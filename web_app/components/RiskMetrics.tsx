@@ -34,7 +34,7 @@ interface MetricItemProps {
 const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick }: MetricItemProps) => (
     <div
         onClick={onClick}
-        className="flex flex-col p-3 bg-secondary/30 rounded-xl hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full"
+        className="flex flex-col p-3 bg-secondary/30 backdrop-blur-sm rounded-xl border border-white/10 hover:bg-cyan-500/10 cursor-pointer transition-all duration-300 group/item h-full"
     >
         <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
             <Icon className="w-3.5 h-3.5 group-hover/item:text-cyan-500 transition-colors" />
@@ -222,7 +222,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     return (
         <React.Fragment>
-            <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md group relative overflow-hidden">
+            <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md group relative overflow-hidden bg-gradient-to-br from-card/80 to-transparent">
                 <CardContent className="h-full p-4 flex flex-col gap-4">
                     <div className="flex justify-between items-start">
                         <div className="flex items-center gap-2">
@@ -240,7 +240,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                         {/* Left Side: Portfolio Health */}
                         {portfolioHealth && (
                             <div
-                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-secondary/5 transition-colors cursor-pointer group/health relative overflow-hidden"
+                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-secondary/30 backdrop-blur-sm border border-white/10 transition-colors cursor-pointer group/health relative overflow-hidden"
                                 onClick={() => setIsHealthModalOpen(true)}
                             >
                                 <div className="absolute top-2 right-2 opacity-0 group-hover/health:opacity-100 transition-opacity">

@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatCompactNumber, formatPercent, cn } from "@/lib/utils";
+import { formatCurrency, formatCompactNumber, formatPercent, cn, getHeatmapClass } from "@/lib/utils";
 
 import { useStockModal } from '@/context/StockModalContext';
 
@@ -193,7 +193,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     if (!results || results.length === 0) return null;
 
     return (
-        <Card className="bg-card shadow-sm overflow-hidden">
+        <Card className="bg-card/50 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-50/50 dark:supports-[backdrop-filter]:bg-zinc-900/50 border-border/50 shadow-xl overflow-hidden transition-all hover:shadow-md">
             <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
@@ -317,7 +317,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-secondary/30 border-y border-border">
+                            <tr className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 border-y border-border/50">
                                 <th
                                     className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('symbol')}
@@ -391,7 +391,10 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                         <td className="px-6 py-4 text-right tabular-nums text-sm font-medium text-muted-foreground">
                                             {typeof row.intrinsic_value === 'number' ? formatCurrency(row.intrinsic_value, 'USD') : '-'}
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className={cn(
+                                            "px-6 py-4 text-right transition-colors",
+                                            getHeatmapClass(row.margin_of_safety)
+                                        )}>
                                             {row.margin_of_safety !== null ? (
                                                 <div className={cn(
                                                     "flex items-center justify-end font-mono font-bold text-sm",
@@ -460,7 +463,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                         <tr className="bg-secondary/5">
                                             <td colSpan={6} className="p-0">
                                                 <div className="p-6 border-t border-border animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <div className="bg-card rounded-2xl p-6 shadow-sm space-y-6">
+                                                    <div className="bg-background/80 backdrop-blur-md border border-border/50 rounded-2xl p-6 shadow-xl space-y-6">
                                                         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
                                                             <div className="flex items-center gap-3">
                                                                 <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">

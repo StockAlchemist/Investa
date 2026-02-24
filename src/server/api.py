@@ -124,7 +124,7 @@ def trigger_background_precalculation(current_user: User):
             today = date.today()
             
             # Call synchronous summary generator
-            overall_metrics, summary_df, account_metrics, _, _, status = calculate_portfolio_summary(
+            overall_metrics, summary_df, holdings_dict, account_metrics, _, _, status = calculate_portfolio_summary(
                 all_transactions_df_cleaned=df,
                 original_transactions_df_for_ignored=df,
                 ignored_indices_from_load=set(),
@@ -187,6 +187,14 @@ def trigger_background_precalculation(current_user: User):
             
             cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
             
+            def sf(val):
+                if val is None: return 0.0
+                try:
+                    import math
+                    return 0.0 if math.isnan(float(val)) else float(val)
+                except:
+                    return 0.0
+            
             if overall_metrics:
                 cursor.execute('''
                     INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
@@ -194,12 +202,12 @@ def trigger_background_precalculation(current_user: User):
                 ''', (
                     today.isoformat(),
                     'ALL',
-                    overall_metrics.get('market_value'),
-                    overall_metrics.get('total_buy_cost'),
-                    overall_metrics.get('total_gain'),
-                    overall_metrics.get('total_return_pct'),
-                    overall_twr,
-                    overall_metrics.get('portfolio_mwr'),
+                    sf(overall_metrics.get('market_value')),
+                    sf(overall_metrics.get('total_buy_cost')),
+                    sf(overall_metrics.get('total_gain')),
+                    sf(overall_metrics.get('total_return_pct')),
+                    sf(overall_twr),
+                    sf(overall_metrics.get('portfolio_mwr')),
                     datetime.now().isoformat()
                 ))
 
@@ -211,12 +219,12 @@ def trigger_background_precalculation(current_user: User):
                     ''', (
                         today.isoformat(),
                         acc,
-                        acc_data.get('total_market_value_display'),
-                        acc_data.get('total_buy_cost_display'),
-                        acc_data.get('total_gain_display'),
-                        acc_data.get('total_return_pct'),
-                        acc_data.get('twr', 0.0),
-                        acc_data.get('mwr'),
+                        sf(acc_data.get('total_market_value_display')),
+                        sf(acc_data.get('total_buy_cost_display')),
+                        sf(acc_data.get('total_gain_display')),
+                        sf(acc_data.get('total_return_pct')),
+                        sf(acc_data.get('twr', 0.0)),
+                        sf(acc_data.get('mwr')),
                         datetime.now().isoformat()
                     ))
             conn.commit()
@@ -3109,7 +3117,8 @@ class SettingsUpdate(BaseModel):
 @router.post("/settings/update")
 async def update_settings(
     settings: SettingsUpdate,
-    config_manager = Depends(get_config_manager)
+    config_manager = Depends(get_config_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Updates the application settings (manual overrides, symbol map, exclude list).

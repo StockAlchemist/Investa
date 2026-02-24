@@ -37,7 +37,7 @@ const COLORS = [
 const CustomTooltip = ({ active, payload, label, period }: any) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-background/95 border border-border p-4 rounded-2xl shadow-2xl backdrop-blur-md min-w-[180px]">
+            <div className="bg-white/95 dark:bg-slate-950/95 border border-border p-4 rounded-2xl shadow-2xl backdrop-blur-md min-w-[180px]">
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 border-b border-border/50 pb-2">
                     {new Date(label).toLocaleString([], {
                         timeZone: 'America/New_York',
@@ -263,7 +263,10 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                     tickLine={false}
                                     width={45}
                                 />
-                                <Tooltip content={<CustomTooltip period={period} />} />
+                                <Tooltip
+                                    wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                    content={<CustomTooltip period={period} />}
+                                />
                                 {activeBenchmarks.map((bench, idx) => (
                                     <Line
                                         key={bench}

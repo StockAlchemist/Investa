@@ -23,6 +23,7 @@ export interface MetricCardProps {
     isLoading?: boolean;
     isRefreshing?: boolean;
     icon?: LucideIcon;
+    accentColor?: string;
 }
 
 export function MetricCard({
@@ -40,15 +41,34 @@ export function MetricCard({
     isLoading = false,
     isRefreshing = false,
     icon: Icon,
+    accentColor = 'cyan-500',
     onClick
 }: MetricCardProps & { onClick?: () => void }) {
+    const colorMap: Record<string, { borderHover: string; bgGlow: string; textHover: string; bgHover: string }> = {
+        'indigo-500': { borderHover: 'hover:border-r-indigo-500', bgGlow: 'bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent dark:from-indigo-500/10', textHover: 'group-hover:text-indigo-500', bgHover: 'group-hover:bg-indigo-500/10' },
+        'sky-500': { borderHover: 'hover:border-r-sky-500', bgGlow: 'bg-gradient-to-br from-sky-500/5 via-transparent to-transparent dark:from-sky-500/10', textHover: 'group-hover:text-sky-500', bgHover: 'group-hover:bg-sky-500/10' },
+        'teal-500': { borderHover: 'hover:border-r-teal-500', bgGlow: 'bg-gradient-to-br from-teal-500/5 via-transparent to-transparent dark:from-teal-500/10', textHover: 'group-hover:text-teal-500', bgHover: 'group-hover:bg-teal-500/10' },
+        'slate-500': { borderHover: 'hover:border-r-slate-500', bgGlow: 'bg-gradient-to-br from-slate-500/5 via-transparent to-transparent dark:from-slate-500/10', textHover: 'group-hover:text-slate-500', bgHover: 'group-hover:bg-slate-500/10' },
+        'purple-500': { borderHover: 'hover:border-r-purple-500', bgGlow: 'bg-gradient-to-br from-purple-500/5 via-transparent to-transparent dark:from-purple-500/10', textHover: 'group-hover:text-purple-500', bgHover: 'group-hover:bg-purple-500/10' },
+        'violet-500': { borderHover: 'hover:border-r-violet-500', bgGlow: 'bg-gradient-to-br from-violet-500/5 via-transparent to-transparent dark:from-violet-500/10', textHover: 'group-hover:text-violet-500', bgHover: 'group-hover:bg-violet-500/10' },
+        'amber-500': { borderHover: 'hover:border-r-amber-500', bgGlow: 'bg-gradient-to-br from-amber-500/5 via-transparent to-transparent dark:from-amber-500/10', textHover: 'group-hover:text-amber-500', bgHover: 'group-hover:bg-amber-500/10' },
+        'emerald-500': { borderHover: 'hover:border-r-emerald-500', bgGlow: 'bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent dark:from-emerald-500/10', textHover: 'group-hover:text-emerald-500', bgHover: 'group-hover:bg-emerald-500/10' },
+        'rose-500': { borderHover: 'hover:border-r-rose-500', bgGlow: 'bg-gradient-to-br from-rose-500/5 via-transparent to-transparent dark:from-rose-500/10', textHover: 'group-hover:text-rose-500', bgHover: 'group-hover:bg-rose-500/10' },
+        'cyan-500': { borderHover: 'hover:border-r-cyan-500', bgGlow: 'bg-gradient-to-br from-cyan-500/5 via-transparent to-transparent dark:from-cyan-500/10', textHover: 'group-hover:text-cyan-500', bgHover: 'group-hover:bg-cyan-500/10' },
+        'zinc-500': { borderHover: 'hover:border-r-zinc-500', bgGlow: 'bg-gradient-to-br from-zinc-500/5 via-transparent to-transparent dark:from-zinc-500/10', textHover: 'group-hover:text-zinc-500', bgHover: 'group-hover:bg-zinc-500/10' }
+    };
+
+    const activeClasses = colorMap[accentColor] || colorMap['cyan-500'];
+
     return (
         <Card
             className={cn(
-                "h-full transition-all duration-300 relative overflow-hidden group",
-                "hover:bg-accent/5 hover:shadow-md",
+                "h-full transition-all duration-300 relative overflow-hidden group border-r-2",
                 onClick ? "cursor-pointer active:scale-[0.98]" : "",
-                containerClassName
+                containerClassName,
+                activeClasses.borderHover,
+                `border-r-transparent`,
+                activeClasses.bgGlow
             )}
             onClick={onClick}
         >
@@ -63,7 +83,8 @@ export function MetricCard({
                     {Icon && (
                         <div className={cn(
                             "absolute top-3 right-3 p-1.5 rounded-lg bg-secondary/50 text-muted-foreground transition-all duration-300",
-                            "group-hover:text-cyan-500 group-hover:bg-cyan-500/10"
+                            activeClasses.textHover,
+                            activeClasses.bgHover
                         )}>
                             <Icon className="w-4 h-4" />
                         </div>

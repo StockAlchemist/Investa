@@ -71,19 +71,20 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                             width={40}
                         />
                         <Tooltip
+                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                             cursor={{ fill: 'var(--muted)', opacity: 0.1 }}
                             contentStyle={{
-                                backgroundColor: 'var(--menu-solid)',
+                                backgroundColor: 'transparent',
+                                border: 'none',
                                 borderRadius: '12px',
-                                border: '1px solid var(--border)',
-                                color: 'var(--foreground)'
+                                boxShadow: 'none'
                             }}
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     // Sort payload by value desc for better reading in tooltip
                                     const sortedPayload = [...payload].sort((a, b) => (b.value as number) - (a.value as number));
                                     return (
-                                        <div className="border border-border p-3 rounded-lg shadow-xl text-xs min-w-[180px]" style={{ backgroundColor: 'var(--menu-solid)' }}>
+                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl text-xs min-w-[180px]">
                                             <p className="font-semibold mb-2 text-foreground">{label}</p>
                                             {sortedPayload.map((entry, idx) => (
                                                 <div key={`tooltip-${idx}`} className="flex items-center gap-3 mb-1 last:mb-0">

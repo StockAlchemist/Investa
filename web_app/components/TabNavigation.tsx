@@ -16,6 +16,7 @@ import {
     LogOut,
     Sparkles
 } from 'lucide-react';
+import { TAB_THEMES } from '@/lib/dashboard_constants';
 
 interface TabNavigationProps {
     activeTab: string;
@@ -81,7 +82,9 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
             >
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300",
-                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "text-cyan-500 group-hover:scale-110",
+                    isOpen
+                        ? `${TAB_THEMES[activeTab]?.bgSolid || 'bg-cyan-500'} text-white shadow-lg ${TAB_THEMES[activeTab]?.shadowSolid || 'shadow-cyan-500/30'}`
+                        : `${TAB_THEMES[activeTab]?.textSolid || 'text-cyan-500'} group-hover:scale-110`,
                     side === 'bottom' && "p-1.5 bg-secondary"
                 )}>
                     <ActiveIcon className={cn(side === 'bottom' ? "w-4 h-4" : "w-5 h-5")} />
@@ -110,13 +113,15 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                                 className={cn(
                                     "flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left",
                                     activeTab === tab.id
-                                        ? "bg-[#0097b2] text-white shadow-sm"
+                                        ? `${TAB_THEMES[tab.id]?.bgSolid || 'bg-cyan-500'} text-white shadow-sm`
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >
                                 <tab.icon className={cn(
                                     "w-4 h-4 transition-transform duration-300",
-                                    activeTab === tab.id ? "text-white" : "text-cyan-500 group-hover:scale-110"
+                                    activeTab === tab.id
+                                        ? "text-white"
+                                        : `${TAB_THEMES[tab.id]?.textSolid || 'text-cyan-500'} group-hover:scale-110`
                                 )} />
                                 <span className="flex-1">{tab.label}</span>
                                 {activeTab === tab.id && (

@@ -29,7 +29,7 @@ interface DashboardProps {
     history?: PerformanceData[];
     isLoading?: boolean;
     isRefreshing?: boolean;
-     
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     riskMetrics?: any;
     riskMetricsLoading?: boolean;
@@ -41,6 +41,7 @@ interface DashboardProps {
     holdings?: Holding[];
     visibleItems: string[];
     accounts?: string[];
+    themeColor?: string;
 }
 
 export default function Dashboard({
@@ -56,7 +57,8 @@ export default function Dashboard({
     holdings = [],
     visibleItems,
     accounts,
-    isRefreshing = false
+    isRefreshing = false,
+    themeColor = 'cyan-500'
 }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
@@ -73,7 +75,7 @@ export default function Dashboard({
     }
 
     // Prepare data helpers
-     
+
     // Use the correctly aggregated cash balance from overall metrics
     const cashBalance = m?.cash_balance ?? null;
     const dayGL = m?.day_change_display ?? null;
@@ -118,6 +120,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={Wallet}
+                    accentColor={themeColor}
                 />;
             case 'dayGL':
                 return <MetricCard
@@ -134,6 +137,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={(dayGL ?? 0) >= 0 ? TrendingUp : TrendingDown}
+                    accentColor={themeColor}
                 />;
             case 'totalReturn':
                 return <MetricCard
@@ -149,6 +153,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={Activity}
+                    accentColor={themeColor}
                 />;
             case 'annualTWR':
                 return <MetricCard
@@ -163,6 +168,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={Percent}
+                    accentColor={themeColor}
                 />;
             case 'mwr':
                 return <MetricCard
@@ -175,6 +181,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={Activity}
+                    accentColor={themeColor}
                 />;
             case 'unrealizedGL':
                 return <MetricCard
@@ -190,6 +197,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={TrendingUp} // Or separate icon
+                    accentColor={themeColor}
                 />;
             case 'fxGL':
                 return <MetricCard
@@ -204,6 +212,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={DollarSign}
+                    accentColor={themeColor}
                 />;
             case 'realizedGain':
                 return <MetricCard
@@ -217,6 +226,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={PiggyBank}
+                    accentColor={themeColor}
                 />;
             case 'cashBalance':
                 return <MetricCard
@@ -227,6 +237,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={DollarSign}
                     valueClassName="text-xl sm:text-2xl"
+                    accentColor={themeColor}
                 />;
             case 'ytdDividends':
                 return <MetricCard
@@ -239,6 +250,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={DollarSign} // Or create a generic dividend icon
+                    accentColor={themeColor}
                 />;
             case 'fees':
                 return <MetricCard
@@ -249,6 +261,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={Receipt}
+                    accentColor={themeColor}
                 />;
             case 'riskMetrics':
                 return <RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} isRefreshing={isRefreshing} />;
@@ -258,7 +271,7 @@ export default function Dashboard({
                 return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} />;
             case 'portfolioDonut':
                 return (
-                    <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md relative overflow-hidden">
+                    <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md relative overflow-hidden bg-gradient-to-br from-card/80 to-transparent">
                         <CardContent className="h-full p-4 relative">
                             <div className="flex justify-between items-start mb-2">
                                 <div className="flex items-center gap-2">

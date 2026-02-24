@@ -714,9 +714,21 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             ))}
                                         </Pie>
                                         <Tooltip
+                                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                             formatter={(value: any) => `${Number(value).toFixed(2)}%`}
-                                            contentStyle={{ borderRadius: '12px', border: '1px solid var(--border)', backgroundColor: 'var(--menu-solid)' }}
-                                            labelStyle={{ color: 'var(--foreground)' }}
+                                            content={({ active, payload }) => {
+                                                if (active && payload && payload.length) {
+                                                    return (
+                                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl">
+                                                            <p className="font-medium text-foreground">{payload[0].name}</p>
+                                                            <p className="text-sm text-muted-foreground">
+                                                                {Number(payload[0].value).toFixed(2)}%
+                                                            </p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }}
                                         />
                                         <Legend
                                             layout="vertical"
@@ -1383,17 +1395,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                     />
                                                     <YAxis hide />
                                                     <Tooltip
+                                                        wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                                         content={({ active, payload }) => {
                                                             if (active && payload && payload.length) {
                                                                 const count = payload[0].value;
                                                                 const probability = (count / 10000) * 100;
                                                                 return (
-                                                                    <div className={cn(
-                                                                        "p-3 rounded-xl shadow-2xl outline-none border scale-105 transition-transform",
-                                                                        isDarkMode
-                                                                            ? "bg-slate-900 border-slate-700"
-                                                                            : "bg-white border-slate-200"
-                                                                    )}>
+                                                                    <div className="p-3 rounded-xl shadow-2xl outline-none border scale-105 transition-transform bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-border">
                                                                         <p className={cn(
                                                                             "text-[10px] uppercase font-bold mb-1 tracking-wider",
                                                                             isDarkMode ? "text-slate-500" : "text-slate-400"
@@ -1586,20 +1594,12 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
                             className="fill-muted-foreground"
                             tickFormatter={(val) => `${val}${suffix}`}
                         />
-                        ```
                         <Tooltip
+                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div
-                                            style={{
-                                                backgroundColor: 'var(--menu-solid)',
-                                                borderRadius: '12px',
-                                                border: '1px solid var(--border)',
-                                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                                            }}
-                                            className="border border-border p-3 rounded-xl shadow-xl text-xs"
-                                        >
+                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl text-xs">
                                             <p className="font-medium text-foreground mb-1">{label}</p>
                                             <div className="flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />

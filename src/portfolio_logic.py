@@ -3533,7 +3533,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
     """
     Dispatcher function to calculate portfolio value using either Python or Numba method.
     """
-    if method == "numba":
+    if method in ("numba", "numba_chrono"):
         return _calculate_portfolio_value_at_date_unadjusted_numba(
             target_date,
             transactions_df,

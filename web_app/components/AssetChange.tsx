@@ -81,7 +81,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <div className="bg-card p-4 rounded-xl shadow-sm border border-border mb-6">
+        <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-sm transition-all hover:shadow-md">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
@@ -123,16 +123,17 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             width={35}
                         />
                         <Tooltip
+                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                             contentStyle={{
-                                backgroundColor: 'var(--menu-solid)',
-                                borderRadius: '8px',
-                                border: '1px solid var(--border)',
-                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                                backgroundColor: 'transparent',
+                                borderRadius: '12px',
+                                border: 'none',
+                                boxShadow: 'none'
                             }}
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="border border-border p-3 rounded-lg shadow-xl" style={{ backgroundColor: 'var(--menu-solid)' }}>
+                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl">
                                             <p className="font-medium text-foreground mb-1 text-sm">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -259,7 +260,7 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
         <div className="space-y-6">
             <div className="flex justify-end space-x-2 mb-4">
                 <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
-                <div className="inline-flex rounded-lg shadow-sm bg-secondary p-1 border border-border">
+                <div className="inline-flex rounded-lg shadow-sm bg-secondary/50 backdrop-blur-sm p-1 border border-border/50">
                     <button
                         onClick={() => setViewMode('percent')}
                         className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'percent'

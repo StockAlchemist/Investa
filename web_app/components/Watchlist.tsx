@@ -19,8 +19,9 @@ import { Input } from "@/components/ui/input";
 import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency, formatPercent, formatCompactNumber, cn } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatCompactNumber, cn, getHeatmapClass } from "@/lib/utils";
 import StockTicker from './StockTicker';
+import { TrendSparkline } from './ui/TrendSparkline';
 
 interface WatchlistProps {
     currency: string;
@@ -372,8 +373,8 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     </form>
 
                     <div className="overflow-x-auto rounded-lg">
-                        <table className="min-w-full divide-y divide-border/50">
-                            <thead className="bg-secondary/50 font-semibold border-b border-border">
+                        <table className="min-w-full divide-y divide-border/30">
+                            <thead className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 font-semibold border-b border-border/50">
                                 <tr>
                                     {[
                                         { key: 'Symbol', label: 'Symbol', align: 'left' },
@@ -425,8 +426,11 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                             <td className="px-4 py-3 whitespace-nowrap text-right font-mono font-medium text-sm text-foreground tabular-nums">
                                                 {item.Price ? formatCurrency(item.Price, item.Currency || 'USD') : '-'}
                                             </td>
-                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
-                                                <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'
+                                            <td className={cn(
+                                                "px-4 py-3 whitespace-nowrap text-right text-sm transition-colors",
+                                                getHeatmapClass(item["Day Change %"])
+                                            )}>
+                                                <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-red-600 dark:text-red-500 font-bold'
                                                     }`}>
                                                     {(item["Day Change"] || 0) >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
                                                     {item["Day Change %"] ? formatPercent(item["Day Change %"] / 100) : '-'}
@@ -447,49 +451,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-28">
                                                 <div className="h-8 w-24">
-                                                    {item.Sparkline && item.Sparkline.length > 1 ? (
-                                                        <ResponsiveContainer width="100%" height="100%">
-                                                            <AreaChart data={item.Sparkline.map(v => ({ value: v }))}>
-                                                                <defs>
-                                                                    {(() => {
-                                                                        const val = item.Sparkline!;
-                                                                        const baseline = val[0];
-                                                                        const min = Math.min(...val);
-                                                                        const max = Math.max(...val);
-                                                                        const range = max - min;
-                                                                        const off = range <= 0 ? 0 : (max - baseline) / range;
-
-                                                                        return (
-                                                                            <>
-                                                                                <linearGradient id={`splitFill-wl-${item.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
-                                                                                </linearGradient>
-                                                                                <linearGradient id={`splitStroke-wl-${item.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
-                                                                                </linearGradient>
-                                                                            </>
-                                                                        );
-                                                                    })()}
-                                                                </defs>
-                                                                <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                <ReferenceLine y={item.Sparkline[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
-                                                                <Area
-                                                                    type="monotone"
-                                                                    dataKey="value"
-                                                                    baseValue={item.Sparkline[0]}
-                                                                    stroke={`url(#splitStroke-wl-${item.Symbol})`}
-                                                                    fill={`url(#splitFill-wl-${item.Symbol})`}
-                                                                    strokeWidth={1.5}
-                                                                    isAnimationActive={false}
-                                                                    dot={false}
-                                                                />
-                                                            </AreaChart>
-                                                        </ResponsiveContainer>
-                                                    ) : (
-                                                        <span className="text-[10px] text-muted-foreground text-center block">no trend</span>
-                                                    )}
+                                                    <TrendSparkline data={item.Sparkline || []} />
                                                 </div>
                                             </td>
                                             <td className={`px-4 py-3 whitespace-nowrap text-xs max-w-[150px] ${editingSymbol === item.Symbol ? '' : 'truncate text-muted-foreground italic'}`}>

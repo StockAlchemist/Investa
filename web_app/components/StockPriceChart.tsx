@@ -277,7 +277,7 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
             });
 
             return (
-                <div className="p-3 border border-border shadow-2xl rounded-xl min-w-[240px] bg-card/95 backdrop-blur-sm">
+                <div className="p-3 border border-border shadow-2xl rounded-xl min-w-[240px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-md">
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
@@ -453,7 +453,11 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
                                 domain={[0, (dataMax: number) => dataMax * 5]} // Volume bars low
                             />
 
-                            <Tooltip content={<CustomTooltip view={view} currency={currency} />} cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                            <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                content={<CustomTooltip view={view} currency={currency} />}
+                                cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }}
+                            />
 
                             <Bar dataKey="volume" yAxisId="vol" fill="#9ca3af" opacity={0.15} barSize={period === '1d' ? undefined : 6} />
 

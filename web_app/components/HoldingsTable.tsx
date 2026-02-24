@@ -10,6 +10,10 @@ import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, UserCircl
 import { Skeleton } from './ui/skeleton';
 import { useStockModal } from '@/context/StockModalContext';
 import WatchlistStar from './WatchlistStar';
+import { getHeatmapClass } from '../lib/utils';
+import { TrendSparkline } from './ui/TrendSparkline';
+import { InlineProgressBar } from './ui/InlineProgressBar';
+import { SemanticBadge } from './ui/SemanticBadge';
 
 interface HoldingsTableProps {
     holdings: Holding[];
@@ -936,7 +940,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 {/* Desktop Table View (also visible on mobile if toggled) */}
                 <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto`}>
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
-                        <thead className="bg-white dark:bg-zinc-900 font-semibold border-b border-border shadow-sm">
+                        <thead className="bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 font-semibold border-b border-border shadow-sm">
                             <tr>
                                 {visibleColumns.map(header => {
                                     const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
@@ -948,7 +952,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             onDragStart={(e) => handleDragStart(e, header)}
                                             onDragOver={handleDragOver}
                                             onDrop={(e) => handleDrop(e, header)}
-                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${header === 'Symbol' ? 'sticky left-0 z-40 bg-white dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : 'bg-white dark:bg-zinc-900'}`}
+                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${header === 'Symbol' ? 'sticky left-0 z-40 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}
                                             onClick={() => handleSort(header)}
                                         >
                                             <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
@@ -1039,63 +1043,26 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
                                                         const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
 
+                                                        const isHeatmap = ['Day Chg %', 'Unreal. G/L %', 'Total Ret %'].includes(header);
+                                                        const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
+
                                                         return (
-                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-white dark:bg-[#121212] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
+                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''} ${heatmapClass}`}>
                                                                 {header === '7d Trend' ? (
                                                                     <div className="h-10 w-28 ml-auto">
                                                                         {val && Array.isArray(val) && val.length > 1 ? (
-                                                                            <ResponsiveContainer width="100%" height="100%" minWidth={50} minHeight={30}>
-                                                                                <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
-                                                                                    <defs>
-                                                                                        {(() => {
-                                                                                            const baseline = val[0];
-                                                                                            const min = Math.min(...val);
-                                                                                            const max = Math.max(...val);
-                                                                                            const range = max - min;
-                                                                                            const off = range <= 0 ? 0 : (max - baseline) / range;
-
-                                                                                            return (
-                                                                                                <>
-                                                                                                    <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                                        <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                                                                                                        <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
-                                                                                                    </linearGradient>
-                                                                                                    <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                                        <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                                                                                                        <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
-                                                                                                    </linearGradient>
-                                                                                                </>
-                                                                                            );
-                                                                                        })()}
-                                                                                    </defs>
-                                                                                    <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                                    <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
-                                                                                    <Area
-                                                                                        type="monotone"
-                                                                                        dataKey="value"
-                                                                                        baseValue={val[0]}
-                                                                                        stroke={`url(#splitStroke-${holding.Symbol})`}
-                                                                                        fill={`url(#splitFill-${holding.Symbol})`}
-                                                                                        strokeWidth={1.5}
-                                                                                        isAnimationActive={false}
-                                                                                        dot={(props: any) => {
-                                                                                            const { cx, cy, index } = props;
-                                                                                            if (index === val.length - 1) {
-                                                                                                const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
-                                                                                                return (
-                                                                                                    <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
-                                                                                                );
-                                                                                            }
-                                                                                            return null;
-                                                                                        }}
-                                                                                    />
-                                                                                </AreaChart>
-                                                                            </ResponsiveContainer>
+                                                                            <TrendSparkline data={val as number[]} />
                                                                         ) : (
                                                                             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground/50">
                                                                                 no data
                                                                             </div>
                                                                         )}
+                                                                    </div>
+                                                                ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
+                                                                    <div className="w-24 ml-auto h-6">
+                                                                        <InlineProgressBar value={(val as number) || 0} max={100}>
+                                                                            <span className="text-xs font-medium relative z-10">{formatValue(val, header)}</span>
+                                                                        </InlineProgressBar>
                                                                     </div>
                                                                 ) : header === 'Symbol' ? (
                                                                     <div className="flex items-center gap-3">
@@ -1169,9 +1136,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                                 {val && Array.isArray(val) && val.length > 0 ? (
                                                                                     <div className="flex flex-wrap gap-1">
                                                                                         {val.map((tag: string, i: number) => (
-                                                                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/20">
-                                                                                                {tag}
-                                                                                            </span>
+                                                                                            <SemanticBadge key={i} text={tag} />
                                                                                         ))}
                                                                                     </div>
                                                                                 ) : (
@@ -1227,64 +1192,26 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                 const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
                                                 const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
 
+                                                const isHeatmap = ['Day Chg %', 'Unreal. G/L %', 'Total Ret %'].includes(header);
+                                                const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
+
                                                 return (
-                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-white dark:bg-[#121212] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
+                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''} ${heatmapClass}`}>
                                                         {header === '7d Trend' ? (
                                                             <div className="h-10 w-28 ml-auto">
                                                                 {val && Array.isArray(val) && val.length > 1 ? (
-                                                                    <ResponsiveContainer width="100%" height="100%" minWidth={50} minHeight={30}>
-                                                                        <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
-                                                                            <defs>
-                                                                                {(() => {
-                                                                                    const baseline = val[0];
-                                                                                    const min = Math.min(...val);
-                                                                                    const max = Math.max(...val);
-                                                                                    const range = max - min;
-                                                                                    const off = range <= 0 ? 0 : (max - baseline) / range;
-
-                                                                                    return (
-                                                                                        <>
-                                                                                            <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                                <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                                                                                                <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
-                                                                                            </linearGradient>
-                                                                                            <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                                <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                                                                                                <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
-                                                                                            </linearGradient>
-                                                                                        </>
-                                                                                    );
-                                                                                })()}
-                                                                            </defs>
-                                                                            <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                            <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
-                                                                            <Area
-                                                                                type="monotone"
-                                                                                dataKey="value"
-                                                                                baseValue={val[0]}
-                                                                                stroke={`url(#splitStroke-${holding.Symbol})`}
-                                                                                fill={`url(#splitFill-${holding.Symbol})`}
-                                                                                strokeWidth={1.5}
-                                                                                isAnimationActive={false}
-                                                                                dot={(props: any) => {
-                                                                                    const { cx, cy, index } = props;
-                                                                                    if (index === val.length - 1) {
-                                                                                        // Calculate color for dot based on value vs baseline
-                                                                                        const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
-                                                                                        return (
-                                                                                            <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
-                                                                                        );
-                                                                                    }
-                                                                                    return <React.Fragment key={index} />;
-                                                                                }}
-                                                                            />
-                                                                        </AreaChart>
-                                                                    </ResponsiveContainer>
+                                                                    <TrendSparkline data={val as number[]} />
                                                                 ) : (
                                                                     <div className="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground/30">
                                                                         no data
                                                                     </div>
                                                                 )}
+                                                            </div>
+                                                        ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
+                                                            <div className="w-24 ml-auto h-6">
+                                                                <InlineProgressBar value={(val as number) || 0} max={100}>
+                                                                    <span className="text-xs font-medium relative z-10">{formatValue(val, header)}</span>
+                                                                </InlineProgressBar>
                                                             </div>
                                                         ) : header === 'Symbol' ? (
                                                             <div className="flex items-center justify-start gap-3">
@@ -1327,9 +1254,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 <div className="flex flex-wrap gap-1 justify-end">
                                                                     {Array.isArray(val) && val.length > 0 ? (
                                                                         val.map((tag: string, i: number) => (
-                                                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
-                                                                                {tag}
-                                                                            </span>
+                                                                            <SemanticBadge key={i} text={tag} />
                                                                         ))
                                                                     ) : (
                                                                         <span className="text-muted-foreground italic text-xs opacity-0 group-hover/tags:opacity-50 transition-opacity">Add tag</span>

@@ -117,9 +117,11 @@ export default function Dividend({ data, currency, expectedDividends, children, 
             {/* Injected Content (e.g. Dividend Calendar) */}
             {children}
 
-            {/* Annual Dividends Chart */}
-            <div className="bg-card p-4 rounded-xl shadow-sm">
-                <h3 className="text-lg font-semibold text-foreground mb-4">Annual Dividends</h3>
+            {/* Chart Section */}
+            <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl p-4 shadow-sm mb-6 transition-all hover:shadow-md">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-foreground">Annual Dividends</h3>
+                </div>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dividendsByYear} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -132,16 +134,17 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                                 width={35}
                             />
                             <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 contentStyle={{
-                                    backgroundColor: 'var(--menu-solid)',
+                                    backgroundColor: 'transparent',
                                     borderRadius: '12px',
-                                    border: '1px solid var(--border)',
+                                    border: 'none',
                                     color: 'var(--foreground)'
                                 }}
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="border border-border p-3 rounded-lg shadow-xl" style={{ backgroundColor: 'var(--menu-solid)' }}>
+                                            <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -164,7 +167,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-card rounded-xl shadow-sm overflow-hidden">
+            <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
                 <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Dividend Transactions</h3>
                     <div className="text-sm text-muted-foreground">
@@ -173,8 +176,8 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                 </div>
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
-                    <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
-                        <thead className="bg-secondary/50 font-semibold border-b border-border">
+                    <table className="min-w-full divide-y divide-border/30">
+                        <thead className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 font-semibold border-b border-border/50">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'DividendAmountDisplayCurrency'].map((header) => (
                                     <th

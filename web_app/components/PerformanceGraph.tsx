@@ -338,8 +338,7 @@ export default function PerformanceGraph({
         return (
             <div
                 ref={containerRef}
-                className="rounded-xl p-6 shadow-sm h-[400px] flex items-center justify-center text-muted-foreground w-full"
-                style={{ backgroundColor: 'var(--menu-solid)' }}
+                className="bg-card/50 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-50/50 dark:supports-[backdrop-filter]:bg-zinc-900/50 rounded-xl p-6 shadow-sm border border-border/50 h-[400px] flex items-center justify-center text-muted-foreground w-full transition-all hover:shadow-md"
             >
                 {!mounted || loading ? (
                     <div className="flex flex-col items-center gap-2">
@@ -438,7 +437,7 @@ export default function PerformanceGraph({
             );
 
             return (
-                <div className="p-3 shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible" style={{ backgroundColor: 'var(--menu-solid)' }}>
+                <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible">
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
@@ -535,7 +534,7 @@ export default function PerformanceGraph({
     const isContinuous = period === '1d';
 
     return (
-        <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm mb-6 overflow-visible relative">
+        <div ref={containerRef} className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl p-4 shadow-sm mb-6 overflow-visible relative transition-all hover:shadow-md group/section">
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground flex items-center gap-2">
@@ -577,7 +576,7 @@ export default function PerformanceGraph({
                                         type="date"
                                         value={customFromDate}
                                         onChange={(e) => onCustomFromDateChange?.(e.target.value)}
-                                        className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-auto"
+                                        className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-[130px] dark:color-scheme-dark"
                                     />
                                 </div>
                                 <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1">
@@ -586,7 +585,7 @@ export default function PerformanceGraph({
                                         type="date"
                                         value={customToDate}
                                         onChange={(e) => onCustomToDateChange?.(e.target.value)}
-                                        className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-auto"
+                                        className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-[130px] dark:color-scheme-dark"
                                     />
                                 </div>
                             </div>
@@ -597,7 +596,7 @@ export default function PerformanceGraph({
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}
-                        <div className="flex bg-secondary rounded-lg p-1 shrink-0">
+                        <div className="flex bg-secondary/50 backdrop-blur-sm rounded-lg p-1 shrink-0 border border-border/50 shadow-sm">
                             <button
                                 onClick={() => onViewChange('return')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
@@ -636,7 +635,7 @@ export default function PerformanceGraph({
                 {loading && processedData.length === 0 && (
                     <div className={cn(
                         "absolute inset-0 flex items-center justify-center z-10 rounded-xl transition-all duration-300",
-                        "bg-background/80"
+                        "bg-background/40 backdrop-blur-sm"
                     )}>
                         <div className="flex flex-col items-center gap-4">
                             <Loader2 className="animate-spin text-cyan-500 w-8 h-8" />
@@ -675,7 +674,11 @@ export default function PerformanceGraph({
                                 }}
                                 width={65}
                             />
-                            <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                            <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                content={<CustomTooltip />}
+                                cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }}
+                            />
                             <Legend />
                             {/* Portfolio Line with Gradient or Solid color */}
                             {/* Time-Weighted Return (TWR) */}
@@ -774,6 +777,7 @@ export default function PerformanceGraph({
                                 />
                             )}
                             <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 content={<CustomTooltip />}
                                 allowEscapeViewBox={{ x: false, y: false }}
                             />
@@ -835,6 +839,7 @@ export default function PerformanceGraph({
                                 }}
                             />
                             <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 content={<CustomTooltip />}
                                 allowEscapeViewBox={{ x: false, y: false }}
                             />

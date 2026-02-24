@@ -27,7 +27,7 @@ import {
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
-import { DEFAULT_ITEMS, INITIAL_VISIBLE_ITEMS } from '@/lib/dashboard_constants';
+import { DEFAULT_ITEMS, INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
 // import { CURRENCY_SYMBOLS } from '@/lib/utils';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
@@ -476,6 +476,7 @@ export default function Home() {
               holdings={holdings}
               visibleItems={visibleItems}
               accounts={selectedAccounts}
+              themeColor={currentTheme.color}
             />
             <PerformanceGraph
               currency={currency}
@@ -648,9 +649,34 @@ export default function Home() {
     return <AppShellSkeleton />;
   }
 
+  // Inside Home component
+  const currentTheme = TAB_THEMES[activeTab] || TAB_THEMES.performance;
+
   return (
     <main className="min-h-screen bg-background pb-20 selection:bg-cyan-500/20 selection:text-cyan-500">
-      <div className="fixed inset-0 z-[-1] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-background to-background pointer-events-none" />
+      {/* Background Glow */}
+      <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
+        <div
+          className={cn(
+            "absolute -top-[20%] -left-[10%] w-[60%] h-[60%] rounded-full blur-[140px] transition-all duration-1000 opacity-40",
+            currentTheme.bgGlow
+          )}
+        />
+        <div
+          className={cn(
+            "absolute top-[30%] -right-[20%] w-[50%] h-[50%] rounded-full blur-[120px] transition-all duration-1000 opacity-30",
+            currentTheme.bgGlow
+          )}
+        />
+        <div
+          className={cn(
+            "absolute -bottom-[20%] left-[20%] w-[60%] h-[40%] rounded-full blur-[140px] transition-all duration-1000 opacity-20",
+            currentTheme.bgGlow
+          )}
+        />
+      </div>
+
+      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/10 via-background to-background pointer-events-none" />
 
       {/* Control Bar - Desktop */}
       <ControlBar
