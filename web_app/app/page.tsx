@@ -653,24 +653,24 @@ export default function Home() {
   const currentTheme = TAB_THEMES[activeTab] || TAB_THEMES.performance;
 
   return (
-    <main className="min-h-screen bg-background pb-20 selection:bg-cyan-500/20 selection:text-cyan-500">
+    <main className="min-h-screen pb-20 selection:bg-cyan-500/20 selection:text-cyan-500">
       {/* Background Glow */}
       <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
         <div
           className={cn(
-            "absolute -top-[20%] -left-[10%] w-[60%] h-[60%] rounded-full blur-[140px] transition-all duration-1000 opacity-40",
+            "absolute -top-[20%] -left-[10%] w-[60%] h-[60%] rounded-full blur-[60px] md:blur-[140px] transition-all duration-1000 opacity-40",
             currentTheme.bgGlow
           )}
         />
         <div
           className={cn(
-            "absolute top-[30%] -right-[20%] w-[50%] h-[50%] rounded-full blur-[120px] transition-all duration-1000 opacity-30",
+            "absolute top-[30%] -right-[20%] w-[50%] h-[50%] rounded-full blur-[50px] md:blur-[120px] transition-all duration-1000 opacity-30",
             currentTheme.bgGlow
           )}
         />
         <div
           className={cn(
-            "absolute -bottom-[20%] left-[20%] w-[60%] h-[40%] rounded-full blur-[140px] transition-all duration-1000 opacity-20",
+            "absolute -bottom-[20%] left-[20%] w-[60%] h-[40%] rounded-full blur-[60px] md:blur-[140px] transition-all duration-1000 opacity-20",
             currentTheme.bgGlow
           )}
         />
