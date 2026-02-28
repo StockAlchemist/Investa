@@ -1342,6 +1342,7 @@ def _build_summary_rows(
                 "fullExchangeName": stock_data.get("fullExchangeName"),
                 "quoteType": stock_data.get("quoteType"),
                 "Tags": tags_list,  # Added Tags
+                "Market Value (Local)": market_value_local, # ADDED 
             }
         )
         
@@ -1547,6 +1548,55 @@ def _build_summary_rows(
         else:
             row["pct_of_total"] = 0.0
     # --- END NEW ---
+    
+    # --- NEW: Aggregate IRR Calculation (All Accounts View) ---
+    # To fix the artificially low IRR seen when viewing "All Accounts", we calculate a 
+    # true aggregate IRR per symbol across all accounts, ignoring internal transfers.
+    if portfolio_summary_rows:
+        symbol_agg_mvs = defaultdict(float)
+        # Sum local market value per symbol. (Assumes local currency is same across accounts for a given symbol)
+        for r in portfolio_summary_rows:
+             sym = r.get("Symbol")
+             if sym and not str(sym).startswith("Cash"):
+                 symbol_agg_mvs[sym] += abs(float(r.get("Market Value (Local)", 0.0)))
+        
+        agg_irrs = {}
+        for sym, total_mv_local in symbol_agg_mvs.items():
+            try:
+                # With account=None and is_transfer_a_flow=False, it gets true flows ignoring internal transfers
+                cf_dates, cf_values = get_cash_flows_for_symbol_account(
+                    symbol=sym,
+                    account=None,
+                    transactions_df=transactions_df,
+                    final_market_value=float(total_mv_local),
+                    is_transfer_a_flow=False,
+                    report_date=report_date
+                )
+                if cf_dates and cf_values:
+                    for i in range(len(cf_dates)):
+                        d = cf_dates[i]
+                        if isinstance(d, str):
+                            try:
+                                cf_dates[i] = datetime.strptime(d, "%Y-%m-%d").date()
+                            except ValueError:
+                                pass
+                        elif isinstance(d, datetime):
+                            cf_dates[i] = d.date()
+                            
+                    duration_days = (cf_dates[-1] - cf_dates[0]).days
+                    if duration_days >= 365:
+                         agg_irr = calculate_irr(cf_dates, cf_values)
+                         if pd.notna(agg_irr):
+                             agg_irrs[sym] = agg_irr * 100.0
+            except Exception as e:
+                logging.warning(f"Failed to calculate aggregate IRR for {sym}: {e}")
+                
+        # Inject aggregate IRR back into the rows
+        for r in portfolio_summary_rows:
+             sym = r.get("Symbol")
+             if sym in agg_irrs:
+                 r["Aggregate IRR (%)"] = agg_irrs[sym]
+    # --- END AGGREGATE IRR ---
 
     return (
         portfolio_summary_rows,

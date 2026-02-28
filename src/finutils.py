@@ -476,7 +476,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
 # --- Cash Flow Helpers ---
 def get_cash_flows_for_symbol_account(
     symbol: str,
-    account: str,
+    account: Optional[str],
     transactions_df: pd.DataFrame,
     final_market_value: float,
     is_transfer_a_flow: bool,  # ADDED: New parameter to control transfer handling
@@ -511,7 +511,11 @@ def get_cash_flows_for_symbol_account(
             cash flow pattern is invalid for IRR.
     """
     # --- MODIFIED: Handle missing 'To Account' column gracefully ---
-    if "To Account" in transactions_df.columns:
+    if account is None:
+        symbol_account_tx_filtered = transactions_df[
+            (transactions_df["Symbol"] == symbol)
+        ]
+    elif "To Account" in transactions_df.columns:
         symbol_account_tx_filtered = transactions_df[
             (transactions_df["Symbol"] == symbol)
             & (
