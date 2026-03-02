@@ -3315,19 +3315,23 @@ async def get_attribution(
         stock_data = []
 
         total_gain = 0.0
+        total_cost = 0.0
         for row in rows:
             symbol = row.get("Symbol")
             if symbol == "Total" or row.get("is_total"):
                 continue
             
             gain_col = f"Total Gain ({currency})"
+            cost_col = f"Total Buy Cost ({currency})"
             value_col = f"Market Value ({currency})"
             
             gain = row.get(gain_col, 0.0)
+            cost = row.get(cost_col, 0.0)
             value = row.get(value_col, 0.0)
             sector = row.get("Sector") or "Unknown"
             
             total_gain += gain
+            total_cost += cost
             sector_data[sector]["gain"] += gain
             sector_data[sector]["value"] += value
             
@@ -3372,7 +3376,7 @@ async def get_attribution(
                 "sector": sector,
                 "gain": d["gain"],
                 "value": d["value"],
-                "contribution": (d["gain"] / total_gain if total_gain != 0 else 0)
+                "contribution": (d["gain"] / total_cost if total_cost != 0 else 0)
             })
 
         # Sort by gain descending (winners first)
@@ -3382,7 +3386,7 @@ async def get_attribution(
         
         # Calculate contribution % for stocks
         for stock in stock_data:
-            stock["contribution"] = (stock["gain"] / total_gain) if total_gain != 0 else 0.0
+            stock["contribution"] = (stock["gain"] / total_cost) if total_cost != 0 else 0.0
 
         return clean_nans({
             "sectors": sector_attribution,
