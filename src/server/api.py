@@ -3322,7 +3322,7 @@ async def get_attribution(
                 continue
             
             gain_col = f"Total Gain ({currency})"
-            cost_col = f"Total Buy Cost ({currency})"
+            cost_col = f"Total Cost Invested ({currency})"
             value_col = f"Market Value ({currency})"
             
             gain = row.get(gain_col, 0.0)
