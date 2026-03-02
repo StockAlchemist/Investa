@@ -715,7 +715,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     const getCellClass = (val: unknown, header: string) => {
         if (typeof val !== 'number') return '';
-        if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)', 'Contribution %'].includes(header)) {
+        if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)'].includes(header)) {
             if (Math.abs(val) < 0.001) return 'text-muted-foreground';
             return val > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-red-600 dark:text-red-500 font-medium';
         }

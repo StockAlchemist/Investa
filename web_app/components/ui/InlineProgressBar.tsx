@@ -12,7 +12,7 @@ interface InlineProgressBarProps {
 export function InlineProgressBar({
     value,
     max = 100,
-    colorClass = 'bg-cyan-500/10 dark:bg-cyan-500/20',
+    colorClass = 'bg-cyan-500/20 dark:bg-cyan-500/30',
     className,
     children,
 }: InlineProgressBarProps) {
