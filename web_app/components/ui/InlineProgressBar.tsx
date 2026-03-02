@@ -13,15 +13,19 @@ export function InlineProgressBar({
     value,
     max = 100,
     colorClass = 'bg-cyan-500/20 dark:bg-cyan-500/30',
+    negativeColorClass = 'bg-red-500/20 dark:bg-red-500/30',
     className,
     children,
-}: InlineProgressBarProps) {
-    const percentage = Math.max(0, Math.min((value / max) * 100, 100));
+}: InlineProgressBarProps & { negativeColorClass?: string }) {
+    const isNegative = value < 0;
+    const absValue = Math.abs(value);
+    const percentage = Math.max(0, Math.min((absValue / max) * 100, 100));
+    const activeColorClass = isNegative ? negativeColorClass : colorClass;
 
     return (
         <div className={cn("relative w-full h-full min-h-[1.75rem] flex items-center rounded overflow-hidden group/progress", className)}>
             <div
-                className={cn("absolute left-0 top-0 bottom-0 transition-all duration-500 ease-out", colorClass)}
+                className={cn("absolute left-0 top-0 bottom-0 transition-all duration-500 ease-out", activeColorClass)}
                 style={{ width: `${percentage}%` }}
             />
             <div className="relative z-10 w-full flex items-center justify-between px-2">

@@ -1066,7 +1066,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
                                                                     <div className="w-24 ml-auto h-6">
                                                                         <InlineProgressBar value={(val as number) || 0} max={100}>
-                                                                            <span className="text-xs font-medium relative z-10">{formatValue(val, header)}</span>
+                                                                            <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-red-600 dark:text-red-500' : ''}`}>{formatValue(val, header)}</span>
                                                                         </InlineProgressBar>
                                                                     </div>
                                                                 ) : header === 'Symbol' ? (
@@ -1215,7 +1215,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
                                                             <div className="w-24 ml-auto h-6">
                                                                 <InlineProgressBar value={(val as number) || 0} max={100}>
-                                                                    <span className="text-xs font-medium relative z-10">{formatValue(val, header)}</span>
+                                                                    <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-red-600 dark:text-red-500' : ''}`}>{formatValue(val, header)}</span>
                                                                 </InlineProgressBar>
                                                             </div>
                                                         ) : header === 'Symbol' ? (
