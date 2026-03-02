@@ -945,7 +945,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 {/* Desktop Table View (also visible on mobile if toggled) */}
                 <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto`}>
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
-                        <thead className="bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 font-semibold border-b border-border shadow-sm">
+                        <thead className="font-semibold border-b border-border shadow-sm">
                             <tr>
                                 {visibleColumns.map(header => {
                                     const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
