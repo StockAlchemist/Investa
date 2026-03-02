@@ -1210,28 +1210,7 @@ def _build_summary_rows(
                 
                 # --- NEW: Suppress Annualized IRR for short duration (< 1 year) ---
                 # Check actual holding duration including transfers (via Lots)
-                earliest_lot_date = None
-                if "lots" in data and data["lots"]:
-                    # Sort lots just in case, though usually sorted
-                    sorted_lots = sorted(data["lots"], key=lambda x: x["Date"])
-                    earliest_lot_date_str = sorted_lots[0]["Date"]
-                    try:
-                        earliest_lot_date = datetime.strptime(str(earliest_lot_date_str), "%Y-%m-%d").date()
-                    except (ValueError, TypeError):
-                        # Fallback or log if date parsing fails
-                        earliest_lot_date = None
-
-                # Determine effective start date (use lot date if older than first flow date)
-                effective_start_date = cf_dates[0]
-                if earliest_lot_date and earliest_lot_date < effective_start_date:
-                    # If lot date is older, it implies we have history before this account (e.g. transfer)
-                    # We shift the start date of the calculation to the lot date to capture true duration.
-                    effective_start_date = earliest_lot_date
-                    # Modify the cash flow stream: Move the initial flow (Transfer In) to the Lot Date
-                    # This approximates the original buy.
-                    # Note: We must ensure dates remain sorted. Since earliest_lot_date < cf_dates[0],
-                    # and cf_dates is sorted, replacing index 0 keeps it sorted.
-                    cf_dates[0] = earliest_lot_date
+                # Removed flawed earliest_lot_date shift logic
 
                 duration_days = (cf_dates[-1] - cf_dates[0]).days
                 
@@ -1596,6 +1575,9 @@ def _build_summary_rows(
              sym = r.get("Symbol")
              if sym in agg_irrs:
                  r["Aggregate IRR (%)"] = agg_irrs[sym]
+                 # We override the account's specific IRR with the Aggregate IRR. 
+                 # Account-level IRR for transferred assets is fundamentally flawed without this.
+                 r["IRR (%)"] = agg_irrs[sym]
     # --- END AGGREGATE IRR ---
 
     return (
