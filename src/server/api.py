@@ -904,6 +904,7 @@ async def _calculate_portfolio_summary_internal(
 async def get_portfolio_summary(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
+    show_closed: Optional[bool] = Query(None),
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
@@ -936,6 +937,7 @@ async def get_portfolio_summary(
         summary_data = await _calculate_portfolio_summary_internal(
             currency=currency,
             include_accounts=accounts,
+            show_closed_positions=show_closed if show_closed is not None else True,
             data=data,
             current_user=current_user
         )
@@ -3285,6 +3287,7 @@ async def get_attribution(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
     show_all: bool = False,
+    show_closed: Optional[bool] = Query(None),
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
@@ -3300,6 +3303,7 @@ async def get_attribution(
         summary_data = await _calculate_portfolio_summary_internal(
             currency=currency,
             include_accounts=accounts,
+            show_closed_positions=show_closed if show_closed is not None else True,
             data=data,
             current_user=current_user
         )
@@ -3774,6 +3778,7 @@ class WebhookRefreshRequest(BaseModel):
 async def get_portfolio_health(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
+    show_closed: Optional[bool] = Query(None),
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
@@ -3785,7 +3790,7 @@ async def get_portfolio_health(
         summary_data = await _calculate_portfolio_summary_internal(
             currency=currency,
             include_accounts=accounts,
-            show_closed_positions=False,
+            show_closed_positions=show_closed if show_closed is not None else False,
             data=data,
             current_user=current_user
         )

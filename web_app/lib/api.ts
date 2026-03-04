@@ -166,10 +166,10 @@ export interface Transaction {
     [key: string]: unknown;
 }
 
-export async function fetchSummary(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<PortfolioSummary> {
+export async function fetchSummary(currency: string = 'USD', accounts?: string[], showClosed?: boolean, signal?: AbortSignal): Promise<PortfolioSummary> {
     const { data, error } = await apiClient.GET("/api/summary", {
         params: {
-            query: { currency, accounts: accounts || undefined }
+            query: { currency, accounts: accounts || undefined, show_closed: showClosed }
         },
         signal,
         cache: 'no-store'
@@ -349,11 +349,12 @@ export async function fetchAssetChange(
     currency: string = 'USD',
     accounts?: string[],
     benchmarks?: string[],
+    showClosed?: boolean,
     signal?: AbortSignal
 ): Promise<AssetChangeData> {
     const { data, error } = await apiClient.GET("/api/asset_change", {
         params: {
-            query: { currency, accounts: accounts || undefined, benchmarks: benchmarks || undefined }
+            query: { currency, accounts: accounts || undefined, benchmarks: benchmarks || undefined, show_closed: showClosed }
         },
         signal,
         cache: 'no-store'
@@ -499,10 +500,10 @@ export interface RiskMetrics {
     'Sortino Ratio'?: number;
 }
 
-export async function fetchRiskMetrics(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<RiskMetrics> {
+export async function fetchRiskMetrics(currency: string = 'USD', accounts?: string[], showClosed?: boolean, signal?: AbortSignal): Promise<RiskMetrics> {
     const { data, error } = await apiClient.GET("/api/risk_metrics", {
         params: {
-            query: { currency, accounts: accounts || undefined }
+            query: { currency, accounts: accounts || undefined, show_closed: showClosed }
         },
         signal,
         cache: 'no-store'
@@ -529,10 +530,10 @@ export interface AttributionData {
     total_gain: number;
 }
 
-export async function fetchAttribution(currency: string = 'USD', accounts?: string[], showAll: boolean = false, signal?: AbortSignal): Promise<AttributionData> {
+export async function fetchAttribution(currency: string = 'USD', accounts?: string[], showAll: boolean = false, showClosed?: boolean, signal?: AbortSignal): Promise<AttributionData> {
     const { data, error } = await apiClient.GET("/api/attribution", {
         params: {
-            query: { currency, accounts: accounts || undefined, show_all: showAll }
+            query: { currency, accounts: accounts || undefined, show_all: showAll, show_closed: showClosed }
         },
         signal,
         cache: 'no-store'
@@ -669,11 +670,12 @@ export interface PortfolioHealth {
 export async function fetchPortfolioHealth(
     currency: string = 'USD',
     accounts?: string[],
+    showClosed?: boolean,
     signal?: AbortSignal
 ): Promise<PortfolioHealth | null> {
     const { data, error } = await apiClient.GET("/api/portfolio_health", {
         params: {
-            query: { currency, accounts: accounts || undefined }
+            query: { currency, accounts: accounts || undefined, show_closed: showClosed }
         },
         signal,
         cache: 'no-store'

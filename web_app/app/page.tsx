@@ -312,8 +312,8 @@ export default function Home() {
 
 
   const summaryQuery = useQuery({
-    queryKey: ['summary', user?.username, currency, selectedAccounts],
-    queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, signal),
+    queryKey: ['summary', user?.username, currency, selectedAccounts, showClosed],
+    queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     refetchInterval: isMarketOpen ? 60 * 1000 : false, // Update summary every minute if market is open
     placeholderData: keepPreviousData,
@@ -342,8 +342,8 @@ export default function Home() {
   });
 
   const assetChangeQuery = useQuery({
-    queryKey: ['assetChange', user?.username, currency, selectedAccounts, benchmarks],
-    queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, signal),
+    queryKey: ['assetChange', user?.username, currency, selectedAccounts, benchmarks, showClosed],
+    queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled: !!user && (activeTab === 'asset_change' || backgroundFetchLevel >= 2),
@@ -366,16 +366,16 @@ export default function Home() {
   });
 
   const riskMetricsQuery = useQuery({
-    queryKey: ['riskMetrics', user?.username, currency, selectedAccounts],
-    queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, signal),
+    queryKey: ['riskMetrics', user?.username, currency, selectedAccounts, showClosed],
+    queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
 
   const attributionQuery = useQuery({
-    queryKey: ['attribution', user?.username, currency, selectedAccounts],
-    queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, false, signal),
+    queryKey: ['attribution', user?.username, currency, selectedAccounts, showClosed],
+    queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, false, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
@@ -430,8 +430,8 @@ export default function Home() {
   });
 
   const portfolioHealthQuery = useQuery({
-    queryKey: ['portfolioHealth', user?.username, currency, selectedAccounts],
-    queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
+    queryKey: ['portfolioHealth', user?.username, currency, selectedAccounts, showClosed],
+    queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
@@ -477,6 +477,7 @@ export default function Home() {
               visibleItems={visibleItems}
               accounts={selectedAccounts}
               themeColor={currentTheme.color}
+              showClosed={showClosed}
             />
             <PerformanceGraph
               currency={currency}

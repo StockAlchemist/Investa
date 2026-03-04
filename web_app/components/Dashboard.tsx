@@ -42,6 +42,7 @@ interface DashboardProps {
     visibleItems: string[];
     accounts?: string[];
     themeColor?: string;
+    showClosed?: boolean;
 }
 
 export default function Dashboard({
@@ -58,7 +59,8 @@ export default function Dashboard({
     visibleItems,
     accounts,
     isRefreshing = false,
-    themeColor = 'cyan-500'
+    themeColor = 'cyan-500',
+    showClosed = false
 }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
@@ -268,7 +270,7 @@ export default function Dashboard({
             case 'sectorContribution':
                 return <SectorAttribution data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} />;
             case 'topContributors':
-                return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} />;
+                return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} showClosed={showClosed} />;
             case 'portfolioDonut':
                 return (
                     <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md relative overflow-hidden bg-gradient-to-br from-card/80 to-transparent">

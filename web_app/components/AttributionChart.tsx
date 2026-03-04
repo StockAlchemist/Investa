@@ -89,9 +89,10 @@ interface FullContributorsModalProps {
     initialData: AttributionData['stocks'];
     currency: string;
     accounts?: string[];
+    showClosed?: boolean;
 }
 
-function FullContributorsModal({ isOpen, onClose, initialData, currency, accounts }: FullContributorsModalProps) {
+function FullContributorsModal({ isOpen, onClose, initialData, currency, accounts, showClosed }: FullContributorsModalProps) {
     const [fullData, setFullData] = useState<AttributionData['stocks']>(initialData);
     const [loading, setLoading] = useState(false);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -100,7 +101,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
     const loadFullData = async () => {
         setLoading(true);
         try {
-            const data = await fetchAttribution(currency, accounts, true);
+            const data = await fetchAttribution(currency, accounts, true, showClosed);
             setFullData(data.stocks);
         } catch (err) {
             console.error("Failed to fetch full contributor list:", err);
@@ -282,7 +283,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
     );
 }
 
-export function TopContributors({ data, isLoading, isRefreshing = false, currency, accounts }: CommonProps & { accounts?: string[] }) {
+export function TopContributors({ data, isLoading, isRefreshing = false, currency, accounts, showClosed }: CommonProps & { accounts?: string[], showClosed?: boolean }) {
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [isAllModalOpen, setIsAllModalOpen] = useState(false);
 
@@ -372,6 +373,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                 onClose={() => setIsAllModalOpen(false)}
                 initialData={data?.stocks || []}
                 currency={currency}
+                showClosed={showClosed}
             />
 
             {selectedSymbol && (
