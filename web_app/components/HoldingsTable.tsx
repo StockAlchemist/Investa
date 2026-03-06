@@ -384,7 +384,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     "Quantity", "Mkt Val", "Cost Basis", "Day Chg",
                     "Unreal. G/L", "Real. G/L", "Divs", "Fees",
                     "Total G/L", "Total Buy Cost", "Est. Income",
-                    "Contribution %", "FX G/L"
+                    "Contribution %", "FX G/L", "% of Total"
                 ];
 
                 keysToSum.forEach(header => {

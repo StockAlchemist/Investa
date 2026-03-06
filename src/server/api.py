@@ -90,6 +90,7 @@ _PORTFOLIO_SUMMARY_CACHE = {}
 _MARKET_HISTORY_CACHE = {}
 _PORTFOLIO_HISTORY_CACHE = {} # Shared cache for historical calculations
 _HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
+_SUMMARY_CALC_LOCK = asyncio.Lock() # Lock to prevent concurrent calculation on cache miss
 
 def reload_data_and_clear_cache(current_user: Optional[User] = None):
     """Helper to clear both transaction data cache, portfolio summary cache, and market history cache."""
@@ -735,35 +736,50 @@ async def _calculate_portfolio_summary_internal(
         logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...") # Partial log for brevity
         return _PORTFOLIO_SUMMARY_CACHE[cache_key]
         
-    logging.info(f"Summary Cache Miss. Calculating summary. Time key: {time_key}")
+    logging.info(f"Summary Cache Miss. Waiting for lock. Time key: {time_key}")
 
-    mdp = get_mdp()
-    (
-        overall_summary_metrics,
-        summary_df,
-        holdings_dict,
-        account_level_metrics,
-        _,
-        _,
-        _
-    ) = calculate_portfolio_summary(
-        all_transactions_df_cleaned=df,
-        original_transactions_df_for_ignored=df,
-        ignored_indices_from_load=set(),
-        ignored_reasons_from_load={},
-        fmp_api_key=getattr(config, "FMP_API_KEY", None),
-        display_currency=currency,
-        show_closed_positions=show_closed_positions,
-        manual_overrides_dict=manual_overrides,
-        user_symbol_map=user_symbol_map,
-        user_excluded_symbols=user_excluded_symbols,
-        include_accounts=include_accounts,
-        account_currency_map=account_currency_map,
-        default_currency=config.DEFAULT_CURRENCY,
-        market_provider=mdp,
-        account_interest_rates=account_interest_rates,
-        interest_free_thresholds=interest_free_thresholds
-    )
+    async with _SUMMARY_CALC_LOCK:
+        # Double-check cache inside lock
+        if cache_key in _PORTFOLIO_SUMMARY_CACHE:
+            logging.info(f"Using cached portfolio summary (after acquiring lock) for key: {cache_key[:3]}...")
+            return _PORTFOLIO_SUMMARY_CACHE[cache_key]
+            
+        logging.info(f"Acquired lock. Calculating summary. Time key: {time_key}")
+
+        mdp = get_mdp()
+        
+        # Offload heavy synchronous calculation to threadpool
+        from fastapi.concurrency import run_in_threadpool
+        
+        def run_calc():
+            return calculate_portfolio_summary(
+                all_transactions_df_cleaned=df,
+                original_transactions_df_for_ignored=df,
+                ignored_indices_from_load=set(),
+                ignored_reasons_from_load={},
+                fmp_api_key=getattr(config, "FMP_API_KEY", None),
+                display_currency=currency,
+                show_closed_positions=show_closed_positions,
+                manual_overrides_dict=manual_overrides,
+                user_symbol_map=user_symbol_map,
+                user_excluded_symbols=user_excluded_symbols,
+                include_accounts=include_accounts,
+                account_currency_map=account_currency_map,
+                default_currency=config.DEFAULT_CURRENCY,
+                market_provider=mdp,
+                account_interest_rates=account_interest_rates,
+                interest_free_thresholds=interest_free_thresholds
+            )
+
+        (
+            overall_summary_metrics,
+            summary_df,
+            holdings_dict,
+            account_level_metrics,
+            _,
+            _,
+            _
+        ) = await run_in_threadpool(run_calc)
     
     # --- Calculate Annualized TWR and include in metrics ---
     annualized_twr = None
@@ -1384,19 +1400,21 @@ async def get_transactions(
         if accounts:
             df = df[df["Account"].isin(accounts)]
 
-        # Sort by Date descending
-        if "Date" in df.columns:
-            df = df.sort_values(by="Date", ascending=False)
-
-        # Handle NaNs and convert to list of dicts
-        df = df.where(pd.notnull(df), None)
-        
         # Ensure we include the ID in the response if it's in the index or a column
         if "original_index" in df.columns:
              # Make sure original_index is available as 'id' for the frontend
              df["id"] = df["original_index"]
         elif df.index.name == "original_index" or "original_index" in df.index.names:
              df["id"] = df.index.get_level_values("original_index")
+
+        # Sort by Date descending, then ID descending
+        if "Date" in df.columns and "id" in df.columns:
+            df = df.sort_values(by=["Date", "id"], ascending=[False, False])
+        elif "Date" in df.columns:
+            df = df.sort_values(by="Date", ascending=False)
+            
+        # Handle NaNs and convert to list of dicts
+        df = df.where(pd.notnull(df), None)
         
         records = df.to_dict(orient="records")
         return clean_nans(records)

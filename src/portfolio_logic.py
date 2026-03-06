@@ -1497,13 +1497,15 @@ def calculate_portfolio_summary(
              summary_df_final["Contribution %"] = 0.0
 
     # --- 9b. Calculate % of Total ---
-    if not summary_df_final.empty and overall_summary_metrics:
-        total_mkt_val = overall_summary_metrics.get("market_value", 0.0)
+    if not summary_df_final.empty:
+        # Re-calculate total market value from the final filtered dataframe to ensure it matches
         mkt_val_col = f"Market Value ({display_currency})"
-        
-        if total_mkt_val and abs(total_mkt_val) > 1e-9 and mkt_val_col in summary_df_final.columns:
-            # Calculate % using the market value of each holding vs total portfolio market value
-            summary_df_final["pct_of_total"] = (summary_df_final[mkt_val_col] / total_mkt_val) * 100.0
+        if mkt_val_col in summary_df_final.columns:
+            actual_total_mkt_val = summary_df_final[mkt_val_col].sum()
+            if abs(actual_total_mkt_val) > 1e-9:
+                summary_df_final["pct_of_total"] = (summary_df_final[mkt_val_col] / actual_total_mkt_val) * 100.0
+            else:
+                summary_df_final["pct_of_total"] = 0.0
         else:
             summary_df_final["pct_of_total"] = 0.0
 
