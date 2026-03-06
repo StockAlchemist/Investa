@@ -85,7 +85,8 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                     isOpen
                         ? `${TAB_THEMES[activeTab]?.bgSolid || 'bg-cyan-500'} text-white shadow-lg ${TAB_THEMES[activeTab]?.shadowSolid || 'shadow-cyan-500/30'}`
                         : `${TAB_THEMES[activeTab]?.textSolid || 'text-cyan-500'} group-hover:scale-110`,
-                    side === 'bottom' && "p-1.5 bg-secondary"
+                    side === 'bottom' && "p-1.5",
+                    side === 'bottom' && !isOpen && "bg-secondary"
                 )}>
                     <ActiveIcon className={cn(side === 'bottom' ? "w-4 h-4" : "w-5 h-5")} />
                 </div>
