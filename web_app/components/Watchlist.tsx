@@ -76,13 +76,37 @@ export default function Watchlist({ currency }: WatchlistProps) {
     // Mutations
     const createListMutation = useMutation({
         mutationFn: createWatchlist,
-        onSuccess: (newItem) => {
-            queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+        onMutate: async (newListName) => {
+            const temporaryId = Date.now();
+            await queryClient.cancelQueries({ queryKey: ['watchlists'] });
+            const previousWatchlists = queryClient.getQueryData<WatchlistMeta[]>(['watchlists']);
+            queryClient.setQueryData<WatchlistMeta[]>(['watchlists'], (old) => {
+                const newList = { id: temporaryId, name: newListName, created_at: new Date().toISOString() };
+                return old ? [...old, newList] : [newList];
+            });
             setIsCreating(false);
             setNewListName("");
-            setActiveWatchlistId(newItem.id);
+            setActiveWatchlistId(temporaryId);
+            return { previousWatchlists, temporaryId };
         },
-        onError: (err: any) => alert(`Failed to create list: ${err.message}`)
+        onSuccess: (newItem, variables, context) => {
+            queryClient.setQueryData<WatchlistMeta[]>(['watchlists'], (old) => {
+                if (!old) return [newItem];
+                return old.map(list => list.id === context?.temporaryId ? newItem : list);
+            });
+            if (activeWatchlistId === context?.temporaryId) {
+                setActiveWatchlistId(newItem.id);
+            }
+        },
+        onError: (err: any, variables, context) => {
+            if (context?.previousWatchlists) {
+                queryClient.setQueryData(['watchlists'], context.previousWatchlists);
+            }
+            alert(`Failed to create list: ${err.message}`)
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+        }
     });
 
     const renameListMutation = useMutation({
@@ -106,19 +130,59 @@ export default function Watchlist({ currency }: WatchlistProps) {
 
     const addMutation = useMutation({
         mutationFn: ({ symbol, note }: { symbol: string, note: string }) => addToWatchlist(symbol, note, activeWatchlistId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, activeWatchlistId] });
+        onMutate: async ({ symbol, note }) => {
+            await queryClient.cancelQueries({ queryKey: ['watchlist', currency, activeWatchlistId] });
+            const previousWatchlist = queryClient.getQueryData<WatchlistItem[]>(['watchlist', currency, activeWatchlistId]);
+
+            queryClient.setQueryData<WatchlistItem[]>(['watchlist', currency, activeWatchlistId], (old) => {
+                const newItem: WatchlistItem = {
+                    Symbol: symbol,
+                    Note: note,
+                    AddedOn: new Date().toISOString(),
+                    Name: "Loading...",
+                    Price: null,
+                    "Day Change": null,
+                    "Day Change %": null,
+                    Currency: currency,
+                    Sparkline: [],
+                    "Market Cap": null,
+                    "PE Ratio": null,
+                    "Dividend Yield": null
+                };
+                return old ? [newItem, ...old] : [newItem];
+            });
             setNewSymbol('');
             setNewNote('');
+            return { previousWatchlist };
         },
-        onError: (error) => {
-            alert(`Error adding to watchlist: ${error.message}`);
+        onError: (err, variables, context) => {
+            if (context?.previousWatchlist) {
+                queryClient.setQueryData(['watchlist', currency, activeWatchlistId], context.previousWatchlist);
+            }
+            alert(`Error adding to watchlist: ${err.message}`);
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, activeWatchlistId] });
         }
     });
 
     const removeMutation = useMutation({
         mutationFn: (symbol: string) => removeFromWatchlist(symbol, activeWatchlistId),
-        onSuccess: () => {
+        onMutate: async (symbol) => {
+            await queryClient.cancelQueries({ queryKey: ['watchlist', currency, activeWatchlistId] });
+            const previousWatchlist = queryClient.getQueryData<WatchlistItem[]>(['watchlist', currency, activeWatchlistId]);
+
+            queryClient.setQueryData<WatchlistItem[]>(['watchlist', currency, activeWatchlistId], (old) => {
+                return old ? old.filter(item => item.Symbol !== symbol) : [];
+            });
+            return { previousWatchlist };
+        },
+        onError: (err, variables, context) => {
+            if (context?.previousWatchlist) {
+                queryClient.setQueryData(['watchlist', currency, activeWatchlistId], context.previousWatchlist);
+            }
+        },
+        onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['watchlist', currency, activeWatchlistId] });
         },
     });

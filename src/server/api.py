@@ -3953,22 +3953,17 @@ async def delete_watchlist_endpoint(
 async def get_watchlist_endpoint(
     watchlist_id: int = Query(1, alias="id"),
     currency: str = "USD",
-    data: tuple = Depends(get_transaction_data),
+    config_manager: ConfigManager = Depends(get_config_manager),
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection)
 ):
     """
     Fetches the watchlist enriched with current market prices.
     """
-    (
-        _,
-        _,
-        user_symbol_map,
-        user_excluded_symbols,
-        account_currency_map,
-        _,
-        _
-    ) = data
+    config_manager.load_manual_overrides()
+    overrides = config_manager.manual_overrides
+    user_symbol_map = overrides.get("user_symbol_map", {})
+    user_excluded_symbols = set(overrides.get("user_excluded_symbols", []))
 
     # conn injected
     # Remove manual check
