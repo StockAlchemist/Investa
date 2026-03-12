@@ -240,6 +240,21 @@ export async function addTransaction(transaction: Transaction): Promise<StatusRe
     return response.json();
 }
 
+export async function importIBKRPdf(file: File): Promise<{ status: string, count: number, message: string }> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await authFetch(`${API_BASE_URL}/transactions/import_pdf`, {
+        method: "POST",
+        body: formData,
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to import PDF: ${response.statusText}`);
+    }
+    return response.json();
+}
+
 export async function updateTransaction(id: number, transaction: Transaction): Promise<StatusResponse> {
     const response = await authFetch(`${API_BASE_URL}/transactions/${id}`, {
         method: "PUT",

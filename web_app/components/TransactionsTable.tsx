@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr } from '../lib/api';
-import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock } from 'lucide-react';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, importIBKRPdf } from '../lib/api';
+import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 import TableSkeleton from './skeletons/TableSkeleton';
@@ -34,6 +34,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     const [isApproving, setIsApproving] = useState(false);
 
     const queryClient = useQueryClient();
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const [isImporting, setIsImporting] = useState(false);
 
     const handleAdd = () => {
         setModalMode('add');
@@ -119,6 +121,32 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         } catch (error) {
             console.error("Failed to save transaction:", error);
             throw error; // Re-throw to be handled by modal
+        }
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setIsImporting(true);
+            const result = await importIBKRPdf(file);
+            alert(`Successfully imported ${result.count} transactions!`);
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['summary'] });
+            queryClient.invalidateQueries({ queryKey: ['holdings'] });
+        } catch (error) {
+            console.error("Failed to import PDF:", error);
+            alert("Failed to import PDF. Check console for details.");
+        } finally {
+            setIsImporting(false);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = ''; // reset input
+            }
         }
     };
 
@@ -355,6 +383,21 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <Plus className="h-4 w-4" />
                             <span className="hidden md:inline">Add Transaction</span>
                         </button>
+                        <button
+                            onClick={handleImportClick}
+                            disabled={isImporting}
+                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                            <FileText className="h-4 w-4" />
+                            <span className="hidden md:inline">{isImporting ? 'Importing...' : 'Import IBKR PDF'}</span>
+                        </button>
+                        <input
+                            type="file"
+                            accept=".pdf"
+                            ref={fileInputRef}
+                            style={{ display: 'none' }}
+                            onChange={handleFileUpload}
+                        />
                         {selectedIds.size > 0 && (
                             <button
                                 onClick={handleBulkDelete}

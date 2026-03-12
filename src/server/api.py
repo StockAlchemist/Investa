@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict
@@ -45,6 +45,7 @@ from config import YFINANCE_INDEX_TICKER_MAP, BENCHMARK_MAPPING
 from config_manager import ConfigManager
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
+from server.pdf_parser import parse_ibkr_pdf
 import numpy as np # Ensure numpy is imported
 import traceback
 
@@ -1491,6 +1492,55 @@ async def create_transaction(
             
     except Exception as e:
         logging.error(f"Error adding transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/transactions/import_pdf")
+async def import_pdf(
+    file: UploadFile = File(...),
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Imports transactions from an IBKR trade confirmation PDF report.
+    """
+    try:
+        _, _, _, _, _, db_path, _ = data
+        conn = get_db_connection(db_path)
+        if not conn:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+            
+        # Save the uploaded file temporarily to pass to the parser
+        temp_file_path = f"/tmp/{file.filename}"
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Parse the PDF
+        transactions = parse_ibkr_pdf(temp_file_path)
+        
+        # Remove the temp file
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+            
+        if not transactions:
+            return {"status": "success", "message": "No transactions found in PDF.", "count": 0}
+            
+        imported_count = 0
+        for tx_data in transactions:
+            # We add each transaction to the DB
+            success, _ = add_transaction_to_db(conn, tx_data)
+            if success:
+                imported_count += 1
+                
+        conn.close()
+        
+        if imported_count > 0:
+            reload_data_and_clear_cache(current_user)
+            return {"status": "success", "message": f"Successfully imported {imported_count} transactions.", "count": imported_count}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to add parsed transactions to database")
+            
+    except Exception as e:
+        logging.error(f"Error importing PDF: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/transactions/{transaction_id}")
