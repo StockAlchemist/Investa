@@ -16,7 +16,7 @@ def parse_ibkr_pdf(file_path: str) -> List[Dict[str, Any]]:
     # Group extraction pattern:
     row_pattern = re.compile(
         r"^(?P<account>U\d+)\s+"                 # Account
-        r"(?P<symbol>[A-Z0-9]+)\s+"              # Symbol
+        r"(?P<symbol>[A-Z0-9]+(?: [A-Z0-9]+)?)\s+" # Symbol
         r"(?P<datetime>\d{4}-\d{2}-\d{2},\s\d{2}:\d{2}:\d{2})\s+" # Date/Time
         r"(?P<settle_date>\d{4}-\d{2}-\d{2})\s+" # Settle Date
         r"(?P<exchange>-)\s+"                    # Exchange (must be hyphen)
@@ -67,7 +67,7 @@ def parse_ibkr_pdf(file_path: str) -> List[Dict[str, Any]]:
                         tx = {
                             "Date": date_str,
                             "Type": tx_type.capitalize(), # "Buy" or "Sell"
-                            "Symbol": data['symbol'],
+                            "Symbol": data['symbol'].replace(" ", "."),
                             "Quantity": abs_qty,
                             "Price/Share": price,
                             "Total Amount": amount, 
