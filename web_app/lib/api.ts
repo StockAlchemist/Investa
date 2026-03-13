@@ -163,6 +163,7 @@ export interface Transaction {
     "Split Ratio"?: number;
     Note?: string;
     "To Account"?: string;
+    "Auto-add Cash"?: boolean;
     [key: string]: unknown;
 }
 
@@ -240,11 +241,11 @@ export async function addTransaction(transaction: Transaction): Promise<StatusRe
     return response.json();
 }
 
-export async function importIBKRPdf(file: File): Promise<{ status: string, count: number, message: string }> {
+export async function importIBKRPdf(file: File, autoAddCash: boolean = false): Promise<{ status: string, count: number, message: string }> {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await authFetch(`${API_BASE_URL}/transactions/import_pdf`, {
+    const response = await authFetch(`${API_BASE_URL}/transactions/import_pdf?auto_add_cash=${autoAddCash}`, {
         method: "POST",
         body: formData,
     });

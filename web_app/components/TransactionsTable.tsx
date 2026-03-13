@@ -36,6 +36,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     const queryClient = useQueryClient();
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [isImporting, setIsImporting] = useState(false);
+    const [autoAddCashOnImport, setAutoAddCashOnImport] = useState(true);
 
     const handleAdd = () => {
         setModalMode('add');
@@ -134,7 +135,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
         try {
             setIsImporting(true);
-            const result = await importIBKRPdf(file);
+            const result = await importIBKRPdf(file, autoAddCashOnImport);
             alert(`Successfully imported ${result.count} transactions!`);
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['summary'] });
@@ -374,8 +375,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             />
 
             <div className="flex flex-col gap-4">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="flex flex-nowrap gap-2 w-full md:w-auto">
+                <div className={`flex flex-col ${selectedIds.size === 0 ? 'lg:flex-row lg:justify-between lg:items-center' : ''} items-start gap-4`}>
+                    <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center">
                         <button
                             onClick={handleAdd}
                             className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
@@ -383,14 +384,32 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <Plus className="h-4 w-4" />
                             <span className="hidden md:inline">Add Transaction</span>
                         </button>
-                        <button
-                            onClick={handleImportClick}
-                            disabled={isImporting}
-                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                            <FileText className="h-4 w-4" />
-                            <span className="hidden md:inline">{isImporting ? 'Importing...' : 'Import IBKR PDF'}</span>
-                        </button>
+                        <div className="flex items-center bg-purple-600 rounded-md shadow-sm overflow-hidden h-9">
+                            <button
+                                onClick={handleImportClick}
+                                disabled={isImporting}
+                                className="px-3 h-full flex items-center gap-2 text-white hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-50 border-r border-purple-500/30"
+                            >
+                                <FileText className="h-4 w-4 shrink-0" />
+                                <span className="hidden md:inline whitespace-nowrap">{isImporting ? 'Importing...' : 'Import IBKR PDF'}</span>
+                            </button>
+                            <label 
+                                className="flex items-center gap-1.5 px-2 h-full hover:bg-purple-700 transition-colors cursor-pointer select-none"
+                                htmlFor="auto-add-cash-import"
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="auto-add-cash-import"
+                                    checked={autoAddCashOnImport}
+                                    onChange={(e) => setAutoAddCashOnImport(e.target.checked)}
+                                    className="h-3.5 w-3.5 rounded border-white/30 bg-white/10 text-white focus:ring-offset-0 focus:ring-0 cursor-pointer"
+                                />
+                                <div className="flex flex-col leading-[0.7rem] text-[9px] font-bold text-white/90">
+                                    <span className="uppercase tracking-tighter">Auto</span>
+                                    <span className="uppercase tracking-tighter">Cash</span>
+                                </div>
+                            </label>
+                        </div>
                         <input
                             type="file"
                             accept=".pdf"

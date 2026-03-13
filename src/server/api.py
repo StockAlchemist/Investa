@@ -22,6 +22,7 @@ from portfolio_analyzer import (
     generate_cash_interest_events
 )
 from market_data import map_to_yf_symbol
+from finutils import is_cash_symbol
 from db_utils import (
     add_transaction_to_db,
     delete_transaction_from_db,
@@ -1438,8 +1439,94 @@ class TransactionInput(BaseModel):
     Local_Currency: str = Field(..., alias="Local Currency")
     To_Account: Optional[str] = Field(None, alias="To Account")
     Tags: Optional[str] = None
+    Auto_Add_Cash: bool = Field(False, alias="Auto-add Cash")
     
     model_config = ConfigDict(populate_by_name=True)
+
+
+def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, Any]):
+    """
+    Automatically creates associated $CASH transactions for a stock Buy or Sell.
+    """
+    tx_type = tx_data.get("Type", "").strip().lower()
+    if tx_type not in ["buy", "sell"]:
+        return
+
+    symbol = tx_data.get("Symbol", "")
+    account = tx_data.get("Account", "")
+    date_str = tx_data.get("Date")
+    local_currency = tx_data.get("Local Currency", "USD")
+    
+    qty = float(tx_data.get("Quantity", 0))
+    price = float(tx_data.get("Price/Share", 0))
+    commission = float(tx_data.get("Commission", 0))
+    
+    # Use Total Amount if provided, else fallback to Qty * Price
+    total_amount = tx_data.get("Total Amount")
+    if total_amount is None or pd.isna(total_amount):
+        principal = qty * price
+    else:
+        principal = abs(total_amount)
+
+    if tx_type == "buy":
+        # Funding the buy: Sell $CASH for the principal amount
+        cash_tx_principal = {
+            "Date": date_str,
+            "Type": "Sell",
+            "Symbol": "$CASH",
+            "Quantity": principal,
+            "Price/Share": 1.0,
+            "Total Amount": principal,
+            "Account": account,
+            "Local Currency": local_currency,
+            "Note": f"Cash funding for {symbol} Buy"
+        }
+        add_transaction_to_db(conn, cash_tx_principal)
+        
+        # Pay commission: Withdrawal $CASH
+        if commission > 0:
+            cash_tx_comm = {
+                "Date": date_str,
+                "Type": "Withdrawal",
+                "Symbol": "$CASH",
+                "Quantity": commission,
+                "Price/Share": 1.0,
+                "Total Amount": commission,
+                "Account": account,
+                "Local Currency": local_currency,
+                "Note": f"Commission for {symbol} Buy"
+            }
+            add_transaction_to_db(conn, cash_tx_comm)
+
+    elif tx_type == "sell":
+        # Proceeds from sell: Buy $CASH for the principal amount
+        cash_tx_principal = {
+            "Date": date_str,
+            "Type": "Buy",
+            "Symbol": "$CASH",
+            "Quantity": principal,
+            "Price/Share": 1.0,
+            "Total Amount": principal,
+            "Account": account,
+            "Local Currency": local_currency,
+            "Note": f"Cash proceeds from {symbol} Sell"
+        }
+        add_transaction_to_db(conn, cash_tx_principal)
+        
+        # Pay commission: Withdrawal $CASH
+        if commission > 0:
+            cash_tx_comm = {
+                "Date": date_str,
+                "Type": "Withdrawal",
+                "Symbol": "$CASH",
+                "Quantity": commission,
+                "Price/Share": 1.0,
+                "Total Amount": commission,
+                "Account": account,
+                "Local Currency": local_currency,
+                "Note": f"Commission for {symbol} Sell"
+            }
+            add_transaction_to_db(conn, cash_tx_comm)
 
 @router.post("/transactions")
 async def create_transaction(
@@ -1482,6 +1569,10 @@ async def create_transaction(
              tx_data["Tags"] = str(tx_data["Tags"]).strip()
 
         success, new_id = add_transaction_to_db(conn, tx_data)
+        
+        if success and tx_data.get("Auto-add Cash"):
+            _handle_auto_cash_generation(conn, tx_data)
+
         conn.close()
         
         if success:
@@ -1497,6 +1588,7 @@ async def create_transaction(
 @router.post("/transactions/import_pdf")
 async def import_pdf(
     file: UploadFile = File(...),
+    auto_add_cash: bool = Query(False, alias="auto_add_cash"),
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
@@ -1530,6 +1622,8 @@ async def import_pdf(
             success, _ = add_transaction_to_db(conn, tx_data)
             if success:
                 imported_count += 1
+                if auto_add_cash:
+                    _handle_auto_cash_generation(conn, tx_data)
                 
         conn.close()
         

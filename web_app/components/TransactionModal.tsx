@@ -38,7 +38,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
         Note: '',
         "Split Ratio": '',
         "To Account": '',
-        "From Account": ''
+        "From Account": '',
+        "Auto-add Cash": true
     });
 
     // Track if total was manually edited to avoid auto-overwrite
@@ -90,7 +91,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                     Note: '',
                     "Split Ratio": '',
                     "To Account": '',
-                    "From Account": ''
+                    "From Account": '',
+                    "Auto-add Cash": true
                 });
             }
             setError(null);
@@ -346,6 +348,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const isTransfer = txType === 'transfer';
     const isCash = isCashSymbol(formData.Symbol);
     const isSplit = txType === 'split' || txType === 'stock split';
+    const canAutoAddCash = (txType === 'buy' || txType === 'sell') && !isCash;
     const isDividend = txType === 'dividend';
 
     const isQtyDisabled = isSplit;
@@ -548,6 +551,22 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 h-20"
                             />
                         </div>
+
+                        {canAutoAddCash && (
+                            <div className="flex items-center gap-2 py-1">
+                                <input
+                                    type="checkbox"
+                                    id="auto-add-cash"
+                                    name="Auto-add Cash"
+                                    checked={formData["Auto-add Cash"]}
+                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, "Auto-add Cash": e.target.checked }))}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <label htmlFor="auto-add-cash" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Auto-add internal cash & commission withdrawal
+                                </label>
+                            </div>
+                        )}
 
                         {/* Actions */}
                         <div className="flex justify-end gap-2 mt-6">
