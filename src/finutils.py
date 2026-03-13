@@ -269,7 +269,7 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
                 except ValueError: # math.log domain error
                      denominator = np.nan
 
-            if not np.isfinite(denominator) or abs(denominator) < 1e-12:
+            if not np.isfinite(denominator) or denominator == 0.0:
                 if denominator == np.inf:
                      # If denominator is infinite, the term (flow/denom) is 0.
                      # We handle this below.
@@ -701,6 +701,13 @@ def get_cash_flows_for_mwr(
             0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
         )
         tx_date = row["Date"].date()
+        
+        # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
+        # Otherwise, the final market value condition (end_date >= final_dates[-1]) will evaluate to False
+        # and drop the entire multi-million dollar portfolio value from the cash flows array!
+        if tx_date > end_date:
+            continue
+            
         local_currency = row["Local Currency"]
         cash_flow_local = 0.0
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
