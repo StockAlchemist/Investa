@@ -47,18 +47,18 @@ export function MetricCard({
     onClick,
     sparklineData
 }: MetricCardProps) {
-    const colorMap: Record<string, { borderHover: string; textHover: string; bgHover: string; accent: string }> = {
-        'indigo-500': { borderHover: 'hover:border-indigo-500/50', textHover: 'group-hover:text-indigo-500', bgHover: 'group-hover:bg-indigo-500/5', accent: 'bg-indigo-500/10' },
-        'sky-500': { borderHover: 'hover:border-sky-500/50', textHover: 'group-hover:text-sky-500', bgHover: 'group-hover:bg-sky-500/5', accent: 'bg-sky-500/10' },
-        'teal-500': { borderHover: 'hover:border-teal-500/50', textHover: 'group-hover:text-teal-500', bgHover: 'group-hover:bg-teal-500/5', accent: 'bg-teal-500/10' },
-        'slate-500': { borderHover: 'hover:border-slate-500/50', textHover: 'group-hover:text-slate-500', bgHover: 'group-hover:bg-slate-500/5', accent: 'bg-slate-500/10' },
-        'purple-500': { borderHover: 'hover:border-purple-500/50', textHover: 'group-hover:text-purple-500', bgHover: 'group-hover:bg-purple-500/5', accent: 'bg-purple-500/10' },
-        'violet-500': { borderHover: 'hover:border-violet-500/50', textHover: 'group-hover:text-violet-500', bgHover: 'group-hover:bg-violet-500/5', accent: 'bg-violet-500/10' },
-        'amber-500': { borderHover: 'hover:border-amber-500/50', textHover: 'group-hover:text-amber-500', bgHover: 'group-hover:bg-amber-500/5', accent: 'bg-amber-500/10' },
-        'emerald-500': { borderHover: 'hover:border-emerald-500/50', textHover: 'group-hover:text-emerald-500', bgHover: 'group-hover:bg-emerald-500/5', accent: 'bg-emerald-500/10' },
-        'rose-500': { borderHover: 'hover:border-rose-500/50', textHover: 'group-hover:text-rose-500', bgHover: 'group-hover:bg-rose-500/5', accent: 'bg-rose-500/10' },
-        'cyan-500': { borderHover: 'hover:border-cyan-500/50', textHover: 'group-hover:text-cyan-500', bgHover: 'group-hover:bg-cyan-500/5', accent: 'bg-cyan-500/10' },
-        'zinc-500': { borderHover: 'hover:border-zinc-500/50', textHover: 'group-hover:text-zinc-500', bgHover: 'group-hover:bg-zinc-500/5', accent: 'bg-zinc-500/10' }
+    const colorMap: Record<string, { textHover: string; bgHover: string; accent: string }> = {
+        'indigo-500': { textHover: 'group-hover:text-indigo-500', bgHover: 'group-hover:bg-indigo-500/5', accent: 'bg-indigo-500/10' },
+        'sky-500': { textHover: 'group-hover:text-sky-500', bgHover: 'group-hover:bg-sky-500/5', accent: 'bg-sky-500/10' },
+        'teal-500': { textHover: 'group-hover:text-teal-500', bgHover: 'group-hover:bg-teal-500/5', accent: 'bg-teal-500/10' },
+        'slate-500': { textHover: 'group-hover:text-slate-500', bgHover: 'group-hover:bg-slate-500/5', accent: 'bg-slate-500/10' },
+        'purple-500': { textHover: 'group-hover:text-purple-500', bgHover: 'group-hover:bg-purple-500/5', accent: 'bg-purple-500/10' },
+        'violet-500': { textHover: 'group-hover:text-violet-500', bgHover: 'group-hover:bg-violet-500/5', accent: 'bg-violet-500/10' },
+        'amber-500': { textHover: 'group-hover:text-amber-500', bgHover: 'group-hover:bg-amber-500/5', accent: 'bg-amber-500/10' },
+        'emerald-500': { textHover: 'group-hover:text-emerald-500', bgHover: 'group-hover:bg-emerald-500/5', accent: 'bg-emerald-500/10' },
+        'rose-500': { textHover: 'group-hover:text-rose-500', bgHover: 'group-hover:bg-rose-500/5', accent: 'bg-rose-500/10' },
+        'cyan-500': { textHover: 'group-hover:text-cyan-500', bgHover: 'group-hover:bg-cyan-500/5', accent: 'bg-cyan-500/10' },
+        'zinc-500': { textHover: 'group-hover:text-zinc-500', bgHover: 'group-hover:bg-zinc-500/5', accent: 'bg-zinc-500/10' }
     };
 
     const activeClasses = colorMap[accentColor] || colorMap['cyan-500'];
@@ -66,12 +66,11 @@ export function MetricCard({
     return (
         <Card
             className={cn(
-                "h-full transition-all duration-300 relative overflow-hidden group rounded-2xl border border-border/50",
-                variant === 'card' && "bg-card hover:border-border hover:shadow-sm",
-                variant === 'seamless' && "bg-transparent border-none shadow-none hover:bg-muted/30",
+                "h-full transition-all duration-300 relative overflow-hidden group rounded-2xl border-none",
+                variant === 'card' && "bg-card hover:shadow-sm",
+                variant === 'seamless' && "bg-transparent shadow-none hover:bg-muted/30",
                 onClick ? "cursor-pointer active:scale-[0.98]" : "",
-                containerClassName,
-                activeClasses.borderHover
+                containerClassName
             )}
             onClick={onClick}
         >

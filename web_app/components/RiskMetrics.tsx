@@ -34,7 +34,7 @@ interface MetricItemProps {
 const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick }: MetricItemProps) => (
     <div
         onClick={onClick}
-        className="flex flex-col p-3 bg-card rounded-xl border border-border hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full"
+        className="flex flex-col p-3 bg-card rounded-xl hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full border-none"
     >
         <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
             <Icon className="w-3.5 h-3.5 group-hover/item:text-cyan-500 transition-colors" />
@@ -46,7 +46,7 @@ const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick
         </div>
 
         {description && (
-            <div className="flex items-center justify-between mt-1 pt-2 border-t border-border/10">
+            <div className="flex items-center justify-between mt-1 pt-2">
                 <p className="text-[9px] text-muted-foreground opacity-60 font-medium group-hover/item:opacity-80 transition-opacity truncate w-full text-center">
                     {description}
                 </p>
@@ -150,7 +150,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     if (isLoading) {
         return (
-            <Card className="h-full bg-card border border-border/50">
+            <Card className="h-full bg-card border-none">
                 <CardContent className="p-6">
                     <div className="flex justify-between items-center mb-6">
                         <Skeleton className="h-4 w-32 opacity-50" />
@@ -222,7 +222,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     return (
         <React.Fragment>
-            <Card className="h-full bg-card border border-border/50 hover:border-border transition-all duration-300 group relative overflow-hidden">
+            <Card className="h-full bg-card border-none transition-all duration-300 group relative overflow-hidden">
                 <CardContent className="h-full p-4 flex flex-col gap-4">
                     <div className="flex justify-between items-start">
                         <div className="flex items-center gap-2">
@@ -231,7 +231,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
                             )}
                         </div>
-                        <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-muted border border-border/50 text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
+                        <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-muted text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
                             <Activity className="w-4 h-4" />
                         </div>
                     </div>
@@ -240,7 +240,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                         {/* Left Side: Portfolio Health */}
                         {portfolioHealth && (
                             <div
-                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-card border border-border/50 transition-colors cursor-pointer group/health relative overflow-hidden"
+                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-card border-none transition-colors cursor-pointer group/health relative overflow-hidden"
                                 onClick={() => setIsHealthModalOpen(true)}
                             >
                                 <div className="absolute top-2 right-2 opacity-0 group-hover/health:opacity-100 transition-opacity">
@@ -261,7 +261,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 </div>
 
                                 {/* Breakdown Section */}
-                                <div className="flex flex-col justify-center gap-3 w-full pr-2 border-l border-white/5 pl-4 py-2">
+                                <div className="flex flex-col justify-center gap-3 w-full pr-2 pl-4 py-2">
                                     <div className="flex justify-between items-center group/row">
                                         <div className="flex items-center gap-2 text-muted-foreground">
                                             <PieChart className="w-4 h-4" />

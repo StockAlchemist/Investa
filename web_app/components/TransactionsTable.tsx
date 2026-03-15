@@ -268,7 +268,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             {/* Pending Transactions Staging Area */}
             {pendingTransactions.length > 0 && (
                 <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 shadow-sm">
-                    <div className="px-4 py-3 bg-cyan-500/10 border-b border-cyan-500/20 flex justify-between items-center">
+                    <div className="px-4 py-3 bg-cyan-500/10 border-cyan-500/20 flex justify-between items-center">
                         <div className="flex items-center gap-2">
                             <Clock className="h-4 w-4 text-cyan-500" />
                             <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-400 uppercase tracking-wider">

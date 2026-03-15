@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import type { Dividend } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
@@ -118,11 +119,11 @@ export default function Dividend({ data, currency, expectedDividends, children, 
             {children}
 
             {/* Chart Section */}
-            <div className="bg-card border border-border rounded-xl p-4 shadow-sm mb-6 transition-all hover:shadow-md">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold text-foreground">Annual Dividends</h3>
-                </div>
-                <div className="h-64">
+            <Card className="p-4 shadow-sm mb-6 transition-all hover:shadow-md">
+                <CardHeader className="p-0 mb-4">
+                    <CardTitle className="text-lg font-semibold text-foreground">Annual Dividends</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0 h-64">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dividendsByYear} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
@@ -163,12 +164,12 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                             />
                         </BarChart>
                     </ResponsiveContainer>
-                </div>
-            </div>
+                </CardContent>
+            </Card>
 
             {/* Transactions Table */}
-            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-                <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
+            <div className="bg-card border-none rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+                <div className="p-4 border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Dividend Transactions</h3>
                     <div className="text-sm text-muted-foreground">
                         Showing {visibleData.length} of {sortedData.length} transactions
@@ -177,7 +178,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-border/30">
-                        <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
+                        <thead className="bg-secondary sticky top-0 z-10 font-semibold">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'DividendAmountDisplayCurrency'].map((header) => (
                                     <th
@@ -224,7 +225,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                 {/* Mobile Card View */}
                 <div className="block md:hidden space-y-4 p-4">
                     {visibleData.map((item, index) => (
-                        <div key={`mobile-div-${index}`} className="bg-card rounded-lg shadow-sm p-4">
+                        <div key={`mobile-div-${index}`} className="bg-card rounded-lg shadow-sm p-4 border-none">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3

@@ -424,7 +424,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             placeholder="Note (optional)"
                             value={newNote}
                             onChange={(e) => setNewNote(e.target.value)}
-                            className="bg-secondary border-border text-foreground flex-1"
+                            className="bg-secondary text-foreground flex-1"
                         />
                         <Button
                             type="submit"

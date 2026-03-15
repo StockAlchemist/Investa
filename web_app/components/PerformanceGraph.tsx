@@ -597,7 +597,7 @@ export default function PerformanceGraph({
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}
-                        <div className="flex bg-secondary rounded-lg p-1 shrink-0 border border-border/50 shadow-sm">
+                        <div className="flex bg-secondary rounded-lg p-1 shrink-0 shadow-sm">
                             <button
                                 onClick={() => onViewChange('return')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'

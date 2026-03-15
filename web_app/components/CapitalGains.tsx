@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Card } from "@/components/ui/card";
 import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
@@ -146,7 +147,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Annual Gains Chart */}
-            <div className="bg-card border border-border p-4 rounded-xl shadow-sm transition-all hover:shadow-md">
+            <Card className="h-full bg-card border-none transition-all duration-300 group">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Realized Gains</h3>
                 <style>{`
                     .recharts-wrapper, .recharts-surface, .recharts-cartesian-grid, .recharts-layer {
@@ -212,7 +213,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
-            </div>
+            </Card>
 
             {/* Transactions Table */}
             <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">

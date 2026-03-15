@@ -1314,9 +1314,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 {/* Mobile Card View */}
                 <div className={`${mobileViewMode === 'card' ? 'block' : 'hidden'} md:hidden space-y-4 p-4`}>
                     {visibleHoldings.map((holding, idx) => (
-                        <div
+                        <Card
                             key={`mobile-${holding.Symbol}-${idx}`}
-                            className="bg-card rounded-lg border border-border shadow-sm p-4 cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
+                            className="bg-card rounded-2xl border-none p-0 overflow-hidden relative group cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
                             onClick={() => openStockDetail(holding.Symbol, currency)}
                         >
                             <div className="space-y-3">
@@ -1426,7 +1426,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     </div>
                                 </div>
                             )}
-                        </div>
+                        </Card>
                     ))}
                 </div>
                 {!groupBy && visibleRows < sortedHoldings.length && (

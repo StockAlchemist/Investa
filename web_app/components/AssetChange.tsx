@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatCurrency } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { Card } from "@/components/ui/card";
 import { AssetChangeData } from '../lib/api';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 
@@ -81,7 +82,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <div className="bg-card border border-border p-4 rounded-xl shadow-sm transition-all hover:shadow-md">
+        <Card className="h-full bg-card border-none transition-all duration-300 group">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
@@ -220,7 +221,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                     </BarChart>
                 </ResponsiveContainer>
             </div>
-        </div>
+        </Card>
     );
 };
 

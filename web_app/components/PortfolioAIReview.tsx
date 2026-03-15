@@ -234,7 +234,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             </div>
 
             {/* Executive Summary */}
-            <Card className="border-purple-500/20 bg-purple-500/5 overflow-hidden">
+            <Card className="h-full bg-card border-none transition-all duration-300 group relative overflow-hidden">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
                         Executive Summary

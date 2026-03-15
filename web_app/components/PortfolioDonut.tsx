@@ -52,10 +52,10 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     return (
         <foreignObject x={x - 24} y={y - 28} width={48} height={56} className="overflow-visible pointer-events-none">
             <div className="flex flex-col items-center justify-center w-full h-full transform transition-transform duration-500 hover:scale-125">
-                <div className="shadow-sm rounded-full bg-card p-1 border border-border">
+                <div className="shadow-sm rounded-full bg-card p-1">
                     <StockIcon symbol={payload.name} size={24} />
                 </div>
-                <span className="text-[10px] font-bold mt-1 text-foreground bg-card px-2 py-0.5 rounded-full border border-border max-w-[70px] truncate text-center">
+                <span className="text-[10px] font-bold mt-1 text-foreground bg-card px-2 py-0.5 rounded-full max-w-[70px] truncate text-center">
                     {payload.name}
                 </span>
             </div>
