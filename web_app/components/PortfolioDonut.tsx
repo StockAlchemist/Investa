@@ -14,11 +14,11 @@ interface PortfolioDonutProps {
 
 const COLORS = [
     '#0ea5e9', // sky-500
-    '#22c55e', // green-500
-    '#eab308', // yellow-500
-    '#f97316', // orange-500
-    '#ef4444', // red-500
+    '#10b981', // emerald-500
+    '#f59e0b', // amber-500
+    '#f43f5e', // rose-500
     '#8b5cf6', // violet-500
+    '#6366f1', // indigo-500
     '#ec4899', // pink-500
     '#14b8a6', // teal-500
 ];
@@ -51,11 +51,11 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
 
     return (
         <foreignObject x={x - 24} y={y - 28} width={48} height={56} className="overflow-visible pointer-events-none">
-            <div className="flex flex-col items-center justify-center w-full h-full transform transition-transform hover:scale-110">
-                <div className="shadow-sm rounded-md bg-card p-0.5">
+            <div className="flex flex-col items-center justify-center w-full h-full transform transition-transform duration-500 hover:scale-125">
+                <div className="shadow-sm rounded-full bg-card p-1 border border-border">
                     <StockIcon symbol={payload.name} size={24} />
                 </div>
-                <span className="text-[10px] font-bold mt-0.5 text-foreground drop-shadow-md bg-background/50 backdrop-blur-sm px-1.5 py-0.5 rounded-sm border border-border/50 max-w-[70px] truncate text-center">
+                <span className="text-[10px] font-bold mt-1 text-foreground bg-card px-2 py-0.5 rounded-full border border-border max-w-[70px] truncate text-center">
                     {payload.name}
                 </span>
             </div>

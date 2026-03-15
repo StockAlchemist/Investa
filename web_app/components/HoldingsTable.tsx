@@ -8,6 +8,7 @@ import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from
 import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
+import { Card } from "@/components/ui/card";
 import { useStockModal } from '@/context/StockModalContext';
 import WatchlistStar from './WatchlistStar';
 import { getHeatmapClass } from '../lib/utils';
@@ -738,8 +739,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     return (
         <>
-            <div className="bg-card rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
-                <div className="flex flex-col gap-4 p-4 border-b border-black/5 dark:border-white/5">
+            <Card className="rounded-2xl mt-6 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent border-border/50 transition-all duration-300">
+                <div className="flex flex-col gap-5 p-6 border-b border-white/10 dark:border-white/5">
                     {/* Header Row: Title, Count & Search */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -1445,7 +1446,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     </div>
                 )}
 
-            </div>
+            </Card>
 
             {/* Edit Tags Modal */}
             {

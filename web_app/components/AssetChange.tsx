@@ -81,7 +81,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-sm transition-all hover:shadow-md">
+        <div className="bg-card border border-border p-4 rounded-xl shadow-sm transition-all hover:shadow-md">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
@@ -122,6 +122,25 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                             width={35}
                         />
+                        {keysToPlot.map((key, index) => {
+                            const name = key.replace(` ${targetSuffix}`, '');
+                            return (
+                                <Bar
+                                    key={key}
+                                    dataKey={key}
+                                    name={name}
+                                    fill={viewMode === 'percent' ? getBarColor(name, index) : undefined}
+                                    radius={[4, 4, 0, 0]}
+                                >
+                                    {viewMode === 'value' && displayData.map((entry: any, i: number) => (
+                                        <Cell
+                                            key={`cell-${i}`}
+                                            fill={(entry[key] || 0) >= 0 ? '#10b981' : '#ef4444'}
+                                        />
+                                    ))}
+                                </Bar>
+                            );
+                        })}
                         <Tooltip
                             wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                             contentStyle={{
@@ -133,7 +152,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl">
+                                        <div className="bg-white dark:bg-[#020817] border border-border p-3 rounded-xl shadow-2xl !opacity-100">
                                             <p className="font-medium text-foreground mb-1 text-sm">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -198,25 +217,6 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                 iconType="circle"
                             />
                         )}
-                        {keysToPlot.map((key, index) => {
-                            const name = key.replace(` ${targetSuffix}`, '');
-                            return (
-                                <Bar
-                                    key={key}
-                                    dataKey={key}
-                                    name={name}
-                                    fill={viewMode === 'percent' ? getBarColor(name, index) : undefined}
-                                    radius={[4, 4, 0, 0]}
-                                >
-                                    {viewMode === 'value' && displayData.map((entry: any, i: number) => (
-                                        <Cell
-                                            key={`cell-${i}`}
-                                            fill={(entry[key] || 0) >= 0 ? '#10b981' : '#ef4444'}
-                                        />
-                                    ))}
-                                </Bar>
-                            );
-                        })}
                     </BarChart>
                 </ResponsiveContainer>
             </div>
@@ -260,7 +260,7 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
         <div className="space-y-6">
             <div className="flex justify-end space-x-2 mb-4">
                 <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
-                <div className="inline-flex rounded-lg shadow-sm bg-secondary/50 backdrop-blur-sm p-1 border border-border/50">
+                <div className="inline-flex rounded-lg shadow-sm bg-secondary p-1 border border-border">
                     <button
                         onClick={() => setViewMode('percent')}
                         className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'percent'

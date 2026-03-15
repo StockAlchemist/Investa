@@ -267,7 +267,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         <div className="space-y-6">
             {/* Pending Transactions Staging Area */}
             {pendingTransactions.length > 0 && (
-                <div className="bg-cyan-500/5 backdrop-blur-md supports-[backdrop-filter]:bg-cyan-50/30 dark:supports-[backdrop-filter]:bg-cyan-900/20 border border-cyan-500/20 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 shadow-sm">
+                <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 shadow-sm">
                     <div className="px-4 py-3 bg-cyan-500/10 border-b border-cyan-500/20 flex justify-between items-center">
                         <div className="flex items-center gap-2">
                             <Clock className="h-4 w-4 text-cyan-500" />
@@ -530,10 +530,10 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             </div>
 
             {/* Desktop Table View */}
-            <div className={`bg-card/50 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-50/50 dark:supports-[backdrop-filter]:bg-zinc-900/50 rounded-xl shadow-sm border border-border/50 overflow-hidden ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block transition-all hover:shadow-md`}>
+            <div className={`bg-card rounded-xl shadow-sm border border-border/50 overflow-hidden ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block transition-all hover:shadow-md`}>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-border/30">
-                        <thead className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 font-semibold border-b border-border/50">
+                        <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
                             <tr>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground w-10">
                                     <input

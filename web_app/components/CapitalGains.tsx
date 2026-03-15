@@ -146,7 +146,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Annual Gains Chart */}
-            <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-sm transition-all hover:shadow-md">
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm transition-all hover:shadow-md">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Realized Gains</h3>
                 <style>{`
                     .recharts-wrapper, .recharts-surface, .recharts-cartesian-grid, .recharts-layer {
@@ -173,12 +173,26 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                                 width={35}
                             />
+                            <Bar
+                                dataKey="gain"
+                                name="Realized Gain"
+                                radius={[4, 4, 0, 0]}
+                                onClick={handleBarClick}
+                                cursor="pointer"
+                            >
+                                {gainsByYear.map((entry, index) => (
+                                    <Cell
+                                        key={`cell-${index}`}
+                                        fill={selectedYear === entry.year ? '#059669' : (selectedYear ? 'var(--glass-hover)' : '#10B981')}
+                                    />
+                                ))}
+                            </Bar>
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl">
+                                            <div className="bg-white dark:bg-[#020817] border border-border p-3 rounded-xl shadow-2xl !opacity-100">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -195,27 +209,13 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 }}
                                 cursor={{ fill: 'var(--glass-hover)' }}
                             />
-                            <Bar
-                                dataKey="gain"
-                                name="Realized Gain"
-                                radius={[4, 4, 0, 0]}
-                                onClick={handleBarClick}
-                                cursor="pointer"
-                            >
-                                {gainsByYear.map((entry, index) => (
-                                    <Cell
-                                        key={`cell-${index}`}
-                                        fill={selectedYear === entry.year ? '#059669' : (selectedYear ? 'var(--glass-hover)' : '#10B981')}
-                                    />
-                                ))}
-                            </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
                 <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Realized Gain Transactions</h3>
                     <div className="text-sm text-muted-foreground">
@@ -287,7 +287,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-border/30">
-                        <thead className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 font-semibold border-b border-border/50">
+                        <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Proceeds', 'Cost Basis', 'Realized Gain', 'Gain %'].map((header) => (
                                     <th

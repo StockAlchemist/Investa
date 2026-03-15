@@ -118,7 +118,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
             {children}
 
             {/* Chart Section */}
-            <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl p-4 shadow-sm mb-6 transition-all hover:shadow-md">
+            <div className="bg-card border border-border rounded-xl p-4 shadow-sm mb-6 transition-all hover:shadow-md">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold text-foreground">Annual Dividends</h3>
                 </div>
@@ -133,6 +133,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                                 width={35}
                             />
+                            <Bar dataKey="amount" fill="#3B82F6" name="Dividend Amount" radius={[4, 4, 0, 0]} />
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 contentStyle={{
@@ -144,7 +145,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl">
+                                            <div className="bg-white dark:bg-[#020817] border border-border p-3 rounded-xl shadow-2xl !opacity-100">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -160,14 +161,13 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                                 }}
                                 cursor={{ fill: 'var(--glass-hover)' }}
                             />
-                            <Bar dataKey="amount" fill="#3B82F6" name="Dividend Amount" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
                 <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Dividend Transactions</h3>
                     <div className="text-sm text-muted-foreground">
@@ -177,7 +177,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-border/30">
-                        <thead className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 font-semibold border-b border-border/50">
+                        <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'DividendAmountDisplayCurrency'].map((header) => (
                                     <th

@@ -118,22 +118,19 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
     }
 
     if (!data || (data.error && !data.warning)) {
-        // Generic Error Fallback if data.error exists but isn't RateLimit (or is RateLimit without cache)
-        if (data?.error) {
-            return (
-                <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 rounded-xl border border-dashed border-border bg-card/50">
-                    <AlertTriangle className="w-10 h-10 text-rose-500 mb-2" />
-                    <h3 className="text-lg font-semibold">Unable to generate analysis</h3>
-                    <p className="text-muted-foreground max-w-md">
-                        {data.message || data.error || "An unexpected error occurred."}
-                    </p>
-                    <Button onClick={handleRefresh} variant="outline" className="mt-4 gap-2">
-                        <RefreshCw className="w-4 h-4" /> Try Again
-                    </Button>
-                </div>
-            );
-        }
-        return null;
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 rounded-xl border border-dashed border-border bg-card/50">
+                <AlertTriangle className="w-10 h-10 text-rose-500 mb-2" />
+                <h3 className="text-lg font-semibold">Unable to generate analysis</h3>
+                <p className="text-muted-foreground max-w-md">
+                    {data?.message || data?.error || "An unexpected error occurred while analyzing your portfolio."}
+                </p>
+                <Button onClick={handleRefresh} variant="outline" className="mt-4 gap-2">
+                    <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+                    {refreshMutation.isPending ? 'Retrying...' : 'Try Again'}
+                </Button>
+            </div>
+        );
     }
 
     const { scorecard, analysis, summary, recommendations } = data;
@@ -297,7 +294,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
             {/* Simple Modal Overlay */}
             {selectedMetric && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedMetric(null)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-in fade-in duration-200" onClick={() => setSelectedMetric(null)}>
                     <Card
                         className={`w-full max-w-lg m-4 shadow-2xl border ${getModalClasses(selectedMetric.score)} ring-1 ring-border animate-in zoom-in-95 duration-200`}
                         onClick={(e) => e.stopPropagation()}
@@ -310,7 +307,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                                         <CardTitle className={`text-xl ${getScoreColor(selectedMetric.score).replace('text-', 'text-')}`}>
                                             {selectedMetric.title}
                                         </CardTitle>
-                                        <div className={`text-lg font-bold px-2 py-0.5 rounded-md bg-muted/50 border border-border/50 ${getScoreColor(selectedMetric.score)}`}>
+                                        <div className={`text-lg font-bold px-2 py-0.5 rounded-md bg-muted border border-border/50 ${getScoreColor(selectedMetric.score)}`}>
                                             {selectedMetric.score}/10
                                         </div>
                                     </div>

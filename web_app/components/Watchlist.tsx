@@ -438,7 +438,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
 
                     <div className="overflow-x-auto rounded-lg">
                         <table className="min-w-full divide-y divide-border/30">
-                            <thead className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 font-semibold border-b border-border/50">
+                                <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
                                 <tr>
                                     {[
                                         { key: 'Symbol', label: 'Symbol', align: 'left' },

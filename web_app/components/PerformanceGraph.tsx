@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
+import { Card, CardContent } from "@/components/ui/card";
 import { useQuery } from '@tanstack/react-query';
 import {
     LineChart,
@@ -338,7 +339,7 @@ export default function PerformanceGraph({
         return (
             <div
                 ref={containerRef}
-                className="bg-card/50 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-50/50 dark:supports-[backdrop-filter]:bg-zinc-900/50 rounded-xl p-6 shadow-sm border border-border/50 h-[400px] flex items-center justify-center text-muted-foreground w-full transition-all hover:shadow-md"
+                className="glass-card premium-shadow rounded-2xl p-6 h-[400px] flex items-center justify-center text-muted-foreground w-full transition-all hover:shadow-2xl hover:shadow-cyan-500/5"
             >
                 {!mounted || loading ? (
                     <div className="flex flex-col items-center gap-2">
@@ -437,7 +438,7 @@ export default function PerformanceGraph({
             );
 
             return (
-                <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible">
+                <div className="bg-white dark:bg-[#020817] border border-border p-3 shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100">
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
@@ -534,7 +535,7 @@ export default function PerformanceGraph({
     const isContinuous = period === '1d';
 
     return (
-        <div ref={containerRef} className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-xl p-4 shadow-sm mb-6 overflow-visible relative transition-all hover:shadow-md group/section">
+        <Card ref={containerRef} className="rounded-2xl p-6 mb-6 overflow-visible relative transition-all hover:border-border duration-300 group/section">
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground flex items-center gap-2">
@@ -596,7 +597,7 @@ export default function PerformanceGraph({
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}
-                        <div className="flex bg-secondary/50 backdrop-blur-sm rounded-lg p-1 shrink-0 border border-border/50 shadow-sm">
+                        <div className="flex bg-secondary rounded-lg p-1 shrink-0 border border-border/50 shadow-sm">
                             <button
                                 onClick={() => onViewChange('return')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
@@ -635,7 +636,7 @@ export default function PerformanceGraph({
                 {loading && processedData.length === 0 && (
                     <div className={cn(
                         "absolute inset-0 flex items-center justify-center z-10 rounded-xl transition-all duration-300",
-                        "bg-background/40 backdrop-blur-sm"
+                        "bg-background/90 transition-all duration-300",
                     )}>
                         <div className="flex flex-col items-center gap-4">
                             <Loader2 className="animate-spin text-cyan-500 w-8 h-8" />
@@ -674,14 +675,7 @@ export default function PerformanceGraph({
                                 }}
                                 width={65}
                             />
-                            <Tooltip
-                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                                content={<CustomTooltip />}
-                                cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }}
-                            />
                             <Legend />
-                            {/* Portfolio Line with Gradient or Solid color */}
-                            {/* Time-Weighted Return (TWR) */}
                             <defs>
                                 <linearGradient id="colorTwr" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8} />
@@ -725,6 +719,11 @@ export default function PerformanceGraph({
                                 />
                             )}
                             <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
+                            <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                content={<CustomTooltip />}
+                                cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }}
+                            />
                         </LineChart>
                     ) : view === 'value' ? (
                         <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
@@ -776,11 +775,6 @@ export default function PerformanceGraph({
                                     tickFormatter={(val) => val.toFixed(2)}
                                 />
                             )}
-                            <Tooltip
-                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                                content={<CustomTooltip />}
-                                allowEscapeViewBox={{ x: false, y: false }}
-                            />
                             <Area
                                 name="Portfolio Value"
                                 type="monotone"
@@ -803,6 +797,11 @@ export default function PerformanceGraph({
                                 />
                             )}
                             <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
+                            <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                content={<CustomTooltip />}
+                                allowEscapeViewBox={{ x: false, y: false }}
+                            />
                         </AreaChart>
                     ) : (
                         <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
@@ -838,11 +837,6 @@ export default function PerformanceGraph({
                                     return [dataMin - padding, dataMax + padding];
                                 }}
                             />
-                            <Tooltip
-                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                                content={<CustomTooltip />}
-                                allowEscapeViewBox={{ x: false, y: false }}
-                            />
                             <Area
                                 name="Drawdown"
                                 type="monotone"
@@ -853,11 +847,16 @@ export default function PerformanceGraph({
                                 strokeWidth={2}
                             />
                             <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
+                            <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                content={<CustomTooltip />}
+                                allowEscapeViewBox={{ x: false, y: false }}
+                            />
                         </AreaChart>
                     )}
 
                 </ResponsiveContainer>
             </div>
-        </div>
+        </Card>
     );
 }

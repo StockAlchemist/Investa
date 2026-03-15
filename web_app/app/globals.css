@@ -31,14 +31,13 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
 
-    --radius: 0.5rem;
-    --glass-hover: rgba(0, 0, 0, 0.05);
+    --radius: 0.75rem;
+    --glass-hover: rgba(0, 0, 0, 0.03);
 
     /* Solid Menu Backgrounds - Explicit HEX */
     --menu-solid: #ffffff;
     --ring-track: #f3f4f6;
     --pie-stroke: #ffffff;
-    /* gray-100 */
   }
 
   .dark {
@@ -109,6 +108,35 @@
   background: rgba(156, 163, 175, 0.8);
 }
 
+/* Glassmorphism & Depth Utilities */
+.glass-card {
+  @apply bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-xl;
+  background-image: linear-gradient(
+    to bottom right,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.05)
+  );
+}
+
+.dark .glass-card {
+  background-image: linear-gradient(
+    to bottom right,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.01)
+  );
+}
+
+.premium-shadow {
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06),
+    0 10px 15px -3px rgba(0, 0, 0, 0.05);
+}
+
+.premium-ring {
+  @apply ring-1 ring-white/20 dark:ring-white/10;
+}
+
 /* Recharts Overrides */
 .recharts-wrapper,
 .recharts-surface,
@@ -119,4 +147,8 @@
 *:focus {
   outline: none !important;
   box-shadow: none !important;
+}
+
+.mask-linear-fade {
+  mask-image: linear-gradient(to top, black, transparent);
 }

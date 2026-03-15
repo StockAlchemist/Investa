@@ -108,21 +108,22 @@ export default function Dashboard({
     const totalReturnColor = totalGain !== null && totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
     const realizedGainColor = realizedGain !== null && realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
 
-    // Render helper same as before
-    const renderContent = (id: string) => {
+    // Render helper
+    const renderContent = (id: string, variant: 'card' | 'seamless' = 'card') => {
         switch (id) {
             case 'portfolioValue':
                 return <MetricCard
                     title="Total Portfolio Value"
                     value={m?.market_value ?? 0}
                     valueClassName="text-2xl sm:text-4xl" // Slightly smaller generally, but hero
-                    containerClassName="h-full bg-gradient-to-br from-card to-secondary/30"
+                    containerClassName="h-full bg-card border-border/50"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={Wallet}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'dayGL':
                 return <MetricCard
@@ -140,6 +141,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={(dayGL ?? 0) >= 0 ? TrendingUp : TrendingDown}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'totalReturn':
                 return <MetricCard
@@ -156,6 +158,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={Activity}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'annualTWR':
                 return <MetricCard
@@ -171,6 +174,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={Percent}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'mwr':
                 return <MetricCard
@@ -184,6 +188,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={Activity}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'unrealizedGL':
                 return <MetricCard
@@ -200,6 +205,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={TrendingUp} // Or separate icon
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'fxGL':
                 return <MetricCard
@@ -215,6 +221,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={DollarSign}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'realizedGain':
                 return <MetricCard
@@ -229,6 +236,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={PiggyBank}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'cashBalance':
                 return <MetricCard
@@ -240,6 +248,7 @@ export default function Dashboard({
                     icon={DollarSign}
                     valueClassName="text-xl sm:text-2xl"
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'ytdDividends':
                 return <MetricCard
@@ -253,6 +262,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={DollarSign} // Or create a generic dividend icon
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'fees':
                 return <MetricCard
@@ -264,6 +274,7 @@ export default function Dashboard({
                     isRefreshing={isRefreshing}
                     icon={Receipt}
                     accentColor={themeColor}
+                    variant={variant}
                 />;
             case 'riskMetrics':
                 return <RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} isRefreshing={isRefreshing} />;
@@ -273,20 +284,20 @@ export default function Dashboard({
                 return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} showClosed={showClosed} />;
             case 'portfolioDonut':
                 return (
-                    <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md relative overflow-hidden bg-gradient-to-br from-card/80 to-transparent">
-                        <CardContent className="h-full p-4 relative">
-                            <div className="flex justify-between items-start mb-2">
+                    <Card className="h-full bg-card rounded-2xl border border-border/50 hover:border-border transition-all duration-300 relative overflow-hidden cursor-default group">
+                        <CardContent className="h-full p-5 relative">
+                            <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Portfolio Composition</h3>
+                                    <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest opacity-80">Portfolio Composition</h3>
                                     {isRefreshing && !isLoading && (
                                         <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
                                     )}
                                 </div>
-                                <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-secondary/50 text-muted-foreground">
+                                <div className="p-2 rounded-xl bg-secondary/30 text-muted-foreground group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 group-hover:text-cyan-500 group-hover:bg-cyan-500/10">
                                     <PieChart className="w-4 h-4" />
                                 </div>
                             </div>
-                            <div className="h-[calc(100%-32px)]">
+                            <div className="h-[calc(100%-48px)]">
                                 <PortfolioDonut holdings={holdings} currency={currency} />
                             </div>
                         </CardContent>
@@ -301,19 +312,19 @@ export default function Dashboard({
     const visibleComplexItems = DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id) && COMPLEX_METRIC_IDS.includes(item.id));
 
     return (
-        <div className="mb-10 space-y-6">
-            {/* Scalar Metrics Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div className="mb-14 space-y-10">
+            {/* Scalar Metrics Floating Board */}
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 {visibleScalarItems.map((item) => (
                     <div key={item.id} className={cn(item.colSpan, "w-full min-w-0")}>
-                        {renderContent(item.id)}
+                        {renderContent(item.id, 'seamless')}
                     </div>
                 ))}
             </div>
 
             {/* Complex/Tall Metrics Grid */}
             {visibleComplexItems.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
                     {visibleComplexItems.map((item) => (
                         <div key={item.id} className={item.colSpan}>
                             {renderContent(item.id)}

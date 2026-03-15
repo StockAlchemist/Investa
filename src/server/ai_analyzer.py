@@ -10,9 +10,9 @@ from db_utils import get_db_connection, get_cached_screener_results
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)
 FALLBACK_MODELS = [
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite"
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash-exp"
 ]
 
 def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force_refresh: bool = False, use_search: bool = True) -> dict:

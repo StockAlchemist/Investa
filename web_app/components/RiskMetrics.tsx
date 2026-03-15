@@ -34,7 +34,7 @@ interface MetricItemProps {
 const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick }: MetricItemProps) => (
     <div
         onClick={onClick}
-        className="flex flex-col p-3 bg-secondary/30 backdrop-blur-sm rounded-xl border border-white/10 hover:bg-cyan-500/10 cursor-pointer transition-all duration-300 group/item h-full"
+        className="flex flex-col p-3 bg-card rounded-xl border border-border hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full"
     >
         <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
             <Icon className="w-3.5 h-3.5 group-hover/item:text-cyan-500 transition-colors" />
@@ -150,17 +150,17 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     if (isLoading) {
         return (
-            <Card className="h-full bg-card">
+            <Card className="h-full bg-card border border-border/50">
                 <CardContent className="p-6">
                     <div className="flex justify-between items-center mb-6">
-                        <Skeleton className="h-4 w-32" />
-                        <Skeleton className="h-8 w-8 rounded-lg" />
+                        <Skeleton className="h-4 w-32 opacity-50" />
+                        <Skeleton className="h-8 w-8 rounded-lg opacity-50" />
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="h-24 rounded-xl bg-background/50 p-4 space-y-2">
-                                <Skeleton className="h-3 w-16" />
-                                <Skeleton className="h-6 w-12" />
+                            <div key={i} className="h-24 rounded-xl bg-muted/30 p-4 space-y-2">
+                                <Skeleton className="h-3 w-16 opacity-30" />
+                                <Skeleton className="h-6 w-12 opacity-30" />
                             </div>
                         ))}
                     </div>
@@ -222,7 +222,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     return (
         <React.Fragment>
-            <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md group relative overflow-hidden bg-gradient-to-br from-card/80 to-transparent">
+            <Card className="h-full bg-card border border-border/50 hover:border-border transition-all duration-300 group relative overflow-hidden">
                 <CardContent className="h-full p-4 flex flex-col gap-4">
                     <div className="flex justify-between items-start">
                         <div className="flex items-center gap-2">
@@ -231,7 +231,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
                             )}
                         </div>
-                        <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-secondary/50 text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
+                        <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-muted border border-border/50 text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
                             <Activity className="w-4 h-4" />
                         </div>
                     </div>
@@ -240,7 +240,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                         {/* Left Side: Portfolio Health */}
                         {portfolioHealth && (
                             <div
-                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-secondary/30 backdrop-blur-sm border border-white/10 transition-colors cursor-pointer group/health relative overflow-hidden"
+                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-card border border-border/50 transition-colors cursor-pointer group/health relative overflow-hidden"
                                 onClick={() => setIsHealthModalOpen(true)}
                             >
                                 <div className="absolute top-2 right-2 opacity-0 group-hover/health:opacity-100 transition-opacity">
@@ -323,7 +323,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
             {/* Metric Explanation Modal */}
             {selectedMetric && activeExplanation && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 isolate">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedMetric(null)} />
+                    <div className="absolute inset-0 bg-black/40 animate-in fade-in duration-200" onClick={() => setSelectedMetric(null)} />
                     <div
                         style={{ backgroundColor: 'var(--menu-solid)' }}
                         className="relative w-full max-w-md border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200"
@@ -381,7 +381,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
             {/* Health Analysis Modal */}
             {isHealthModalOpen && portfolioHealth && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 isolate">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsHealthModalOpen(false)} />
+                    <div className="absolute inset-0 bg-black/40 animate-in fade-in duration-200" onClick={() => setIsHealthModalOpen(false)} />
                     <div
                         style={{ backgroundColor: 'var(--menu-solid)' }}
                         className="relative w-full max-w-lg border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"

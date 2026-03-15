@@ -50,7 +50,7 @@ function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) 
     const onPieLeave = () => setActiveIndex(undefined);
 
     return (
-        <div className="bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-sm flex flex-col h-[32rem] transition-all hover:shadow-md">
+        <div className="bg-card border border-border p-4 rounded-xl shadow-sm flex flex-col h-[32rem] transition-all hover:shadow-md">
             <h3 className="text-lg font-semibold text-foreground mb-4 text-center">{title}</h3>
             <div className="flex-grow min-h-0 relative">
                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>

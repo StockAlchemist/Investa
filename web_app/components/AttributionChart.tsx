@@ -45,14 +45,14 @@ const formatPercentHelper = (val: number) => {
 export function SectorAttribution({ data, isLoading, isRefreshing = false, currency }: CommonProps) {
     if (isLoading) {
         return (
-            <div className="bg-card rounded-xl p-6 shadow-sm animate-pulse h-80"></div>
+            <div className="glass-card rounded-2xl p-6 shadow-sm animate-pulse h-80 opacity-50"></div>
         );
     }
 
     const hasSectors = data?.sectors && data.sectors.length > 0;
 
     return (
-        <div className="bg-card rounded-xl p-6 shadow-sm h-full relative overflow-hidden">
+        <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden border border-border/50">
             <div className="flex items-center gap-2 mb-6">
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sector Contribution</h3>
                 {isRefreshing && !isLoading && (
@@ -128,11 +128,11 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
 
     return createPortal(
         <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 isolate">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
             <div
                 style={{ backgroundColor: 'var(--menu-solid)' }}
-                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 pointer-events-auto bg-card"
+                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 pointer-events-auto bg-card border border-border"
             >
                 {/* Mobile Drag Handle */}
                 <div className="sm:hidden w-full flex justify-center pt-3 pb-1 flex-shrink-0">
@@ -289,7 +289,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     if (isLoading) {
         return (
-            <div className="bg-card rounded-xl p-6 shadow-sm animate-pulse h-80"></div>
+            <div className="glass-card rounded-2xl p-6 shadow-sm animate-pulse h-80 opacity-50"></div>
         );
     }
 
@@ -299,7 +299,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     return (
         <>
-            <div className="bg-card rounded-xl p-6 shadow-sm h-full relative overflow-hidden">
+            <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden border border-border/50">
                 <div className="flex items-center gap-2 mb-6">
                     <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Top Contributors</h3>
                     {isRefreshing && !isLoading && (

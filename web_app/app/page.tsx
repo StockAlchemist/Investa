@@ -39,7 +39,7 @@ import dynamic from 'next/dynamic';
 import AppShellSkeleton from "@/components/skeletons/AppShellSkeleton";
 
 const PerformanceGraph = dynamic(() => import('@/components/PerformanceGraph'), {
-  loading: () => <div className="h-[400px] bg-card rounded-xl border border-border mb-6 animate-pulse" />,
+  loading: () => <div className="h-[400px] bg-card border border-border/50 rounded-2xl mb-6 animate-pulse" />,
   ssr: false
 });
 
