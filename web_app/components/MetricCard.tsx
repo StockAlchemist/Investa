@@ -76,8 +76,8 @@ export function MetricCard({
             onClick={onClick}
         >
             <CardContent className={cn(
-                "h-full flex flex-col justify-between p-5 relative",
-                variant === 'seamless' && "p-4"
+                "h-full flex flex-col justify-start gap-1 p-3 relative",
+                variant === 'seamless' && "p-1"
             )}>
                 <div className="flex justify-between items-start z-10">
                     <div className="flex items-center gap-2">
@@ -98,7 +98,7 @@ export function MetricCard({
                     )}
                 </div>
 
-                <div className="mt-4 flex items-end justify-between gap-2 relative z-10">
+                <div className="flex items-end justify-between gap-2 relative z-10">
                     <div className="flex flex-col">
                         {isLoading ? (
                             <Skeleton className="h-9 w-32 mb-1 opacity-50" />
