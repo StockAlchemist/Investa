@@ -44,8 +44,8 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     // We strictly hide 'Other' if needed, though for Accounts it usually doesn't exist.
     if ((!forceAllLabels && percent < 0.03) || payload.name === 'Other') return null;
 
-    // Push labels closer to avoid cutting off
-    const radius = outerRadius + 28;
+    // Push labels out for better breathing room
+    const radius = outerRadius + 38;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
@@ -220,7 +220,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     return (
         <div className="relative h-full">
             <h4 className="absolute top-3 left-4 z-10 text-xs font-semibold text-muted-foreground uppercase tracking-tight">{title}</h4>
-            <div className="relative w-full h-full min-h-[300px] md:min-h-[400px]">
+            <div className="relative w-full h-full min-h-[350px] md:min-h-[500px]">
                 {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={100} minHeight={100}>
@@ -230,8 +230,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                 data={data}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius="55%"
-                                outerRadius="75%"
+                                innerRadius="50%"
+                                outerRadius="70%"
                                 paddingAngle={2}
                                 dataKey="value"
                                 onMouseEnter={onPieEnter}
