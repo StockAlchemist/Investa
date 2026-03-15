@@ -831,7 +831,16 @@ def update_transaction_in_db(
     set_clauses = []
     values_for_sql: Dict[str, Any] = {}
 
+    db_columns = {
+        "Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount",
+        "Commission", "Account", "Split Ratio", "Note", "Local Currency",
+        "To Account", "Tags", "ExternalID"
+    }
+
     for key, value in new_data_dict.items():
+        if key not in db_columns:
+            continue
+            
         placeholder = key.replace("/", "_per_").replace(" ", "_").replace(".", "_")
         set_clauses.append(f'"{key}" = :{placeholder}')
 

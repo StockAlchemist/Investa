@@ -1400,7 +1400,7 @@ async def get_transactions(
     try:
         # Filter by accounts if provided
         if accounts:
-            df = df[df["Account"].isin(accounts)]
+            df = df[df["Account"].isin(accounts)].copy()
 
         # Ensure we include the ID in the response if it's in the index or a column
         if "original_index" in df.columns:
@@ -1453,6 +1453,10 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
         return
 
     symbol = tx_data.get("Symbol", "")
+    from finutils import is_cash_symbol
+    if is_cash_symbol(symbol):
+        return
+
     account = tx_data.get("Account", "")
     date_str = tx_data.get("Date")
     local_currency = tx_data.get("Local Currency", "USD")
@@ -1552,21 +1556,6 @@ async def create_transaction(
             
         # Convert Pydantic model to dict with correct keys for DB
         tx_data = transaction.dict(by_alias=True)
-        
-        # Explicitly handle Price/Share alias if Pydantic didn't cover it fully or for safety
-        if "Price_Share" in tx_data:
-             tx_data["Price/Share"] = tx_data.pop("Price_Share")
-        if "Total_Amount" in tx_data:
-             tx_data["Total Amount"] = tx_data.pop("Total_Amount")
-        if "Local_Currency" in tx_data:
-             tx_data["Local Currency"] = tx_data.pop("Local_Currency")
-        if "To_Account" in tx_data:
-             tx_data["To Account"] = tx_data.pop("To_Account")
-        if "Split_Ratio" in tx_data:
-             tx_data["Split Ratio"] = tx_data.pop("Split_Ratio")
-        if "Tags" in tx_data and tx_data["Tags"] is not None:
-             # Ensure stripped string
-             tx_data["Tags"] = str(tx_data["Tags"]).strip()
 
         success, new_id = add_transaction_to_db(conn, tx_data)
         
@@ -1581,6 +1570,8 @@ async def create_transaction(
         else:
             raise HTTPException(status_code=500, detail="Failed to add transaction to database")
             
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error adding transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -1662,20 +1653,6 @@ async def update_transaction(
              raise HTTPException(status_code=500, detail="Database connection failed")
 
         tx_data = transaction.dict(by_alias=True)
-        
-        # Handle Aliases
-        if "Price_Share" in tx_data:
-             tx_data["Price/Share"] = tx_data.pop("Price_Share")
-        if "Total_Amount" in tx_data:
-             tx_data["Total Amount"] = tx_data.pop("Total_Amount")
-        if "Local_Currency" in tx_data:
-             tx_data["Local Currency"] = tx_data.pop("Local_Currency")
-        if "To_Account" in tx_data:
-             tx_data["To Account"] = tx_data.pop("To_Account")
-        if "Split_Ratio" in tx_data:
-             tx_data["Split Ratio"] = tx_data.pop("Split_Ratio")
-        if "Tags" in tx_data and tx_data["Tags"] is not None:
-             tx_data["Tags"] = str(tx_data["Tags"]).strip()
 
         success = update_transaction_in_db(conn, transaction_id, tx_data)
         conn.close()
@@ -1686,6 +1663,8 @@ async def update_transaction(
         else:
             raise HTTPException(status_code=404, detail="Transaction not found or update failed")
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error updating transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -1721,6 +1700,8 @@ async def delete_transaction(
         else:
             raise HTTPException(status_code=404, detail="Transaction not found or delete failed")
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error deleting transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

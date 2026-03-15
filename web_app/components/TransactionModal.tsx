@@ -69,13 +69,16 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                     ...initialData,
                     Date: formattedDate,
                     Type: initType,
+                    Symbol: initialData.Symbol || '',
                     Quantity: initialData.Quantity || '',
                     "Price/Share": initialData["Price/Share"] || '',
                     Commission: initialData.Commission || '',
                     "Split Ratio": initialData["Split Ratio"] || '',
                     "Total Amount": initialData["Total Amount"] ? Math.abs(initialData["Total Amount"]) : '',
                     "From Account": fromAcc,
-                    "To Account": toAcc
+                    "To Account": toAcc,
+                    "Auto-add Cash": !!initialData["Auto-add Cash"],
+                    Note: initialData.Note || ''
                 });
             } else {
                 setFormData({
@@ -147,6 +150,11 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 if (newData['From Account'] !== newData.Account) {
                     newData['From Account'] = newData.Account;
                 }
+            }
+
+            // 3. Clear Auto-add Cash if not applicable
+            if (!canAutoAddCash && newData["Auto-add Cash"]) {
+                newData["Auto-add Cash"] = false;
             }
 
             const hasChanged = Object.keys(newData).some(key => newData[key] !== prev[key]);
@@ -558,7 +566,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                     type="checkbox"
                                     id="auto-add-cash"
                                     name="Auto-add Cash"
-                                    checked={formData["Auto-add Cash"]}
+                                    checked={!!formData["Auto-add Cash"]}
                                     onChange={(e) => setFormData((prev: any) => ({ ...prev, "Auto-add Cash": e.target.checked }))}
                                     className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
