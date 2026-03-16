@@ -41,7 +41,7 @@ const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick
             <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
         </div>
 
-        <div className={cn("flex-1 flex items-center justify-center text-2xl font-bold tracking-tight", colorClass || "text-foreground")}>
+        <div className={cn("flex-1 flex items-center justify-center text-xl md:text-2xl font-bold tracking-tight", colorClass || "text-foreground")}>
             {value}
         </div>
 
@@ -97,7 +97,7 @@ const ScoreRing = ({ score }: { score: number }) => {
                 />
             </svg>
             <div className="absolute flex flex-col items-center justify-center">
-                <span className={cn("text-2xl font-bold", colorClass)}>{score}</span>
+                <span className={cn("text-xl md:text-2xl font-bold", colorClass)}>{score}</span>
             </div>
         </div>
     );
@@ -248,7 +248,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                             <div className="flex flex-col items-center justify-center p-4 min-w-[130px] gap-2">
                                 <ScoreRing score={portfolioHealth.overall_score} />
                                 <div className={cn(
-                                    "text-base font-bold tracking-tight",
+                                    "text-sm md:text-base font-bold tracking-tight",
                                     portfolioHealth.overall_score >= 80 ? "text-cyan-500" :
                                         portfolioHealth.overall_score >= 60 ? "text-emerald-500" :
                                             portfolioHealth.overall_score >= 40 ? "text-yellow-500" : "text-red-500"
@@ -262,10 +262,10 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 <div className="flex justify-between items-center group/row">
                                     <div className="flex items-center gap-2 text-muted-foreground">
                                         <PieChart className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase tracking-wider">Diversification</span>
+                                        <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide md:tracking-wider">Diversification</span>
                                     </div>
                                     <span className={cn(
-                                        "text-sm font-bold",
+                                        "text-xs md:text-sm font-bold",
                                         portfolioHealth.components.diversification.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                     )}>
                                         {portfolioHealth.components.diversification.score}
@@ -274,10 +274,10 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 <div className="flex justify-between items-center group/row">
                                     <div className="flex items-center gap-2 text-muted-foreground">
                                         <TrendingUp className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase tracking-wider">Efficiency</span>
+                                        <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide md:tracking-wider">Efficiency</span>
                                     </div>
                                     <span className={cn(
-                                        "text-sm font-bold",
+                                        "text-xs md:text-sm font-bold",
                                         portfolioHealth.components.efficiency.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                     )}>
                                         {portfolioHealth.components.efficiency.score}
@@ -286,10 +286,10 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 <div className="flex justify-between items-center group/row">
                                     <div className="flex items-center gap-2 text-muted-foreground">
                                         <ShieldCheck className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase tracking-wider">Stability</span>
+                                        <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide md:tracking-wider">Stability</span>
                                     </div>
                                     <span className={cn(
-                                        "text-sm font-bold",
+                                        "text-xs md:text-sm font-bold",
                                         portfolioHealth.components.stability.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                     )}>
                                         {portfolioHealth.components.stability.score}

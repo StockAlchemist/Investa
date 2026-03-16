@@ -39,23 +39,24 @@ const SYMBOL_MAPPING: Record<string, string> = {
 
 // Custom label component
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload, forceAllLabels }: any) => {
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload, forceAllLabels, isMobile }: any) => {
     // If forceAllLabels is true, we skip the 3% threshold check.
     // We strictly hide 'Other' if needed, though for Accounts it usually doesn't exist.
     if ((!forceAllLabels && percent < 0.03) || payload.name === 'Other') return null;
 
-    // Push labels closer as the ring is now larger
-    const radius = outerRadius + 32;
+    // Adjust label distance for mobile to keep icons within view
+    const offset = isMobile ? 22 : 32;
+    const radius = outerRadius + offset;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
     return (
-        <foreignObject x={x - 24} y={y - 28} width={48} height={56} className="overflow-visible pointer-events-none">
+        <foreignObject x={x - 24} y={y - 28} width={64} height={56} className="overflow-visible pointer-events-none">
             <div className="flex flex-col items-center justify-center w-full h-full transform transition-transform duration-500 hover:scale-125">
-                <div className="rounded-full bg-card p-1">
-                    <StockIcon symbol={payload.name} size={24} />
+                <div className="rounded-full bg-card p-1 shadow-sm border border-border/50">
+                    <StockIcon symbol={payload.name} size={isMobile ? 20 : 24} />
                 </div>
-                <span className="text-[10px] font-bold mt-1 text-foreground bg-card px-2 py-0.5 rounded-full max-w-[70px] truncate text-center">
+                <span className="text-[9px] md:text-[10px] font-bold mt-1 text-foreground bg-card/80 backdrop-blur-sm px-1.5 py-0.5 rounded-full max-w-[60px] md:max-w-[70px] truncate text-center border border-border/30">
                     {payload.name}
                 </span>
             </div>
@@ -141,10 +142,10 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
 
     const getFontSizeClass = (text: string) => {
         const len = text.length;
-        if (len > 18) return "text-xs sm:text-sm md:text-base";
-        if (len > 14) return "text-sm sm:text-base md:text-lg";
-        if (len > 11) return "text-base sm:text-lg md:text-xl";
-        return "text-lg sm:text-xl md:text-2xl";
+        if (len > 18) return "text-[10px] sm:text-xs md:text-sm lg:text-base";
+        if (len > 14) return "text-xs sm:text-sm md:text-base lg:text-lg";
+        if (len > 11) return "text-sm sm:text-base md:text-lg lg:text-xl";
+        return "text-base sm:text-lg md:text-xl lg:text-2xl";
     };
 
     // Helper to render main value
@@ -217,21 +218,30 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     const mainActiveText = activeItem ? getMainValueString(false) : '';
     const mainTotalText = getMainValueString(true);
 
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
     return (
         <div className="relative h-full">
             <h4 className="absolute top-3 left-4 z-10 text-xs font-semibold text-muted-foreground uppercase tracking-tight">{title}</h4>
-            <div className="relative w-full h-full min-h-[350px] md:min-h-[500px]">
+            <div className="relative w-full h-full min-h-[300px] md:min-h-[500px]">
                 {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={100} minHeight={100}>
-                        <PieChart margin={{ left: 20, right: 20, top: 10, bottom: 10 }}>
+                        <PieChart margin={{ left: isMobile ? 45 : 20, right: isMobile ? 45 : 20, top: 10, bottom: 10 }}>
                             {/* @ts-ignore */}
                             <Pie
                                 data={data}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius="60%"
-                                outerRadius="85%"
+                                innerRadius={isMobile ? "50%" : "60%"}
+                                outerRadius={isMobile ? "70%" : "85%"}
                                 paddingAngle={2}
                                 dataKey="value"
                                 onMouseEnter={onPieEnter}
@@ -239,8 +249,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                 // @ts-ignore
                                 activeIndex={activeIndex}
                                 activeShape={renderActiveShape}
-                                // Pass forceAllLabels through a closure or similar
-                                label={(props) => renderCustomizedLabel({ ...props, forceAllLabels })}
+                                // Pass forceAllLabels and isMobile through a closure
+                                label={(props) => renderCustomizedLabel({ ...props, forceAllLabels, isMobile })}
                                 labelLine={false}
                                 isAnimationActive={false}
                             >
