@@ -44,8 +44,8 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     // We strictly hide 'Other' if needed, though for Accounts it usually doesn't exist.
     if ((!forceAllLabels && percent < 0.03) || payload.name === 'Other') return null;
 
-    // Push labels out for better breathing room
-    const radius = outerRadius + 38;
+    // Push labels closer as the ring is now larger
+    const radius = outerRadius + 32;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
@@ -224,14 +224,14 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={100} minHeight={100}>
-                        <PieChart margin={{ left: 40, right: 40, top: 20, bottom: 20 }}>
+                        <PieChart margin={{ left: 20, right: 20, top: 10, bottom: 10 }}>
                             {/* @ts-ignore */}
                             <Pie
                                 data={data}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius="50%"
-                                outerRadius="70%"
+                                innerRadius="60%"
+                                outerRadius="85%"
                                 paddingAngle={2}
                                 dataKey="value"
                                 onMouseEnter={onPieEnter}
