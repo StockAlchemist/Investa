@@ -266,9 +266,9 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     </div>
                                     <span className={cn(
                                         "text-xs md:text-sm font-bold",
-                                        portfolioHealth.components.diversification.score >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                        (portfolioHealth?.components?.diversification?.score ?? 0) >= 60 ? "text-emerald-500" : "text-yellow-500"
                                     )}>
-                                        {portfolioHealth.components.diversification.score}
+                                        {portfolioHealth?.components?.diversification?.score ?? 0}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center group/row">
@@ -278,9 +278,9 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     </div>
                                     <span className={cn(
                                         "text-xs md:text-sm font-bold",
-                                        portfolioHealth.components.efficiency.score >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                        (portfolioHealth?.components?.efficiency?.score ?? 0) >= 60 ? "text-emerald-500" : "text-yellow-500"
                                     )}>
-                                        {portfolioHealth.components.efficiency.score}
+                                        {portfolioHealth?.components?.efficiency?.score ?? 0}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center group/row">
@@ -290,9 +290,9 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     </div>
                                     <span className={cn(
                                         "text-xs md:text-sm font-bold",
-                                        portfolioHealth.components.stability.score >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                        (portfolioHealth?.components?.stability?.score ?? 0) >= 60 ? "text-emerald-500" : "text-yellow-500"
                                     )}>
-                                        {portfolioHealth.components.stability.score}
+                                        {portfolioHealth?.components?.stability?.score ?? 0}
                                     </span>
                                 </div>
                             </div>
