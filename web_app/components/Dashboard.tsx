@@ -21,7 +21,6 @@ import RiskMetrics from './RiskMetrics';
 import { SectorAttribution, TopContributors } from './AttributionChart';
 import PortfolioDonut from './PortfolioDonut';
 import { Holding } from '@/lib/api';
-import { Card, CardContent } from "@/components/ui/card";
 
 interface DashboardProps {
     summary: PortfolioSummary;
@@ -116,7 +115,7 @@ export default function Dashboard({
                     title="Total Portfolio Value"
                     value={m?.market_value ?? 0}
                     valueClassName="text-2xl sm:text-4xl" // Slightly smaller generally, but hero
-                    containerClassName="h-full bg-card border-border/50"
+                    containerClassName="h-full bg-card"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
@@ -284,8 +283,8 @@ export default function Dashboard({
                 return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} showClosed={showClosed} />;
             case 'portfolioDonut':
                 return (
-                    <Card className="h-full bg-card rounded-2xl border-none p-5 relative overflow-hidden transition-all duration-300 group">
-                        <CardContent className="h-full p-5 relative">
+                    <div className="h-full bg-card rounded-2xl p-6 relative overflow-hidden transition-all duration-300 group">
+                        <div className="h-full relative">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest opacity-80">Portfolio Composition</h3>
@@ -300,8 +299,8 @@ export default function Dashboard({
                             <div className="h-[calc(100%-48px)]">
                                 <PortfolioDonut holdings={holdings} currency={currency} />
                             </div>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 );
             default:
                 return null;

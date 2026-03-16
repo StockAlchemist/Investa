@@ -44,7 +44,7 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
 
 
     return (
-        <Card className="bg-card border border-border overflow-hidden mb-6 shadow-sm">
+        <Card className="bg-card overflow-hidden mb-6">
             <CardHeader className="flex flex-row items-center justify-between pb-2 px-6 pt-6 space-y-0">
                 <div>
                     <CardTitle className="text-lg font-semibold text-foreground">
@@ -84,7 +84,7 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                                     // Sort payload by value desc for better reading in tooltip
                                     const sortedPayload = [...payload].sort((a, b) => (b.value as number) - (a.value as number));
                                     return (
-                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl text-xs min-w-[180px]">
+                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md p-3 rounded-xl text-xs min-w-[180px]">
                                             <p className="font-semibold mb-2 text-foreground">{label}</p>
                                             {sortedPayload.map((entry, idx) => (
                                                 <div key={`tooltip-${idx}`} className="flex items-center gap-3 mb-1 last:mb-0">
@@ -95,7 +95,7 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                                                     </span>
                                                 </div>
                                             ))}
-                                            <div className="border-t border-border mt-2 pt-2 flex justify-between font-bold">
+                                            <div className="mt-2 pt-2 flex justify-between font-bold">
                                                 <span>Total</span>
                                                 <span>{formatCurrency(payload.reduce((s, p) => s + (p.value as number), 0), currency)}</span>
                                             </div>

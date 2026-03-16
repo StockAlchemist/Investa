@@ -739,8 +739,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     return (
         <>
-            <Card className="rounded-2xl mt-6 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent border-border/50 transition-all duration-300">
-                <div className="flex flex-col gap-5 p-6 border-b border-white/10 dark:border-white/5">
+            <Card className="rounded-2xl mt-6 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent transition-all duration-300">
+                <div className="flex flex-col gap-5 p-6">
                     {/* Header Row: Title, Count & Search */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -762,7 +762,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 placeholder="Search symbol..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-1.5 text-sm bg-secondary border-border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
+                                className="w-full pl-9 pr-4 py-1.5 text-sm bg-secondary border-none rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
                             />
                             {searchQuery && (
                                 <button
@@ -782,17 +782,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="relative" ref={groupByMenuRef}>
                             <button
                                 onClick={() => setIsGroupByMenuOpen(!isGroupByMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
                                 ${groupBy
-                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
-                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                    }`}
+                                    ? 'bg-[#0097b2] text-white border-none'
+                                    : 'text-foreground bg-secondary border-none hover:bg-accent/10'
+                                }`}
                             >
                                 <ListFilter className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">{groupBy ? `By ${GROUPING_LABEL_MAP[groupBy]}` : 'Group'}</span>
                             </button>
                             {isGroupByMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-1.5 w-48 origin-top-left bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                <div className="absolute left-0 z-50 mt-1.5 w-48 origin-top-left bg-white dark:bg-zinc-950 rounded-md focus:outline-none">
                                     <div className="py-1">
                                         <label className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
                                             <input
@@ -804,7 +804,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             />
                                             <span className="ml-2">Do not group</span>
                                         </label>
-                                        <hr className="my-1 border-border" />
+                                        <hr className="my-1 opacity-10" />
                                         {Object.entries(GROUPING_LABEL_MAP).map(([key, label]) => (
                                             <label key={key} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
                                                 <input
@@ -828,19 +828,19 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="relative" ref={accountMenuRef}>
                             <button
                                 onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
                                 ${selectedAccounts.size > 0 || isAccountMenuOpen
-                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
-                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                        ? 'bg-[#0097b2] text-white'
+                                        : 'text-foreground bg-secondary hover:bg-accent/10'
                                     }`}
                             >
                                 <UserCircle className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}</span>
-                                {selectedAccounts.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center border border-card">{selectedAccounts.size}</span>}
+                                {selectedAccounts.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center">{selectedAccounts.size}</span>}
                             </button>
                             {isAccountMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
-                                    <div className="p-2 border-b border-border">
+                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-white dark:bg-zinc-950 rounded-md shadow-none ring-0 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
+                                    <div className="p-2">
                                         <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
                                             Clear Filter
                                         </button>
@@ -866,17 +866,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="relative" ref={columnMenuRef}>
                             <button
                                 onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
                                 ${isColumnMenuOpen
-                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
-                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                        ? 'bg-[#0097b2] text-white'
+                                        : 'text-foreground bg-secondary hover:bg-accent/10'
                                     }`}
                             >
                                 <Settings2 className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">Columns</span>
                             </button>
                             {isColumnMenuOpen && (
-                                <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-56 origin-top-left sm:origin-top-right bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
+                                <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-56 origin-top-left sm:origin-top-right bg-white dark:bg-zinc-950 rounded-md shadow-none ring-0 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
                                     <div className="py-1">
                                         {Object.keys(COLUMN_DEFINITIONS).map(header => (
                                             <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
@@ -897,10 +897,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         {/* Show/Hide Closed Toggle */}
                         <button
                             onClick={() => onToggleShowClosed?.(!showClosed)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
                             ${showClosed
-                                    ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
-                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                    ? 'bg-[#0097b2] text-white'
+                                    : 'text-foreground bg-secondary hover:bg-accent/10'
                                 }`}
                             title={showClosed ? 'Hide Closed Positions' : 'Show Closed Positions'}
                         >
@@ -911,10 +911,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         {/* Toggle All Lots Helper */}
                         <button
                             onClick={toggleAllLots}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
                             ${expandedLots.size > 0
-                                    ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
-                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                    ? 'bg-[#0097b2] text-white'
+                                    : 'text-foreground bg-secondary hover:bg-accent/10'
                                 }`}
                             title={expandedLots.size > 0 ? 'Collapse All Tax Lots' : 'Show All Tax Lots'}
                         >
@@ -925,7 +925,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         {/* Export Button */}
                         <button
                             onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center ml-auto"
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary rounded-md hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center ml-auto"
                             title="Export to CSV"
                         >
                             <Download className="w-3.5 h-3.5" />
@@ -934,7 +934,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         {/* Mobile View Toggle */}
                         <button
                             onClick={() => setMobileViewMode(current => current === 'card' ? 'table' : 'card')}
-                            className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary border-border hover:bg-accent/10"
+                            className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary hover:bg-accent/10"
                             title={mobileViewMode === 'card' ? 'Switch to Table View' : 'Switch to Card View'}
                         >
                             {mobileViewMode === 'card' ? <TableIcon className="w-3.5 h-3.5" /> : <LayoutGrid className="w-3.5 h-3.5" />}
@@ -945,8 +945,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
                 {/* Desktop Table View (also visible on mobile if toggled) */}
                 <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto`}>
-                    <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
-                        <thead className="font-semibold border-b border-border shadow-sm">
+                    <table className="min-w-full">
+                        <thead className="font-semibold">
                             <tr>
                                 {visibleColumns.map(header => {
                                     const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
@@ -958,7 +958,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             onDragStart={(e) => handleDragStart(e, header)}
                                             onDragOver={handleDragOver}
                                             onDrop={(e) => handleDrop(e, header)}
-                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${header === 'Symbol' ? 'sticky left-0 z-40 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}
+                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${header === 'Symbol' ? 'sticky left-0 z-40 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''}`}
                                             onClick={() => handleSort(header)}
                                         >
                                             <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
@@ -972,7 +972,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 })}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border/50">
+                        <tbody className="divide-y-none">
                             {isLoading ? (
                                 Array.from({ length: 5 }).map((_, i) => (
                                     <tr key={`skeleton-${i}`}>
@@ -1000,7 +1000,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                             <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                                         )}
                                                         <span className="font-semibold text-foreground">{group.key}</span>
-                                                        <span className="text-xs text-muted-foreground bg-secondary border border-border px-1.5 py-0.5 rounded-full">
+                                                        <span className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
                                                             {group.holdings.length}
                                                         </span>
                                                     </div>
@@ -1053,7 +1053,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
 
                                                         return (
-                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''} ${heatmapClass}`}>
+                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''} ${heatmapClass}`}>
                                                                 {header === '7d Trend' ? (
                                                                     <div className="h-10 w-28 ml-auto">
                                                                         {val && Array.isArray(val) && val.length > 1 ? (
@@ -1122,7 +1122,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                                     type="text"
                                                                                     value={tagsInput}
                                                                                     onChange={(e) => setTagsInput(e.target.value)}
-                                                                                    className="w-32 h-7 text-xs bg-background border border-cyan-500/50 rounded px-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-sm"
+                                                                                    className="w-32 h-7 text-xs bg-background rounded px-2 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                                                                                     placeholder="e.g. Dividend, Tech"
                                                                                     autoFocus
                                                                                     onKeyDown={(e) => {
@@ -1174,7 +1174,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                                 return (
-                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
+                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900' : ''}`}>
                                                                         {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                                         {formatValue(val, header)}
                                                                     </td>
@@ -1202,7 +1202,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                 const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
 
                                                 return (
-                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''} ${heatmapClass}`}>
+                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''} ${heatmapClass}`}>
                                                         {header === '7d Trend' ? (
                                                             <div className="h-10 w-28 ml-auto">
                                                                 {val && Array.isArray(val) && val.length > 1 ? (
@@ -1295,7 +1295,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                         return (
-                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
+                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-none ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-none' : ''}`}>
                                                                 {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                                 {formatValue(val, header)}
                                                             </td>
@@ -1359,7 +1359,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                     e.stopPropagation();
                                                     toggleLotExpansion(getExpansionKey(holding));
                                                 }}
-                                                className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors border border-border/40"
+                                                className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors border-none"
                                             >
                                                 {expandedLots.has(getExpansionKey(holding)) ? (
                                                     <ChevronDown className="w-4 h-4 text-cyan-500" />
@@ -1372,7 +1372,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3 border-t border-black/5 dark:border-white/10">
+                            <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3">
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Qty:</span>
                                     <span className="text-foreground font-medium">{formatValue(getValue(holding, "Quantity"), "Quantity")}</span>
@@ -1389,7 +1389,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     <span className="text-muted-foreground">Div Yield:</span>
                                     <span className="text-foreground font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
                                 </div>
-                                <div className="flex flex-col items-center justify-center col-span-2 bg-emerald-500/5 dark:bg-emerald-400/5 border border-emerald-500/20 p-3 rounded-lg shadow-inner">
+                                <div className="flex flex-col items-center justify-center col-span-2 bg-emerald-500/5 dark:bg-emerald-400/5 p-3 rounded-lg">
                                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total Return</span>
                                     <span className={`text-base font-bold ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
                                         {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
@@ -1399,7 +1399,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
                             {/* Mobile Lots View */}
                             {expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
-                                <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/10">
+                                <div className="mt-4 pt-3">
                                     <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Tax Lots</h4>
                                     <div className="space-y-2">
                                         {holding.lots.map((lot, lotIdx) => {
@@ -1407,7 +1407,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             const gain = getLotValue(lot, "Unreal. G/L", holdingPrice);
                                             const gainPct = getLotValue(lot, "Unreal. G/L %", holdingPrice);
                                             return (
-                                                <div key={`mobile-lot-${lotIdx}`} className="bg-secondary p-2 rounded text-xs border border-border">
+                                                <div key={`mobile-lot-${lotIdx}`} className="bg-secondary p-2 rounded text-xs">
                                                     <div className="flex justify-between items-center mb-1">
                                                         <span className="font-medium text-foreground">
                                                             {formatValue(getLotValue(lot, "Symbol"), "Symbol")}
@@ -1430,16 +1430,16 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     ))}
                 </div>
                 {!groupBy && visibleRows < sortedHoldings.length && (
-                    <div className="flex justify-center gap-4 p-4 border-t border-black/5 dark:border-white/10">
+                    <div className="flex justify-center gap-4 p-4">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm"
+                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
                         >
                             Show More
                         </button>
                         <button
                             onClick={handleShowAll}
-                            className="px-4 py-2 bg-card text-foreground border border-border rounded-md hover:bg-secondary transition-colors text-sm font-medium shadow-sm"
+                            className="px-4 py-2 bg-card text-foreground rounded-md hover:bg-secondary transition-colors text-sm font-medium"
                         >
                             Show All
                         </button>
@@ -1452,7 +1452,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             {
                 editingTags && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                        <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm p-4 space-y-4">
+                        <div className="bg-card rounded-lg shadow-none w-full max-w-sm p-4 space-y-4">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-lg font-semibold flex items-center gap-2">
                                     <Tag className="w-4 h-4" />
@@ -1471,7 +1471,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     value={tagsInput}
                                     onChange={(e) => setTagsInput(e.target.value)}
                                     placeholder="Enter tags separated by commas..."
-                                    className="w-full px-3 py-2 bg-secondary border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    className="w-full px-3 py-2 bg-secondary border-none rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                     autoFocus
                                 />
                                 <p className="text-xs text-muted-foreground">

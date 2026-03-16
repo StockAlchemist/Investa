@@ -248,15 +248,15 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     const getTransactionTypeStyle = (type: string) => {
         const t = type.toUpperCase();
         if (['BUY', 'DEPOSIT'].includes(t)) {
-            return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20';
+            return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
         }
         if (['SELL', 'WITHDRAWAL'].includes(t)) {
-            return 'bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20';
+            return 'bg-red-500/10 text-red-600 dark:text-red-500';
         }
         if (['DIVIDEND', 'INTEREST'].includes(t)) {
-            return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20';
+            return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400';
         }
-        return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700';
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
     };
 
     const formatTransactionType = (type: string) => {
@@ -267,8 +267,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         <div className="space-y-6">
             {/* Pending Transactions Staging Area */}
             {pendingTransactions.length > 0 && (
-                <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 shadow-sm">
-                    <div className="px-4 py-3 bg-cyan-500/10 border-cyan-500/20 flex justify-between items-center">
+                <div className="bg-cyan-500/5 rounded-xl overflow-hidden border-none shadow-none animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="px-4 py-3 bg-cyan-500/10 flex justify-between items-center border-none">
                         <div className="flex items-center gap-2">
                             <Clock className="h-4 w-4 text-cyan-500" />
                             <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-400 uppercase tracking-wider">
@@ -279,7 +279,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <button
                                 onClick={() => handlePendingAction('approve')}
                                 disabled={selectedPendingIds.size === 0 || isApproving}
-                                className="px-3 py-1 bg-cyan-600 text-white rounded text-xs font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                                className="px-3 py-1 bg-cyan-600 text-white rounded text-xs font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 border-none shadow-none"
                             >
                                 <CheckCircle className="h-3 w-3" />
                                 Approve Selected ({selectedPendingIds.size})
@@ -287,17 +287,17 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <button
                                 onClick={() => handlePendingAction('reject')}
                                 disabled={selectedPendingIds.size === 0 || isApproving}
-                                className="px-3 py-1 bg-red-600/10 text-red-600 border border-red-600/20 rounded text-xs font-bold hover:bg-red-600/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                                className="px-3 py-1 bg-red-600/10 text-red-600 border-none rounded text-xs font-bold hover:bg-red-600/20 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-none"
                             >
                                 <XCircle className="h-3 w-3" />
                                 Discard
                             </button>
                         </div>
                     </div>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
-                            <thead className="bg-cyan-500/5 text-xs font-semibold text-cyan-700 dark:text-cyan-400">
-                                <tr>
+                    <div className="overflow-x-auto border-none">
+                        <table className="min-w-full border-none">
+                            <thead className="bg-cyan-500/5 text-xs font-semibold text-cyan-700 dark:text-cyan-400 border-none">
+                                <tr className="border-none">
                                     <th className="px-4 py-2 text-left w-10">
                                         <input
                                             type="checkbox"
@@ -306,7 +306,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                                 if (selectedPendingIds.size === pendingTransactions.length) setSelectedPendingIds(new Set());
                                                 else setSelectedPendingIds(new Set(pendingTransactions.map(t => t.id!).filter(Boolean)));
                                             }}
-                                            className="rounded border-cyan-500/30 text-cyan-500 focus:ring-cyan-500"
+                                            className="rounded border-none text-cyan-500 focus:ring-cyan-500"
                                         />
                                     </th>
                                     <th className="px-4 py-2">Date</th>
@@ -319,7 +319,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                     <th className="px-4 py-2 text-right">Action</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-black/5 dark:divide-white/10 text-sm">
+                            <tbody className="text-sm">
                                 {pendingTransactions.map((tx) => (
                                     <tr key={tx.id} className="hover:bg-cyan-500/10 transition-colors">
                                         <td className="px-4 py-2">
@@ -332,7 +332,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                                     else next.add(tx.id!);
                                                     setSelectedPendingIds(next);
                                                 }}
-                                                className="rounded border-cyan-500/30 text-cyan-500 focus:ring-cyan-500"
+                                                className="rounded border-none text-cyan-500 focus:ring-cyan-500"
                                             />
                                         </td>
                                         <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{tx.Date}</td>
@@ -379,16 +379,16 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                     <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center">
                         <button
                             onClick={handleAdd}
-                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
+                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium flex items-center justify-center gap-2"
                         >
                             <Plus className="h-4 w-4" />
                             <span className="hidden md:inline">Add Transaction</span>
                         </button>
-                        <div className="flex items-center bg-purple-600 rounded-md shadow-sm overflow-hidden h-9">
+                        <div className="flex items-center bg-purple-600 rounded-md overflow-hidden h-9">
                             <button
                                 onClick={handleImportClick}
                                 disabled={isImporting}
-                                className="px-3 h-full flex items-center gap-2 text-white hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-50 border-r border-purple-500/30"
+                                className="px-3 h-full flex items-center gap-2 text-white hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-50"
                             >
                                 <FileText className="h-4 w-4 shrink-0" />
                                 <span className="hidden md:inline whitespace-nowrap">{isImporting ? 'Importing...' : 'Import IBKR PDF'}</span>
@@ -402,7 +402,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                     id="auto-add-cash-import"
                                     checked={autoAddCashOnImport}
                                     onChange={(e) => setAutoAddCashOnImport(e.target.checked)}
-                                    className="h-3.5 w-3.5 rounded border-white/30 bg-white/10 text-white focus:ring-offset-0 focus:ring-0 cursor-pointer"
+                                    className="h-3.5 w-3.5 rounded border-none bg-white/10 text-white focus:ring-offset-0 focus:ring-0 cursor-pointer"
                                 />
                                 <div className="flex flex-col leading-[0.7rem] text-[9px] font-bold text-white/90">
                                     <span className="uppercase tracking-tighter">Auto</span>
@@ -420,7 +420,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         {selectedIds.size > 0 && (
                             <button
                                 onClick={handleBulkDelete}
-                                className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
+                                className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                             >
                                 <Trash2 className="h-4 w-4" />
                                 <span className="hidden md:inline">Delete Selected ({selectedIds.size})</span>
@@ -428,7 +428,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         )}
                         <button
                             onClick={() => { setShowFilters(!showFilters); if (showFilters) resetFilters(); }}
-                            className="flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center"
+                            className="flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary rounded-lg hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center"
                         >
                             <div className="flex items-center gap-2">
                                 <Filter className="h-4 w-4" />
@@ -438,16 +438,16 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         </button>
                         <button
                             onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
-                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center flex items-center justify-center gap-2"
+                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-secondary text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center flex items-center justify-center gap-2"
                         >
                             <Download className="h-4 w-4" />
                             <span className="hidden md:inline">Export CSV</span>
                         </button>
                         <button
                             onClick={() => setShowInternalCash(!showInternalCash)}
-                            className={`flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center ${showInternalCash
-                                ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'
-                                : 'bg-secondary text-foreground border-border hover:bg-accent/10'
+                            className={`flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center ${showInternalCash
+                                ? 'bg-cyan-500/10 text-cyan-500'
+                                : 'bg-secondary text-foreground hover:bg-accent/10'
                                 }`}
                         >
                             <div className="flex items-center gap-2">
@@ -457,7 +457,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         </button>
                         <button
                             onClick={() => setMobileViewMode(current => current === 'card' ? 'table' : 'card')}
-                            className="md:hidden flex-1 md:flex-none flex items-center justify-center gap-1.5 px-2 md:px-4 py-2 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary border-border hover:bg-accent/10"
+                            className="md:hidden flex-1 md:flex-none flex items-center justify-center gap-1.5 px-2 md:px-4 py-2 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary hover:bg-accent/10"
                             title={mobileViewMode === 'card' ? 'Switch to Table View' : 'Switch to Card View'}
                         >
                             {mobileViewMode === 'card' ? <TableIcon className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
@@ -476,7 +476,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 placeholder="Filter Symbol..."
                                 value={symbolFilter}
                                 onChange={(e) => setSymbolFilter(e.target.value)}
-                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
+                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
                             />
                             {symbolFilter && (
                                 <button
@@ -493,7 +493,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 placeholder="Filter Account..."
                                 value={accountFilter}
                                 onChange={(e) => setAccountFilter(e.target.value)}
-                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
+                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
                             />
                             {accountFilter && (
                                 <button
@@ -508,7 +508,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <select
                                 value={filterType}
                                 onChange={(e) => setFilterType(e.target.value)}
-                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500 appearance-none pr-8"
+                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500 appearance-none pr-8"
                             >
                                 <option value="">All Types</option>
                                 {existingTypes.map(type => (
@@ -521,7 +521,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         </div>
                         <button
                             onClick={resetFilters}
-                            className="flex-1 md:flex-none px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
+                            className="flex-1 md:flex-none px-4 py-2 bg-secondary text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
                         >
                             Reset Filters
                         </button>
@@ -530,17 +530,17 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             </div>
 
             {/* Desktop Table View */}
-            <div className={`bg-card rounded-xl shadow-sm border border-border/50 overflow-hidden ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block transition-all hover:shadow-md`}>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-border/30">
-                        <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
+            <div className={`bg-card rounded-xl overflow-hidden border-none shadow-none ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block transition-all`}>
+                <div className="overflow-x-auto border-none">
+                    <table className="min-w-full border-none">
+                        <thead className="bg-secondary sticky top-0 z-10 font-semibold border-none">
                             <tr>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground w-10">
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.size === visibleTransactions.length && visibleTransactions.length > 0}
                                         onChange={handleSelectAll}
-                                        className="rounded border-gray-300 text-cyan-500 focus:ring-cyan-500"
+                                        className="rounded text-cyan-500"
                                     />
                                 </th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Date</th>
@@ -557,7 +557,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/5 dark:divide-white/10">
+                        <tbody>
                             {visibleTransactions.length === 0 ? (
                                 <tr>
                                     <td colSpan={13} className="px-6 py-12 text-center text-muted-foreground">
@@ -568,13 +568,13 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 </tr>
                             ) : (
                                 visibleTransactions.map((tx, index) => (
-                                    <tr key={index} className={`hover:bg-accent/5 transition-colors group ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-cyan-500/5' : ''}`}>
+                                    <tr key={index} className={`hover:bg-accent/5 transition-colors group border-none ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-cyan-500/5' : ''}`}>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">
                                             <input
                                                 type="checkbox"
                                                 checked={tx.id !== undefined && selectedIds.has(tx.id)}
                                                 onChange={() => tx.id !== undefined && handleToggleSelect(tx.id)}
-                                                className="rounded border-gray-300 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
+                                                className="rounded text-cyan-500"
                                             />
                                         </td>
                                         <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
@@ -629,7 +629,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             {/* Mobile Card View */}
             <div className={`md:hidden space-y-4 p-4 ${mobileViewMode === 'card' ? 'block' : 'hidden'}`}>
                 {visibleTransactions.map((tx, index) => (
-                    <div key={`mobile-tx-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4">
+                    <div key={`mobile-tx-${index}`} className="bg-card rounded-lg p-4 border-none shadow-none">
                         <div className="flex justify-between items-start mb-2">
                             <div>
                                 <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${getTransactionTypeStyle(tx.Type)}`}>
@@ -647,7 +647,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-y-2 text-sm mt-3 pt-3 border-t border-black/5 dark:border-white/10">
+                        <div className="grid grid-cols-2 gap-y-2 text-sm mt-3 pt-3">
                             <div className="text-muted-foreground">Quantity</div>
                             <div className="text-right font-medium text-foreground">
                                 {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? '' : tx.Quantity}
@@ -672,12 +672,12 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         </div>
                         {
                             tx.Note && (
-                                <div className="mt-2 pt-2 border-t border-black/5 dark:border-white/10 text-xs text-muted-foreground italic">
+                                <div className="mt-2 pt-2 text-xs text-muted-foreground italic">
                                     {tx.Note}
                                 </div>
                             )
                         }
-                        < div className="mt-3 pt-2 border-t border-black/5 dark:border-white/10 flex justify-end gap-3" >
+                        <div className="mt-3 pt-2 flex justify-end gap-3">
                             <button
                                 onClick={() => handleEdit(tx)}
                                 className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors"
@@ -694,28 +694,25 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             </button>
                         </div>
                     </div>
-                ))
-                }
-            </div >
+                ))}
+            </div>
 
-            {
-                visibleRows < filteredTransactions.length && (
-                    <div className="flex justify-center gap-4 p-4 border-t border-black/5 dark:border-white/10">
-                        <button
-                            onClick={handleShowMore}
-                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm"
-                        >
-                            Show More
-                        </button>
-                        <button
-                            onClick={handleShowAll}
-                            className="px-4 py-2 bg-card text-foreground border border-border rounded-md hover:bg-secondary transition-colors text-sm font-medium shadow-sm"
-                        >
-                            Show All
-                        </button>
-                    </div>
-                )
-            }
-        </div >
+            {visibleRows < filteredTransactions.length && (
+                <div className="flex justify-center gap-4 p-4">
+                    <button
+                        onClick={handleShowMore}
+                        className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
+                    >
+                        Show More
+                    </button>
+                    <button
+                        onClick={handleShowAll}
+                        className="px-4 py-2 bg-card text-foreground rounded-md hover:bg-secondary transition-colors text-sm font-medium"
+                    >
+                        Show All
+                    </button>
+                </div>
+            )}
+        </div>
     );
 }

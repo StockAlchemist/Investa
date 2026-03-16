@@ -66,10 +66,10 @@ export function MetricCard({
     return (
         <Card
             className={cn(
-                "h-full transition-all duration-300 relative overflow-hidden group rounded-2xl border-none",
-                variant === 'card' && "bg-card hover:shadow-sm",
-                variant === 'seamless' && "bg-transparent shadow-none hover:bg-muted/30",
-                onClick ? "cursor-pointer active:scale-[0.98]" : "",
+                "h-full relative overflow-hidden group rounded-2xl",
+                variant === 'card' && "bg-card",
+                variant === 'seamless' && "bg-transparent",
+                onClick ? "cursor-pointer" : "",
                 containerClassName
             )}
             onClick={onClick}
@@ -88,7 +88,6 @@ export function MetricCard({
                     {Icon && (
                         <div className={cn(
                             "p-2 rounded-xl transition-all duration-300",
-                            "group-hover:scale-105",
                             activeClasses.accent,
                             activeClasses.textHover
                         )}>

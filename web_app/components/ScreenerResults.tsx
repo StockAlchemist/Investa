@@ -193,13 +193,13 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     if (!results || results.length === 0) return null;
 
     return (
-        <Card className="bg-card/50 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-50/50 dark:supports-[backdrop-filter]:bg-zinc-900/50 border-border/50 shadow-xl overflow-hidden transition-all hover:shadow-md">
+        <Card className="bg-card/50 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-50/50 dark:supports-[backdrop-filter]:bg-zinc-900/50 overflow-hidden transition-all">
             <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
                         <Target className="w-5 h-5 text-purple-500" />
                         <CardTitle className="text-xl font-bold text-foreground">Scan Results</CardTitle>
-                        <Badge variant="secondary" className="ml-2 bg-secondary/50 text-muted-foreground border-none">
+                        <Badge variant="secondary" className="ml-2 bg-secondary/50 text-muted-foreground">
                             {filteredResults.length} of {localResults.length}
                         </Badge>
                     </div>
@@ -210,7 +210,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 placeholder="Search symbol or name..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 h-9 w-full sm:w-[240px] bg-secondary/50 border-border focus:ring-cyan-500/20 text-foreground"
+                                className="pl-9 h-9 w-full sm:w-[240px] bg-secondary/50 border-none focus:ring-cyan-500/20 text-foreground"
                             />
                             {searchQuery && (
                                 <button
@@ -226,8 +226,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                             size="sm"
                             onClick={() => setShowFilters(!showFilters)}
                             className={cn(
-                                "h-9 gap-2 border-border shrink-0",
-                                showFilters && "bg-secondary border-cyan-500/50 text-cyan-500"
+                                showFilters && "bg-secondary text-cyan-500"
                             )}
                         >
                             <SlidersHorizontal className="w-4 h-4" />
@@ -237,7 +236,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                 </div>
 
                 {showFilters && (
-                    <div className="mt-4 p-4 rounded-xl bg-secondary/20 border-border/50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="mt-4 p-4 rounded-xl bg-secondary/10 animate-in fade-in slide-in-from-top-2 duration-200">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {/* MOS Filter */}
                             <div className="space-y-2">
@@ -247,7 +246,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     placeholder="e.g. 15"
                                     value={minMOS}
                                     onChange={(e) => setMinMOS(e.target.value === "" ? "" : Number(e.target.value))}
-                                    className="h-9 bg-background/50 border-border text-foreground"
+                                    className="h-9 bg-background/50 border-none text-foreground"
                                 />
                             </div>
 
@@ -259,7 +258,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     placeholder="e.g. 25"
                                     value={maxPE}
                                     onChange={(e) => setMaxPE(e.target.value === "" ? "" : Number(e.target.value))}
-                                    className="h-9 bg-background/50 border-border text-foreground"
+                                    className="h-9 bg-background/50 border-none text-foreground"
                                 />
                             </div>
 
@@ -269,7 +268,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 <select
                                     value={marketCapCategory}
                                     onChange={(e) => setMarketCapCategory(e.target.value)}
-                                    className="w-full h-9 px-3 bg-background/50 border border-border rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-foreground"
+                                    className="w-full h-9 px-3 bg-background/50 rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-foreground"
                                 >
                                     <option value="all">All Sizes</option>
                                     <option value="micro">Micro Cap (&lt; $300M)</option>
@@ -285,10 +284,10 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 <button
                                     onClick={() => setOnlyAI(!onlyAI)}
                                     className={cn(
-                                        "flex-1 h-9 px-3 rounded-md border text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2",
+                                        "flex-1 h-9 px-3 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2",
                                         onlyAI
-                                            ? "bg-purple-500/10 border-purple-500/30 text-purple-500"
-                                            : "bg-background/50 border-border text-muted-foreground hover:bg-muted"
+                                            ? "bg-purple-500/10 text-purple-500"
+                                            : "bg-background/50 text-muted-foreground hover:bg-muted"
                                     )}
                                 >
                                     <BrainCircuit className="w-3.5 h-3.5" />
@@ -315,9 +314,9 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
             </CardHeader>
             <CardContent className="p-0">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full text-left">
                         <thead>
-                            <tr className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10 border-y border-border/50">
+                            <tr className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10">
                                 <th
                                     className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('symbol')}
@@ -369,10 +368,10 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 <th className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">AI Audit</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border/50">
+                        <tbody className="">
                             {sortedResults.map((row) => (
                                 <React.Fragment key={row.symbol}>
-                                    <tr className="hover:bg-secondary/20 transition-all group border-b border-border/10">
+                                    <tr className="hover:bg-secondary/20 transition-all group">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <WatchlistStar symbol={row.symbol} />
@@ -434,10 +433,10 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                 onClick={() => handleReviewClick(row.symbol)}
                                                 disabled={reviewingSymbol === row.symbol}
                                                 className={cn(
-                                                    "text-[11px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-all border inline-flex items-center gap-1.5",
+                                                    "text-[11px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-all inline-flex items-center gap-1.5",
                                                     row.has_ai_review
-                                                        ? 'bg-purple-500/10 border-purple-500/20 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400'
-                                                        : 'bg-muted border-border text-muted-foreground hover:bg-muted/80'
+                                                        ? 'bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400'
+                                                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
                                                 )}
                                             >
                                                 {reviewingSymbol === row.symbol ? (
@@ -462,8 +461,8 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     {expandedReview === row.symbol && reviews[row.symbol] && (
                                         <tr className="bg-secondary/5">
                                             <td colSpan={6} className="p-0">
-                                                <div className="p-6 border-t border-border animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <div className="bg-background/80 backdrop-blur-md border border-border/50 rounded-2xl p-6 shadow-xl space-y-6">
+                                                <div className="p-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    <div className="bg-background/80 backdrop-blur-md rounded-2xl p-6 space-y-6">
                                                         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
                                                             <div className="flex items-center gap-3">
                                                                 <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
@@ -487,7 +486,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                             </div>
                                                             <div className="flex flex-wrap gap-3">
                                                                 {Object.entries(reviews[row.symbol].scorecard || {}).map(([k, v]: [string, any]) => (
-                                                                    <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 border border-border flex items-center gap-2">
+                                                                    <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 flex items-center gap-2">
                                                                         <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
                                                                         <span className={cn(
                                                                             "text-xs font-bold",
@@ -498,7 +497,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                             </div>
                                                         </div>
 
-                                                        <div className="p-4 rounded-xl bg-muted/30 border-l-4 border-purple-500/50">
+                                                        <div className="p-4 rounded-xl bg-muted/30">
                                                             <p className="text-sm text-foreground/90 leading-relaxed font-semibold italic">
                                                                 "{reviews[row.symbol].summary}"
                                                             </p>

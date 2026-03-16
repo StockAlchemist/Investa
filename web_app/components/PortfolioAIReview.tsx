@@ -59,7 +59,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
     if (isError) {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 rounded-xl border border-dashed border-border bg-card/50">
+            <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 rounded-xl bg-card/50">
                 <AlertTriangle className="w-10 h-10 text-rose-500 mb-2" />
                 <h3 className="text-lg font-semibold">Unable to generate analysis</h3>
                 <p className="text-muted-foreground max-w-md">
@@ -76,7 +76,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
     let warningBanner = null;
     if (data?.warning === "RateLimit") {
         warningBanner = (
-            <div className="mb-6 p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 flex items-start gap-3 fade-in animate-in duration-500">
+            <div className="mb-6 p-4 rounded-xl bg-yellow-500/10 flex items-start gap-3 fade-in animate-in duration-500">
                 <AlertTriangle className="w-5 h-5 text-yellow-500 mt-0.5 shrink-0" />
                 <div className="flex-1">
                     <h3 className="font-semibold text-yellow-500 text-sm">AI Service Busy</h3>
@@ -98,7 +98,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
         );
     } else if (data?.error === "RateLimit") {
         return (
-            <div className="flex flex-col items-center justify-center p-8 text-center space-y-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 fade-in animate-in duration-500">
+            <div className="flex flex-col items-center justify-center p-8 text-center space-y-4 rounded-xl bg-yellow-500/10 fade-in animate-in duration-500">
                 <AlertTriangle className="w-10 h-10 text-yellow-500 mb-2" />
                 <h3 className="text-lg font-semibold text-yellow-500">AI Service Busy</h3>
                 <p className="text-muted-foreground max-w-md text-sm">
@@ -107,7 +107,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                 <Button
                     onClick={handleRefresh}
                     variant="outline"
-                    className="mt-4 gap-2 border-yellow-500/50 hover:bg-yellow-500/10"
+                    className="mt-4 gap-2 border-none hover:bg-yellow-500/10 shadow-none"
                     disabled={refreshMutation.isPending}
                 >
                     <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
@@ -119,7 +119,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
     if (!data || (data.error && !data.warning)) {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 rounded-xl border border-dashed border-border bg-card/50">
+            <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 rounded-xl bg-card/50">
                 <AlertTriangle className="w-10 h-10 text-rose-500 mb-2" />
                 <h3 className="text-lg font-semibold">Unable to generate analysis</h3>
                 <p className="text-muted-foreground max-w-md">
@@ -152,10 +152,10 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
     };
 
     const getModalClasses = (score: number) => {
-        if (!score) return "border-gray-200 bg-gray-50/95 dark:border-gray-800 dark:bg-gray-950/90";
-        if (score >= 8) return "border-emerald-200 bg-emerald-50/95 dark:border-emerald-900/50 dark:bg-emerald-950/90";
-        if (score >= 5) return "border-yellow-200 bg-yellow-50/95 dark:border-yellow-900/50 dark:bg-yellow-950/90";
-        return "border-rose-200 bg-rose-50/95 dark:border-rose-900/50 dark:bg-rose-950/90";
+        if (!score) return "bg-gray-50/95 dark:bg-gray-950/90";
+        if (score >= 8) return "bg-emerald-50/95 dark:bg-emerald-950/90";
+        if (score >= 5) return "bg-yellow-50/95 dark:bg-yellow-950/90";
+        return "bg-rose-50/95 dark:bg-rose-950/90";
     };
 
     return (
@@ -234,51 +234,49 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             </div>
 
             {/* Executive Summary */}
-            <Card className="h-full bg-card border-none transition-all duration-300 group relative overflow-hidden">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
-                        Executive Summary
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="prose dark:prose-invert max-w-none prose-sm">
+            <div className="h-full bg-card p-6 rounded-2xl transition-all duration-300 group relative overflow-hidden">
+                <h3 className="flex items-center gap-2 text-purple-600 dark:text-purple-400 font-semibold mb-4">
+                    Executive Summary
+                </h3>
+                <div className="prose dark:prose-invert max-w-none prose-sm">
                     <p className="whitespace-pre-wrap">{summary}</p>
-                </CardContent>
-            </Card>
+                </div>
+            </div>
 
             {/* Detailed Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {analysis?.diversification && (
-                    <Card>
-                        <CardHeader><CardTitle className="text-base">Diversification Analysis</CardTitle></CardHeader>
-                        <CardContent className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
+                    <div className="bg-card p-6 rounded-2xl">
+                        <h3 className="text-base font-semibold mb-4 text-foreground">Diversification Analysis</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
                             <p className="whitespace-pre-wrap">{analysis.diversification}</p>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 )}
                 {analysis?.risk_profile && (
-                    <Card>
-                        <CardHeader><CardTitle className="text-base">Risk Assessment</CardTitle></CardHeader>
-                        <CardContent className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
+                    <div className="bg-card p-6 rounded-2xl">
+                        <h3 className="text-base font-semibold mb-4 text-foreground">Risk Assessment</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
                             <p className="whitespace-pre-wrap">{analysis.risk_profile}</p>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 )}
                 {analysis?.performance && (
-                    <Card>
-                        <CardHeader><CardTitle className="text-base">Performance Review</CardTitle></CardHeader>
-                        <CardContent className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
+                    <div className="bg-card p-6 rounded-2xl">
+                        <h3 className="text-base font-semibold mb-4 text-foreground">Performance Review</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
                             <p className="whitespace-pre-wrap">{analysis.performance}</p>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 )}
 
                 {/* Actionable Recommendations */}
-                <Card className="border-cyan-500/20 bg-cyan-500/5 lg:col-span-2">
-                    <CardHeader><CardTitle className="text-cyan-600 dark:text-cyan-400 flex items-center gap-2">
+                <div className="bg-cyan-500/5 lg:col-span-2 p-6 rounded-2xl">
+                    <h3 className="text-cyan-600 dark:text-cyan-400 flex items-center gap-2 font-semibold mb-4">
                         <Lightbulb className="w-5 h-5" />
                         Actionable Recommendations
-                    </CardTitle></CardHeader>
-                    <CardContent className="prose dark:prose-invert max-w-none text-sm">
+                    </h3>
+                    <div className="prose dark:prose-invert max-w-none text-sm">
                         {analysis?.actionable_recommendations ? (
                             <p className="whitespace-pre-wrap">{analysis.actionable_recommendations}</p>
                         ) : (
@@ -288,26 +286,26 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                                 ))}
                             </ul>
                         )}
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
             </div>
 
             {/* Simple Modal Overlay */}
             {selectedMetric && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-in fade-in duration-200" onClick={() => setSelectedMetric(null)}>
-                    <Card
-                        className={`w-full max-w-lg m-4 shadow-2xl border ${getModalClasses(selectedMetric.score)} ring-1 ring-border animate-in zoom-in-95 duration-200`}
+                    <div
+                        className={`w-full max-w-lg m-4 p-8 rounded-[2rem] ${getModalClasses(selectedMetric.score)} animate-in zoom-in-95 duration-200`}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <CardHeader className="pb-2">
+                        <div className="pb-2">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="text-sm font-medium text-muted-foreground uppercase tracking-widest mb-1">Score Explanation</p>
                                     <div className="flex items-center gap-3">
-                                        <CardTitle className={`text-xl ${getScoreColor(selectedMetric.score).replace('text-', 'text-')}`}>
+                                        <h3 className={`text-xl font-bold ${getScoreColor(selectedMetric.score).replace('text-', 'text-')}`}>
                                             {selectedMetric.title}
-                                        </CardTitle>
-                                        <div className={`text-lg font-bold px-2 py-0.5 rounded-md bg-muted border border-border/50 ${getScoreColor(selectedMetric.score)}`}>
+                                        </h3>
+                                        <div className={`text-lg font-bold px-2 py-0.5 rounded-md bg-muted ${getScoreColor(selectedMetric.score)}`}>
                                             {selectedMetric.score}/10
                                         </div>
                                     </div>
@@ -317,16 +315,16 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x w-4 h-4"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                                 </Button>
                             </div>
-                        </CardHeader>
-                        <CardContent className="pt-4">
+                        </div>
+                        <div className="pt-4">
                             <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed text-muted-foreground">
                                 <p className="whitespace-pre-wrap">{selectedMetric.content}</p>
                             </div>
-                            <div className="mt-6 pt-4 border-t border-border/50 flex justify-end">
+                            <div className="mt-6 pt-4 flex justify-end">
                                 <Button variant="secondary" size="sm" onClick={() => setSelectedMetric(null)}>Close</Button>
                             </div>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 </div>
             )}
 

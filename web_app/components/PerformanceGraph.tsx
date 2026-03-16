@@ -339,11 +339,11 @@ export default function PerformanceGraph({
         return (
             <div
                 ref={containerRef}
-                className="glass-card premium-shadow rounded-2xl p-6 h-[400px] flex items-center justify-center text-muted-foreground w-full transition-all hover:shadow-2xl hover:shadow-cyan-500/5"
+                className="bg-card rounded-2xl p-6 h-[400px] flex items-center justify-center text-muted-foreground w-full transition-all"
             >
                 {!mounted || loading ? (
                     <div className="flex flex-col items-center gap-2">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
                         <span>Loading chart...</span>
                     </div>
                 ) : 'No historical data available.'}
@@ -438,8 +438,8 @@ export default function PerformanceGraph({
             );
 
             return (
-                <div className="bg-white dark:bg-[#020817] border border-border p-3 shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100">
-                    <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
+                <div className="bg-white dark:bg-[#020817] p-3 rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100">
+                    <p className="text-sm font-bold text-foreground mb-2 pb-1">
                         {dateStr}
                     </p>
 
@@ -485,7 +485,7 @@ export default function PerformanceGraph({
 
                     {/* FX Rate & Benchmarks Section (Full Width) */}
                     {(dataPoint.fx_rate != null || benchKeys.length > 0) && (
-                        <div className="mt-1 pt-1 border-t border-border space-y-1">
+                        <div className="mt-1 pt-1 space-y-1">
                             {dataPoint.fx_rate != null && (
                                 <div className="grid grid-cols-2 gap-x-6">
                                     <div className="flex items-center justify-between gap-2">
@@ -535,7 +535,7 @@ export default function PerformanceGraph({
     const isContinuous = period === '1d';
 
     return (
-        <Card ref={containerRef} className="rounded-2xl p-6 mb-6 overflow-visible relative transition-all hover:border-border duration-300 group/section">
+        <div ref={containerRef} className="bg-card rounded-2xl p-6 mb-6 overflow-visible relative transition-all duration-300 group/section">
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground flex items-center gap-2">
@@ -544,7 +544,7 @@ export default function PerformanceGraph({
                             <Loader2 className="w-4 h-4 animate-spin text-cyan-500 opacity-70" />
                         )}
                     </h3>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-baseline gap-4">
                         {periodStats ? (
                             <div className="flex items-baseline gap-4">
                                 {periodStats.map((stat, index) => (
@@ -597,11 +597,11 @@ export default function PerformanceGraph({
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}
-                        <div className="flex bg-secondary rounded-lg p-1 shrink-0 shadow-sm">
+                        <div className="flex bg-secondary rounded-lg p-1 shrink-0">
                             <button
                                 onClick={() => onViewChange('return')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
-                                    ? 'bg-[#0097b2] text-white shadow-sm'
+                                    ? 'bg-[#0097b2] text-white'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
@@ -611,7 +611,7 @@ export default function PerformanceGraph({
                                 <button
                                     onClick={() => onViewChange('value')}
                                     className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'value'
-                                        ? 'bg-[#0097b2] text-white shadow-sm'
+                                        ? 'bg-[#0097b2] text-white'
                                         : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                         }`}
                                 >
@@ -621,7 +621,7 @@ export default function PerformanceGraph({
                             <button
                                 onClick={() => onViewChange('drawdown')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'drawdown'
-                                    ? 'bg-[#0097b2] text-white shadow-sm'
+                                    ? 'bg-[#0097b2] text-white'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
@@ -857,6 +857,6 @@ export default function PerformanceGraph({
 
                 </ResponsiveContainer>
             </div>
-        </Card>
+        </div>
     );
 }

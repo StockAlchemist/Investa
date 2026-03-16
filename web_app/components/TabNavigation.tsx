@@ -73,7 +73,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    side === 'bottom' ? "bg-transparent border-none shadow-none" : "hover:bg-accent/10",
+                    side === 'bottom' ? "bg-transparent" : "hover:bg-accent/10",
                     "text-xs font-semibold tracking-tight w-[60px]",
                     isOpen ? "ring-2 ring-cyan-500/20" : "text-foreground/80 hover:text-foreground",
                     side === 'bottom' && "flex-row py-2 px-4 justify-center w-auto min-w-0 h-[44px]"
@@ -83,7 +83,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300",
                     isOpen
-                        ? `${TAB_THEMES[activeTab]?.bgSolid || 'bg-cyan-500'} text-white shadow-lg ${TAB_THEMES[activeTab]?.shadowSolid || 'shadow-cyan-500/30'}`
+                        ? `${TAB_THEMES[activeTab]?.bgSolid || 'bg-cyan-500'} text-white`
                         : `${TAB_THEMES[activeTab]?.textSolid || 'text-cyan-500'} group-hover:scale-110`,
                     side === 'bottom' && "p-1.5",
                     side === 'bottom' && !isOpen && "bg-secondary"
@@ -98,10 +98,10 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                     side === 'right'
                         ? "left-full top-0 ml-4 slide-in-from-left-2"
                         : `${align === 'left' ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} top-full mt-2 slide-in-from-top-2`,
-                    "w-56 rounded-2xl border border-border shadow-2xl shadow-black/40"
+                    "w-56 rounded-2xl"
                 )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
-                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 border-b border-border mb-1">
+                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
                             Navigation
                         </div>
                         {TABS.map(tab => (
@@ -114,7 +114,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                                 className={cn(
                                     "flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left",
                                     activeTab === tab.id
-                                        ? `${TAB_THEMES[tab.id]?.bgSolid || 'bg-cyan-500'} text-white shadow-sm`
+                                        ? `${TAB_THEMES[tab.id]?.bgSolid || 'bg-cyan-500'} text-white`
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >
@@ -132,7 +132,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                         ))}
                         {onLogout && (
                             <>
-                                <div className="border-t border-border my-1" />
+                                <div className="my-1" />
                                 <button
                                     onClick={() => {
                                         if (confirm('Are you sure you want to log out?')) {

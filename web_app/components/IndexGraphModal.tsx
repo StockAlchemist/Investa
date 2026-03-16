@@ -37,8 +37,8 @@ const COLORS = [
 const CustomTooltip = ({ active, payload, label, period }: any) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-white/95 dark:bg-slate-950/95 border border-border p-4 rounded-2xl shadow-2xl backdrop-blur-md min-w-[180px]">
-                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 border-b border-border/50 pb-2">
+            <div className="bg-white/95 dark:bg-slate-950/95 p-4 rounded-2xl backdrop-blur-md min-w-[180px]">
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 pb-2">
                     {new Date(label).toLocaleString([], {
                         timeZone: 'America/New_York',
                         month: 'short',
@@ -136,14 +136,14 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
             {/* Modal */}
             <div
                 style={{ backgroundColor: 'var(--menu-solid)' }}
-                className="relative w-full max-w-5xl h-[90vh] sm:h-auto sm:max-h-[85vh] rounded-[2.5rem] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-300 border border-border/50"
+                className="relative w-full max-w-5xl h-[90vh] sm:h-auto sm:max-h-[85vh] rounded-[2.5rem] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-300"
             >
                 {/* Header Section */}
-                <div className="sticky top-0 z-50 bg-card border-b border-border flex-shrink-0 shadow-sm">
+                <div className="sticky top-0 z-50 bg-card flex-shrink-0">
                     <div className="p-8 pb-6 flex justify-between items-start">
                         <div className="flex items-center gap-6 text-foreground">
                             {/* Icon Stack/Placeholder */}
-                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0097b2] to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 flex-shrink-0 p-3 overflow-hidden">
+                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0097b2] to-blue-600 flex items-center justify-center flex-shrink-0 p-3 overflow-hidden">
                                 <TrendingUp className="w-full h-full text-white" />
                             </div>
 
@@ -176,7 +176,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                     if (displayPct === undefined) return null;
                                     return (
                                         <React.Fragment key={bench}>
-                                            {idx > 0 && <div className="w-px h-10 bg-border/60 mx-6" />}
+                                            {idx > 0 && <div className="mx-6" />}
                                             <div className="flex flex-col items-end">
                                                 <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80 mb-0.5">{bench}</span>
                                                 <span className="text-xl font-bold tracking-tighter tabular-nums text-foreground">
@@ -209,7 +209,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                         <div className="hidden sm:flex items-center gap-4">
                             {activeBenchmarks.map((bench, idx) => (
                                 <div key={bench} className="flex items-center gap-2">
-                                    <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{bench}</span>
                                 </div>
                             ))}
@@ -222,8 +222,8 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                     <div className="h-[450px] w-full relative">
                         {loading && (
                             <div className="absolute inset-0 flex items-center justify-center z-10">
-                                <div className="flex flex-col items-center gap-4 bg-background/50 backdrop-blur-sm p-8 rounded-[2rem] border border-border/50">
-                                    <div className="w-12 h-12 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin shadow-lg shadow-cyan-500/20" />
+                                <div className="flex flex-col items-center gap-4 bg-background/50 backdrop-blur-sm p-8 rounded-[2rem]">
+                                    <div className="w-12 h-12 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin" />
                                     <span className="text-xs font-black tracking-[0.2em] text-cyan-500 uppercase animate-pulse">Syncing Markets</span>
                                 </div>
                             </div>
@@ -288,7 +288,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                 </div>
 
                 {/* Standard Footer */}
-                <div className="bg-card/50 px-8 py-4 border-t border-border flex justify-between items-center bg-secondary/10">
+                <div className="bg-card/50 px-8 py-4 flex justify-between items-center bg-secondary/10">
                     <div className="flex items-center gap-4">
                         <span className="text-[10px] text-muted-foreground uppercase tracking-[0.15em] font-black opacity-40">
                             Market Insight • {period.toUpperCase()} View

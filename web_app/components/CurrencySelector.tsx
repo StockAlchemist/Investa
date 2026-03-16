@@ -37,7 +37,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    side === 'bottom' ? "bg-transparent border-none shadow-none" : "hover:bg-accent/10",
+                    side === 'bottom' ? "bg-transparent" : "hover:bg-accent/10",
                     "font-semibold tracking-tight w-[60px]",
                     isOpen ? "ring-2 ring-cyan-500/20" : "text-cyan-500",
                     side === 'bottom' && "flex-row py-2 px-2 h-[44px] justify-center w-auto min-w-0"
@@ -46,7 +46,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
             >
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300 hidden sm:block",
-                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "text-cyan-500 group-hover:scale-110",
+                    isOpen ? "bg-cyan-500 text-white" : "text-cyan-500 group-hover:scale-110",
                     side === 'bottom' && "p-1 bg-secondary"
                 )}>
                     <Globe className={cn(side === 'bottom' ? "w-3.5 h-3.5" : "w-5 h-5")} />
@@ -72,10 +72,10 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     side === 'right'
                         ? "left-full top-0 ml-4 slide-in-from-left-2"
                         : cn("top-full mt-2 slide-in-from-top-2", align === 'left' ? "left-0" : "right-0"),
-                    "w-48 rounded-2xl border border-border shadow-2xl shadow-black/40"
+                    "w-48 rounded-2xl"
                 )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
-                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 border-b border-border mb-1">
+                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
                             Currencies
                         </div>
                         {currencies.map(currency => (
@@ -88,7 +88,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                                 className={cn(
                                     "flex items-center w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left",
                                     currentCurrency === currency
-                                        ? "bg-[#0097b2] text-white shadow-sm"
+                                        ? "bg-[#0097b2] text-white"
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >

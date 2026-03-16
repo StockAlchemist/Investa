@@ -48,14 +48,14 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
     };
 
     return (
-        <Card className="bg-card shadow-sm">
-            <CardHeader className="pb-4">
+        <div className="bg-card rounded-2xl p-6">
+            <div className="pb-4">
                 <div className="flex items-center gap-2">
                     <Filter className="w-5 h-5 text-[#0097b2]" />
-                    <CardTitle className="text-xl font-bold text-foreground">Initial Parameters</CardTitle>
+                    <h3 className="text-xl font-bold text-foreground">Initial Parameters</h3>
                 </div>
-            </CardHeader>
-            <CardContent>
+            </div>
+            <div>
                 <form onSubmit={handleRun} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
 
@@ -66,7 +66,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                 <select
                                     value={universeType}
                                     onChange={(e) => setUniverseType(e.target.value)}
-                                    className="w-full h-10 px-3 bg-secondary border border-border rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
+                                    className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
                                 >
                                     <option value="watchlist" className="bg-card text-foreground">Watchlist</option>
                                     <option value="holdings" className="bg-card text-foreground">Holdings</option>
@@ -87,7 +87,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     <select
                                         value={selectedWatchlistId}
                                         onChange={(e) => setSelectedWatchlistId(e.target.value)}
-                                        className="w-full h-10 px-3 bg-secondary border border-border rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
+                                        className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
                                     >
                                         {isFetchingLists ? (
                                             <option value="" disabled>Loading watchlists...</option>
@@ -114,7 +114,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     value={manualSymbols}
                                     onChange={(e) => setManualSymbols(e.target.value)}
                                     placeholder="e.g. AAPL, MSFT, NVIDIA"
-                                    className="bg-secondary border-border text-foreground font-medium h-10 placeholder:text-muted-foreground/50"
+                                    className="bg-secondary text-foreground font-medium h-10 placeholder:text-muted-foreground/50 border-none"
                                 />
                             </div>
                         )}
@@ -124,7 +124,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                             <Button
                                 type="submit"
                                 disabled={isLoading || (universeType === 'watchlist' && !selectedWatchlistId && !isFetchingLists)}
-                                className="w-full h-10 bg-[#0097b2] hover:bg-[#00869e] text-white font-bold tracking-tight rounded-md shadow-sm transition-all flex items-center justify-center gap-2"
+                                className="w-full h-10 bg-[#0097b2] hover:bg-[#00869e] text-white font-bold tracking-tight rounded-md transition-all flex items-center justify-center gap-2"
                             >
                                 {isLoading ? (
                                     <>
@@ -142,15 +142,15 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                     </div>
 
                     {/* Information Note */}
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-secondary/30 border-border/50">
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-secondary/30">
                         <Info className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
                         <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
                             Screening large universes may take 1-5 minutes on the first run to build the local metadata cache (S&P 400 ~4m, Russell 2000 ~20m). Subsequent runs are instant.
                         </p>
                     </div>
                 </form>
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     );
 };
 

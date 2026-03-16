@@ -353,7 +353,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     )}
                 </div>
 
-                <div className="bg-muted rounded-2xl p-6 border border-border shadow-md">
+                <div className="bg-muted px-6 py-4">
                     <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                         <Building2 className="w-5 h-5 text-cyan-500" />
                         Business Summary
@@ -423,10 +423,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             key={btn.id}
                             onClick={() => setFinType(btn.id as any)}
                             className={cn(
-                                "flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all border whitespace-nowrap flex-shrink-0",
+                                "flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap flex-shrink-0",
                                 finType === btn.id
-                                    ? "bg-cyan-500 text-white border-cyan-500 shadow-lg shadow-cyan-500/20"
-                                    : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                                    ? "bg-cyan-500 text-white"
+                                    : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                             )}
                             title={btn.fullLabel}
                         >
@@ -436,9 +436,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     ))}
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-border bg-muted">
+                <div className="overflow-x-auto bg-muted">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-secondary/50 font-semibold border-b border-border">
+                        <thead className="bg-secondary/50 font-semibold">
                             <tr>
                                 <th className="px-6 py-3 font-semibold text-foreground sticky left-0 bg-card"></th>
                                 <th className="px-6 py-3 font-semibold text-center text-muted-foreground">Trend</th>
@@ -447,10 +447,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border/50">
+                        <tbody className="">
                             {currentStatement.index.map((item, idx) => (
                                 <tr key={item} className="hover:bg-accent/5 transition-colors">
-                                    <td className="px-6 py-3 font-medium text-foreground sticky left-0 bg-card min-w-[200px] border-r border-border/50 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">{item}</td>
+                                    <td className="px-6 py-3 font-medium text-foreground sticky left-0 bg-card min-w-[200px]">{item}</td>
                                     <td className="px-6 py-3 text-center min-w-[100px]">
                                         <Sparkline data={currentStatement.data[idx] as number[]} />
                                     </td>
@@ -571,11 +571,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 {/* Scorecard Header */}
                 <div className={cn(
-                    "p-6 rounded-[2rem] border overflow-hidden relative",
-                    isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+                    "p-6 rounded-[2rem] overflow-hidden relative",
+                    isDarkMode ? "bg-slate-900/50" : "bg-white"
                 )}>
                     <div className="flex items-center gap-4 relative z-10">
-                        <div className="w-12 h-12 rounded-2xl bg-purple-500 flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
+                        <div className="w-12 h-12 rounded-2xl bg-purple-500 flex items-center justify-center shrink-0">
                             <Sparkles className="w-6 h-6 text-white" />
                         </div>
                         <div className="flex flex-col">
@@ -606,8 +606,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {topics.map(t => (
                         <div key={t.id} className={cn(
-                            "p-4 rounded-3xl border flex flex-col items-center justify-center gap-2",
-                            isDarkMode ? "bg-slate-900/30 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+                            "p-4 rounded-3xl flex flex-col items-center justify-center gap-2",
+                            isDarkMode ? "bg-slate-900/10" : "bg-zinc-50/50"
                         )}>
                             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{t.id}</span>
                             <div className={cn("text-3xl font-black", t.color)}>{t.score}<span className="text-sm opacity-50 font-normal">/10</span></div>
@@ -619,8 +619,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {topics.map(t => (
                         <div key={t.id} className={cn(
-                            "p-6 rounded-[2rem] border transition-all hover:shadow-xl group",
-                            isDarkMode ? "bg-slate-900/30 border-slate-800 hover:bg-slate-900/50" : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+                            "p-6 rounded-[2rem] transition-all group",
+                            isDarkMode ? "bg-slate-900/30 hover:bg-slate-900/50" : "bg-white"
                         )}>
                             <div className="flex items-center gap-3 mb-4">
                                 <div className={cn("p-2.5 rounded-xl", t.bg)}>
@@ -660,12 +660,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* Top Holdings Table */}
-                    <div className="bg-muted border border-border rounded-2xl p-6">
+                    <div className="bg-muted rounded-2xl p-6">
                         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                             <List className="w-5 h-5 text-cyan-500" />
                             Top Holdings
                         </h3>
-                        <div className="overflow-hidden rounded-xl border border-border/50">
+                        <div className="overflow-hidden rounded-xl">
                             <table className="w-full text-sm">
                                 <thead className="bg-secondary/50">
                                     <tr>
@@ -673,7 +673,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         <th className="px-4 py-2 text-right font-medium text-muted-foreground">% Assets</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-border/30">
+                                <tbody className="">
                                     {top_holdings?.map((h, i) => (
                                         <tr key={i} className="hover:bg-accent/5">
                                             <td className="px-4 py-2 font-medium">{h.symbol}</td>
@@ -691,7 +691,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     </div>
 
                     {/* Sector Allocation Chart */}
-                    <div className="bg-muted border border-border rounded-2xl p-6">
+                    <div className="bg-muted rounded-2xl p-6">
                         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                             <PieChartIcon className="w-5 h-5 text-cyan-500" />
                             Sector Allocation
@@ -719,7 +719,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             content={({ active, payload }) => {
                                                 if (active && payload && payload.length) {
                                                     return (
-                                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl">
+                                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md p-3 rounded-xl">
                                                             <p className="font-medium text-foreground">{payload[0].name}</p>
                                                             <p className="text-sm text-muted-foreground">
                                                                 {Number(payload[0].value).toFixed(2)}%
@@ -803,7 +803,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Summary Header */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-muted border border-border p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                    <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Average Intrinsic Value</p>
                         <p className="text-3xl font-bold text-cyan-500">{formatCurrency(average_intrinsic_value)}</p>
                         {intrinsicValue.range && (
@@ -812,15 +812,15 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             </p>
                         )}
                     </div>
-                    <div className="bg-muted border border-border p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                    <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Current Price</p>
                         <p className="text-3xl font-bold">{formatCurrency(current_price)}</p>
                     </div>
                     <div className={cn(
-                        "border p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
+                        "p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
                         (margin_of_safety_pct || 0) > 0
-                            ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/5 dark:border-emerald-500/20"
-                            : "bg-rose-500/10 border-rose-500/30 dark:bg-rose-500/5 dark:border-rose-500/20"
+                            ? "bg-emerald-500/10 dark:bg-emerald-500/5"
+                            : "bg-rose-500/10 dark:bg-rose-500/5"
                     )}>
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Margin of Safety</p>
                         <p className={cn(
@@ -833,7 +833,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 </div>
 
                 {intrinsicValue.valuation_note && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+                    <div className="bg-amber-500/10 p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
                         <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                         <div className="flex flex-col gap-1">
                             <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Model Discrepancy Note</p>
@@ -844,7 +844,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
                 {/* Models Detail */}
                 {!models.dcf.parameters && !models.graham.parameters ? (
-                    <div className="bg-muted border border-border rounded-2xl p-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="bg-muted rounded-2xl p-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="w-16 h-16 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
                             <Info className="w-8 h-8 text-cyan-500" />
                         </div>
@@ -854,7 +854,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             <br /><br />
                             For <strong>ETFs and Mutual Funds</strong>, the intrinsic value is best represented by the <strong>Net Asset Value (NAV)</strong>, which is the total value of the fund's assets minus its liabilities, divided by the number of outstanding shares.
                         </p>
-                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-background border border-border rounded-full text-xs font-medium text-foreground">
+                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-background rounded-full text-xs font-medium text-foreground">
                             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                             Using Industry Standard NAV Valuation
                         </div>
@@ -862,7 +862,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         {/* DCF Model */}
-                        <div className="bg-muted border border-border rounded-2xl p-6">
+                        <div className="bg-muted rounded-2xl p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-semibold flex items-center gap-2">
                                     <TrendingUp className="w-5 h-5 text-emerald-500" />
@@ -882,7 +882,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 )}
                             </div>
                             {models.dcf.error ? (
-                                <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.dcf.error}</p>
+                                <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl">{models.dcf.error}</p>
                             ) : !models.dcf.parameters ? (
                                 <div className="flex flex-col items-center justify-center py-10 text-center opacity-50">
                                     <Info className="w-8 h-8 mb-2" />
@@ -925,7 +925,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             </div>
                                         )}
                                     </div>
-                                    <div className="pt-4 border-t border-border/50">
+                                    <div className="pt-4">
                                         <ParamItem
                                             label="Base Free Cash Flow"
                                             value={formatCurrency(models.dcf.parameters.base_fcf)}
@@ -940,25 +940,25 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         )}
                                     </div>
                                     {models.dcf.mc && (
-                                        <div className="pt-4 border-t border-border/50">
+                                        <div className="pt-4">
                                             <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
                                             <div className="grid grid-cols-3 gap-2">
                                                 <div
-                                                    className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
+                                                    className="bg-rose-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
                                                     <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear)}</p>
                                                 </div>
                                                 <div
-                                                    className="bg-cyan-500/5 border border-cyan-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-cyan-500/10 transition-colors group/mc"
+                                                    className="bg-cyan-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-cyan-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-cyan-500 font-bold uppercase mb-1">Median (50th)</p>
                                                     <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base)}</p>
                                                 </div>
                                                 <div
-                                                    className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
+                                                    className="bg-emerald-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
@@ -973,7 +973,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         </div>
 
                         {/* Graham Model */}
-                        <div className="bg-muted border border-border rounded-2xl p-6">
+                        <div className="bg-muted rounded-2xl p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-semibold flex items-center gap-2">
                                     <Scale className="w-5 h-5 text-amber-500" />
@@ -993,7 +993,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 )}
                             </div>
                             {models.graham.error ? (
-                                <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.graham.error}</p>
+                                <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl">{models.graham.error}</p>
                             ) : !models.graham.parameters ? (
                                 <div className="flex flex-col items-center justify-center py-10 text-center opacity-50">
                                     <Info className="w-8 h-8 mb-2" />
@@ -1026,18 +1026,18 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             info={VALUATION_INFO.bond_yield}
                                         />
                                         {models.graham.parameters.note && (
-                                            <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 flex items-start gap-2">
+                                            <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 p-3 rounded-xl flex items-start gap-2">
                                                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                                                 <span>{models.graham.parameters.note}</span>
                                             </div>
                                         )}
                                     </div>
-                                    <div className="mt-4 p-4 bg-secondary/5 rounded-xl flex flex-col items-center select-none border border-border/20 overflow-visible">
+                                    <div className="mt-4 p-4 bg-secondary/5 rounded-xl flex flex-col items-center select-none overflow-visible">
                                         <div className="flex items-center gap-2">
                                             <div className="flex items-baseline gap-1">
                                                 <div className="group relative">
-                                                    <span className="text-lg font-bold text-foreground cursor-help decoration-dotted decoration-border/50 underline-offset-4 hover:text-cyan-500 transition-colors">V</span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    <span className="text-lg font-bold text-foreground cursor-help decoration-dotted underline-offset-4 hover:text-cyan-500 transition-colors">V</span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
                                                         Intrinsic Value
                                                     </div>
                                                 </div>
@@ -1046,16 +1046,16 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             <div className="flex items-center gap-1.5 px-4">
                                                 <div className="group relative">
                                                     <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">EPS</span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
                                                         Trailing 12-Month Earnings Per Share
                                                     </div>
                                                 </div>
                                                 <span className="text-[9px] opacity-40">×</span>
                                                 <div className="group relative">
-                                                    <span className="px-1.5 py-0.5 bg-secondary/30 rounded-md border border-border/30 text-[10px] font-bold text-foreground cursor-help hover:border-cyan-500/50 transition-colors">
+                                                    <span className="px-1.5 py-0.5 bg-secondary/30 rounded-md text-[10px] font-bold text-foreground cursor-help transition-colors">
                                                         8.5 + 2G
                                                     </span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed text-center font-medium">
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed text-center font-medium">
                                                         <div className="mb-0.5"><span className="font-bold">8.5</span>: Base P/E for zero growth</div>
                                                         <div><span className="font-bold">G</span>: Expected long-term growth rate</div>
                                                     </div>
@@ -1063,14 +1063,14 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                 <span className="text-[9px] opacity-40">×</span>
                                                 <div className="group relative">
                                                     <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">4.4</span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
                                                         Average yield of high-grade corporate bonds in 1962
                                                     </div>
                                                 </div>
                                                 <span className="text-[10px] opacity-40 mx-0.5">/</span>
                                                 <div className="group relative">
                                                     <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">Y</span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
                                                         <div className="font-bold mb-1">Y = {models.graham.parameters?.bond_yield_proxy || '4.5'}%</div>
                                                         Current yield on AAA corporate bonds
                                                     </div>
@@ -1080,7 +1080,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     </div>
 
                                     {models.graham.mc && (
-                                        <div className="mt-8 pt-4 border-t border-border/50">
+                                        <div className="mt-8 pt-4">
                                             <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
                                             <div className="grid grid-cols-3 gap-2">
                                                 <div
@@ -1091,7 +1091,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                     <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bear)}</p>
                                                 </div>
                                                 <div
-                                                    className="bg-amber-500/5 border border-amber-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-colors group/mc"
+                                                    className="bg-amber-500/5 border-none p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-colors group/mc shadow-none"
                                                     onClick={() => setViewingDistribution('graham')}
                                                 >
                                                     <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">Median (50th)</p>
@@ -1114,7 +1114,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     </div>
                 )}
 
-                <div className="bg-secondary/20 rounded-2xl p-6 border border-border/50 italic text-sm text-muted-foreground text-center">
+                <div className="bg-secondary/20 rounded-2xl p-6 italic text-sm text-muted-foreground text-center">
                     Note: Intrinsic value calculations are estimates based on various assumptions.
                     Actual stock performance may vary significantly.
                 </div>
@@ -1129,9 +1129,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 {info && (
                     <div className="group relative">
                         <HelpCircle className="w-2.5 h-2.5 text-muted-foreground/50 hover:text-cyan-500 cursor-help" />
-                        <div className="absolute bottom-full left-0 mb-2 w-48 p-3 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[10px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]">
+                        <div className="absolute bottom-full left-0 mb-2 w-48 p-3 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]">
                             {info.description}
-                            <div className="mt-1 pt-1 border-t border-slate-100 dark:border-white/10 font-bold text-cyan-600 dark:text-cyan-400">Default: {info.default}</div>
+                            <div className="mt-1 pt-1 font-bold text-cyan-600 dark:text-cyan-400">Default: {info.default}</div>
                         </div>
                     </div>
                 )}
@@ -1145,22 +1145,22 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
             <div
-                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 bg-white dark:bg-zinc-950"
+                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 bg-white dark:bg-zinc-950"
             >
 
                 {/* Mobile Drag Handle */}
                 <div className="sm:hidden w-full flex justify-center pt-3 pb-1 flex-shrink-0">
-                    <div className="w-12 h-1.5 bg-border/50 rounded-full" />
+                    <div className="w-12 h-1.5 bg-secondary rounded-full" />
                 </div>
 
                 {/* Sticky Header & Tabs Container */}
-                <div className="sticky top-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-b border-border flex-shrink-0 shadow-sm">
+                <div className="sticky top-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md flex-shrink-0">
                     {/* Header */}
                     <div className="p-5 sm:p-8 pb-3 sm:pb-4 flex justify-between items-start relative">
                         <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
 
                         <div className="flex items-center gap-4 sm:gap-6 relative z-10 text-foreground flex-1">
-                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-lg sm:text-3xl font-bold shadow-lg shadow-cyan-500/20 text-white overflow-hidden flex-shrink-0">
+                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-lg sm:text-3xl font-bold text-white overflow-hidden flex-shrink-0">
                                 <StockIcon symbol={symbol} size="100%" className="w-full h-full p-2 bg-white" domain={domain} />
                             </div>
                             <div className="flex-1 min-w-0 pr-4">
@@ -1290,12 +1290,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         isDarkMode ? "bg-black/60" : "bg-slate-500/20"
                     )}>
                         <div className={cn(
-                            "w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border",
-                            isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-900"
+                            "w-full max-w-2xl rounded-3xl overflow-hidden animate-in zoom-in-95 duration-300",
+                            isDarkMode ? "bg-slate-900 text-white" : "bg-white text-slate-900"
                         )}>
                             <div className={cn(
-                                "p-6 border-b flex items-center justify-between",
-                                isDarkMode ? "bg-muted/30 border-slate-800" : "bg-slate-50/50 border-slate-100"
+                                "p-6 flex items-center justify-between",
+                                isDarkMode ? "bg-muted/30" : "bg-slate-50/50"
                             )}>
                                 <div>
                                     <h3 className="text-xl font-bold flex items-center gap-2 text-inherit">
@@ -1401,7 +1401,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                                 const count = payload[0].value;
                                                                 const probability = (count / 10000) * 100;
                                                                 return (
-                                                                    <div className="p-3 rounded-xl shadow-2xl outline-none border scale-105 transition-transform bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-border">
+                                                                    <div className="p-3 rounded-xl outline-none scale-105 transition-transform bg-white/95 dark:bg-slate-950/95 backdrop-blur-md">
                                                                         <p className={cn(
                                                                             "text-[10px] uppercase font-bold mb-1 tracking-wider",
                                                                             isDarkMode ? "text-slate-500" : "text-slate-400"
@@ -1411,7 +1411,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                                             isDarkMode ? "text-white" : "text-slate-900"
                                                                         )}>{formatCurrency(payload[0].payload.price)}</p>
 
-                                                                        <div className="flex flex-col gap-1 mt-3 pt-2 border-t border-border/50">
+                                                                        <div className="flex flex-col gap-1 mt-3 pt-2">
                                                                             <div className="flex items-center justify-between gap-4">
                                                                                 <div className="flex items-center gap-1.5">
                                                                                     <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
@@ -1495,13 +1495,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     isDarkMode ? "bg-slate-800/50 text-slate-400" : "bg-slate-50 text-slate-500"
                                 )}>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/20" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/20" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-cyan-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/20" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1510,7 +1510,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 )}
 
                 {/* Footer */}
-                <div className="px-4 sm:px-8 py-3 sm:py-4 bg-muted/30 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-2 text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-widest font-bold pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-4">
+                <div className="px-4 sm:px-8 py-3 sm:py-4 bg-muted/30 flex flex-col sm:flex-row justify-between items-center gap-2 text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-widest font-bold pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-4">
                     <div className="flex gap-4">
                         <span>Exchange: {fundamentals?.exchange || 'Unknown'}</span>
                         <span>Currency: {fundamentals?.currency || 'USD'}</span>
@@ -1525,8 +1525,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
 function StatCard({ label, value, icon: Icon, color, className, rotate, subValue, subValueColor, rangeMin, rangeMax }: any) {
     return (
-        <div className="bg-muted border border-border p-5 rounded-2xl flex items-center gap-4 transition-all hover:bg-muted/50 hover:border-accent group">
-            <div className={cn("p-3 rounded-xl bg-card border border-border", color, rotate)}>
+        <div className="bg-muted p-5 rounded-2xl flex items-center gap-4 transition-all hover:bg-muted/50 group">
+            <div className={cn("p-3 rounded-xl bg-card", color, rotate)}>
                 <Icon className="w-5 h-5" />
             </div>
             <div className="flex-1 overflow-hidden">
@@ -1555,7 +1555,7 @@ function TabButton({ active, onClick, icon: Icon, label }: any) {
             onClick={onClick}
             className={cn(
                 "py-4 px-4 flex items-center gap-2 text-sm font-medium transition-all relative border-b-2 outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/20",
-                active ? "text-cyan-600 dark:text-cyan-400 border-cyan-600 dark:border-cyan-400" : "text-muted-foreground border-transparent hover:text-foreground"
+                active ? "text-cyan-600 dark:text-cyan-400" : "text-muted-foreground hover:text-foreground"
             )}
         >
             <Icon className="w-5 h-5 sm:w-4 sm:h-4" />
@@ -1567,7 +1567,7 @@ function TabButton({ active, onClick, icon: Icon, label }: any) {
 function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
     const sanitizedId = `gradient-${dataKey.replace(/[^a-zA-Z0-9]/g, '')}`;
     return (
-        <div className="bg-muted border border-border p-6 rounded-2xl">
+        <div className="bg-muted p-6 rounded-2xl">
             <h4 className="text-sm font-semibold text-muted-foreground mb-6 uppercase tracking-wider">{title}</h4>
             <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1599,7 +1599,7 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-2xl text-xs">
+                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md p-3 rounded-xl text-xs">
                                             <p className="font-medium text-foreground mb-1">{label}</p>
                                             <div className="flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />

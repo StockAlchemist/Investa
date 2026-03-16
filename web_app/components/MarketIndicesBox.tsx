@@ -24,7 +24,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
     return (
         <div
             onClick={onClick}
-            className="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-muted/30 border border-border/50 hover:bg-muted/50 transition-all duration-300 group cursor-pointer overflow-hidden relative"
+            className="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-muted/30 hover:bg-muted/50 transition-all duration-300 group cursor-pointer overflow-hidden relative"
         >
             {isFetching && (
                 <div className="absolute top-1 right-1 z-20">
@@ -34,7 +34,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
             {indexList.map((index, idx) => (
                 <div
                     key={index.name}
-                    className={`flex flex-col items-start px-3 py-1.5 min-w-[100px] ${idx < indexList.length - 1 ? 'border-r border-border/30' : ''}`}
+                    className={`flex flex-col items-start px-3 py-1.5 min-w-[100px]`}
                 >
                     <div className="flex items-center justify-between w-full gap-2">
                         <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors truncate max-w-[80px]">

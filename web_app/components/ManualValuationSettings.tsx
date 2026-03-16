@@ -196,12 +196,12 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
         }
     };
 
-    const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
+    const inputClassName = "w-full rounded-md border-none bg-secondary text-foreground focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
     const labelClassName = "flex items-center gap-1 text-[10px] font-bold text-muted-foreground mb-1 uppercase tracking-wider";
 
     return (
         <div className="space-y-6">
-            <div className="bg-secondary/30 p-6 rounded-xl border border-dotted border-border">
+            <div className="bg-secondary/30 p-6 rounded-xl">
                 <h3 className="text-sm font-semibold mb-4">Add Custom Valuation Parameters</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="md:col-span-4 max-w-xs">
@@ -222,7 +222,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         </div>
                     </div>
 
-                    <div className="md:col-span-4 flex items-center justify-between bg-cyan-500/5 p-3 rounded-lg border border-cyan-500/10">
+                    <div className="md:col-span-4 flex items-center justify-between bg-cyan-500/5 p-3 rounded-lg">
                         <div className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium flex items-center gap-2">
                             <Info className="w-4 h-4" />
                             <span>
@@ -236,7 +236,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         {Object.keys(liveDefaults).length > 0 && (
                             <button
                                 onClick={handleFillDefaults}
-                                className="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-bold px-3 py-1.5 rounded uppercase tracking-wider transition-colors border border-cyan-500/20"
+                                className="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-bold px-3 py-1.5 rounded uppercase tracking-wider transition-colors"
                             >
                                 Pre-fill from Defaults
                             </button>
@@ -353,13 +353,13 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
             <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                     <thead>
-                        <tr className="border-b border-border">
+                        <tr>
                             <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[15%]">Symbol</th>
                             <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[65%]">Parameters</th>
                             <th className="text-right py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[20%]">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
+                    <tbody className="divide-y-none">
                         {Object.entries(valuationOverrides).length === 0 ? (
                             <tr>
                                 <td colSpan={3} className="py-8 text-center text-muted-foreground italic">No manual valuation parameters set.</td>
@@ -372,7 +372,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                         <div className="flex flex-col md:flex-row gap-4">
                                             {/* DCF Group */}
                                             {Object.entries(data).some(([k]) => k.startsWith('dcf')) && (
-                                                <div className="flex-1 bg-cyan-500/5 rounded-lg border border-cyan-500/10 p-3 min-w-[200px]">
+                                                <div className="flex-1 bg-cyan-500/5 rounded-lg p-3 min-w-[200px]">
                                                     <div className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                                                         <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
                                                         DCF Model
@@ -408,7 +408,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
 
                                             {/* Graham Group */}
                                             {Object.entries(data).some(([k]) => k.startsWith('graham')) && (
-                                                <div className="flex-1 bg-amber-500/5 rounded-lg border border-amber-500/10 p-3 min-w-[200px]">
+                                                <div className="flex-1 bg-amber-500/5 rounded-lg p-3 min-w-[200px]">
                                                     <div className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                                                         <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                                                         Graham's Formula

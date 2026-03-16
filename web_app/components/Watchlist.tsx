@@ -284,7 +284,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
     if (isLoading && !watchlists.length) {
         return (
             <div className="space-y-4">
-                <Card className="bg-card">
+                <div className="bg-card p-6 rounded-xl">
                     <CardHeader>
                         <Skeleton className="h-8 w-48" />
                     </CardHeader>
@@ -293,7 +293,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
                         </div>
                     </CardContent>
-                </Card>
+                </div>
             </div>
         );
     }
@@ -307,10 +307,10 @@ export default function Watchlist({ currency }: WatchlistProps) {
                         key={wl.id}
                         onClick={() => setActiveWatchlistId(wl.id)}
                         className={cn(
-                            "px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500",
+                            "px-3 py-1.5 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500",
                             activeWatchlistId === wl.id
-                                ? "bg-[#0097b2] text-white border-transparent shadow-sm"
-                                : "text-foreground bg-secondary border-transparent hover:bg-accent/10"
+                                ? "bg-[#0097b2] text-white"
+                                : "text-foreground bg-secondary hover:bg-accent/10"
                         )}
                     >
                         {wl.name}
@@ -336,7 +336,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 ) : (
                     <button
                         onClick={() => setIsCreating(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border-transparent rounded-md shadow-sm hover:bg-accent/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground bg-secondary rounded-md hover:bg-accent/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
                     >
                         <Plus className="h-3.5 w-3.5" />
                         <span>New List</span>
@@ -344,7 +344,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 )}
             </div>
 
-            <Card className="bg-card">
+            <Card className="bg-card border-none shadow-none">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div>
                         <div className="flex items-center gap-3">
@@ -354,7 +354,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                         key={activeWatchlistId} // Force remount on list switch
                                         value={renameName}
                                         onChange={(e) => setRenameName(e.target.value)}
-                                        className="h-9 w-48 text-lg font-bold bg-background text-foreground border-border focus-visible:ring-1"
+                                        className="h-9 w-48 text-lg font-bold bg-background text-foreground border-none focus-visible:ring-1"
                                         autoFocus
                                         onKeyDown={(e) => {
                                             if (e.key === 'Escape') setIsRenaming(false);
@@ -418,7 +418,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             placeholder="Symbol (e.g. AAPL, BTC-USD)"
                             value={newSymbol}
                             onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                            className="bg-secondary border-border text-foreground md:w-48"
+                            className="bg-secondary border-none text-foreground md:w-48"
                         />
                         <Input
                             placeholder="Note (optional)"
@@ -437,8 +437,8 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     </form>
 
                     <div className="overflow-x-auto rounded-lg">
-                        <table className="min-w-full divide-y divide-border/30">
-                                <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
+                        <table className="min-w-full">
+                                <thead className="bg-secondary sticky top-0 z-10 font-semibold">
                                 <tr>
                                     {[
                                         { key: 'Symbol', label: 'Symbol', align: 'left' },
@@ -473,7 +473,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-border/50 bg-transparent">
+                            <tbody className="bg-transparent divide-y-none">
                                 {watchlist?.length === 0 ? (
                                     <tr>
                                         <td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">
@@ -523,7 +523,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                     <Input
                                                         value={editNote}
                                                         onChange={(e) => setEditNote(e.target.value)}
-                                                        className="h-7 text-xs text-foreground bg-background border-input w-full min-w-[120px]"
+                                                        className="h-7 text-xs text-foreground bg-background border-none w-full min-w-[120px]"
                                                         autoFocus
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'Enter') saveEdit(item.Symbol);

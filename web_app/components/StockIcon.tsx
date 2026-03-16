@@ -35,7 +35,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
             <div
                 className={cn(
                     "overflow-hidden rounded-full flex items-center justify-center",
-                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100 border border-zinc-200",
+                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100",
                     className
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
@@ -78,7 +78,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
             <div
                 className={cn(
                     "overflow-hidden rounded-full flex items-center justify-center",
-                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100 border border-zinc-200",
+                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100",
                     className
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
@@ -160,7 +160,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
             <div
                 className={cn(
                     "overflow-hidden rounded-full flex items-center justify-center",
-                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100 border border-zinc-200",
+                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100",
                     className
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
@@ -316,7 +316,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
 
     const bgColor = isDarkIcon || needsDarkBg
         ? 'bg-black'
-        : (isDark ? 'bg-zinc-800' : (symbol === 'V' ? 'bg-white border border-zinc-200' : 'bg-zinc-100 border border-zinc-200'));
+        : (isDark ? 'bg-zinc-800' : (symbol === 'V' ? 'bg-white' : 'bg-zinc-100'));
 
     return (
         <img

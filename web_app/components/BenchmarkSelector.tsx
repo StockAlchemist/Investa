@@ -45,7 +45,7 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center space-x-2 px-3 py-1 text-sm font-medium text-foreground bg-secondary border border-border rounded-md hover:bg-accent/10 transition-colors"
+                className="flex items-center space-x-2 px-3 py-1 text-sm font-medium text-foreground bg-secondary border-none rounded-md hover:bg-accent/10 transition-colors"
             >
                 <span>Index</span>
                 <span className="bg-accent/20 text-xs px-1.5 py-0.5 rounded-full text-foreground">
@@ -54,13 +54,13 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
             </button>
 
             {isOpen && (
-                <div className="absolute left-0 md:right-0 mt-2 w-56 bg-white dark:bg-zinc-950 rounded-md shadow-2xl border border-border z-50">
+                <div className="absolute left-0 md:right-0 mt-2 w-56 bg-white dark:bg-zinc-950 rounded-md z-50">
                     <div className="p-2 space-y-1">
                         {BENCHMARKS.map((benchmark) => (
                             <label
                                 key={benchmark}
                                 className={`flex items-center space-x-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${selectedBenchmarks.includes(benchmark)
-                                    ? 'bg-[#0097b2] text-white shadow-sm'
+                                    ? 'bg-[#0097b2] text-white underline-none'
                                     : 'hover:bg-accent/10 text-foreground'
                                     }`}
                             >
@@ -68,7 +68,7 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                                     type="checkbox"
                                     checked={selectedBenchmarks.includes(benchmark)}
                                     onChange={() => handleToggle(benchmark)}
-                                    className={`rounded border-border bg-secondary focus:ring-cyan-500 ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-cyan-500'}`}
+                                    className={`rounded border-none bg-secondary focus:ring-cyan-500 ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-cyan-500'}`}
                                 />
                                 <span className={`text-sm ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-foreground'}`}>{benchmark}</span>
                             </label>

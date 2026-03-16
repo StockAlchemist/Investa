@@ -150,22 +150,20 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     if (isLoading) {
         return (
-            <Card className="h-full bg-card border-none">
-                <CardContent className="p-6">
-                    <div className="flex justify-between items-center mb-6">
-                        <Skeleton className="h-4 w-32 opacity-50" />
-                        <Skeleton className="h-8 w-8 rounded-lg opacity-50" />
-                    </div>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="h-24 rounded-xl bg-muted/30 p-4 space-y-2">
-                                <Skeleton className="h-3 w-16 opacity-30" />
-                                <Skeleton className="h-6 w-12 opacity-30" />
-                            </div>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
+            <div className="h-full bg-card p-6 rounded-2xl flex flex-col gap-6">
+                <div className="flex justify-between items-center">
+                    <Skeleton className="h-4 w-32 opacity-50" />
+                    <Skeleton className="h-8 w-8 rounded-lg opacity-50" />
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
+                    {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className="h-full rounded-xl bg-muted/30 p-4 space-y-2">
+                            <Skeleton className="h-3 w-16 opacity-30" />
+                            <Skeleton className="h-6 w-12 opacity-30" />
+                        </div>
+                    ))}
+                </div>
+            </div>
         );
     }
 
@@ -222,103 +220,101 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     return (
         <React.Fragment>
-            <Card className="h-full bg-card border-none transition-all duration-300 group relative overflow-hidden">
-                <CardContent className="h-full p-4 flex flex-col gap-4">
-                    <div className="flex justify-between items-start">
-                        <div className="flex items-center gap-2">
-                            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Analytics</h3>
-                            {isRefreshing && !isLoading && (
-                                <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
-                            )}
-                        </div>
-                        <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-muted text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
-                            <Activity className="w-4 h-4" />
-                        </div>
+            <div className="h-full bg-card p-6 rounded-2xl transition-all duration-300 group relative overflow-hidden flex flex-col gap-4">
+                <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Analytics</h3>
+                        {isRefreshing && !isLoading && (
+                            <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                        )}
                     </div>
+                    <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-muted text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
+                        <Activity className="w-4 h-4" />
+                    </div>
+                </div>
 
-                    <div className="flex flex-col lg:flex-row gap-4 h-full flex-1">
-                        {/* Left Side: Portfolio Health */}
-                        {portfolioHealth && (
-                            <div
-                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-card border-none transition-colors cursor-pointer group/health relative overflow-hidden"
-                                onClick={() => setIsHealthModalOpen(true)}
-                            >
-                                <div className="absolute top-2 right-2 opacity-0 group-hover/health:opacity-100 transition-opacity">
-                                    <Info className="w-3.5 h-3.5 text-muted-foreground" />
-                                </div>
+                <div className="flex flex-col lg:flex-row gap-4 h-full flex-1">
+                    {/* Left Side: Portfolio Health */}
+                    {portfolioHealth && (
+                        <div
+                            className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-card border-none transition-colors cursor-pointer group/health relative overflow-hidden"
+                            onClick={() => setIsHealthModalOpen(true)}
+                        >
+                            <div className="absolute top-2 right-2 opacity-0 group-hover/health:opacity-100 transition-opacity">
+                                <Info className="w-3.5 h-3.5 text-muted-foreground" />
+                            </div>
 
-                                {/* Ring Section */}
-                                <div className="flex flex-col items-center justify-center p-4 min-w-[130px] gap-2">
-                                    <ScoreRing score={portfolioHealth.overall_score} />
-                                    <div className={cn(
-                                        "text-base font-bold tracking-tight",
-                                        portfolioHealth.overall_score >= 80 ? "text-cyan-500" :
-                                            portfolioHealth.overall_score >= 60 ? "text-emerald-500" :
-                                                portfolioHealth.overall_score >= 40 ? "text-yellow-500" : "text-red-500"
-                                    )}>
-                                        {portfolioHealth.rating}
-                                    </div>
-                                </div>
-
-                                {/* Breakdown Section */}
-                                <div className="flex flex-col justify-center gap-3 w-full pr-2 pl-4 py-2">
-                                    <div className="flex justify-between items-center group/row">
-                                        <div className="flex items-center gap-2 text-muted-foreground">
-                                            <PieChart className="w-4 h-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider">Diversification</span>
-                                        </div>
-                                        <span className={cn(
-                                            "text-base font-bold",
-                                            portfolioHealth.components.diversification.score >= 60 ? "text-emerald-500" : "text-yellow-500"
-                                        )}>
-                                            {portfolioHealth.components.diversification.score}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between items-center group/row">
-                                        <div className="flex items-center gap-2 text-muted-foreground">
-                                            <TrendingUp className="w-4 h-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider">Efficiency</span>
-                                        </div>
-                                        <span className={cn(
-                                            "text-base font-bold",
-                                            portfolioHealth.components.efficiency.score >= 60 ? "text-emerald-500" : "text-yellow-500"
-                                        )}>
-                                            {portfolioHealth.components.efficiency.score}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between items-center group/row">
-                                        <div className="flex items-center gap-2 text-muted-foreground">
-                                            <ShieldCheck className="w-4 h-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider">Stability</span>
-                                        </div>
-                                        <span className={cn(
-                                            "text-base font-bold",
-                                            portfolioHealth.components.stability.score >= 60 ? "text-emerald-500" : "text-yellow-500"
-                                        )}>
-                                            {portfolioHealth.components.stability.score}
-                                        </span>
-                                    </div>
+                            {/* Ring Section */}
+                            <div className="flex flex-col items-center justify-center p-4 min-w-[130px] gap-2">
+                                <ScoreRing score={portfolioHealth.overall_score} />
+                                <div className={cn(
+                                    "text-base font-bold tracking-tight",
+                                    portfolioHealth.overall_score >= 80 ? "text-cyan-500" :
+                                        portfolioHealth.overall_score >= 60 ? "text-emerald-500" :
+                                            portfolioHealth.overall_score >= 40 ? "text-yellow-500" : "text-red-500"
+                                )}>
+                                    {portfolioHealth.rating}
                                 </div>
                             </div>
-                        )}
 
-                        {/* Right Side: Metrics Grid */}
-                        <div className="flex-1 grid grid-cols-2 gap-3">
-                            {items.map((item) => (
-                                <MetricItem
-                                    key={item.key}
-                                    label={item.label}
-                                    value={item.value}
-                                    icon={item.icon}
-                                    description={item.description}
-                                    colorClass={item.color}
-                                    onClick={item.onClick}
-                                />
-                            ))}
+                            {/* Breakdown Section */}
+                            <div className="flex flex-col justify-center gap-3 w-full pr-2 pl-4 py-2">
+                                <div className="flex justify-between items-center group/row">
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                        <PieChart className="w-4 h-4" />
+                                        <span className="text-xs font-bold uppercase tracking-wider">Diversification</span>
+                                    </div>
+                                    <span className={cn(
+                                        "text-base font-bold",
+                                        portfolioHealth.components.diversification.score >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                    )}>
+                                        {portfolioHealth.components.diversification.score}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center group/row">
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                        <TrendingUp className="w-4 h-4" />
+                                        <span className="text-xs font-bold uppercase tracking-wider">Efficiency</span>
+                                    </div>
+                                    <span className={cn(
+                                        "text-base font-bold",
+                                        portfolioHealth.components.efficiency.score >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                    )}>
+                                        {portfolioHealth.components.efficiency.score}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center group/row">
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                        <ShieldCheck className="w-4 h-4" />
+                                        <span className="text-xs font-bold uppercase tracking-wider">Stability</span>
+                                    </div>
+                                    <span className={cn(
+                                        "text-base font-bold",
+                                        portfolioHealth.components.stability.score >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                    )}>
+                                        {portfolioHealth.components.stability.score}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
+                    )}
+
+                    {/* Right Side: Metrics Grid */}
+                    <div className="flex-1 grid grid-cols-2 gap-3">
+                        {items.map((item) => (
+                            <MetricItem
+                                key={item.key}
+                                label={item.label}
+                                value={item.value}
+                                icon={item.icon}
+                                description={item.description}
+                                colorClass={item.color}
+                                onClick={item.onClick}
+                            />
+                        ))}
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </div>
 
             {/* Metric Explanation Modal */}
             {selectedMetric && activeExplanation && typeof document !== 'undefined' && createPortal(
@@ -326,7 +322,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     <div className="absolute inset-0 bg-black/40 animate-in fade-in duration-200" onClick={() => setSelectedMetric(null)} />
                     <div
                         style={{ backgroundColor: 'var(--menu-solid)' }}
-                        className="relative w-full max-w-md border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200"
+                        className="relative w-full max-w-md rounded-2xl p-6 animate-in zoom-in-95 duration-200"
                     >
                         <button
                             onClick={() => setSelectedMetric(null)}
@@ -353,9 +349,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 </p>
                             </div>
 
-                            <div className="h-px bg-border/50" />
-
-                            <div className="space-y-2">
+                            <div className="space-y-2 pt-4">
                                 <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Interpretation</h4>
                                 <p className="text-sm text-foreground/90 leading-relaxed">
                                     {activeExplanation.interpretation}
@@ -363,8 +357,8 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                             </div>
 
                             {activeExplanation.formula && (
-                                <div className="pt-2">
-                                    <div className="bg-secondary/30 rounded-lg p-3 border border-border/50">
+                                <div className="pt-4">
+                                    <div className="bg-secondary/30 rounded-lg p-3">
                                         <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Approx. Formula</div>
                                         <div className="font-mono text-xs text-cyan-600 dark:text-cyan-400">
                                             {activeExplanation.formula}
@@ -384,7 +378,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     <div className="absolute inset-0 bg-black/40 animate-in fade-in duration-200" onClick={() => setIsHealthModalOpen(false)} />
                     <div
                         style={{ backgroundColor: 'var(--menu-solid)' }}
-                        className="relative w-full max-w-lg border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+                        className="relative w-full max-w-lg rounded-2xl p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
                     >
                         <button
                             onClick={() => setIsHealthModalOpen(false)}
@@ -404,29 +398,29 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                         </div>
 
                         <div className="space-y-6">
-                            <div className="p-4 bg-secondary/20 rounded-xl border border-border/50 space-y-4">
+                        <div className="p-4 bg-secondary/20 rounded-xl space-y-4">
                                 <div>
                                     <h4 className="text-sm font-bold text-foreground mb-2">Overall Score</h4>
                                     <p className="text-xs text-muted-foreground mb-3">
                                         The overall score is a weighted average of three key pillars:
                                     </p>
                                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                                        <div className="p-2 bg-background/50 rounded-lg border border-border/50">
+                                        <div className="p-2 bg-background/50 rounded-lg">
                                             <div className="font-bold text-emerald-500">40%</div>
                                             <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Diversification</div>
                                         </div>
-                                        <div className="p-2 bg-background/50 rounded-lg border border-border/50">
+                                        <div className="p-2 bg-background/50 rounded-lg">
                                             <div className="font-bold text-emerald-500">40%</div>
                                             <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Efficiency</div>
                                         </div>
-                                        <div className="p-2 bg-background/50 rounded-lg border border-border/50">
+                                        <div className="p-2 bg-background/50 rounded-lg">
                                             <div className="font-bold text-cyan-500">20%</div>
                                             <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Stability</div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="border-t border-border/50 pt-3">
+                                <div className="pt-3">
                                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Score Legend</p>
                                     <div className="flex items-center justify-between text-[10px]">
                                         <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span>0-39 Critical</span></div>
@@ -438,7 +432,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                             </div>
 
                             <div className="space-y-5">
-                                <div className="space-y-2 pb-4 border-b border-border/30 last:border-0 last:pb-0">
+                                <div className="space-y-2 pb-4 last:pb-0">
                                     <h4 className="text-sm font-bold flex items-center gap-2">
                                         <PieChart className="w-4 h-4 text-emerald-500" />
                                         Diversification (HHI)
@@ -455,12 +449,12 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     <p className="text-xs text-muted-foreground leading-relaxed">
                                         Measured using the <strong>Herfindahl-Hirschman Index (HHI)</strong>. Lower is better, indicating less concentration.
                                     </p>
-                                    <div className="mt-2 text-[10px] text-muted-foreground/70 bg-secondary/30 p-2 rounded-lg border border-border/50">
+                                    <div className="mt-2 text-[10px] text-muted-foreground/70 bg-secondary/30 p-2 rounded-lg">
                                         <span className="font-bold opacity-100">Range:</span> Score 80-100: &lt;0.12 (Excellent) • Score 60-79: 0.12-0.35 (Moderate) • Score &lt;60: &gt;0.35 (Concentrated)
                                     </div>
                                 </div>
 
-                                <div className="space-y-2 pb-4 border-b border-border/30 last:border-0 last:pb-0">
+                                <div className="space-y-2 pb-4 last:pb-0">
                                     <h4 className="text-sm font-bold flex items-center gap-2">
                                         <Activity className="w-4 h-4 text-emerald-500" />
                                         Efficiency (Sharpe Cost)
@@ -477,12 +471,12 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     <p className="text-xs text-muted-foreground leading-relaxed">
                                         Return generated per unit of risk. Higher is better.
                                     </p>
-                                    <div className="mt-2 text-[10px] text-muted-foreground/70 bg-secondary/30 p-2 rounded-lg border border-border/50">
+                                    <div className="mt-2 text-[10px] text-muted-foreground/70 bg-secondary/30 p-2 rounded-lg">
                                         <span className="font-bold opacity-100">Range:</span> Score 80-100: &gt;1.0 (Excellent) • Score 30-79: 0-1.0 (Fair) • Score &lt;30: &lt;0 (Poor)
                                     </div>
                                 </div>
 
-                                <div className="space-y-2 pb-4 border-b border-border/30 last:border-0 last:pb-0">
+                                <div className="space-y-2 pb-4 last:pb-0">
                                     <h4 className="text-sm font-bold flex items-center gap-2">
                                         <ShieldCheck className="w-4 h-4 text-cyan-500" />
                                         Stability (Volatility)
@@ -499,7 +493,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     <p className="text-xs text-muted-foreground leading-relaxed">
                                         Annualized volatility. Lower suggests steadier growth.
                                     </p>
-                                    <div className="mt-2 text-[10px] text-muted-foreground/70 bg-secondary/30 p-2 rounded-lg border border-border/50">
+                                    <div className="mt-2 text-[10px] text-muted-foreground/70 bg-secondary/30 p-2 rounded-lg">
                                         <span className="font-bold opacity-100">Range:</span> Score 80-100: 5-25% (Ideal) • Score 40-79: &lt;5% or 25-35% • Score &lt;40: &gt;35% (High)
                                     </div>
                                 </div>

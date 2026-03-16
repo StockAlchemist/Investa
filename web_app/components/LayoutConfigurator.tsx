@@ -56,8 +56,8 @@ export default function LayoutConfigurator({
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex items-center justify-center gap-2 p-2 rounded-xl transition-all duration-300 group",
-                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border-none shadow-sm",
-                    isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
+                    variant === 'ghost' ? "bg-transparent" : "bg-card",
+                    isOpen ? "ring-2 ring-cyan-500/20" : "text-cyan-500",
                     "h-[44px] px-3"
                 )}
                 title="Configure Dashboard"
@@ -74,7 +74,7 @@ export default function LayoutConfigurator({
                 <div
                     style={{ backgroundColor: 'var(--menu-solid)' }}
                     className={cn(
-                        "absolute top-full mt-2 min-w-[240px] w-max origin-top border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden",
+                        "absolute top-full mt-2 min-w-[240px] w-max origin-top rounded-xl outline-none z-50 overflow-hidden",
                         align === 'left' ? "left-0 origin-top-left" : "right-0 origin-top-right"
                     )}
                 >
@@ -91,7 +91,7 @@ export default function LayoutConfigurator({
                                     className={cn(
                                         "group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors last:border-0",
                                         isVisible
-                                            ? 'bg-[#0097b2] text-white shadow-sm'
+                                            ? 'bg-[#0097b2] text-white'
                                             : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                     )}
                                 >

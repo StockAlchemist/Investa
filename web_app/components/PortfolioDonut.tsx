@@ -52,7 +52,7 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     return (
         <foreignObject x={x - 24} y={y - 28} width={48} height={56} className="overflow-visible pointer-events-none">
             <div className="flex flex-col items-center justify-center w-full h-full transform transition-transform duration-500 hover:scale-125">
-                <div className="shadow-sm rounded-full bg-card p-1">
+                <div className="rounded-full bg-card p-1">
                     <StockIcon symbol={payload.name} size={24} />
                 </div>
                 <span className="text-[10px] font-bold mt-1 text-foreground bg-card px-2 py-0.5 rounded-full max-w-[70px] truncate text-center">
@@ -528,7 +528,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
                 metric={holdingsMetric}
                 setMetric={setHoldingsMetric}
             />
-            <div className="block lg:hidden h-px bg-border/50 my-1" />
+            {/* Removed h-px divider */}
             <SingleDonut
                 title="By Account"
                 data={accountsData}

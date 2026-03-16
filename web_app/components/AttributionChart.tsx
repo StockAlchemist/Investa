@@ -45,14 +45,14 @@ const formatPercentHelper = (val: number) => {
 export function SectorAttribution({ data, isLoading, isRefreshing = false, currency }: CommonProps) {
     if (isLoading) {
         return (
-            <div className="glass-card rounded-2xl p-6 shadow-sm animate-pulse h-80 opacity-50"></div>
+            <div className="bg-card rounded-2xl p-6 animate-pulse h-80 opacity-50"></div>
         );
     }
 
     const hasSectors = data?.sectors && data.sectors.length > 0;
 
     return (
-        <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden border border-border/50">
+        <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden">
             <div className="flex items-center gap-2 mb-6">
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sector Contribution</h3>
                 {isRefreshing && !isLoading && (
@@ -132,23 +132,23 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
 
             <div
                 style={{ backgroundColor: 'var(--menu-solid)' }}
-                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 pointer-events-auto bg-card border border-border"
+                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 pointer-events-auto bg-card"
             >
                 {/* Mobile Drag Handle */}
                 <div className="sm:hidden w-full flex justify-center pt-3 pb-1 flex-shrink-0">
-                    <div className="w-12 h-1.5 bg-border/50 rounded-full" />
+                    <div className="w-12 h-1.5 bg-secondary rounded-full" />
                 </div>
 
                 {/* Header */}
                 <div
                     style={{ backgroundColor: 'var(--menu-solid)' }}
-                    className="sticky top-0 z-50 border-b border-border flex-shrink-0 shadow-sm overflow-hidden"
+                    className="sticky top-0 z-50 flex-shrink-0 overflow-hidden"
                 >
                     <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
 
                     <div className="p-5 sm:p-8 pb-4 sm:pb-6 flex justify-between items-start relative z-10">
                         <div className="flex items-center gap-4 sm:gap-6 flex-1">
-                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 flex-shrink-0">
+                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
                                 <LayoutDashboard className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                             </div>
                             <div className="flex-1 min-w-0">
@@ -173,7 +173,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                             <input
                                 type="text"
                                 placeholder="Search symbols, names, or sectors..."
-                                className="w-full bg-secondary border border-border rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
+                                className="w-full bg-secondary rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 autoFocus
@@ -202,7 +202,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                             {filteredData.map((stock, idx) => (
                                 <div
                                     key={`${stock.symbol}-${idx}`}
-                                    className="flex items-center justify-between p-4 bg-secondary/30 hover:bg-secondary/60 rounded-xl border border-border shadow-sm transition-all cursor-pointer group hover:scale-[1.01] active:scale-[0.99] duration-200"
+                                    className="flex items-center justify-between p-4 bg-secondary/30 hover:bg-secondary/60 rounded-xl transition-all cursor-pointer group hover:scale-[1.01] active:scale-[0.99] duration-200"
                                     onClick={() => {
                                         const symbols = stock.symbol.split(',').map(s => s.trim());
                                         if (symbols.length === 1) {
@@ -211,7 +211,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                     }}
                                 >
                                     <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 mr-2">
-                                        <div className="bg-background w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform shadow-sm border border-border/50 p-1.5 sm:p-2">
+                                        <div className="bg-background w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform p-1.5 sm:p-2">
                                             <StockIcon symbol={stock.symbol.split(',')[0]} size="100%" />
                                         </div>
                                         <div className="flex flex-col min-w-0">
@@ -229,7 +229,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                                     </span>
                                                 ))}
                                                 {stock.value > 0 && (
-                                                    <span className="ml-1 px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider whitespace-nowrap leading-none">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider whitespace-nowrap leading-none">
                                                         Held
                                                     </span>
                                                 )}
@@ -257,7 +257,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                 </div>
                             ))}
                             {filteredData.length === 0 && (
-                                <div className="col-span-full py-20 text-center bg-card/30 rounded-3xl border border-dashed border-border/50">
+                                <div className="col-span-full py-20 text-center bg-card/30 rounded-3xl">
                                     <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4 opacity-30">
                                         <Info className="w-8 h-8" />
                                     </div>
@@ -289,7 +289,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     if (isLoading) {
         return (
-            <div className="glass-card rounded-2xl p-6 shadow-sm animate-pulse h-80 opacity-50"></div>
+            <div className="bg-card rounded-2xl p-6 animate-pulse h-80 opacity-50"></div>
         );
     }
 
@@ -299,7 +299,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     return (
         <>
-            <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden border border-border/50">
+            <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden">
                 <div className="flex items-center gap-2 mb-6">
                     <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Top Contributors</h3>
                     {isRefreshing && !isLoading && (
@@ -335,7 +335,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                             </span>
                                         ))}
                                         {stock.value > 0 && (
-                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider whitespace-nowrap leading-none">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider whitespace-nowrap leading-none">
                                                 Held
                                             </span>
                                         )}
@@ -357,10 +357,10 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                 </div>
 
                 {hasStocks && (
-                    <div className="mt-6 pt-4 border-t border-border/50">
+                    <div className="mt-6 pt-4">
                         <button
                             onClick={() => setIsAllModalOpen(true)}
-                            className="w-full py-2.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-cyan-500 hover:bg-cyan-500/5 transition-all border border-transparent hover:border-cyan-500/20 uppercase tracking-widest"
+                            className="w-full py-2.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-cyan-500 hover:bg-cyan-500/5 transition-all uppercase tracking-widest"
                         >
                             View All Contributors
                         </button>

@@ -147,7 +147,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Annual Gains Chart */}
-            <Card className="h-full bg-card border-none transition-all duration-300 group">
+            <div className="h-full bg-card rounded-2xl p-6 transition-all duration-300 group">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Realized Gains</h3>
                 <style>{`
                     .recharts-wrapper, .recharts-surface, .recharts-cartesian-grid, .recharts-layer {
@@ -193,7 +193,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-white dark:bg-[#020817] border border-border p-3 rounded-xl shadow-2xl !opacity-100">
+                                            <div className="bg-white dark:bg-[#020817] p-3 rounded-xl !opacity-100">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -213,11 +213,11 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
-            </Card>
+            </div>
 
             {/* Transactions Table */}
-            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-                <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
+            <div className="bg-card rounded-xl overflow-hidden transition-all">
+                <div className="p-4 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Realized Gain Transactions</h3>
                     <div className="text-sm text-muted-foreground">
                         Showing {visibleData.length} of {sortedData.length} transactions
@@ -226,7 +226,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                 {/* Mobile Card View */}
                 <div className="md:hidden space-y-4 p-4">
                     {visibleData.map((item, index) => (
-                        <div key={`mobile-${index}`} className="bg-card p-4 rounded-lg border border-border shadow-sm">
+                        <div key={`mobile-${index}`} className="bg-card p-4 rounded-lg">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3
@@ -250,7 +250,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3 border-t border-black/5 dark:border-white/10">
+                            <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3">
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Qty:</span>
                                     <span className="text-foreground font-medium">{item.Quantity}</span>
@@ -287,8 +287,8 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
 
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
-                    <table className="min-w-full divide-y divide-border/30">
-                        <thead className="bg-secondary sticky top-0 z-10 font-semibold border-b border-border/50">
+                    <table className="min-w-full">
+                        <thead className="bg-secondary sticky top-0 z-10 font-semibold">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Proceeds', 'Cost Basis', 'Realized Gain', 'Gain %'].map((header) => (
                                     <th
@@ -312,7 +312,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border/50">
+                        <tbody className="divide-y-none">
                             {visibleData.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
@@ -364,16 +364,16 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                     </table>
                 </div>
                 {visibleRows < sortedData.length && (
-                    <div className="flex justify-center gap-4 p-4 border-t border-black/5 dark:border-white/10">
+                    <div className="flex justify-center gap-4 p-4">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm"
+                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
                         >
                             Show More
                         </button>
                         <button
                             onClick={handleShowAll}
-                            className="px-4 py-2 bg-card text-foreground border border-border rounded-md hover:bg-secondary transition-colors text-sm font-medium shadow-sm"
+                            className="px-4 py-2 bg-card text-foreground rounded-md hover:bg-secondary transition-colors text-sm font-medium"
                         >
                             Show All
                         </button>

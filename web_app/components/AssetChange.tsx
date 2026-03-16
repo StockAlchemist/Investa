@@ -82,7 +82,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <Card className="h-full bg-card border-none transition-all duration-300 group">
+        <div className="h-full bg-card rounded-2xl p-6 transition-all duration-300 group">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
@@ -93,7 +93,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                         max="100"
                         value={numPeriods}
                         onChange={(e) => setNumPeriods(parseInt(e.target.value) || 1)}
-                        className="w-16 px-2 py-1 text-sm bg-secondary border border-border rounded text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-16 px-2 py-1 text-sm bg-secondary rounded text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     />
                 </div>
             </div>
@@ -153,7 +153,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white dark:bg-[#020817] border border-border p-3 rounded-xl shadow-2xl !opacity-100">
+                                        <div className="bg-white dark:bg-[#020817] p-3 rounded-xl !opacity-100">
                                             <p className="font-medium text-foreground mb-1 text-sm">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -182,7 +182,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                         const totalChange = portfolioValue + netFlow;
                                                         return (
                                                             <>
-                                                                <div className="flex items-center gap-2 text-xs mt-1 pt-1 border-t border-border/50">
+                                                                <div className="flex items-center gap-2 text-xs mt-1 pt-2">
                                                                     <span className="w-2 h-2 rounded-full bg-cyan-500" />
                                                                     <span className="text-muted-foreground">Net Flow:</span>
                                                                     <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
@@ -221,7 +221,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                     </BarChart>
                 </ResponsiveContainer>
             </div>
-        </Card>
+        </div>
     );
 };
 
@@ -239,7 +239,7 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
 
     if (!data || Object.keys(data).length === 0) {
         return (
-            <div className="p-12 text-center text-muted-foreground bg-card rounded-2xl border border-border border-dashed">
+            <div className="p-12 text-center text-muted-foreground bg-card rounded-2xl">
                 <p className="font-medium text-sm">No asset change data available.</p>
                 <p className="text-xs mt-1">Please ensure your portfolio history is populated.</p>
             </div>
@@ -261,11 +261,11 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
         <div className="space-y-6">
             <div className="flex justify-end space-x-2 mb-4">
                 <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
-                <div className="inline-flex rounded-lg shadow-sm bg-secondary p-1 border border-border">
+                <div className="inline-flex rounded-lg bg-secondary p-1">
                     <button
                         onClick={() => setViewMode('percent')}
                         className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'percent'
-                            ? 'bg-[#0097b2] text-white shadow-sm'
+                            ? 'bg-[#0097b2] text-white'
                             : 'text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800'
                             }`}
                     >
@@ -274,7 +274,7 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
                     <button
                         onClick={() => setViewMode('value')}
                         className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'value'
-                            ? 'bg-[#0097b2] text-white shadow-sm'
+                            ? 'bg-[#0097b2] text-white'
                             : 'text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800'
                             }`}
                     >
