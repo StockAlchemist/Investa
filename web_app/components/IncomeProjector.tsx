@@ -84,7 +84,7 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                                     // Sort payload by value desc for better reading in tooltip
                                     const sortedPayload = [...payload].sort((a, b) => (b.value as number) - (a.value as number));
                                     return (
-                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md p-3 rounded-xl text-xs min-w-[180px]">
+                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl text-xs min-w-[180px] border border-border/50 shadow-2xl">
                                             <p className="font-semibold mb-2 text-foreground">{label}</p>
                                             {sortedPayload.map((entry, idx) => (
                                                 <div key={`tooltip-${idx}`} className="flex items-center gap-3 mb-1 last:mb-0">

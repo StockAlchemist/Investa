@@ -141,12 +141,13 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                                     backgroundColor: 'transparent',
                                     borderRadius: '12px',
                                     border: 'none',
+                                    boxShadow: 'none',
                                     color: 'var(--foreground)'
                                 }}
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-white dark:bg-[#020817] p-3 rounded-xl !opacity-100">
+                                            <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-blue-500" />

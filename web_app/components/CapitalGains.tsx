@@ -190,10 +190,11 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                             </Bar>
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                contentStyle={{ backgroundColor: 'transparent', border: 'none' }}
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-white dark:bg-[#020817] p-3 rounded-xl !opacity-100">
+                                            <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-emerald-500" />

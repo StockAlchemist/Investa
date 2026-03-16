@@ -277,7 +277,7 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
             });
 
             return (
-                <div className="p-3 border border-border shadow-2xl rounded-xl min-w-[240px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-md">
+                <div className="bg-background/60 backdrop-blur-xl p-3 border border-border/50 shadow-2xl rounded-xl min-w-[240px] !opacity-100">
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
@@ -455,6 +455,7 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
 
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                contentStyle={{ backgroundColor: 'transparent', border: 'none' }}
                                 content={<CustomTooltip view={view} currency={currency} />}
                                 cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }}
                             />

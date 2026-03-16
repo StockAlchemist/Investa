@@ -90,7 +90,7 @@ function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) 
                             content={({ active, payload }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md p-3 rounded-xl">
+                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl border border-border/50 shadow-2xl">
                                             <p className="font-medium text-foreground">{payload[0].name}</p>
                                             <p className="text-sm text-muted-foreground">
                                                 {formatCurrency(payload[0].value as number, currency)}

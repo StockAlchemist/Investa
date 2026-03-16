@@ -716,10 +716,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         <Tooltip
                                             wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                             formatter={(value: any) => `${Number(value).toFixed(2)}%`}
+                                            contentStyle={{ backgroundColor: 'transparent', border: 'none' }}
                                             content={({ active, payload }) => {
                                                 if (active && payload && payload.length) {
                                                     return (
-                                                        <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md p-3 rounded-xl">
+                                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl border border-border/50 shadow-2xl">
                                                             <p className="font-medium text-foreground">{payload[0].name}</p>
                                                             <p className="text-sm text-muted-foreground">
                                                                 {Number(payload[0].value).toFixed(2)}%

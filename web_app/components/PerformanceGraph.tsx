@@ -438,7 +438,7 @@ export default function PerformanceGraph({
             );
 
             return (
-                <div className="bg-white dark:bg-[#020817] p-3 rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100">
+                <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100 border border-border/50 shadow-2xl">
                     <p className="text-sm font-bold text-foreground mb-2 pb-1">
                         {dateStr}
                     </p>
@@ -721,6 +721,7 @@ export default function PerformanceGraph({
                             <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                contentStyle={{ backgroundColor: 'transparent', border: 'none' }}
                                 content={<CustomTooltip />}
                                 cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }}
                             />

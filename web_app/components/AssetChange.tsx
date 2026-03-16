@@ -142,18 +142,18 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                 </Bar>
                             );
                         })}
-                        <Tooltip
-                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                            contentStyle={{
-                                backgroundColor: 'transparent',
-                                borderRadius: '12px',
-                                border: 'none',
-                                boxShadow: 'none'
-                            }}
-                            content={({ active, payload, label }) => {
+                            <Tooltip
+                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                                contentStyle={{
+                                    backgroundColor: 'transparent',
+                                    borderRadius: '12px',
+                                    border: 'none',
+                                    boxShadow: 'none'
+                                }}
+                                content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white dark:bg-[#020817] p-3 rounded-xl !opacity-100">
+                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
                                             <p className="font-medium text-foreground mb-1 text-sm">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
