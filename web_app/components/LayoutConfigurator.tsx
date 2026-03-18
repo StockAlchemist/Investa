@@ -57,7 +57,7 @@ export default function LayoutConfigurator({
                 className={cn(
                     "flex items-center justify-center gap-2 p-2 rounded-xl transition-all duration-300 group",
                     variant === 'ghost' ? "bg-transparent" : "bg-card",
-                    isOpen ? "ring-2 ring-cyan-500/20" : "text-cyan-500",
+                    isOpen ? "" : "text-cyan-500",
                     "h-[44px] px-3"
                 )}
                 title="Configure Dashboard"

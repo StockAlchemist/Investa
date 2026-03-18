@@ -224,7 +224,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={100} minHeight={100}>
-                        <PieChart margin={{ left: 20, right: 20, top: 10, bottom: 10 }}>
+                        <PieChart margin={{ left: 30, right: 30, top: 30, bottom: 50 }}>
                             {/* @ts-ignore */}
                             <Pie
                                 data={data}
