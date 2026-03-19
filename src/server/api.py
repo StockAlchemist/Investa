@@ -1580,6 +1580,7 @@ async def create_transaction(
 async def import_pdf(
     file: UploadFile = File(...),
     auto_add_cash: bool = Query(False, alias="auto_add_cash"),
+    account: Optional[str] = Query(None),
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
@@ -1609,6 +1610,10 @@ async def import_pdf(
             
         imported_count = 0
         for tx_data in transactions:
+            # Override account if provided
+            if account:
+                tx_data["Account"] = account
+                
             # We add each transaction to the DB
             success, _ = add_transaction_to_db(conn, tx_data)
             if success:

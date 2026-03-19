@@ -37,6 +37,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [isImporting, setIsImporting] = useState(false);
     const [autoAddCashOnImport, setAutoAddCashOnImport] = useState(true);
+    const [importAccount, setImportAccount] = useState('');
 
     const handleAdd = () => {
         setModalMode('add');
@@ -135,7 +136,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
         try {
             setIsImporting(true);
-            const result = await importIBKRPdf(file, autoAddCashOnImport);
+            const result = await importIBKRPdf(file, autoAddCashOnImport, importAccount || undefined);
             alert(`Successfully imported ${result.count} transactions!`);
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['summary'] });
@@ -375,26 +376,47 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             />
 
             <div className="flex flex-col gap-4">
-                <div className={`flex flex-col ${selectedIds.size === 0 ? 'lg:flex-row lg:justify-between lg:items-center' : ''} items-start gap-4`}>
-                    <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    {/* Primary Actions Group (Left) */}
+                    <div className="flex flex-row items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
                         <button
                             onClick={handleAdd}
-                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                            className="flex-shrink-0 px-3 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-xs font-bold flex items-center gap-1.5"
                         >
-                            <Plus className="h-4 w-4" />
-                            <span className="hidden md:inline">Add Transaction</span>
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Add</span>
                         </button>
-                        <div className="flex items-center bg-purple-600 rounded-md overflow-hidden h-9">
+                        
+                        <div className="flex-shrink-0 flex items-center bg-purple-600 rounded-md overflow-hidden h-9">
+                            <select
+                                value={importAccount}
+                                onChange={(e) => setImportAccount(e.target.value)}
+                                className="bg-purple-700 text-white text-[9px] font-bold h-full border-none focus:ring-0 cursor-pointer appearance-none px-1.5 pr-5 uppercase tracking-tighter"
+                                style={{
+                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7' /%3E%3C/svg%3E")`,
+                                    backgroundRepeat: 'no-repeat',
+                                    backgroundPosition: 'right 0.3rem center',
+                                    backgroundSize: '0.8em'
+                                }}
+                            >
+                                <option value="" className="bg-purple-800 text-[9px]">DEFAULT</option>
+                                {existingAccounts.map(acc => (
+                                    <option key={acc} value={acc} className="bg-purple-800 text-[9px]">{acc}</option>
+                                ))}
+                            </select>
+                            <div className="w-[1px] h-4 bg-white/20" />
                             <button
                                 onClick={handleImportClick}
                                 disabled={isImporting}
-                                className="px-3 h-full flex items-center gap-2 text-white hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-50"
+                                className="px-2 h-full flex items-center gap-1.5 text-white hover:bg-purple-700 transition-colors text-xs font-bold disabled:opacity-50 border-none"
+                                title="Only used to import from an IBKR trade confirmation PDF file"
                             >
-                                <FileText className="h-4 w-4 shrink-0" />
-                                <span className="hidden md:inline whitespace-nowrap">{isImporting ? 'Importing...' : 'Import IBKR PDF'}</span>
+                                <FileText className="h-3.5 w-3.5 shrink-0" />
+                                <span className="whitespace-nowrap">{isImporting ? '...' : 'Import'}</span>
                             </button>
+                            <div className="w-[1px] h-4 bg-white/20" />
                             <label 
-                                className="flex items-center gap-1.5 px-2 h-full hover:bg-purple-700 transition-colors cursor-pointer select-none"
+                                className="flex items-center gap-1 px-2 h-full hover:bg-purple-700 transition-colors cursor-pointer select-none"
                                 htmlFor="auto-add-cash-import"
                             >
                                 <input
@@ -402,14 +424,12 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                     id="auto-add-cash-import"
                                     checked={autoAddCashOnImport}
                                     onChange={(e) => setAutoAddCashOnImport(e.target.checked)}
-                                    className="h-3.5 w-3.5 rounded border-none bg-white/10 text-white focus:ring-offset-0 focus:ring-0 cursor-pointer"
+                                    className="h-3 w-3 rounded border-none bg-white/10 text-white focus:ring-offset-0 focus:ring-0 cursor-pointer"
                                 />
-                                <div className="flex flex-col leading-[0.7rem] text-[9px] font-bold text-white/90">
-                                    <span className="uppercase tracking-tighter">Auto</span>
-                                    <span className="uppercase tracking-tighter">Cash</span>
-                                </div>
+                                <span className="text-[9px] font-bold text-white/90 uppercase tracking-tighter">Auto</span>
                             </label>
                         </div>
+
                         <input
                             type="file"
                             accept=".pdf"
@@ -417,54 +437,61 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             style={{ display: 'none' }}
                             onChange={handleFileUpload}
                         />
+
                         {selectedIds.size > 0 && (
                             <button
                                 onClick={handleBulkDelete}
-                                className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium flex items-center gap-2"
                             >
                                 <Trash2 className="h-4 w-4" />
-                                <span className="hidden md:inline">Delete Selected ({selectedIds.size})</span>
+                                <span>Delete ({selectedIds.size})</span>
                             </button>
                         )}
-                        <button
-                            onClick={() => { setShowFilters(!showFilters); if (showFilters) resetFilters(); }}
-                            className="flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary rounded-lg hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center"
-                        >
-                            <div className="flex items-center gap-2">
-                                <Filter className="h-4 w-4" />
-                                <span className="hidden md:inline">{showFilters ? 'Hide Filters' : 'Show Filters'}</span>
-                            </div>
-                            <span className="text-xs hidden md:inline">{showFilters ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}</span>
-                        </button>
+                    </div>
+
+                    {/* Secondary Actions & Info Group (Right) */}
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end flex-1">
+                        <div className="text-xs font-medium text-muted-foreground bg-secondary/50 px-3 py-2 rounded-lg border border-border/50 hidden md:block whitespace-nowrap">
+                            Showing <span className="text-foreground font-bold">{visibleTransactions.length}</span> of <span className="text-foreground font-bold">{filteredTransactions.length}</span>
+                        </div>
+
+                        <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg">
+                            <button
+                                onClick={() => { setShowFilters(!showFilters); if (showFilters) resetFilters(); }}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${showFilters 
+                                    ? 'bg-[#0097b2] text-white shadow-sm' 
+                                    : 'text-foreground hover:bg-accent/10'}`}
+                            >
+                                <Filter className="h-3.5 w-3.5" />
+                                <span>Filters</span>
+                            </button>
+                            
+                            <button
+                                onClick={() => setShowInternalCash(!showInternalCash)}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${showInternalCash
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    : 'text-foreground hover:bg-accent/10'}`}
+                            >
+                                {showInternalCash ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                <span>Internal Cash</span>
+                            </button>
+                        </div>
+
                         <button
                             onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
-                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-secondary text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center flex items-center justify-center gap-2"
+                            className="p-2 text-foreground bg-secondary rounded-lg hover:bg-accent/10 transition-all"
+                            title="Export CSV"
                         >
                             <Download className="h-4 w-4" />
-                            <span className="hidden md:inline">Export CSV</span>
                         </button>
-                        <button
-                            onClick={() => setShowInternalCash(!showInternalCash)}
-                            className={`flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center ${showInternalCash
-                                ? 'bg-cyan-500/10 text-cyan-500'
-                                : 'bg-secondary text-foreground hover:bg-accent/10'
-                                }`}
-                        >
-                            <div className="flex items-center gap-2">
-                                {showInternalCash ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                <span className="hidden md:inline">{showInternalCash ? 'Hide Internal Cash' : 'Show Internal Cash'}</span>
-                            </div>
-                        </button>
+
                         <button
                             onClick={() => setMobileViewMode(current => current === 'card' ? 'table' : 'card')}
-                            className="md:hidden flex-1 md:flex-none flex items-center justify-center gap-1.5 px-2 md:px-4 py-2 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary hover:bg-accent/10"
+                            className="md:hidden p-2 text-foreground bg-secondary rounded-lg hover:bg-accent/10 transition-all"
                             title={mobileViewMode === 'card' ? 'Switch to Table View' : 'Switch to Card View'}
                         >
                             {mobileViewMode === 'card' ? <TableIcon className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
                         </button>
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Showing {visibleTransactions.length} of {filteredTransactions.length} transactions
                     </div>
                 </div>
 

@@ -241,11 +241,16 @@ export async function addTransaction(transaction: Transaction): Promise<StatusRe
     return response.json();
 }
 
-export async function importIBKRPdf(file: File, autoAddCash: boolean = false): Promise<{ status: string, count: number, message: string }> {
+export async function importIBKRPdf(file: File, autoAddCash: boolean = false, account?: string): Promise<{ status: string, count: number, message: string }> {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await authFetch(`${API_BASE_URL}/transactions/import_pdf?auto_add_cash=${autoAddCash}`, {
+    let url = `${API_BASE_URL}/transactions/import_pdf?auto_add_cash=${autoAddCash}`;
+    if (account) {
+        url += `&account=${encodeURIComponent(account)}`;
+    }
+
+    const response = await authFetch(url, {
         method: "POST",
         body: formData,
     });
