@@ -6538,6 +6538,12 @@ def calculate_historical_performance(
                             # MLK Day holiday requires > 72h (Fri 4pm to Tue 9:30am is ~90h)
                             tol = pd.Timedelta('120h')
 
+                            # --- FIX: Ensure TZ alignment for reindexing ---
+                            if bm_series.index.tz is None and daily_df.index.tz is not None:
+                                bm_series.index = bm_series.index.tz_localize(daily_df.index.tz)
+                            elif bm_series.index.tz is not None and daily_df.index.tz is None:
+                                bm_series.index = bm_series.index.tz_localize(None)
+
                             is_intra = any(x in interval for x in ["m", "h", "min"])
                             if is_intra:
                                 bm_series_aligned = bm_series.reindex(daily_df.index).interpolate(method='time').ffill().bfill()

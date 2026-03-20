@@ -1100,14 +1100,16 @@ async def get_portfolio_ai_review(
                 end_date=end_date,
                 display_currency=currency,
                 include_accounts=accounts,
-                benchmark_symbols_yf=[], # No benchmarks needed for pure portfolio risk stats
+                benchmark_symbols_yf=['^GSPC'], # Fetch S&P 500 for Beta/Alpha
                 interval="D",
                 db_mtime=mtime
             )
             
             if daily_df is not None and "Portfolio Value" in daily_df.columns:
                  portfolio_values = daily_df["Portfolio Value"]
-                 risk_metrics = clean_nans(calculate_all_risk_metrics(portfolio_values))
+                 benchmark_values = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
+                 risk_metrics = clean_nans(calculate_all_risk_metrics(portfolio_values, benchmark_values=benchmark_values))
+
             
             # Fallback if empty - Just log it, don't use mock data for production
             if not risk_metrics:
@@ -3448,7 +3450,7 @@ async def get_risk_metrics(
             end_date=date.today(),
             display_currency=currency,
             include_accounts=accounts,
-            benchmark_symbols_yf=[], # Add empty benchmarks for risk metrics
+            benchmark_symbols_yf=['^GSPC'], # Add S&P 500 for risk metrics
             interval="D",
             db_mtime=data[6] # db_mtime
         )
@@ -3457,8 +3459,12 @@ async def get_risk_metrics(
             return {}
 
         portfolio_values = daily_df["Portfolio Value"]
-        metrics = calculate_all_risk_metrics(portfolio_values)
+        benchmark_values = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
+        metrics = calculate_all_risk_metrics(portfolio_values, benchmark_values=benchmark_values)
+        if metrics.get('Beta') is None:
+            logging.warning(f"Risk Metrics: Beta is None. daily_df columns: {daily_df.columns.tolist()}, port_len={len(portfolio_values)}, bench_len={len(benchmark_values) if benchmark_values is not None else 0}")
         return clean_nans(metrics)
+
     except Exception as e:
         logging.error(f"Error calculating risk metrics: {e}")
         return {"error": str(e)}
@@ -3989,20 +3995,27 @@ async def get_portfolio_health(
             currency=currency,
             period="1y", # Standard period for health check
             accounts=accounts,
-            benchmarks=None,
+            benchmarks=["S&P 500"], # Use S&P 500 for Beta/Alpha
             data=data,
             return_df=True # Requested DF for calculations
         )
         
         portfolio_series = pd.Series(dtype=float)
+        benchmark_series = pd.Series(dtype=float)
         if history_df is not None and not history_df.empty and "value" in history_df.columns:
              logging.info(f"Health: History DF shape: {history_df.shape}")
              # Extract portfolio portfolio value series
-             portfolio_series = history_df.set_index("date")["value"]
+             history_df_reset = history_df.set_index("date")
+             portfolio_series = history_df_reset["value"]
+             
+             # Extract benchmark series if available (using ticker ^GSPC which S&P 500 maps to)
+             if "^GSPC Price" in history_df_reset.columns:
+                 benchmark_series = history_df_reset["^GSPC Price"]
         else:
              logging.warning(f"Health: History DF is empty or missing 'value'. Columns: {history_df.columns if history_df is not None else 'None'}")
              
-        risk_metrics = calculate_all_risk_metrics(portfolio_series)
+        risk_metrics = calculate_all_risk_metrics(portfolio_series, benchmark_values=benchmark_series if not benchmark_series.empty else None)
+
         logging.info(f"Health: Risk Metrics: {risk_metrics}")
         
         # 3. Calculate Health Score

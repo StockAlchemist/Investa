@@ -14,6 +14,8 @@ interface RiskMetricsProps {
         'Volatility (Ann.)'?: number;
         'Sharpe Ratio'?: number;
         'Sortino Ratio'?: number;
+        'Beta'?: number;
+        'Alpha'?: number;
     };
     portfolioHealth: PortfolioHealth | null;
     isLoading: boolean;
@@ -127,6 +129,18 @@ const RISK_EXPLANATIONS: Record<string, { title: string, description: string, in
         description: 'The maximum observed loss from a peak to a trough of a portfolio, before a new peak is attained.',
         interpretation: 'It is an indicator of downside risk over a specified time period. A lower (closer to 0%) drawdown suggests better capital preservation capabilities. (0-10%: Excellent, 10-20%: Good, 20-30%: Fair, > 30%: Concerning)',
         formula: '(Trough Value - Peak Value) / Peak Value'
+    },
+    'Beta': {
+        title: 'Portfolio Beta',
+        description: 'Measures the price sensitivity of an investment relative to the overall market (S&P 500).',
+        interpretation: 'Beta = 1: Moves with the market. Beta > 1: More volatile than the market (Aggressive). Beta < 1: Less volatile than the market (Defensive).',
+        formula: 'Cov(Rp, Rm) / Var(Rm)'
+    },
+    'Alpha': {
+        title: 'Jensen\'s Alpha',
+        description: 'The excess return of an investment relative to the return of a benchmark index after adjusting for risk.',
+        interpretation: 'Positive alpha indicates the investment outperformed its benchmark after adjusting for risk (Beta). It represents the value added by the portfolio manager/strategy.',
+        formula: 'Rp - [Rf + Beta * (Rm - Rf)]'
     }
 };
 
@@ -155,9 +169,10 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     <Skeleton className="h-4 w-32 opacity-50" />
                     <Skeleton className="h-8 w-8 rounded-lg opacity-50" />
                 </div>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
-                    {[1, 2, 3, 4].map((i) => (
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 flex-1">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
                         <div key={i} className="h-full rounded-xl bg-muted/30 p-4 space-y-2">
+
                             <Skeleton className="h-3 w-16 opacity-30" />
                             <Skeleton className="h-6 w-12 opacity-30" />
                         </div>
@@ -213,6 +228,24 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
             color: 'text-red-500',
             icon: ArrowDownRight,
             onClick: () => setSelectedMetric('Max Drawdown')
+        },
+        {
+            key: 'Beta',
+            label: 'Beta',
+            value: formatNumber(metrics['Beta']),
+            description: 'Market sensitivity',
+            color: metrics['Beta'] && metrics['Beta'] > 1.2 ? 'text-amber-500' : 'text-muted-foreground',
+            icon: Activity,
+            onClick: () => setSelectedMetric('Beta')
+        },
+        {
+            key: 'Alpha',
+            label: 'Alpha',
+            value: formatPercent(metrics['Alpha']),
+            description: 'Excess return',
+            color: metrics['Alpha'] && metrics['Alpha'] > 0 ? 'text-emerald-500' : metrics['Alpha'] && metrics['Alpha'] < 0 ? 'text-red-500' : 'text-muted-foreground',
+            icon: TrendingUp,
+            onClick: () => setSelectedMetric('Alpha')
         },
     ];
 
@@ -300,7 +333,8 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     )}
 
                     {/* Right Side: Metrics Grid */}
-                    <div className="flex-1 grid grid-cols-2 gap-3">
+                    <div className="flex-1 grid grid-cols-2 lg:grid-cols-3 gap-3">
+
                         {items.map((item) => (
                             <MetricItem
                                 key={item.key}

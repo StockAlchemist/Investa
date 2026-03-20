@@ -15,7 +15,7 @@ SPDX-License-Identifier: MIT
 
 import pandas as pd
 import numpy as np
-from typing import Dict
+from typing import Dict, Optional
 
 def calculate_drawdown_series(series: pd.Series) -> pd.Series:
     """
@@ -162,10 +162,62 @@ def calculate_sortino_ratio(
     
     return float(sortino_annual)
 
+def calculate_beta(returns_series: pd.Series, benchmark_returns: pd.Series) -> float:
+    """
+    Calculates the Beta of the portfolio relative to a benchmark.
+    Beta = Cov(Rp, Rm) / Var(Rm)
+
+    Args:
+        returns_series (pd.Series): Portfolio periodic returns.
+        benchmark_returns (pd.Series): Benchmark periodic returns.
+
+    Returns:
+        float: Portfolio Beta.
+    """
+    if returns_series.empty or benchmark_returns.empty:
+        return 1.0
+        
+    # Align the series by date
+    aligned = pd.concat([returns_series, benchmark_returns], axis=1).dropna()
+    if len(aligned) < 2:
+        return 1.0
+        
+    cov = aligned.iloc[:, 0].cov(aligned.iloc[:, 1])
+    var = aligned.iloc[:, 1].var()
+    
+    if var == 0:
+        return 1.0
+        
+    return float(cov / var)
+
+def calculate_alpha(
+    portfolio_return_ann: float, 
+    benchmark_return_ann: float, 
+    beta: float, 
+    risk_free_rate: float = 0.02
+) -> float:
+    """
+    Calculates Jensen's Alpha.
+    Alpha = Rp - [Rf + Beta * (Rm - Rf)]
+
+    Args:
+        portfolio_return_ann (float): Annualized portfolio return.
+        benchmark_return_ann (float): Annualized benchmark return.
+        beta (float): Portfolio Beta.
+        risk_free_rate (float): Annualized risk-free rate.
+
+    Returns:
+        float: Portfolio Alpha.
+    """
+    expected_return = risk_free_rate + beta * (benchmark_return_ann - risk_free_rate)
+    alpha = portfolio_return_ann - expected_return
+    return float(alpha)
+
 def calculate_all_risk_metrics(
     portfolio_values: pd.Series, 
     risk_free_rate: float = 0.02,
-    periods_per_year: int = 252
+    periods_per_year: int = 252,
+    benchmark_values: Optional[pd.Series] = None
 ) -> Dict[str, float]:
     """
     Wrapper to calculate all risk metrics from a series of portfolio values.
@@ -174,6 +226,7 @@ def calculate_all_risk_metrics(
         portfolio_values (pd.Series): Time series of portfolio total value.
         risk_free_rate (float): Annualized risk-free rate.
         periods_per_year (int): Periods per year.
+        benchmark_values (pd.Series, optional): Time series of benchmark values (e.g. S&P 500).
 
     Returns:
         Dict[str, float]: Dictionary containing all calculated metrics.
@@ -182,7 +235,6 @@ def calculate_all_risk_metrics(
         return {}
         
     # Calculate returns
-    # Calculate returns and replace inf with NaN so they can be dropped or handled
     returns = portfolio_values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
     
     mdd = calculate_max_drawdown(portfolio_values)
@@ -190,9 +242,27 @@ def calculate_all_risk_metrics(
     sharpe = calculate_sharpe_ratio(returns, risk_free_rate, periods_per_year)
     sortino = calculate_sortino_ratio(returns, risk_free_rate, periods_per_year)
     
-    return {
+    metrics = {
         "Max Drawdown": mdd,
         "Volatility (Ann.)": vol,
         "Sharpe Ratio": sharpe,
         "Sortino Ratio": sortino
     }
+
+    # Add Alpha & Beta if benchmark provided
+    if benchmark_values is not None and not benchmark_values.empty:
+        bench_returns = benchmark_values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+        if not bench_returns.empty:
+            beta = calculate_beta(returns, bench_returns)
+            
+            # Annualized returns for Alpha
+            port_ann_ret = returns.mean() * periods_per_year
+            bench_ann_ret = bench_returns.mean() * periods_per_year
+            
+            alpha = calculate_alpha(port_ann_ret, bench_ann_ret, beta, risk_free_rate)
+            
+            metrics["Beta"] = beta
+            metrics["Alpha"] = alpha
+            
+    return metrics
+
