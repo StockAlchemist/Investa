@@ -263,6 +263,22 @@ export default function Dashboard({
                     accentColor={themeColor}
                     variant={variant}
                 />;
+            case 'dividendYield':
+                return <MetricCard
+                    title="Dividend Yield %"
+                    value={m?.dividend_return_cumulative !== undefined && m?.dividend_return_cumulative !== null ?
+                        `${m.dividend_return_cumulative > 0 ? '+' : ''}${m.dividend_return_cumulative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'}
+                    subValue={m?.dividend_return_annualized !== undefined && m?.dividend_return_annualized !== null ?
+                        `${m.dividend_return_annualized > 0 ? '+' : ''}${m.dividend_return_annualized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined}
+                    isCurrency={false}
+                    colorClass={m?.dividend_return_cumulative && m.dividend_return_cumulative >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
+                    subValueClassName={cn("", (m?.dividend_return_annualized ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
+                    isLoading={isLoading}
+                    isRefreshing={isRefreshing}
+                    icon={Percent}
+                    accentColor={themeColor}
+                    variant={variant}
+                />;
             case 'fees':
                 return <MetricCard
                     title="Fees"

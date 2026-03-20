@@ -7,18 +7,19 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import StockDetailModal from './StockDetailModal';
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
-import { CircleDollarSign, CalendarClock } from 'lucide-react';
+import { CircleDollarSign, CalendarClock, Percent } from 'lucide-react';
 import { MetricCard } from './MetricCard';
 
 interface DividendProps {
     data: Dividend[] | null;
     currency: string;
     expectedDividends?: number;
+    dividendYield?: number;
     children?: React.ReactNode;
     isLoading?: boolean;
 }
 
-export default function Dividend({ data, currency, expectedDividends, children, isLoading }: DividendProps) {
+export default function Dividend({ data, currency, expectedDividends, dividendYield, children, isLoading }: DividendProps) {
     const [sortConfig, setSortConfig] = useState<{ key: keyof Dividend; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -111,6 +112,16 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                         currency={currency}
                         colorClass="text-cyan-600 dark:text-cyan-400"
                         icon={CalendarClock}
+                    />
+                )}
+
+                {dividendYield !== undefined && (
+                    <MetricCard
+                        title="Annual Yield %"
+                        value={`${dividendYield.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`}
+                        isCurrency={false}
+                        colorClass="text-purple-600 dark:text-purple-400"
+                        icon={Percent}
                     />
                 )}
             </div>

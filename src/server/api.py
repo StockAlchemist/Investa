@@ -889,6 +889,39 @@ async def _calculate_portfolio_summary_internal(
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
         overall_summary_metrics["cumulative_twr"] = cumulative_twr
+        
+        # --- NEW: Calculate Historical Dividend Metrics ---
+        # Similar to TWR, these are based on total history (since inception)
+        total_dividends = overall_summary_metrics.get("dividends", 0.0)
+        total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
+        
+        # We need 'days' since inception for the annualized calculation.
+        # Recalculate 'days' if not already in scope from one of the TWR branches.
+        days_since_inception = 0
+        try:
+            df_for_days = df
+            if include_accounts:
+                df_for_days = df[df["Account"].isin(include_accounts)]
+            if not df_for_days.empty:
+                min_date_val = df_for_days["Date"].min().date()
+                days_since_inception = (date.today() - min_date_val).days
+        except Exception:
+            pass
+
+        if abs(total_buy_cost) > 1e-9:
+            # 1. Cumulative Historical Dividend Return % (Yield on Cost)
+            div_cum = (total_dividends / total_buy_cost) * 100.0
+            overall_summary_metrics["dividend_return_cumulative"] = div_cum
+            
+            # 2. Annualized Historical Dividend Return %
+            if days_since_inception > 0:
+                # Geometric annualization: (1 + total_div/total_cost)^(365.25/days) - 1
+                div_factor = 1.0 + (total_dividends / total_buy_cost)
+                if div_factor > 0:
+                    annual_div_factor = div_factor ** (365.25 / days_since_inception)
+                    overall_summary_metrics["dividend_return_annualized"] = (annual_div_factor - 1) * 100.0
+        # --- END NEW ---
+
         # Base calculator now correctly includes cash interest (due to fresh config load).
         # We verified 'est_annual_income_display' matches user expectations (~$5237).
         pass

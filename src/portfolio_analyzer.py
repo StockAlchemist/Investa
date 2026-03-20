@@ -1975,6 +1975,14 @@ def _calculate_aggregate_metrics(
     )
     # --- END ADDED ---
 
+    # --- ADDED: Overall Forward Dividend Yield Percentage ---
+    overall_dividend_yield_pct = (
+        (overall_est_annual_income_display / overall_market_value_display) * 100
+        if abs(overall_market_value_display) > 1e-9
+        else 0.0
+    )
+    # --- END ADDED ---
+
     # --- ADDED: Overall MWR (IRR) Calculation ---
     overall_mwr = np.nan
     
@@ -2102,6 +2110,7 @@ def _calculate_aggregate_metrics(
         "fx_gain_loss_display": overall_fx_gain_loss_display,  # ADDED
         "fx_gain_loss_pct": overall_fx_gain_loss_pct,  # ADDED
         "est_annual_income_display": overall_est_annual_income_display,  # ADDED
+        "dividend_yield_pct": overall_dividend_yield_pct,  # ADDED
         "cash_balance": overall_cash_balance_display,  # ADDED
     }
     logging.debug(

@@ -609,6 +609,7 @@ export default function Home() {
               data={dividendData}
               currency={currency}
               expectedDividends={summary?.metrics?.est_annual_income_display as number}
+              dividendYield={summary?.metrics?.dividend_yield_pct as number}
               isLoading={dividendsQuery.isPending && !dividendsQuery.data}
             >
               <IncomeProjector
@@ -754,6 +755,14 @@ export default function Home() {
                 availableCurrencies={settingsQuery.data?.available_currencies}
                 align="left"
               />
+              {activeTab === 'performance' && (
+                <LayoutConfigurator
+                  visibleItems={visibleItems}
+                  onVisibleItemsChange={setVisibleItems}
+                  variant="ghost"
+                  align="left"
+                />
+              )}
               <AccountSelector
                 availableAccounts={availableAccounts}
                 selectedAccounts={selectedAccounts}
@@ -762,29 +771,12 @@ export default function Home() {
                 variant="ghost"
                 align="left"
               />
-              {activeTab === 'performance' && (
-                <LayoutConfigurator
-                  visibleItems={visibleItems}
-                  onVisibleItemsChange={setVisibleItems}
-                  variant="ghost"
-                  align="right"
-                />
-              )}
               <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={logout} side="bottom" />
               <UserMenu
                 user={user}
                 onLogout={logout}
                 onUserClick={handleUserIconClick}
                 align="right"
-              />
-            </div>
-
-            <div className="hidden md:block">
-              <AccountSelector
-                availableAccounts={availableAccounts}
-                selectedAccounts={selectedAccounts}
-                onChange={setSelectedAccounts}
-                accountGroups={settingsQuery.data?.account_groups}
               />
             </div>
 
@@ -796,6 +788,15 @@ export default function Home() {
                 />
               </div>
             )}
+
+            <div className="hidden md:block">
+              <AccountSelector
+                availableAccounts={availableAccounts}
+                selectedAccounts={selectedAccounts}
+                onChange={setSelectedAccounts}
+                accountGroups={settingsQuery.data?.account_groups}
+              />
+            </div>
 
           </div>
         </div>

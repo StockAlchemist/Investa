@@ -10,6 +10,7 @@ export const DEFAULT_ITEMS = [
     { id: 'annualTWR', title: 'Annual TWR', colSpan: 'col-span-2 lg:col-span-1' },
     { id: 'mwr', title: 'IRR (MWR)', colSpan: 'col-span-1' },
     { id: 'ytdDividends', title: 'Total Dividends', colSpan: 'col-span-1' },
+    { id: 'dividendYield', title: 'Dividend Yield %', colSpan: 'col-span-1' },
     { id: 'cashBalance', title: 'Cash Balance', colSpan: 'col-span-1' },
     { id: 'fxGL', title: 'FX Gain/Loss', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'fees', title: 'Fees', colSpan: 'col-span-2 md:col-span-1' },
@@ -25,6 +26,7 @@ export const INITIAL_VISIBLE_ITEMS = [
     'realizedGain',
     'annualTWR',
     'mwr',
+    'dividendYield',
     'cashBalance',
     'portfolioDonut'
 ];

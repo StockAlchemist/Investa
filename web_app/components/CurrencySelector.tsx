@@ -47,7 +47,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300 hidden sm:block",
                     isOpen ? "bg-cyan-500 text-white" : "text-cyan-500 group-hover:scale-110",
-                    side === 'bottom' && "p-1 bg-secondary"
+                    side === 'bottom' && (isOpen ? "p-1" : "p-1 bg-secondary")
                 )}>
                     <Globe className={cn(side === 'bottom' ? "w-3.5 h-3.5" : "w-5 h-5")} />
                 </div>

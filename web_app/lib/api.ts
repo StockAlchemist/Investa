@@ -106,6 +106,9 @@ export interface PortfolioSummary {
         annualized_twr?: number;
         cumulative_twr?: number;
         portfolio_mwr?: number; // Added Money-Weighted Return (IRR)
+        dividend_return_cumulative?: number;
+        dividend_return_annualized?: number;
+        dividend_yield_pct?: number;
         cash_balance?: number; // Might not be directly in metrics, check account_metrics for Cash
         exchange_rate_to_display?: number;
         indices?: Record<string, {
