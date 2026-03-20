@@ -388,10 +388,20 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         </button>
                         
                         <div className="flex-shrink-0 flex items-center bg-purple-600 rounded-md overflow-hidden h-9">
+                            <button
+                                onClick={handleImportClick}
+                                disabled={isImporting}
+                                className="px-2 h-full flex items-center gap-1.5 text-white hover:bg-purple-700 transition-colors text-xs font-bold disabled:opacity-50 border-none"
+                                title="Only used to import from an IBKR trade confirmation PDF file"
+                            >
+                                <FileText className="h-3.5 w-3.5 shrink-0" />
+                                <span className="whitespace-nowrap">{isImporting ? '...' : 'Import'}</span>
+                            </button>
+                            <div className="w-[1px] h-4 bg-white/20" />
                             <select
                                 value={importAccount}
                                 onChange={(e) => setImportAccount(e.target.value)}
-                                className="bg-purple-700 text-white text-[9px] font-bold h-full border-none focus:ring-0 cursor-pointer appearance-none px-1.5 pr-5 uppercase tracking-tighter"
+                                className="bg-purple-700 text-white text-[9px] font-bold h-full border-none focus:ring-0 cursor-pointer appearance-none pl-1.5 pr-6 text-right uppercase tracking-tighter"
                                 style={{
                                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7' /%3E%3C/svg%3E")`,
                                     backgroundRepeat: 'no-repeat',
@@ -404,16 +414,6 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                     <option key={acc} value={acc} className="bg-purple-800 text-[9px]">{acc}</option>
                                 ))}
                             </select>
-                            <div className="w-[1px] h-4 bg-white/20" />
-                            <button
-                                onClick={handleImportClick}
-                                disabled={isImporting}
-                                className="px-2 h-full flex items-center gap-1.5 text-white hover:bg-purple-700 transition-colors text-xs font-bold disabled:opacity-50 border-none"
-                                title="Only used to import from an IBKR trade confirmation PDF file"
-                            >
-                                <FileText className="h-3.5 w-3.5 shrink-0" />
-                                <span className="whitespace-nowrap">{isImporting ? '...' : 'Import'}</span>
-                            </button>
                             <div className="w-[1px] h-4 bg-white/20" />
                             <label 
                                 className="flex items-center gap-1 px-2 h-full hover:bg-purple-700 transition-colors cursor-pointer select-none"
