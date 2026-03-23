@@ -535,9 +535,9 @@ export default function PerformanceGraph({
     const isContinuous = period === '1d';
 
     return (
-        <div ref={containerRef} className="bg-card rounded-2xl p-6 mb-6 overflow-visible relative transition-all duration-300 group/section">
-            <div className="mb-6">
-                <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
+        <div ref={containerRef} className="bg-card rounded-2xl p-4 sm:p-6 mb-6 overflow-visible relative transition-all duration-300 group/section">
+            <div className="mb-4 md:mb-6">
+                <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-2 md:mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground flex items-center gap-2">
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                         {loading && processedData.length > 0 && (

@@ -218,19 +218,19 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     const mainTotalText = getMainValueString(true);
 
     return (
-        <div className="relative h-full">
-            <h4 className="absolute top-3 left-4 z-10 text-xs font-semibold text-muted-foreground uppercase tracking-tight">{title}</h4>
-            <div className="relative w-full h-full min-h-[350px] md:min-h-[500px]">
+        <div className="relative h-full flex flex-col">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-tight mb-1 px-4 pt-3 shrink-0">{title}</h4>
+            <div className="relative flex-1 min-h-[350px] md:min-h-[500px]">
                 {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={100} minHeight={100}>
-                        <PieChart margin={{ left: 30, right: 30, top: 30, bottom: 50 }}>
+                        <PieChart margin={{ left: 20, right: 20, top: 25, bottom: 25 }}>
                             {/* @ts-ignore */}
                             <Pie
                                 data={data}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius="60%"
+                                innerRadius="55%"
                                 outerRadius="85%"
                                 paddingAngle={2}
                                 dataKey="value"

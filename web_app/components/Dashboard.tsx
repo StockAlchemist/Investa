@@ -327,7 +327,7 @@ export default function Dashboard({
     const visibleComplexItems = DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id) && COMPLEX_METRIC_IDS.includes(item.id));
 
     return (
-        <div className="mb-14 space-y-10">
+        <div className="mb-4 md:mb-14 space-y-6 md:space-y-10">
             {/* Scalar Metrics Floating Board */}
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 {visibleScalarItems.map((item) => (
@@ -339,7 +339,7 @@ export default function Dashboard({
 
             {/* Complex/Tall Metrics Grid */}
             {visibleComplexItems.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
                     {visibleComplexItems.map((item) => (
                         <div key={item.id} className={item.colSpan}>
                             {renderContent(item.id)}
