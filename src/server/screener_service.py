@@ -259,6 +259,22 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
         symbols = get_russell2000_tickers()
     elif universe_type == "sp400":
         symbols = get_sp400_tickers()
+    elif universe_type == "all":
+        # For 'all', we fetch everything from the DB
+        conn = db_conn or get_db_connection()
+        try:
+            from db_utils import get_all_distinct_screener_results
+            cached_all = get_all_distinct_screener_results(conn)
+            symbols = [r['symbol'] for r in cached_all]
+            
+            if fast_mode:
+                logging.info(f"Screener: 'all' universe FAST MODE. Returning {len(cached_all)} items.")
+                return cached_all
+        except Exception as e:
+            logging.error(f"Error fetching 'all' universe symbols: {e}")
+            return []
+        finally:
+            if not db_conn and conn: conn.close()
     
     if not symbols:
         return []

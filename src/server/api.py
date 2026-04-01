@@ -4423,7 +4423,7 @@ async def clear_cache():
         raise HTTPException(status_code=500, detail=str(e))
 
 class ScreenerRequest(BaseModel):
-    universe_type: str = Field(..., description="watchlist, manual, or sp500")
+    universe_type: str = Field(..., description="watchlist, manual, sp500, russell2000, sp400, holdings, or all")
     universe_id: Optional[str] = None
     manual_symbols: Optional[List[str]] = None
     fast_mode: Optional[bool] = False

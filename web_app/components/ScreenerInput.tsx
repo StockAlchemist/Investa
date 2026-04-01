@@ -73,6 +73,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     <option value="sp500" className="bg-card text-foreground">S&P 500 (Large Cap)</option>
                                     <option value="sp400" className="bg-card text-foreground">S&P 400 (Mid Cap)</option>
                                     <option value="russell2000" className="bg-card text-foreground">Russell 2000 (Small Cap)</option>
+                                    <option value="all" className="bg-card text-foreground">All Database Stocks</option>
                                     <option value="manual" className="bg-card text-foreground">Custom List</option>
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />

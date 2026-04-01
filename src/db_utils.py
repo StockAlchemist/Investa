@@ -1285,6 +1285,90 @@ def get_screener_results_by_universe(db_conn: sqlite3.Connection, universe: str)
     finally:
         if is_temporary_conn:
             target_conn.close()
+
+def get_all_distinct_screener_results(db_conn: sqlite3.Connection) -> List[Dict[str, Any]]:
+    """
+    Retrieves the latest cached screener results for all unique symbols in the database,
+    merging results from both the User (current) and Global databases.
+    """
+    global_path = get_global_screener_db_path()
+    
+    # 1. Helper to fetch all from a connection
+    def fetch_all(conn):
+        # We use a subquery to get the latest updated_at per symbol
+        # SQLite GROUP BY symbol alone is not guaranteed to pick the row with max(updated_at)
+        # for other columns unless using a specific subquery or window function.
+        sql = """
+            SELECT * FROM screener_cache t1
+            WHERE updated_at = (
+                SELECT max(updated_at) 
+                FROM screener_cache t2 
+                WHERE t2.symbol = t1.symbol
+            )
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        cols = [description[0] for description in cursor.description]
+        return {row[cols.index('symbol')]: dict(zip(cols, row)) for row in rows}
+
+    results = {}
+    
+    # Start with provided connection (User DB)
+    try:
+        results = fetch_all(db_conn)
+    except sqlite3.Error as e:
+        logging.error(f"Error fetching from user screener cache: {e}")
+
+    # Merge with Global DB
+    if os.path.exists(global_path):
+        import sqlite3 as sqlite_lib
+        try:
+            # Check if current connection is already the global one
+            current_db_res = db_conn.execute("PRAGMA database_list").fetchone()
+            current_db_path = current_db_res[2] if current_db_res else ""
+            
+            if not current_db_path or os.path.abspath(current_db_path) != os.path.abspath(global_path):
+                with sqlite_lib.connect(global_path) as global_conn:
+                    global_data = fetch_all(global_conn)
+                    # Merge: if symbol exists, take the one with newer updated_at
+                    for sym, g_row in global_data.items():
+                        if sym not in results:
+                            results[sym] = g_row
+                        else:
+                            u_row = results[sym]
+                            u_updated = u_row.get('updated_at', '')
+                            g_updated = g_row.get('updated_at', '')
+                            if g_updated > u_updated:
+                                results[sym] = g_row
+        except Exception as e:
+            logging.warning(f"Failed to merge global screener data: {e}")
+
+    # Convert to list and cleanup (similar to get_screener_results_by_universe)
+    final_list = []
+    for row_dict in results.values():
+        # Cleanup for frontend consistency
+        if "ai_summary" in row_dict:
+            row_dict["has_ai_review"] = row_dict["ai_summary"] is not None and len(row_dict["ai_summary"]) > 20
+        
+        # Calculate average AI score if available
+        ai_scores = [
+            row_dict.get("ai_moat"),
+            row_dict.get("ai_financial_strength"),
+            row_dict.get("ai_predictability"),
+            row_dict.get("ai_growth")
+        ]
+        valid_scores = [s for s in ai_scores if s is not None]
+        if valid_scores:
+            row_dict["ai_score"] = sum(valid_scores) / len(valid_scores)
+        else:
+            row_dict["ai_score"] = None
+            
+        final_list.append(row_dict)
+        
+    # Sort by Margin of Safety desc
+    final_list.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
+    return final_list
 def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data: Dict[str, Any], info: Optional[Dict[str, Any]] = None, universe: str = 'manual'):
     """
     Specifically updates the AI review portions of the screener cache.
