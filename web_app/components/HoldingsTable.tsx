@@ -739,7 +739,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     return (
         <>
-            <Card className="rounded-2xl mt-6 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent transition-all duration-300">
+            <Card className="rounded-2xl mt-6 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent transition-all duration-300">
                 <div className="flex flex-col gap-5 p-6">
                     {/* Header Row: Title, Count & Search */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1316,7 +1316,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     {visibleHoldings.map((holding, idx) => (
                         <Card
                             key={`mobile-${holding.Symbol}-${idx}`}
-                            className="bg-card rounded-2xl border-none p-0 overflow-hidden relative group cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
+                            className="bg-card rounded-2xl border-none p-0 relative group cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
                             onClick={() => openStockDetail(holding.Symbol, currency)}
                         >
                             <div className="space-y-3">

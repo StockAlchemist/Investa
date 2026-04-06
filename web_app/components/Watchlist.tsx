@@ -413,26 +413,32 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     </Button>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleAdd} className="flex flex-col md:flex-row gap-3 mb-6">
-                        <Input
-                            placeholder="Symbol (e.g. AAPL, BTC-USD)"
-                            value={newSymbol}
-                            onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                            className="bg-secondary border-none text-foreground md:w-48"
-                        />
-                        <Input
-                            placeholder="Note (optional)"
-                            value={newNote}
-                            onChange={(e) => setNewNote(e.target.value)}
-                            className="bg-secondary text-foreground flex-1"
-                        />
+                    <form onSubmit={handleAdd} className="flex flex-col md:flex-row items-end gap-3 mb-6 bg-secondary/30 p-4 rounded-xl border border-border/50">
+                        <div className="flex flex-col gap-1.5 md:w-56 w-full">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">Symbol</label>
+                            <Input
+                                placeholder="e.g. AAPL, BTC-USD"
+                                value={newSymbol}
+                                onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                                className="bg-background border-border hover:border-cyan-500/50 focus-visible:ring-cyan-500 transition-all text-foreground"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5 flex-1 w-full">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">Note (optional)</label>
+                            <Input
+                                placeholder="Add a description..."
+                                value={newNote}
+                                onChange={(e) => setNewNote(e.target.value)}
+                                className="bg-background border-border hover:border-cyan-500/50 focus-visible:ring-cyan-500 transition-all text-foreground"
+                            />
+                        </div>
                         <Button
                             type="submit"
                             disabled={addMutation.isPending || !newSymbol.trim()}
-                            className="bg-cyan-600 hover:bg-cyan-500 text-white font-medium"
+                            className="bg-[#0097b2] hover:bg-[#0087a2] text-white font-bold h-10 px-6 shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
                         >
                             <Plus className="h-4 w-4 mr-2" />
-                            Add
+                            Add to List
                         </Button>
                     </form>
 
