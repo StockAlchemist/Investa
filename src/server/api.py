@@ -4194,6 +4194,13 @@ async def get_watchlist_endpoint(
             logging.error(f"Failed to fetch quotes for watchlist: {e_quotes}")
             quotes = {}
 
+        # Fetch AI ratings for AI score
+        try:
+            ai_results = get_cached_screener_results(conn, symbols)
+        except Exception as e_ai:
+            logging.error(f"Failed to fetch AI results for watchlist: {e_ai}")
+            ai_results = {}
+
         # Fetch fundamentals (Market Cap, PE, Yield)
         try:
             fundamentals = mdp.get_fundamentals_batch(
@@ -4210,6 +4217,7 @@ async def get_watchlist_endpoint(
             symbol = item["Symbol"]
             quote = quotes.get(symbol, {})
             fund = fundamentals.get(symbol, {})
+            ai_res = ai_results.get(symbol, {})
             
             # Sparkline data is already provided in the quote from get_current_quotes batch fetch
             sparkline = quote.get("sparkline_7d", [])
@@ -4224,7 +4232,8 @@ async def get_watchlist_endpoint(
                 "Sparkline": sparkline,
                 "Market Cap": fund.get("marketCap"),
                 "PE Ratio": fund.get("trailingPE") or fund.get("forwardPE"),
-                "Dividend Yield": fund.get("dividendYield")
+                "Dividend Yield": fund.get("dividendYield"),
+                "ai_score": ai_res.get("ai_score")
             })
         
         return clean_nans(enriched_items)

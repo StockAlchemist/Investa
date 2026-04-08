@@ -262,6 +262,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     case 'Mkt Cap': return item["Market Cap"] || 0;
                     case 'PE': return item["PE Ratio"] || 0;
                     case 'Div Yield': return item["Dividend Yield"] || 0;
+                    case 'AI Score': return item.ai_score || 0;
                     case 'Note': return item.Note || '';
                     default: return 0;
                 }
@@ -454,15 +455,16 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                         { key: 'Mkt Cap', label: 'Mkt Cap', align: 'right' },
                                         { key: 'PE', label: 'PE', align: 'right' },
                                         { key: 'Div Yield', label: 'Div Yield', align: 'right' },
+                                        { key: 'AI Score', label: 'AI Score', align: 'center' },
                                         { key: '7D Trend', label: '7D Trend', align: 'left', disableSort: true },
                                         { key: 'Note', label: 'Note', align: 'left' },
                                     ].map((col) => (
                                         <th
                                             key={col.key}
-                                            className={`px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'} ${!col.disableSort ? 'cursor-pointer hover:text-foreground hover:bg-muted/50 transition-colors select-none' : ''}`}
+                                            className={`px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'} ${!col.disableSort ? 'cursor-pointer hover:text-foreground hover:bg-muted/50 transition-colors select-none' : ''}`}
                                             onClick={() => !col.disableSort && handleSort(col.key)}
                                         >
-                                            <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
                                                 {col.label}
                                                 {!col.disableSort && (
                                                     <span className="text-muted-foreground/50">
@@ -518,6 +520,20 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                     if (y && y > 1) y = y / 100;
                                                     return y ? formatPercent(y) : '-';
                                                 })()}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
+                                                {item.ai_score ? (
+                                                    <div className={cn(
+                                                        "inline-flex items-center justify-center w-9 h-9 rounded-full font-bold text-xs shadow-sm border mx-auto",
+                                                        item.ai_score >= 7.5 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" :
+                                                        item.ai_score >= 5.0 ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
+                                                        "bg-red-500/10 text-red-600 border-red-500/20"
+                                                    )}>
+                                                        {item.ai_score.toFixed(1)}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-28">
                                                 <div className="h-8 w-24">

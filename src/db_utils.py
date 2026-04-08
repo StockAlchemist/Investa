@@ -1160,7 +1160,10 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
     def fetch_and_map(conn, syms):
         try:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT * FROM screener_cache WHERE symbol IN ({','.join(['?'] * len(syms))})", syms)
+            # Prioritize rows with AI data (ai_summary IS NOT NULL) and then by update time
+            # ASC for (ai_summary IS NOT NULL) means 0 (no AI) comes first, then 1 (has AI)
+            # This ensures that the rows with AI data are processed last and overwrite others in the mapping
+            cursor.execute(f"SELECT * FROM screener_cache WHERE symbol IN ({','.join(['?'] * len(syms))}) ORDER BY symbol, (ai_summary IS NOT NULL) ASC, updated_at ASC", syms)
             rows = cursor.fetchall()
             cols = [description[0] for description in cursor.description]
             
@@ -1211,18 +1214,24 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
                         # If not in user cache at all, just use the global entry
                         results[symbol] = g_info
                     else:
-                        # If in user cache but missing AI data, merge AI fields
+                        # If in user cache but missing substantial AI data, merge AI fields from global
                         u_info = results[symbol]
-                        has_ai = u_info.get("ai_summary") and len(u_info["ai_summary"]) > 0
-                        g_has_ai = g_info.get("ai_summary") and len(g_info["ai_summary"]) > 0
                         
-                        if not has_ai and g_has_ai:
+                        # Check if user entry lacks AI rating fields or summary that global might have
+                        # Since ai_score is calculated in fetch_and_map, we can use it as a proxy for ratings presence
+                        u_has_rating = u_info.get("ai_score") is not None
+                        g_has_rating = g_info.get("ai_score") is not None
+                        u_has_summary = u_info.get("ai_summary") and len(u_info["ai_summary"]) > 0
+                        g_has_summary = g_info.get("ai_summary") and len(g_info["ai_summary"]) > 0
+                        
+                        if (not u_has_rating and g_has_rating) or (not u_has_summary and g_has_summary):
                             ai_fields = [
                                 "ai_moat", "ai_financial_strength", "ai_predictability", 
-                                "ai_growth", "ai_summary", "ai_score"
+                                "ai_growth", "ai_summary", "ai_score", "has_ai_review"
                             ]
                             for field in ai_fields:
-                                u_info[field] = g_info.get(field)
+                                if g_info.get(field) is not None:
+                                    u_info[field] = g_info.get(field)
     except Exception as e:
         logging.warning(f"Failed to merge global AI data: {e}")
 

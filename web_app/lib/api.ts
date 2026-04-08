@@ -724,6 +724,7 @@ export interface WatchlistItem {
     "Market Cap"?: number | null;
     "PE Ratio"?: number | null;
     "Dividend Yield"?: number | null;
+    ai_score?: number | null;
 }
 
 
