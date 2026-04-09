@@ -147,7 +147,11 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     Sparkline: [],
                     "Market Cap": null,
                     "PE Ratio": null,
-                    "Dividend Yield": null
+                    "Dividend Yield": null,
+                    ai_score: null,
+                    intrinsic_value: null,
+                    margin_of_safety: null,
+                    has_ai_review: false
                 };
                 return old ? [newItem, ...old] : [newItem];
             });
@@ -262,6 +266,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     case 'Mkt Cap': return item["Market Cap"] || 0;
                     case 'PE': return item["PE Ratio"] || 0;
                     case 'Div Yield': return item["Dividend Yield"] || 0;
+                    case 'Intrinsic Value': return item.intrinsic_value || 0;
                     case 'AI Score': return item.ai_score || 0;
                     case 'Note': return item.Note || '';
                     default: return 0;
@@ -456,6 +461,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                         { key: 'PE', label: 'PE', align: 'right' },
                                         { key: 'Div Yield', label: 'Div Yield', align: 'right' },
                                         { key: 'AI Score', label: 'AI Score', align: 'center' },
+                                        { key: 'Intrinsic Value', label: 'Intrinsic Value', align: 'right' },
                                         { key: '7D Trend', label: '7D Trend', align: 'left', disableSort: true },
                                         { key: 'Note', label: 'Note', align: 'left' },
                                     ].map((col) => (
@@ -534,6 +540,22 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                 ) : (
                                                     <span className="text-muted-foreground">-</span>
                                                 )}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
+                                                <span className={cn(
+                                                    "font-mono tabular-nums",
+                                                    item.intrinsic_value !== null && item.intrinsic_value !== undefined && item.Price !== null && item.Price !== undefined ? (
+                                                        item.intrinsic_value > item.Price ? 'text-emerald-500 font-medium' : 
+                                                        item.intrinsic_value < item.Price ? 'text-rose-500 font-medium' : ''
+                                                    ) : ''
+                                                )}>
+                                                    {item.intrinsic_value ? formatCurrency(item.intrinsic_value, item.Currency || 'USD') : '-'}
+                                                    {item.margin_of_safety !== null && item.margin_of_safety !== undefined && (
+                                                        <span className="text-[10px] opacity-70 ml-1.5">
+                                                            ({item.margin_of_safety > 0 ? '+' : ''}{item.margin_of_safety.toFixed(1)}%)
+                                                        </span>
+                                                    )}
+                                                </span>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-28">
                                                 <div className="h-8 w-24">

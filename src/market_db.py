@@ -6,6 +6,7 @@ from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
 import threading
 import config
+from db_utils import get_db_connection
 
 class MarketDatabase:
     """
@@ -19,35 +20,8 @@ class MarketDatabase:
         self._init_db()
 
     def _get_connection(self):
-        # Use thread-local storage for DB connections
-        if not hasattr(self, '_local_storage'):
-            self._local_storage = threading.local()
-        
-        if not hasattr(self._local_storage, 'conn'):
-            import time
-            retries = 5
-            last_error = None
-            for i in range(retries):
-                try:
-                    # check_same_thread=False is needed if the connection is passed between threads,
-                    # but here we use thread-local so it should be fine with default True.
-                    # However, timeout=30 is good for concurrent writes.
-                    self._local_storage.conn = sqlite3.connect(self.db_path, timeout=30)
-                    # Enable WAL mode for better concurrency
-                    self._local_storage.conn.execute("PRAGMA journal_mode=WAL;")
-                    self._local_storage.conn.execute("PRAGMA synchronous=NORMAL;")
-                    return self._local_storage.conn
-                except sqlite3.OperationalError as e:
-                    last_error = e
-                    if "unable to open database file" in str(e) or "database is locked" in str(e):
-                        if i < retries - 1:
-                            time.sleep(0.1 * (i + 1))
-                            continue
-                    raise e
-            if last_error:
-                raise last_error
-        
-        return self._local_storage.conn
+        """Returns a thread-local database connection using the centralized helper."""
+        return get_db_connection(self.db_path)
 
     def _init_db(self):
         """Initializes the database schema if it doesn't exist."""

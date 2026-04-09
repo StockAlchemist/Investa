@@ -55,10 +55,12 @@ const COLUMN_DEFINITIONS: { [header: string]: string } = {
     "7d Trend": "sparkline_7d",
     "Tags": "Tags",
     "Contribution %": "Contribution %",
+    "AI Score": "ai_score",
+    "Intrinsic Value": "intrinsic_value",
 };
 
 const DEFAULT_VISIBLE_COLUMNS = [
-    "Symbol", "7d Trend", "Quantity", "% of Total", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L", "Unreal. G/L %", "IRR (%)", "Total G/L", "Total Ret %"
+    "Symbol", "7d Trend", "Quantity", "% of Total", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L"
 ];
 
 type SortDirection = 'asc' | 'desc';
@@ -703,7 +705,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             return `${val.toFixed(2)}%`;
         }
 
-        if (['Price', 'Cost Basis', 'Avg Cost', 'Mkt Val', 'Day Chg', 'Unreal. G/L', 'Real. G/L', 'Divs', 'Fees', 'Total G/L', 'Total Buy Cost', 'FX G/L', 'Est. Income'].includes(header)) {
+        if (['Price', 'Cost Basis', 'Avg Cost', 'Mkt Val', 'Day Chg', 'Unreal. G/L', 'Real. G/L', 'Divs', 'Fees', 'Total G/L', 'Total Buy Cost', 'FX G/L', 'Est. Income', 'Intrinsic Value'].includes(header)) {
             return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
@@ -1158,6 +1160,35 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                             </>
                                                                         )}
                                                                     </div>
+                                                                ) : header === 'AI Score' ? (
+                                                                    <div className="flex justify-end">
+                                                                        {val !== null && val !== undefined ? (
+                                                                            <div 
+                                                                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shadow-sm ${
+                                                                                    (val as number) >= 8.0 ? 'bg-emerald-500' : 
+                                                                                    (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                                                }`}
+                                                                            >
+                                                                                {(val as number).toFixed(1)}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <span className="text-muted-foreground/30">-</span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : header === 'Intrinsic Value' ? (
+                                                                    <span className={
+                                                                        val !== null && val !== undefined && holding.Price !== undefined ? (
+                                                                            (val as number) > (holding.Price as number) ? 'text-emerald-500 font-medium' : 
+                                                                            (val as number) < (holding.Price as number) ? 'text-rose-500 font-medium' : ''
+                                                                        ) : ''
+                                                                    }>
+                                                                        {formatValue(val, header)}
+                                                                        {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
+                                                                            <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
+                                                                                ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
                                                                 ) : (
                                                                     formatValue(val, header)
                                                                 )}
@@ -1279,6 +1310,35 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                     <PenLine className="h-3 w-3" />
                                                                 </button>
                                                             </div>
+                                                        ) : header === 'AI Score' ? (
+                                                            <div className="flex justify-end">
+                                                                {val !== null && val !== undefined ? (
+                                                                    <div 
+                                                                        className={`px-2 py-0.5 rounded text-xs font-bold text-white shadow-sm ${
+                                                                            (val as number) >= 8.0 ? 'bg-emerald-500' : 
+                                                                            (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                                        }`}
+                                                                    >
+                                                                        {(val as number).toFixed(1)}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-muted-foreground/30">-</span>
+                                                                )}
+                                                            </div>
+                                                        ) : header === 'Intrinsic Value' ? (
+                                                            <span className={
+                                                                val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
+                                                                    (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-500 font-medium' : 
+                                                                    (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
+                                                                ) : ''
+                                                            }>
+                                                                {formatValue(val, header)}
+                                                                {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
+                                                                    <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
+                                                                        ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
+                                                                    </span>
+                                                                )}
+                                                            </span>
                                                         ) : (
                                                             formatValue(val, header)
                                                         )}
@@ -1388,6 +1448,35 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Div Yield:</span>
                                     <span className="text-foreground font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">AI Score:</span>
+                                    <div className="flex justify-end">
+                                        {holding.ai_score !== null && holding.ai_score !== undefined ? (
+                                            <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${
+                                                holding.ai_score >= 8.0 ? 'bg-emerald-500' : 
+                                                holding.ai_score >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                            }`}>
+                                                {holding.ai_score.toFixed(1)}
+                                            </div>
+                                        ) : <span className="text-muted-foreground/30 leading-none">-</span>}
+                                    </div>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Intrinsic:</span>
+                                    <span className={`font-medium ${
+                                        holding.intrinsic_value !== null && holding.intrinsic_value !== undefined && holding.Price !== undefined ? (
+                                            holding.intrinsic_value > (holding.Price as number) ? 'text-emerald-500' : 
+                                            holding.intrinsic_value < (holding.Price as number) ? 'text-rose-500' : 'text-foreground'
+                                        ) : 'text-foreground'
+                                    }`}>
+                                        {formatValue(holding.intrinsic_value, "Intrinsic Value")}
+                                        {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
+                                            <span className="text-[10px] opacity-70 ml-1">
+                                                ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
+                                            </span>
+                                        )}
+                                    </span>
                                 </div>
                                 <div className="flex flex-col items-center justify-center col-span-2 bg-emerald-500/5 dark:bg-emerald-400/5 p-3 rounded-lg">
                                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total Return</span>

@@ -150,6 +150,10 @@ export interface Holding {
     [key: string]: unknown;
     lots?: Lot[];
     sparkline_7d?: number[];
+    ai_score?: number;
+    intrinsic_value?: number;
+    margin_of_safety?: number;
+    has_ai_review?: boolean;
 }
 
 export interface Transaction {
@@ -725,6 +729,9 @@ export interface WatchlistItem {
     "PE Ratio"?: number | null;
     "Dividend Yield"?: number | null;
     ai_score?: number | null;
+    intrinsic_value?: number | null;
+    margin_of_safety?: number | null;
+    has_ai_review?: boolean;
 }
 
 

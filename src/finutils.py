@@ -1295,50 +1295,76 @@ def map_to_yf_symbol(
     normalized_map = {
         k.upper().strip(): v.upper().strip() for k, v in user_symbol_map.items()
     }  # Use user-defined map
+    
+    # ADDED: Default system mappings for common problematic tickers
+    SYSTEM_MAP = {
+        "BRK.B": "BRK-B",
+        "BRK.A": "BRK-A",
+        "BF.B": "BF-B",
+        "BF.A": "BF-A",
+        "RDS.A": "RDS-A",
+        "RDS.B": "RDS-B",
+    }
+    
     if normalized_symbol in normalized_map:
         mapped_symbol = normalized_map[normalized_symbol]
         logging.debug(
             f"  Found in explicit map: '{normalized_symbol}' -> '{mapped_symbol}'"
         )
-        return normalized_map[normalized_symbol]
+        return mapped_symbol
+    
+    if normalized_symbol in SYSTEM_MAP:
+        mapped_symbol = SYSTEM_MAP[normalized_symbol]
+        logging.debug(
+            f"  Applied SYSTEM_MAP: '{normalized_symbol}' -> '{mapped_symbol}'"
+        )
+        return mapped_symbol
 
     # --- 3. Apply Automatic Conversion Rules (if not found in map) ---
     # Handle Thai stocks (:BKK -> .BK)
-    logging.debug(
-        f"  '{normalized_symbol}' not in explicit map. Checking rules..."
-    )  # ADDED Logging
-    if normalized_symbol.endswith(":BKK"):
-        base_symbol = normalized_symbol[:-4]
-        # Check if the base symbol itself has an explicit mapping (e.g., "BRK.B" -> "BRK-B")
-        # This check is now redundant because we check the full normalized_symbol first
-        # if base_symbol in normalized_map:
-        #     base_symbol = normalized_map[base_symbol]
+    if ":BKK" in normalized_symbol:
+        base_symbol = normalized_symbol.replace(":BKK", "")
+        # Handle cases like "ADVANC:BKK" -> "ADVANC.BK"
         if "." in base_symbol or len(base_symbol) == 0:
             logging.warning(
-                f"Hist WARN: Skipping potentially invalid BKK conversion: {internal_symbol}"
+                f"map_to_yf_symbol: Skipping potentially invalid BKK conversion: {internal_symbol}"
             )
             return None
-        # --- ADDED Logging ---
-        converted_symbol = f"{base_symbol.upper()}.BK"
-        logging.debug(
-            f"  Applied :BKK rule: '{normalized_symbol}' -> '{converted_symbol}'"
-        )
-        # --- END Logging ---
         return f"{base_symbol.upper()}.BK"
 
-    # --- 4. Check for other invalid formats ---
-    if " " in normalized_symbol or any(c in normalized_symbol for c in [":", ","]):
+    # --- 4. Sanitization and Heuristics ---
+    
+    # Rule 4a: Replace dots with dashes for short US-style tickers (e.g. BRK.B -> BRK-B)
+    # This catches variations not in the explicit SYSTEM_MAP.
+    if "." in normalized_symbol and len(normalized_symbol) <= 6:
+        # Check if it looks like a class (e.g. TKR.A)
+        parts = normalized_symbol.split(".")
+        if len(parts) == 2 and len(parts[1]) <= 2:
+             converted = normalized_symbol.replace(".", "-")
+             logging.debug(f"  Applied DOT-to-DASH heuristic: '{normalized_symbol}' -> '{converted}'")
+             return converted
+
+    # Rule 4b: Skip obviously invalid tickers (Custom names, fund tags, etc.)
+    # Valid tickers typically only contain letters, numbers, and very few special chars (. - :)
+    import re
+    # Allowing : for BKK (handled above) and ^ for indices
+    if not re.match(r"^[A-Z0-9\.\-\^:]+$", normalized_symbol):
         logging.warning(
-            f"map_to_yf_symbol WARN: Skipping potentially invalid symbol format for YF: {internal_symbol}"  # Modified log source
+            f"map_to_yf_symbol: Skipping symbol with invalid characters: {internal_symbol}"
+        )
+        return None
+    
+    # Rule 4c: Extremely long symbols (likely descriptive names or mutual fund tags)
+    if len(normalized_symbol) > 15:
+        logging.warning(
+            f"map_to_yf_symbol: Skipping excessively long symbol: {internal_symbol}"
         )
         return None
 
     # --- 5. Return normalized symbol if no rules applied ---
-    # --- ADDED Logging ---
     logging.debug(
         f"  No rules applied. Returning normalized symbol: '{normalized_symbol.upper()}'"
     )
-    # --- END Logging ---
     return normalized_symbol.upper()
 
 

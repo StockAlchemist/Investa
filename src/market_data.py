@@ -487,7 +487,8 @@ class MarketDataProvider:
 
         logging.info(f"Metadata Cache: Fetching missing metadata for {len(missing_symbols)} symbols...")
         try:
-            chunk_size = 50
+            # REDUCED: Was 50. Smaller chunks prevent "poison" tickers from failing large groups.
+            chunk_size = 20
             for i in range(0, len(missing_symbols), chunk_size):
                 chunk = missing_symbols[i:i+chunk_size]
                 logging.info(f"Metadata Fetch: Processing batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
@@ -613,7 +614,8 @@ class MarketDataProvider:
 
         logging.info(f"Fundamentals: Fetching missing data for {len(missing_symbols)} symbols...")
         try:
-            chunk_size = 50
+            # REDUCED: Was 50. Smaller chunks prevent "poison" tickers from failing large groups.
+            chunk_size = 20
             for i in range(0, len(missing_symbols), chunk_size):
                 chunk = list(missing_symbols)[i:i+chunk_size]
                 logging.info(f"Fundamentals Fetch: Processing batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
@@ -849,7 +851,8 @@ class MarketDataProvider:
                 yf_symbols_list = list(yf_symbols_to_fetch)
                 # UPDATED: Increased to 100 for better throughput on large universes like S&P 500
                 # REDUCED: Was 100. Smaller chunk size to further limit peak memory spike per subprocess.
-                chunk_size = 50
+                # REDUCED: Was 50. Smaller chunks for better isolation of problematic tickers.
+                chunk_size = 20
                 
                 for i in range(0, len(yf_symbols_list), chunk_size):
                     chunk = yf_symbols_list[i:i+chunk_size]

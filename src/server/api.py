@@ -1328,7 +1328,8 @@ async def get_holdings(
     accounts: Optional[List[str]] = Query(None),
     show_closed: bool = Query(False),
     data: tuple = Depends(get_transaction_data),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection)
 ):
     """
     Returns the list of current holdings.
@@ -1404,6 +1405,34 @@ async def get_holdings(
                              if str(h_key[0]).lower() == str(sym).lower() and str(h_key[1]).lower() == str(acct).lower():
                                  record["lots"] = h_data.get("lots", [])
                                  break
+        # ----------------------------------------------------
+        
+        # --- ADDED: Include AI Score and Intrinsic Value from Screener Cache ---
+        try:
+            # Get unique symbols
+            symbols = list(set(r.get("Symbol") for r in records if r.get("Symbol")))
+            logging.info(f"[DEBUG_HOLDINGS] Fetching screener data for {len(symbols)} symbols: {symbols[:10]}...")
+            if symbols:
+                # Fetch screener data (this handles both local and global DB fallback)
+                screener_data = get_cached_screener_results(db_conn, symbols)
+                logging.info(f"[DEBUG_HOLDINGS] Found screener data for {len(screener_data)} / {len(symbols)} symbols.")
+                
+                # Merge into holdings records
+                match_count = 0
+                for record in records:
+                    sym = record.get("Symbol")
+                    if sym:
+                        u_sym = sym.upper()
+                        if u_sym in screener_data:
+                            s_info = screener_data[u_sym]
+                            record["ai_score"] = s_info.get("ai_score")
+                            record["intrinsic_value"] = s_info.get("intrinsic_value")
+                            record["margin_of_safety"] = s_info.get("margin_of_safety")
+                            record["has_ai_review"] = s_info.get("has_ai_review")
+                            match_count += 1
+                logging.info(f"[DEBUG_HOLDINGS] Successfully merged data for {match_count} records.")
+        except Exception as e_ai:
+            logging.warning(f"Error merging AI data into holdings: {e_ai}")
         # ----------------------------------------------------
 
         return clean_nans(records)
@@ -4215,9 +4244,10 @@ async def get_watchlist_endpoint(
         enriched_items = []
         for item in db_items:
             symbol = item["Symbol"]
+            u_symbol = symbol.upper() if symbol else ""
             quote = quotes.get(symbol, {})
             fund = fundamentals.get(symbol, {})
-            ai_res = ai_results.get(symbol, {})
+            ai_res = ai_results.get(u_symbol, {})
             
             # Sparkline data is already provided in the quote from get_current_quotes batch fetch
             sparkline = quote.get("sparkline_7d", [])
@@ -4233,7 +4263,10 @@ async def get_watchlist_endpoint(
                 "Market Cap": fund.get("marketCap"),
                 "PE Ratio": fund.get("trailingPE") or fund.get("forwardPE"),
                 "Dividend Yield": fund.get("dividendYield"),
-                "ai_score": ai_res.get("ai_score")
+                "ai_score": ai_res.get("ai_score"),
+                "intrinsic_value": ai_res.get("intrinsic_value"),
+                "margin_of_safety": ai_res.get("margin_of_safety"),
+                "has_ai_review": ai_res.get("has_ai_review")
             })
         
         return clean_nans(enriched_items)

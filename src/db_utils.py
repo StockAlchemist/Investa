@@ -68,6 +68,24 @@ def get_global_screener_db_path() -> str:
 
 _DB_CONN_CACHE = threading.local()
 
+def is_path_on_cloud_drive(path: str) -> bool:
+    """
+    Checks if a given path is likely within a cloud-synced folder (Google Drive, Dropbox, OneDrive).
+    These environments often conflict with SQLite's WAL mode and shared memory segments.
+    """
+    if not path:
+        return False
+    path_lower = path.lower()
+    cloud_indicators = [
+        "cloudstorage",
+        "googledrive",
+        "google drive",
+        "dropbox",
+        "onedrive",
+        "icloud"
+    ]
+    return any(indicator in path_lower for indicator in cloud_indicators)
+
 def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = True, use_cache: bool = True) -> Optional[sqlite3.Connection]:
     """Establishes a connection to the SQLite database, with thread-local caching."""
     if db_path is None:
@@ -108,13 +126,22 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
                     check_same_thread=check_same_thread
                 )
                 conn.execute("PRAGMA foreign_keys = ON;")
-                conn.execute("PRAGMA journal_mode=WAL;")
-                conn.execute("PRAGMA synchronous=NORMAL;")
+                
+                # Check for cloud-synced paths to avoid WAL mode conflicts (disk I/O error)
+                if is_path_on_cloud_drive(db_path):
+                    logging.info(f"Cloud drive detected for {db_path}. Using safe journal mode (DELETE) and full synchronization.")
+                    conn.execute("PRAGMA journal_mode=DELETE;")
+                    conn.execute("PRAGMA synchronous=FULL;")
+                else:
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA synchronous=NORMAL;")
                 break
             except sqlite3.OperationalError as e:
-                if "unable to open database file" in str(e) or "database is locked" in str(e):
+                err_msg = str(e).lower()
+                if "unable to open database file" in err_msg or "database is locked" in err_msg or "disk i/o error" in err_msg:
                     if i < retries - 1:
-                        time.sleep(0.1 * (i + 1))
+                        logging.warning(f"Database access issue ({e}). Retrying in {0.2 * (i + 1)}s... (attempt {i+1}/{retries})")
+                        time.sleep(0.2 * (i + 1))
                         continue
                 raise e
         
@@ -1183,7 +1210,8 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
                 else:
                     row_dict["ai_score"] = None
                 
-                mapping[row_dict["symbol"]] = row_dict
+                # Store with normalized ticker to handle case sensitivity
+                mapping[row_dict["symbol"].upper()] = row_dict
             return mapping
         except sqlite3.Error:
             return {}
@@ -1206,16 +1234,19 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
             
         if is_isolated and os.path.exists(global_path):
             with sqlite_lib.connect(global_path) as global_conn:
-                global_data = fetch_and_map(global_conn, symbols)
+                # Normalize symbols to uppercase for consistent lookup
+                upper_symbols = [s.upper() for s in symbols]
+                global_data = fetch_and_map(global_conn, upper_symbols)
                 
                 # Merge AI data from global into user results
                 for symbol, g_info in global_data.items():
-                    if symbol not in results:
+                    u_sym = symbol.upper()
+                    if u_sym not in results:
                         # If not in user cache at all, just use the global entry
-                        results[symbol] = g_info
+                        results[u_sym] = g_info
                     else:
                         # If in user cache but missing substantial AI data, merge AI fields from global
-                        u_info = results[symbol]
+                        u_info = results[u_sym]
                         
                         # Check if user entry lacks AI rating fields or summary that global might have
                         # Since ai_score is calculated in fetch_and_map, we can use it as a proxy for ratings presence
@@ -1227,7 +1258,8 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
                         if (not u_has_rating and g_has_rating) or (not u_has_summary and g_has_summary):
                             ai_fields = [
                                 "ai_moat", "ai_financial_strength", "ai_predictability", 
-                                "ai_growth", "ai_summary", "ai_score", "has_ai_review"
+                                "ai_growth", "ai_summary", "ai_score", "has_ai_review",
+                                "intrinsic_value", "margin_of_safety", "valuation_details"
                             ]
                             for field in ai_fields:
                                 if g_info.get(field) is not None:

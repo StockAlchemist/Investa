@@ -235,7 +235,7 @@ def calculate_all_risk_metrics(
         return {}
         
     # Calculate returns
-    returns = portfolio_values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+    returns = portfolio_values.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan).dropna()
     
     mdd = calculate_max_drawdown(portfolio_values)
     vol = calculate_volatility(returns, periods_per_year)
@@ -251,7 +251,7 @@ def calculate_all_risk_metrics(
 
     # Add Alpha & Beta if benchmark provided
     if benchmark_values is not None and not benchmark_values.empty:
-        bench_returns = benchmark_values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+        bench_returns = benchmark_values.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan).dropna()
         if not bench_returns.empty:
             beta = calculate_beta(returns, bench_returns)
             
