@@ -1426,8 +1426,22 @@ async def get_holdings(
                         if u_sym in screener_data:
                             s_info = screener_data[u_sym]
                             record["ai_score"] = s_info.get("ai_score")
-                            record["intrinsic_value"] = s_info.get("intrinsic_value")
-                            record["margin_of_safety"] = s_info.get("margin_of_safety")
+                            iv_local = s_info.get("intrinsic_value")
+                            fx = record.get("fx_rate", 1.0)
+                            if iv_local is not None and fx is not None:
+                                converted_iv = iv_local * fx
+                                record["intrinsic_value"] = converted_iv
+                                
+                                # Recalculate Margin of Safety using Display Price
+                                price_display = record.get(f"Price ({currency})")
+                                if pd.notna(price_display) and price_display is not None and converted_iv > 1e-9:
+                                    record["margin_of_safety"] = (converted_iv - price_display) / converted_iv * 100
+                                else:
+                                    record["margin_of_safety"] = s_info.get("margin_of_safety")
+                            else:
+                                record["intrinsic_value"] = iv_local
+                                record["margin_of_safety"] = s_info.get("margin_of_safety")
+                                
                             record["has_ai_review"] = s_info.get("has_ai_review")
                             match_count += 1
                 logging.info(f"[DEBUG_HOLDINGS] Successfully merged data for {match_count} records.")

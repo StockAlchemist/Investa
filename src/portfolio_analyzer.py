@@ -1322,6 +1322,8 @@ def _build_summary_rows(
                 "quoteType": stock_data.get("quoteType"),
                 "Tags": tags_list,  # Added Tags
                 "Market Value (Local)": market_value_local, # ADDED 
+                "Price (Local)": current_price_local, # ADDED
+                "fx_rate": fx_rate, # ADDED: Multiplier from Local -> Display
             }
         )
         
