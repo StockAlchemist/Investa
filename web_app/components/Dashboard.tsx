@@ -327,7 +327,7 @@ export default function Dashboard({
     const visibleComplexItems = DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id) && COMPLEX_METRIC_IDS.includes(item.id));
 
     return (
-        <div className="mb-4 md:mb-14 space-y-6 md:space-y-10">
+        <div className="mb-4 md:mb-14 space-y-8 md:space-y-12">
             {/* Scalar Metrics Floating Board */}
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 {visibleScalarItems.map((item) => (

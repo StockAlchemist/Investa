@@ -426,9 +426,15 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
 
         const totalVal = sorted.reduce((sum, item) => sum + item.value, 0);
 
-        const topN = 12;
-        const top = sorted.slice(0, topN);
-        const other = sorted.slice(topN);
+        const top: typeof sorted = [];
+        const other: typeof sorted = [];
+        sorted.forEach(h => {
+            if (h.value / totalVal >= 0.02) {
+                top.push(h);
+            } else {
+                other.push(h);
+            }
+        });
 
         const processed = top.map((h, i) => ({
             name: h.name,
@@ -485,7 +491,17 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
 
         const totalVal = sorted.reduce((sum, item) => sum + item.value, 0);
 
-        return sorted.map((acc, i) => ({
+        const top: typeof sorted = [];
+        const other: typeof sorted = [];
+        sorted.forEach(acc => {
+            if (acc.value / totalVal >= 0.02) {
+                top.push(acc);
+            } else {
+                other.push(acc);
+            }
+        });
+
+        const processed = top.map((acc, i) => ({
             name: acc.name,
             value: acc.value,
             dayChange: acc.dayChange,
@@ -494,6 +510,21 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
             percent: acc.value / totalVal,
             color: COLORS[i % COLORS.length]
         }));
+
+        if (other.length > 0) {
+            const otherVal = other.reduce((s, acc) => s + acc.value, 0);
+            processed.push({
+                name: 'Other',
+                value: otherVal,
+                dayChange: other.reduce((s, acc) => s + acc.dayChange, 0),
+                unrealizedGain: other.reduce((s, acc) => s + acc.unrealizedGain, 0),
+                costBasis: other.reduce((s, acc) => s + acc.costBasis, 0),
+                percent: otherVal / totalVal,
+                color: '#94a3b8'
+            });
+        }
+        
+        return processed;
     }, [holdings, currency]);
 
     // Totals need to be calculated across all holdings

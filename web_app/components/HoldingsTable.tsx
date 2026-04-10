@@ -717,9 +717,12 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     };
 
     const getCellClass = (val: unknown, header: string) => {
+        if (val === null || val === undefined || val === '-' || val === '' || (typeof val === 'number' && Math.abs(val) < 0.0001)) {
+            return 'text-muted-foreground/40 font-light';
+        }
         if (typeof val !== 'number') return '';
         if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)'].includes(header)) {
-            if (Math.abs(val) < 0.001) return 'text-muted-foreground';
+            if (Math.abs(val) < 0.001) return 'text-muted-foreground/40 font-light';
             return val > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-red-600 dark:text-red-500 font-medium';
         }
         return '';
@@ -1176,19 +1179,36 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                         )}
                                                                     </div>
                                                                 ) : header === 'Intrinsic Value' ? (
-                                                                    <span className={
-                                                                        val !== null && val !== undefined && holding.Price !== undefined ? (
-                                                                            (val as number) > (holding.Price as number) ? 'text-emerald-500 font-medium' : 
-                                                                            (val as number) < (holding.Price as number) ? 'text-rose-500 font-medium' : ''
-                                                                        ) : ''
-                                                                    }>
-                                                                        {formatValue(val, header)}
+                                                                    <div className="flex flex-col items-end gap-1.5 min-w-[80px]">
+                                                                        <span className={
+                                                                            val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
+                                                                                (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 
+                                                                                (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
+                                                                            ) : ''
+                                                                        }>
+                                                                            {formatValue(val, header)}
+                                                                            {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
+                                                                                <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
+                                                                                    ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
                                                                         {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
-                                                                            <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
-                                                                                ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
-                                                                            </span>
+                                                                            <div className="w-16 h-1 bg-secondary rounded-full overflow-hidden flex">
+                                                                                {holding.margin_of_safety > 0 ? (
+                                                                                    <>
+                                                                                        <div className="w-1/2 bg-transparent" />
+                                                                                        <div className="h-full bg-emerald-500" style={{ width: `${Math.min(holding.margin_of_safety, 100) / 2}%` }} />
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <div className="h-full bg-transparent" style={{ width: `${50 - Math.min(Math.abs(holding.margin_of_safety), 100) / 2}%` }} />
+                                                                                        <div className="h-full bg-rose-500" style={{ width: `${Math.min(Math.abs(holding.margin_of_safety), 100) / 2}%` }} />
+                                                                                    </>
+                                                                                )}
+                                                                            </div>
                                                                         )}
-                                                                    </span>
+                                                                    </div>
                                                                 ) : (
                                                                     formatValue(val, header)
                                                                 )}
@@ -1279,9 +1299,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                         )}
                                                                     </div>
                                                                     {holding.lots && holding.lots.length > 0 && (
-                                                                        <div className="flex items-center gap-1 mt-0.5" title={`${holding.lots.length} tax lots`}>
-                                                                            <Layers className="w-3 h-3 text-muted-foreground" />
-                                                                            <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
+                                                                        <div className="flex items-center gap-1 mt-0.5 cursor-help" title={`${holding.lots.length} tax lots`}>
+                                                                            <Layers className="w-3 h-3 text-muted-foreground hover:text-cyan-500 transition-colors" />
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -1328,7 +1347,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         ) : header === 'Intrinsic Value' ? (
                                                             <span className={
                                                                 val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
-                                                                    (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-500 font-medium' : 
+                                                                    (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 
                                                                     (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
                                                                 ) : ''
                                                             }>

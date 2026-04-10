@@ -101,7 +101,7 @@ function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) 
                                 return null;
                             }}
                         />
-                        <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                        <Legend layout="horizontal" align="center" verticalAlign="top" wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }} />
                     </PieChart>
                 </ResponsiveContainer>
             </div>
@@ -132,9 +132,27 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
             aggregation[category] = (aggregation[category] || 0) + value;
         });
 
-        return Object.entries(aggregation)
+        const sorted = Object.entries(aggregation)
             .map(([name, value]) => ({ name, value }))
             .sort((a, b) => b.value - a.value);
+
+        const totalVal = sorted.reduce((sum, item) => sum + item.value, 0);
+        const top: AggregatedData[] = [];
+        let otherVal = 0;
+
+        sorted.forEach(item => {
+            if (item.value / totalVal >= 0.02) {
+                top.push(item);
+            } else {
+                otherVal += item.value;
+            }
+        });
+
+        if (otherVal > 0) {
+            top.push({ name: 'Other', value: otherVal });
+        }
+
+        return top;
     };
 
     const assetTypeData = aggregateData('quoteType');

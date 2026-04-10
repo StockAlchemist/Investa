@@ -55,7 +55,7 @@ export function MetricCard({
         'purple-500': { textHover: 'group-hover:text-purple-500', bgHover: 'group-hover:bg-purple-500/5', accent: 'bg-purple-500/10' },
         'violet-500': { textHover: 'group-hover:text-violet-500', bgHover: 'group-hover:bg-violet-500/5', accent: 'bg-violet-500/10' },
         'amber-500': { textHover: 'group-hover:text-amber-500', bgHover: 'group-hover:bg-amber-500/5', accent: 'bg-amber-500/10' },
-        'emerald-500': { textHover: 'group-hover:text-emerald-500', bgHover: 'group-hover:bg-emerald-500/5', accent: 'bg-emerald-500/10' },
+        'emerald-500': { textHover: 'group-hover:text-emerald-600 dark:group-hover:text-emerald-500', bgHover: 'group-hover:bg-emerald-500/5', accent: 'bg-emerald-500/10' },
         'rose-500': { textHover: 'group-hover:text-rose-500', bgHover: 'group-hover:bg-rose-500/5', accent: 'bg-rose-500/10' },
         'cyan-500': { textHover: 'group-hover:text-cyan-500', bgHover: 'group-hover:bg-cyan-500/5', accent: 'bg-cyan-500/10' },
         'zinc-500': { textHover: 'group-hover:text-zinc-500', bgHover: 'group-hover:bg-zinc-500/5', accent: 'bg-zinc-500/10' }

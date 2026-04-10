@@ -658,14 +658,14 @@ export default function PerformanceGraph({
                                 scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
                                 allowDataOverflow={isContinuous}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: '#6b7280' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: '#6b7280' }}
                                 axisLine={false}
                                 tickLine={false}
                                 domain={([dataMin, dataMax]) => {
@@ -675,7 +675,7 @@ export default function PerformanceGraph({
                                 }}
                                 width={65}
                             />
-                            <Legend />
+                            <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />
                             <defs>
                                 <linearGradient id="colorTwr" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8} />
@@ -743,14 +743,14 @@ export default function PerformanceGraph({
                                 scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
                                 allowDataOverflow={isContinuous}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: '#6b7280' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: '#6b7280' }}
                                 axisLine={false}
                                 tickLine={false}
                                 width={60}
@@ -821,14 +821,14 @@ export default function PerformanceGraph({
                                 scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
                                 allowDataOverflow={isContinuous}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: '#6b7280' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: '#6b7280' }}
                                 axisLine={false}
                                 tickLine={false}
                                 width={60}

@@ -305,7 +305,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8 md:space-y-12">
             {/* Watchlist Selector Tabs */}
             <div className="flex flex-wrap items-center gap-2 pb-2 overflow-x-auto no-scrollbar mask-grad-right">
                 {watchlists.map((wl) => (

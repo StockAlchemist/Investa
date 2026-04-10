@@ -92,7 +92,7 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8 md:space-y-12">
 
 
             {/* Summary Cards */}
@@ -138,10 +138,10 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dividendsByYear} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
-                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
                             <YAxis
-                                tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
-                                tick={{ fill: '#9ca3af', fontSize: 10 }}
+                                tickFormatter={(val) => formatCompactNumber(val, currency)}
+                                tick={{ fill: '#6b7280', fontSize: 12 }}
                                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                                 width={35}
                             />

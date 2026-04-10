@@ -121,7 +121,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8 md:space-y-12">
 
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -167,10 +167,10 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                             className="outline-none focus:outline-none [&_.recharts-surface]:outline-none"
                         >
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
-                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
                             <YAxis
                                 tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
-                                tick={{ fill: '#9ca3af', fontSize: 10 }}
+                                tick={{ fill: '#6b7280', fontSize: 10 }}
                                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                                 width={35}
                             />

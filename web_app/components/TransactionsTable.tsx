@@ -265,7 +265,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8 md:space-y-12">
             {/* Pending Transactions Staging Area */}
             {pendingTransactions.length > 0 && (
                 <div className="bg-cyan-500/5 rounded-xl overflow-hidden border-none shadow-none animate-in fade-in slide-in-from-top-4 duration-500">
@@ -614,20 +614,20 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                             <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
                                         </td>
                                         <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                            {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? '' : tx.Quantity}
+                                            {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? <span className="text-muted-foreground/30">-</span> : tx.Quantity}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                            {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? '' : tx["Price/Share"]?.toFixed(2)}
+                                            {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? <span className="text-muted-foreground/30">-</span> : tx["Price/Share"]?.toFixed(2)}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
-                                            {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                            {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-muted-foreground/30">-</span>}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                            {tx.Commission ? tx.Commission.toFixed(2) : '-'}
+                                            {tx.Commission ? tx.Commission.toFixed(2) : <span className="text-muted-foreground/30">-</span>}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{tx.Account}</td>
-                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Split Ratio"] ? tx["Split Ratio"] : ''}</td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground truncate max-w-xs" title={tx.Note}>{tx.Note || '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Split Ratio"] ? tx["Split Ratio"] : <span className="text-muted-foreground/30">-</span>}</td>
+                                        <td className="px-4 py-3 text-sm text-muted-foreground truncate max-w-xs" title={tx.Note}>{tx.Note || <span className="text-muted-foreground/30">-</span>}</td>
                                         <td className="px-4 py-3 text-sm text-muted-foreground">{tx["Local Currency"]}</td>
                                         <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">
                                             <button

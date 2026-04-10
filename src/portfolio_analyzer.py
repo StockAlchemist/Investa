@@ -120,7 +120,7 @@ def get_type_id(t):
 def _process_numba_core(
     sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios, 
     to_acc_ids, local_curr_ids, fx_rates_hist, 
-    shortable_sym_ids, stock_qty_tol,
+    shortable_sym_ids, stock_qty_tol, cash_sym_id,
     num_tx, num_syms, num_accs
 ):
     # State Array: (num_syms, num_accs, 13)
@@ -387,7 +387,25 @@ def _process_numba_core(
         # Sell / Withdrawal
         elif typ == TYPE_SELL or typ == TYPE_WITHDRAWAL:
             held_qty = current_state[0]
-            if held_qty > 1e-9:
+            if sym == cash_sym_id:
+                # Cash allows negative balances, process fully without held_qty limits
+                cost_sold = qty_abs * price
+                cost_sold_hist = cost_sold * fx_rate
+                
+                proceeds = (qty_abs * price) - comm
+                gain = 0.0
+                gain_display = 0.0
+                
+                current_state[0] -= qty_abs
+                current_state[1] -= cost_sold
+                current_state[10] -= cost_sold_hist
+                current_state[4] += comm
+                current_state[2] += gain
+                current_state[12] += gain_display
+                current_state[7] -= cost_sold
+                current_state[8] -= proceeds
+                
+            elif held_qty > 1e-9:
                 qty_sold = min(qty_abs, held_qty)
                 
                 cost_sold = 0.0
@@ -615,10 +633,12 @@ def _process_transactions_to_holdings(
     for sid in shortable_sym_ids_set:
         nb_shortable.append(sid)
         
+    cash_sym_id = sym_map.get(CASH_SYMBOL_CSV, -1)
+        
     final_state, transfer_costs_nb = _process_numba_core(
         sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios,
         to_acc_ids, local_curr_ids, fx_rates_hist,
-        nb_shortable, STOCK_QUANTITY_CLOSE_TOLERANCE,
+        nb_shortable, STOCK_QUANTITY_CLOSE_TOLERANCE, cash_sym_id,
         n, num_syms, num_accs
     )
 

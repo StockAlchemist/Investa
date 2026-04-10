@@ -105,7 +105,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                         <XAxis
                             dataKey="Date"
-                            tick={{ fontSize: 10, fill: '#9ca3af' }}
+                            tick={{ fontSize: 10, fill: '#6b7280' }}
                             tickFormatter={(val) => {
                                 if (!val || typeof val !== 'string') return '';
                                 const datePart = val.split(' ')[0];
@@ -119,7 +119,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                         <YAxis
                             tickFormatter={(val) => viewMode === 'percent' ? `${val.toFixed(0)}%` : new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
                             domain={['auto', 'auto']}
-                            tick={{ fill: '#9ca3af', fontSize: 10 }}
+                            tick={{ fill: '#6b7280', fontSize: 10 }}
                             axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                             width={35}
                         />
@@ -213,7 +213,8 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                         />
                         {viewMode === 'percent' && (
                             <Legend
-                                wrapperStyle={{ fontSize: 10, paddingTop: 10 }}
+                                verticalAlign="top"
+                                wrapperStyle={{ fontSize: 10, paddingBottom: 10 }}
                                 iconSize={8}
                                 iconType="circle"
                             />
@@ -258,7 +259,7 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8 md:space-y-12">
             <div className="flex justify-end space-x-2 mb-4">
                 <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
                 <div className="inline-flex rounded-lg bg-secondary p-1">
