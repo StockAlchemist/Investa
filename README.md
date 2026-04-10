@@ -13,16 +13,19 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Multi-Currency:** converting all assets to your preferred display currency (e.g. USD, EUR, JPY).
 * **Performance Charts:** Time-Weighted Return (TWR) vs. Benchmarks (SPY, QQQ) and Portfolio Value over time, including **gapless intraday views** (1D, 5D) with **intelligent caching** for instant after-hours loading.
 * **Interactive Price Charts:** Detailed stock price charts with **Moving Averages (SMA 50/200)**, configurable time ranges (1D to Max), and gain/loss shading.
-* **Dividend Tracking:** Charts and tables for annual/quarterly/monthly dividend income.
+* **Dividend Tracking:** Charts and tables for annual/quarterly/monthly dividend income, including **forward-looking Annual Yield %** metrics.
 * **Advanced Analysis:** Asset allocation, Correlation Matrix, Factor Analysis, and Scenario Analysis.
 * **Rebalancing:** Calculator to help you rebalance portfolio to target allocations.
-* **Web & Mobile:** Sleek Web Dashboard with mobile-optimized navigation and market indices.
+* **Web & Mobile:** Sleek Web Dashboard with mobile-optimized navigation, market indices, and a **comprehensive Market Screener**.
+* **Market Screener:** identify opportunities across your Watchlist, Holdings, or the **entire database ("All Stocks")** with quantitative intrinsic value filters.
+* **AI Score:** Intelligent **scorecard-based rankings** in the Watchlist and Screener to help prioritize high-probability investments.
 * **Custom Groups (Tags):** Organize holdings with custom tags (e.g., "Core", "Speculative") for personalized grouping.
 * **Contribution Analysis:** See exactly how much each holding contributes to your total portfolio return.
 * **Customizable Dashboard:** Toggle visibility of widgets and view "Sector Contribution" and "Top Contributors" analysis directly on the main dashboard.
 * **Fundamental Data:** Built-in viewer for company profiles, financials, and balance sheets.
-* **Intrinsic Value Analysis:** Automated **DCF (Income & Revenue-based)** and **Graham's Revised Formula** calculations **(with NAV support for ETFs)** with **Monte Carlo simulations** and **stability logic (Growth Capping & Linear Fading)** to estimate fair value ranges.
+* **Intrinsic Value Analysis:** Automated **DCF (Income & Revenue-based)** and **Graham's Revised Formula** calculations **(with NAV support for ETFs)** with **Monte Carlo simulations**, **currency normalization**, and **stability logic (Growth Capping & Linear Fading)**.
 * **AI Portfolio Review:** Intelligent AI-powered analysis of your portfolio holdings, providing personalized insights, risk assessments, and diversification suggestions.
+* **Data Robustness:** Built-in **Ticker Normalization** (e.g., mapping `BRK.B` to `BRK-B`) and sanitization to prevent batch-fetch failures.
 * **User Authentication:** Secure login and registration system with multi-user support.
 * **HTTPS Support:** Built-in Tailscale Serve configuration for secure, encrypted access on local networks and mobile devices.
 * **Valuation Overrides:** Fully customizable valuation parameters (growth rates, discount rates, etc.) for each stock via the Settings menu or individual detail views.

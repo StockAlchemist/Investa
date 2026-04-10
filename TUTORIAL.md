@@ -322,17 +322,20 @@ The **"Dividend History"** tab is dedicated to tracking and visualizing your div
     * **Periods to Show:** This spinbox lets you define how many of the chosen aggregation periods (e.g., the last 10 years, the last 12 quarters) are displayed in the chart and summary table.
     * **Update Chart Button:** After changing "Aggregate by" or "Periods to Show," click this button to refresh the dividend visualizations and tables.
 
-4. **Dividend Bar Chart:**
+4. **Dividend Summary Metrics:**
+    * Along with the charts, the **Dividend** tab displays high-level metrics including **Current Dividend Annual Yield%** (forward-looking) to help you estimate your future income stream based on current holdings.
+
+5. **Dividend Bar Chart:**
     * This chart visually represents the total dividend amounts for each aggregated period you've selected (e.g., a bar for each year showing total annual dividends).
     * The Y-axis displays the total dividend amount in your globally selected `Display Currency`.
     * The X-axis represents the periods (years, quarters, or months).
     * Hovering over a bar often shows the exact amount for that period.
 
-5. **Dividend Summary Table:**
+6. **Dividend Summary Table:**
     * Located typically below the bar chart, this table provides the same aggregated data in a numerical format.
     * It has columns like "Period" (e.g., "2023", "2023-Q1") and "Total Dividends" (in the `Display Currency`).
 
-6. **Detailed Dividend Transaction History Table:**
+7. **Detailed Dividend Transaction History Table:**
     * This comprehensive table, usually found to the right or below the summary, lists every individual dividend transaction loaded from your database that falls within the selected account scope.
     * Key columns include:
         * `Date`: Date the dividend was received.
@@ -610,6 +613,7 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
   * When you want the absolute latest market prices and FX rates.
   * If something just doesn't look right, a "Refresh All" is often the first step.
 * **Use the Status Bar:** The bottom of the Investa window often displays messages about current operations (e.g., "Fetching prices...", "Calculations complete...", "Database loaded"). This can give you an idea of what the application is doing, especially during longer operations.
+* **Ticker Normalization:** Investa includes built-in intelligence to handle symbol variations across different sources. For example, it automatically maps `BRK.B` to `BRK-B` for Yahoo Finance compatibility, ensuring your performance data is always accurate even if your brokerage uses slightly different ticker conventions.
 * **CSV Format Help (`Help > CSV Format Help...`):**
   * Even though the database is primary, this in-app guide is still very useful if you are preparing a CSV file for import. It details the expected headers and data for each transaction type.
 * **Troubleshooting Steps:**
@@ -682,14 +686,16 @@ Investa now includes a modern Web Dashboard that allows you to view your portfol
 
 The Web Dashboard mirrors many of the key features of the desktop application:
 
-*   **Customizable Layout:** Use the "Layout" button to toggle the visibility of any dashboard metric, including "Sector Contribution" and "Top Contributors".
+*   **Customizable Layout:** Use the "Layout" button to toggle the visibility of any dashboard metric, including "Sector Contribution" and "Top Contributors". The **Account Selector** has been moved to the right of the Import button for a more streamlined experience.
 *   **Dashboard Summary:** View your Net Value, Daily P&L, Total Return, and key metrics at a glance.
 *   **Performance Graph:** Interactive charts for TWR and Portfolio Value.
 *   **Mobile-Optimized Tables:** Toggle between "Card" and "Table" views for Holdings and Transactions on mobile devices for better readability.
 *   **Markets Tab (Mobile):** Dedicated tab to track major market indices (Dow, Nasdaq, S&P 500) while on the go.
-*   **Holdings:** A sorted list of your current positions.
+*   **Holdings:** A sorted list of your current positions, now including **AI Scores** to help rank your holdings.
+*   **Market Screener:** A comprehensive tool to identify new opportunities across your Watchlist, Holdings, or the **entire database ("All Stocks")**.
 *   **Transactions Log:** View your history of trades and cash movements.
-    *   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
+*   **Dividend History:** Detailed tracking of income, including **Annual Yield %** metrics.
+*   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
 
 *Note: Currently, the Web Dashboard is primarily for **viewing** and **analyzing** your data. For heavy transaction management (bulk imports, editing past records), we recommend using the Desktop Application.*
 
@@ -744,6 +750,9 @@ For users tracking a wide universe of stocks, you can run a batch recalculation 
 python scripts/recalculate_sp500_valuations.py
 ```
 This will fetch fresh financials for all 500 companies and update your local database with fresh intrinsic values.
+
+### 🌍 Currency Normalization
+Investa handles cross-currency valuations with precision. All Intrinsic Value estimates and "Margin of Safety" calculations are automatically **normalized to your selected display currency**. This ensures that if you are viewing a THB-denominated portfolio, US stock valuations are converted to THB for an accurate "apples-to-apples" comparison against current market prices.
 
 ## Part 15: Interactive Stock Charts
 
@@ -819,7 +828,24 @@ The **AI Portfolio Review** analyzes your current holdings and historical perfor
 > [!TIP]
 > Use the AI Review periodically or after significant market moves to see how your portfolio's risk profile has evolved.
 
-Once approved, these transactions will be treated like any other entry, impacting your Holdings, Performance, and Total Return after a **Refresh All**.
+## Part 18: Market Screener & AI Score
+
+The **Market Screener** allows you to discover high-probability investment opportunities using quantitative intrinsic value models and AI fundamental audits.
+
+### 🔍 Screening the Market
+1.  Select your **Universe**:
+    *   **Watchlist/Holdings:** Screen assets you already track.
+    *   **S&P 500 / Russell 2000:** Screen major indices.
+    *   **All Database Stocks:** Screen every ticker across all universes in the system.
+2.  Click **"Execute Screen"**. The system fetches live data and calculates intrinsic values in real-time.
+
+### 🤖 AI Score & Audit
+For any stock in the screener or your watchlist, you can trigger an **AI Audit**. This generates a **scorecard-based AI Score** (0-100) based on:
+*   **Profitability & Growth:** Revenue trends and margin stability.
+*   **Financial Health:** Debt levels and liquidity.
+*   **Valuation Context:** Comparison of current price to intrinsic value estimates.
+
+The **AI Score** helps you quickly prioritize which opportunities to investigate further, acting as a second opinion on the quantitative data.
 
 ---
 
