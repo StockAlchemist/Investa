@@ -133,13 +133,19 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
     if not info:
         return {"frequency_months": 3, "indicated_annual_rate": 0.0}
         
-    last_div_val = info.get("lastDividendValue", 0.0)
-    div_rate = info.get("dividendRate", 0.0)
-    trailing_rate = info.get("trailingAnnualDividendRate", 0.0)
+    last_div_val = float(info.get("lastDividendValue", 0.0) or 0.0)
     
-    if last_div_val is None: last_div_val = 0.0
-    if div_rate is None or div_rate <= 0: div_rate = trailing_rate if trailing_rate else 0.0
-    if div_rate is None: div_rate = 0.0
+    try:
+        div_rate = float(info.get("dividendRate", 0.0) or 0.0)
+    except (ValueError, TypeError):
+        div_rate = 0.0
+        
+    try:
+        trailing_rate = float(info.get("trailingAnnualDividendRate", 0.0) or 0.0)
+    except (ValueError, TypeError):
+        trailing_rate = 0.0
+    
+    if div_rate <= 0: div_rate = trailing_rate if trailing_rate else 0.0
     
     if last_div_val <= 0 and div_rate <= 0:
         return {"frequency_months": 3, "indicated_annual_rate": 0.0}
@@ -1340,9 +1346,11 @@ def map_to_yf_symbol(
         # Check if it looks like a class (e.g. TKR.A)
         parts = normalized_symbol.split(".")
         if len(parts) == 2 and len(parts[1]) <= 2:
-             converted = normalized_symbol.replace(".", "-")
-             logging.debug(f"  Applied DOT-to-DASH heuristic: '{normalized_symbol}' -> '{converted}'")
-             return converted
+            # Explicitly skip known valid exchange suffixes like .BK
+            if parts[1].upper() not in ["BK", "L", "TO", "V"]:
+                converted = normalized_symbol.replace(".", "-")
+                logging.debug(f"  Applied DOT-to-DASH heuristic: '{normalized_symbol}' -> '{converted}'")
+                return converted
 
     # Rule 4b: Skip obviously invalid tickers (Custom names, fund tags, etc.)
     # Valid tickers typically only contain letters, numbers, and very few special chars (. - :)

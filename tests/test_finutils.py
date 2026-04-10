@@ -28,6 +28,8 @@ try:
         get_conversion_rate,
         get_historical_price,
         get_historical_rate_via_usd_bridge,
+        map_to_yf_symbol,
+        calculate_indicated_dividend,
         # Add other functions you moved if needed
     )
 
@@ -684,3 +686,55 @@ def test_get_cash_flows_mwr_with_historical_fx(sample_transactions_mwr_df):
 
     assert dates == expected_dates
     assert flows == pytest.approx(expected_flows)
+
+
+# --- Tests for map_to_yf_symbol ---
+
+def test_map_to_yf_symbol_system_map():
+    assert map_to_yf_symbol("BRK.B", {}, set()) == "BRK-B"
+    assert map_to_yf_symbol("BF.B", {}, set()) == "BF-B"
+
+def test_map_to_yf_symbol_thai_stocks():
+    assert map_to_yf_symbol("ADVANC:BKK", {}, set()) == "ADVANC.BK"
+    assert map_to_yf_symbol("AOT.BK", {}, set()) == "AOT.BK" # Should remain unchanged
+
+def test_map_to_yf_symbol_dot_to_dash_heuristic():
+    assert map_to_yf_symbol("TKR.A", {}, set()) == "TKR-A"
+    assert map_to_yf_symbol("XYZ.B", {}, set()) == "XYZ-B"
+
+def test_map_to_yf_symbol_invalid_inputs():
+    assert map_to_yf_symbol(None, {}, set()) == None
+    assert map_to_yf_symbol("", {}, set()) == None
+    assert map_to_yf_symbol("   ", {}, set()) == None
+    # Very long symbol to bypass heuristic
+    assert map_to_yf_symbol("TOOLONG.A", {}, set()) == "TOOLONG.A"
+
+def test_map_to_yf_symbol_user_map():
+    user_map = {"WEIRD.TICKER": "NORMAL.TICKER"}
+    assert map_to_yf_symbol("WEIRD.TICKER", user_symbol_map=user_map, user_excluded_symbols=set()) == "NORMAL.TICKER"
+    assert map_to_yf_symbol("BRK.B", user_symbol_map=user_map, user_excluded_symbols=set()) == "BRK-B" # System map still works
+    
+def test_map_to_yf_symbol_excluded():
+    assert map_to_yf_symbol("BRK.B", {}, {"BRK.B"}) == None
+
+
+# --- Tests for calculate_indicated_dividend ---
+
+def test_calculate_indicated_dividend_basic():
+    ticker_info = {"dividendRate": 2.0}
+    yield_val = calculate_indicated_dividend(ticker_info)
+    assert yield_val == 2.0
+
+def test_calculate_indicated_dividend_missing_rate():
+    ticker_info = {"trailingAnnualDividendRate": 1.5}
+    yield_val = calculate_indicated_dividend(ticker_info)
+    assert yield_val == 1.5
+    
+def test_calculate_indicated_dividend_empty_info():
+    yield_val = calculate_indicated_dividend({})
+    assert yield_val == 0.0
+
+def test_calculate_indicated_dividend_invalid():
+    ticker_info = {"dividendRate": "not_a_number"}
+    yield_val = calculate_indicated_dividend(ticker_info)
+    assert yield_val == 0.0

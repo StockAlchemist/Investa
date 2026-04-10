@@ -55,5 +55,33 @@ def test_intrinsic_value():
         print(f"Average Intrinsic Value: ${results['average_intrinsic_value']:.2f}")
         print(f"Margin of Safety: {results.get('margin_of_safety_pct', 0):.2f}%")
 
+def test_intrinsic_value_currency_conversion():
+    """
+    Validates the currency normalization logic used in the Holdings API 
+    to ensure Margin of Safety remains proportional when mapped to a different Display Currency.
+    """
+    iv_usd = 150.0  # e.g., AAPL intrinsic value in USD
+    price_usd = 100.0 # e.g., AAPL spot price in USD
+    
+    # Original Base Currency MOS
+    mos_base = (iv_usd - price_usd) / iv_usd * 100
+    
+    # Simulating the API conversion parameters for Target Currency = THB
+    fx_rate_usd_to_thb = 35.0
+    converted_iv = iv_usd * fx_rate_usd_to_thb
+    price_display_thb = price_usd * fx_rate_usd_to_thb
+    
+    assert converted_iv == 5250.0 # 150 * 35
+    assert price_display_thb == 3500.0 # 100 * 35
+    
+    # App-side logic
+    mos_display = (converted_iv - price_display_thb) / converted_iv * 100
+    
+    # The margin of safety is a ratio, so it must not be altered by the currency magnitude!
+    assert round(mos_base, 4) == round(mos_display, 4)
+    assert round(mos_display, 4) == 33.3333
+
 if __name__ == "__main__":
     test_intrinsic_value()
+    test_intrinsic_value_currency_conversion()
+

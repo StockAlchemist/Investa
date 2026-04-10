@@ -157,6 +157,13 @@ def test_calculate_portfolio_summary_basic(
     assert not holdings_df.empty, "Holdings DataFrame should not be empty"
     # Basic check that we have some rows
     assert len(holdings_df) > 0
+    
+    # Assert Dividend Yield features are present
+    assert "dividend_yield_pct" in summary_metrics
+    assert "est_annual_income_display" in summary_metrics
+    # Yield should be non-negative
+    assert summary_metrics["dividend_yield_pct"] >= 0
+    assert summary_metrics["est_annual_income_display"] >= 0
 
 def test_calculate_portfolio_summary_transfers(
     sample_csv_filepath, default_account_map, default_base_currency
