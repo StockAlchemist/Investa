@@ -524,38 +524,48 @@ export default function Home() {
               <p className="text-muted-foreground">Market data unavailable.</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.values(summary.metrics.indices).map((index: any) => (
-                  <div
-                    key={index.name}
-                    onClick={() => setIsIndexGraphModalOpen(true)}
-                    className="flex flex-col p-5 rounded-2xl bg-card border border-border bg-gradient-to-b from-card to-card/50 shadow-sm hover:shadow-md hover:border-cyan-500/30 transition-all duration-300 group cursor-pointer"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <span className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest">{index.name}</span>
-                        <h3 className="text-2xl font-bold text-foreground mt-1 tabular-nums">
-                          {index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </h3>
-                      </div>
-                      <div className={`flex flex-col items-end font-bold tabular-nums ${index.change >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        <div className="flex items-center text-lg">
-                          {index.change >= 0 ? "+" : ""}{index.change.toFixed(2)}
+                {Object.values(summary.metrics.indices).map((index: any) => {
+                  const normalized = index.name.toLowerCase();
+                  let accentColor = "bg-emerald-500";
+                  if (normalized.includes('s&p 500') || normalized.includes('500')) accentColor = "bg-cyan-500";
+                  if (normalized.includes('nasdaq')) accentColor = "bg-violet-500";
+                  if (normalized.includes('dow jones') || normalized.includes('dow')) accentColor = "bg-amber-500";
+
+                  return (
+                    <div
+                      key={index.name}
+                      onClick={() => setIsIndexGraphModalOpen(true)}
+                      className="metric-card card-shine p-5 relative overflow-hidden group cursor-pointer"
+                    >
+                      {/* Dynamic accent bar */}
+                      <div className={`absolute top-0 left-4 right-4 h-[2px] rounded-full ${accentColor} opacity-40`} />
+                      
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <span className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest">{index.name}</span>
+                          <h3 className="text-2xl font-bold text-foreground mt-1 tabular-nums">
+                            {index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </h3>
                         </div>
-                        <div className="text-sm">
-                          {index.changesPercentage.toFixed(2)}%
+                        <div className={`flex flex-col items-end font-bold tabular-nums ${index.change >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                          <div className="flex items-center text-lg">
+                            {index.change >= 0 ? "+" : ""}{index.change.toFixed(2)}
+                          </div>
+                          <div className="text-sm">
+                            {index.changesPercentage.toFixed(2)}%
+                          </div>
                         </div>
                       </div>
-                    </div>
 
                     {index.sparkline && index.sparkline.length > 1 && (
                       <div className="h-16 w-full mt-2 filter drop-shadow-sm opacity-90 group-hover:opacity-100 transition-opacity">
                         <ResponsiveContainer width="100%" height="100%">
                           {(() => {
-                            const normalized = index.name.toLowerCase();
+                            const normalized_inner = index.name.toLowerCase();
                             let color = "#10b981"; // Default Emerald
-                            if (normalized.includes('s&p 500') || normalized.includes('500')) color = "#0097b2"; // Cyan
-                            if (normalized.includes('nasdaq')) color = "#8b5cf6"; // Violet
-                            if (normalized.includes('dow jones') || normalized.includes('dow')) color = "#f59e0b"; // Amber
+                            if (normalized_inner.includes('s&p 500') || normalized_inner.includes('500')) color = "#0097b2"; // Cyan
+                            if (normalized_inner.includes('nasdaq')) color = "#8b5cf6"; // Violet
+                            if (normalized_inner.includes('dow jones') || normalized_inner.includes('dow')) color = "#f59e0b"; // Amber
 
                             const gradientId = `splitFill-${index.name.replace(/[^a-zA-Z]/g, '')}`;
                             return (
@@ -583,7 +593,8 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -656,29 +667,31 @@ export default function Home() {
 
   return (
     <main className="min-h-screen pb-20 selection:bg-cyan-500/20 selection:text-cyan-500">
-      {/* Background Glow */}
+      {/* Background Ambient Layers */}
       <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
+        {/* Primary glow - top-left */}
         <div
           className={cn(
-            "absolute -top-[20%] -left-[10%] w-[60%] h-[60%] rounded-full blur-[60px] md:blur-[140px] transition-all duration-1000 opacity-40",
-            currentTheme.bgGlow
+            "absolute -top-[30%] -left-[15%] w-[70%] h-[70%] rounded-full blur-[120px] md:blur-[160px] transition-all duration-1500 animate-pulse-glow",
+            currentTheme.bgGlow,
+            "opacity-30"
           )}
         />
+        {/* Secondary glow - right */}
         <div
           className={cn(
-            "absolute top-[30%] -right-[20%] w-[50%] h-[50%] rounded-full blur-[50px] md:blur-[120px] transition-all duration-1000 opacity-30",
-            currentTheme.bgGlow
+            "absolute top-[20%] -right-[25%] w-[60%] h-[60%] rounded-full blur-[100px] md:blur-[140px] transition-all duration-1500",
+            currentTheme.bgGlow,
+            "opacity-20"
           )}
         />
+        {/* Accent glow - bottom */}
         <div
-          className={cn(
-            "absolute -bottom-[20%] left-[20%] w-[60%] h-[40%] rounded-full blur-[60px] md:blur-[140px] transition-all duration-1000 opacity-20",
-            currentTheme.bgGlow
-          )}
+          className="absolute -bottom-[10%] left-[15%] w-[70%] h-[50%] rounded-full blur-[80px] md:blur-[130px] opacity-10 bg-cyan-400/30 dark:bg-indigo-500/20 transition-all duration-1500"
         />
       </div>
 
-      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/10 via-background to-background pointer-events-none" />
+      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/15 via-background to-background pointer-events-none" />
 
       {/* Control Bar - Desktop */}
       <ControlBar
@@ -707,28 +720,30 @@ export default function Home() {
         currentIndices={summary?.metrics?.indices}
       />
 
-      <header className="sticky top-0 md:top-[61px] z-50 w-full border-b border-border bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 md:top-[61px] z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 py-3 sm:py-4 flex justify-between items-center gap-4 sm:gap-8">
           <div className="flex items-center gap-4">
             {/* Logo and App Title */}
-            <div className="flex items-center gap-2 sm:gap-3 transition-all duration-300">
+            <div className="flex items-center gap-2.5 sm:gap-3 transition-all duration-300">
               {/* logo-dark.png is the dark mode logo, logo.png is light mode */}
               {/* Using display classes for instant switching based on next-themes class */}
-              <img
-                src="logo.png?v=5"
-                alt="Investa Logo"
-                className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 block dark:hidden"
-              />
-              <img
-                src="logo-dark.png?v=5"
-                alt="Investa Logo"
-                className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
-              />
+              <div className="relative">
+                <img
+                  src="logo.png?v=5"
+                  alt="Investa Logo"
+                  className="w-10 h-10 rounded-xl shadow-lg shadow-cyan-500/25 ring-1 ring-border/50 block dark:hidden"
+                />
+                <img
+                  src="logo-dark.png?v=5"
+                  alt="Investa Logo"
+                  className="w-10 h-10 rounded-xl shadow-lg shadow-cyan-500/25 ring-1 ring-white/10 hidden dark:block"
+                />
+              </div>
               <div className="hidden sm:flex md:hidden lg:flex flex-col -space-y-0.5">
-                <h1 className="text-3xl md:text-3xl font-bold text-foreground leading-none">
+                <h1 className="text-2xl md:text-2xl font-black text-foreground leading-none tracking-tight">
                   Investa
                 </h1>
-                <span className="text-xs md:text-xs text-muted-foreground font-medium">
+                <span className="text-[10px] md:text-[10px] text-muted-foreground/60 font-semibold tracking-widest uppercase">
                   by StockAlchemist
                 </span>
               </div>

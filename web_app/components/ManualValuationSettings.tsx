@@ -196,12 +196,12 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
         }
     };
 
-    const inputClassName = "w-full rounded-md border-none bg-secondary text-foreground focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
+    const inputClassName = "w-full rounded-xl border border-border/40 dark:border-white/10 bg-background/50 dark:bg-black/20 backdrop-blur-sm text-foreground focus:ring-cyan-500/50 px-3 py-2 text-sm outline-none focus:ring-1 transition-all";
     const labelClassName = "flex items-center gap-1 text-[10px] font-bold text-muted-foreground mb-1 uppercase tracking-wider";
 
     return (
         <div className="space-y-6">
-            <div className="bg-secondary/30 p-6 rounded-xl">
+            <div className="bg-muted/30 dark:bg-white/[0.04] backdrop-blur-md p-6 rounded-2xl border border-border/40 dark:border-white/[0.06] shadow-sm">
                 <h3 className="text-sm font-semibold mb-4">Add Custom Valuation Parameters</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="md:col-span-4 max-w-xs">
@@ -222,7 +222,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         </div>
                     </div>
 
-                    <div className="md:col-span-4 flex items-center justify-between bg-cyan-500/5 p-3 rounded-lg">
+                    <div className="md:col-span-4 flex items-center justify-between bg-cyan-500/10 dark:bg-cyan-500/5 backdrop-blur-sm p-3 rounded-xl border border-cyan-500/20">
                         <div className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium flex items-center gap-2">
                             <Info className="w-4 h-4" />
                             <span>
@@ -352,7 +352,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
 
             <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                    <thead>
+                    <thead className="bg-muted/30 dark:bg-white/[0.03] backdrop-blur-md">
                         <tr>
                             <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[15%]">Symbol</th>
                             <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[65%]">Parameters</th>
@@ -366,13 +366,13 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                             </tr>
                         ) : (
                             Object.entries(valuationOverrides).map(([sym, data]: [string, any]) => (
-                                <tr key={sym} className="group hover:bg-secondary/10 transition-colors">
-                                    <td className="py-4 px-4 font-bold text-cyan-500 align-toppt-6">{sym}</td>
+                                <tr key={sym} className="group hover:bg-muted/20 dark:hover:bg-white/[0.04] transition-colors border-b border-border/20 dark:border-white/[0.05]">
+                                    <td className="py-4 px-4 font-bold text-cyan-500 align-top pt-6">{sym}</td>
                                     <td className="py-4 px-4">
                                         <div className="flex flex-col md:flex-row gap-4">
                                             {/* DCF Group */}
                                             {Object.entries(data).some(([k]) => k.startsWith('dcf')) && (
-                                                <div className="flex-1 bg-cyan-500/5 rounded-lg p-3 min-w-[200px]">
+                                                <div className="flex-1 bg-cyan-500/10 dark:bg-cyan-500/5 backdrop-blur-sm rounded-xl p-3 min-w-[200px] border border-cyan-500/20">
                                                     <div className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                                                         <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
                                                         DCF Model

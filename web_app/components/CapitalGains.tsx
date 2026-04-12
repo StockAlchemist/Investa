@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Card } from "@/components/ui/card";
+
 import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
@@ -147,8 +147,10 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Annual Gains Chart */}
-            <div className="h-full bg-card rounded-2xl p-6 transition-all duration-300 group">
-                <h3 className="text-lg font-semibold text-foreground mb-4">Annual Realized Gains</h3>
+            <div className="metric-card card-shine p-6 relative overflow-hidden">
+                {/* Accent bar - emerald */}
+                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-emerald-500 opacity-40" />
+                <h3 className="section-label mb-4">Annual Realized Gains</h3>
                 <style>{`
                     .recharts-wrapper, .recharts-surface, .recharts-cartesian-grid, .recharts-layer {
                         outline: none !important;
@@ -217,11 +219,13 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-card rounded-xl overflow-hidden transition-all">
+            <div className="metric-card card-shine overflow-hidden relative">
+                {/* Accent bar - amber */}
+                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-amber-500 opacity-40" />
                 <div className="p-4 flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-foreground">Realized Gain Transactions</h3>
-                    <div className="text-sm text-muted-foreground">
-                        Showing {visibleData.length} of {sortedData.length} transactions
+                    <h3 className="section-label">Realized Gain Transactions</h3>
+                    <div className="text-xs font-medium text-muted-foreground/60">
+                        {visibleData.length} / {sortedData.length} transactions
                     </div>
                 </div>
                 {/* Mobile Card View */}

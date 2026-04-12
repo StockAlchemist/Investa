@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatCurrency } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { Card } from "@/components/ui/card";
+
 import { AssetChangeData } from '../lib/api';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 
@@ -82,9 +82,11 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <div className="h-full bg-card rounded-2xl p-6 transition-all duration-300 group">
+        <div className="metric-card card-shine p-5 relative overflow-hidden">
+            {/* Accent bar - teal */}
+            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-teal-500 opacity-40" />
             <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
+                <h3 className="section-label">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
                     <label className="text-sm text-muted-foreground">Periods:</label>
                     <input
@@ -240,9 +242,9 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
 
     if (!data || Object.keys(data).length === 0) {
         return (
-            <div className="p-12 text-center text-muted-foreground bg-card rounded-2xl">
-                <p className="font-medium text-sm">No asset change data available.</p>
-                <p className="text-xs mt-1">Please ensure your portfolio history is populated.</p>
+            <div className="metric-card p-12 text-center">
+                <p className="font-medium text-sm text-muted-foreground">No asset change data available.</p>
+                <p className="text-xs mt-1 text-muted-foreground/60">Please ensure your portfolio history is populated.</p>
             </div>
         );
     }

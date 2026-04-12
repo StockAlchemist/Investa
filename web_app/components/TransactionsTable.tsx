@@ -265,11 +265,12 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     };
 
     return (
-        <div className="space-y-8 md:space-y-12">
+        <div className="space-y-6">
             {/* Pending Transactions Staging Area */}
             {pendingTransactions.length > 0 && (
-                <div className="bg-cyan-500/5 rounded-xl overflow-hidden border-none shadow-none animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="px-4 py-3 bg-cyan-500/10 flex justify-between items-center border-none">
+                <div className="metric-card card-shine overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 relative">
+                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-50" />
+                    <div className="px-4 py-3 bg-cyan-500/10 flex justify-between items-center">
                         <div className="flex items-center gap-2">
                             <Clock className="h-4 w-4 text-cyan-500" />
                             <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-400 uppercase tracking-wider">
@@ -557,7 +558,9 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             </div>
 
             {/* Desktop Table View */}
-            <div className={`bg-card rounded-xl overflow-hidden border-none shadow-none ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block transition-all`}>
+            <div className={`metric-card card-shine overflow-hidden relative ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block transition-all`}>
+                {/* Accent bar - violet */}
+                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-violet-500 opacity-40" />
                 <div className="overflow-x-auto border-none">
                     <table className="min-w-full border-none">
                         <thead className="bg-secondary sticky top-0 z-10 font-semibold border-none">

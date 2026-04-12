@@ -9,6 +9,7 @@ import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, UserCircl
 
 import { Skeleton } from './ui/skeleton';
 import { Card } from "@/components/ui/card";
+
 import { useStockModal } from '@/context/StockModalContext';
 import WatchlistStar from './WatchlistStar';
 import { getHeatmapClass } from '../lib/utils';
@@ -744,15 +745,18 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     return (
         <>
-            <Card className="rounded-2xl mt-6 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent transition-all duration-300">
-                <div className="flex flex-col gap-5 p-6">
+            <div className="metric-card card-shine mt-6 scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent transition-all duration-300 relative overflow-hidden">
+                {/* Emerald accent bar */}
+                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-emerald-500 opacity-40" />
+
+                <div className="flex flex-col gap-4 p-5">
                     {/* Header Row: Title, Count & Search */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
-                            <h2 className="text-lg font-bold text-foreground">Holdings</h2>
-                            <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                            <h2 className="section-label text-sm font-bold text-foreground">Holdings</h2>
+                            <span className="text-[10px] font-bold text-muted-foreground/60 bg-muted/50 border border-border/60 px-2 py-0.5 rounded-full tracking-wide">
                                 {groupBy
-                                    ? `${aggregatedHoldings.length} items in ${groupedHoldings?.length || 0} groups`
+                                    ? `${aggregatedHoldings.length} items · ${groupedHoldings?.length || 0} groups`
                                     : `${aggregatedHoldings.length} / ${totalItemsCount}`
                                 }
                             </span>
@@ -760,21 +764,21 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
                         <div className="relative w-full sm:w-64 lg:w-80">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search className="h-4 w-4 text-muted-foreground" />
+                                <Search className="h-3.5 w-3.5 text-muted-foreground/50" />
                             </div>
                             <input
                                 type="text"
                                 placeholder="Search symbol..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-1.5 text-sm bg-secondary border-none rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
+                                className="w-full pl-9 pr-4 py-1.5 text-sm bg-muted/40 dark:bg-white/[0.04] border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder-muted-foreground/40 transition-all"
                             />
                             {searchQuery && (
                                 <button
                                     onClick={() => setSearchQuery("")}
                                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
                                 >
-                                    <X className="h-4 w-4" />
+                                    <X className="h-3.5 w-3.5" />
                                 </button>
                             )}
                         </div>
@@ -1554,7 +1558,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     </div>
                 )}
 
-            </Card>
+            </div>
+
 
             {/* Edit Tags Modal */}
             {

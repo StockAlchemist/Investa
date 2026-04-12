@@ -1,7 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+
+
+
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { ProjectedIncome } from '../lib/api';
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,15 +46,18 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
 
 
     return (
-        <Card className="bg-card overflow-hidden mb-6">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 px-6 pt-6 space-y-0">
+        <div className="metric-card card-shine mb-6 relative overflow-hidden">
+            {/* Accent bar - sky */}
+            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-sky-500 opacity-40" />
+            
+            <div className="flex flex-row items-center justify-between p-6 pb-2 space-y-0">
                 <div>
-                    <CardTitle className="text-lg font-semibold text-foreground">
+                    <h3 className="section-label">
                         Projected 12M Income
-                    </CardTitle>
+                    </h3>
                 </div>
-            </CardHeader>
-            <CardContent className="h-[300px] w-full pl-0 pb-2">
+            </div>
+            <div className="h-[300px] w-full pl-0 pb-5">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data} margin={{ top: 20, right: 30, left: 10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128,128,128,0.1)" />
@@ -119,7 +124,7 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                         ))}
                     </BarChart>
                 </ResponsiveContainer>
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     );
 }

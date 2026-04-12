@@ -1,12 +1,28 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
 
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
-    --card: 0 0% 100%;
+    /* Card: kept as solid HSL so hsl(var(--card)) works in Tailwind utilities */
+    --card: 220 35% 97%;
     --card-foreground: 222.2 84% 4.9%;
 
     --popover: 0 0% 100%;
@@ -34,6 +50,11 @@
     --radius: 0.75rem;
     --glass-hover: rgba(0, 0, 0, 0.03);
 
+    /* Card elevation layers — glassy like index boxes */
+    --card-elevated: rgba(255,255,255,0.55);
+    --card-border: rgba(255,255,255,0.55);
+    --shine: rgba(255,255,255,0.6);
+
     /* Solid Menu Backgrounds - Explicit HEX */
     --menu-solid: #ffffff;
     --ring-track: #f3f4f6;
@@ -44,7 +65,8 @@
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
 
-    --card: 222.2 84% 4.9%;
+    /* Card is distinctly elevated from background */
+    --card: 217 50% 8%;
     --card-foreground: 210 40% 98%;
 
     --popover: 222.2 84% 4.9%;
@@ -65,15 +87,20 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
+    --border: 217.2 25% 16%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
     --glass-hover: rgba(255, 255, 255, 0.05);
 
+    /* Card elevation layers */
+    --card-elevated: rgba(255,255,255,0.04);
+    --card-border: rgba(255,255,255,0.08);
+    --shine: rgba(255,255,255,0.04);
+
     /* Solid Menu Backgrounds - Explicit HEX */
-    --menu-solid: #020817;
+    --menu-solid: #030d1a;
     --ring-track: #27272a;
-    --pie-stroke: #020817;
+    --pie-stroke: #030d1a;
     /* zinc-800 */
   }
 }
@@ -108,22 +135,81 @@
   background: rgba(156, 163, 175, 0.8);
 }
 
-/* Glassmorphism & Depth Utilities */
+/* ============================
+   GLASSMORPHISM & DEPTH
+   ============================ */
 .glass-card {
-  @apply bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-xl;
-  background-image: linear-gradient(
-    to bottom right,
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.05)
-  );
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.8);
+  box-shadow:
+    0 2px 12px rgba(99,102,241,0.06),
+    0 1px 3px rgba(0,0,0,0.04),
+    0 1px 0 rgba(255,255,255,1.0) inset;
 }
 
 .dark .glass-card {
-  background-image: linear-gradient(
-    to bottom right,
-    rgba(255, 255, 255, 0.05),
-    rgba(255, 255, 255, 0.01)
-  );
+  background: rgba(10,20,50,0.7);
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.05) inset;
+}
+
+/* Metric card base — glass elements with subtle depth */
+.metric-card {
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.8);
+  border-radius: 1.25rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow:
+    0 2px 12px rgba(99,102,241,0.06),
+    0 1px 3px rgba(0,0,0,0.04),
+    0 1px 0 rgba(255,255,255,1.0) inset;
+}
+
+.dark .metric-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.3),
+    0 4px 6px -4px rgba(0, 0, 0, 0.2),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255,255,255,1.0);
+  border-color: rgba(255,255,255,0.9);
+  box-shadow:
+    0 12px 32px rgba(99,102,241,0.10),
+    0 4px 8px rgba(0,0,0,0.04),
+    0 1px 0 rgba(255,255,255,1.0) inset;
+}
+
+.dark .metric-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 
+    0 20px 25px -5px rgba(0, 0, 0, 0.4),
+    0 10px 10px -6px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+/* Top-shine highlight on cards */
+.card-shine::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dark .card-shine::before {
+  background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 40%);
 }
 
 .premium-shadow {
@@ -133,8 +219,34 @@
     0 10px 15px -3px rgba(0, 0, 0, 0.05);
 }
 
+.dark .premium-shadow {
+  box-shadow:
+    0 4px 24px rgba(0,0,0,0.45),
+    0 1px 0 rgba(255,255,255,0.05) inset;
+}
+
 .premium-ring {
   @apply ring-1 ring-white/20 dark:ring-white/10;
+}
+
+/* Animated background gradient shimmer for accent glows */
+.animate-shimmer {
+  background-size: 200% auto;
+  animation: shimmer 3s linear infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* Section dividers */
+.section-label {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.6;
 }
 
 /* Recharts Overrides */

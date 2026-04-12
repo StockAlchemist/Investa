@@ -1073,13 +1073,45 @@ def _build_summary_rows(
         market_value_display = (
             market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
-        # --- Asset Change (Day Change) with FX ---
-        # Value Today = Qty * Price_Today_Local * FX_Today
-        # Value Yesterday = Qty * (Price_Today_Local - Day_Change_Local) * FX_Yesterday
+        # --- Asset Change (Day Change) with FX and Transactions ---
+        # Robust Logic: Market Gain = (Value Today) - (Value Yesterday) - (Net Flow Today)
+        # This correctly isolates market movement from capital flows (buys/sells)
         day_change_value_display = np.nan
         
         if pd.notna(current_price_local) and pd.notna(fx_rate) and pd.notna(day_change_local):
-             # 1. Get FX Previous Close
+             # 1. Calculate Today's Net Flow and Quantity Change for this holding
+             qty_change_today = 0.0
+             net_flow_today_local = 0.0
+             
+             try:
+                 # Filter transactions for this specific holding on the report date
+                 # report_date is a datetime.date
+                 tx_today = transactions_df[
+                     (transactions_df['Symbol'] == symbol) & 
+                     (transactions_df['Account'] == account) & 
+                     (transactions_df['Date'].dt.date == report_date)
+                 ]
+                 
+                 if not tx_today.empty:
+                     for _, tx in tx_today.iterrows():
+                         t_type = str(tx['Type']).lower().strip()
+                         t_qty = abs(float(tx['Quantity']))
+                         t_price = float(tx['Price/Share'])
+                         t_comm = float(tx['Commission']) if pd.notna(tx['Commission']) else 0.0
+                         
+                         if t_type in ['buy', 'deposit', 'short sell']:
+                             # Buys/Deposits add to quantity (except short sell adds to the short position, which is negative qty)
+                             qty_change_today += t_qty if t_type != 'short sell' else -t_qty
+                             net_flow_today_local += (t_qty * t_price) + t_comm
+                         elif t_type in ['sell', 'withdrawal', 'buy to cover']:
+                             qty_change_today -= t_qty if t_type != 'buy to cover' else -t_qty
+                             net_flow_today_local -= (t_qty * t_price) - t_comm
+                         elif t_type == 'fees':
+                             net_flow_today_local += t_comm
+             except Exception as e_flow:
+                 logging.warning(f"Error calculating intra-day flow for {symbol}/{account}: {e_flow}")
+
+             # 2. Get FX Previous Close
              fx_prev = np.nan
              if local_currency == display_currency:
                  fx_prev = 1.0
@@ -1089,14 +1121,21 @@ def _build_summary_rows(
                  )
              
              if pd.notna(fx_prev):
-                 val_today = current_qty * current_price_local * fx_rate
-                 price_yesterday_local = current_price_local - day_change_local
-                 val_yesterday = current_qty * price_yesterday_local * fx_prev
-                 val_yesterday = current_qty * price_yesterday_local * fx_prev
-                 day_change_value_display = val_today - val_yesterday
+                  # 3. Calculate Components
+                  starting_qty = current_qty - qty_change_today
+                  val_today = current_qty * current_price_local * fx_rate
+                  
+                  price_yesterday_local = current_price_local - day_change_local
+                  val_yesterday = starting_qty * price_yesterday_local * fx_prev
+                  
+                  net_flow_today_display = net_flow_today_local * fx_rate
+                  
+                  # 4. Market Day Gain = Today Value - Yesterday Value - Net Flow
+                  day_change_value_display = val_today - val_yesterday - net_flow_today_display
              else:
-                 # Fallback if FX prev missing: Ignore FX change
-                 day_change_value_display = current_qty * day_change_local * fx_rate
+                 # Fallback if FX prev missing: Ignore FX change, just use local change on starting qty
+                 starting_qty = current_qty - qty_change_today
+                 day_change_value_display = starting_qty * day_change_local * fx_rate
         current_price_display = (
             current_price_local * fx_rate
             if pd.notna(current_price_local) and pd.notna(fx_rate)

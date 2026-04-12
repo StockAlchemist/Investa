@@ -3,7 +3,6 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolioAIReview } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, ShieldCheck, TrendingUp, AlertTriangle, Lightbulb, PieChart } from 'lucide-react';
@@ -234,11 +233,13 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             </div>
 
             {/* Executive Summary */}
-            <div className="h-full bg-card p-6 rounded-2xl transition-all duration-300 group relative overflow-hidden">
-                <h3 className="flex items-center gap-2 text-purple-600 dark:text-purple-400 font-semibold mb-4">
+            <div className="metric-card card-shine p-6 relative overflow-hidden">
+                {/* Accent bar - purple */}
+                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-purple-500 opacity-40" />
+                <h3 className="section-label text-purple-600 dark:text-purple-400 mb-4">
                     Executive Summary
                 </h3>
-                <div className="prose dark:prose-invert max-w-none prose-sm">
+                <div className="prose dark:prose-invert max-w-none prose-sm opacity-90">
                     <p className="whitespace-pre-wrap">{summary}</p>
                 </div>
             </div>
@@ -246,37 +247,41 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             {/* Detailed Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {analysis?.diversification && (
-                    <div className="bg-card p-6 rounded-2xl">
-                        <h3 className="text-base font-semibold mb-4 text-foreground">Diversification Analysis</h3>
-                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
+                    <div className="metric-card card-shine p-6 relative overflow-hidden">
+                        <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-violet-500 opacity-40" />
+                        <h3 className="section-label mb-4">Diversification Analysis</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90">
                             <p className="whitespace-pre-wrap">{analysis.diversification}</p>
                         </div>
                     </div>
                 )}
                 {analysis?.risk_profile && (
-                    <div className="bg-card p-6 rounded-2xl">
-                        <h3 className="text-base font-semibold mb-4 text-foreground">Risk Assessment</h3>
-                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
+                    <div className="metric-card card-shine p-6 relative overflow-hidden">
+                        <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-amber-500 opacity-40" />
+                        <h3 className="section-label mb-4">Risk Assessment</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90">
                             <p className="whitespace-pre-wrap">{analysis.risk_profile}</p>
                         </div>
                     </div>
                 )}
                 {analysis?.performance && (
-                    <div className="bg-card p-6 rounded-2xl">
-                        <h3 className="text-base font-semibold mb-4 text-foreground">Performance Review</h3>
-                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground">
+                    <div className="metric-card card-shine p-6 relative overflow-hidden">
+                        <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-blue-500 opacity-40" />
+                        <h3 className="section-label mb-4">Performance Review</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90">
                             <p className="whitespace-pre-wrap">{analysis.performance}</p>
                         </div>
                     </div>
                 )}
 
                 {/* Actionable Recommendations */}
-                <div className="bg-cyan-500/5 lg:col-span-2 p-6 rounded-2xl">
-                    <h3 className="text-cyan-600 dark:text-cyan-400 flex items-center gap-2 font-semibold mb-4">
-                        <Lightbulb className="w-5 h-5" />
+                <div className="metric-card card-shine lg:col-span-2 p-6 relative overflow-hidden">
+                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-50" />
+                    <h3 className="section-label text-cyan-600 dark:text-cyan-400 flex items-center gap-2 mb-4">
+                        <Lightbulb className="w-4 h-4" />
                         Actionable Recommendations
                     </h3>
-                    <div className="prose dark:prose-invert max-w-none text-sm">
+                    <div className="prose dark:prose-invert max-w-none text-sm opacity-90">
                         {analysis?.actionable_recommendations ? (
                             <p className="whitespace-pre-wrap">{analysis.actionable_recommendations}</p>
                         ) : (

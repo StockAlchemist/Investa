@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+
 import type { Dividend } from '../lib/api';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, formatCompactNumber } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
 import StockDetailModal from './StockDetailModal';
@@ -130,11 +130,11 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
             {children}
 
             {/* Chart Section */}
-            <div className="p-4 mb-6 transition-all">
-                <CardHeader className="p-0 mb-4">
-                    <CardTitle className="text-lg font-semibold text-foreground">Annual Dividends</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0 h-64">
+            <div className="metric-card card-shine p-6 relative overflow-hidden">
+                {/* Accent bar - cyan */}
+                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-40" />
+                <h3 className="section-label mb-4">Annual Dividends</h3>
+                <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dividendsByYear} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
@@ -176,21 +176,23 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                             />
                         </BarChart>
                     </ResponsiveContainer>
-                </CardContent>
+                </div>
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-card border-none rounded-xl overflow-hidden transition-all">
+            <div className="metric-card card-shine overflow-hidden relative">
+                {/* Accent bar - emerald */}
+                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-emerald-500 opacity-40" />
                 <div className="p-4 flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-foreground">Dividend Transactions</h3>
-                    <div className="text-sm text-muted-foreground">
-                        Showing {visibleData.length} of {sortedData.length} transactions
+                    <h3 className="section-label">Dividend Transactions</h3>
+                    <div className="text-xs font-medium text-muted-foreground/60">
+                        {visibleData.length} / {sortedData.length} transactions
                     </div>
                 </div>
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full">
-                        <thead className="bg-secondary sticky top-0 z-10 font-semibold">
+                        <thead className="bg-muted/30 dark:bg-white/[0.03] backdrop-blur-md sticky top-0 z-10 font-semibold">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'DividendAmountDisplayCurrency'].map((header) => (
                                     <th
@@ -237,7 +239,7 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                 {/* Mobile Card View */}
                 <div className="block md:hidden space-y-4 p-4">
                     {visibleData.map((item, index) => (
-                        <div key={`mobile-div-${index}`} className="bg-card rounded-lg p-4 border-none">
+                        <div key={`mobile-div-${index}`} className="bg-muted/20 dark:bg-white/[0.03] backdrop-blur-md rounded-2xl p-4 border border-border/40 dark:border-white/[0.05]">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3

@@ -3,8 +3,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Search, SlidersHorizontal, X, Filter } from 'lucide-react';
 import WatchlistStar from './WatchlistStar';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatCompactNumber, formatPercent, cn, getHeatmapClass } from "@/lib/utils";
@@ -193,13 +193,16 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     if (!results || results.length === 0) return null;
 
     return (
-        <Card className="bg-card/50 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-50/50 dark:supports-[backdrop-filter]:bg-zinc-900/50 overflow-hidden transition-all">
-            <CardHeader className="pb-2">
+        <div className="metric-card card-shine relative overflow-hidden transition-all">
+            {/* Purple accent bar */}
+            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-purple-500 opacity-50" />
+
+            <div className="p-5 pb-2">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
                         <Target className="w-5 h-5 text-purple-500" />
-                        <CardTitle className="text-xl font-bold text-foreground">Scan Results</CardTitle>
-                        <Badge variant="secondary" className="ml-2 bg-secondary/50 text-muted-foreground">
+                        <h2 className="section-label">Scan Results</h2>
+                        <Badge variant="secondary" className="ml-2 bg-secondary/50 text-muted-foreground border-none">
                             {filteredResults.length} of {localResults.length}
                         </Badge>
                     </div>
@@ -210,7 +213,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 placeholder="Search symbol or name..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 h-9 w-full sm:w-[240px] bg-secondary/50 border-none focus:ring-cyan-500/20 text-foreground"
+                                className="pl-9 h-9 w-full sm:w-[240px] bg-muted/30 dark:bg-white/[0.03] backdrop-blur-sm border-border/40 dark:border-white/[0.05] focus:ring-cyan-500/20 text-foreground transition-all"
                             />
                             {searchQuery && (
                                 <button
@@ -236,7 +239,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                 </div>
 
                 {showFilters && (
-                    <div className="mt-4 p-4 rounded-xl bg-secondary/10 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="mt-4 p-4 rounded-2xl bg-muted/20 dark:bg-white/[0.02] border border-border/30 dark:border-white/[0.04] backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-200">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {/* MOS Filter */}
                             <div className="space-y-2">
@@ -246,7 +249,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     placeholder="e.g. 15"
                                     value={minMOS}
                                     onChange={(e) => setMinMOS(e.target.value === "" ? "" : Number(e.target.value))}
-                                    className="h-9 bg-background/50 border-none text-foreground"
+                                    className="h-9 bg-background/50 backdrop-blur-sm border-border/40 focus:ring-cyan-500/30 text-foreground"
                                 />
                             </div>
 
@@ -258,7 +261,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     placeholder="e.g. 25"
                                     value={maxPE}
                                     onChange={(e) => setMaxPE(e.target.value === "" ? "" : Number(e.target.value))}
-                                    className="h-9 bg-background/50 border-none text-foreground"
+                                    className="h-9 bg-background/50 backdrop-blur-sm border-border/40 focus:ring-cyan-500/30 text-foreground"
                                 />
                             </div>
 
@@ -268,7 +271,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 <select
                                     value={marketCapCategory}
                                     onChange={(e) => setMarketCapCategory(e.target.value)}
-                                    className="w-full h-9 px-3 bg-background/50 rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-foreground"
+                                    className="w-full h-9 px-3 bg-background/50 backdrop-blur-sm border border-border/40 rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-foreground transition-all"
                                 >
                                     <option value="all">All Sizes</option>
                                     <option value="micro">Micro Cap (&lt; $300M)</option>
@@ -311,8 +314,9 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                         </div>
                     </div>
                 )}
-            </CardHeader>
-            <CardContent className="p-0">
+            </div>
+            
+            <div className="p-0">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
@@ -533,8 +537,8 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                         </div>
                     )}
                 </div>
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     );
 };
 

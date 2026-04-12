@@ -323,7 +323,7 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
     };
 
     return (
-        <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
+        <div ref={containerRef} className="glass-card rounded-xl p-4 shadow-sm border mb-6 overflow-visible">
             {/* Header Layout (Matches PerformanceGraph) */}
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-4 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">

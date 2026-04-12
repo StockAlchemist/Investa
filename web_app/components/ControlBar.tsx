@@ -31,18 +31,18 @@ export default function ControlBar({
     user
 }: ControlBarProps) {
     return (
-        <div className="w-full border-b border-border bg-background/40 backdrop-blur-md z-[60] hidden md:block sticky top-0">
+        <div className="w-full border-b border-border/50 bg-background/60 backdrop-blur-2xl z-[60] hidden md:block sticky top-0 shadow-sm dark:shadow-black/20">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 flex items-center justify-between py-2">
                 {/* Left: Navigation */}
                 <div className="flex items-center gap-1">
                     <button
                         onClick={() => onTabChange('performance')}
-                        className="p-2 rounded-xl text-cyan-500 hover:bg-accent/10 transition-all duration-300 group"
+                        className="p-2 rounded-xl text-cyan-500 hover:bg-cyan-500/10 transition-all duration-300 group"
                         title="Dashboard"
                     >
-                        <Home className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
+                        <Home className="w-4 h-4 transition-transform duration-300 group-hover:scale-110" />
                     </button>
-                    <div className="h-4 w-px bg-border mx-1" />
+                    <div className="h-4 w-px bg-border/60 mx-1" />
                     <TabNavigation
                         activeTab={activeTab}
                         onTabChange={onTabChange}
@@ -52,18 +52,18 @@ export default function ControlBar({
                 </div>
 
                 {/* Right: Controls */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                     <ThemeToggle />
 
                     <button
                         onClick={onSettingsClick}
-                        className="p-2 rounded-xl text-cyan-500 hover:bg-accent/10 transition-all duration-300 group"
+                        className="p-2 rounded-xl text-muted-foreground hover:text-cyan-500 hover:bg-cyan-500/10 transition-all duration-300 group"
                         title="Project Settings"
                     >
-                        <SettingsIcon className="w-5 h-5 transition-transform duration-300 group-hover:rotate-90" />
+                        <SettingsIcon className="w-4 h-4 transition-transform duration-300 group-hover:rotate-90" />
                     </button>
 
-                    <div className="h-6 w-px bg-border mx-1" />
+                    <div className="h-5 w-px bg-border/60 mx-1" />
 
                     <CurrencySelector
                         currentCurrency={currency}
@@ -73,7 +73,7 @@ export default function ControlBar({
                         availableCurrencies={availableCurrencies}
                     />
 
-                    <div className="h-6 w-px bg-border mx-1" />
+                    <div className="h-5 w-px bg-border/60 mx-1" />
 
                     <UserMenu
                         user={user}

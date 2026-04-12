@@ -44,18 +44,21 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
 
     if (!events || !Array.isArray(events) || events.length === 0) {
         return (
-            <div className="bg-card rounded-xl p-12 text-center">
+            <div className="metric-card p-12 text-center">
                 <p className="text-zinc-500 dark:text-zinc-400">No upcoming dividend events found.</p>
             </div>
         );
     }
 
     return (
-        <div className="bg-card rounded-xl overflow-hidden">
+        <div className="metric-card card-shine relative overflow-hidden transition-all">
+            {/* Amber accent bar */}
+            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-amber-500 opacity-40" />
+            
             <div className="p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center justify-between w-full sm:w-auto gap-3">
-                    <h3 className="text-base font-semibold text-foreground">Dividend Calendar</h3>
-                    <span className="px-2.5 py-1 rounded-md bg-secondary text-xs font-medium text-muted-foreground">
+                    <h3 className="section-label">Dividend Calendar</h3>
+                    <span className="px-2.5 py-1 rounded-md bg-secondary text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
                         {filteredEvents.length} events
                     </span>
                 </div>

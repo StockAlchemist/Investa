@@ -13,8 +13,9 @@ import {
     renameWatchlist,
     WatchlistMeta
 } from '@/lib/api';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CardHeader, CardContent } from "@/components/ui/card";
+
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -290,13 +291,15 @@ export default function Watchlist({ currency }: WatchlistProps) {
     if (isLoading && !watchlists.length) {
         return (
             <div className="space-y-4">
-                <div className="bg-card p-6 rounded-xl">
-                    <CardHeader>
-                        <Skeleton className="h-8 w-48" />
+                <div className="metric-card card-shine p-6 relative overflow-hidden">
+                    {/* Sky accent bar */}
+                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-sky-400 opacity-50" />
+                    <CardHeader className="p-0 mb-4">
+                        <Skeleton className="h-8 w-48 opacity-50 rounded-lg" />
                     </CardHeader>
-                    <CardContent>
-                        <div className="space-y-2">
-                            {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                    <CardContent className="p-0">
+                        <div className="space-y-3">
+                            {[1, 2, 3].map(i => <Skeleton key={i} className="h-14 w-full opacity-40 rounded-2xl" />)}
                         </div>
                     </CardContent>
                 </div>
@@ -305,7 +308,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
     }
 
     return (
-        <div className="space-y-8 md:space-y-12">
+        <div className="space-y-6">
             {/* Watchlist Selector Tabs */}
             <div className="flex flex-wrap items-center gap-2 pb-2 overflow-x-auto no-scrollbar mask-grad-right">
                 {watchlists.map((wl) => (
@@ -350,8 +353,12 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 )}
             </div>
 
-            <Card className="bg-card border-none shadow-none">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="metric-card card-shine relative overflow-hidden">
+                {/* Sky accent bar */}
+                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-sky-400 opacity-50" />
+
+                {/* Header */}
+                <div className="flex flex-row items-center justify-between p-5 pb-2">
                     <div>
                         <div className="flex items-center gap-3">
                             {isRenaming ? (
@@ -375,9 +382,9 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                 </form>
                             ) : (
                                 <>
-                                    <CardTitle className="text-xl font-bold text-foreground">
+                                    <h2 className="section-label text-base">
                                         {currentList.name}
-                                    </CardTitle>
+                                    </h2>
 
                                     <div className="flex items-center gap-0.5">
                                         <Button
@@ -405,7 +412,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                 </>
                             )}
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground/60 mt-0.5">
                             {watchlist?.length || 0} items tracked
                         </p>
                     </div>
@@ -417,16 +424,17 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     >
                         <RefreshCw className="h-4 w-4" />
                     </Button>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleAdd} className="flex flex-col md:flex-row items-end gap-3 mb-6 bg-secondary/30 p-4 rounded-xl border border-border/50">
+                </div>
+
+                <div className="px-5 pb-5">
+                    <form onSubmit={handleAdd} className="flex flex-col md:flex-row items-end gap-3 mb-6 bg-muted/30 dark:bg-white/[0.03] backdrop-blur-md p-4 rounded-2xl border border-border/40 dark:border-white/[0.05]">
                         <div className="flex flex-col gap-1.5 md:w-56 w-full">
                             <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">Symbol</label>
                             <Input
                                 placeholder="e.g. AAPL, BTC-USD"
                                 value={newSymbol}
                                 onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                                className="bg-background border-border hover:border-cyan-500/50 focus-visible:ring-cyan-500 transition-all text-foreground"
+                                className="bg-background/50 backdrop-blur-sm border-border/40 hover:border-cyan-500/50 focus-visible:ring-cyan-500 rounded-2xl transition-all text-foreground placeholder:text-muted-foreground/50"
                             />
                         </div>
                         <div className="flex flex-col gap-1.5 flex-1 w-full">
@@ -435,7 +443,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                 placeholder="Add a description..."
                                 value={newNote}
                                 onChange={(e) => setNewNote(e.target.value)}
-                                className="bg-background border-border hover:border-cyan-500/50 focus-visible:ring-cyan-500 transition-all text-foreground"
+                                className="bg-background/50 backdrop-blur-sm border-border/40 hover:border-cyan-500/50 focus-visible:ring-cyan-500 rounded-2xl transition-all text-foreground placeholder:text-muted-foreground/50"
                             />
                         </div>
                         <Button
@@ -627,8 +635,8 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             </tbody>
                         </table>
                     </div>
-                </CardContent>
-            </Card>
-        </div >
+                </div>
+            </div>
+        </div>
     );
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Card, CardContent } from "@/components/ui/card";
+
+
 import { Activity, Percent, ArrowDownRight, Zap, X, Info, PieChart, ShieldCheck, TrendingUp, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,20 +37,20 @@ interface MetricItemProps {
 const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick }: MetricItemProps) => (
     <div
         onClick={onClick}
-        className="flex flex-col p-3 bg-card rounded-xl hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full border-none"
+        className="flex flex-col p-3 bg-muted/30 dark:bg-white/[0.04] backdrop-blur-sm rounded-2xl hover:bg-cyan-500/10 dark:hover:bg-cyan-500/15 cursor-pointer transition-all duration-300 group/item h-full border border-border/20 dark:border-white/[0.05] hover:border-cyan-500/30 shadow-sm"
     >
-        <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
-            <Icon className="w-3.5 h-3.5 group-hover/item:text-cyan-500 transition-colors" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
+        <div className="flex items-center justify-center gap-1.5 text-muted-foreground mb-2">
+            <Icon className="w-3 h-3 group-hover/item:text-cyan-500 transition-colors" />
+            <span className="text-[9px] font-bold uppercase tracking-widest">{label}</span>
         </div>
 
-        <div className={cn("flex-1 flex items-center justify-center text-xl md:text-2xl font-bold tracking-tight", colorClass || "text-foreground")}>
+        <div className={cn("flex-1 flex items-center justify-center text-xl md:text-2xl font-bold tracking-tight tabular-nums", colorClass || "text-foreground")}>
             {value}
         </div>
 
         {description && (
-            <div className="flex items-center justify-between mt-1 pt-2">
-                <p className="text-[9px] text-muted-foreground opacity-60 font-medium group-hover/item:opacity-80 transition-opacity truncate w-full text-center">
+            <div className="flex items-center justify-between mt-1 pt-1">
+                <p className="text-[9px] text-muted-foreground opacity-50 font-medium group-hover/item:opacity-70 transition-opacity truncate w-full text-center">
                     {description}
                 </p>
             </div>
@@ -164,7 +165,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     if (isLoading) {
         return (
-            <div className="h-full bg-card p-6 rounded-2xl flex flex-col gap-6">
+            <div className="h-full glass-card p-6 rounded-2xl flex flex-col gap-6">
                 <div className="flex justify-between items-center">
                     <Skeleton className="h-4 w-32 opacity-50" />
                     <Skeleton className="h-8 w-8 rounded-lg opacity-50" />
@@ -253,15 +254,18 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     return (
         <React.Fragment>
-            <div className="h-full bg-card p-6 rounded-2xl transition-all duration-300 group relative overflow-hidden flex flex-col gap-4">
-                <div className="flex justify-between items-start">
+            <div className="metric-card card-shine h-full p-5 transition-all duration-300 group relative overflow-hidden flex flex-col gap-4">
+                {/* Accent top bar */}
+                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-purple-500 opacity-50" />
+
+                <div className="flex justify-between items-start relative z-10">
                     <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Analytics</h3>
+                        <h3 className="section-label">Risk Analytics</h3>
                         {isRefreshing && !isLoading && (
-                            <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                            <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />
                         )}
                     </div>
-                    <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-muted text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
+                    <div className="p-2 rounded-xl bg-purple-500/15 dark:bg-purple-500/20 text-purple-500 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                         <Activity className="w-4 h-4" />
                     </div>
                 </div>
@@ -270,7 +274,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     {/* Left Side: Portfolio Health */}
                     {portfolioHealth && (
                         <div
-                            className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-card border-none transition-colors cursor-pointer group/health relative overflow-hidden"
+                            className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-muted/30 dark:bg-white/[0.04] backdrop-blur-sm border border-border/20 dark:border-white/[0.05] transition-colors cursor-pointer group/health relative overflow-hidden"
                             onClick={() => setIsHealthModalOpen(true)}
                         >
                             <div className="absolute top-2 right-2 opacity-0 group-hover/health:opacity-100 transition-opacity">

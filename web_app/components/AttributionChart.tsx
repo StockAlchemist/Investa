@@ -45,35 +45,36 @@ const formatPercentHelper = (val: number) => {
 export function SectorAttribution({ data, isLoading, isRefreshing = false, currency }: CommonProps) {
     if (isLoading) {
         return (
-            <div className="bg-card rounded-2xl p-6 animate-pulse h-80 opacity-50"></div>
+            <div className="glass-card rounded-2xl p-6 animate-pulse h-80 opacity-50"></div>
         );
     }
 
     const hasSectors = data?.sectors && data.sectors.length > 0;
 
     return (
-        <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden">
-            <div className="flex items-center gap-2 mb-6">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sector Contribution</h3>
+        <div className="metric-card card-shine p-5 h-full relative overflow-hidden group">
+            {/* Accent top bar - teal */}
+            <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-teal-500 opacity-50" />
+            <div className="flex items-center justify-between mb-5 relative z-10">
+                <h3 className="section-label">Sector Contribution</h3>
                 {isRefreshing && !isLoading && (
-                    <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                    <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />
                 )}
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3 relative z-10">
                 {hasSectors ? [...data.sectors].sort((a, b) => b.gain - a.gain).map((s) => (
                     <div key={s.sector}>
                         <div className="flex justify-between text-xs mb-1.5">
-                            <span className="font-medium text-foreground">{s.sector}</span>
-                            <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}>
+                            <span className="font-semibold text-foreground/80">{s.sector}</span>
+                            <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-red-600 dark:text-red-500 font-bold'}>
                                 {formatCurrencyHelper(s.gain, currency)} ({formatPercentHelper(s.contribution)})
                             </span>
                         </div>
-                        <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
+                        <div className="w-full bg-muted/50 rounded-full h-1.5 overflow-hidden">
                             <div
-                                className={`h-full ${s.gain >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}
+                                className={`h-full rounded-full transition-all duration-700 ${s.gain >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}
                                 style={{ width: `${Math.min(100, Math.abs(s.contribution * 100))}%` }}
-                            ></div>
-                        </div>
+                            /></div>
                     </div>
                 )) : (
                     <p className="text-sm text-muted-foreground italic">No sector data available</p>
@@ -173,7 +174,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                             <input
                                 type="text"
                                 placeholder="Search symbols, names, or sectors..."
-                                className="w-full bg-secondary rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
+                                className="w-full bg-muted/60 dark:bg-black/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 backdrop-blur-md placeholder-muted-foreground/60 border border-border/40 dark:border-white/10 transition-all text-foreground"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 autoFocus
@@ -202,7 +203,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                             {filteredData.map((stock, idx) => (
                                 <div
                                     key={`${stock.symbol}-${idx}`}
-                                    className="flex items-center justify-between p-4 bg-secondary/30 hover:bg-secondary/60 rounded-xl transition-all cursor-pointer group hover:scale-[1.01] active:scale-[0.99] duration-200"
+                                    className="flex items-center justify-between p-4 bg-muted/40 dark:bg-white/[0.03] backdrop-blur-sm border border-border/40 dark:border-white/[0.05] hover:bg-muted/60 dark:hover:bg-white/[0.06] rounded-2xl transition-all cursor-pointer group hover:scale-[1.01] active:scale-[0.99] duration-200 shadow-sm"
                                     onClick={() => {
                                         const symbols = stock.symbol.split(',').map(s => s.trim());
                                         if (symbols.length === 1) {
@@ -289,7 +290,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     if (isLoading) {
         return (
-            <div className="bg-card rounded-2xl p-6 animate-pulse h-80 opacity-50"></div>
+            <div className="glass-card rounded-2xl p-6 animate-pulse h-80 opacity-50"></div>
         );
     }
 
@@ -299,18 +300,21 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     return (
         <>
-            <div className="bg-card rounded-2xl p-6 h-full relative overflow-hidden">
-                <div className="flex items-center gap-2 mb-6">
-                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Top Contributors</h3>
+            <div className="metric-card card-shine p-5 h-full relative overflow-hidden group">
+                {/* Accent top bar - amber */}
+                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-amber-500 opacity-50" />
+
+                <div className="flex items-center justify-between mb-5 relative z-10">
+                    <h3 className="section-label">Top Contributors</h3>
                     {isRefreshing && !isLoading && (
-                        <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                        <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />
                     )}
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2 relative z-10">
                     {hasStocks ? dashboardStocks.map((stock, idx) => (
                         <div
                             key={`${stock.symbol}-${idx}`}
-                            className="flex items-center justify-between p-2 hover:bg-accent/10 rounded-lg transition-colors cursor-pointer group"
+                            className="flex items-center justify-between p-2 hover:bg-muted/40 dark:hover:bg-white/[0.04] rounded-2xl transition-all duration-200 cursor-pointer group/row border border-transparent hover:border-border/60"
                             onClick={() => {
                                 const symbols = stock.symbol.split(',').map(s => s.trim());
                                 if (symbols.length === 1) {
@@ -344,11 +348,11 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                 </div>
                             </div>
                             <div className="text-right">
-                                <p className={`text-sm font-medium ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                <p className={`text-sm font-bold tabular-nums ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                     {stock.gain >= 0 ? '+' : ''}{formatCurrencyHelper(stock.gain, currency)}
-                                    <span className="text-xs ml-1">({formatPercentHelper(stock.contribution)})</span>
+                                    <span className="text-[10px] ml-1 opacity-70">({formatPercentHelper(stock.contribution)})</span>
                                 </p>
-                                <p className="text-[10px] text-muted-foreground uppercase">{stock.sector}</p>
+                                <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{stock.sector}</p>
                             </div>
                         </div>
                     )) : (
@@ -357,10 +361,10 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                 </div>
 
                 {hasStocks && (
-                    <div className="mt-6 pt-4">
+                    <div className="mt-4 pt-3 border-t border-border/40 relative z-10">
                         <button
                             onClick={() => setIsAllModalOpen(true)}
-                            className="w-full py-2.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-cyan-500 hover:bg-cyan-500/5 transition-all uppercase tracking-widest"
+                            className="w-full py-2 rounded-xl text-[10px] font-bold text-muted-foreground hover:text-amber-500 hover:bg-amber-500/5 transition-all uppercase tracking-widest"
                         >
                             View All Contributors
                         </button>

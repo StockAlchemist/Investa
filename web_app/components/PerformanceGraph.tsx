@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
-import { Card, CardContent } from "@/components/ui/card";
+
 import { useQuery } from '@tanstack/react-query';
 import {
     LineChart,
@@ -339,14 +339,16 @@ export default function PerformanceGraph({
         return (
             <div
                 ref={containerRef}
-                className="bg-card rounded-2xl p-6 h-[400px] flex items-center justify-center text-muted-foreground w-full transition-all"
+                className="metric-card card-shine p-4 sm:p-6 mb-6 h-[400px] flex items-center justify-center w-full relative overflow-hidden"
             >
+                {/* Accent top bar */}
+                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-indigo-500 opacity-50" />
                 {!mounted || loading ? (
-                    <div className="flex flex-col items-center gap-2">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
-                        <span>Loading chart...</span>
+                    <div className="flex flex-col items-center gap-3">
+                        <Loader2 className="animate-spin text-indigo-500 w-8 h-8" />
+                        <span className="text-[10px] font-black tracking-[0.2em] text-muted-foreground uppercase">Loading chart...</span>
                     </div>
-                ) : 'No historical data available.'}
+                ) : <span className="text-sm text-muted-foreground">No historical data available.</span>}
             </div>
         );
     }
@@ -535,13 +537,16 @@ export default function PerformanceGraph({
     const isContinuous = period === '1d';
 
     return (
-        <div ref={containerRef} className="bg-card rounded-2xl p-4 sm:p-6 mb-6 overflow-visible relative transition-all duration-300 group/section">
+        <div ref={containerRef} className="metric-card card-shine p-4 sm:p-6 mb-6 overflow-visible relative transition-all duration-300 group/section">
+            {/* Accent top bar - indigo for chart section */}
+            <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-indigo-500 opacity-50" />
+
             <div className="mb-4 md:mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-2 md:mb-4">
-                    <h3 className="text-lg font-medium text-muted-foreground flex items-center gap-2">
+                    <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2 tracking-tight">
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                         {loading && processedData.length > 0 && (
-                            <Loader2 className="w-4 h-4 animate-spin text-cyan-500 opacity-70" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500 opacity-70" />
                         )}
                     </h3>
                     <div className="flex items-baseline gap-4">

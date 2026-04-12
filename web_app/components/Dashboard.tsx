@@ -115,7 +115,7 @@ export default function Dashboard({
                     title="Total Portfolio Value"
                     value={m?.market_value ?? 0}
                     valueClassName="text-2xl sm:text-4xl" // Slightly smaller generally, but hero
-                    containerClassName="h-full bg-card"
+                    containerClassName="h-full"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
@@ -299,16 +299,18 @@ export default function Dashboard({
                 return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} showClosed={showClosed} />;
             case 'portfolioDonut':
                 return (
-                    <div className="h-full bg-card rounded-2xl p-6 relative overflow-hidden transition-all duration-300 group">
-                        <div className="h-full relative">
+                    <div className="metric-card card-shine h-full p-5 relative overflow-hidden group">
+                        {/* Accent top bar */}
+                        <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-cyan-500 opacity-50" />
+                        <div className="h-full relative z-10">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest opacity-80">Portfolio Composition</h3>
+                                    <h3 className="section-label">Portfolio Composition</h3>
                                     {isRefreshing && !isLoading && (
-                                        <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                                        <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />
                                     )}
                                 </div>
-                                <div className="p-2 rounded-xl bg-secondary/30 text-muted-foreground group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 group-hover:text-cyan-500 group-hover:bg-cyan-500/10">
+                                <div className="p-2 rounded-xl bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-500 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                                     <PieChart className="w-4 h-4" />
                                 </div>
                             </div>
@@ -327,25 +329,35 @@ export default function Dashboard({
     const visibleComplexItems = DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id) && COMPLEX_METRIC_IDS.includes(item.id));
 
     return (
-        <div className="mb-4 md:mb-14 space-y-8 md:space-y-12">
-            {/* Scalar Metrics Floating Board */}
-            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                {visibleScalarItems.map((item) => (
-                    <div key={item.id} className={cn(item.colSpan, "w-full min-w-0")}>
-                        {renderContent(item.id, 'seamless')}
-                    </div>
-                ))}
-            </div>
-
-            {/* Complex/Tall Metrics Grid */}
-            {visibleComplexItems.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
-                    {visibleComplexItems.map((item) => (
-                        <div key={item.id} className={item.colSpan}>
-                            {renderContent(item.id)}
+        <div className="mb-4 md:mb-14 space-y-6 md:space-y-10">
+            {/* Scalar Metrics Grid */}
+            {visibleScalarItems.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                    {visibleScalarItems.map((item) => (
+                        <div key={item.id} className={cn(item.colSpan, "w-full min-w-0")}>
+                            {renderContent(item.id, 'seamless')}
                         </div>
                     ))}
                 </div>
+            )}
+
+            {/* Complex/Tall Metrics Grid */}
+            {visibleComplexItems.length > 0 && (
+                <>
+                    {/* Visual separator */}
+                    <div className="flex items-center gap-3">
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+                        <span className="section-label tracking-[0.2em]">Analytics</span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                        {visibleComplexItems.map((item) => (
+                            <div key={item.id} className={item.colSpan}>
+                                {renderContent(item.id)}
+                            </div>
+                        ))}
+                    </div>
+                </>
             )}
         </div>
     );

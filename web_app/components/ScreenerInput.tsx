@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { Filter, RefreshCw, Loader2, Info, ChevronDown } from 'lucide-react';
 import { getWatchlists, WatchlistMeta } from '@/lib/api';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
 
 interface ScreenerInputProps {
     onRunScreener: (universeType: string, universeId: string | null, manualSymbols: string[]) => void;
@@ -48,11 +48,13 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
     };
 
     return (
-        <div className="bg-card rounded-2xl p-6">
+        <div className="metric-card card-shine p-6 relative overflow-hidden">
+            {/* Accent bar - cyan */}
+            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-40" />
             <div className="pb-4">
                 <div className="flex items-center gap-2">
-                    <Filter className="w-5 h-5 text-[#0097b2]" />
-                    <h3 className="text-xl font-bold text-foreground">Initial Parameters</h3>
+                    <Filter className="w-4 h-4 text-[#0097b2]" />
+                    <h3 className="section-label">Initial Parameters</h3>
                 </div>
             </div>
             <div>
