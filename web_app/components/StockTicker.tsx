@@ -26,7 +26,7 @@ export default function StockTicker({ symbol, currency, className, children, sho
                     e.stopPropagation();
                     openStockDetail(symbol, currency);
                 }}
-                className="font-bold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 transition-colors bg-cyan-500/0 hover:bg-cyan-500/5 px-1.5 py-0.5 rounded-md -mx-1.5"
+                className="font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 transition-colors bg-indigo-500/0 hover:bg-indigo-500/5 px-1.5 py-0.5 rounded-md -mx-1.5"
             >
                 {children || symbol}
             </button>

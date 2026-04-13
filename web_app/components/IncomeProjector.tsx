@@ -47,9 +47,8 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
 
     return (
         <div className="metric-card card-shine mb-6 relative overflow-hidden">
-            {/* Accent bar - sky */}
-            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-sky-500 opacity-40" />
-            
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
+
             <div className="flex flex-row items-center justify-between p-6 pb-2 space-y-0">
                 <div>
                     <h3 className="section-label">
@@ -89,7 +88,7 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                                     // Sort payload by value desc for better reading in tooltip
                                     const sortedPayload = [...payload].sort((a, b) => (b.value as number) - (a.value as number));
                                     return (
-                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl text-xs min-w-[180px] border border-border/50 shadow-2xl">
+                                        <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl text-xs min-w-[180px] border border-border/50 shadow-2xl">
                                             <p className="font-semibold mb-2 text-foreground">{label}</p>
                                             {sortedPayload.map((entry, idx) => (
                                                 <div key={`tooltip-${idx}`} className="flex items-center gap-3 mb-1 last:mb-0">

@@ -50,10 +50,9 @@ function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) 
     const onPieLeave = () => setActiveIndex(undefined);
 
     return (
-        <div className="metric-card card-shine p-5 flex flex-col h-[32rem] relative overflow-hidden">
-            {/* Accent top bar */}
-            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-violet-500 opacity-40" />
-            <h3 className="section-label text-center mb-4">{title}</h3>
+        <div className="metric-card card-shine p-5 flex flex-col h-[32rem] relative overflow-hidden group">
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-purple-500 opacity-80" />
+            <h3 className="section-label text-center mb-4 relative z-10">{title}</h3>
             <div className="flex-grow min-h-0 relative">
                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                     <PieChart>
@@ -92,7 +91,7 @@ function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) 
                             content={({ active, payload }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl border border-border/50 shadow-2xl">
+                                        <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl border border-border/50 shadow-2xl">
                                             <p className="font-medium text-foreground">{payload[0].name}</p>
                                             <p className="text-sm text-muted-foreground">
                                                 {formatCurrency(payload[0].value as number, currency)}

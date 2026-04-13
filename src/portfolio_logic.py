@@ -5875,6 +5875,12 @@ def _calculate_accumulated_gains_and_resample(
                             divisor = 0.0
                             found_valid = False
                             
+                            # --- QUICK CHECK: If entire column is NaN or zero, skip search ---
+                            col_data = final_df_output[col]
+                            if col_data.isna().all() or (col_data == 0).all():
+                                logging.debug(f"Normalization skipped for {col}: Column is empty or all zeros.")
+                                continue
+                            
                             # Try t0 first
                             t0_val = final_df_output.loc[visible_dates[0], col]
                             if pd.notnull(t0_val) and t0_val != 0:

@@ -720,7 +720,7 @@ def load_all_transactions_from_db(
     try:
         query = """
         SELECT id as original_index, Date, Type, Symbol, Quantity, "Price/Share",
-               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account", Tags, ExternalID
+               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account", Tags, ExternalID, user_id
         FROM transactions
         ORDER BY Date, original_index;
         """
@@ -782,6 +782,7 @@ def add_transaction_to_db(
         "To Account",
         "Tags",
         "ExternalID",
+        "user_id",
     ]
     
     # --- Deduplication Check ---
@@ -815,10 +816,20 @@ def add_transaction_to_db(
             if isinstance(value, (datetime, date)):
                 data_for_sql_ordered.append(value.strftime("%Y-%m-%d"))
             elif isinstance(value, str):
-                try:
-                    datetime.strptime(value, "%Y-%m-%d")
-                    data_for_sql_ordered.append(value)
-                except ValueError:
+                # Allow both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS
+                valid = False
+                for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        datetime.strptime(value, fmt)
+                        valid = True
+                        break
+                    except ValueError:
+                        continue
+                
+                if valid:
+                    # Truncate to YYYY-MM-DD to maintain DB standard
+                    data_for_sql_ordered.append(value[:10])
+                else:
                     logging.error(f"Invalid date string for DB: {value}")
                     return False, None
             else:
@@ -861,7 +872,7 @@ def update_transaction_in_db(
     db_columns = {
         "Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount",
         "Commission", "Account", "Split Ratio", "Note", "Local Currency",
-        "To Account", "Tags", "ExternalID"
+        "To Account", "Tags", "ExternalID", "user_id"
     }
 
     for key, value in new_data_dict.items():
@@ -877,10 +888,19 @@ def update_transaction_in_db(
             if isinstance(value, (datetime, date)):
                 values_for_sql[placeholder] = value.strftime("%Y-%m-%d")
             elif isinstance(value, str):
-                try:
-                    datetime.strptime(value, "%Y-%m-%d")
+                # Allow both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS
+                valid = False
+                for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        datetime.strptime(value, fmt)
+                        valid = True
+                        break
+                    except ValueError:
+                        continue
+                
+                if valid:
                     values_for_sql[placeholder] = value
-                except ValueError:
+                else:
                     logging.error(f"Invalid date string for update: {value}")
                     return False
             else:

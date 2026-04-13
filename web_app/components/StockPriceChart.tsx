@@ -26,6 +26,8 @@ interface StockPriceChartProps {
     symbol: string;
     currency: string;
     benchmarks?: string[]; // Optional initial benchmarks
+    avgCost?: number;
+    hidePrice?: boolean;
 }
 
 interface CustomTooltipProps {
@@ -72,7 +74,7 @@ const calculateSMA = (data: any[], period: number) => {
     return smaData;
 };
 
-export default function StockPriceChart({ symbol, currency }: StockPriceChartProps) {
+export default function StockPriceChart({ symbol, currency, avgCost, hidePrice }: StockPriceChartProps) {
     const [view, setView] = useState<'price' | 'return'>('price');
     const [period, setPeriod] = useState('1y');
     const [showSMA50, setShowSMA50] = useState(false);
@@ -330,9 +332,11 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
                     {/* Price and Stats (Top Left) */}
                     {stats ? (
                         <div className="flex items-baseline gap-3">
-                            <span className="text-3xl font-bold tracking-tight text-foreground">
-                                {formatCurrency(stats.currentPrice, currency)}
-                            </span>
+                            {!hidePrice && (
+                                <span className="text-3xl font-bold tracking-tight text-foreground">
+                                    {formatCurrency(stats.currentPrice, currency)}
+                                </span>
+                            )}
                             <span className={`text-base font-medium ${stats.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                 {stats.change >= 0 ? '+' : ''}{formatCurrency(stats.change, currency)} ({stats.changePct.toFixed(2)}%)
                             </span>
@@ -496,6 +500,23 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
                                             dot={false}
                                             activeDot={{ r: 4 }}
                                             connectNulls
+                                        />
+                                    )}
+                                    {avgCost && avgCost > 0 && (
+                                        <ReferenceLine
+                                            yAxisId="main"
+                                            y={avgCost}
+                                            stroke="#64748b" // Slate 500
+                                            strokeDasharray="5 5"
+                                            strokeWidth={1.5}
+                                            label={{
+                                                value: `AVG COST: ${formatCurrency(avgCost, currency)}`,
+                                                position: 'right',
+                                                fill: '#64748b',
+                                                fontSize: 10,
+                                                fontWeight: 'bold',
+                                                offset: 10
+                                            }}
                                         />
                                     )}
                                 </>

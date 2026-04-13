@@ -537,8 +537,8 @@ export default function Home() {
                       onClick={() => setIsIndexGraphModalOpen(true)}
                       className="metric-card card-shine p-5 relative overflow-hidden group cursor-pointer"
                     >
-                      {/* Dynamic accent bar */}
-                      <div className={`absolute top-0 left-4 right-4 h-[2px] rounded-full ${accentColor} opacity-40`} />
+                      {/* Standardized accent bar for Markets tab */}
+                      <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500 opacity-80" />
                       
                       <div className="flex justify-between items-start mb-4">
                         <div>
@@ -666,7 +666,7 @@ export default function Home() {
   const currentTheme = TAB_THEMES[activeTab] || TAB_THEMES.performance;
 
   return (
-    <main className="min-h-screen pb-20 selection:bg-cyan-500/20 selection:text-cyan-500">
+    <main className="min-h-screen pb-20 selection:bg-indigo-500/20 selection:text-indigo-500">
       {/* Background Ambient Layers */}
       <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
         {/* Primary glow - top-left */}
@@ -687,7 +687,7 @@ export default function Home() {
         />
         {/* Accent glow - bottom */}
         <div
-          className="absolute -bottom-[10%] left-[15%] w-[70%] h-[50%] rounded-full blur-[80px] md:blur-[130px] opacity-10 bg-cyan-400/30 dark:bg-indigo-500/20 transition-all duration-1500"
+          className="absolute -bottom-[10%] left-[15%] w-[70%] h-[50%] rounded-full blur-[80px] md:blur-[130px] opacity-10 bg-indigo-400/30 dark:bg-indigo-500/20 transition-all duration-1500"
         />
       </div>
 
@@ -731,12 +731,12 @@ export default function Home() {
                 <img
                   src="logo.png?v=5"
                   alt="Investa Logo"
-                  className="w-10 h-10 rounded-xl shadow-lg shadow-cyan-500/25 ring-1 ring-border/50 block dark:hidden"
+                  className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/25 ring-1 ring-border/50 block dark:hidden"
                 />
                 <img
                   src="logo-dark.png?v=5"
                   alt="Investa Logo"
-                  className="w-10 h-10 rounded-xl shadow-lg shadow-cyan-500/25 ring-1 ring-white/10 hidden dark:block"
+                  className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/25 ring-1 ring-white/10 hidden dark:block"
                 />
               </div>
               <div className="hidden sm:flex md:hidden lg:flex flex-col -space-y-0.5">
@@ -830,32 +830,32 @@ export default function Home() {
       {/* Bottom Nav (Visual only for now) */}
       {/* Bottom Nav */}
       <div
-        className="fixed bottom-0 left-0 right-0 border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 md:hidden z-50"
+        className="fixed bottom-0 left-0 right-0 border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest md:hidden z-50 transition-all duration-300"
         style={{ backgroundColor: 'var(--menu-solid)' }}
       >
         <div
-          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab !== 'settings' && activeTab !== 'markets' ? 'text-cyan-600 dark:text-cyan-400' : 'hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab !== 'settings' && activeTab !== 'markets' && activeTab !== 'screener' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           onClick={() => { setActiveTab('performance'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         >
           <HomeIcon className="w-5 h-5" />
           <span className="mt-1">Home</span>
         </div>
         <div
-          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'markets' ? 'text-cyan-600 dark:text-cyan-400' : 'hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'markets' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           onClick={() => { setActiveTab('markets'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         >
           <BarChart3 className="w-5 h-5" />
           <span className="mt-1">Markets</span>
         </div>
         <div
-          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'settings' ? 'text-cyan-600 dark:text-cyan-400' : 'hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'settings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           onClick={() => { setActiveTab('settings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         >
           <SettingsIcon className="w-5 h-5" />
           <span className="mt-1">Settings</span>
         </div>
         <div
-          className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-cyan-600 dark:hover:text-cyan-400"
+          className="flex flex-col items-center flex-1 cursor-pointer transition-colors text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         >
           {mounted && theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}

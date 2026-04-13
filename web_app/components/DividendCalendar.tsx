@@ -52,8 +52,8 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
 
     return (
         <div className="metric-card card-shine relative overflow-hidden transition-all">
-            {/* Amber accent bar */}
-            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-amber-500 opacity-40" />
+            {/* emerald accent bar */}
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
             
             <div className="p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center justify-between w-full sm:w-auto gap-3">
@@ -89,7 +89,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                 <table className="w-full text-sm text-left">
                     <thead className="bg-secondary/50 font-semibold sticky top-0 z-10 backdrop-blur-md">
                         <tr>
-                            <th className="px-6 py-3 text-xs font-semibold text-muted-foreground">Symbol</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-muted-foreground sticky left-0 z-20 bg-secondary/95 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">Symbol</th>
                             <th className="px-6 py-3 text-xs font-semibold text-muted-foreground">Ex-Dividend</th>
                             <th className="px-6 py-3 text-xs font-semibold text-muted-foreground">Pay Date</th>
                             <th className="px-6 py-3 text-xs font-semibold text-muted-foreground">Status</th>
@@ -100,7 +100,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                         {filteredEvents.map((event, idx) => (
                             <tr key={`${event.symbol}-${event.dividend_date}-${idx}`} className="hover:bg-accent/5 transition-colors group">
                                 <td
-                                    className="px-6 py-3 font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                    className="px-6 py-3 font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors sticky left-0 z-10 bg-background/95 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]"
                                     onClick={() => setSelectedSymbol(event.symbol)}
                                 >
                                     <div className="flex items-center gap-2">

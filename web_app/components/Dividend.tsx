@@ -103,6 +103,7 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                     currency={currency}
                     colorClass="text-emerald-600 dark:text-emerald-400"
                     icon={CircleDollarSign}
+                    accentColor="emerald-500"
                 />
 
                 {expectedDividends !== undefined && (
@@ -130,10 +131,9 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
             {children}
 
             {/* Chart Section */}
-            <div className="metric-card card-shine p-6 relative overflow-hidden">
-                {/* Accent bar - cyan */}
-                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-40" />
-                <h3 className="section-label mb-4">Annual Dividends</h3>
+            <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
+                <h3 className="section-label mb-4 relative z-10">Annual Dividends</h3>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dividendsByYear} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -158,7 +158,7 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
+                                            <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -180,10 +180,9 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
             </div>
 
             {/* Transactions Table */}
-            <div className="metric-card card-shine overflow-hidden relative">
-                {/* Accent bar - emerald */}
-                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-emerald-500 opacity-40" />
-                <div className="p-4 flex justify-between items-center">
+            <div className="metric-card card-shine overflow-hidden relative group">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
+                <div className="p-4 flex justify-between items-center relative z-10">
                     <h3 className="section-label">Dividend Transactions</h3>
                     <div className="text-xs font-medium text-muted-foreground/60">
                         {visibleData.length} / {sortedData.length} transactions
@@ -217,7 +216,7 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                                     <tr key={index} className="hover:bg-accent/5 transition-colors">
                                         <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
                                         <td
-                                            className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                            className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-indigo-500 transition-colors"
                                             onClick={() => setSelectedSymbol(item.Symbol)}
                                         >
                                             <div className="flex items-center gap-2">
@@ -243,7 +242,7 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3
-                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors flex items-center gap-2"
+                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-indigo-500 transition-colors flex items-center gap-2"
                                         onClick={() => setSelectedSymbol(item.Symbol)}
                                     >
                                         <StockIcon symbol={item.Symbol} size={24} />

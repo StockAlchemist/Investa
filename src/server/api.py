@@ -1543,12 +1543,8 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
     price = float(tx_data.get("Price/Share", 0))
     commission = float(tx_data.get("Commission", 0))
     
-    # Use Total Amount if provided, else fallback to Qty * Price
-    total_amount = tx_data.get("Total Amount")
-    if total_amount is None or pd.isna(total_amount):
-        principal = qty * price
-    else:
-        principal = abs(total_amount)
+    principal = abs(tx_data.get("Total Amount")) if tx_data.get("Total Amount") is not None and not pd.isna(tx_data.get("Total Amount")) else qty * price
+    user_id = tx_data.get("user_id")
 
     if tx_type == "buy":
         # Funding the buy: Sell $CASH for the principal amount
@@ -1561,7 +1557,8 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
             "Total Amount": principal,
             "Account": account,
             "Local Currency": local_currency,
-            "Note": f"Cash funding for {symbol} Buy"
+            "Note": f"Auto-cash for Buy {symbol}",
+            "user_id": user_id
         }
         add_transaction_to_db(conn, cash_tx_principal)
         
@@ -1569,14 +1566,15 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
         if commission > 0:
             cash_tx_comm = {
                 "Date": date_str,
-                "Type": "Withdrawal",
+                "Type": "Sell",
                 "Symbol": "$CASH",
                 "Quantity": commission,
                 "Price/Share": 1.0,
                 "Total Amount": commission,
                 "Account": account,
                 "Local Currency": local_currency,
-                "Note": f"Commission for {symbol} Buy"
+                "Note": f"Auto-cash Fee for Buy {symbol}",
+                "user_id": user_id
             }
             add_transaction_to_db(conn, cash_tx_comm)
 
@@ -1588,25 +1586,27 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
             "Symbol": "$CASH",
             "Quantity": principal,
             "Price/Share": 1.0,
-            "Total Amount": principal,
+            "Total Amount": -principal,
             "Account": account,
             "Local Currency": local_currency,
-            "Note": f"Cash proceeds from {symbol} Sell"
+            "Note": f"Auto-cash for Sell {symbol}",
+            "user_id": user_id
         }
         add_transaction_to_db(conn, cash_tx_principal)
-        
-        # Pay commission: Withdrawal $CASH
+
         if commission > 0:
+            # Paying commission: Sell $CASH for commission
             cash_tx_comm = {
                 "Date": date_str,
-                "Type": "Withdrawal",
+                "Type": "Sell",
                 "Symbol": "$CASH",
                 "Quantity": commission,
                 "Price/Share": 1.0,
                 "Total Amount": commission,
                 "Account": account,
                 "Local Currency": local_currency,
-                "Note": f"Commission for {symbol} Sell"
+                "Note": f"Auto-cash Fee for Sell {symbol}",
+                "user_id": user_id
             }
             add_transaction_to_db(conn, cash_tx_comm)
 
@@ -1688,6 +1688,9 @@ async def import_pdf(
             
         imported_count = 0
         for tx_data in transactions:
+            # Set the user_id for isolation
+            tx_data["user_id"] = current_user.id
+            
             # Override account if provided
             if account:
                 tx_data["Account"] = account

@@ -31,7 +31,7 @@ export default function UserMenu({ user, onLogout, onUserClick, align = 'right' 
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "p-2 rounded-xl transition-all duration-300 group",
-                    isOpen ? "bg-accent/10 text-cyan-500" : "text-cyan-500 hover:bg-accent/10"
+                    isOpen ? "bg-accent/10 text-indigo-500" : "text-indigo-500 hover:bg-accent/10"
                 )}
                 title="Account"
             >
@@ -57,7 +57,7 @@ export default function UserMenu({ user, onLogout, onUserClick, align = 'right' 
                             }}
                             className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5 text-left"
                         >
-                            <User className="w-4 h-4 text-cyan-500" />
+                            <User className="w-4 h-4 text-indigo-500" />
                             <span>User Settings</span>
                         </button>
                         <button

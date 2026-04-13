@@ -128,12 +128,12 @@ export function MetricCard({
     isLoading = false,
     isRefreshing = false,
     icon: Icon,
-    accentColor = 'cyan-500',
+    accentColor = 'indigo-500',
     variant = 'card',
     onClick,
     sparklineData
 }: MetricCardProps) {
-    const accent = ACCENT_MAP[accentColor] || ACCENT_MAP['cyan-500'];
+    const accent = ACCENT_MAP[accentColor] || ACCENT_MAP['indigo-500'];
 
     if (variant === 'seamless') {
         // Seamless variant: flat, no card chrome, used in the scalar metrics grid
@@ -146,8 +146,9 @@ export function MetricCard({
                 )}
                 onClick={onClick}
             >
-                {/* Accent top bar */}
-                <div className={cn('absolute top-0 left-4 right-4 h-[2px] rounded-full opacity-60', accent.topBar)} />
+                {/* Soft background glow */}
+                <div className="absolute -top-12 -right-12 w-32 h-32 blur-[40px] opacity-10 transition-opacity duration-500 group-hover:opacity-20 pointer-events-none"
+                    style={{ backgroundColor: accent.sparkColor }} />
 
                 {/* Header row */}
                 <div className="flex items-start justify-between mb-3 relative z-10">
@@ -234,8 +235,9 @@ export function MetricCard({
             )}
             onClick={onClick}
         >
-            {/* Accent top bar */}
-            <div className={cn('absolute top-0 left-5 right-5 h-[2px] rounded-full opacity-60', accent.topBar)} />
+            {/* Soft background glow */}
+            <div className="absolute -top-16 -right-16 w-48 h-48 blur-[60px] opacity-8 transition-opacity duration-500 group-hover:opacity-15 pointer-events-none"
+                style={{ backgroundColor: accent.sparkColor }} />
 
             {/* Header */}
             <div className="flex items-start justify-between mb-4 relative z-10">

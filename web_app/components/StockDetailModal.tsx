@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState, useEffect, useId, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
 import { createPortal } from 'react-dom';
 import {
@@ -13,7 +14,9 @@ import {
     FinancialsResponse,
     RatiosResponse,
     IntrinsicValueResponse,
-    StockAnalysisResponse
+    StockAnalysisResponse,
+    fetchHoldings,
+    Holding
 } from '../lib/api';
 import {
     X,
@@ -31,6 +34,9 @@ import {
     Users,
     Wallet,
     PieChart as PieChartIcon,
+    Hash,
+    Tag,
+    LineChart as LineChartIcon,
     List,
     HelpCircle,
     Sparkles,
@@ -41,7 +47,9 @@ import {
     CheckCircle2,
     RotateCcw,
     Loader2,
-    AlertCircle
+    AlertCircle,
+    ArrowUpRight,
+    ArrowDownRight
 } from 'lucide-react';
 import {
     LineChart,
@@ -144,6 +152,89 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [analysisError, setAnalysisError] = useState<string | null>(null);
     const { resolvedTheme } = useTheme();
     const isDarkMode = resolvedTheme === 'dark';
+
+    // Get filters for holdings query (matching dashboard)
+    const filters = useMemo(() => {
+        if (typeof window === 'undefined') return { accounts: [], showClosed: false };
+        try {
+            const savedAccounts = localStorage.getItem('investa_selected_accounts');
+            const savedShowClosed = localStorage.getItem('investa_show_closed');
+            return {
+                accounts: savedAccounts ? JSON.parse(savedAccounts) : [],
+                showClosed: savedShowClosed === 'true'
+            };
+        } catch (e) {
+            return { accounts: [], showClosed: false };
+        }
+    }, [isOpen]);
+
+    // Fetch holdings to check if user has a position
+    const { data: holdings = [] } = useQuery({
+        queryKey: ['holdings', symbol, currency, filters.accounts, filters.showClosed],
+        queryFn: () => fetchHoldings(currency, filters.accounts, filters.showClosed),
+        enabled: isOpen && !!symbol,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    // Aggregate position across accounts
+    const userPosition = useMemo(() => {
+        if (!holdings.length) return null;
+
+        const matchingHoldings = holdings.filter(h => h.Symbol === symbol);
+        if (!matchingHoldings.length) return null;
+
+        const aggregate = matchingHoldings.reduce((acc, curr) => {
+            // Helper to get numeric value handling dynamic currency keys
+            const getVal = (h: Holding, prefix: string) => {
+                const exact = h[prefix];
+                if (typeof exact === 'number') return exact;
+                const withCurr = h[`${prefix} (${currency})`];
+                if (typeof withCurr === 'number') return withCurr;
+                // Search for key starting with prefix if needed
+                const foundKey = Object.keys(h).find(k => k.startsWith(prefix));
+                if (foundKey && typeof h[foundKey] === 'number') return h[foundKey] as number;
+                return 0;
+            };
+
+            const qty = curr.Quantity || 0;
+            const mktVal = getVal(curr, "Market Value");
+            const costBasis = getVal(curr, "Cost Basis");
+            const unrealizedGain = getVal(curr, "Unreal. Gain");
+            const totalGain = getVal(curr, "Total Gain") || unrealizedGain; // Fallback
+            const dividends = getVal(curr, "Dividends") || 0;
+
+            return {
+                Quantity: acc.Quantity + qty,
+                "Market Value": acc["Market Value"] + mktVal,
+                "Cost Basis": acc["Cost Basis"] + costBasis,
+                "Unreal. Gain": acc["Unreal. Gain"] + unrealizedGain,
+                "Total Gain": acc["Total Gain"] + totalGain,
+                "Dividends": acc["Dividends"] + dividends,
+                "Weighted IRR": (acc["Weighted IRR"] || 0) + ((curr["IRR (%)"] || 0) * mktVal),
+            };
+        }, {
+            Quantity: 0,
+            "Market Value": 0,
+            "Cost Basis": 0,
+            "Unreal. Gain": 0,
+            "Total Gain": 0,
+            "Dividends": 0,
+            "Weighted IRR": 0
+        });
+
+        const avgCost = aggregate.Quantity > 0 ? aggregate["Cost Basis"] / aggregate.Quantity : 0;
+        const totalReturnPct = aggregate["Cost Basis"] > 0 ? (aggregate["Total Gain"] / aggregate["Cost Basis"]) * 100 : 0;
+        const unrealizedGainPct = aggregate["Cost Basis"] > 0 ? (aggregate["Unreal. Gain"] / aggregate["Cost Basis"]) * 100 : 0;
+        const aggregateIrr = aggregate["Market Value"] > 0 ? aggregate["Weighted IRR"] / aggregate["Market Value"] : 0;
+
+        return {
+            ...aggregate,
+            "Avg Cost": avgCost,
+            "Total Return %": totalReturnPct,
+            "Unreal. Gain %": unrealizedGainPct,
+            "IRR %": aggregateIrr
+        };
+    }, [holdings, symbol, currency]);
 
     useEffect(() => {
         if (activeTab === 'analysis' && !analysis && !analysisLoading && !analysisError) {
@@ -292,9 +383,79 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {userPosition && (
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <Wallet className="w-5 h-5 text-indigo-500" />
+                                Your Position
+                            </h3>
+                            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider bg-secondary/50 px-2 py-1 rounded-md">
+                                Aggregated
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                            <StatCard
+                                label="Quantity"
+                                value={userPosition.Quantity.toLocaleString()}
+                                icon={Hash}
+                                color="text-indigo-500"
+                            />
+                            <StatCard
+                                label="Avg Cost"
+                                value={formatCurrency(userPosition["Avg Cost"])}
+                                icon={Tag}
+                                color="text-slate-500"
+                            />
+                            <StatCard
+                                label="Market Value"
+                                value={formatCurrency(userPosition["Market Value"])}
+                                icon={PieChartIcon}
+                                color="text-indigo-500"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                            <StatCard
+                                label="Unrealized G/L"
+                                value={formatCurrency(userPosition["Unreal. Gain"])}
+                                subValue={`${userPosition["Unreal. Gain %"] >= 0 ? '+' : ''}${userPosition["Unreal. Gain %"].toFixed(2)}%`}
+                                subValueColor={userPosition["Unreal. Gain %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                valueColor={userPosition["Unreal. Gain"] >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                icon={LucideActivity}
+                                color={userPosition["Unreal. Gain"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                            />
+                            <StatCard
+                                label="Total Return"
+                                value={formatCurrency(userPosition["Total Gain"])}
+                                subValue={`${userPosition["Total Return %"] >= 0 ? '+' : ''}${userPosition["Total Return %"].toFixed(2)}%`}
+                                subValueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                valueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                icon={TrendingUp}
+                                color={userPosition["Total Return %"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                                extra={
+                                    <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-500/90 leading-tight">
+                                        Divs: +{formatCurrency(userPosition["Dividends"])}
+                                    </p>
+                                }
+                            />
+                            <StatCard
+                                label="IRR %"
+                                value={`${userPosition["IRR %"] >= 0 ? '+' : ''}${userPosition["IRR %"].toFixed(2)}%`}
+                                icon={LineChartIcon}
+                                valueColor={userPosition["IRR %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                color={userPosition["IRR %"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                            />
+                        </div>
+
+                        <div className="h-px bg-border/40 w-full my-1" />
+                    </div>
+                )}
+
                 <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <LayoutDashboard className="w-5 h-5 text-cyan-500" />
+                        <LayoutDashboard className="w-5 h-5 text-indigo-500" />
                         Market Overview
                     </h3>
                     <button
@@ -307,7 +468,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         Refresh Data
                     </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 w-full">
                     {intrinsicValue?.models?.dcf?.intrinsic_value && (
                         <StatCard
                             label="DCF Intrinsic Value"
@@ -334,8 +495,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <StatCard label="Market Cap" value={formatCurrency(fundamentals.marketCap)} icon={Globe} color="text-cyan-400" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                    <StatCard label="Market Cap" value={formatCurrency(fundamentals.marketCap)} icon={Globe} color="text-indigo-400" />
                     <StatCard label="P/E Ratio (TTM)" value={fundamentals.trailingPE?.toFixed(2)} icon={TrendingUp} color="text-emerald-400" />
                     <StatCard label="Dividend Yield" value={formatPercent(fundamentals.dividendYield)} icon={DollarSign} color="text-amber-400" />
                     <StatCard label="52W High" value={formatCurrency(fundamentals.fiftyTwoWeekHigh)} icon={TrendingUp} color="text-blue-400" />
@@ -355,7 +516,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
                 <div className="bg-muted px-6 py-4">
                     <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                        <Building2 className="w-5 h-5 text-cyan-500" />
+                        <Building2 className="w-5 h-5 text-indigo-500" />
                         Business Summary
                     </h3>
                     <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
@@ -425,7 +586,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             className={cn(
                                 "flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap flex-shrink-0",
                                 finType === btn.id
-                                    ? "bg-cyan-500 text-white"
+                                    ? "bg-indigo-500 text-white"
                                     : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                             )}
                             title={btn.fullLabel}
@@ -662,7 +823,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     {/* Top Holdings Table */}
                     <div className="bg-muted rounded-2xl p-6">
                         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                            <List className="w-5 h-5 text-cyan-500" />
+                            <List className="w-5 h-5 text-indigo-500" />
                             Top Holdings
                         </h3>
                         <div className="overflow-hidden rounded-xl">
@@ -693,7 +854,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     {/* Sector Allocation Chart */}
                     <div className="bg-muted rounded-2xl p-6">
                         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                            <PieChartIcon className="w-5 h-5 text-cyan-500" />
+                            <PieChartIcon className="w-5 h-5 text-indigo-500" />
                             Sector Allocation
                         </h3>
                         {sectorData.length > 0 ? (
@@ -720,7 +881,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             content={({ active, payload }) => {
                                                 if (active && payload && payload.length) {
                                                     return (
-                                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl border border-border/50 shadow-2xl">
+                                                        <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl border border-border/50 shadow-2xl">
                                                             <p className="font-medium text-foreground">{payload[0].name}</p>
                                                             <p className="text-sm text-muted-foreground">
                                                                 {Number(payload[0].value).toFixed(2)}%
@@ -753,7 +914,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
     const renderChart = () => (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <StockPriceChart symbol={symbol} currency={currency} />
+            <StockPriceChart
+                symbol={symbol}
+                currency={currency}
+                avgCost={userPosition?.["Avg Cost"]}
+                hidePrice={true}
+            />
         </div>
     );
 
@@ -806,7 +972,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Average Intrinsic Value</p>
-                        <p className="text-3xl font-bold text-cyan-500">{formatCurrency(average_intrinsic_value)}</p>
+                        <p className="text-3xl font-bold text-indigo-500">{formatCurrency(average_intrinsic_value)}</p>
                         {intrinsicValue.range && (
                             <p className="text-xs text-muted-foreground mt-2 font-medium">
                                 Range: {formatCurrency(intrinsicValue.range.bear)} - {formatCurrency(intrinsicValue.range.bull)}
@@ -846,8 +1012,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 {/* Models Detail */}
                 {!models.dcf.parameters && !models.graham.parameters ? (
                     <div className="bg-muted rounded-2xl p-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="w-16 h-16 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <Info className="w-8 h-8 text-cyan-500" />
+                        <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Info className="w-8 h-8 text-indigo-500" />
                         </div>
                         <h3 className="text-xl font-bold mb-3">Why standard models aren't shown?</h3>
                         <p className="text-muted-foreground text-sm leading-relaxed max-w-xl mx-auto mb-6">
@@ -952,10 +1118,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                     <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear)}</p>
                                                 </div>
                                                 <div
-                                                    className="bg-cyan-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-cyan-500/10 transition-colors group/mc"
+                                                    className="bg-indigo-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-indigo-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
-                                                    <p className="text-[10px] text-cyan-500 font-bold uppercase mb-1">Median (50th)</p>
+                                                    <p className="text-[10px] text-indigo-500 font-bold uppercase mb-1">Median (50th)</p>
                                                     <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base)}</p>
                                                 </div>
                                                 <div
@@ -1085,25 +1251,28 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
                                             <div className="grid grid-cols-3 gap-2">
                                                 <div
-                                                    className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
+                                                    className="bg-rose-500/5 relative overflow-hidden p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-all group/mc"
                                                     onClick={() => setViewingDistribution('graham')}
                                                 >
-                                                    <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bear)}</p>
+                                                    <div className="absolute -top-12 -right-12 w-24 h-24 blur-[30px] opacity-10 group-hover/mc:opacity-20 transition-opacity pointer-events-none bg-rose-500" />
+                                                    <p className="text-[10px] text-rose-500 font-bold uppercase mb-1 relative z-10">Bear (10th)</p>
+                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.bear)}</p>
                                                 </div>
                                                 <div
-                                                    className="bg-amber-500/5 border-none p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-colors group/mc shadow-none"
+                                                    className="bg-amber-500/5 relative overflow-hidden p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-all group/mc shadow-none"
                                                     onClick={() => setViewingDistribution('graham')}
                                                 >
-                                                    <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">Median (50th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.graham.mc.base)}</p>
+                                                    <div className="absolute -top-12 -right-12 w-24 h-24 blur-[30px] opacity-10 group-hover/mc:opacity-20 transition-opacity pointer-events-none bg-amber-500" />
+                                                    <p className="text-[10px] text-amber-500 font-bold uppercase mb-1 relative z-10">Median (50th)</p>
+                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.base)}</p>
                                                 </div>
                                                 <div
-                                                    className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
+                                                    className="bg-emerald-500/5 relative overflow-hidden p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-all group/mc"
                                                     onClick={() => setViewingDistribution('graham')}
                                                 >
-                                                    <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bull)}</p>
+                                                    <div className="absolute -top-12 -right-12 w-24 h-24 blur-[30px] opacity-10 group-hover/mc:opacity-20 transition-opacity pointer-events-none bg-emerald-500" />
+                                                    <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1 relative z-10">Bull (90th)</p>
+                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.bull)}</p>
                                                 </div>
                                             </div>
                                             <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
@@ -1129,10 +1298,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">{label}</p>
                 {info && (
                     <div className="group relative">
-                        <HelpCircle className="w-2.5 h-2.5 text-muted-foreground/50 hover:text-cyan-500 cursor-help" />
+                        <HelpCircle className="w-2.5 h-2.5 text-muted-foreground/50 hover:text-indigo-500 cursor-help" />
                         <div className="absolute bottom-full left-0 mb-2 w-48 p-3 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]">
                             {info.description}
-                            <div className="mt-1 pt-1 font-bold text-cyan-600 dark:text-cyan-400">Default: {info.default}</div>
+                            <div className="mt-1 pt-1 font-bold text-indigo-600 dark:text-indigo-400">Default: {info.default}</div>
                         </div>
                     </div>
                 )}
@@ -1157,11 +1326,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 {/* Sticky Header & Tabs Container */}
                 <div className="sticky top-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md flex-shrink-0">
                     {/* Header */}
-                    <div className="p-5 sm:p-8 pb-3 sm:pb-4 flex justify-between items-start relative">
-                        <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
+                    <div className="p-4 sm:p-6 pb-2 sm:pb-3 flex justify-between items-start relative">
+                        <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
 
                         <div className="flex items-center gap-4 sm:gap-6 relative z-10 text-foreground flex-1">
-                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-lg sm:text-3xl font-bold text-white overflow-hidden flex-shrink-0">
+                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-lg sm:text-3xl font-bold text-white overflow-hidden flex-shrink-0">
                                 <StockIcon symbol={symbol} size="100%" className="w-full h-full p-2 bg-white" domain={domain} />
                             </div>
                             <div className="flex-1 min-w-0 pr-4">
@@ -1171,7 +1340,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         <Badge className="bg-secondary text-secondary-foreground border-none font-mono text-[9px] sm:text-xs shrink-0">{symbol}</Badge>
                                     </div>
                                     {fundamentals?.regularMarketPrice && (
-                                        <div className="flex items-baseline gap-1 text-cyan-600 dark:text-cyan-400">
+                                        <div className="flex items-baseline gap-1 text-indigo-600 dark:text-indigo-400">
                                             <span className="text-xl sm:text-3xl font-black tracking-tight tabular-nums">
                                                 {formatCurrency(fundamentals.regularMarketPrice)}
                                             </span>
@@ -1179,7 +1348,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     )}
                                 </div>
                                 <p className="text-muted-foreground flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-sm">
-                                    <span className="font-semibold text-cyan-500">{fundamentals?.sector}</span>
+                                    <span className="font-semibold text-indigo-500">{fundamentals?.sector}</span>
                                     <span className="text-border">•</span>
                                     <span className="truncate max-w-[100px] sm:max-w-none">{fundamentals?.industry}</span>
                                 </p>
@@ -1196,7 +1365,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     </div>
 
                     {/* Tabs */}
-                    <div className="px-4 sm:px-8 flex justify-around sm:justify-start gap-2 sm:gap-8 overflow-x-auto no-scrollbar">
+                    <div className="px-4 sm:px-6 flex justify-around sm:justify-start gap-2 sm:gap-6 overflow-x-auto no-scrollbar">
                         <TabButton
                             active={activeTab === 'overview'}
                             onClick={() => setActiveTab('overview')}
@@ -1249,7 +1418,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 </div>
 
                 {/* Content Area */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 pt-2 sm:pt-4 custom-scrollbar">
                     {loading ? (
                         <div className="space-y-4">
                             <Skeleton className="h-40 w-full rounded-2xl" />
@@ -1300,7 +1469,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             )}>
                                 <div>
                                     <h3 className="text-xl font-bold flex items-center gap-2 text-inherit">
-                                        <BarChart3 className="w-5 h-5 text-cyan-500" />
+                                        <BarChart3 className="w-5 h-5 text-indigo-500" />
                                         {viewingDistribution === 'dcf' ? 'DCF' : 'Graham'} Probabilistic Distribution
                                     </h3>
                                     <p className={isDarkMode ? "text-slate-400 text-sm" : "text-slate-500 text-sm"}>Monte Carlo Simulation (10,000 iterations)</p>
@@ -1415,10 +1584,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                                         <div className="flex flex-col gap-1 mt-3 pt-2">
                                                                             <div className="flex items-center justify-between gap-4">
                                                                                 <div className="flex items-center gap-1.5">
-                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
                                                                                     <span className={cn("text-[10px] font-bold uppercase", isDarkMode ? "text-slate-400" : "text-slate-500")}>Probability</span>
                                                                                 </div>
-                                                                                <span className="text-[10px] font-black text-cyan-500">{probability.toFixed(2)}%</span>
+                                                                                <span className="text-[10px] font-black text-indigo-500">{probability.toFixed(2)}%</span>
                                                                             </div>
                                                                             <div className="flex items-center justify-between gap-4">
                                                                                 <div className="flex items-center gap-1.5">
@@ -1499,7 +1668,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-cyan-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull)}</span>
@@ -1523,28 +1692,42 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         document.body
     );
 }
-
-function StatCard({ label, value, icon: Icon, color, className, rotate, subValue, subValueColor, rangeMin, rangeMax }: any) {
+function StatCard({ icon: Icon, label, value, subValue, color, valueColor, subValueColor, extra, rangeMin, rangeMax, rotate }: any) {
     return (
-        <div className="bg-muted p-5 rounded-2xl flex items-center gap-4 transition-all hover:bg-muted/50 group">
-            <div className={cn("p-3 rounded-xl bg-card", color, rotate)}>
-                <Icon className="w-5 h-5" />
+        <div className="bg-muted py-1.5 px-3 rounded-xl flex items-center gap-3 transition-all hover:bg-muted/50 group relative overflow-hidden">
+            {/* Soft background glow */}
+            <div className={cn(
+                "absolute -top-8 -right-8 w-20 h-20 blur-[25px] opacity-10 transition-opacity duration-500 group-hover:opacity-20 pointer-events-none rounded-full",
+                color?.includes('emerald') ? 'bg-emerald-500' :
+                    color?.includes('rose') ? 'bg-rose-500' :
+                        color?.includes('indigo') ? 'bg-indigo-500' :
+                            color?.includes('amber') ? 'bg-amber-500' :
+                                color?.includes('purple') ? 'bg-purple-500' :
+                                    'bg-slate-500'
+            )} />
+
+            <div className={cn("p-2 rounded-lg bg-card relative z-10", color, rotate)}>
+                <Icon className="w-4 h-4" />
             </div>
-            <div className="flex-1 overflow-hidden">
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-0.5 truncate">{label}</p>
-                <div className="flex items-baseline gap-2">
-                    <p className="text-lg font-bold text-foreground tracking-tight whitespace-nowrap">{value}</p>
+            <div className="flex-1 overflow-hidden relative z-10">
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider truncate">{label}</p>
+                <div className="flex items-baseline gap-1.5">
+                    <p className={cn("text-base font-bold tracking-tight whitespace-nowrap", valueColor || "text-foreground")}>{value}</p>
                     {subValue && (
                         <span className={cn("text-xs whitespace-nowrap", subValueColor)}>
                             {subValue}
                         </span>
                     )}
                 </div>
-                {(rangeMin && rangeMax) && (
-                    <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+                {(rangeMin && rangeMax) ? (
+                    <p className="text-[10px] text-muted-foreground font-medium grayscale opacity-70">
                         Range: {rangeMin} - {rangeMax}
                     </p>
-                )}
+                ) : extra ? (
+                    <div>
+                        {extra}
+                    </div>
+                ) : null}
             </div>
         </div>
     );
@@ -1555,8 +1738,8 @@ function TabButton({ active, onClick, icon: Icon, label }: any) {
         <button
             onClick={onClick}
             className={cn(
-                "py-4 px-4 flex items-center gap-2 text-sm font-medium transition-all relative border-b-2 outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/20",
-                active ? "text-cyan-600 dark:text-cyan-400" : "text-muted-foreground hover:text-foreground"
+                "py-4 px-4 flex items-center gap-2 text-sm font-medium transition-all relative border-b-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20",
+                active ? "text-indigo-600 dark:text-indigo-400 border-indigo-500" : "text-muted-foreground hover:text-foreground border-transparent"
             )}
         >
             <Icon className="w-5 h-5 sm:w-4 sm:h-4" />

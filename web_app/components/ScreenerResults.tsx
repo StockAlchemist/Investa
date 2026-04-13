@@ -194,8 +194,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
 
     return (
         <div className="metric-card card-shine relative overflow-hidden transition-all">
-            {/* Purple accent bar */}
-            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-purple-500 opacity-50" />
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-teal-500 opacity-80" />
 
             <div className="p-5 pb-2">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

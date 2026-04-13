@@ -107,6 +107,15 @@ INVALID_SYMBOLS_DURATION = 24 * 60 * 60  # 24 hours in seconds
 PERSISTENT_FX_CACHE_FILE = "fx_rates_persistent.json"
 PERSISTENT_FX_DURATION_HOURS = 24
 
+# Symbols that are extremely reliable and should never be marked as invalid
+# even if a transient fetch failure occurs.
+RELIABLE_SYMBOLS = {
+    "AAPL", "MSFT", "GOOG", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "BRK-B",
+    "VZ", "BHP", "BBW", "TSM", "ASML",
+    "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX", "^FTSE", "^N225", "^HSI",
+    "BTC-USD", "ETH-USD", "GC=F", "CL=F", "EURUSD=X", "JPY=X", "GBPUSD=X"
+}
+
 # --- Import helpers from finutils.py ---
 try:
     # map_to_yf_symbol is used within get_current_quotes
@@ -1930,8 +1939,15 @@ class MarketDataProvider:
         try:
              # Use the holiday-aware calendar for counting business days
              cal = get_nyse_calendar()
-             schedule = cal.schedule(start_date=yf_start_date, end_date=yf_end_date - timedelta(days=1))
-             bus_days = len(schedule)
+             # --- FIX: Ensure end_date for schedule is at least start_date ---
+             schedule_end = yf_end_date - timedelta(days=1)
+             if schedule_end < yf_start_date:
+                  # If the range is empty (e.g. today is Sunday, end_date=Sunday, start_date=Sunday)
+                  # then we technically have 0 business days in the requested (exclusive) range.
+                  bus_days = 0
+             else:
+                  schedule = cal.schedule(start_date=yf_start_date, end_date=schedule_end)
+                  bus_days = len(schedule)
              
              if bus_days == 0:
                  # FIX: If 0 business days (e.g. holiday/weekend) but we want intraday data,
@@ -2041,7 +2057,7 @@ class MarketDataProvider:
                             break # Exit retry loop, return empty
                             
                         logging.warning(
-                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame. Retrying (Potential transient error)..."
+                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}) for symbols {batch_symbols[:3]}...: yf.download returned empty DataFrame. Retrying (Potential transient error)..."
                         )
                         time.sleep(1)
                         continue # FORCE RETRY
@@ -2087,21 +2103,11 @@ class MarketDataProvider:
 
             # Actually, let's just modify the check below.
             if data.empty:
-                # If batch failed completely (or was validly empty), all are arguably 'missing' data-wise.
-                # BUT if it was validly empty, we don't want to RETRY them.
-                # So we should only add to missing_symbols_in_batch if we want to retry.
-                # If it's a weekend, individual retry will ALSO match 'empty', so it's a waste of time.
-                # So: if data is empty, we generally assume "no data available" unless we have reason to believe otherwise?
-                # The only reason to retry individually is if the BATCH request failed technically (network etc).
-                # But yfinance usually raises exceptions for network errors.
-                # If it returns empty DataFrame, it usually means "valid response, no data".
-                # So... we should PROBABLY NEVER retry individually if data is empty but no exception raised?
-                # Yes. If yfinance returns empty DF, individual retry will virtually always be empty too.
-                
-                # So, simply: Don't add to missing_symbols_in_batch if data.empty is True.
-                # Just log and skip. 
-                logging.info(f"  Hist Fetch Helper: Batch returned empty (valid). Skipping individual retries for: {', '.join(batch_symbols[:5])}...")
-                missing_symbols_in_batch = [] # Explicitly empty
+                # If batch failed completely, all are arguably 'missing' data-wise.
+                # We add them to missing_symbols_in_batch so we can try them INDIVIDUALLY in the recovery phase.
+                # This helps isolate a single 'poisoned' ticker that might be making the whole batch return empty.
+                logging.info(f"  Hist Fetch Helper: Batch returned empty. Queueing for individual recovery: {', '.join(batch_symbols[:5])}...")
+                missing_symbols_in_batch = batch_symbols
             else:
 
                 for symbol in batch_symbols:
@@ -2196,7 +2202,7 @@ class MarketDataProvider:
 
         # --- Final Cleanup: Isolated Batch Fetch for all Missing Symbols ---
         if all_missing_symbols:
-            # Deduplicate just in case
+            # Deduplicate
             all_missing_symbols = list(set(all_missing_symbols))
             logging.info(f"  Hist Fetch Helper: Attempting final isolated recovery for {len(all_missing_symbols)} missing symbols...")
             
@@ -2210,12 +2216,11 @@ class MarketDataProvider:
                         start=yf_start_date,
                         end=yf_end_date,
                         interval=interval,
-                        task="history" # Added task
+                        task="history"
                     )
                     
                     if not data_rec.empty:
                         for symbol in rec_batch:
-                            # Standard processing for each symbol in recovery batch
                             df_rec = None
                             found_rec = False
                             if isinstance(data_rec.columns, pd.MultiIndex):
@@ -2226,7 +2231,6 @@ class MarketDataProvider:
                                     df_rec = data_rec[symbol]
                                     found_rec = True
                             else:
-                                # Flat Index: Tuples or Prefixed
                                 matching_cols = [c for c in data_rec.columns if (isinstance(c, (list, tuple)) and c[0] == symbol) or (isinstance(c, str) and c.startswith(f"{symbol}"))]
                                 if matching_cols:
                                     df_rec = data_rec[matching_cols]
@@ -2240,7 +2244,6 @@ class MarketDataProvider:
                                     df_rec = data_rec
                                     found_rec = True
 
-                                
                             if found_rec and df_rec is not None and not df_rec.empty:
                                 if "Close" not in df_rec.columns and len(df_rec.columns) == 1:
                                     df_rec.columns = ["Close"]
@@ -2260,7 +2263,22 @@ class MarketDataProvider:
                 except Exception as e_rec:
                     logging.warning(f"  Hist Fetch Helper recovery failed for {rec_batch[0]}...: {e_rec}")
 
+            # --- IDENTIFY STILL MISSING SYMBOLS & MARK INVALID ---
+            final_missing = [s for s in all_missing_symbols if s not in historical_data]
+            if final_missing:
+                logging.warning(f"  Hist Fetch Helper: {len(final_missing)} symbols failed recovery: {final_missing[:10]}...")
+                for s in final_missing:
+                    # SAFETY: Don't mark reliable symbols as invalid based on a transient failure
+                    if s.upper() in RELIABLE_SYMBOLS or s.startswith("^"):
+                        logging.info(f"  Hist Fetch Helper: {s} is in RELIABLE_SYMBOLS whitelist. Skipping invalidation.")
+                        continue
+                    
+                    logging.warning(f"  Hist Fetch Helper: Marking {s} as invalid (cached for 24h).")
+                    invalid_cache[s] = now_ts
+                    cache_needs_update = True
+
         if cache_needs_update:
+            logging.info(f"Hist Fetch Helper: Saving updated invalid symbols cache (Total: {len(invalid_cache)}).")
             self._save_invalid_symbols_cache(invalid_cache)
 
         # --- CACHE WRITE (Intraday) ---

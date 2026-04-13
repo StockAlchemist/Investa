@@ -131,26 +131,28 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                     currency={currency}
                     colorClass={totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     icon={CircleDollarSign}
+                    accentColor="amber-500"
                 />
                 <MetricCard
                     title="Total Proceeds"
                     value={totalProceeds}
                     currency={currency}
                     icon={ArrowUpRight}
+                    accentColor="amber-500"
                 />
                 <MetricCard
                     title="Total Cost Basis"
                     value={totalCostBasis}
                     currency={currency}
                     icon={Scale}
+                    accentColor="amber-500"
                 />
             </div>
 
             {/* Annual Gains Chart */}
-            <div className="metric-card card-shine p-6 relative overflow-hidden">
-                {/* Accent bar - emerald */}
-                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-emerald-500 opacity-40" />
-                <h3 className="section-label mb-4">Annual Realized Gains</h3>
+            <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
+                <h3 className="section-label mb-4 relative z-10">Annual Realized Gains</h3>
                 <style>{`
                     .recharts-wrapper, .recharts-surface, .recharts-cartesian-grid, .recharts-layer {
                         outline: none !important;
@@ -196,7 +198,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
+                                            <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -219,10 +221,9 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Transactions Table */}
-            <div className="metric-card card-shine overflow-hidden relative">
-                {/* Accent bar - amber */}
-                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-amber-500 opacity-40" />
-                <div className="p-4 flex justify-between items-center">
+            <div className="metric-card card-shine overflow-hidden relative group">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
+                <div className="p-4 flex justify-between items-center relative z-10">
                     <h3 className="section-label">Realized Gain Transactions</h3>
                     <div className="text-xs font-medium text-muted-foreground/60">
                         {visibleData.length} / {sortedData.length} transactions

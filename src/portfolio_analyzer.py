@@ -2303,14 +2303,16 @@ def calculate_periodic_returns(
 
                 # Filter out US Holidays
                 try:
-                    cal = USFederalHolidayCalendar()
-                    holidays = cal.holidays(start=resampled_factors.index.min(), end=resampled_factors.index.max())
-                    mask_hol = ~resampled_factors.index.isin(holidays)
-                    resampled_factors = resampled_factors[mask_hol]
-                    if not resampled_value_change.empty:
-                        resampled_value_change = resampled_value_change[mask_hol]
-                    if not resampled_net_flow.empty:
-                        resampled_net_flow = resampled_net_flow[mask_hol]
+                    # --- FIX: Ensure index has valid dates to avoid 'float' error ---
+                    if not resampled_factors.empty and pd.notnull(resampled_factors.index.min()):
+                        cal = USFederalHolidayCalendar()
+                        holidays = cal.holidays(start=resampled_factors.index.min(), end=resampled_factors.index.max())
+                        mask_hol = ~resampled_factors.index.isin(holidays)
+                        resampled_factors = resampled_factors[mask_hol]
+                        if not resampled_value_change.empty:
+                            resampled_value_change = resampled_value_change[mask_hol]
+                        if not resampled_net_flow.empty:
+                            resampled_net_flow = resampled_net_flow[mask_hol]
                 except Exception as e_hol:
                     logging.warning(f"Failed to filter holidays: {e_hol}")
             # --- END ADDED ---

@@ -341,8 +341,7 @@ export default function PerformanceGraph({
                 ref={containerRef}
                 className="metric-card card-shine p-4 sm:p-6 mb-6 h-[400px] flex items-center justify-center w-full relative overflow-hidden"
             >
-                {/* Accent top bar */}
-                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-indigo-500 opacity-50" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
                 {!mounted || loading ? (
                     <div className="flex flex-col items-center gap-3">
                         <Loader2 className="animate-spin text-indigo-500 w-8 h-8" />
@@ -440,7 +439,7 @@ export default function PerformanceGraph({
             );
 
             return (
-                <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100 border border-border/50 shadow-2xl">
+                <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100 border border-border/50 shadow-2xl">
                     <p className="text-sm font-bold text-foreground mb-2 pb-1">
                         {dateStr}
                     </p>
@@ -538,8 +537,7 @@ export default function PerformanceGraph({
 
     return (
         <div ref={containerRef} className="metric-card card-shine p-4 sm:p-6 mb-6 overflow-visible relative transition-all duration-300 group/section">
-            {/* Accent top bar - indigo for chart section */}
-            <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-indigo-500 opacity-50" />
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
             <div className="mb-4 md:mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-2 md:mb-4">

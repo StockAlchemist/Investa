@@ -75,7 +75,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
                     side === 'bottom' ? "bg-transparent" : "hover:bg-accent/10",
                     "text-xs font-semibold tracking-tight w-[60px]",
-                    isOpen ? "ring-2 ring-cyan-500/20" : "text-foreground/80 hover:text-foreground",
+                    isOpen ? "ring-2 ring-indigo-500/20" : "text-foreground/80 hover:text-foreground",
                     side === 'bottom' && "flex-row py-2 px-4 justify-center w-auto min-w-0 h-[44px]"
                 )}
                 title={activeTabObj?.label}
@@ -83,8 +83,8 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300",
                     isOpen
-                        ? `${TAB_THEMES[activeTab]?.bgSolid || 'bg-cyan-500'} text-white`
-                        : `${TAB_THEMES[activeTab]?.textSolid || 'text-cyan-500'} group-hover:scale-110`,
+                        ? `${TAB_THEMES[activeTab]?.bgSolid || 'bg-indigo-500'} text-white`
+                        : `${TAB_THEMES[activeTab]?.textSolid || 'text-indigo-500'} group-hover:scale-110`,
                     side === 'bottom' && "p-1.5",
                     side === 'bottom' && !isOpen && "bg-secondary"
                 )}>
@@ -114,7 +114,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                                 className={cn(
                                     "flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left",
                                     activeTab === tab.id
-                                        ? `${TAB_THEMES[tab.id]?.bgSolid || 'bg-cyan-500'} text-white`
+                                        ? `${TAB_THEMES[tab.id]?.bgSolid || 'bg-indigo-500'} text-white`
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >

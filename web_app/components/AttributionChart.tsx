@@ -53,8 +53,7 @@ export function SectorAttribution({ data, isLoading, isRefreshing = false, curre
 
     return (
         <div className="metric-card card-shine p-5 h-full relative overflow-hidden group">
-            {/* Accent top bar - teal */}
-            <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-teal-500 opacity-50" />
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
             <div className="flex items-center justify-between mb-5 relative z-10">
                 <h3 className="section-label">Sector Contribution</h3>
                 {isRefreshing && !isLoading && (
@@ -301,8 +300,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
     return (
         <>
             <div className="metric-card card-shine p-5 h-full relative overflow-hidden group">
-                {/* Accent top bar - amber */}
-                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-amber-500 opacity-50" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
                 <div className="flex items-center justify-between mb-5 relative z-10">
                     <h3 className="section-label">Top Contributors</h3>

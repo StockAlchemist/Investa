@@ -228,15 +228,14 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                     subValue={null}
                     isCurrency={false}
                     icon={Lightbulb}
-                    colorClass="text-cyan-500"
+                    colorClass="text-rose-500"
                 />
             </div>
 
             {/* Executive Summary */}
-            <div className="metric-card card-shine p-6 relative overflow-hidden">
-                {/* Accent bar - purple */}
-                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-purple-500 opacity-40" />
-                <h3 className="section-label text-purple-600 dark:text-purple-400 mb-4">
+            <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
+                <h3 className="section-label text-rose-600 dark:text-rose-400 mb-4 relative z-10">
                     Executive Summary
                 </h3>
                 <div className="prose dark:prose-invert max-w-none prose-sm opacity-90">
@@ -247,41 +246,41 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             {/* Detailed Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {analysis?.diversification && (
-                    <div className="metric-card card-shine p-6 relative overflow-hidden">
-                        <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-violet-500 opacity-40" />
-                        <h3 className="section-label mb-4">Diversification Analysis</h3>
-                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90">
+                    <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
+                        <h3 className="section-label mb-4 relative z-10">Diversification Analysis</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <p className="whitespace-pre-wrap">{analysis.diversification}</p>
                         </div>
                     </div>
                 )}
                 {analysis?.risk_profile && (
-                    <div className="metric-card card-shine p-6 relative overflow-hidden">
-                        <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-amber-500 opacity-40" />
-                        <h3 className="section-label mb-4">Risk Assessment</h3>
-                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90">
+                    <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
+                        <h3 className="section-label mb-4 relative z-10">Risk Assessment</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <p className="whitespace-pre-wrap">{analysis.risk_profile}</p>
                         </div>
                     </div>
                 )}
                 {analysis?.performance && (
-                    <div className="metric-card card-shine p-6 relative overflow-hidden">
-                        <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-blue-500 opacity-40" />
-                        <h3 className="section-label mb-4">Performance Review</h3>
-                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90">
+                    <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
+                        <h3 className="section-label mb-4 relative z-10">Performance Review</h3>
+                        <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <p className="whitespace-pre-wrap">{analysis.performance}</p>
                         </div>
                     </div>
                 )}
 
                 {/* Actionable Recommendations */}
-                <div className="metric-card card-shine lg:col-span-2 p-6 relative overflow-hidden">
-                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-50" />
-                    <h3 className="section-label text-cyan-600 dark:text-cyan-400 flex items-center gap-2 mb-4">
+                <div className="metric-card card-shine lg:col-span-2 p-6 relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
+                    <h3 className="section-label text-rose-600 dark:text-rose-400 flex items-center gap-2 mb-4 relative z-10">
                         <Lightbulb className="w-4 h-4" />
                         Actionable Recommendations
                     </h3>
-                    <div className="prose dark:prose-invert max-w-none text-sm opacity-90">
+                    <div className="prose dark:prose-invert max-w-none text-sm opacity-90 relative z-10">
                         {analysis?.actionable_recommendations ? (
                             <p className="whitespace-pre-wrap">{analysis.actionable_recommendations}</p>
                         ) : (

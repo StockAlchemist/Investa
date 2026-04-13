@@ -40,8 +40,9 @@ def parse_ibkr_pdf(file_path: str) -> List[Dict[str, Any]]:
                     if match:
                         data = match.groupdict()
                         
-                        # Parse Date - keeping only YYYY-MM-DD
-                        date_str = data['datetime'].split(',')[0].strip()
+                        # Parse Full Timestamp
+                        # IBKR Format: "2026-03-09, 13:07:27" -> "2026-03-09 13:07:27"
+                        raw_ts = data['datetime'].replace(', ', ' ').strip()
                         
                         # Parse Type
                         tx_type = data['type']
@@ -65,7 +66,7 @@ def parse_ibkr_pdf(file_path: str) -> List[Dict[str, Any]]:
                         abs_comm = abs(comm) + abs(fee)
                         
                         tx = {
-                            "Date": date_str,
+                            "Date": raw_ts, # Store full timestamp for chronological order
                             "Type": tx_type.capitalize(), # "Buy" or "Sell"
                             "Symbol": data['symbol'].replace(" ", "."),
                             "Quantity": abs_qty,
@@ -78,8 +79,13 @@ def parse_ibkr_pdf(file_path: str) -> List[Dict[str, Any]]:
                         }
                         
                         extracted_transactions.append(tx)
+        
+        # Sort transactions chronologically by Date
+        extracted_transactions.sort(key=lambda x: x['Date'])
+        
     except Exception as e:
         logging.error(f"Error parsing IBKR PDF: {e}", exc_info=True)
         raise
         
     return extracted_transactions
+

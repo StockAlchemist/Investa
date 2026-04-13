@@ -255,7 +255,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             return 'bg-red-500/10 text-red-600 dark:text-red-500';
         }
         if (['DIVIDEND', 'INTEREST'].includes(t)) {
-            return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400';
+            return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400';
         }
         return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
     };
@@ -269,11 +269,11 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             {/* Pending Transactions Staging Area */}
             {pendingTransactions.length > 0 && (
                 <div className="metric-card card-shine overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 relative">
-                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-50" />
-                    <div className="px-4 py-3 bg-cyan-500/10 flex justify-between items-center">
+                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-slate-500 opacity-80" />
+                    <div className="px-4 py-3 bg-indigo-500/10 flex justify-between items-center">
                         <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-cyan-500" />
-                            <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-400 uppercase tracking-wider">
+                            <Clock className="h-4 w-4 text-indigo-500" />
+                            <h3 className="text-sm font-semibold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
                                 Pending Syncs ({pendingTransactions.length})
                             </h3>
                         </div>
@@ -281,7 +281,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <button
                                 onClick={() => handlePendingAction('approve')}
                                 disabled={selectedPendingIds.size === 0 || isApproving}
-                                className="px-3 py-1 bg-cyan-600 text-white rounded text-xs font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 border-none shadow-none"
+                                className="px-3 py-1 bg-indigo-600 text-white rounded text-xs font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 border-none shadow-none"
                             >
                                 <CheckCircle className="h-3 w-3" />
                                 Approve Selected ({selectedPendingIds.size})
@@ -298,7 +298,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                     </div>
                     <div className="overflow-x-auto border-none">
                         <table className="min-w-full border-none">
-                            <thead className="bg-cyan-500/5 text-xs font-semibold text-cyan-700 dark:text-cyan-400 border-none">
+                            <thead className="bg-indigo-500/5 text-xs font-semibold text-indigo-700 dark:text-indigo-400 border-none">
                                 <tr className="border-none">
                                     <th className="px-4 py-2 text-left w-10">
                                         <input
@@ -308,7 +308,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                                 if (selectedPendingIds.size === pendingTransactions.length) setSelectedPendingIds(new Set());
                                                 else setSelectedPendingIds(new Set(pendingTransactions.map(t => t.id!).filter(Boolean)));
                                             }}
-                                            className="rounded border-none text-cyan-500 focus:ring-cyan-500"
+                                            className="rounded border-none text-indigo-500 focus:ring-indigo-500"
                                         />
                                     </th>
                                     <th className="px-4 py-2">Date</th>
@@ -334,11 +334,11 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                                     else next.add(tx.id!);
                                                     setSelectedPendingIds(next);
                                                 }}
-                                                className="rounded border-none text-cyan-500 focus:ring-cyan-500"
+                                                className="rounded border-none text-indigo-500 focus:ring-indigo-500"
                                             />
                                         </td>
                                         <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{tx.Date}</td>
-                                        <td className="px-4 py-2 font-bold text-cyan-500 uppercase text-[10px] tracking-tighter">{tx.Type}</td>
+                                        <td className="px-4 py-2 font-bold text-indigo-500 uppercase text-[10px] tracking-tighter">{tx.Type}</td>
                                         <td className="px-4 py-2 font-medium">{tx.Symbol}</td>
                                         <td className="px-4 py-2 text-right tabular-nums">{tx.Quantity}</td>
                                         <td className="px-4 py-2 text-right tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>
@@ -348,7 +348,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                         </td>
                                         <td className="px-4 py-2 text-right whitespace-nowrap">
                                             <div className="flex justify-end gap-1">
-                                                <button onClick={() => handlePendingAction('approve', [tx.id!])} className="p-1 hover:bg-cyan-500/20 text-cyan-500 rounded transition-colors" title="Approve">
+                                                <button onClick={() => handlePendingAction('approve', [tx.id!])} className="p-1 hover:bg-indigo-500/20 text-indigo-500 rounded transition-colors" title="Approve">
                                                     <CheckCircle className="h-4 w-4" />
                                                 </button>
                                                 <button onClick={() => handlePendingAction('reject', [tx.id!])} className="p-1 hover:bg-red-500/20 text-red-500 rounded transition-colors" title="Discard">
@@ -504,7 +504,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 placeholder="Filter Symbol..."
                                 value={symbolFilter}
                                 onChange={(e) => setSymbolFilter(e.target.value)}
-                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
+                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-indigo-500 focus:border-indigo-500"
                             />
                             {symbolFilter && (
                                 <button
@@ -521,7 +521,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 placeholder="Filter Account..."
                                 value={accountFilter}
                                 onChange={(e) => setAccountFilter(e.target.value)}
-                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
+                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-indigo-500 focus:border-indigo-500"
                             />
                             {accountFilter && (
                                 <button
@@ -559,13 +559,12 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
             {/* Desktop Table View */}
             <div className={`metric-card card-shine overflow-hidden relative ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block transition-all`}>
-                {/* Accent bar - violet */}
-                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-violet-500 opacity-40" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-slate-500 opacity-80" />
                 <div className="overflow-x-auto border-none">
                     <table className="min-w-full border-none">
                         <thead className="bg-secondary sticky top-0 z-10 font-semibold border-none">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground w-10">
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground w-12 sticky left-0 z-20 bg-secondary/95 backdrop-blur-md">
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.size === visibleTransactions.length && visibleTransactions.length > 0}
@@ -573,9 +572,9 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                         className="rounded text-cyan-500"
                                     />
                                 </th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Date</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Type</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Symbol</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[100px] sticky left-12 z-20 bg-secondary/95 backdrop-blur-md border-none">Date</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[80px] sticky left-[148px] z-20 bg-secondary/95 backdrop-blur-md border-none">Type</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[100px] sticky left-[228px] z-20 bg-secondary/95 backdrop-blur-md border-none shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">Symbol</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Qty</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Price/Share</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Total Amount</th>
@@ -598,8 +597,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 </tr>
                             ) : (
                                 visibleTransactions.map((tx, index) => (
-                                    <tr key={index} className={`hover:bg-accent/5 transition-colors group border-none ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-cyan-500/5' : ''}`}>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                    <tr key={index} className={`hover:bg-accent/5 transition-colors group border-none ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-indigo-500/5' : ''}`}>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm w-12 sticky left-0 z-10 bg-background/95 backdrop-blur-md">
                                             <input
                                                 type="checkbox"
                                                 checked={tx.id !== undefined && selectedIds.has(tx.id)}
@@ -607,13 +606,13 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                                 className="rounded text-cyan-500"
                                             />
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap min-w-[100px] sticky left-12 z-10 bg-background/95 backdrop-blur-md border-none">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-muted-foreground min-w-[80px] sticky left-[148px] z-10 bg-background/95 backdrop-blur-md border-none">
                                             <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getTransactionTypeStyle(tx.Type)}`}>
                                                 {formatTransactionType(tx.Type)}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
+                                        <td className="px-4 py-3 whitespace-nowrap min-w-[100px] sticky left-[228px] z-10 bg-background/95 backdrop-blur-md border-none shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">
                                             <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
                                         </td>
                                         <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
@@ -635,7 +634,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                         <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">
                                             <button
                                                 onClick={() => handleEdit(tx)}
-                                                className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors mr-1"
+                                                className="text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 p-2 rounded transition-colors mr-1"
                                                 title="Edit"
                                             >
                                                 <Pencil className="w-4 h-4" />
@@ -710,7 +709,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         <div className="mt-3 pt-2 flex justify-end gap-3">
                             <button
                                 onClick={() => handleEdit(tx)}
-                                className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors"
+                                className="text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 p-2 rounded transition-colors"
                                 title="Edit"
                             >
                                 <Pencil className="w-5 h-5" />

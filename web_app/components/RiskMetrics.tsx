@@ -37,19 +37,22 @@ interface MetricItemProps {
 const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick }: MetricItemProps) => (
     <div
         onClick={onClick}
-        className="flex flex-col p-3 bg-muted/30 dark:bg-white/[0.04] backdrop-blur-sm rounded-2xl hover:bg-cyan-500/10 dark:hover:bg-cyan-500/15 cursor-pointer transition-all duration-300 group/item h-full border border-border/20 dark:border-white/[0.05] hover:border-cyan-500/30 shadow-sm"
+        className="flex flex-col p-3 bg-muted/30 dark:bg-white/[0.04] backdrop-blur-sm rounded-2xl hover:bg-cyan-500/10 dark:hover:bg-cyan-500/15 cursor-pointer transition-all duration-300 group/item h-full border border-border/20 dark:border-white/[0.05] hover:border-cyan-500/30 shadow-sm relative overflow-hidden"
     >
-        <div className="flex items-center justify-center gap-1.5 text-muted-foreground mb-2">
+        {/* Subtle glow for individual metrics */}
+        <div className="absolute -top-8 -right-8 w-20 h-20 blur-[25px] opacity-5 group-hover/item:opacity-15 transition-opacity pointer-events-none bg-cyan-500 rounded-full" />
+
+        <div className="flex items-center justify-center gap-1.5 text-muted-foreground mb-2 relative z-10">
             <Icon className="w-3 h-3 group-hover/item:text-cyan-500 transition-colors" />
             <span className="text-[9px] font-bold uppercase tracking-widest">{label}</span>
         </div>
 
-        <div className={cn("flex-1 flex items-center justify-center text-xl md:text-2xl font-bold tracking-tight tabular-nums", colorClass || "text-foreground")}>
+        <div className={cn("flex-1 flex items-center justify-center text-xl md:text-2xl font-bold tracking-tight tabular-nums relative z-10", colorClass || "text-foreground")}>
             {value}
         </div>
 
         {description && (
-            <div className="flex items-center justify-between mt-1 pt-1">
+            <div className="flex items-center justify-between mt-1 pt-1 relative z-10">
                 <p className="text-[9px] text-muted-foreground opacity-50 font-medium group-hover/item:opacity-70 transition-opacity truncate w-full text-center">
                     {description}
                 </p>
@@ -255,8 +258,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
     return (
         <React.Fragment>
             <div className="metric-card card-shine h-full p-5 transition-all duration-300 group relative overflow-hidden flex flex-col gap-4">
-                {/* Accent top bar */}
-                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-purple-500 opacity-50" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
                 <div className="flex justify-between items-start relative z-10">
                     <div className="flex items-center gap-2">

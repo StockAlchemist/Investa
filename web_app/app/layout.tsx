@@ -29,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} antialiased selection:bg-cyan-500/20 selection:text-cyan-500 min-h-screen bg-background text-foreground`} suppressHydrationWarning>
+      <body className={`${inter.className} antialiased selection:bg-indigo-500/20 selection:text-indigo-500 min-h-screen bg-background text-foreground`} suppressHydrationWarning>
         <Providers>
           <AuthProvider>
             <WebVitals />

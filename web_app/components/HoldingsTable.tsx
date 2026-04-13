@@ -746,8 +746,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     return (
         <>
             <div className="metric-card card-shine mt-6 scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent transition-all duration-300 relative overflow-hidden">
-                {/* Emerald accent bar */}
-                <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-emerald-500 opacity-40" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
                 <div className="flex flex-col gap-4 p-5">
                     {/* Header Row: Title, Count & Search */}
@@ -793,9 +792,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 onClick={() => setIsGroupByMenuOpen(!isGroupByMenuOpen)}
                                 className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
                                 ${groupBy
-                                    ? 'bg-[#0097b2] text-white border-none'
-                                    : 'text-foreground bg-secondary border-none hover:bg-accent/10'
-                                }`}
+                                        ? 'bg-[#0097b2] text-white border-none'
+                                        : 'text-foreground bg-secondary border-none hover:bg-accent/10'
+                                    }`}
                             >
                                 <ListFilter className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">{groupBy ? `By ${GROUPING_LABEL_MAP[groupBy]}` : 'Group'}</span>
@@ -955,10 +954,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 {/* Desktop Table View (also visible on mobile if toggled) */}
                 <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto`}>
                     <table className="min-w-full">
-                        <thead className="font-semibold">
+                        <thead className="bg-secondary sticky top-0 z-30 font-semibold border-b">
                             <tr>
                                 {visibleColumns.map(header => {
                                     const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
+                                    const isSticky = header === 'Symbol' || (header === 'Account' && visibleColumns.indexOf('Account') === 0);
                                     return (
                                         <th
                                             key={header}
@@ -967,7 +967,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             onDragStart={(e) => handleDragStart(e, header)}
                                             onDragOver={handleDragOver}
                                             onDrop={(e) => handleDrop(e, header)}
-                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${header === 'Symbol' ? 'sticky left-0 z-40 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''}`}
+                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${isSticky ? 'sticky left-0 z-40 bg-secondary/95 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}
                                             onClick={() => handleSort(header)}
                                         >
                                             <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
@@ -1170,11 +1170,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 ) : header === 'AI Score' ? (
                                                                     <div className="flex justify-end">
                                                                         {val !== null && val !== undefined ? (
-                                                                            <div 
-                                                                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shadow-sm ${
-                                                                                    (val as number) >= 8.0 ? 'bg-emerald-500' : 
-                                                                                    (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
-                                                                                }`}
+                                                                            <div
+                                                                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shadow-sm ${(val as number) >= 8.0 ? 'bg-emerald-500' :
+                                                                                        (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                                                    }`}
                                                                             >
                                                                                 {(val as number).toFixed(1)}
                                                                             </div>
@@ -1186,8 +1185,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                     <div className="flex flex-col items-end gap-1.5 min-w-[80px]">
                                                                         <span className={
                                                                             val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
-                                                                                (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 
-                                                                                (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
+                                                                                (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' :
+                                                                                    (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
                                                                             ) : ''
                                                                         }>
                                                                             {formatValue(val, header)}
@@ -1229,7 +1228,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                                 return (
-                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900' : ''}`}>
+                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}>
                                                                         {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                                         {formatValue(val, header)}
                                                                     </td>
@@ -1257,7 +1256,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                 const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
 
                                                 return (
-                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''} ${heatmapClass}`}>
+                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-lg shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''} ${heatmapClass}`}>
                                                         {header === '7d Trend' ? (
                                                             <div className="h-10 w-28 ml-auto">
                                                                 {val && Array.isArray(val) && val.length > 1 ? (
@@ -1336,11 +1335,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         ) : header === 'AI Score' ? (
                                                             <div className="flex justify-end">
                                                                 {val !== null && val !== undefined ? (
-                                                                    <div 
-                                                                        className={`px-2 py-0.5 rounded text-xs font-bold text-white shadow-sm ${
-                                                                            (val as number) >= 8.0 ? 'bg-emerald-500' : 
-                                                                            (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
-                                                                        }`}
+                                                                    <div
+                                                                        className={`px-2 py-0.5 rounded text-xs font-bold text-white shadow-sm ${(val as number) >= 8.0 ? 'bg-emerald-500' :
+                                                                                (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                                            }`}
                                                                     >
                                                                         {(val as number).toFixed(1)}
                                                                     </div>
@@ -1351,8 +1349,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         ) : header === 'Intrinsic Value' ? (
                                                             <span className={
                                                                 val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
-                                                                    (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 
-                                                                    (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
+                                                                    (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' :
+                                                                        (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
                                                                 ) : ''
                                                             }>
                                                                 {formatValue(val, header)}
@@ -1378,7 +1376,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                         return (
-                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-none ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-none' : ''}`}>
+                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-none ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}>
                                                                 {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                                 {formatValue(val, header)}
                                                             </td>
@@ -1476,10 +1474,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     <span className="text-muted-foreground">AI Score:</span>
                                     <div className="flex justify-end">
                                         {holding.ai_score !== null && holding.ai_score !== undefined ? (
-                                            <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${
-                                                holding.ai_score >= 8.0 ? 'bg-emerald-500' : 
-                                                holding.ai_score >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
-                                            }`}>
+                                            <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${holding.ai_score >= 8.0 ? 'bg-emerald-500' :
+                                                    holding.ai_score >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                }`}>
                                                 {holding.ai_score.toFixed(1)}
                                             </div>
                                         ) : <span className="text-muted-foreground/30 leading-none">-</span>}
@@ -1487,12 +1484,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Intrinsic:</span>
-                                    <span className={`font-medium ${
-                                        holding.intrinsic_value !== null && holding.intrinsic_value !== undefined && holding.Price !== undefined ? (
-                                            holding.intrinsic_value > (holding.Price as number) ? 'text-emerald-500' : 
-                                            holding.intrinsic_value < (holding.Price as number) ? 'text-rose-500' : 'text-foreground'
+                                    <span className={`font-medium ${holding.intrinsic_value !== null && holding.intrinsic_value !== undefined && holding.Price !== undefined ? (
+                                            holding.intrinsic_value > (holding.Price as number) ? 'text-emerald-500' :
+                                                holding.intrinsic_value < (holding.Price as number) ? 'text-rose-500' : 'text-foreground'
                                         ) : 'text-foreground'
-                                    }`}>
+                                        }`}>
                                         {formatValue(holding.intrinsic_value, "Intrinsic Value")}
                                         {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
                                             <span className="text-[10px] opacity-70 ml-1">

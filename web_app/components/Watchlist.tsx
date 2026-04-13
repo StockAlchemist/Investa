@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     fetchWatchlist,
@@ -15,9 +15,8 @@ import {
 } from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardContent } from "@/components/ui/card";
-
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
 import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, formatCompactNumber, cn, getHeatmapClass } from "@/lib/utils";
@@ -244,8 +243,6 @@ export default function Watchlist({ currency }: WatchlistProps) {
             return;
         }
         if (confirm(`Delete watchlist "${currentList.name}"? This action cannot be undone.`)) {
-            // If deleting active list, switch to another one first (optimistically) or let query error handle it?
-            // Better to switch to first available that is NOT this one.
             const nextList = watchlists.find(w => w.id !== activeWatchlistId) || { id: 1 };
             setActiveWatchlistId(nextList.id);
             deleteListMutation.mutate(activeWatchlistId);
@@ -292,8 +289,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
         return (
             <div className="space-y-4">
                 <div className="metric-card card-shine p-6 relative overflow-hidden">
-                    {/* Sky accent bar */}
-                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-sky-400 opacity-50" />
+                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-indigo-500 opacity-50" />
                     <CardHeader className="p-0 mb-4">
                         <Skeleton className="h-8 w-48 opacity-50 rounded-lg" />
                     </CardHeader>
@@ -316,10 +312,10 @@ export default function Watchlist({ currency }: WatchlistProps) {
                         key={wl.id}
                         onClick={() => setActiveWatchlistId(wl.id)}
                         className={cn(
-                            "px-3 py-1.5 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500",
+                            "px-3 py-1.5 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500",
                             activeWatchlistId === wl.id
-                                ? "bg-[#0097b2] text-white"
-                                : "text-foreground bg-secondary hover:bg-accent/10"
+                                ? "bg-indigo-600 text-white"
+                                : "text-indigo-500 hover:bg-accent/10"
                         )}
                     >
                         {wl.name}
@@ -345,7 +341,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 ) : (
                     <button
                         onClick={() => setIsCreating(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground bg-secondary rounded-md hover:bg-accent/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground bg-secondary rounded-md hover:bg-accent/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
                         <Plus className="h-3.5 w-3.5" />
                         <span>New List</span>
@@ -354,8 +350,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
             </div>
 
             <div className="metric-card card-shine relative overflow-hidden">
-                {/* Sky accent bar */}
-                <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-sky-400 opacity-50" />
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-sky-500 opacity-80" />
 
                 {/* Header */}
                 <div className="flex flex-row items-center justify-between p-5 pb-2">
@@ -364,7 +359,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             {isRenaming ? (
                                 <form onSubmit={handleRenameList} className="flex items-center gap-2">
                                     <Input
-                                        key={activeWatchlistId} // Force remount on list switch
+                                        key={activeWatchlistId}
                                         value={renameName}
                                         onChange={(e) => setRenameName(e.target.value)}
                                         className="h-9 w-48 text-lg font-bold bg-background text-foreground border-none focus-visible:ring-1"
@@ -397,7 +392,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                             <Pencil className="h-4 w-4" />
                                         </Button>
 
-                                        {(watchlists.length > 1) && ( // Allow delete if more than 1 list
+                                        {(watchlists.length > 1) && (
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
@@ -434,7 +429,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                 placeholder="e.g. AAPL, BTC-USD"
                                 value={newSymbol}
                                 onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                                className="bg-background/50 backdrop-blur-sm border-border/40 hover:border-cyan-500/50 focus-visible:ring-cyan-500 rounded-2xl transition-all text-foreground placeholder:text-muted-foreground/50"
+                                className="bg-background/50 backdrop-blur-sm border-border/40 hover:border-indigo-500/50 focus-visible:ring-indigo-500 rounded-2xl transition-all text-foreground placeholder:text-muted-foreground/50"
                             />
                         </div>
                         <div className="flex flex-col gap-1.5 flex-1 w-full">
@@ -443,13 +438,13 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                 placeholder="Add a description..."
                                 value={newNote}
                                 onChange={(e) => setNewNote(e.target.value)}
-                                className="bg-background/50 backdrop-blur-sm border-border/40 hover:border-cyan-500/50 focus-visible:ring-cyan-500 rounded-2xl transition-all text-foreground placeholder:text-muted-foreground/50"
+                                className="bg-background/50 backdrop-blur-sm border-border/40 hover:border-indigo-500/50 focus-visible:ring-indigo-500 rounded-2xl transition-all text-foreground placeholder:text-muted-foreground/50"
                             />
                         </div>
                         <Button
                             type="submit"
                             disabled={addMutation.isPending || !newSymbol.trim()}
-                            className="bg-[#0097b2] hover:bg-[#0087a2] text-white font-bold h-10 px-6 shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-10 px-6 shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
                         >
                             <Plus className="h-4 w-4 mr-2" />
                             Add to List
@@ -458,7 +453,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
 
                     <div className="overflow-x-auto rounded-lg">
                         <table className="min-w-full">
-                                <thead className="bg-secondary sticky top-0 z-10 font-semibold">
+                            <thead className="bg-secondary sticky top-0 z-10 font-semibold">
                                 <tr>
                                     {[
                                         { key: 'Symbol', label: 'Symbol', align: 'left' },
@@ -475,7 +470,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                     ].map((col) => (
                                         <th
                                             key={col.key}
-                                            className={`px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'} ${!col.disableSort ? 'cursor-pointer hover:text-foreground hover:bg-muted/50 transition-colors select-none' : ''}`}
+                                            className={`px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'} ${!col.disableSort ? 'cursor-pointer hover:text-foreground hover:bg-muted/50 transition-colors select-none' : ''} ${col.key === 'Symbol' ? 'sticky left-0 z-20 bg-secondary/95 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}
                                             onClick={() => !col.disableSort && handleSort(col.key)}
                                         >
                                             <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
@@ -491,6 +486,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                 )}
                                             </div>
                                         </th>
+
                                     ))}
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                                 </tr>
@@ -498,14 +494,14 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             <tbody className="bg-transparent divide-y-none">
                                 {watchlist?.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">
+                                        <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">
                                             No symbols in your watchlist yet.
                                         </td>
                                     </tr>
                                 ) : (
                                     sortedWatchlist?.map((item) => (
                                         <tr key={item.Symbol} className="hover:bg-accent/5 transition-colors">
-                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm sticky left-0 z-10 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                                 <StockTicker symbol={item.Symbol} currency={currency} />
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-foreground text-sm max-w-[200px] truncate">{item.Name || '-'}</td>
@@ -613,7 +609,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 onClick={() => startEditing(item)}
-                                                                className="h-8 w-8 text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10"
+                                                                className="h-8 w-8 text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10"
                                                             >
                                                                 <Pencil className="h-4 w-4" />
                                                             </Button>

@@ -115,7 +115,7 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
         });
     }, [availableAccounts, accountCashBalances, settings]);
 
-    const inputClassName = "w-full rounded-md border border-border bg-background text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
+    const inputClassName = "w-full rounded-md border border-border bg-background text-foreground shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2 text-sm outline-none focus:ring-1";
 
     return (
         <div className="max-w-4xl space-y-6">

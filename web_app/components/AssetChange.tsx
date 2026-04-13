@@ -82,10 +82,9 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <div className="metric-card card-shine p-5 relative overflow-hidden">
-            {/* Accent bar - teal */}
-            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-teal-500 opacity-40" />
-            <div className="flex justify-between items-center mb-4">
+        <div className="metric-card card-shine p-5 relative overflow-hidden group">
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-violet-500 opacity-80" />
+            <div className="flex justify-between items-center mb-4 relative z-10">
                 <h3 className="section-label">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
                     <label className="text-sm text-muted-foreground">Periods:</label>
@@ -95,7 +94,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                         max="100"
                         value={numPeriods}
                         onChange={(e) => setNumPeriods(parseInt(e.target.value) || 1)}
-                        className="w-16 px-2 py-1 text-sm bg-secondary rounded text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-16 px-2 py-1 text-sm bg-secondary rounded text-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
                     />
                 </div>
             </div>
@@ -144,18 +143,18 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                 </Bar>
                             );
                         })}
-                            <Tooltip
-                                wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                                contentStyle={{
-                                    backgroundColor: 'transparent',
-                                    borderRadius: '12px',
-                                    border: 'none',
-                                    boxShadow: 'none'
-                                }}
-                                content={({ active, payload, label }) => {
+                        <Tooltip
+                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                            contentStyle={{
+                                backgroundColor: 'transparent',
+                                borderRadius: '12px',
+                                border: 'none',
+                                boxShadow: 'none'
+                            }}
+                            content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-background/60 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
+                                        <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
                                             <p className="font-medium text-foreground mb-1 text-sm">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })

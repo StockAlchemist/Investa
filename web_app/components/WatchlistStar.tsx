@@ -94,7 +94,7 @@ export default function WatchlistStar({ symbol, size = "md", className, iconClas
                     isStarred
                         ? "text-yellow-500 border-yellow-200 dark:border-yellow-900 bg-yellow-50 dark:bg-yellow-950/30 scale-100"
                         : "text-muted-foreground/30 opacity-0 group-hover/star:opacity-100 hover:text-yellow-500 hover:scale-110",
-                    openWatchlistDropdown && "opacity-100 ring-1 ring-cyan-500"
+                    openWatchlistDropdown && "opacity-100 ring-1 ring-indigo-500"
                 )}
             >
                 <Star className={cn("h-3 w-3", isStarred && "fill-current")} />
@@ -127,7 +127,7 @@ export default function WatchlistStar({ symbol, size = "md", className, iconClas
                             >
                                 <span>{wl.name}</span>
                                 {isInThisList && (
-                                    <div className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
+                                    <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
                                 )}
                             </button>
                         );

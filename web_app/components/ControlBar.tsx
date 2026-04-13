@@ -57,7 +57,7 @@ export default function ControlBar({
 
                     <button
                         onClick={onSettingsClick}
-                        className="p-2 rounded-xl text-muted-foreground hover:text-cyan-500 hover:bg-cyan-500/10 transition-all duration-300 group"
+                        className="p-2 rounded-xl text-indigo-500 hover:text-cyan-500 hover:bg-cyan-500/10 transition-all duration-300 group"
                         title="Project Settings"
                     >
                         <SettingsIcon className="w-4 h-4 transition-transform duration-300 group-hover:rotate-90" />
