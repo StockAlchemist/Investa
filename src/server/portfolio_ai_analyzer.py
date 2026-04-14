@@ -11,35 +11,49 @@ import requests
 
 def _compute_portfolio_hash(portfolio_data: dict) -> str:
     """Computes a stable hash of the portfolio state for caching."""
-    # We use holdings and total value to detect changes.
-    # We sort holdings to ensure order doesn't matter.
-    
-    # Simple approach: Create a string rep of key components
     key_components = []
     
-    # 1. Total Value (rounded to nearest 100 to avoid noise? Or just exact. Let's use int Cast)
     metrics = portfolio_data.get("metrics", {})
     key_components.append(str(int(metrics.get("market_value", 0))))
     
-    # 2. Holdings (Symbol, Qty)
     holdings_dict = portfolio_data.get("holdings_dict", {})
-    # holdings_dict keys are strings "Symbol|Account" if coming from API serialisation, 
-    # but inside API it is (Symbol, Account) tuple.
-    # We expect this function to be called from API with the raw dictionary.
-    
-    sorted_holdings = sorted(holdings_dict.items()) # Sort by key (Sym, Acc)
+    sorted_holdings = sorted(holdings_dict.items()) 
     for k, v in sorted_holdings:
-        # k is (Symbol, Account)
-        # v is dict with 'qty', etc.
         qty = v.get('qty', 0)
-        if abs(qty) > 0.01: # Ignore tiny dust
+        if abs(qty) > 0.01:
             key_components.append(f"{k[0]}:{k[1]}:{qty:.2f}")
             
-    # 3. Date (Portfolio state is valid for a day essentially)
     key_components.append(datetime.now().strftime("%Y-%m-%d"))
     
     combined_str = "|".join(key_components)
     return hashlib.md5(combined_str.encode()).hexdigest()
+
+def _detect_tax_loss_candidates(holdings: list) -> list:
+    """Identifies positions with significant unrealized losses for TLH suggestions."""
+    candidates = []
+    for h in holdings:
+        gain = h.get("unrealized_gain", 0)
+        symbol = h.get("symbol")
+        if gain < -500 or (h.get("market_value", 0) > 0 and gain / (h.get("market_value", 0) - gain) < -0.10):
+            candidates.append({
+                "symbol": symbol,
+                "loss": gain,
+                "loss_percent": (gain / (h.get("market_value", 0) - gain) * 100) if (h.get("market_value", 0) - gain) != 0 else 0
+            })
+    return sorted(candidates, key=lambda x: x["loss"])
+
+def _calculate_sector_allocation(holdings: list) -> dict:
+    """Groups holdings by sector to identify over-concentration."""
+    sectors = {}
+    total_val = sum(h.get("market_value", 0) for h in holdings)
+    if total_val == 0: return {}
+    
+    for h in holdings:
+        s = h.get("sector", "Unknown")
+        val = h.get("market_value", 0)
+        sectors[s] = sectors.get(s, 0) + val
+        
+    return {s: (v / total_val * 100) for s, v in sectors.items()}
 
 def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_refresh: bool = False) -> dict:
     """
@@ -126,33 +140,43 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
     else:
         holdings_summary = "Holdings data not explicit."
 
-    # 3. Construct Prompt
+    # 3. Optimization Data
+    tlh_candidates = _detect_tax_loss_candidates(holdings)
+    sector_alloc = _calculate_sector_allocation(holdings)
+    
+    tlh_summary = "\n".join([f"- {c['symbol']}: {c['loss']:,.2f} ({c['loss_percent']:.1f}%)" for c in tlh_candidates]) if tlh_candidates else "No major tax-loss candidates found."
+    sector_summary = "\n".join([f"- {s}: {v:.1f}%" for s, v in sorted(sector_alloc.items(), key=lambda x: x[1], reverse=True)])
+
+    # 4. Construct Prompt
     prompt = f"""
-    You are an expert financial advisor. Review the following investment portfolio and provide a comprehensive analysis.
+    You are an expert financial advisor and tax strategist. Review the following investment portfolio and provide a comprehensive analysis with specific optimizations for rebalancing and tax efficiency.
     
     PORTFOLIO METRICS:
     - Total Value: {total_value:,.2f}
     - Total Change: {total_change:,.2f} ({total_change_percent:.2f}%)
-    - Timeframe: Past 1 Year (for risk metrics)
     
     RISK METRICS:
-    - Sharpe Ratio: {sharpe}
-    - Sortino Ratio: {sortino}
-    - Annualized Volatility: {volatility}
-    - Max Drawdown: {max_drawdown}
-    - Beta: {beta}
-    - Alpha: {alpha}
+    - Sharpe Ratio: {sharpe} | Sortino Ratio: {sortino}
+    - Annualized Volatility: {volatility} | Max Drawdown: {max_drawdown}
+    - Beta: {beta} | Alpha: {alpha}
     
     ASSET ALLOCATION:
     {holdings_summary}
     
+    SECTOR ALLOCATION:
+    {sector_summary}
+    
+    TAX-LOSS HARVESTING CANDIDATES (Unrealized Losses):
+    {tlh_summary}
+    
     INSTRUCTIONS:
     1. Score the portfolio (1-10) on Diversification, Risk Profile, and Performance.
     2. Provide an Executive Summary.
-    3. Analyze Diversification, Risk, and Performance separately in detail. 
-       - For each category, explicitly explain WHY you assigned the specific score (e.g., "Score: 7/10 because..."). This explanation will be shown in a tooltip, so be clear and concise.
-    4. Provide 3-5 concrete, actionable recommendations.
-       - CRITICAL: Include at least one rebalancing idea that maintains the current risk and return profile of the portfolio (e.g., swapping a high-beta stock for another high-growth stock in a different sector).
+    3. Analyze Diversification, Risk, and Performance separately.
+    4. Provide specific "Optimizations":
+       - Identify the best Tax-Loss Harvesting (TLH) opportunity if any. Suggest a "Replacement" ticker (e.g., VOO for IVV) to stay invested while harvesting the loss.
+       - Identify sector over-concentration (e.g., >25% in one sector) and suggest rebalancing moves.
+       - Suggest a "Risk Hedge" if the portfolio beta is too high or diversification is poor.
     
     OUTPUT FORMAT (JSON):
     {{
@@ -168,7 +192,17 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
             "performance": "<text>",
             "actionable_recommendations": "<text>"
         }},
-        "recommendations": ["<rec1>", "<rec2>", "..."]
+        "recommendations": ["<rec1>", "<rec2>", "..."],
+        "optimizations": [
+            {{
+                "type": "tax_loss_harvesting" | "rebalancing" | "diversification",
+                "title": "<short_title>",
+                "description": "<detailed_suggestion>",
+                "symbol": "<related_ticker_or_sector>",
+                "action": "Sell" | "Buy" | "Swap" | "Hold",
+                "priority": "High" | "Medium" | "Low"
+            }}
+        ]
     }}
     """
     
@@ -188,7 +222,8 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
                 "performance": "Analysis unavailable.",
                 "actionable_recommendations": "No recommendations available."
             },
-            "recommendations": []
+            "recommendations": [],
+            "optimizations": []
         }
         
     base_payload = {
@@ -196,28 +231,17 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
         "generationConfig": {"response_mime_type": "application/json"}
     }
     
-    # Re-use the fallback logic? 
-    # To avoid code duplication, we could import a helper, but ai_analyzer's logic is embedded in the function.
-    # I'll implement a simplified version here or refactor. 
-    # For speed, I'll copy the robust loop structure.
-    
     rate_limit_count = 0
     other_error_count = 0
             
     for model in FALLBACK_MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         try:
-            # Portfolio review doesn't need Google Search usually (internal data), 
-            # so we skip 'tools' to save latency/quota, unless user explicitly wants market context?
-            # Let's stick to base_payload (no search) for now to be fast.
-            
             resp = requests.post(url, json=base_payload, timeout=60)
             if resp.status_code == 200:
                 data = resp.json()
                 text = data['candidates'][0]['content']['parts'][0]['text']
                 
-                # Try to parse JSON
-                # Clean markdown
                 if "```json" in text:
                     text = text.split("```json")[1].split("```")[0]
                 elif "```" in text:
@@ -225,7 +249,6 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
                     
                 result = json.loads(text)
                 
-                # Ensure keys exist
                 default_scorecard = {"diversification": 0, "risk_profile": 0, "performance": 0}
                 default_analysis = {
                     "diversification": "Analysis unavailable.",
@@ -238,6 +261,7 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
                 if "analysis" not in result: result["analysis"] = default_analysis
                 if "summary" not in result: result["summary"] = "AI analysis generated, but summary missing."
                 if "recommendations" not in result: result["recommendations"] = []
+                if "optimizations" not in result: result["optimizations"] = []
                 
                 # Cache it
                 with open(cache_path, "w") as f:

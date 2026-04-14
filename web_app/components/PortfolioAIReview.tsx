@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, ShieldCheck, TrendingUp, AlertTriangle, Lightbulb, PieChart } from 'lucide-react';
 import { MetricCard } from '@/components/MetricCard';
+import PortfolioOptimization from '@/components/PortfolioOptimization';
 
 interface PortfolioAIReviewProps {
     currency: string;
@@ -242,6 +243,11 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                     <p className="whitespace-pre-wrap">{summary}</p>
                 </div>
             </div>
+
+            {/* Optimization Hub */}
+            {data?.optimizations && data.optimizations.length > 0 && (
+                <PortfolioOptimization optimizations={data.optimizations} />
+            )}
 
             {/* Detailed Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

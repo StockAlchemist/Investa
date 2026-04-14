@@ -154,6 +154,8 @@ export interface Holding {
     intrinsic_value?: number;
     margin_of_safety?: number;
     has_ai_review?: boolean;
+    ai_sentiment?: number;
+    ai_catalysts?: { event: string, date: string, impact: string }[];
 }
 
 export interface Transaction {
@@ -248,14 +250,11 @@ export async function addTransaction(transaction: Transaction): Promise<StatusRe
     return response.json();
 }
 
-export async function importIBKRPdf(file: File, autoAddCash: boolean = false, account?: string): Promise<{ status: string, count: number, message: string }> {
+export async function parseDocument(file: File): Promise<{ status: string, transactions: Transaction[], count: number, message: string }> {
     const formData = new FormData();
     formData.append("file", file);
 
-    let url = `${API_BASE_URL}/transactions/import_pdf?auto_add_cash=${autoAddCash}`;
-    if (account) {
-        url += `&account=${encodeURIComponent(account)}`;
-    }
+    const url = `${API_BASE_URL}/transactions/parse_document`;
 
     const response = await authFetch(url, {
         method: "POST",
@@ -263,7 +262,21 @@ export async function importIBKRPdf(file: File, autoAddCash: boolean = false, ac
     });
 
     if (!response.ok) {
-        throw new Error(`Failed to import PDF: ${response.statusText}`);
+        throw new Error(`Failed to parse document: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+export async function addTransactionsBatch(transactions: Transaction[], autoAddCash: bool = false): Promise<StatusResponse> {
+    const response = await authFetch(`${API_BASE_URL}/transactions/batch`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ transactions, auto_add_cash: autoAddCash }),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to add transactions: ${response.statusText}`);
     }
     return response.json();
 }
@@ -732,6 +745,8 @@ export interface WatchlistItem {
     intrinsic_value?: number | null;
     margin_of_safety?: number | null;
     has_ai_review?: boolean;
+    ai_sentiment?: number | null;
+    ai_catalysts?: { event: string, date: string, impact: string }[] | null;
 }
 
 
@@ -945,7 +960,35 @@ export interface StockAnalysisResponse {
         growth_perspective: string;
     };
     summary?: string;
-    error?: string;
+    sentiment?: number;
+    catalysts?: { event: string, date: string, impact: string }[];
+    ai_review: string;
+    optimizations?: {
+        type: 'tax_loss_harvesting' | 'rebalancing' | 'diversification';
+        title: string;
+        description: string;
+        symbol: string;
+        action: 'Sell' | 'Buy' | 'Swap' | 'Hold';
+        priority: 'High' | 'Medium' | 'Low';
+    }[];
+}
+
+export interface ChatMessage {
+    role: 'user' | 'ai';
+    text: string;
+}
+
+export async function sendChatMessage(message: string, history: ChatMessage[] = []): Promise<string> {
+    const res = await authFetch(`${API_BASE_URL}/chat/message`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message, history }),
+    });
+    if (!res.ok) throw new Error('Failed to send message to AI');
+    const data = await res.json();
+    return data.response;
 }
 
 export async function fetchStockAnalysis(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
@@ -992,6 +1035,16 @@ export async function runScreener(request: ScreenerRequest): Promise<ScreenerRes
     });
     if (error) throw new Error('Failed to run stock screen');
     return data as unknown as ScreenerResult[];
+}
+
+export async function runNarrativeSearch(prompt: string): Promise<ScreenerResult[]> {
+    const res = await authFetch(`${API_BASE_URL}/screener/narrative`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+    });
+    if (!res.ok) throw new Error('Failed to run narrative search');
+    return res.json();
 }
 
 export async function fetchScreenerReview(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {

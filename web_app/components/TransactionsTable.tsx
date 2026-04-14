@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, importIBKRPdf } from '../lib/api';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch } from '../lib/api';
 import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
@@ -38,6 +38,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     const [isImporting, setIsImporting] = useState(false);
     const [autoAddCashOnImport, setAutoAddCashOnImport] = useState(true);
     const [importAccount, setImportAccount] = useState('');
+    const [reviewTransactions, setReviewTransactions] = useState<Transaction[]>([]);
+    const [isReviewing, setIsReviewing] = useState(false);
 
     const handleAdd = () => {
         setModalMode('add');
@@ -136,20 +138,58 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
         try {
             setIsImporting(true);
-            const result = await importIBKRPdf(file, autoAddCashOnImport, importAccount || undefined);
-            alert(`Successfully imported ${result.count} transactions!`);
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            queryClient.invalidateQueries({ queryKey: ['summary'] });
-            queryClient.invalidateQueries({ queryKey: ['holdings'] });
+            const result = await parseDocument(file);
+            
+            if (result.transactions && result.transactions.length > 0) {
+                // Apply the selected import account to all extracted transactions if they don't have one
+                const enrichedTransactions = result.transactions.map(tx => ({
+                    ...tx,
+                    Account: importAccount || tx.Account || 'Default'
+                }));
+                setReviewTransactions(enrichedTransactions);
+                setIsReviewing(true);
+            } else {
+                alert(result.message || "No transactions found in document.");
+            }
         } catch (error) {
-            console.error("Failed to import PDF:", error);
-            alert("Failed to import PDF. Check console for details.");
+            console.error("Failed to parse document:", error);
+            alert("Failed to parse document. Check console for details.");
         } finally {
             setIsImporting(false);
             if (fileInputRef.current) {
                 fileInputRef.current.value = ''; // reset input
             }
         }
+    };
+
+    const handleReviewConfirm = async () => {
+        if (reviewTransactions.length === 0) return;
+        
+        setIsImporting(true);
+        try {
+            const result = await addTransactionsBatch(reviewTransactions, autoAddCashOnImport);
+            alert(`Successfully imported ${result.count} transactions!`);
+            
+            setReviewTransactions([]);
+            setIsReviewing(false);
+            
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['summary'] });
+            queryClient.invalidateQueries({ queryKey: ['holdings'] });
+        } catch (error) {
+            console.error("Failed to add batch transactions:", error);
+            alert("Failed to add transactions to database.");
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
+    const handleRemoveFromReview = (index: number) => {
+        setReviewTransactions(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleUpdateReviewTransaction = (index: number, updated: Transaction) => {
+        setReviewTransactions(prev => prev.map((tx, i) => i === index ? updated : tx));
     };
 
     const resetFilters = () => {
@@ -266,95 +306,123 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
     return (
         <div className="space-y-6">
-            {/* Pending Transactions Staging Area */}
-            {pendingTransactions.length > 0 && (
-                <div className="metric-card card-shine overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 relative">
-                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-slate-500 opacity-80" />
-                    <div className="px-4 py-3 bg-indigo-500/10 flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-indigo-500" />
-                            <h3 className="text-sm font-semibold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
-                                Pending Syncs ({pendingTransactions.length})
-                            </h3>
+            {/* AI Review & Confirm Section */}
+            {isReviewing && reviewTransactions.length > 0 && (
+                <div className="metric-card card-shine overflow-hidden animate-in fade-in zoom-in duration-500 relative border-2 border-indigo-500/20">
+                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500" />
+                    <div className="px-4 py-4 bg-indigo-500/10 flex justify-between items-center border-b border-indigo-500/10">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-500/20 rounded-full">
+                                <FileText className="h-5 w-5 text-indigo-500" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-widest">
+                                    Review Extracted Transactions ({reviewTransactions.length})
+                                </h3>
+                                <p className="text-[10px] text-muted-foreground uppercase font-semibold">AI identified these from your document. Please verify before saving.</p>
+                            </div>
                         </div>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => handlePendingAction('approve')}
-                                disabled={selectedPendingIds.size === 0 || isApproving}
-                                className="px-3 py-1 bg-indigo-600 text-white rounded text-xs font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 border-none shadow-none"
+                                onClick={handleReviewConfirm}
+                                disabled={isImporting}
+                                className="px-5 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black uppercase tracking-wider hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-500/40 disabled:opacity-50 flex items-center gap-2 border-none"
                             >
-                                <CheckCircle className="h-3 w-3" />
-                                Approve Selected ({selectedPendingIds.size})
+                                <CheckCircle className="h-4 w-4" />
+                                Confirm & Import All
                             </button>
                             <button
-                                onClick={() => handlePendingAction('reject')}
-                                disabled={selectedPendingIds.size === 0 || isApproving}
-                                className="px-3 py-1 bg-red-600/10 text-red-600 border-none rounded text-xs font-bold hover:bg-red-600/20 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-none"
+                                onClick={() => { setReviewTransactions([]); setIsReviewing(false); }}
+                                className="px-4 py-2 bg-secondary text-foreground rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-accent/10 transition-all border-none"
                             >
-                                <XCircle className="h-3 w-3" />
-                                Discard
+                                <Trash2 className="h-4 w-4" />
                             </button>
                         </div>
                     </div>
-                    <div className="overflow-x-auto border-none">
-                        <table className="min-w-full border-none">
-                            <thead className="bg-indigo-500/5 text-xs font-semibold text-indigo-700 dark:text-indigo-400 border-none">
-                                <tr className="border-none">
-                                    <th className="px-4 py-2 text-left w-10">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedPendingIds.size === pendingTransactions.length}
-                                            onChange={() => {
-                                                if (selectedPendingIds.size === pendingTransactions.length) setSelectedPendingIds(new Set());
-                                                else setSelectedPendingIds(new Set(pendingTransactions.map(t => t.id!).filter(Boolean)));
-                                            }}
-                                            className="rounded border-none text-indigo-500 focus:ring-indigo-500"
-                                        />
-                                    </th>
-                                    <th className="px-4 py-2">Date</th>
-                                    <th className="px-4 py-2">Type</th>
-                                    <th className="px-4 py-2">Symbol</th>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                            <thead className="bg-indigo-500/5 text-[10px] font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-tighter">
+                                <tr>
+                                    <th className="px-4 py-2 text-left">Date</th>
+                                    <th className="px-4 py-2 text-left">Type</th>
+                                    <th className="px-4 py-2 text-left">Symbol</th>
                                     <th className="px-4 py-2 text-right">Qty</th>
                                     <th className="px-4 py-2 text-right">Price</th>
-                                    <th className="px-4 py-2 text-right">Comm.</th>
                                     <th className="px-4 py-2 text-right">Total</th>
-                                    <th className="px-4 py-2 text-right">Action</th>
+                                    <th className="px-4 py-2 text-left">Account</th>
+                                    <th className="px-4 py-2 text-right whitespace-nowrap"></th>
                                 </tr>
                             </thead>
-                            <tbody className="text-sm">
-                                {pendingTransactions.map((tx) => (
-                                    <tr key={tx.id} className="hover:bg-cyan-500/10 transition-colors">
-                                        <td className="px-4 py-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedPendingIds.has(tx.id!)}
-                                                onChange={() => {
-                                                    const next = new Set(selectedPendingIds);
-                                                    if (next.has(tx.id!)) next.delete(tx.id!);
-                                                    else next.add(tx.id!);
-                                                    setSelectedPendingIds(next);
-                                                }}
-                                                className="rounded border-none text-indigo-500 focus:ring-indigo-500"
+                            <tbody className="text-sm divide-y divide-indigo-500/5">
+                                {reviewTransactions.map((tx, idx) => (
+                                    <tr key={`review-${idx}`} className="hover:bg-indigo-500/5 transition-colors group">
+                                        <td className="px-4 py-3">
+                                            <input 
+                                                type="text" 
+                                                value={tx.Date} 
+                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Date: e.target.value })}
+                                                className="bg-transparent border-none text-[12px] p-0 w-full focus:ring-0 text-muted-foreground"
                                             />
                                         </td>
-                                        <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{tx.Date}</td>
-                                        <td className="px-4 py-2 font-bold text-indigo-500 uppercase text-[10px] tracking-tighter">{tx.Type}</td>
-                                        <td className="px-4 py-2 font-medium">{tx.Symbol}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums">{tx.Quantity}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>
-                                        <td className="px-4 py-2 text-right text-muted-foreground tabular-nums">{tx.Commission?.toFixed(2) || '0.00'}</td>
-                                        <td className="px-4 py-2 text-right font-bold tabular-nums">
-                                            {tx["Total Amount"]?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <td className="px-4 py-3">
+                                            <select 
+                                                value={tx.Type} 
+                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Type: e.target.value })}
+                                                className="bg-transparent border-none text-[10px] p-0 font-bold uppercase tracking-widest focus:ring-0 text-indigo-500 appearance-none"
+                                            >
+                                                <option value="Buy">BUY</option>
+                                                <option value="Sell">SELL</option>
+                                                <option value="Dividend">DIVIDEND</option>
+                                            </select>
                                         </td>
-                                        <td className="px-4 py-2 text-right whitespace-nowrap">
-                                            <div className="flex justify-end gap-1">
-                                                <button onClick={() => handlePendingAction('approve', [tx.id!])} className="p-1 hover:bg-indigo-500/20 text-indigo-500 rounded transition-colors" title="Approve">
-                                                    <CheckCircle className="h-4 w-4" />
-                                                </button>
-                                                <button onClick={() => handlePendingAction('reject', [tx.id!])} className="p-1 hover:bg-red-500/20 text-red-500 rounded transition-colors" title="Discard">
-                                                    <XCircle className="h-4 w-4" />
-                                                </button>
-                                            </div>
+                                        <td className="px-4 py-3">
+                                            <input 
+                                                type="text" 
+                                                value={tx.Symbol} 
+                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Symbol: e.target.value.toUpperCase() })}
+                                                className="bg-transparent border-none text-sm p-0 w-full font-bold focus:ring-0"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <input 
+                                                type="number" 
+                                                value={tx.Quantity} 
+                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Quantity: parseFloat(e.target.value) })}
+                                                className="bg-transparent border-none text-right text-sm p-0 w-full focus:ring-0 tabular-nums"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <input 
+                                                type="number" 
+                                                value={tx["Price/Share"]} 
+                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, "Price/Share": parseFloat(e.target.value) })}
+                                                className="bg-transparent border-none text-right text-sm p-0 w-full focus:ring-0 tabular-nums"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <input 
+                                                type="number" 
+                                                value={tx["Total Amount"]} 
+                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, "Total Amount": parseFloat(e.target.value) })}
+                                                className="bg-transparent border-none text-right text-sm p-0 w-full focus:ring-0 font-bold tabular-nums"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <input 
+                                                type="text" 
+                                                value={tx.Account} 
+                                                placeholder="Account"
+                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Account: e.target.value })}
+                                                className="bg-transparent border-none text-xs p-0 w-full focus:ring-0 text-muted-foreground"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 text-right">
+                                            <button 
+                                                onClick={() => handleRemoveFromReview(idx)}
+                                                className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-all"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}
@@ -433,7 +501,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
                         <input
                             type="file"
-                            accept=".pdf"
+                            accept=".pdf,image/*"
                             ref={fileInputRef}
                             style={{ display: 'none' }}
                             onChange={handleFileUpload}

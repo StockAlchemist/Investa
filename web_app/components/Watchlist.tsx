@@ -266,6 +266,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     case 'Div Yield': return item["Dividend Yield"] || 0;
                     case 'Intrinsic Value': return item.intrinsic_value || 0;
                     case 'AI Score': return item.ai_score || 0;
+                    case 'Sentiment': return item.ai_sentiment || 0;
                     case 'Note': return item.Note || '';
                     default: return 0;
                 }
@@ -465,6 +466,8 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                         { key: 'Div Yield', label: 'Div Yield', align: 'right' },
                                         { key: 'AI Score', label: 'AI Score', align: 'center' },
                                         { key: 'Intrinsic Value', label: 'Intrinsic Value', align: 'right' },
+                                        { key: 'Sentiment', label: 'Sentiment', align: 'center' },
+                                        { key: 'Catalyst', label: 'Catalyst', align: 'center', disableSort: true },
                                         { key: '7D Trend', label: '7D Trend', align: 'left', disableSort: true },
                                         { key: 'Note', label: 'Note', align: 'left' },
                                     ].map((col) => (
@@ -499,7 +502,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                         </td>
                                     </tr>
                                 ) : (
-                                    sortedWatchlist?.map((item) => (
+                                    sortedWatchlist?.map((item, idx) => (
                                         <tr key={item.Symbol} className="hover:bg-accent/5 transition-colors">
                                             <td className="px-4 py-3 whitespace-nowrap text-sm sticky left-0 z-10 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                                 <StockTicker symbol={item.Symbol} currency={currency} />
@@ -545,21 +548,80 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                     <span className="text-muted-foreground">-</span>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
-                                                <span className={cn(
-                                                    "font-mono tabular-nums",
-                                                    item.intrinsic_value !== null && item.intrinsic_value !== undefined && item.Price !== null && item.Price !== undefined ? (
-                                                        item.intrinsic_value > item.Price ? 'text-emerald-500 font-medium' : 
-                                                        item.intrinsic_value < item.Price ? 'text-rose-500 font-medium' : ''
-                                                    ) : ''
-                                                )}>
-                                                    {item.intrinsic_value ? formatCurrency(item.intrinsic_value, item.Currency || 'USD') : '-'}
-                                                    {item.margin_of_safety !== null && item.margin_of_safety !== undefined && (
-                                                        <span className="text-[10px] opacity-70 ml-1.5">
-                                                            ({item.margin_of_safety > 0 ? '+' : ''}{item.margin_of_safety.toFixed(1)}%)
+                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm tabular-nums">
+                                                {item.intrinsic_value ? (
+                                                    <div className="flex flex-col items-end">
+                                                        <span className="font-mono font-medium">
+                                                            {formatCurrency(item.intrinsic_value, item.Currency || 'USD')}
                                                         </span>
-                                                    )}
-                                                </span>
+                                                        {item.margin_of_safety !== undefined && (
+                                                            <span className={cn(
+                                                                "text-[10px] font-bold",
+                                                                item.margin_of_safety > 0 ? "text-emerald-500" : "text-rose-500"
+                                                            )}>
+                                                                {item.margin_of_safety > 0 ? '+' : ''}{item.margin_of_safety.toFixed(1)}% MOS
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
+                                                {item.ai_sentiment !== null && item.ai_sentiment !== undefined ? (
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                                                            <div 
+                                                                className={cn(
+                                                                    "h-full rounded-full transition-all duration-500",
+                                                                    item.ai_sentiment >= 70 ? "bg-emerald-500" :
+                                                                    item.ai_sentiment >= 40 ? "bg-amber-500" :
+                                                                    "bg-rose-500"
+                                                                )}
+                                                                style={{ width: `${item.ai_sentiment}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className="text-[10px] font-bold opacity-70">
+                                                            {item.ai_sentiment.toFixed(0)}%
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
+                                                {item.ai_catalysts && item.ai_catalysts.length > 0 ? (
+                                                    <div className="relative group cursor-help inline-block">
+                                                        <div className="p-1.5 rounded-full bg-amber-500/10 text-amber-500 animate-pulse-subtle">
+                                                            <HelpCircle className="h-4 w-4" />
+                                                        </div>
+                                                        <div className={cn(
+                                                            "absolute left-1/2 -translate-x-1/2 w-max max-w-[350px] p-4 bg-popover border border-border rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 pointer-events-none backdrop-blur-md whitespace-normal",
+                                                            idx < 3 ? "top-full mt-2" : "bottom-full mb-2"
+                                                        )}>
+                                                            <p className="text-[10px] font-extrabold uppercase text-primary mb-3 tracking-widest border-b border-border pb-1">Upcoming Catalysts</p>
+                                                            <div className="space-y-3">
+                                                                {item.ai_catalysts.map((c, idx) => (
+                                                                    <div key={idx} className="text-left border-l-2 border-amber-500 pl-3 py-0.5">
+                                                                        <p className="text-[12px] font-bold text-foreground leading-snug">{c.event}</p>
+                                                                        <div className="flex items-center gap-2 mt-1">
+                                                                            <span className="text-[10px] text-muted-foreground font-medium">{c.date}</span>
+                                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
+                                                                                c.impact === 'High' ? 'bg-red-500/10 text-red-500' : 
+                                                                                c.impact === 'Medium' ? 'bg-amber-500/10 text-amber-500' : 
+                                                                                'bg-blue-500/10 text-blue-500'
+                                                                            }`}>
+                                                                                {c.impact} Impact
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-28">
                                                 <div className="h-8 w-24">

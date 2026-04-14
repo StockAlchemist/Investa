@@ -3,6 +3,10 @@ import pdfplumber
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
+import mimetypes
+import os
+
+from server.vision_parser import parse_document_with_ai
 
 def parse_ibkr_pdf(file_path: str) -> List[Dict[str, Any]]:
     extracted_transactions = []
@@ -88,4 +92,37 @@ def parse_ibkr_pdf(file_path: str) -> List[Dict[str, Any]]:
         raise
         
     return extracted_transactions
+
+
+def extract_transactions_from_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Main entry point for transaction extraction.
+    Attempts deterministic IBKR parsing first, then falls back to AI Vision.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    mime_type, _ = mimetypes.guess_type(file_path)
+    
+    # Pre-checks
+    if not mime_type:
+        if ext == '.pdf':
+            mime_type = 'application/pdf'
+        elif ext in ['.png', '.jpg', '.jpeg']:
+            mime_type = f'image/{ext[1:]}'
+        else:
+            mime_type = 'application/octet-stream'
+
+    # 1. If it's a PDF, try IBKR Regex first
+    if mime_type == 'application/pdf':
+        try:
+            logging.info(f"Parser: Attempting deterministic IBKR parse for {file_path}...")
+            results = parse_ibkr_pdf(file_path)
+            if results:
+                logging.info(f"Parser: Successfully parsed {len(results)} transactions using IBKR regex.")
+                return results
+        except Exception as e:
+            logging.warning(f"Parser: IBKR regex parse failed or not applicable: {e}")
+
+    # 2. Fallback to AI Vision Parser
+    logging.info(f"Parser: Falling back to AI Vision for {file_path} (Mime: {mime_type})...")
+    return parse_document_with_ai(file_path, mime_type)
 

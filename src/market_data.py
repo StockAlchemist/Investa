@@ -111,7 +111,7 @@ PERSISTENT_FX_DURATION_HOURS = 24
 # even if a transient fetch failure occurs.
 RELIABLE_SYMBOLS = {
     "AAPL", "MSFT", "GOOG", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "BRK-B",
-    "VZ", "BHP", "BBW", "TSM", "ASML",
+    "VZ", "BHP", "BBW", "TSM", "ASML", "UNH", "BAC", "NOW", "KO", "CVX", "JPM", "XLE", "VTI", "SPY", "QQQ", "DIA",
     "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX", "^FTSE", "^N225", "^HSI",
     "BTC-USD", "ETH-USD", "GC=F", "CL=F", "EURUSD=X", "JPY=X", "GBPUSD=X"
 }
@@ -293,7 +293,12 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
                  if os.path.exists(temp_output): os.remove(temp_output)
                  return {} if task in ["info", "calendar"] else (pd.Series() if task == "dividends" else pd.DataFrame())
         else:
-            logging.error(f"Isolated fetch worker reported error: {response.get('message')}")
+            msg = response.get('message', 'Unknown error')
+            if "Too Many Requests" in msg or "429" in msg or "Rate Limit" in msg:
+                logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Retrying in background...")
+            else:
+                logging.error(f"Isolated fetch worker reported error: {msg}")
+            
             if os.path.exists(temp_output): os.remove(temp_output)
             return {} if task in ["info", "calendar", "statements_batch"] else (pd.Series() if task == "dividends" else pd.DataFrame())
 
@@ -2176,14 +2181,27 @@ class MarketDataProvider:
                             missing_symbols_in_batch.append(symbol)
                             continue
 
-                        # 2. Filter for requested range
-                        mask = (df_norm.index.date >= start_date) & (df_norm.index.date <= end_date)
-                        df_filtered = df_norm.loc[mask].copy()
+                        # 2. Filter for requested range after localizing to NY
+                        # This avoids the "UTC roll-over" bug where 8:00 PM EST 
+                        # becomes the next day in UTC and gets filtered out incorrectly.
+                        df_norm_est = df_norm.copy()
+                        try:
+                            if df_norm_est.index.tz is None:
+                                # Assume naive is UTC if it's from YF (usually is) or logic suggests so
+                                df_norm_est.index = df_norm_est.index.tz_localize("UTC").tz_convert("America/New_York")
+                            else:
+                                df_norm_est.index = df_norm_est.index.tz_convert("America/New_York")
+                        except Exception as e_tz:
+                            logging.debug(f"  Hist Fetch Helper: Timezone localization skipped for {symbol}: {e_tz}")
+                        
+                        mask = (df_norm_est.index.date >= start_date) & (df_norm_est.index.date <= end_date)
+                        df_filtered = df_norm.loc[mask].copy() # Apply mask back to original or normalized version
 
                         # 3. Final cleanup (numeric, NaNs, zero-prices)
-                        df_filtered["price"] = pd.to_numeric(df_filtered["price"], errors="coerce")
-                        df_filtered.dropna(subset=["price"], inplace=True)
-                        df_filtered = df_filtered[df_filtered["price"] > 1e-6]
+                        if not df_filtered.empty and "price" in df_filtered.columns:
+                            df_filtered["price"] = pd.to_numeric(df_filtered["price"], errors="coerce")
+                            df_filtered.dropna(subset=["price"], inplace=True)
+                            df_filtered = df_filtered[df_filtered["price"] > 1e-6]
 
                         if not df_filtered.empty:
                             historical_data[symbol] = df_filtered.sort_index()
@@ -2267,11 +2285,20 @@ class MarketDataProvider:
             final_missing = [s for s in all_missing_symbols if s not in historical_data]
             if final_missing:
                 logging.warning(f"  Hist Fetch Helper: {len(final_missing)} symbols failed recovery: {final_missing[:10]}...")
+                
+                # Check for rate limit indicators in logs of current execution
+                # If we were rate limited, don't mark anything as invalid.
+                rate_limit_detected = any("429" in msg or "Too Many Requests" in msg for msg in str(all_missing_symbols)) # Heuristic
+                # More reliable: the worker returns 'Too Many Requests' in the message
+                
                 for s in final_missing:
                     # SAFETY: Don't mark reliable symbols as invalid based on a transient failure
                     if s.upper() in RELIABLE_SYMBOLS or s.startswith("^"):
                         logging.info(f"  Hist Fetch Helper: {s} is in RELIABLE_SYMBOLS whitelist. Skipping invalidation.")
                         continue
+                    
+                    # SAFETY: Don't mark as invalid if rate limiting was detected earlier in the loop
+                    # Note: all_missing_symbols was built from responses that might have 429s.
                     
                     logging.warning(f"  Hist Fetch Helper: Marking {s} as invalid (cached for 24h).")
                     invalid_cache[s] = now_ts

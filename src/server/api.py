@@ -12,7 +12,7 @@ from datetime import datetime, date, time as dt_time
 import asyncio
 import shutil
 
-from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection
+from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection, get_current_user
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from utils_time import get_est_today, get_latest_trading_date, is_market_open
 from portfolio_analyzer import (
@@ -46,7 +46,7 @@ from config import YFINANCE_INDEX_TICKER_MAP, BENCHMARK_MAPPING
 from config_manager import ConfigManager
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
-from server.pdf_parser import parse_ibkr_pdf
+from server.pdf_parser import extract_transactions_from_file
 import numpy as np # Ensure numpy is imported
 import traceback
 
@@ -64,12 +64,13 @@ except ImportError:
     FINANCIAL_RATIOS_AVAILABLE = False
 
 from server.ai_analyzer import generate_stock_review
-from server.screener_service import screen_stocks
+from server.screener_service import screen_stocks, run_narrative_search
 from server.auth import (
     Token, User, create_access_token, get_password_hash, verify_password
 )
-from server.dependencies import get_current_user
+# from server.auth import get_current_user (Removed - moved to dependencies)
 from datetime import timedelta
+import ai_chat_service  # Added for chat integration
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -1443,6 +1444,8 @@ async def get_holdings(
                                 record["margin_of_safety"] = s_info.get("margin_of_safety")
                                 
                             record["has_ai_review"] = s_info.get("has_ai_review")
+                            record["ai_sentiment"] = s_info.get("ai_sentiment")
+                            record["ai_catalysts"] = s_info.get("ai_catalysts")
                             match_count += 1
                 logging.info(f"[DEBUG_HOLDINGS] Successfully merged data for {match_count} records.")
         except Exception as e_ai:
@@ -1520,6 +1523,10 @@ class TransactionInput(BaseModel):
     Auto_Add_Cash: bool = Field(False, alias="Auto-add Cash")
     
     model_config = ConfigDict(populate_by_name=True)
+
+class TransactionBatchInput(BaseModel):
+    transactions: List[TransactionInput]
+    auto_add_cash: bool = False
 
 
 def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, Any]):
@@ -1654,16 +1661,58 @@ async def create_transaction(
         logging.error(f"Error adding transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/transactions/import_pdf")
-async def import_pdf(
+@router.post("/transactions/parse_document")
+async def parse_document(
     file: UploadFile = File(...),
-    auto_add_cash: bool = Query(False, alias="auto_add_cash"),
-    account: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Parses a brokerage statement (PDF or Image) and returns extracted transactions.
+    Supports IBKR trade confirmations (deterministic) and general statements (AI fallback).
+    """
+    try:
+        # Save the uploaded file temporarily to pass to the parser
+        # Use a safe unique name
+        temp_dir = os.path.join(project_root, "data", "temp_uploads")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_file_path = os.path.join(temp_dir, f"{current_user.id}_{int(time.time())}_{file.filename}")
+        
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Parse the document
+        transactions = []
+        try:
+            transactions = extract_transactions_from_file(temp_file_path)
+        finally:
+            # Always clean up temp file
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            
+        if not transactions:
+            return {"status": "success", "message": "No transactions found in document.", "transactions": [], "count": 0}
+            
+        return {
+            "status": "success", 
+            "message": f"Successfully extracted {len(transactions)} transactions.", 
+            "transactions": transactions,
+            "count": len(transactions)
+        }
+            
+    except Exception as e:
+        logging.error(f"Error parsing document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/transactions/batch")
+async def add_transactions_batch(
+    payload: TransactionBatchInput,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Imports transactions from an IBKR trade confirmation PDF report.
+    Adds a batch of transactions to the database.
+    Used for Review & Confirm step after document parsing.
     """
     try:
         _, _, _, _, _, db_path, _ = data
@@ -1671,47 +1720,42 @@ async def import_pdf(
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
             
-        # Save the uploaded file temporarily to pass to the parser
-        temp_file_path = f"/tmp/{file.filename}"
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # Parse the PDF
-        transactions = parse_ibkr_pdf(temp_file_path)
-        
-        # Remove the temp file
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-            
-        if not transactions:
-            return {"status": "success", "message": "No transactions found in PDF.", "count": 0}
-            
         imported_count = 0
-        for tx_data in transactions:
+        errors = []
+        
+        for tx_input in payload.transactions:
+            # Convert back to dict for the lower-level add_transaction_to_db
+            # This handles JSON key aliases correctly
+            tx_data = tx_input.model_dump(by_alias=True)
+            
             # Set the user_id for isolation
             tx_data["user_id"] = current_user.id
             
-            # Override account if provided
-            if account:
-                tx_data["Account"] = account
-                
             # We add each transaction to the DB
-            success, _ = add_transaction_to_db(conn, tx_data)
+            success, error = add_transaction_to_db(conn, tx_data)
             if success:
                 imported_count += 1
-                if auto_add_cash:
+                if payload.auto_add_cash:
+                    # _handle_auto_cash_generation requires raw dict
+                    from server.api import _handle_auto_cash_generation
                     _handle_auto_cash_generation(conn, tx_data)
+            else:
+                errors.append({"symbol": tx_input.Symbol, "error": error})
                 
         conn.close()
         
         if imported_count > 0:
             reload_data_and_clear_cache(current_user)
-            return {"status": "success", "message": f"Successfully imported {imported_count} transactions.", "count": imported_count}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to add parsed transactions to database")
+            
+        return {
+            "status": "success", 
+            "message": f"Successfully imported {imported_count} transactions.", 
+            "count": imported_count,
+            "errors": errors
+        }
             
     except Exception as e:
-        logging.error(f"Error importing PDF: {e}", exc_info=True)
+        logging.error(f"Error in batch import: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/transactions/{transaction_id}")
@@ -3152,7 +3196,6 @@ async def get_projected_income(
             iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
             
         return results
-
     except Exception as e:
         logging.error(f"Error getting projected income: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -4259,13 +4302,37 @@ async def get_watchlist_endpoint(
             fundamentals = {}
 
         enriched_items = []
+        ai_cache_dir = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache")
+
         for item in db_items:
             symbol = item["Symbol"]
             u_symbol = symbol.upper() if symbol else ""
             quote = quotes.get(symbol, {})
             fund = fundamentals.get(symbol, {})
-            ai_res = ai_results.get(u_symbol, {})
+            ai_res = ai_results.get(u_symbol, {}).copy()
             
+            # --- LAZY SYNC FROM DISK CACHE ---
+            # If DB is missing sentiment or catalysts, check the disk cache
+            if not ai_res.get("ai_sentiment") or not ai_res.get("ai_catalysts"):
+                ai_cache_path = os.path.join(ai_cache_dir, f"{u_symbol}_analysis.json")
+                if os.path.exists(ai_cache_path):
+                    try:
+                        with open(ai_cache_path, 'r') as f:
+                            ai_disk_data = json.load(f)
+                            # Support both old and new cache structures
+                            analysis_obj = ai_disk_data.get("analysis") if "analysis" in ai_disk_data else ai_disk_data
+                            
+                            if not ai_res.get("ai_sentiment"):
+                                ai_res["ai_sentiment"] = analysis_obj.get("sentiment")
+                            if not ai_res.get("ai_catalysts"):
+                                ai_res["ai_catalysts"] = analysis_obj.get("catalysts")
+                            
+                            # Update has_ai_review if we found a file
+                            if not ai_res.get("has_ai_review"):
+                                ai_res["has_ai_review"] = True
+                    except Exception:
+                        pass
+
             # Sparkline data is already provided in the quote from get_current_quotes batch fetch
             sparkline = quote.get("sparkline_7d", [])
 
@@ -4283,7 +4350,9 @@ async def get_watchlist_endpoint(
                 "ai_score": ai_res.get("ai_score"),
                 "intrinsic_value": ai_res.get("intrinsic_value"),
                 "margin_of_safety": ai_res.get("margin_of_safety"),
-                "has_ai_review": ai_res.get("has_ai_review")
+                "has_ai_review": ai_res.get("has_ai_review"),
+                "ai_sentiment": ai_res.get("ai_sentiment"),
+                "ai_catalysts": ai_res.get("ai_catalysts")
             })
         
         return clean_nans(enriched_items)
@@ -4522,6 +4591,23 @@ async def run_screener(
         logging.error(f"Screener error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/screener/narrative")
+async def narrative_screener(
+    item: Dict[str, str],
+    current_user: User = Depends(get_current_user)
+):
+    """Executes a narrative search using natural language via Gemini."""
+    prompt = item.get("prompt")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Missing prompt")
+        
+    try:
+        results = run_narrative_search(prompt)
+        return results
+    except Exception as e:
+        logging.error(f"Error in narrative screener API: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/screener/review/{symbol}")
 async def trigger_ai_review(
     symbol: str, 
@@ -4565,3 +4651,37 @@ async def trigger_ai_review(
     except Exception as e:
         logging.error(f"AI Review error for {symbol}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- AI CHAT ASSISTANT ---
+
+class ChatMessage(BaseModel):
+    role: str # 'user' or 'ai'
+    text: str
+
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[ChatMessage]] = None
+
+@router.post("/chat/message")
+async def chat_message_endpoint(
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Conversational AI interface for portfolio and market insights.
+    """
+    try:
+        from server.ai_chat_service import process_chat_message
+        
+        # Convert history objects to simple dicts
+        history_dicts = []
+        if request.history:
+            history_dicts = [{"role": m.role, "text": m.text} for m in request.history]
+            
+        # Run in threadpool as many AI calls are synchronous requests
+        response_text = await run_in_threadpool(process_chat_message, request.message, current_user, history_dicts)
+        return {"response": response_text}
+        
+    except Exception as e:
+        logging.error(f"AI Chat error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate AI response.")

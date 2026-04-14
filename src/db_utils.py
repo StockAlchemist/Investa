@@ -25,7 +25,7 @@ import threading
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 13
+DB_SCHEMA_VERSION = 14
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -567,6 +567,20 @@ def create_transactions_table(conn: sqlite3.Connection):
                 logging.info("Updated schema_version to 13.")
             except sqlite3.Error as e:
                 logging.error(f"Error during migration v13: {e}")
+                raise
+
+        if current_db_version < 14:
+            logging.info("Schema version is less than 14. Adding 'ai_sentiment' and 'ai_catalysts' to screener_cache.")
+            try:
+                cursor.execute('ALTER TABLE screener_cache ADD COLUMN ai_sentiment REAL;')
+                cursor.execute('ALTER TABLE screener_cache ADD COLUMN ai_catalysts TEXT;')
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (14, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 14.")
+            except sqlite3.Error as e:
+                logging.error(f"Error during migration v14: {e}")
                 raise
 
         conn.commit()
@@ -1139,8 +1153,9 @@ def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str,
         symbol, name, price, intrinsic_value, margin_of_safety, 
         pe_ratio, market_cap, sector, 
         ai_moat, ai_financial_strength, ai_predictability, ai_growth, ai_summary,
+        ai_sentiment, ai_catalysts,
         last_fiscal_year_end, most_recent_quarter, universe, updated_at, valuation_details
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(symbol, universe) DO UPDATE SET
         name=excluded.name,
         price=excluded.price,
@@ -1154,6 +1169,8 @@ def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str,
         ai_predictability=COALESCE(excluded.ai_predictability, screener_cache.ai_predictability),
         ai_growth=COALESCE(excluded.ai_growth, screener_cache.ai_growth),
         ai_summary=COALESCE(excluded.ai_summary, screener_cache.ai_summary),
+        ai_sentiment=COALESCE(excluded.ai_sentiment, screener_cache.ai_sentiment),
+        ai_catalysts=COALESCE(excluded.ai_catalysts, screener_cache.ai_catalysts),
         last_fiscal_year_end=excluded.last_fiscal_year_end,
         most_recent_quarter=excluded.most_recent_quarter,
         updated_at=excluded.updated_at,
@@ -1177,6 +1194,8 @@ def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str,
             r.get("ai_predictability"),
             r.get("ai_growth"),
             r.get("ai_summary"),
+            r.get("ai_sentiment"),
+            json.dumps(r.get("ai_catalysts")) if isinstance(r.get("ai_catalysts"), list) else r.get("ai_catalysts"),
             r.get("last_fiscal_year_end"),
             r.get("most_recent_quarter"),
             universe,
@@ -1230,6 +1249,13 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
                 else:
                     row_dict["ai_score"] = None
                 
+                # Parse ai_catalysts if present
+                if row_dict.get("ai_catalysts") and isinstance(row_dict["ai_catalysts"], str):
+                    try:
+                        row_dict["ai_catalysts"] = json.loads(row_dict["ai_catalysts"])
+                    except:
+                        pass
+                
                 # Store with normalized ticker to handle case sensitivity
                 mapping[row_dict["symbol"].upper()] = row_dict
             return mapping
@@ -1279,6 +1305,7 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
                             ai_fields = [
                                 "ai_moat", "ai_financial_strength", "ai_predictability", 
                                 "ai_growth", "ai_summary", "ai_score", "has_ai_review",
+                                "ai_sentiment", "ai_catalysts",
                                 "intrinsic_value", "margin_of_safety", "valuation_details"
                             ]
                             for field in ai_fields:
@@ -1412,6 +1439,13 @@ def get_all_distinct_screener_results(db_conn: sqlite3.Connection) -> List[Dict[
         if "ai_summary" in row_dict:
             row_dict["has_ai_review"] = row_dict["ai_summary"] is not None and len(row_dict["ai_summary"]) > 20
         
+        # Parse ai_catalysts for consistency
+        if row_dict.get("ai_catalysts") and isinstance(row_dict["ai_catalysts"], str):
+            try:
+                row_dict["ai_catalysts"] = json.loads(row_dict["ai_catalysts"])
+            except:
+                pass
+        
         # Calculate average AI score if available
         ai_scores = [
             row_dict.get("ai_moat"),
@@ -1451,6 +1485,11 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
             ai_predictability = ?,
             ai_growth = ?,
             ai_summary = ?,
+            ai_sentiment = ?,
+            ai_catalysts = ?,
+            intrinsic_value = ?,
+            margin_of_safety = ?,
+            valuation_details = ?,
             name = COALESCE(?, name),
             price = COALESCE(?, price),
             pe_ratio = COALESCE(?, pe_ratio),
@@ -1470,14 +1509,27 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
         fy_end_val = inf.get("lastFiscalYearEnd") if inf else None
         mrq_val = inf.get("mostRecentQuarter") if inf else None
 
+        # Extract extra fields from ai_data
+        sentiment = data.get("sentiment")
+        catalysts = json.dumps(data.get("catalysts", [])) if data.get("catalysts") else None
+        iv = data.get("intrinsic_value")
+        mos = data.get("margin_of_safety")
+        val_details = json.dumps(data.get("valuation_details", {})) if data.get("valuation_details") else None
+
         try:
             cursor = conn.cursor()
+            # Bindings for UPDATE (18 placeholders + 1 WHERE)
             cursor.execute(update_sql, (
                 scorecard.get("moat"),
                 scorecard.get("financial_strength"),
                 scorecard.get("predictability"),
                 scorecard.get("growth"),
                 data.get("summary"),
+                sentiment, 
+                catalysts,
+                iv,
+                mos,
+                val_details,
                 short_name, price_val, pe_val, mcap_val, sector_val,
                 fy_end_val, mrq_val,
                 now_str,
@@ -1490,10 +1542,12 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
                 INSERT INTO screener_cache (
                     symbol, universe, ai_moat, ai_financial_strength, 
                     ai_predictability, ai_growth, ai_summary, 
+                    ai_sentiment, ai_catalysts, intrinsic_value, margin_of_safety, valuation_details,
                     name, price, pe_ratio, market_cap, sector, 
                     last_fiscal_year_end, most_recent_quarter, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
+                # Bindings for INSERT (20 placeholders)
                 cursor.execute(insert_sql, (
                     sym.upper(),
                     univ,
@@ -1502,6 +1556,11 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
                     scorecard.get("predictability"),
                     scorecard.get("growth"),
                     data.get("summary"),
+                    sentiment, 
+                    catalysts,
+                    iv,
+                    mos,
+                    val_details,
                     short_name, price_val, pe_val, mcap_val, sector_val,
                     fy_end_val, mrq_val,
                     now_str

@@ -16,7 +16,8 @@ from db_utils import (
     get_db_connection, 
     upsert_screener_results, 
     get_cached_screener_results,
-    get_screener_results_by_universe
+    get_screener_results_by_universe,
+    get_all_distinct_screener_results
 )
 import config
 
@@ -512,6 +513,17 @@ def process_screener_results(
                 ai_financial_strength = cached.get("ai_financial_strength")
                 ai_predictability = cached.get("ai_predictability")
                 ai_growth = cached.get("ai_growth")
+                
+                # FIX: Initialize sentiment and catalysts from cache as well to prevent "Ticker Poisoning"
+                ai_sentiment = cached.get("ai_sentiment")
+                ai_catalysts = cached.get("ai_catalysts")
+                
+                # Parse catalysts if they are stored as JSON string in cache
+                if isinstance(ai_catalysts, str) and ai_catalysts:
+                    try:
+                        ai_catalysts = json.loads(ai_catalysts)
+                    except:
+                        pass
 
                 if os.path.exists(ai_cache_path):
                     try:
@@ -535,13 +547,17 @@ def process_screener_results(
                     try:
                         with open(ai_cache_path, 'r') as f:
                             ai_data = json.load(f)
-                            analysis_obj = ai_data.get("analysis", {})
+                            # Support both old and new cache structures
+                            analysis_obj = ai_data.get("analysis") if "analysis" in ai_data else ai_data
                             scorecard = analysis_obj.get("scorecard", {})
                             
                             ai_moat = scorecard.get("moat")
                             ai_financial_strength = scorecard.get("financial_strength")
                             ai_predictability = scorecard.get("predictability")
                             ai_growth = scorecard.get("growth")
+                            
+                            ai_sentiment = analysis_obj.get("sentiment")
+                            ai_catalysts = analysis_obj.get("catalysts")
                             
                             vals = [v for v in [ai_moat, ai_financial_strength, ai_predictability, ai_growth] if isinstance(v, (int, float))]
                             if vals:
@@ -569,6 +585,8 @@ def process_screener_results(
                     "ai_predictability": ai_predictability,
                     "ai_growth": ai_growth,
                     "ai_summary": ai_summary,
+                    "ai_sentiment": ai_sentiment,
+                    "ai_catalysts": ai_catalysts,
                     "valuation_details": valuation_details_json,
                     "last_fiscal_year_end": live_fy_end,
                     "most_recent_quarter": live_quarter
@@ -609,24 +627,29 @@ def process_screener_results(
                 # AI Review Check
                 has_ai = sym.upper() in existing_reviews
                 
-                ai_score = None
+                ai_sentiment = None
+                ai_catalysts = None
+                ai_summary = None
                 ai_moat = None
                 ai_fin = None
                 ai_pred = None
                 ai_growth = None
-                ai_summary = None
-                
+                ai_score = None
+
                 if has_ai:
                     try:
                         with open(ai_cache_path, 'r') as f:
                             ai_data = json.load(f)
-                            analysis_obj = ai_data.get("analysis", {})
+                            # Support both old and new cache structures
+                            analysis_obj = ai_data.get("analysis") if "analysis" in ai_data else ai_data
                             scorecard = analysis_obj.get("scorecard", {})
                             ai_summary = analysis_obj.get("summary")
                             ai_moat = scorecard.get("moat")
                             ai_fin = scorecard.get("financial_strength")
                             ai_pred = scorecard.get("predictability")
                             ai_growth = scorecard.get("growth")
+                            ai_sentiment = analysis_obj.get("sentiment")
+                            ai_catalysts = analysis_obj.get("catalysts")
                             vals = [v for v in [ai_moat, ai_fin, ai_pred, ai_growth] if isinstance(v, (int, float))]
                             if vals:
                                 ai_score = sum(vals) / len(vals)
@@ -649,6 +672,8 @@ def process_screener_results(
                     "ai_predictability": ai_pred,
                     "ai_growth": ai_growth,
                     "ai_summary": ai_summary,
+                    "ai_sentiment": ai_sentiment,
+                    "ai_catalysts": ai_catalysts,
                     "valuation_details": valuation_details_json, 
                     "last_fiscal_year_end": live_fy_end,
                     "most_recent_quarter": live_quarter
@@ -681,3 +706,124 @@ def process_screener_results(
     results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
     
     return results
+
+def run_narrative_search(prompt: str) -> List[Dict[str, Any]]:
+    """
+    Experimental: Converts a natural language prompt into a SQL query for the screener_cache.
+    """
+    logging.info(f"Screener: Narrative Search for '{prompt}'")
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        logging.error("Screener: GEMINI_API_KEY not found in environment.")
+        return []
+
+    # Describe the schema to the AI
+    # ai_score is a Virtual column for the AI to understand (it's calc'd from components in DB)
+    schema_info = """
+    Table: screener_cache
+    Columns (available for filtering/ordering):
+    - symbol (TEXT): Stock ticker (e.g., 'AAPL', 'TSLA')
+    - name (TEXT): Company name
+    - price (REAL): Current price
+    - intrinsic_value (REAL): Calculated fair value
+    - margin_of_safety (REAL): Upside/downside percentage from fair value
+    - pe_ratio (REAL): P/E ratio
+    - market_cap (REAL): Total market capitalization
+    - sector (TEXT): e.g., 'Technology', 'Healthcare', 'Financial Services'
+    - ai_moat (REAL): Quality of economic moat (1-10)
+    - ai_financial_strength (REAL): Health of balance sheet (1-10)
+    - ai_predictability (REAL): Reliability of business (1-10)
+    - ai_growth (REAL): Growth outlook (1-10)
+    - ai_sentiment (REAL): Market sentiment score (0-100)
+    - ai_summary (TEXT): AI generated business summary
+    """
+    
+    # We provide a hint about ai_score = (ai_moat + ai_financial_strength + ai_predictability + ai_growth) / 4.0
+    
+    ai_prompt = f"""
+    You are an expert SQL analyst for a stock screening application. 
+    Translate the user's natural language request into a single SQLite SELECT statement.
+    
+    DATABASE SCHEMA:
+    {schema_info}
+    
+    VIRTUAL CALCULATIONS:
+    - If user asks for "AI Score", use: ((IFNULL(ai_moat,0) + IFNULL(ai_financial_strength,0) + IFNULL(ai_predictability,0) + IFNULL(ai_growth,0)) / 4.0)
+    
+    USER REQUEST:
+    "{prompt}"
+    
+    RULES:
+    1. ONLY return the SQL. No markdown blocks, no explanations.
+    2. The query MUST start with "SELECT * FROM screener_cache WHERE".
+    3. Use standard SQLite syntax. 
+    4. For sector names or company names, use 'LIKE' with '%' wildcards for fuzzy matching.
+    5. Filter out rows where intrinsic_value is NULL unless explicitly asked.
+    6. Sort by margin_of_safety DESC by default unless specified otherwise.
+    7. LIMIT results to 100 maximum.
+    
+    SQL:
+    """
+
+    payload = {
+        "contents": [{"parts": [{"text": ai_prompt}]}],
+        "generationConfig": {
+            "temperature": 0.1, # Low temperature for consistent SQL
+            "topP": 0.95,
+            "maxOutputTokens": 256
+        }
+    }
+
+    try:
+        model = "gemini-1.5-flash" # Use a fast model for NL2SQL
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        response = requests.post(url, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        sql = data['candidates'][0]['content']['parts'][0]['text'].strip()
+        
+        # Strip potential markdown formatting
+        if sql.startswith("```"):
+            sql = sql.split("\n", 1)[1].rsplit("\n", 1)[0].replace("sql", "").strip()
+        
+        # Safety Check: Must be a SELECT against screener_cache
+        sql_lower = sql.lower()
+        if "select" not in sql_lower or "screener_cache" not in sql_lower or any(x in sql_lower for x in ["delete", "drop", "update", "insert", "alter"]):
+             logging.warning(f"Screener: AI suggested unsafe or invalid SQL: {sql}")
+             return []
+             
+        logging.info(f"Screener: Executing AI-Generated SQL: {sql}")
+        
+        conn = get_db_connection()
+        if not conn: return []
+        
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            item = dict(row)
+            # Re-calculate AI Score for frontend consistency
+            vals = [v for v in [item.get("ai_moat"), item.get("ai_financial_strength"), item.get("ai_predictability"), item.get("ai_growth")] if isinstance(v, (int, float))]
+            item["ai_score"] = sum(vals) / len(vals) if vals else None
+            
+            # Ensure catalysts is parsed
+            cats = item.get("ai_catalysts")
+            if cats and isinstance(cats, str):
+                try:
+                    item["ai_catalysts"] = json.loads(cats)
+                except:
+                    pass
+            
+            results.append(item)
+            
+        conn.close()
+        return results
+        
+    except Exception as e:
+        logging.error(f"Screener: Narrative Search failed: {e}")
+        return []

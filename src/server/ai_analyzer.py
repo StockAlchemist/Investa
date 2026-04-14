@@ -44,7 +44,9 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force
             # ai_summary = ai_data.get("summary")
             # So the DB table has ai_moat, ai_financial_strength, etc. as the text/scores?
             # Let's check update_ai_review_in_cache again.
-            "summary": row.get("ai_summary")
+            "summary": row.get("ai_summary"),
+            "sentiment": row.get("ai_sentiment"),
+            "catalysts": json.loads(row.get("ai_catalysts")) if row.get("ai_catalysts") and isinstance(row.get("ai_catalysts"), str) else (row.get("ai_catalysts") or [])
         }
     
     # --- Caching Logic ---
@@ -174,6 +176,8 @@ Provide a professional investment review covering these specific topics:
 2. Financial Strength: Balance sheet quality, debt levels, and solvency.
 3. Predictability: Reliability of earnings, historical consistency, and business cyclicality.
 4. Growth Perspective: Future growth drivers, market opportunities, and potential risks.
+5. Market Sentiment: Analyze current news, analyst upgrades/downgrades, and market buzz.
+6. Upcoming Catalysts: Identify 2-3 specific upcoming events (earnings dates, product launches, clinical trials, regulatory decisions, macro impacts) with estimated dates.
 
 For each topic, provide a score from 1 to 10 based on both the data and your web research.
 
@@ -191,7 +195,11 @@ Return the response STRICTLY as a JSON object with the following structure:
     "predictability": "Analysis text here...",
     "growth_perspective": "Analysis text here..."
   }},
-  "summary": "Overall conclusion in one or two sentences."
+  "summary": "Overall conclusion in one or two sentences.",
+  "sentiment": 50.0,
+  "catalysts": [
+    {{"event": "Event name", "date": "Estimated date", "impact": "High/Medium/Low"}}
+  ]
 }}
 Do not include any other markdown formatting or explanations outside the JSON block.
 """

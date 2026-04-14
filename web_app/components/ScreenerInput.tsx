@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Filter, RefreshCw, Loader2, Info, ChevronDown } from 'lucide-react';
+import { Filter, RefreshCw, Loader2, Info, ChevronDown, Sparkles } from 'lucide-react';
 import { getWatchlists, WatchlistMeta } from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 
 interface ScreenerInputProps {
-    onRunScreener: (universeType: string, universeId: string | null, manualSymbols: string[]) => void;
+    onRunScreener: (universeType: string, universeId: string | null, manualSymbols: string[], narrativePrompt?: string) => void;
     isLoading: boolean;
 }
 
@@ -17,6 +17,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
     const [watchlists, setWatchlists] = useState<WatchlistMeta[]>([]);
     const [selectedWatchlistId, setSelectedWatchlistId] = useState<string>("");
     const [manualSymbols, setManualSymbols] = useState<string>("");
+    const [narrativePrompt, setNarrativePrompt] = useState<string>("");
     const [isFetchingLists, setIsFetchingLists] = useState(true);
 
     useEffect(() => {
@@ -44,7 +45,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
             .map(s => s.trim())
             .filter(s => s.length > 0);
 
-        onRunScreener(universeType, selectedWatchlistId || null, symbols);
+        onRunScreener(universeType, selectedWatchlistId || null, symbols, narrativePrompt);
     };
 
     return (
@@ -71,6 +72,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
                                 >
                                     <option value="watchlist" className="bg-card text-foreground">Watchlist</option>
+                                    <option value="narrative" className="bg-card text-foreground text-cyan-400 font-bold">Narrative Search (AI) ✨</option>
                                     <option value="holdings" className="bg-card text-foreground">Holdings</option>
                                     <option value="sp500" className="bg-card text-foreground">S&P 500 (Large Cap)</option>
                                     <option value="sp400" className="bg-card text-foreground">S&P 400 (Mid Cap)</option>
@@ -109,6 +111,22 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                             </div>
                         )}
 
+                        {/* Narrative Search Prompt */}
+                        {universeType === "narrative" && (
+                            <div className="space-y-2 lg:col-span-2">
+                                <label className="text-sm font-semibold text-cyan-500/80 flex items-center gap-1.5">
+                                    <Sparkles className="w-3 h-3" />
+                                    AI Search Prompt
+                                </label>
+                                <Input
+                                    value={narrativePrompt}
+                                    onChange={(e) => setNarrativePrompt(e.target.value)}
+                                    placeholder="e.g. Find high-growth tech stocks with margin of safety > 20%"
+                                    className="bg-secondary/50 border-cyan-500/20 text-foreground font-medium h-10 placeholder:text-muted-foreground/50 focus-visible:ring-cyan-500/30"
+                                />
+                            </div>
+                        )}
+
                         {/* Manual Symbols */}
                         {universeType === "manual" && (
                             <div className="space-y-2 lg:col-span-2">
@@ -131,13 +149,13 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                             >
                                 {isLoading ? (
                                     <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        <span>Scanning Market...</span>
+                                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                        <span>AI is analyzing...</span>
                                     </>
                                 ) : (
                                     <>
-                                        <RefreshCw className="w-4 h-4" />
-                                        <span>Execute Screen</span>
+                                        {universeType === 'narrative' ? <Sparkles className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
+                                        <span>{universeType === 'narrative' ? 'Search with AI' : 'Execute Screen'}</span>
                                     </>
                                 )}
                             </Button>
@@ -146,10 +164,21 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
 
                     {/* Information Note */}
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-secondary/30">
-                        <Info className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
-                            Screening large universes may take 1-5 minutes on the first run to build the local metadata cache (S&P 400 ~4m, Russell 2000 ~20m). Subsequent runs are instant.
-                        </p>
+                        {universeType === 'narrative' ? (
+                            <>
+                                <Sparkles className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
+                                <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
+                                    <span className="text-cyan-400 font-bold">Narrative Search</span> uses Gemini to translate your natural language into a database query. It works best on stocks already in your local cache.
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <Info className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
+                                <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
+                                    Screening large universes may take 1-5 minutes on the first run to build the local metadata cache (S&P 400 ~4m, Russell 2000 ~20m). Subsequent runs are instant.
+                                </p>
+                            </>
+                        )}
                     </div>
                 </form>
             </div>

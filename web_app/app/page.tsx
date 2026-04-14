@@ -60,7 +60,7 @@ const IndexGraphModal = dynamic(() => import('@/components/IndexGraphModal'), { 
 
 
 import { useTheme } from 'next-themes';
-import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun, LogOut, UserCircle } from 'lucide-react';
+import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Activity, Moon, Sun, LogOut, UserCircle } from 'lucide-react';
 import ControlBar from '@/components/ControlBar';
 import UserMenu from '@/components/UserMenu';
 const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
@@ -844,8 +844,8 @@ export default function Home() {
           className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'markets' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           onClick={() => { setActiveTab('markets'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         >
-          <BarChart3 className="w-5 h-5" />
-          <span className="mt-1">Markets</span>
+          <Activity className="w-5 h-5" />
+          <span className="mt-1">Indices</span>
         </div>
         <div
           className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'settings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}

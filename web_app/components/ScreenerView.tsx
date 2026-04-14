@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import ScreenerInput from './ScreenerInput';
 import ScreenerResults from './ScreenerResults';
 import { Telescope } from 'lucide-react';
-import { runScreener, fetchScreenerReview, fetchWatchlist, addToWatchlist, removeFromWatchlist, getWatchlists } from '@/lib/api';
+import { runScreener, runNarrativeSearch, fetchScreenerReview, fetchWatchlist, addToWatchlist, removeFromWatchlist, getWatchlists } from '@/lib/api';
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 
 interface ScreenerViewProps {
@@ -113,10 +113,18 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
 
     // ... (existing code: fetchWatchlist, etc.)
 
-    const handleRunScreener = async (universeType: string, universeId: string | null, manualSymbols: string[]) => {
+    const handleRunScreener = async (universeType: string, universeId: string | null, manualSymbols: string[], narrativePrompt?: string) => {
         setIsLoading(true);
         setResults([]); // Clear previous results
         try {
+            if (universeType === 'narrative' && narrativePrompt) {
+                const data = await runNarrativeSearch(narrativePrompt);
+                // Deduplicate by symbol to prevent key errors
+                const uniqueResults = Array.from(new Map(data.map((item: any) => [item.symbol, item])).values());
+                setResults(uniqueResults);
+                return;
+            }
+
             // PHASE 1: Fast Load (Cache Only)
             const fastData = await runScreener({
                 universe_type: universeType,
@@ -176,7 +184,7 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
         <div className="space-y-6 animate-in fade-in duration-500">
             <header className="space-y-2">
                 <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit">
-                    Market Screener
+                    Market Explorer
                 </h2>
                 <p className="text-muted-foreground text-sm font-medium max-w-2xl leading-relaxed">
                     Identify high-probability investment opportunities using quantitative <span className="text-cyan-500/80">intrinsic value models</span> and <span className="text-blue-500/80">AI-powered fundamental audits</span>.

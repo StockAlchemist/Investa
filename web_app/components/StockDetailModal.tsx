@@ -796,6 +796,109 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     ))}
                 </div>
 
+                {/* Market Sentiment & Catalysts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Sentiment Gauge */}
+                    <div className={cn(
+                        "p-6 rounded-[2rem] transition-all",
+                        isDarkMode ? "bg-slate-900/30" : "bg-white"
+                    )}>
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-500">
+                                    <TrendingUp className="w-5 h-5" />
+                                </div>
+                                <h4 className="font-bold text-lg">Market Sentiment</h4>
+                            </div>
+                            {analysis.sentiment !== undefined && (
+                                <Badge className={cn(
+                                    "border-none px-3 py-1",
+                                    analysis.sentiment >= 70 ? "bg-emerald-500/20 text-emerald-500" :
+                                    analysis.sentiment >= 40 ? "bg-amber-500/20 text-amber-500" :
+                                    "bg-rose-500/20 text-rose-500"
+                                )}>
+                                    {analysis.sentiment >= 70 ? 'Bullish' : analysis.sentiment >= 40 ? 'Neutral' : 'Bearish'}
+                                </Badge>
+                            )}
+                        </div>
+                        
+                        {analysis.sentiment !== undefined ? (
+                            <div className="flex flex-col items-center py-4">
+                                <div className="relative w-full h-4 bg-muted rounded-full overflow-hidden mb-4">
+                                    <div 
+                                        className={cn(
+                                            "h-full rounded-full transition-all duration-1000 ease-out",
+                                            analysis.sentiment >= 70 ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)]" :
+                                            analysis.sentiment >= 40 ? "bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]" :
+                                            "bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.5)]"
+                                        )}
+                                        style={{ width: `${analysis.sentiment}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between w-full text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">
+                                    <span>Extreme Fear</span>
+                                    <span className="text-foreground text-lg">{analysis.sentiment.toFixed(0)}%</span>
+                                    <span>Extreme Greed</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground text-center mt-6 leading-relaxed">
+                                    Current market vibe based on news flow, analyst ratings, and social trends.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground opacity-30 italic">
+                                <Activity className="w-8 h-8 mb-2" />
+                                <p className="text-xs">Sentiment data pending...</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Catalyst Timeline */}
+                    <div className={cn(
+                        "p-6 rounded-[2rem] transition-all",
+                        isDarkMode ? "bg-slate-900/30" : "bg-white"
+                    )}>
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500">
+                                <Calendar className="w-5 h-5" />
+                            </div>
+                            <h4 className="font-bold text-lg">Upcoming Catalysts</h4>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {analysis.catalysts && analysis.catalysts.length > 0 ? (
+                                analysis.catalysts.map((c: any, i: number) => (
+                                    <div key={i} className="flex gap-4 group">
+                                        <div className="flex flex-col items-center">
+                                            <div className={cn(
+                                                "w-2 h-2 rounded-full mt-1.5 shrink-0",
+                                                c.impact === 'High' ? "bg-rose-500" :
+                                                c.impact === 'Medium' ? "bg-amber-500" : "bg-blue-500"
+                                            )} />
+                                            {i < analysis.catalysts.length - 1 && (
+                                                <div className="w-px h-full bg-border/40 my-1" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1 pb-4">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="text-sm font-bold text-foreground transition-colors group-hover:text-indigo-500">{c.event}</p>
+                                                <Badge variant="outline" className="text-[9px] font-bold uppercase border-muted-foreground/20 text-muted-foreground">
+                                                    {c.impact}
+                                                </Badge>
+                                            </div>
+                                            <p className="text-[11px] font-medium text-muted-foreground">{c.date}</p>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground opacity-30 italic">
+                                    <Info className="w-8 h-8 mb-2" />
+                                    <p className="text-xs">No catalysts detected in latest run.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
                 <div className="text-center pb-8">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] font-medium opacity-50">
                         Generated by Google Gemini 3 Flash

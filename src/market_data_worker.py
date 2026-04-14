@@ -6,6 +6,8 @@ import tempfile
 import logging # Added missing import
 from datetime import datetime, date
 import gc
+import time
+import random
 
 # Setup explicit logging
 # Setup explicit logging
@@ -29,8 +31,36 @@ except ImportError:
 
 # Removed ThreadPoolExecutor to save memory
 
+def retry_with_backoff(retries=3, backoff_in_seconds=2):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            x = 0
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    # Check for rate limit indicators in the exception
+                    err_str = str(e)
+                    is_rate_limit = "Too Many Requests" in err_str or "429" in err_str or "YFRateLimitError" in err_str
+                    if x == retries or not is_rate_limit:
+                        raise
+                    
+                    sleep = (backoff_in_seconds * (2 ** x) + 
+                             random.uniform(0, 1))
+                    log(f"Rate limited. Retrying in {sleep:.2f} seconds... (Attempt {x+1}/{retries})")
+                    time.sleep(sleep)
+                    x += 1
+        return wrapper
+    return decorator
+
 def fetch_info(symbols, output_file, minimal=False):
     try:
+        # Randomized jitter to prevent thundering herd
+        if len(symbols) > 1:
+            jitter = random.uniform(0.1, 1.5)
+            log(f"Jittering for {jitter:.2f}s before batch info fetch...")
+            time.sleep(jitter)
+
         log(f"Starting info fetch for {len(symbols)} symbols. Sequential mode. Minimal={minimal}")
         results = {}
         
@@ -39,7 +69,11 @@ def fetch_info(symbols, output_file, minimal=False):
                 import yfinance as yf # Redundant but safe
                 log(f"Fetching .info for {sym}...")
                 ticker = yf.Ticker(sym)
-                info = ticker.info
+                @retry_with_backoff(retries=2, backoff_in_seconds=3)
+                def _fetch_yf_ticker_info(t):
+                    return t.info
+
+                info = _fetch_yf_ticker_info(ticker)
                 log(f"Received .info for {sym}. Keys: {len(info) if info else 0}")
 
                 # --- ETF DATA EXTRACTION ---
@@ -240,9 +274,14 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
     try:
         import yfinance as yf # Lazy import
         import pandas as pd  # Lazy import
+        @retry_with_backoff(retries=3, backoff_in_seconds=5)
+        def _execute_download(**kwargs):
+            log(f"Executing yf.download attempt...")
+            return yf.download(**kwargs)
+
         if period:
              log(f"Starting fetch for {len(symbols)} symbols. Period: {period}, Int: {interval}")
-             data = yf.download(
+             data = _execute_download(
                 tickers=symbols,
                 period=period,
                 interval=interval,
@@ -251,11 +290,15 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=1 # REDUCED: Force single-threaded to minimize memory and potential rate-limit triggers
+                threads=1
             )
         else:
             log(f"Starting fetch for {len(symbols)} symbols. Range: {start_date}-{end_date}, Int: {interval}")
-            data = yf.download(
+            # Randomized jitter for data fetch
+            jitter = random.uniform(0.1, 2.0)
+            time.sleep(jitter)
+            
+            data = _execute_download(
                 tickers=symbols,
                 start=start_date,
                 end=end_date,
@@ -265,7 +308,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=1 # REDUCED: Force single-threaded
+                threads=1
             )
         
         # DIAGNOSTIC LOGGING
@@ -295,47 +338,46 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
         if not data.empty:
             log(f"Data index dtype: {data.index.dtype}")
             try:
-                # Normalize timezone to US/Eastern for consistent 9:30-16:00 filtering
-                # This handles both UTC-aware and naive (assumed NY) data
-                if data.index.tz is None:
-                     # Check if it looks like UTC or NY
-                     # 14:30 UTC is usually the open for NY markets.
-                     # 09:30 NY is usually the open.
-                     # If the first timestamp is >= 13:00, it's likely UTC.
-                     first_h = data.index[0].hour
-                     if first_h >= 12:
-                         log(f"Assuming naive index is UTC based on first hour {first_h}")
-                         data_local = data.index.tz_localize("UTC").tz_convert("America/New_York")
-                     else:
-                         log(f"Assuming naive index is NY based on first hour {first_h}")
-                         data_local = data.index.tz_localize("America/New_York", ambiguous='infer')
+                # Normalize timezone to US/Eastern for consistent date masking (9:30-16:00 filtering uses NY)
+                # This handles both UTC-aware and naive data
+                df_est = data.copy()
+                if df_est.index.tz is None:
+                    # Assume naive is UTC for yfinance (usually is)
+                    df_est.index = df_est.index.tz_localize("UTC").tz_convert("America/New_York")
                 else:
-                     # Convert to NY if already aware
-                     data_local = data.index.tz_convert("America/New_York")
+                    df_est.index = df_est.index.tz_convert("America/New_York")
                 
                 # Apply localized index for filtering
-                df_local = data.copy()
-                df_local.index = data_local
+                original_len = len(df_est)
                 
-                original_len = len(df_local)
-                # FILTERING: Only for intraday
+                # 1. Intra-day Time Filter (only for short intervals)
                 if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
                     # Filter for market hours (09:30 - 16:15)
-                    df_filtered_local = df_local.between_time("09:30", "16:15")
-                    
-                    if not df_filtered_local.empty:
-                        # Convert back to UTC for the consumer
-                        data = df_filtered_local.tz_convert("UTC")
-                        log(f"Filtered (NY time 09:30-16:15): {original_len} -> {len(data)}. Tuesday rows: {len(data[data.index.date == date(2026, 1, 20)])}")
+                    df_filtered_est = df_est.between_time("09:30", "16:15")
+                    if not df_filtered_est.empty:
+                        # Extract the indices that passed the time filter
+                        passed_indices = df_filtered_est.index
+                        data = data.loc[data.index.isin(passed_indices.tz_convert(data.index.tz))] # Apply back to original TZ
+                        log(f"Time-Filtered (NY 09:30-16:15): {original_len} -> {len(data)}.")
                     else:
-                        data = df_filtered_local # Still empty
-                        log(f"Filtered (NY time 09:30-16:15): {original_len} -> 0 (EMPTY)")
-                else:
-                     # For Daily/Weekly/Monthly, DO NOT FILTER TIME.
-                     # Timestamps are often 00:00 UTC, which would be filtered out.
-                     data = data # Keep original
-                     log(f"Skipping time filter for interval {interval}")
+                        data = pd.DataFrame() # Became empty
+                        log(f"Time-Filtered (NY 09:30-16:15): {original_len} -> 0 (EMPTY)")
                 
+                # 2. Date Mask Filter (for all intervals)
+                # If start_date/end_date provided, enforce them using the EST localized index
+                if not data.empty and start_date and end_date:
+                    # Refresh df_est based on current 'data' if it changed
+                    df_est_current = data.copy()
+                    if df_est_current.index.tz is None:
+                        df_est_current.index = df_est_current.index.tz_localize("UTC").tz_convert("America/New_York")
+                    else:
+                        df_est_current.index = df_est_current.index.tz_convert("America/New_York")
+                    
+                    mask = (df_est_current.index.date >= pd.to_datetime(start_date).date()) & \
+                           (df_est_current.index.date <= pd.to_datetime(end_date).date())
+                    data = data.loc[mask]
+                    log(f"Date-Filtered ({start_date} to {end_date}): New length {len(data)}")
+
             except Exception as e:
                 log(f"Timezone filtering error: {e}")
                 # Fallback: don't filter if error
