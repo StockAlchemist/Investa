@@ -18,6 +18,8 @@ import {
     fetchHoldings,
     Holding
 } from '../lib/api';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
     X,
     LayoutDashboard,
@@ -395,7 +397,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                             <StatCard
                                 label="Quantity"
                                 value={userPosition.Quantity.toLocaleString()}
@@ -416,7 +418,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                             <StatCard
                                 label="Unrealized G/L"
                                 value={formatCurrency(userPosition["Unreal. Gain"])}
@@ -468,7 +470,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         Refresh Data
                     </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 w-full">
+                <div className="grid grid-cols-2 md:grid-cols-2 gap-2.5 w-full">
                     {intrinsicValue?.models?.dcf?.intrinsic_value && (
                         <StatCard
                             label="DCF Intrinsic Value"
@@ -495,7 +497,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                     <StatCard label="Market Cap" value={formatCurrency(fundamentals.marketCap)} icon={Globe} color="text-indigo-400" />
                     <StatCard label="P/E Ratio (TTM)" value={fundamentals.trailingPE?.toFixed(2)} icon={TrendingUp} color="text-emerald-400" />
                     <StatCard label="Dividend Yield" value={formatPercent(fundamentals.dividendYield)} icon={DollarSign} color="text-amber-400" />
@@ -756,7 +758,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     Regenerate
                                 </button>
                             </div>
-                            <p className="text-sm text-muted-foreground leading-relaxed mt-1">{analysis.summary}</p>
+                            <div className="text-sm text-muted-foreground leading-relaxed mt-1 markdown-content bg-transparent p-0 border-none shadow-none">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.summary || ""}</ReactMarkdown>
+                            </div>
                         </div>
                     </div>
                     {/* Decorative background element */}
@@ -789,9 +793,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 </div>
                                 <h4 className="font-bold text-lg">{t.title}</h4>
                             </div>
-                            <p className="text-sm leading-relaxed text-muted-foreground group-hover:text-foreground transition-colors">
-                                {t.content}
-                            </p>
+                            <div className="text-sm leading-relaxed text-muted-foreground group-hover:text-foreground transition-colors markdown-content bg-transparent p-0 border-none shadow-none">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.content || ""}</ReactMarkdown>
+                            </div>
                         </div>
                     ))}
                 </div>

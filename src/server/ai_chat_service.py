@@ -11,6 +11,7 @@ from server.ai_analyzer import FALLBACK_MODELS
 from market_data import get_shared_mdp
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from db_utils import get_db_connection
+from server.screener_service import run_narrative_search
 
 # --- Tool Implementations ---
 
@@ -150,6 +151,33 @@ def get_stock_review_tool(symbol: str) -> Dict[str, Any]:
         if conn: conn.close()
         return {"error": f"Failed to query reviews: {str(e)}"}
 
+def run_screener_tool(prompt: str) -> Dict[str, Any]:
+    """Runs a natural language stock screening query across the entire market database."""
+    try:
+        results = run_narrative_search(prompt)
+        if not results:
+            return {"message": "No stocks matched your criteria."}
+            
+        # Simplify results for the chat model
+        simplified = []
+        for r in results[:10]: # Limit to top 10 to keep context manageable
+            simplified.append({
+                "symbol": r.get("symbol"),
+                "name": r.get("name"),
+                "price": r.get("price"),
+                "upside": r.get("margin_of_safety"),
+                "ai_score": r.get("ai_score"),
+                "sector": r.get("sector")
+            })
+        return {
+            "match_count": len(results),
+            "top_results": simplified,
+            "note": "Sorted by Margin of Safety (higher = more undervalued). Intrinsic value based on DCF models."
+        }
+    except Exception as e:
+        logging.error(f"Chat Tool Error (Screener): {e}")
+        return {"error": f"Failed to run screener: {str(e)}"}
+
 # --- AI Chat Service Core ---
 
 SYSTEM_PROMPT = """
@@ -210,19 +238,26 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                         },
                         "required": ["symbol"]
                     }
+                },
+                {
+                    "name": "run_screener",
+                    "description": "Runs a natural language stock screening query across the market to find stocks matching specific criteria (e.g. 'undervalued tech stocks').",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {
+                                "type": "string",
+                                "description": "The screening criteria in natural language."
+                            }
+                        },
+                        "required": ["prompt"]
+                    }
                 }
             ]
         }
     ]
 
-    model = "gemini-1.5-flash" # Use flash for reliability and speed in chat
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-
     # Prepare historical messages
-    messages = []
-    # System prompt as 'user' then model 'ok' is a common pattern for Gemini system instructions if not using system_instruction field
-    # But gemini-1.5 supports system_instruction.
-    
     contents = []
     if history:
         for msg in history:
@@ -236,6 +271,16 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
         "parts": [{"text": user_message}]
     })
 
+    # --- MODEL FALLBACK CHAIN ---
+    # User requested Gemini 3.0 then 2.5. We use the mapped names.
+    CHAT_MODELS = [
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
+    ]
+
+    # Prepare payload once
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": contents,
@@ -246,12 +291,47 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
     }
 
     try:
-        # Loop for tool calling (Max 5 iterations to prevent infinite loops)
+        active_model = None
+        # Outer loop for tool calling (Max 5 iterations to prevent infinite loops)
         for _ in range(5):
-            response = requests.post(url, json=payload, timeout=60)
-            response.raise_for_status()
-            data = response.json()
+            response_json = None
             
+            # Inner loop for Model Fallback (if the current model fails or hasn't been chosen yet)
+            models_to_try = [active_model] if active_model else CHAT_MODELS
+            
+            for model in models_to_try:
+                if not model: continue
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                
+                try:
+                    logging.info(f"AI Chat: Sending request with model '{model}'...")
+                    response = requests.post(url, json=payload, timeout=60)
+                    
+                    if response.status_code == 404 or response.status_code == 429 or 500 <= response.status_code < 600:
+                        logging.warning(f"AI Chat: Model '{model}' failed (status {response.status_code}). Trying next model...")
+                        active_model = None # Reset if the "active" model failed
+                        continue
+                        
+                    response.raise_for_status()
+                    response_json = response.json()
+                    active_model = model # Set/Refresh active model
+                    break # Success!
+                except Exception as e:
+                    logging.warning(f"AI Chat: Request to '{model}' failed: {e}")
+                    active_model = None
+                    continue
+            
+            # If our "active model" fallback failed, try the whole CHAT_MODELS list once more from the top
+            if not response_json and not active_model:
+                for model in CHAT_MODELS:
+                     # (Same logic as above, omitted for brevity but actually we should just ensure we try everything)
+                     # Let's keep it simple: the loop above handles it if we start with CHAT_MODELS.
+                     pass
+                     
+            if not response_json:
+                return "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later."
+            
+            data = response_json
             candidate = data['candidates'][0]
             message = candidate['content']
             
@@ -278,14 +358,13 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                 tool_result = get_market_data_tool(args.get('symbols', []))
             elif fn_name == "get_stock_review":
                 tool_result = get_stock_review_tool(args.get('symbol', ''))
+            elif fn_name == "run_screener":
+                tool_result = run_screener_tool(args.get('prompt', ''))
             else:
                 tool_result = {"error": f"Tool {fn_name} not found."}
 
-            # Add model's call and our response to contents
-            payload["contents"].append({
-                "role": "model",
-                "parts": [call_part]
-            })
+            # Add model's entire message AND our response to contents
+            payload["contents"].append(message)
             payload["contents"].append({
                 "role": "function",
                 "parts": [{

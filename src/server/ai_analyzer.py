@@ -10,9 +10,9 @@ from db_utils import get_db_connection, get_cached_screener_results
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)
 FALLBACK_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-2.5-flash",
     "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
     "gemini-2.5-pro"
 ]
 

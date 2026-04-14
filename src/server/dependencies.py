@@ -163,12 +163,12 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
         if current_overrides_mtime != _OVERRIDES_MTIMES.get(user_id, 0.0):
             overrides_changed = True
 
-    # Reload if cache is empty OR file has changed OR DB path changed
     user_cache_exists = user_id in _TRANSACTIONS_CACHE
     db_mtime_changed = current_mtime != _DB_MTIMES.get(user_id, 0.0)
     db_path_changed = db_path != _DB_PATHS.get(user_id)
+    db_needs_reload = not user_cache_exists or db_mtime_changed or db_path_changed
     
-    if not user_cache_exists or db_mtime_changed or db_path_changed or overrides_changed:
+    if db_needs_reload or overrides_changed:
         # CRITICAL FIX: Prevent concurrent reloads which cause OOM
         # Multiple requests (dashboard parts) hit this simultaneously after cache clear.
         with _DATA_LOADING_LOCK:
@@ -191,7 +191,10 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
             if is_cache_fresh:
                 logging.info(f"Skipping reload for user {user_id}, duplicate request handled by another thread.")
             else:
-                logging.info(f"Loading/Reloading transactions for user {user_id} from: {db_path}")
+                if db_needs_reload:
+                    logging.info(f"Loading/Reloading transactions for user {user_id} from: {db_path}")
+                else:
+                    logging.info(f"Reloading only overrides/settings for user {user_id} (Database is fresh).")
                 
                 # --- 2b. Load manual_overrides.json ---
                 global _MANUAL_OVERRIDES_FILE_CACHES, _MANUAL_OVERRIDES_FILE_MTIMES
@@ -260,12 +263,19 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
                     # But underlying logic 'load_and_clean_transactions' reads everything.
                     # We will filter dataframe after load.
                     
-                    df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
-                        source_path=db_path,
-                        account_currency_map=account_currency_map,
-                        default_currency=default_currency,
-                        is_db_source=is_db
-                    )
+                    # Only reload from DB if needed
+                    if db_needs_reload:
+                        df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
+                            source_path=db_path,
+                            account_currency_map=account_currency_map,
+                            default_currency=default_currency,
+                            is_db_source=is_db
+                        )
+                    else:
+                        # Use existing cache
+                        df = _TRANSACTIONS_CACHE.get(user_id, pd.DataFrame())
+                        ignored_indices = _IGNORED_INDICES.get(user_id, set())
+                        ignored_reasons = _IGNORED_REASONS.get(user_id, {})
                     
                     # --- FILTER BY USER ID ---
                     # In Isolated Mode, the DB *only* contains this user's data (migrated).
@@ -320,7 +330,7 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
     )
 
 def reload_data():
-    """Forces a reload of all transaction data."""
+    """Forces a full reload of all transaction data and settings for all users."""
     global _TRANSACTIONS_CACHE, _DB_MTIMES, _DB_PATHS, _OVERRIDES_MTIMES, _OVERRIDES_PATHS
     global _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP
     global _GUI_CONFIG_CACHES, _MANUAL_OVERRIDES_FILE_CACHES
@@ -337,9 +347,18 @@ def reload_data():
     _ACCOUNT_CURRENCY_MAP.clear()
     _GUI_CONFIG_CACHES.clear()
     _MANUAL_OVERRIDES_FILE_CACHES.clear()
-    logging.info("Transaction data cache cleared for all users.")
-    # We cannot call get_transaction_data() here because it now requires a user dependency.
-    # The next request will trigger reload.
+    logging.info("ALL data caches cleared for all users.")
+
+def clear_settings_cache(user_id: Optional[int] = None):
+    """Clears settings and overrides cache, forcing a reload on next access without necessarily reloading the DB."""
+    global _MANUAL_OVERRIDES_FILE_MTIMES, _OVERRIDES_MTIMES
+    if user_id is not None:
+        if user_id in _MANUAL_OVERRIDES_FILE_MTIMES: _MANUAL_OVERRIDES_FILE_MTIMES[user_id] = 0.0
+        if user_id in _OVERRIDES_MTIMES: _OVERRIDES_MTIMES[user_id] = 0.0
+    else:
+        _MANUAL_OVERRIDES_FILE_MTIMES.clear()
+        _OVERRIDES_MTIMES.clear()
+    logging.info(f"Settings cache cleared for {'user ' + str(user_id) if user_id else 'all users'}.")
 
 from config_manager import ConfigManager
 

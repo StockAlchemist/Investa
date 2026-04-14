@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, ShieldCheck, TrendingUp, AlertTriangle, Lightbulb, PieChart } from 'lucide-react';
 import { MetricCard } from '@/components/MetricCard';
 import PortfolioOptimization from '@/components/PortfolioOptimization';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface PortfolioAIReviewProps {
     currency: string;
@@ -240,7 +242,9 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                     Executive Summary
                 </h3>
                 <div className="prose dark:prose-invert max-w-none prose-sm opacity-90">
-                    <p className="whitespace-pre-wrap">{summary}</p>
+                    <div className="markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary || ""}</ReactMarkdown>
+                    </div>
                 </div>
             </div>
 
@@ -256,7 +260,9 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                         <h3 className="section-label mb-4 relative z-10">Diversification Analysis</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
-                            <p className="whitespace-pre-wrap">{analysis.diversification}</p>
+                            <div className="markdown-content">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.diversification || ""}</ReactMarkdown>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -265,7 +271,9 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                         <h3 className="section-label mb-4 relative z-10">Risk Assessment</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
-                            <p className="whitespace-pre-wrap">{analysis.risk_profile}</p>
+                            <div className="markdown-content">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.risk_profile || ""}</ReactMarkdown>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -274,7 +282,9 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                         <h3 className="section-label mb-4 relative z-10">Performance Review</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
-                            <p className="whitespace-pre-wrap">{analysis.performance}</p>
+                            <div className="markdown-content">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.performance || ""}</ReactMarkdown>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -288,7 +298,9 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                     </h3>
                     <div className="prose dark:prose-invert max-w-none text-sm opacity-90 relative z-10">
                         {analysis?.actionable_recommendations ? (
-                            <p className="whitespace-pre-wrap">{analysis.actionable_recommendations}</p>
+                            <div className="markdown-content">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.actionable_recommendations || ""}</ReactMarkdown>
+                            </div>
                         ) : (
                             <ul className="list-disc pl-5">
                                 {recommendations?.map((rec: string, i: number) => (
@@ -328,7 +340,9 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                         </div>
                         <div className="pt-4">
                             <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed text-muted-foreground">
-                                <p className="whitespace-pre-wrap">{selectedMetric.content}</p>
+                                <div className="markdown-content">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedMetric.content || ""}</ReactMarkdown>
+                                </div>
                             </div>
                             <div className="mt-6 pt-4 flex justify-end">
                                 <Button variant="secondary" size="sm" onClick={() => setSelectedMetric(null)}>Close</Button>

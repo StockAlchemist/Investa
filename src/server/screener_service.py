@@ -776,13 +776,27 @@ def run_narrative_search(prompt: str) -> List[Dict[str, Any]]:
     }
 
     try:
-        model = "gemini-1.5-flash" # Use a fast model for NL2SQL
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        response = requests.post(url, json=payload, timeout=30)
-        response.raise_for_status()
+        # --- MODEL FALLBACK CHAIN FOR NL2SQL ---
+        SCREENER_MODELS = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-1.5-flash"]
+        sql = None
         
-        data = response.json()
-        sql = data['candidates'][0]['content']['parts'][0]['text'].strip()
+        for model in SCREENER_MODELS:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            try:
+                response = requests.post(url, json=payload, timeout=30)
+                if response.status_code == 404 or response.status_code == 429:
+                    continue
+                response.raise_for_status()
+                
+                data = response.json()
+                sql = data['candidates'][0]['content']['parts'][0]['text'].strip()
+                break # Success
+            except Exception as e:
+                logging.warning(f"Screener: Model '{model}' failed for Narrative Search: {e}")
+                continue
+
+        if not sql:
+            return []
         
         # Strip potential markdown formatting
         if sql.startswith("```"):

@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { sendChatMessage, ChatMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function AIChat() {
     const [isOpen, setIsOpen] = useState(false);
@@ -130,9 +132,14 @@ export default function AIChat() {
                                     : "bg-white/40 dark:bg-white/5 border border-white/10 rounded-tl-none"
                             )}
                         >
-                            {msg.text.split('\n').map((line, i) => (
-                                <p key={i} className={i > 0 ? "mt-2" : ""}>{line}</p>
-                            ))}
+                            <div className={cn(
+                                "markdown-content",
+                                msg.role === 'user' ? "[&_*]:text-white" : ""
+                            )}>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {msg.text}
+                                </ReactMarkdown>
+                            </div>
                         </div>
                         <span className="text-[10px] text-muted-foreground mt-1 px-1 font-medium uppercase tracking-tighter">
                             {msg.role === 'user' ? 'You' : 'Investa AI'}

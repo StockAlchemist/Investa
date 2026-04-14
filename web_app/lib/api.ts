@@ -267,7 +267,7 @@ export async function parseDocument(file: File): Promise<{ status: string, trans
     return response.json();
 }
 
-export async function addTransactionsBatch(transactions: Transaction[], autoAddCash: bool = false): Promise<StatusResponse> {
+export async function addTransactionsBatch(transactions: Transaction[], autoAddCash: boolean = false): Promise<StatusResponse> {
     const response = await authFetch(`${API_BASE_URL}/transactions/batch`, {
         method: "POST",
         headers: {
@@ -971,6 +971,7 @@ export interface StockAnalysisResponse {
         action: 'Sell' | 'Buy' | 'Swap' | 'Hold';
         priority: 'High' | 'Medium' | 'Low';
     }[];
+    error?: string;
 }
 
 export interface ChatMessage {

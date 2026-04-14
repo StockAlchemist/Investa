@@ -12,7 +12,7 @@ from datetime import datetime, date, time as dt_time
 import asyncio
 import shutil
 
-from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection, get_current_user
+from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection, get_current_user, clear_settings_cache
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from utils_time import get_est_today, get_latest_trading_date, is_market_open
 from portfolio_analyzer import (
@@ -104,6 +104,13 @@ def reload_data_and_clear_cache(current_user: Optional[User] = None):
     logging.info("Transaction, Summary, Market History, and Portfolio History caches cleared.")
     if current_user:
         trigger_background_precalculation(current_user)
+
+def clear_portfolio_caches():
+    """Clears calculated caches (Summary, History) without wiping the transaction dataframe cache."""
+    _PORTFOLIO_SUMMARY_CACHE.clear()
+    _MARKET_HISTORY_CACHE.clear()
+    _PORTFOLIO_HISTORY_CACHE.clear()
+    logging.info("Portfolio Summary, Market History, and Portfolio History caches cleared (Transaction cache retained).")
 
 def trigger_background_precalculation(current_user: User):
     """Triggers background task to calculate and store portfolio snapshots."""
@@ -3503,8 +3510,11 @@ async def update_settings(
                     logging.warning(f"Failed to mirror settings to project file: {e}")
             # ---------------------------------------------------------
 
-            # Reload data to apply changes (clear cache)
-            reload_data_and_clear_cache(current_user)
+            # OPTIMIZATION: Only reload settings and clear summary/history caches.
+            # Avoid a full 'reload_data()' which wipes the transaction cache and forces a heavy DB reload.
+            clear_settings_cache(current_user.id)
+            clear_portfolio_caches()
+            trigger_background_precalculation(current_user)
             return {"status": "success", "message": "Settings updated and data reloaded"}
         else:
              raise HTTPException(status_code=500, detail="Failed to save settings to file")
