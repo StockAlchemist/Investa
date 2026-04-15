@@ -264,13 +264,17 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
 
     # --- MODEL FALLBACK CHAIN ---
     # User requested Gemini 3.0 then 2.5. We use the mapped names.
+    # Added Gemini 1.5 as permanent robust fallbacks.
     CHAT_MODELS = [
         "gemini-3.1-flash-lite-preview",
         "gemini-3-flash-preview",
         "gemini-3.1-pro-preview",
         "gemini-2.5-flash-lite",
         "gemini-2.5-flash",
-        "gemini-2.5-pro"
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
     ]
 
     # Prepare historical messages
@@ -321,7 +325,7 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
         "contents": contents,
         "tools": tools,
         "generationConfig": {
-            "temperature": 0.2, # Lower temperature for factual accuracy
+            "temperature": 0.1, # Lower temperature for even better factual accuracy
         }
     }
 
@@ -331,21 +335,32 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
     try:
         active_model = None
         # Outer loop for tool calling (Max 5 iterations to prevent infinite loops)
-        for _ in range(5):
+        for iteration in range(5):
             response_json = None
             
-            # Inner loop for Model Fallback (if the current model fails or hasn't been chosen yet)
-            models_to_try = [active_model] if active_model else CHAT_MODELS
+            # --- Robust Model Selection Strategy ---
+            # 1. Try active_model if we have one
+            # 2. Try the rest of CHAT_MODELS if active_model fails or is None
+            models_to_try = []
+            if active_model:
+                models_to_try.append(active_model)
             
+            # Append all models from CHAT_MODELS that aren't already the active_model
+            for m in CHAT_MODELS:
+                if m != active_model:
+                    models_to_try.append(m)
+
             for model in models_to_try:
                 if not model: continue
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
                 
                 # Add jitter to avoid rate limits (especially if retrying)
-                time.sleep(random.random() * 2)
+                # Reduced jitter for better responsiveness unless we are deep in fallbacks
+                sleep_time = random.random() * 1.5 if model == active_model else random.random() * 2.5
+                time.sleep(sleep_time)
                 
                 try:
-                    logging.info(f"AI Chat: Sending request with model '{model}'...")
+                    logging.info(f"AI Chat (Iter {iteration+1}): Sending request with model '{model}'...")
                     response = requests.post(url, json=payload, timeout=60)
                     
                     if response.status_code == 404 or response.status_code == 429 or 500 <= response.status_code < 600:
@@ -355,6 +370,13 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                         
                     response.raise_for_status()
                     response_json = response.json()
+                    
+                    # Basic validation of response structure
+                    if not response_json.get('candidates'):
+                         logging.warning(f"AI Chat: Model '{model}' returned 200 but no candidates. Response: {response.text[:200]}")
+                         active_model = None
+                         continue
+
                     active_model = model # Set/Refresh active model
                     break # Success!
                 except Exception as e:
@@ -362,19 +384,16 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                     active_model = None
                     continue
             
-            # If our "active model" fallback failed, try the whole CHAT_MODELS list once more from the top
-            if not response_json and not active_model:
-                for model in CHAT_MODELS:
-                     # (Same logic as above, omitted for brevity but actually we should just ensure we try everything)
-                     # Let's keep it simple: the loop above handles it if we start with CHAT_MODELS.
-                     pass
-                     
             if not response_json:
+                logging.error("AI Chat: ALL models failed to return a response.")
                 return "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later."
             
             data = response_json
             candidate = data['candidates'][0]
             message = candidate['content']
+            finish_reason = candidate.get('finishReason')
+            
+            logging.info(f"AI Chat (Iter {iteration+1}): Model '{active_model}' responded. Finish Reason: {finish_reason}")
             
             # Check for function calls
             parts = message.get('parts', [])
@@ -387,6 +406,7 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                 
                 # Safety check: If for some reason the model returned empty text, return a fallback
                 if not final_text.strip():
+                    logging.warning(f"AI Chat: Model '{active_model}' returned empty text. Finish Reason: {finish_reason}. Candidates: {len(data.get('candidates', []))}")
                     return "I found some information, but I'm having trouble summarizing it. Could you try asking in a different way?"
                 
                 return final_text

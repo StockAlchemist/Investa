@@ -15,7 +15,10 @@ FALLBACK_MODELS = [
     "gemini-3.1-pro-preview",
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
-    "gemini-2.5-pro"
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro"
 ]
 
 def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force_refresh: bool = False, use_search: bool = True) -> dict:

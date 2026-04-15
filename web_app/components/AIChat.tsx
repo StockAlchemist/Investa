@@ -187,8 +187,8 @@ export default function AIChat() {
                             className={cn(
                                 "px-4 py-3 rounded-2xl text-sm leading-relaxed",
                                 msg.role === 'user' 
-                                    ? "bg-indigo-600 text-white rounded-tr-none shadow-md shadow-indigo-600/20" 
-                                    : "bg-white/40 dark:bg-white/5 border border-white/10 rounded-tl-none"
+                                    ? "bg-indigo-600 text-white rounded-tr-none shadow-md shadow-indigo-600/20 selection:bg-white selection:text-indigo-600" 
+                                    : "bg-white/40 dark:bg-white/5 border border-white/10 rounded-tl-none selection:bg-indigo-500/30"
                             )}
                         >
                             <div className={cn(
