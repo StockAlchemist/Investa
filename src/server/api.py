@@ -1580,7 +1580,7 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
         if commission > 0:
             cash_tx_comm = {
                 "Date": date_str,
-                "Type": "Sell",
+                "Type": "Withdrawal",
                 "Symbol": "$CASH",
                 "Quantity": commission,
                 "Price/Share": 1.0,
@@ -1612,7 +1612,7 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
             # Paying commission: Sell $CASH for commission
             cash_tx_comm = {
                 "Date": date_str,
-                "Type": "Sell",
+                "Type": "Withdrawal",
                 "Symbol": "$CASH",
                 "Quantity": commission,
                 "Price/Share": 1.0,
