@@ -8,6 +8,31 @@ from datetime import datetime, date
 import gc
 import time
 import random
+import requests
+
+# List of modern browser user agents to rotate
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edge/119.0.0.0"
+]
+
+def get_requests_session():
+    """Creates a requests session with a randomized User-Agent."""
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Cache-Control": "max-age=0",
+    })
+    return session
 
 # Setup explicit logging
 # Setup explicit logging
@@ -31,7 +56,7 @@ except ImportError:
 
 # Removed ThreadPoolExecutor to save memory
 
-def retry_with_backoff(retries=3, backoff_in_seconds=2):
+def retry_with_backoff(retries=3, backoff_in_seconds=5):
     def decorator(func):
         def wrapper(*args, **kwargs):
             x = 0
@@ -41,13 +66,17 @@ def retry_with_backoff(retries=3, backoff_in_seconds=2):
                 except Exception as e:
                     # Check for rate limit indicators in the exception
                     err_str = str(e)
-                    is_rate_limit = "Too Many Requests" in err_str or "429" in err_str or "YFRateLimitError" in err_str
+                    is_rate_limit = any(indicator in err_str for indicator in ["Too Many Requests", "429", "YFRateLimitError", "503", "Service Unavailable"])
+                    
                     if x == retries or not is_rate_limit:
                         raise
                     
-                    sleep = (backoff_in_seconds * (2 ** x) + 
-                             random.uniform(0, 1))
-                    log(f"Rate limited. Retrying in {sleep:.2f} seconds... (Attempt {x+1}/{retries})")
+                    # More aggressive backoff for 429
+                    base_delay = backoff_in_seconds if not is_rate_limit else backoff_in_seconds * 3
+                    sleep = (base_delay * (2 ** x) + 
+                             random.uniform(2, 8)) # More jitter
+                    
+                    log(f"Rate limited or Service error ({err_str[:50]}...). Retrying in {sleep:.2f} seconds... (Attempt {x+1}/{retries})")
                     time.sleep(sleep)
                     x += 1
         return wrapper
@@ -66,10 +95,10 @@ def fetch_info(symbols, output_file, minimal=False):
         
         def get_single_info(sym):
             try:
-                import yfinance as yf # Redundant but safe
+                import yfinance as yf  # Redundant but safe
                 log(f"Fetching .info for {sym}...")
                 ticker = yf.Ticker(sym)
-                @retry_with_backoff(retries=2, backoff_in_seconds=3)
+                @retry_with_backoff(retries=2, backoff_in_seconds=10)
                 def _fetch_yf_ticker_info(t):
                     return t.info
 
@@ -83,21 +112,21 @@ def fetch_info(symbols, output_file, minimal=False):
                             log(f"Fetching funds_data for {sym}...")
                             fd = ticker.funds_data
                             if fd:
-                                 etf_data = {}
-                                 th = getattr(fd, 'top_holdings', None)
-                                 if th is not None:
-                                     etf_data['top_holdings'] = []
-                                     if hasattr(th, 'iterrows'): 
-                                         for s, row in th.iterrows():
-                                             etf_data['top_holdings'].append({
-                                                 "symbol": str(s), "name": str(row.get('Name', s)), "percent": float(row.get('Holding Percent', 0))
-                                             })
-                                 if hasattr(fd, 'sector_weightings') and fd.sector_weightings:
-                                     etf_data['sector_weightings'] = fd.sector_weightings
-                                 if hasattr(fd, 'asset_classes') and fd.asset_classes:
-                                     etf_data['asset_classes'] = fd.asset_classes
-                                 if etf_data:
-                                     info['etf_data'] = etf_data
+                                etf_data = {}
+                                th = getattr(fd, 'top_holdings', None)
+                                if th is not None:
+                                    etf_data['top_holdings'] = []
+                                    if hasattr(th, 'iterrows'): 
+                                        for s, row in th.iterrows():
+                                            etf_data['top_holdings'].append({
+                                                "symbol": str(s), "name": str(row.get('Name', s)), "percent": float(row.get('Holding Percent', 0))
+                                            })
+                                if hasattr(fd, 'sector_weightings') and fd.sector_weightings:
+                                    etf_data['sector_weightings'] = fd.sector_weightings
+                                if hasattr(fd, 'asset_classes') and fd.asset_classes:
+                                    etf_data['asset_classes'] = fd.asset_classes
+                                if etf_data:
+                                    info['etf_data'] = etf_data
                             log(f"funds_data processed for {sym}")
                     except Exception as e_etf:
                         log(f"Error extracting ETF data for {sym}: {e_etf}")
@@ -274,7 +303,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
     try:
         import yfinance as yf # Lazy import
         import pandas as pd  # Lazy import
-        @retry_with_backoff(retries=3, backoff_in_seconds=5)
+        @retry_with_backoff(retries=3, backoff_in_seconds=10)
         def _execute_download(**kwargs):
             log(f"Executing yf.download attempt...")
             return yf.download(**kwargs)
@@ -339,7 +368,10 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
             log(f"Data index dtype: {data.index.dtype}")
             try:
                 # Normalize timezone to US/Eastern for consistent date masking (9:30-16:00 filtering uses NY)
-                # This handles both UTC-aware and naive data
+                # This handles both UTC-aware and naive data.
+                # IMPORTANT: We build a TZ-aware copy (df_est) for filtering logic, but
+                # we apply the resulting boolean mask positionally to 'data' (original TZ)
+                # to avoid index-alignment mismatches between different TZ-aware indexes.
                 df_est = data.copy()
                 if df_est.index.tz is None:
                     # Assume naive is UTC for yfinance (usually is)
@@ -352,30 +384,38 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 
                 # 1. Intra-day Time Filter (only for short intervals)
                 if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
-                    # Filter for market hours (09:30 - 16:15)
+                    # Filter for market hours (09:30 - 16:15) using NY-localized index
                     df_filtered_est = df_est.between_time("09:30", "16:15")
                     if not df_filtered_est.empty:
-                        # Extract the indices that passed the time filter
-                        passed_indices = df_filtered_est.index
-                        data = data.loc[data.index.isin(passed_indices.tz_convert(data.index.tz))] # Apply back to original TZ
+                        # Build a positional boolean mask (same length as df_est/data)
+                        # to avoid tz_convert(None) issues when data.index.tz is naive
+                        time_mask = df_est.index.isin(df_filtered_est.index)
+                        data = data.loc[time_mask]  # Apply positionally - safe as lengths match
+                        df_est = df_est.loc[time_mask]  # Keep df_est in sync
                         log(f"Time-Filtered (NY 09:30-16:15): {original_len} -> {len(data)}.")
                     else:
-                        data = pd.DataFrame() # Became empty
+                        data = pd.DataFrame()  # Became empty
                         log(f"Time-Filtered (NY 09:30-16:15): {original_len} -> 0 (EMPTY)")
                 
                 # 2. Date Mask Filter (for all intervals)
-                # If start_date/end_date provided, enforce them using the EST localized index
+                # If start_date/end_date provided, enforce them using the EST localized index.
+                # FIX: We use df_est (already NY-converted, same length as data) to build the
+                # mask, then apply it positionally to 'data'. This avoids any TZ mismatch.
                 if not data.empty and start_date and end_date:
-                    # Refresh df_est based on current 'data' if it changed
-                    df_est_current = data.copy()
-                    if df_est_current.index.tz is None:
-                        df_est_current.index = df_est_current.index.tz_localize("UTC").tz_convert("America/New_York")
-                    else:
-                        df_est_current.index = df_est_current.index.tz_convert("America/New_York")
+                    # df_est is already in sync with data (same positional rows) from above.
+                    # If data was modified by time filter, df_est was also updated above.
+                    # Safety: rebuild df_est from current data if lengths differ
+                    if len(df_est) != len(data):
+                        df_est = data.copy()
+                        if df_est.index.tz is None:
+                            df_est.index = df_est.index.tz_localize("UTC").tz_convert("America/New_York")
+                        else:
+                            df_est.index = df_est.index.tz_convert("America/New_York")
                     
-                    mask = (df_est_current.index.date >= pd.to_datetime(start_date).date()) & \
-                           (df_est_current.index.date <= pd.to_datetime(end_date).date())
-                    data = data.loc[mask]
+                    start_d = pd.to_datetime(start_date).date()
+                    end_d = pd.to_datetime(end_date).date()
+                    date_mask = (df_est.index.date >= start_d) & (df_est.index.date <= end_d)
+                    data = data.loc[date_mask]  # Apply positionally - safe as lengths match
                     log(f"Date-Filtered ({start_date} to {end_date}): New length {len(data)}")
 
             except Exception as e:
@@ -393,10 +433,13 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
         log(f"Fetch completed. Data shape: {data.shape}")
         
         if data.empty:
-            log(f"Data is empty from yfinance. Attempting fallback for {symbols[0] if symbols else 'None'}.")
+            log(f"Data is empty from yfinance. (Tickers: {symbols[:5]}, Range: {start_date}-{end_date if end_date else 'N/A'}, Interval: {interval})")
+            
+            # Diagnostic: check if it might be a holiday or weekend if we have a specific date
             fallback_success = False
             if fetch_data_fallback and len(symbols) == 1:
                 # Basic fallback implementation handles single symbols best
+                log(f"Attempting fallback for {symbols[0]}...")
                 fb_data = fetch_data_fallback(symbols, start_date, end_date, interval)
                 if fb_data is not None and not fb_data.empty:
                     data = fb_data
@@ -404,7 +447,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                     log(f"Fallback SUCCESS for {symbols[0]}. Shape: {data.shape}")
                     
             if not fallback_success:
-                return {"status": "success", "data": None}
+                return {"status": "success", "data": None, "message": "No data returned (likely closed market or invalid range)"}
 
         # Save to temp file using parquet or json to avoid massive string in memory
         # Parquet is efficient but requires pyarrow/fastparquet. JSON is safer for compat.

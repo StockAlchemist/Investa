@@ -22,12 +22,43 @@ import remarkGfm from 'remark-gfm';
 export default function AIChat() {
     const [isOpen, setIsOpen] = useState(false);
     const [isMaximized, setIsMaximized] = useState(false);
-    const [messages, setMessages] = useState<ChatMessage[]>([
-        { role: 'ai', text: "Hello! I'm Investa AI. How can I help you with your portfolio today?" }
-    ]);
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    
+    // Initial welcome message (not stored in persistence)
+    const WELCOME_MESSAGE: ChatMessage = { 
+        role: 'ai', 
+        text: "Hello! I'm Investa AI. How can I help you with your portfolio today?" 
+    };
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Load history from localStorage on mount
+    useEffect(() => {
+        const saved = localStorage.getItem('investa_chat_history');
+        if (saved) {
+            try {
+                setMessages(JSON.parse(saved));
+            } catch (e) {
+                console.error("Failed to load chat history", e);
+            }
+        }
+    }, []);
+
+    // Save history to localStorage on change
+    useEffect(() => {
+        if (messages.length > 0) {
+            try {
+                // Cap persistent history to last 50 messages to avoid QuotaExceededError
+                const toSave = messages.slice(-50);
+                localStorage.setItem('investa_chat_history', JSON.stringify(toSave));
+            } catch (e) {
+                console.warn("Storage quota exceeded, could not save full chat history", e);
+                // If it still fails, we could try saving even fewer, 
+                // but 50 small text messages should easily fit in 5MB.
+            }
+        }
+    }, [messages]);
 
     // Auto-scroll to bottom of messages
     useEffect(() => {
@@ -45,10 +76,17 @@ export default function AIChat() {
         setIsLoading(true);
 
         try {
-            // Keep last 10 messages for context
-            const history = messages.slice(-10);
+            // Keep last 40 messages for context, filtering out the static welcome message
+            // and ensuring we don't send an empty history if it's just text
+            const history = messages
+                .filter(m => m.text !== WELCOME_MESSAGE.text && m.text.trim() !== '')
+                .slice(-40);
+                
             const responseText = await sendChatMessage(input, history);
-            setMessages(prev => [...prev, { role: 'ai', text: responseText }]);
+            
+            // Safety: Don't add empty messages
+            const finalReply = responseText?.trim() || "I encountered an issue generating a response. Please try again.";
+            setMessages(prev => [...prev, { role: 'ai', text: finalReply }]);
         } catch (error) {
             console.error('Chat Error:', error);
             setMessages(prev => [...prev, { role: 'ai', text: "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later." }]);
@@ -58,7 +96,8 @@ export default function AIChat() {
     };
 
     const clearHistory = () => {
-        setMessages([{ role: 'ai', text: "History cleared. How can I help you now?" }]);
+        localStorage.removeItem('investa_chat_history');
+        setMessages([]);
     };
 
     if (!isOpen) {
@@ -95,6 +134,12 @@ export default function AIChat() {
                         <div className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Online</span>
+                            {messages.length > 0 && (
+                                <>
+                                    <span className="w-1 h-1 rounded-full bg-slate-400 mx-0.5" />
+                                    <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-wider">Memory Active</span>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -116,6 +161,20 @@ export default function AIChat() {
                 ref={scrollRef}
                 className="flex-1 p-4 space-y-4 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10"
             >
+                {messages.length === 0 && (
+                    <div className="flex flex-col items-start max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <div className="bg-white/40 dark:bg-white/5 border border-white/10 rounded-2xl rounded-tl-none px-4 py-3 text-sm leading-relaxed">
+                            <div className="markdown-content">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {WELCOME_MESSAGE.text}
+                                </ReactMarkdown>
+                            </div>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground mt-1 px-1 font-medium uppercase tracking-tighter">
+                            Investa AI
+                        </span>
+                    </div>
+                )}
                 {messages.map((msg, idx) => (
                     <div 
                         key={idx} 

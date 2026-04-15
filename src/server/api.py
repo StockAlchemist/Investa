@@ -2408,7 +2408,11 @@ async def _calculate_historical_performance_internal(
     # --- FX Rate series preparation ---
     fx_rate_series = None
     if currency and currency.upper() != "USD" and historical_fx_yf:
-        fx_pair = f"{currency.upper()}=X"
+        curr_upper = currency.upper()
+        if curr_upper == "THB":
+            fx_pair = "USDTHB=X"
+        else:
+            fx_pair = f"{curr_upper}=X"
         if fx_pair in historical_fx_yf:
             fx_df = historical_fx_yf[fx_pair]
             # Handle both 'price' (new format) and 'Close' (old/direct format)

@@ -528,11 +528,15 @@ def calculate_portfolio_summary(
         }
 
         min_tx_date = all_transactions_df_cleaned["Date"].min().date()
-        fx_pairs_to_fetch_hist = [
-            f"{lc.upper()}=X"
-            for lc in cleaned_currencies_for_hist_fx  # Use the cleaned and expanded set
-            if lc and lc.upper() != "USD" and pd.notna(lc) and str(lc).strip() != ""
-        ]
+        fx_pairs_to_fetch_hist = []
+        for lc in cleaned_currencies_for_hist_fx:
+            if not lc or str(lc).strip() == "" or lc.upper() == "USD" or pd.isna(lc):
+                continue
+            curr_code = lc.upper()
+            if curr_code == "THB":
+                fx_pairs_to_fetch_hist.append("USDTHB=X")
+            else:
+                fx_pairs_to_fetch_hist.append(f"{curr_code}=X")
 
         if market_provider:
             market_provider_for_hist_fx = market_provider
@@ -597,6 +601,24 @@ def calculate_portfolio_summary(
             master_fx_df = pd.concat(fx_series_list, axis=1)
             master_fx_df.sort_index(inplace=True)
             
+            # --- ADDED: Normalize column names (e.g. USDTHB -> THB) ---
+            # This ensures that 'THB' is found in master_fx_df.columns later.
+            rename_map = {}
+            for col in master_fx_df.columns:
+                if col == "USDTHB":
+                    rename_map[col] = "THB"
+                elif col.endswith("USD") and col != "USD": # e.g. EURUSD
+                     rename_map[col] = col.replace("USD", "")
+                     # Note: EURUSD is USD/EUR. If we want EUR/USD (Local/USD), we must invert.
+                     # However, the current cross-rate logic below handles it if we are consistent.
+                     # Let's see if we should invert here or let the cross-rate logic handle it.
+                elif col.startswith("USD") and col != "USD": # e.g. USDJPY
+                     rename_map[col] = col.replace("USD", "")
+            
+            if rename_map:
+                master_fx_df.rename(columns=rename_map, inplace=True)
+                logging.debug(f"Normalized FX columns: {rename_map}")
+
             # 2. Reindex to cover all transaction dates (ffill AND bfill)
             # We need the union of existing FX dates and transaction dates
             all_needed_dates = sorted(list(set(master_fx_df.index) | set(unique_dates)))
@@ -617,8 +639,11 @@ def calculate_portfolio_summary(
                 missing_pairs = [f"{c.upper()}=X" for c in missing_currencies]
                 try:
                     # Fetch current quotes for missing pairs
-                    _, current_fx_rates, _, _ = market_provider_for_hist_fx.get_current_quotes(
-                        stock_tickers=[], fx_pairs=missing_pairs
+                    _, current_fx_rates, _, _, _ = market_provider_for_hist_fx.get_current_quotes(
+                        internal_stock_symbols=[],
+                        required_currencies=set(missing_pairs),
+                        user_symbol_map={},
+                        user_excluded_symbols=set()
                     )
                     
                     for curr in missing_currencies:
@@ -651,13 +676,39 @@ def calculate_portfolio_summary(
                 for curr_col in master_fx_df.columns:
                     try:
                         # Calculate cross rate vector: Rate = Display / Local
-                        # Note: master_fx_df contains Base/USD rates (e.g. EUR/USD ~ 0.92, THB/USD ~ 34.0)
-                        # We want Display/Local.
-                        # Display/Local = (Display/USD) / (Local/USD)
-                        # Example: Display=USD (1.0), Local=EUR (0.92). Rate = 1.0 / 0.92 = 1.08 USD/EUR. Correct.
-                        # Example: Display=THB (34.0), Local=USD (1.0). Rate = 34.0 / 1.0 = 34.0 THB/USD. Correct.
+                        # --- MODIFIED: Robust Cross Rate Calculation ---
+                        # master_fx_df[curr_col] is the rate fetched from YF.
+                        # YF is inconsistent: 
+                        # - USDTHB=X (~35) is THB/USD (Local/USD)
+                        # - EURUSD=X (~1.08) is USD/EUR (USD/Local)
+                        # We want all rates in 'master_fx_df' to effectively be 'Local / USD' (units per 1 USD)
+                        # so that: Display/Local = (Display/USD) / (Local/USD)
                         
-                        cross_rates = display_rates / master_fx_df[curr_col]
+                        raw_rate = master_fx_df[curr_col]
+                        
+                        # Heuristic: Determine if rate is Local/USD or USD/Local.
+                        # YF symbols like EUR=X, GBP=X usually return Local/USD (~0.9, ~0.8).
+                        # But explicit pairs like EURUSD=X return USD/Local (~1.08).
+                        # We want all rates to be Local / USD for the divisor logic.
+                        
+                        rate_to_use = raw_rate
+                        
+                        # --- IMPROVED HEURISTIC ---
+                        # If a pair looks like CURUSD=X (Standard Major Quote), it's likely USD per 1 Local.
+                        # We need Local per 1 USD -> Invert.
+                        # (Note: we use the series itself to check if mean is > 5 as a safety, 
+                        # but the name is the primary driver).
+                        
+                        avg_rate = raw_rate.mean()
+                        is_inverted_major = (curr_col in ["EUR", "GBP", "AUD", "NZD"]) and (avg_rate > 1.0)
+                        
+                        if is_inverted_major:
+                            # If it's a major currency and rate is > 1.0 (e.g. 1.08), 
+                            # it's almost certainly USD/Local. Invert it.
+                            rate_to_use = 1.0 / raw_rate
+                            logging.debug(f"Vectorized FX: Inverting {curr_col} (Avg={avg_rate:.4f}) as it appears to be USD/Local.")
+                        
+                        cross_rates = display_rates / rate_to_use
                         
                         # Filter for relevant dates and update dict
                         relevant_rates = cross_rates.loc[cross_rates.index.isin(unique_dates)]
@@ -4108,11 +4159,17 @@ def _prepare_historical_inputs(
     }
     all_currencies_needed = cleaned_all_currencies_needed
     # --- END ADDED ---
-    fx_pairs_for_api_yf = sorted(
-        list(
-            {f"{curr}=X" for curr in all_currencies_needed if curr != "USD" and curr}
-        )  # Added 'and curr' to ensure not empty
-    )
+    fx_pairs_for_api_yf = []
+    for curr in all_currencies_needed:
+        if not curr or curr.upper() == "USD":
+            continue
+        curr_upper = curr.upper()
+        if curr_upper == "THB":
+            fx_pairs_for_api_yf.append("USDTHB=X")
+            fx_pairs_for_api_yf.append("THB=X")
+        else:
+            fx_pairs_for_api_yf.append(f"{curr_upper}=X")
+    fx_pairs_for_api_yf = sorted(list(set(fx_pairs_for_api_yf)))
 
     # Cache paths
     app_cache_dir = None
@@ -4317,6 +4374,13 @@ def _value_daily_holdings_vectorized(
     else:
         # Fetch Target=X (e.g. THB=X means THB per USD)
         target_pair = f"{target_curr_upper}=X"
+        # FALLBACK: Try USDCURR=X if CURR=X missing, or vice versa
+        if target_pair not in historical_fx_yf:
+            if target_curr_upper == "THB" and "USDTHB=X" in historical_fx_yf:
+                target_pair = "USDTHB=X"
+            elif target_curr_upper != "THB" and f"USD{target_curr_upper}=X" in historical_fx_yf:
+                target_pair = f"USD{target_curr_upper}=X"
+
         if target_pair in historical_fx_yf:
             t_df = historical_fx_yf[target_pair]
             if not t_df.empty:
@@ -4329,10 +4393,20 @@ def _value_daily_holdings_vectorized(
                 if col_to_use:
                     # Reindex to date_range with ffill
                     # Reindex to date_range with ffill then bfill to cover start of history
-                    t_series = t_df[col_to_use]
-                t_series.index = pd.to_datetime(t_series.index, utc=True)
-                # FIX: Ensure we have a value for the first day by bfilling, but use interpolation
-                target_rate_series = t_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
+                    t_series = t_df[col_to_use].copy()
+                    t_series.index = pd.to_datetime(t_series.index, utc=True)
+
+                    # --- ORIENTATION CHECK ---
+                    # Ensure rate is Local / USD. 
+                    # If it's THB=X or USDTHB=X (~35), it's already Local/USD.
+                    # If it was returned as a Major pair (e.g. EURUSD=X ~1.08), it's USD/Local -> Invert.
+                    # Note: My analysis shows yfinance EUR=X is already EUR/USD (~0.92).
+                    # But we keep this check for robustness if a USD... pair was fetched.
+                    if target_pair.endswith("USD=X") and not target_pair.startswith("USD"):
+                         # e.g. EURUSD=X -> USD per EUR -> Invert to get EUR per USD
+                         t_series = 1.0 / t_series
+                    
+                    target_rate_series = t_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
     
     # If target rate missing, we can't convert anything (unless local==target)
     # Ensure it's not None for math consistency, fill with NaN if missing
@@ -4365,6 +4439,13 @@ def _value_daily_holdings_vectorized(
             local_rate_series = pd.Series(1.0, index=date_range)
         else:
             local_pair = f"{local_curr_upper}=X"
+            # FALLBACK
+            if local_pair not in historical_fx_yf:
+                if local_curr_upper == "THB" and "USDTHB=X" in historical_fx_yf:
+                    local_pair = "USDTHB=X"
+                elif local_curr_upper != "THB" and f"USD{local_curr_upper}=X" in historical_fx_yf:
+                    local_pair = f"USD{local_curr_upper}=X"
+
             if local_pair in historical_fx_yf:
                  l_df = historical_fx_yf[local_pair]
                  if not l_df.empty:
@@ -4375,11 +4456,16 @@ def _value_daily_holdings_vectorized(
                     elif "rate" in l_df.columns: col_to_use = "rate"
                     
                     if col_to_use:
-                        l_series = l_df[col_to_use]
-                    # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
-                    l_series.index = pd.to_datetime(l_series.index, utc=True)
-                    # FIX: Aggressive backfill for local rates too, but smooth it
-                    local_rate_series = l_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
+                        l_series = l_df[col_to_use].copy()
+                        # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
+                        l_series.index = pd.to_datetime(l_series.index, utc=True)
+
+                        # --- ORIENTATION CHECK ---
+                        if local_pair.endswith("USD=X") and not local_pair.startswith("USD"):
+                             l_series = 1.0 / l_series
+
+                        # FIX: Aggressive backfill for local rates too, but smooth it
+                        local_rate_series = l_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
 
         if local_rate_series is None:
              # Missing local rate data - Default to 1.0 to prevent NaN propagation

@@ -544,7 +544,8 @@ def _process_transactions_to_holdings(
         deduped_splits = splits_df.drop_duplicates(subset=['__split_ym', 'Symbol'], keep='first').drop(columns=['__split_priority', '__split_ym'])
         
         # Recombine and sort by date/index to maintain chronology
-        df = pd.concat([other_df, deduped_splits], ignore_index=True)
+        # Force a copy and consolidation to avoid internal pandas BlockManager AssertionErrors
+        df = pd.concat([other_df.copy(), deduped_splits.copy()], ignore_index=True).sort_values(by=['Date', 'original_index'])
         # Ensure 'Date' and 'original_index' are used for sorting
         df.sort_values(by=['Date', 'original_index'], inplace=True)
         # Force consolidation and new index to avoid Numba memory view issues

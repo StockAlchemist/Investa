@@ -10,9 +10,11 @@ from db_utils import get_db_connection, get_cached_screener_results
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)
 FALLBACK_MODELS = [
+    "gemini-3.1-flash-lite-preview",
     "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
+    "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
     "gemini-2.5-pro"
 ]
 
@@ -165,8 +167,13 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force
         "Summary": fund_data.get("longBusinessSummary", "No summary available")[:1000]
     }
 
+    # Get current date for temporal context
+    current_date_str = datetime.now().strftime("%B %d, %Y")
+
     prompt = f"""
 Analyze the stock {symbol} using the provided financial data AND by looking up recent news, earnings reports, and analyst sentiments on the web.
+
+IMPORTANT: Today's date is {current_date_str}. All analysis should be relative to this date.
 
 Financial Data:
 {json.dumps(metrics, indent=2)}
@@ -177,7 +184,7 @@ Provide a professional investment review covering these specific topics:
 3. Predictability: Reliability of earnings, historical consistency, and business cyclicality.
 4. Growth Perspective: Future growth drivers, market opportunities, and potential risks.
 5. Market Sentiment: Analyze current news, analyst upgrades/downgrades, and market buzz.
-6. Upcoming Catalysts: Identify 2-3 specific upcoming events (earnings dates, product launches, clinical trials, regulatory decisions, macro impacts) with estimated dates.
+6. Upcoming Catalysts: Identify 2-3 specific upcoming events (earnings dates, product launches, clinical trials, regulatory decisions, macro impacts) that occur AFTER {current_date_str}, with estimated dates.
 
 For each topic, provide a score from 1 to 10 based on both the data and your web research.
 

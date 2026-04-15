@@ -418,7 +418,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             />
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             <StatCard
                                 label="Unrealized G/L"
                                 value={formatCurrency(userPosition["Unreal. Gain"])}
@@ -470,7 +470,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         Refresh Data
                     </button>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-2 gap-2.5 w-full">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
                     {intrinsicValue?.models?.dcf?.intrinsic_value && (
                         <StatCard
                             label="DCF Intrinsic Value"

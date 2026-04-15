@@ -185,6 +185,11 @@ You are "Investa AI", a premium wealth intelligence assistant.
 Your goal is to help users understand their investment portfolio and the financial markets.
 You have access to REAL-TIME tools to query the user's specific performance, holdings, and detailed stock analyses.
 
+CONVERSATIONAL CONTEXT:
+- You carry over knowledge from previous turns in the conversation. 
+- If the user asks a follow-up question (e.g., "What about its PE?" after discussing AAPL), refer back to the context.
+- Use the provided conversation history to maintain continuity and provide a cohesive advisory experience.
+
 BEHAVIORAL GUIDELINES:
 1.  **Be Precise**: Use the data provided by tools. If a value is $12,450.21, say that, don't round unless it improves readability.
 2.  **Be Analytical**: Don't just list holdings. Explain what they imply (e.g., "You are heavily concentrated in Tech").
@@ -257,38 +262,71 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
         }
     ]
 
-    # Prepare historical messages
-    contents = []
-    if history:
-        for msg in history:
-            contents.append({
-                "role": "user" if msg["role"] == "user" else "model",
-                "parts": [{"text": msg["text"]}]
-            })
-    
-    contents.append({
-        "role": "user",
-        "parts": [{"text": user_message}]
-    })
-
     # --- MODEL FALLBACK CHAIN ---
     # User requested Gemini 3.0 then 2.5. We use the mapped names.
     CHAT_MODELS = [
+        "gemini-3.1-flash-lite-preview",
         "gemini-3-flash-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-2.5-flash-lite",
         "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash"
+        "gemini-2.5-pro"
     ]
+
+    # Prepare historical messages
+    contents = []
+    
+    # Prepend SYSTEM_PROMPT to the very first user message to define behavior
+    # This is more compatible than system_instruction for some preview models
+    current_system_prefix = f"[SYSTEM INSTRUCTION]\n{SYSTEM_PROMPT}\n\n[USER PROMPT]\n"
+
+    if history:
+        for msg in history:
+            role = "user" if msg["role"] == "user" else "model"
+            
+            # Gemini requires alternating roles starting with 'user'
+            if not msg.get("text") or not msg["text"].strip():
+                continue
+
+            if not contents and role == "model":
+                continue # Skip leading model messages to comply with Gemini API
+            
+            # Prepend system instruction to the very first user message
+            text = msg["text"]
+            if not contents and role == "user":
+                text = current_system_prefix + text
+
+            if contents and contents[-1]["role"] == role:
+                contents[-1]["parts"][0]["text"] += f"\n{text}"
+            else:
+                contents.append({
+                    "role": role,
+                    "parts": [{"text": text}]
+                })
+    
+    # If no history, the current message becomes the first user message (with system prefix)
+    if not contents:
+        contents.append({
+            "role": "user",
+            "parts": [{"text": current_system_prefix + user_message}]
+        })
+    else:
+        contents.append({
+            "role": "user",
+            "parts": [{"text": user_message}]
+        })
 
     # Prepare payload once
     payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": contents,
         "tools": tools,
         "generationConfig": {
             "temperature": 0.2, # Lower temperature for factual accuracy
         }
     }
+
+    import time
+    import random
 
     try:
         active_model = None
@@ -302,6 +340,9 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
             for model in models_to_try:
                 if not model: continue
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                
+                # Add jitter to avoid rate limits (especially if retrying)
+                time.sleep(random.random() * 2)
                 
                 try:
                     logging.info(f"AI Chat: Sending request with model '{model}'...")
@@ -342,7 +383,13 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
             if not call_part:
                 # No more tools, return final text
                 text_part = next((p for p in parts if 'text' in p), None)
-                return text_part['text'] if text_part else "I'm sorry, I couldn't generate a response."
+                final_text = text_part['text'] if text_part else ""
+                
+                # Safety check: If for some reason the model returned empty text, return a fallback
+                if not final_text.strip():
+                    return "I found some information, but I'm having trouble summarizing it. Could you try asking in a different way?"
+                
+                return final_text
 
             # Execute tool
             fn_call = call_part['functionCall']
@@ -377,6 +424,7 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
             
             # Continue loop to let model consider the results
 
+        logging.warning("AI Chat: Max tool iterations reached without final text response.")
         return "I've performed too many lookups to answer this question. Could you try being more specific?"
 
     except Exception as e:

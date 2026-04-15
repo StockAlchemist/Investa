@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, date, timezone  # Added UTC
 from utils_time import get_est_today, get_latest_trading_date, is_market_open, get_nyse_calendar # Added for holiday/timezone awareness
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
+import random
 import traceback  # For detailed error logging
 from io import StringIO  # For historical cache loading
 import subprocess
@@ -102,8 +103,43 @@ except ImportError:
         "yf_portfolio_hist_raw_adjusted"  # Keep as prefix for basename construction
     )
 
+# --- Robust MultiIndex Helper ---
+def _extract_ticker_from_df(df, ticker):
+    """Robustly extracts columns for a specific ticker from a yfinance DataFrame."""
+    if df.empty:
+        return pd.DataFrame()
+    
+    # CASE 1: Single Ticker (Flat index or simple column name)
+    if not isinstance(df.columns, pd.MultiIndex):
+        if ticker in df.columns:
+            # If it's a series (e.g. from yf.download(single_ticker)), convert to DF
+            if isinstance(df[ticker], pd.Series):
+                return df[[ticker]].rename(columns={ticker: "Close"})
+            return df[[ticker]]
+        # If columns are OHLC names directly and it's a single ticker fetch
+        # (e.g. 'Close', 'Open' are columns), we assume it's the requested ticker
+        if "Close" in df.columns or "Price" in df.columns:
+            return df
+        return pd.DataFrame()
+    
+    # CASE 2: MultiIndex (group_by='ticker' or multiple symbols)
+    # yfinance alternates between [Ticker, Price] and [Price, Ticker] (at Level 0 or 1)
+    levels = df.columns.nlevels
+    for level in range(levels):
+        if ticker in df.columns.get_level_values(level):
+            # Extract using cross-section
+            try:
+                extracted = df.xs(ticker, axis=1, level=level, drop_level=True)
+                # Ensure the resulting columns are standard OHLC (Close, etc)
+                if not extracted.empty:
+                    return extracted
+            except Exception:
+                continue
+                
+    return pd.DataFrame()
+
 INVALID_SYMBOLS_CACHE_FILE = "invalid_symbols_cache.json"
-INVALID_SYMBOLS_DURATION = 24 * 60 * 60  # 24 hours in seconds
+INVALID_SYMBOLS_DURATION = 4 * 60 * 60  # 4 hours in seconds (Reduced from 24h)
 PERSISTENT_FX_CACHE_FILE = "fx_rates_persistent.json"
 PERSISTENT_FX_DURATION_HOURS = 24
 
@@ -112,8 +148,11 @@ PERSISTENT_FX_DURATION_HOURS = 24
 RELIABLE_SYMBOLS = {
     "AAPL", "MSFT", "GOOG", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "BRK-B",
     "VZ", "BHP", "BBW", "TSM", "ASML", "UNH", "BAC", "NOW", "KO", "CVX", "JPM", "XLE", "VTI", "SPY", "QQQ", "DIA",
-    "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX", "^FTSE", "^N225", "^HSI",
-    "BTC-USD", "ETH-USD", "GC=F", "CL=F", "EURUSD=X", "JPY=X", "GBPUSD=X"
+    "AXP", "BLV", "BND", "C", "DAL", "DPZ", "EFA", "EPP", "GLD", "GS", "IBM", "JNJ", "MA", "NFLX", "NKE", "NLY", "PLTR", "QSR", "SCHG", "SPGI", "VDE", "VGK", "VHT", "VWO",
+    "DIS", "MCD", "V", "PYPL", "CRM", "COST", "PEP", "ABT", "CSCO", "ACN", "AVGO", "ADBE", "LIN", "TMO", "PFE", "ABBV", "DHR", "NEE", "TM", "SAP",
+    "THB=X", "USDTHB=X", "HKD=X", "SGD=X", "EUR=X", "GBP=X", "JPY=X", "CNY=X", "CAD=X", "AUD=X", "INR=X",
+    "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX", "^FTSE", "^N225", "^HSI", "^GDAXI", "^FCHI",
+    "BTC-USD", "ETH-USD", "GC=F", "CL=F", "EURUSD=X", "JPY=X", "GBPUSD=X", "CNYUSD=X", "AUDUSD=X"
 }
 
 # --- Import helpers from finutils.py ---
@@ -160,6 +199,8 @@ _SHARED_MDP_LOCK = threading.Lock()
 # REDUCED TO 1: Force serialized subprocess execution to survive memory-constrained environments
 # This prevents multiple yfinance instances from competing for RAM.
 _FETCH_SEMAPHORE = threading.Semaphore(1)
+_LAST_RATE_LIMIT_TIME = 0.0 # Track when we last saw a 429
+_RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
 
 
 # --- Helper for JSON serialization with NaNs ---
@@ -194,6 +235,15 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
     """
     Actual implementation of the isolated fetch.
     """
+    global _LAST_RATE_LIMIT_TIME
+    
+    # Check for global cool-down before starting
+    elapsed_since_429 = time.time() - _LAST_RATE_LIMIT_TIME
+    if elapsed_since_429 < _RATE_LIMIT_COOLDOWN:
+        wait_time = _RATE_LIMIT_COOLDOWN - elapsed_since_429
+        logging.warning(f"GLOBAL COOL-DOWN ACTIVE: Yahoo Finance rate limited us. Waiting {wait_time:.1f}s more before trying {task} batch...")
+        time.sleep(wait_time)
+
     temp_output = None
     try:
         script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py")
@@ -295,7 +345,8 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
         else:
             msg = response.get('message', 'Unknown error')
             if "Too Many Requests" in msg or "429" in msg or "Rate Limit" in msg:
-                logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Retrying in background...")
+                logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Triggering 60s Global Cool-down.")
+                _LAST_RATE_LIMIT_TIME = time.time()
             else:
                 logging.error(f"Isolated fetch worker reported error: {msg}")
             
@@ -504,6 +555,12 @@ class MarketDataProvider:
             # REDUCED: Was 50. Smaller chunks prevent "poison" tickers from failing large groups.
             chunk_size = 20
             for i in range(0, len(missing_symbols), chunk_size):
+                # Randomized throttling between metadata batches
+                if i > 0:
+                    wait = random.uniform(2.0, 5.0)
+                    logging.info(f"Metadata Throttling: Waiting {wait:.1f}s before next chunk...")
+                    time.sleep(wait)
+                    
                 chunk = missing_symbols[i:i+chunk_size]
                 logging.info(f"Metadata Fetch: Processing batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
                 
@@ -893,9 +950,6 @@ class MarketDataProvider:
                 if df.empty:
                     logging.warning("Combined batch price fetch resulted in empty DataFrame.")
                 else:
-                    # Robust check for MultiIndex or flat tuple index (Moved here for scope)
-                    has_multilevel = getattr(df.columns, 'nlevels', 1) > 1
-                    
                     # Current UTC date for filtering
                     now_utc = datetime.now(timezone.utc).date()
                     
@@ -906,32 +960,8 @@ class MarketDataProvider:
                             prev_close = None
                             sparkline = []
                             
-                            # Handle yf.download structure
-                            sym_df = pd.DataFrame()
-                            if len(yf_symbols_to_fetch) > 1:
-                                try:
-                                    if has_multilevel and yf_sym in df.columns.get_level_values(0):
-                                        sym_df = df[yf_sym]
-                                    elif not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df.columns):
-                                        # Handle flattened MultiIndex (tuples/lists)
-                                        cols_for_sym = [c for c in df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper()]
-                                        sym_df = df[cols_for_sym]
-                                        sym_df.columns = [c[1] for c in sym_df.columns]
-                                    elif has_multilevel and yf_sym not in df.columns.get_level_values(0):
-                                        pass 
-                                    elif yf_sym in df.columns:
-                                        sym_df = df[[yf_sym]].rename(columns={yf_sym: "Close"}) 
-                                except Exception as e_df_parse:
-                                    logging.warning(f"Error parsing DataFrame for {yf_sym}: {e_df_parse}")
-                                    sym_df = pd.DataFrame() 
-                            else:
-                                # Single ticker download
-                                if not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df.columns):
-                                     cols_for_sym = [c for c in df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper()]
-                                     sym_df = df[cols_for_sym]
-                                     sym_df.columns = [c[1] for c in sym_df.columns]
-                                else:
-                                     sym_df = df
+                            # Handle yf.download structure using robust helper
+                            sym_df = _extract_ticker_from_df(df, yf_sym)
                             
                             if not sym_df.empty:
                                 # Check for Close or Price column
@@ -1166,7 +1196,17 @@ class MarketDataProvider:
         if "USD" not in required_currencies:
             required_currencies.add("USD")
             
-        fx_pairs = [f"{c}=X" for c in required_currencies if c != "USD"]
+        # Map currencies to YF pairs
+        # For THB, we fetch both USDTHB=X and THB=X for maximum reliability
+        fx_pairs = []
+        for c_raw in required_currencies:
+            c = c_raw.upper().replace("=X", "").strip()
+            if not c or c == "USD": continue
+            if c == "THB":
+                fx_pairs.extend(["USDTHB=X", "THB=X"])
+            else:
+                fx_pairs.append(f"{c}=X")
+
         
         if fx_pairs:
             logging.info(f"Fetching FX for {len(fx_pairs)} pairs using history...")
@@ -1188,23 +1228,8 @@ class MarketDataProvider:
                             price = None
                             prev = None
                             
-                            # Extract Series for this symbol
-                            # Extract Series for this symbol
-                            sym_df_fx = pd.DataFrame()
-                            
-                            # Check if the dataframe has MultiIndex columns (Level 0 = Ticker)
-                            if has_multilevel_fx:
-                                if yf_symbol in fx_history_df.columns.get_level_values(0):
-                                    sym_df_fx = fx_history_df[yf_symbol]
-                            else:
-                                # Flat dataframe.
-                                # If we requested multiple symbols, we can't easily distinguish unless columns have names
-                                # But if we requested only 1, it must be it.
-                                if len(fx_pairs) == 1:
-                                    sym_df_fx = fx_history_df
-                                # Else (multiple symbols but flat): 
-                                # This happens if yf failed to group, or columns are like 'Close' and it's ambiguous.
-                                # We'll skip or try to match prefix if columns are 'THB=X Close' (unlikely with auto_adjust)
+                            # Use robust helper for extraction
+                            sym_df_fx = _extract_ticker_from_df(fx_history_df, yf_symbol)
                             
                             if not sym_df_fx.empty:
                                 close_col = "Close" if "Close" in sym_df_fx.columns else (sym_df_fx.columns[0] if len(sym_df_fx.columns) > 0 else None)
@@ -1223,14 +1248,22 @@ class MarketDataProvider:
                                             prev = price # Fallback
 
                             base_curr_from_symbol = yf_symbol.replace("=X", "").upper()
+                            # Handle 6-char pairs like USDTHB=X
+                            if len(base_curr_from_symbol) == 6 and base_curr_from_symbol.startswith("USD"):
+                                base_curr_from_symbol = base_curr_from_symbol[3:]
                                 
                             if price and price > 0:
-                                fx_rates_vs_usd[base_curr_from_symbol] = price
-                                if prev and prev > 0:
-                                    fx_prev_close_vs_usd[base_curr_from_symbol] = prev
+                                # If this currency already has a rate (e.g. from USDTHB=X), 
+                                # we only update if this one is somehow better or the previous was missing.
+                                # Actually, prioritize USDTHB=X if we got it.
+                                if base_curr_from_symbol not in fx_rates_vs_usd or "USD" in yf_symbol:
+                                    fx_rates_vs_usd[base_curr_from_symbol] = price
+                                    if prev and prev > 0:
+                                        fx_prev_close_vs_usd[base_curr_from_symbol] = prev
                             else:
-                                logging.warning(f"FX Fetch: Invalid/Empty history for {yf_symbol}")
-                                has_warnings = True
+                                if base_curr_from_symbol not in fx_rates_vs_usd:
+                                    logging.warning(f"FX Fetch: Invalid/Empty history for {yf_symbol}")
+                                    has_warnings = True
 
                         except Exception as e_fx_sym:
                             logging.warning(f"Error extracting FX for {yf_symbol}: {e_fx_sym}")
@@ -1576,21 +1609,8 @@ class MarketDataProvider:
                     # 2. Fallback to History if price is missing
                     if price is None and not index_hist_df.empty:
                         try:
-                            # Extract specific symbol dataframe
-                            sym_df = pd.DataFrame()
-                            has_multilevel = getattr(index_hist_df.columns, 'nlevels', 1) > 1
-                            
-                            if len(yf_tickers_to_fetch) > 1:
-                                if has_multilevel and yf_symbol in index_hist_df.columns.get_level_values(0):
-                                    sym_df = index_hist_df[yf_symbol]
-                                elif not has_multilevel:
-                                    # Try to find columns starting with symbol if flattened
-                                    cols_for_sym = [c for c in index_hist_df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper()]
-                                    if cols_for_sym:
-                                        sym_df = index_hist_df[cols_for_sym]
-                                        sym_df.columns = [c[1] for c in sym_df.columns]
-                            else:
-                                sym_df = index_hist_df
+                            # Use robust helper for extraction
+                            sym_df = _extract_ticker_from_df(index_hist_df, yf_symbol)
                                 
                             if not sym_df.empty:
                                 close_col = "Close" if "Close" in sym_df.columns else sym_df.columns[0]
@@ -1979,7 +1999,7 @@ class MarketDataProvider:
         if "m" in interval or "h" in interval:
              fetch_batch_size = 5
         else:
-             fetch_batch_size = 50 
+             fetch_batch_size = 25 # Reduced from 50 to avoid being flagged as robot
 
 
         # --- ADDED: Retry logic parameters for increased network robustness ---
@@ -1991,6 +2011,12 @@ class MarketDataProvider:
         all_missing_symbols = []
 
         for i in range(0, len(symbols_yf), fetch_batch_size):
+            # Randomized throttling between history batches
+            if i > 0:
+                wait = random.uniform(3.0, 10.0)
+                logging.info(f"Historical Throttling: Waiting {wait:.1f}s before next chunk...")
+                time.sleep(wait)
+                
             batch_symbols = symbols_yf[i : i + fetch_batch_size]
             data = pd.DataFrame()  # Initialize empty DataFrame for the batch
             
@@ -2061,6 +2087,16 @@ class MarketDataProvider:
                             logging.info(f"  Hist Fetch Helper: No trading days in range {yf_start_date} to {yf_end_date}. Avoiding retries.")
                             break # Exit retry loop, return empty
                             
+                        # --- IMPROVED: Check if all symbols in batch are reliable and market is closed ---
+                        is_all_reliable = all(s in RELIABLE_SYMBOLS for s in batch_symbols)
+                        market_closed = not is_market_open()
+                        
+                        if is_all_reliable and market_closed:
+                             # If we are closed and it's a reliable symbol, an empty result is likely 
+                             # just yfinance not having the 'today' data yet. No need for alarm or heavy retries.
+                             logging.info(f"  Hist Fetch Helper: Reliable batch {batch_symbols[:3]} returned empty during after-hours. Skipping further retries.")
+                             break
+
                         logging.warning(
                             f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}) for symbols {batch_symbols[:3]}...: yf.download returned empty DataFrame. Retrying (Potential transient error)..."
                         )
@@ -2073,6 +2109,11 @@ class MarketDataProvider:
                     )
                     break  # Exit retry loop on success
                 except Exception as e_batch:
+                    # Skip noise for 429 errors which are handled by global cooldown
+                    if "429" in str(e_batch):
+                        logging.error(f"  Hist Fetch Helper: Rate limited (429). Stopping batch retries.")
+                        break
+
                     logging.warning(
                         f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}) during yf.download for batch starting with {batch_symbols[0]}: {e_batch}"
                     )
@@ -2091,28 +2132,23 @@ class MarketDataProvider:
             missing_symbols_in_batch = []
             
             # Check if we broke out due to valid empty result
-            valid_empty_batch = False
+            is_valid_empty_batch = False
             if data.empty and len(batch_symbols) > 0:
-                 # If we didn't raise an exception but data is empty, check if we intended to treat it as valid.
-                 # We can rely on a flag or state. 
-                 # Let's see... my previous change added a 'break' inside the loop.
-                 # If we broke because of valid empty, 'data' is empty.
-                 # We need to distinguish "failed all retries" (data empty) vs "valid empty" (data empty).
-                 # We can assume if we didn't log an ERROR for all retries, then it might be valid.
-                 # Better: Initialize valid_empty_batch = False outside loop.
-                 # Ah, implementing that purely via replace_content is tricky without context diff.
-                 # Let's just check the log logic? No.
-                 # I will assume "valid empty" if we broke early.
-                 # But 'break' just exits the loop.
-                 pass
+                 is_all_reliable = all(s in RELIABLE_SYMBOLS for s in batch_symbols)
+                 market_closed = not is_market_open()
+                 if is_all_reliable and market_closed:
+                      is_valid_empty_batch = True
+                      logging.info(f"  Hist Fetch Helper: Batch {batch_symbols[:3]} identified as validly empty (Closed Market + Reliable). Skipping recovery.")
 
-            # Actually, let's just modify the check below.
             if data.empty:
-                # If batch failed completely, all are arguably 'missing' data-wise.
-                # We add them to missing_symbols_in_batch so we can try them INDIVIDUALLY in the recovery phase.
-                # This helps isolate a single 'poisoned' ticker that might be making the whole batch return empty.
-                logging.info(f"  Hist Fetch Helper: Batch returned empty. Queueing for individual recovery: {', '.join(batch_symbols[:5])}...")
-                missing_symbols_in_batch = batch_symbols
+                if not is_valid_empty_batch:
+                    # If batch failed completely and isn't a known 'valid empty' case,
+                    # queue for individual recovery to isolate potential ticker issues.
+                    logging.info(f"  Hist Fetch Helper: Batch returned empty (potential error). Queueing for recovery: {', '.join(batch_symbols[:5])}...")
+                    missing_symbols_in_batch = batch_symbols
+                else:
+                    # Valid empty: we don't treat them as 'missing' for recovery
+                    missing_symbols_in_batch = []
             else:
 
                 for symbol in batch_symbols:
@@ -2125,19 +2161,18 @@ class MarketDataProvider:
                         if symbol.startswith("^"):
                              symbols_to_try.append(symbol[1:])
                         
-                        # Robust Logic for MultiIndex (Price, Ticker)
-                        if isinstance(data.columns, pd.MultiIndex):
-                            for s_to_try in symbols_to_try:
-                                if s_to_try in data.columns.get_level_values(1):
-                                    df_symbol = data.xs(s_to_try, axis=1, level=1, drop_level=True)
-                                    found_in_batch = True
-                                    break
-                                elif s_to_try in data.columns.get_level_values(0):
-                                    df_symbol = data[s_to_try]
-                                    found_in_batch = True
-                                    break
-                        else:
-                            # Flat Index matching
+                        # Use robust helper for extraction
+                        df_symbol = _extract_ticker_from_df(data, symbol)
+                        if not df_symbol.empty:
+                            found_in_batch = True
+                        elif symbol.startswith("^"):
+                             # Try without caret
+                             stripped_sym = symbol[1:]
+                             df_symbol = _extract_ticker_from_df(data, stripped_sym)
+                             if not df_symbol.empty:
+                                 found_in_batch = True
+                        if not found_in_batch:
+                            # Flat Index matching fallback
                             for s_to_try in symbols_to_try:
                                 matching_cols = []
                                 for c in data.columns:
@@ -2286,10 +2321,26 @@ class MarketDataProvider:
             if final_missing:
                 logging.warning(f"  Hist Fetch Helper: {len(final_missing)} symbols failed recovery: {final_missing[:10]}...")
                 
+                # --- SAFETY: High failure rate protection ---
+                # If a large percentage of symbols fail at once, it's likely a systematic issue (rate limit, API down, network, or market closed)
+                # rather than all of them actually being invalid symbols.
+                if len(final_missing) > len(symbols_yf) * 0.5 and len(symbols_yf) > 5:
+                    is_all_reliable = all(s in RELIABLE_SYMBOLS or s.startswith("^") for s in final_missing)
+                    market_closed = not is_market_open()
+                    
+                    if is_all_reliable and market_closed:
+                        logging.info(f"  Hist Fetch Helper: Systematic absence of data for {len(final_missing)} reliable symbols during after-hours. This is expected.")
+                    else:
+                        logging.warning(f"  Hist Fetch Helper: High failure rate detected ({len(final_missing)}/{len(symbols_yf)}). Skipping cache invalidation to avoid false positives.")
+                    
+                    final_missing = [] # Emptying this prevents the loop below from marking them as invalid
+                
                 # Check for rate limit indicators in logs of current execution
                 # If we were rate limited, don't mark anything as invalid.
                 rate_limit_detected = any("429" in msg or "Too Many Requests" in msg for msg in str(all_missing_symbols)) # Heuristic
-                # More reliable: the worker returns 'Too Many Requests' in the message
+                if rate_limit_detected:
+                    logging.info("  Hist Fetch Helper: Rate limit detected in batch. Skipping cache invalidation.")
+                    final_missing = []
                 
                 for s in final_missing:
                     # SAFETY: Don't mark reliable symbols as invalid based on a transient failure
