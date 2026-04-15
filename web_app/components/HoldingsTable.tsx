@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card";
 
 import { useStockModal } from '@/context/StockModalContext';
 import WatchlistStar from './WatchlistStar';
-import { getHeatmapClass } from '../lib/utils';
+import { getHeatmapClass, formatCurrency } from '../lib/utils';
 import { TrendSparkline } from './ui/TrendSparkline';
 import { InlineProgressBar } from './ui/InlineProgressBar';
 import { SemanticBadge } from './ui/SemanticBadge';
@@ -280,26 +280,26 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     const resolvedKeysRef = useRef<Record<string, string>>({});
 
     // Helper to get value from holding object handling currency suffix
-    const getValue = useCallback((holding: Holding, header: string) => {
+    const getValue = useCallback((holding: Holding, header: string): string | number | string[] | number[] | null => {
         const prefix = COLUMN_DEFINITIONS[header];
         if (!prefix) return null;
 
         // Try exact match first
-        if (holding[prefix] !== undefined) return holding[prefix];
+        if (holding[prefix] !== undefined) return holding[prefix] as string | number | string[] | number[] | null;
 
         // Try with currency suffix (e.g., "Market Value (USD)")
         const keyWithCurrency = `${prefix} (${currency})`;
-        if (holding[keyWithCurrency] !== undefined) return holding[keyWithCurrency];
+        if (holding[keyWithCurrency] !== undefined) return holding[keyWithCurrency] as string | number | string[] | number[] | null;
 
         // Try cached resolved key
         const cachedKey = resolvedKeysRef.current[prefix];
-        if (cachedKey && holding[cachedKey] !== undefined) return holding[cachedKey];
+        if (cachedKey && holding[cachedKey] !== undefined) return holding[cachedKey] as string | number | string[] | number[] | null;
 
         // Fallback: search for key starting with prefix
         const foundKey = Object.keys(holding).find(k => k.startsWith(prefix));
         if (foundKey) {
             resolvedKeysRef.current[prefix] = foundKey; // Cache for next time
-            return holding[foundKey];
+            return holding[foundKey] as string | number | string[] | number[] | null;
         }
         return null;
     }, [currency]);
@@ -698,23 +698,19 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     };
 
     // Formatters
-    const formatValue = (val: unknown, header: string) => {
-        if (val === null || val === undefined) return '-';
-        if (typeof val !== 'number') return val as string;
+    const formatValue = (val: number | string | string[] | number[] | null | undefined, field: string) => {
+        if (val === undefined || val === null || val === '') return '-';
+        if (Array.isArray(val)) return val.join(', ');
+        const num = typeof val === 'string' ? parseFloat(val.replace(/[^0-9.-]/g, '')) : val;
+        if (isNaN(num)) return val;
 
-        if (header.includes('%') || header.includes('Yield') || header.includes('Ret')) {
-            return `${val.toFixed(2)}%`;
+        if (field.includes('%') || field.includes('Yield') || field === 'Weight') {
+            return `${num.toFixed(2)}%`;
         }
-
-        if (['Price', 'Cost Basis', 'Avg Cost', 'Mkt Val', 'Day Chg', 'Unreal. G/L', 'Real. G/L', 'Divs', 'Fees', 'Total G/L', 'Total Buy Cost', 'FX G/L', 'Est. Income', 'Intrinsic Value'].includes(header)) {
-            return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (field.includes('Price') || field.includes('Value') || field.includes('Cost') || field.includes('Gain') || field.includes('Div') || field.includes('Balance')) {
+            return formatCurrency(num, currency);
         }
-
-        if (header === 'Quantity') {
-            return val.toLocaleString();
-        }
-
-        return val;
+        return num.toLocaleString();
     };
 
     const getCellClass = (val: unknown, header: string) => {
@@ -1150,7 +1146,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                             <>
                                                                                 {val && Array.isArray(val) && val.length > 0 ? (
                                                                                     <div className="flex flex-wrap gap-1">
-                                                                                        {val.map((tag: string, i: number) => (
+                                                                                        {(val as string[]).map((tag: string, i: number) => (
                                                                                             <SemanticBadge key={i} text={tag} />
                                                                                         ))}
                                                                                     </div>
@@ -1192,7 +1188,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                             {formatValue(val, header)}
                                                                             {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
                                                                                 <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
-                                                                                    ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
+                                                                                    ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
                                                                                 </span>
                                                                             )}
                                                                         </span>
@@ -1312,7 +1308,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                             <div className="flex items-center justify-end gap-2 group/tags min-w-[120px]">
                                                                 <div className="flex flex-wrap gap-1 justify-end">
                                                                     {Array.isArray(val) && val.length > 0 ? (
-                                                                        val.map((tag: string, i: number) => (
+                                                                        (val as string[]).map((tag: string, i: number) => (
                                                                             <SemanticBadge key={i} text={tag} />
                                                                         ))
                                                                     ) : (
@@ -1322,7 +1318,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        const tags = Array.isArray(val) ? val : [];
+                                                                        const tags = Array.isArray(val) ? val as string[] : [];
                                                                         const acc = formatValue(getValue(holding, "Account"), "Account") as string;
                                                                         handleEditTags(holding.Symbol, acc, tags);
                                                                     }}
@@ -1356,7 +1352,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 {formatValue(val, header)}
                                                                 {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
                                                                     <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
-                                                                        ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
+                                                                        ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
                                                                     </span>
                                                                 )}
                                                             </span>
@@ -1491,9 +1487,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                         }`}>
                                         {formatValue(holding.intrinsic_value, "Intrinsic Value")}
                                         {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
-                                            <span className="text-[10px] opacity-70 ml-1">
-                                                ({holding.margin_of_safety > 0 ? '+' : ''}{holding.margin_of_safety.toFixed(1)}%)
-                                            </span>
+                                                <span className="text-[10px] opacity-70 ml-1">
+                                                    ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
+                                                </span>
                                         )}
                                     </span>
                                 </div>

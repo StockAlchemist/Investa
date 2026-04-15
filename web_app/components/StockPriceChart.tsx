@@ -49,7 +49,7 @@ const COLORS = [
 
 // --- Helper Functions ---
 const formatValue = (val: number, view: 'price' | 'return', currency: string) => {
-    if (view === 'return') return `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
+    if (view === 'return') return `${val.toFixed(2)}%`;
     return formatCurrency(val, currency);
 };
 
@@ -290,7 +290,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice }
                             <span className="text-sm font-bold text-foreground">
                                 {view === 'price' ? formatCurrency(dataPoint.value, currency) :
                                     <span className={dataPoint.return_pct >= 0 ? "text-emerald-500" : "text-red-500"}>
-                                        {dataPoint.return_pct >= 0 ? '+' : ''}{dataPoint.return_pct.toFixed(2)}%
+                                        {dataPoint.return_pct.toFixed(2)}%
                                     </span>
                                 }
                             </span>
@@ -338,7 +338,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice }
                                 </span>
                             )}
                             <span className={`text-base font-medium ${stats.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
-                                {stats.change >= 0 ? '+' : ''}{formatCurrency(stats.change, currency)} ({stats.changePct.toFixed(2)}%)
+                                {formatCurrency(stats.change, currency)} ({stats.changePct.toFixed(2)}%)
                             </span>
                         </div>
                     ) : (

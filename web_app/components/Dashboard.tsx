@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { PortfolioSummary, PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard'; // Use new component
@@ -15,12 +15,21 @@ import {
     PieChart,
     Loader2
 } from 'lucide-react';
-
-// Lazy component import logic handled by parent or standard import above
-import RiskMetrics from './RiskMetrics';
-import { SectorAttribution, TopContributors } from './AttributionChart';
-import PortfolioDonut from './PortfolioDonut';
 import { Holding } from '@/lib/api';
+
+// Lazy-load heavy analytics components — these pull in recharts and complex chart logic
+const RiskMetrics = lazy(() => import('./RiskMetrics'));
+const PortfolioDonut = lazy(() => import('./PortfolioDonut'));
+
+// Named export wrappers for lazy loading
+const SectorAttribution = lazy(() => import('./AttributionChart').then(m => ({ default: m.SectorAttribution })));
+const TopContributors = lazy(() => import('./AttributionChart').then(m => ({ default: m.TopContributors })));
+
+const AnalyticsFallback = () => (
+    <div className="h-full rounded-2xl bg-muted/30 animate-pulse flex items-center justify-center min-h-[200px]">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/40" />
+    </div>
+);
 
 interface DashboardProps {
     summary: PortfolioSummary;
@@ -163,9 +172,9 @@ export default function Dashboard({
                 return <MetricCard
                     title="Total TWR"
                     value={m?.cumulative_twr !== undefined && m?.cumulative_twr !== null ?
-                        `${m.cumulative_twr > 0 ? '+' : ''}${m.cumulative_twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'}
+                        `${Math.abs(m.cumulative_twr).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'}
                     subValue={m?.annualized_twr !== undefined && m?.annualized_twr !== null ?
-                        `${m.annualized_twr > 0 ? '+' : ''}${m.annualized_twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined}
+                        `${Math.abs(m.annualized_twr).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined}
                     isCurrency={false}
                     colorClass={m?.cumulative_twr && m.cumulative_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     subValueClassName={cn("", (m?.annualized_twr ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
@@ -267,9 +276,9 @@ export default function Dashboard({
                 return <MetricCard
                     title="Dividend Yield %"
                     value={m?.dividend_return_cumulative !== undefined && m?.dividend_return_cumulative !== null ?
-                        `${m.dividend_return_cumulative > 0 ? '+' : ''}${m.dividend_return_cumulative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'}
+                        `${Math.abs(m.dividend_return_cumulative).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'}
                     subValue={m?.dividend_return_annualized !== undefined && m?.dividend_return_annualized !== null ?
-                        `${m.dividend_return_annualized > 0 ? '+' : ''}${m.dividend_return_annualized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined}
+                        `${Math.abs(m.dividend_return_annualized).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined}
                     isCurrency={false}
                     colorClass={m?.dividend_return_cumulative && m.dividend_return_cumulative >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     subValueClassName={cn("", (m?.dividend_return_annualized ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
@@ -292,11 +301,11 @@ export default function Dashboard({
                     variant={variant}
                 />;
             case 'riskMetrics':
-                return <RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} isRefreshing={isRefreshing} />;
+                return <Suspense fallback={<AnalyticsFallback />}><RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} isRefreshing={isRefreshing} /></Suspense>;
             case 'sectorContribution':
-                return <SectorAttribution data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} />;
+                return <Suspense fallback={<AnalyticsFallback />}><SectorAttribution data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} /></Suspense>;
             case 'topContributors':
-                return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} showClosed={showClosed} />;
+                return <Suspense fallback={<AnalyticsFallback />}><TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} showClosed={showClosed} /></Suspense>;
             case 'portfolioDonut':
                 return (
                     <div className="metric-card card-shine h-full p-5 relative overflow-hidden group">
@@ -315,7 +324,9 @@ export default function Dashboard({
                                 </div>
                             </div>
                             <div className="h-[calc(100%-48px)]">
-                                <PortfolioDonut holdings={holdings} currency={currency} />
+                                <Suspense fallback={<AnalyticsFallback />}>
+                                    <PortfolioDonut holdings={holdings} currency={currency} />
+                                </Suspense>
                             </div>
                         </div>
                     </div>

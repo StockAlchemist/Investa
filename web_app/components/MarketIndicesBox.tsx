@@ -92,7 +92,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
                                     ? <TrendingUp className="w-2.5 h-2.5 shrink-0" />
                                     : <TrendingDown className="w-2.5 h-2.5 shrink-0" />
                                 }
-                                {isUp ? '+' : ''}{(index.changesPercentage || 0).toFixed(2)}%
+                                {Math.abs(index.changesPercentage || 0).toFixed(2)}%
                             </span>
                         </div>
                         <div className="relative z-10 text-xs font-bold text-foreground tabular-nums leading-none">

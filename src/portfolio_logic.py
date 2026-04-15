@@ -599,21 +599,32 @@ def calculate_portfolio_summary(
         if fx_series_list:
             # Concat into a wide DataFrame
             master_fx_df = pd.concat(fx_series_list, axis=1)
+            # --- IMPROVE: Handle NaNs in FX data (holidays, weekends) ---
             master_fx_df.sort_index(inplace=True)
+            master_fx_df = master_fx_df.ffill().bfill()
+
             
-            # --- ADDED: Normalize column names (e.g. USDTHB -> THB) ---
+            # --- ADDED: Normalize column names (e.g. USDTHB=X -> THB) ---
             # This ensures that 'THB' is found in master_fx_df.columns later.
             rename_map = {}
             for col in master_fx_df.columns:
-                if col == "USDTHB":
-                    rename_map[col] = "THB"
-                elif col.endswith("USD") and col != "USD": # e.g. EURUSD
-                     rename_map[col] = col.replace("USD", "")
-                     # Note: EURUSD is USD/EUR. If we want EUR/USD (Local/USD), we must invert.
-                     # However, the current cross-rate logic below handles it if we are consistent.
-                     # Let's see if we should invert here or let the cross-rate logic handle it.
-                elif col.startswith("USD") and col != "USD": # e.g. USDJPY
-                     rename_map[col] = col.replace("USD", "")
+                # 1. Strip =X suffix if present
+                clean_name = col.replace("=X", "").upper()
+                
+                # 2. Extract local currency if it's a USD pair (e.g. USDTHB or EURUSD)
+                if len(clean_name) == 6:
+                    if clean_name.startswith("USD"):
+                        final_code = clean_name[3:]
+                    elif clean_name.endswith("USD"):
+                        final_code = clean_name[:3]
+                    else:
+                        final_code = clean_name
+                else:
+                    final_code = clean_name
+                
+                if final_code != col:
+                    rename_map[col] = final_code
+
             
             if rename_map:
                 master_fx_df.rename(columns=rename_map, inplace=True)
@@ -694,19 +705,27 @@ def calculate_portfolio_summary(
                         rate_to_use = raw_rate
                         
                         # --- IMPROVED HEURISTIC ---
-                        # If a pair looks like CURUSD=X (Standard Major Quote), it's likely USD per 1 Local.
-                        # We need Local per 1 USD -> Invert.
-                        # (Note: we use the series itself to check if mean is > 5 as a safety, 
-                        # but the name is the primary driver).
+                        # Standardize all rates to "Local per 1 USD" (e.g. THB=35, JPY=150, EUR=0.92)
+                        # so that: Rate_to_Target = Target_per_USD / Local_per_USD
                         
                         avg_rate = raw_rate.mean()
-                        is_inverted_major = (curr_col in ["EUR", "GBP", "AUD", "NZD"]) and (avg_rate > 1.0)
+                        is_major = curr_col in ["EUR", "GBP", "AUD", "NZD"]
                         
-                        if is_inverted_major:
-                            # If it's a major currency and rate is > 1.0 (e.g. 1.08), 
-                            # it's almost certainly USD/Local. Invert it.
+                        # 1. If it's a major currency and > 1.0 (e.g. 1.08), it's USD/Local. Invert to get Local/USD (~0.92).
+                        if is_major and avg_rate > 1.0:
                             rate_to_use = 1.0 / raw_rate
-                            logging.debug(f"Vectorized FX: Inverting {curr_col} (Avg={avg_rate:.4f}) as it appears to be USD/Local.")
+                            logging.debug(f"Vectorized FX: Inverting major {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
+                        # 2. If it's THB and < 1.0 (e.g. 0.028), it's USD/THB. Invert to get THB/USD (~35.0).
+                        elif curr_col == "THB" and avg_rate < 1.0:
+                            rate_to_use = 1.0 / raw_rate
+                            logging.debug(f"Vectorized FX: Inverting {curr_col} (Avg={avg_rate:.4f}) to THB/USD.")
+                        # 3. General catch-all: if rate is extremely small (< 0.1), it's likely USD/Local
+                        elif avg_rate < 0.1:
+                            rate_to_use = 1.0 / raw_rate
+                            logging.debug(f"Vectorized FX: Inverting low-rate {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
+                        else:
+                            rate_to_use = raw_rate
+
                         
                         cross_rates = display_rates / rate_to_use
                         

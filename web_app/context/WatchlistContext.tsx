@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useMemo, useState, useEffect, ReactNode } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getWatchlists, fetchWatchlist, addToWatchlist, removeFromWatchlist, WatchlistItem } from '@/lib/api';
 
@@ -17,10 +17,18 @@ const WatchlistContext = createContext<WatchlistContextType | undefined>(undefin
 export function WatchlistProvider({ children }: { children: ReactNode }) {
     const queryClient = useQueryClient();
 
+    // Defer watchlist fetching by 2s so it doesn't compete with critical dashboard queries
+    const [ready, setReady] = useState(false);
+    useEffect(() => {
+        const timer = setTimeout(() => setReady(true), 2000);
+        return () => clearTimeout(timer);
+    }, []);
+
     // Fetch all watchlists metadata
     const { data: watchlists = [], isLoading: isLoadingLists } = useQuery({
         queryKey: ['watchlists'],
         queryFn: ({ signal }) => getWatchlists(signal),
+        enabled: ready,
     });
 
     // Fetch all items from all watchlists to build a symbol mapping

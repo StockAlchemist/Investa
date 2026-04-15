@@ -4,7 +4,7 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 import { WebVitals } from "@/components/WebVitals";
 import { AuthProvider } from "@/context/AuthContext";
-import AIChat from "@/components/AIChat";
+import LazyAIChat from "@/components/LazyAIChat";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -35,7 +35,7 @@ export default function RootLayout({
           <AuthProvider>
             <WebVitals />
             {children}
-            <AIChat />
+            <LazyAIChat />
           </AuthProvider>
         </Providers>
       </body>

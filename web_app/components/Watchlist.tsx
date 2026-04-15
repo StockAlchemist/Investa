@@ -517,7 +517,6 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                             )}>
                                                 <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-red-600 dark:text-red-500 font-bold'
                                                     }`}>
-                                                    {(item["Day Change"] || 0) >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
                                                     {item["Day Change %"] ? formatPercent(item["Day Change %"] / 100) : '-'}
                                                 </div>
                                             </td>
@@ -554,12 +553,9 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                         <span className="font-mono font-medium">
                                                             {formatCurrency(item.intrinsic_value, item.Currency || 'USD')}
                                                         </span>
-                                                        {item.margin_of_safety !== undefined && (
-                                                            <span className={cn(
-                                                                "text-[10px] font-bold",
-                                                                item.margin_of_safety > 0 ? "text-emerald-500" : "text-rose-500"
-                                                            )}>
-                                                                {item.margin_of_safety > 0 ? '+' : ''}{item.margin_of_safety.toFixed(1)}% MOS
+                                                        {item.margin_of_safety !== undefined && item.margin_of_safety !== null && (
+                                                            <span className={`text-[10px] font-black uppercase tracking-tighter ${item.margin_of_safety >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                                {item.margin_of_safety.toFixed(1)}% MOS
                                                             </span>
                                                         )}
                                                     </div>

@@ -371,8 +371,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
         const formatUpside = (upside: number | null) => {
             if (upside === null) return null;
-            const prefix = upside > 0 ? '+' : '';
-            return `${prefix}${formatPercentShared(upside)}`;
+            return formatPercentShared(upside);
         };
 
         const getUpsideColor = (upside: number | null) => {
@@ -422,7 +421,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             <StatCard
                                 label="Unrealized G/L"
                                 value={formatCurrency(userPosition["Unreal. Gain"])}
-                                subValue={`${userPosition["Unreal. Gain %"] >= 0 ? '+' : ''}${userPosition["Unreal. Gain %"].toFixed(2)}%`}
+                                subValue={`${userPosition["Unreal. Gain %"].toFixed(2)}%`}
                                 subValueColor={userPosition["Unreal. Gain %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 valueColor={userPosition["Unreal. Gain"] >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 icon={LucideActivity}
@@ -431,20 +430,20 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             <StatCard
                                 label="Total Return"
                                 value={formatCurrency(userPosition["Total Gain"])}
-                                subValue={`${userPosition["Total Return %"] >= 0 ? '+' : ''}${userPosition["Total Return %"].toFixed(2)}%`}
+                                subValue={`${userPosition["Total Return %"].toFixed(2)}%`}
                                 subValueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 valueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 icon={TrendingUp}
                                 color={userPosition["Total Return %"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
                                 extra={
                                     <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-500/90 leading-tight">
-                                        Divs: +{formatCurrency(userPosition["Dividends"])}
+                                        Divs: {formatCurrency(userPosition["Dividends"])}
                                     </p>
                                 }
                             />
                             <StatCard
                                 label="IRR %"
-                                value={`${userPosition["IRR %"] >= 0 ? '+' : ''}${userPosition["IRR %"].toFixed(2)}%`}
+                                value={`${userPosition["IRR %"].toFixed(2)}%`}
                                 icon={LineChartIcon}
                                 valueColor={userPosition["IRR %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 color={userPosition["IRR %"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
@@ -1101,7 +1100,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             "text-3xl font-bold tracking-tight",
                             (margin_of_safety_pct || 0) > 0 ? "text-emerald-500" : "text-rose-500"
                         )}>
-                            {margin_of_safety_pct?.toFixed(2)}%
+                            {(margin_of_safety_pct || 0).toFixed(2)}%
                         </p>
                     </div>
                 </div>
@@ -1278,25 +1277,25 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     <div className="grid grid-cols-2 gap-4">
                                         <ParamItem
                                             label="Trailing EPS"
-                                            value={models.graham.parameters.eps?.toFixed(2)}
+                                            value={(models.graham.parameters.eps || 0).toFixed(2)}
                                             info={VALUATION_INFO.eps}
                                         />
                                         <ParamItem
                                             label="Growth Rate (g)"
-                                            value={`${models.graham.parameters.growth_rate_pct?.toFixed(2)}%`}
+                                            value={`${(models.graham.parameters.growth_rate_pct || 0).toFixed(2)}%`}
                                             info={VALUATION_INFO.graham_growth}
                                         />
                                         {models.graham.parameters.applied_growth_pct !== undefined && models.graham.parameters.applied_growth_pct !== models.graham.parameters.growth_rate_pct && (
                                             <ParamItem
                                                 label="Applied Growth"
-                                                value={`${models.graham.parameters.applied_growth_pct?.toFixed(2)}%`}
+                                                value={`${(models.graham.parameters.applied_growth_pct || 0).toFixed(2)}%`}
                                                 className="text-amber-500 font-bold"
                                                 info={{ description: "The growth rate actually used in the formula after applying stability caps.", default: "30% Max" }}
                                             />
                                         )}
                                         <ParamItem
                                             label="Bond Yield (Y)"
-                                            value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`}
+                                            value={`${(models.graham.parameters.bond_yield_proxy || 0).toFixed(2)}%`}
                                             info={VALUATION_INFO.bond_yield}
                                         />
                                         {models.graham.parameters.note && (

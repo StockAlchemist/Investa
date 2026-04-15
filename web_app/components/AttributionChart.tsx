@@ -244,7 +244,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                                 <div className="bg-red-500/10 p-0.5 rounded-full"><TrendingDown className="w-3 h-3 text-red-500" /></div>
                                             }
                                             <span className={cn("text-sm sm:text-base font-medium tracking-tight whitespace-nowrap", stock.gain >= 0 ? 'text-emerald-500' : 'text-red-500')}>
-                                                {stock.gain >= 0 ? '+' : ''}{formatCurrencyHelper(stock.gain, currency)}
+                                                {formatCurrencyHelper(stock.gain, currency)}
                                                 <span className="text-[10px] sm:text-xs ml-1 opacity-80">({formatPercentHelper(stock.contribution)})</span>
                                             </span>
                                         </div>
@@ -347,7 +347,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                             </div>
                             <div className="text-right">
                                 <p className={`text-sm font-bold tabular-nums ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
-                                    {stock.gain >= 0 ? '+' : ''}{formatCurrencyHelper(stock.gain, currency)}
+                                    {formatCurrencyHelper(stock.gain, currency)}
                                     <span className="text-[10px] ml-1 opacity-70">({formatPercentHelper(stock.contribution)})</span>
                                 </p>
                                 <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{stock.sector}</p>

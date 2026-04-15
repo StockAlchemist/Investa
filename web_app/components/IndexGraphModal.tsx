@@ -57,7 +57,7 @@ const CustomTooltip = ({ active, payload, label, period }: any) => {
                             </div>
                             <div className="flex flex-col items-end">
                                 <span className={`text-xs font-black tabular-nums ${entry.value >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    {entry.value >= 0 ? '+' : ''}{entry.value.toFixed(2)}%
+                                    {entry.value.toFixed(2)}%
                                 </span>
                                 {payload[0]?.payload?.[`${entry.name}_price`] !== undefined && (
                                     <span className="text-[10px] font-medium text-muted-foreground tabular-nums">
@@ -186,7 +186,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                                     "text-[10px] font-bold tracking-tight tabular-nums",
                                                     displayPct >= 0 ? "text-emerald-500" : "text-rose-500"
                                                 )}>
-                                                    {displayPct >= 0 ? '+' : ''}{displayPct.toFixed(2)}%
+                                                    {displayPct.toFixed(2)}%
                                                 </span>
                                             </div>
                                         </React.Fragment>
@@ -257,7 +257,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                     interval="preserveStartEnd"
                                 />
                                 <YAxis
-                                    tickFormatter={(val) => `${val > 0 ? '+' : ''}${val}%`}
+                                    tickFormatter={(val) => `${val}%`}
                                     tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))', fontWeight: 700 }}
                                     axisLine={false}
                                     tickLine={false}

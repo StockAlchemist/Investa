@@ -161,7 +161,7 @@ export default function PerformanceGraph({
 
             const stats = [{
                 label: "Period TWR",
-                text: `${twr > 0 ? '+' : ''}${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
+                text: `${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
                 color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
             }];
 
@@ -174,7 +174,7 @@ export default function PerformanceGraph({
                 const annualizedTwr = ((Math.pow(1 + twr / 100, 1 / years) - 1) * 100);
                 stats.push({
                     label: "Ann. TWR",
-                    text: `${annualizedTwr > 0 ? '+' : ''}${annualizedTwr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
+                    text: `${annualizedTwr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
                     color: annualizedTwr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
                 });
             }
@@ -188,7 +188,7 @@ export default function PerformanceGraph({
 
             return [{
                 label: "Period Change",
-                text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
+                text: `${formatCurrency(change, currency)} (${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
                 color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
             }];
         }
@@ -456,7 +456,7 @@ export default function PerformanceGraph({
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">TWR</span>
                                 <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
-                                    {dataPoint.twr >= 0 ? '+' : ''}{dataPoint.twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                                    {dataPoint.twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
@@ -499,7 +499,7 @@ export default function PerformanceGraph({
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Ret</span>
                                             <span className={`text-[12px] font-bold ${dataPoint.fx_return >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
-                                                {dataPoint.fx_return >= 0 ? '+' : ''}{dataPoint.fx_return.toFixed(2)}%
+                                                {dataPoint.fx_return.toFixed(2)}%
                                             </span>
                                         </div>
                                     )}
@@ -518,7 +518,7 @@ export default function PerformanceGraph({
                                                     {bKey}
                                                 </span>
                                                 <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                    {dataPoint[bKey] >= 0 ? '+' : ''}{Number(dataPoint[bKey]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                                                    {Number(dataPoint[bKey]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                                 </span>
                                             </div>
                                         );

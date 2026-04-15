@@ -198,7 +198,7 @@ export function MetricCard({
                             )}
                         >
                             {typeof subValue === 'number'
-                                ? `${subValue > 0 ? '+' : ''}${subValue.toFixed(2)}%`
+                                ? `${subValue.toFixed(2)}%`
                                 : subValue}
                         </Badge>
                     )}
@@ -287,7 +287,7 @@ export function MetricCard({
                         )}
                     >
                         {typeof subValue === 'number'
-                            ? `${subValue > 0 ? '+' : ''}${subValue.toFixed(2)}%`
+                            ? `${subValue.toFixed(2)}%`
                             : subValue}
                     </Badge>
                 )}

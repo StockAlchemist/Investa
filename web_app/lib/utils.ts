@@ -19,13 +19,14 @@ export function formatCurrency(value: number, currency: string = 'USD'): string 
     const formatted = new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: currency,
+        currencyDisplay: 'narrowSymbol',
+        notation: 'standard',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(value);
 
-    // Manual override for THB symbol
+    // Manual override for THB symbol if Intl doesn't handle it well
     if (currency === 'THB') {
-        // Check if there's a space that needs removing too (Intl sometimes adds NBSP or space)
         return formatted.replace('THB', '฿').replace(/\s/g, '');
     }
 
@@ -37,13 +38,14 @@ export function formatPercent(value: number): string {
         style: 'percent',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-    }).format(value);
+    }).format(value / 100);
 }
 
 export function formatCompactNumber(number: number, currency?: string): string {
+    if (number === 0) return '0';
     const formatter = new Intl.NumberFormat('en-US', {
         notation: 'compact',
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 1,
         style: currency ? 'currency' : 'decimal',
         currency: currency,
     });
