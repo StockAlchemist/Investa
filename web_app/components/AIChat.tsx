@@ -104,7 +104,7 @@ export default function AIChat() {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50 group overflow-hidden"
+                className="fixed bottom-20 md:bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50 group overflow-hidden"
                 aria-label="Open Investa AI Chat"
             >
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -120,7 +120,7 @@ export default function AIChat() {
                 "bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-2xl rounded-3xl",
                 isMaximized 
                     ? "inset-4 md:inset-10" 
-                    : "bottom-6 right-6 w-[90vw] h-[70vh] md:w-[400px] md:h-[600px]"
+                    : "bottom-20 md:bottom-8 right-4 md:right-8 w-[calc(100%-2rem)] md:w-[420px] h-[65vh] md:h-[650px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)]"
             )}
         >
             {/* Header */}
