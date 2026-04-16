@@ -326,13 +326,20 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
     if (!isOpen) return null;
 
-    const formatCurrency = (val: number | null | undefined) => {
+    const formatCurrency = (val: number | null | undefined, overrideCurrency?: string) => {
         if (val === undefined || val === null) return '-';
-        return new Intl.NumberFormat('en-US', {
+        const targetCurrency = overrideCurrency || fundamentals?.currency || 'USD';
+        const formatted = new Intl.NumberFormat('en-US', {
             style: 'currency',
-            currency: fundamentals?.currency || 'USD',
+            currency: targetCurrency,
             notation: val > 1000000 ? 'compact' : 'standard',
+            currencyDisplay: 'narrowSymbol',
         }).format(val);
+
+        if (targetCurrency === 'THB') {
+            return formatted.replace('THB', '฿').replace(/\s/g, '');
+        }
+        return formatted;
     };
 
     const formatPercent = (val: number | undefined) => {
@@ -405,13 +412,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             />
                             <StatCard
                                 label="Avg Cost"
-                                value={formatCurrency(userPosition["Avg Cost"])}
+                                value={formatCurrency(userPosition["Avg Cost"], currency)}
                                 icon={Tag}
                                 color="text-slate-500"
                             />
                             <StatCard
                                 label="Market Value"
-                                value={formatCurrency(userPosition["Market Value"])}
+                                value={formatCurrency(userPosition["Market Value"], currency)}
                                 icon={PieChartIcon}
                                 color="text-indigo-500"
                             />
@@ -420,7 +427,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             <StatCard
                                 label="Unrealized G/L"
-                                value={formatCurrency(userPosition["Unreal. Gain"])}
+                                value={formatCurrency(userPosition["Unreal. Gain"], currency)}
                                 subValue={`${userPosition["Unreal. Gain %"].toFixed(2)}%`}
                                 subValueColor={userPosition["Unreal. Gain %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 valueColor={userPosition["Unreal. Gain"] >= 0 ? "text-emerald-500" : "text-rose-500"}
@@ -429,7 +436,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             />
                             <StatCard
                                 label="Total Return"
-                                value={formatCurrency(userPosition["Total Gain"])}
+                                value={formatCurrency(userPosition["Total Gain"], currency)}
                                 subValue={`${userPosition["Total Return %"].toFixed(2)}%`}
                                 subValueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 valueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
@@ -437,7 +444,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 color={userPosition["Total Return %"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
                                 extra={
                                     <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-500/90 leading-tight">
-                                        Divs: {formatCurrency(userPosition["Dividends"])}
+                                        Divs: {formatCurrency(userPosition["Dividends"], currency)}
                                     </p>
                                 }
                             />
@@ -473,11 +480,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     {intrinsicValue?.models?.dcf?.intrinsic_value && (
                         <StatCard
                             label="DCF Intrinsic Value"
-                            value={formatCurrency(intrinsicValue.models.dcf.intrinsic_value)}
+                            value={formatCurrency(intrinsicValue.models.dcf.intrinsic_value, currency)}
                             subValue={formatUpside(dcfUpside)}
                             subValueColor={getUpsideColor(dcfUpside)}
-                            rangeMin={formatCurrency(intrinsicValue.models.dcf.mc?.bear)}
-                            rangeMax={formatCurrency(intrinsicValue.models.dcf.mc?.bull)}
+                            rangeMin={formatCurrency(intrinsicValue.models.dcf.mc?.bear, currency)}
+                            rangeMax={formatCurrency(intrinsicValue.models.dcf.mc?.bull, currency)}
                             icon={TrendingUp}
                             color="text-emerald-400"
                         />
@@ -485,11 +492,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     {intrinsicValue?.models?.graham?.intrinsic_value && (
                         <StatCard
                             label="Graham Intrinsic Value"
-                            value={formatCurrency(intrinsicValue.models.graham.intrinsic_value)}
+                            value={formatCurrency(intrinsicValue.models.graham.intrinsic_value, currency)}
                             subValue={formatUpside(grahamUpside)}
                             subValueColor={getUpsideColor(grahamUpside)}
-                            rangeMin={formatCurrency(intrinsicValue.models.graham.mc?.bear)}
-                            rangeMax={formatCurrency(intrinsicValue.models.graham.mc?.bull)}
+                            rangeMin={formatCurrency(intrinsicValue.models.graham.mc?.bear, currency)}
+                            rangeMax={formatCurrency(intrinsicValue.models.graham.mc?.bull, currency)}
                             icon={Scale}
                             color="text-amber-400"
                         />
@@ -1078,16 +1085,16 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Average Intrinsic Value</p>
-                        <p className="text-3xl font-bold text-indigo-500">{formatCurrency(average_intrinsic_value)}</p>
+                        <p className="text-3xl font-bold text-indigo-500">{formatCurrency(average_intrinsic_value, currency)}</p>
                         {intrinsicValue.range && (
                             <p className="text-xs text-muted-foreground mt-2 font-medium">
-                                Range: {formatCurrency(intrinsicValue.range.bear)} - {formatCurrency(intrinsicValue.range.bull)}
+                                Range: {formatCurrency(intrinsicValue.range.bear, currency)} - {formatCurrency(intrinsicValue.range.bull, currency)}
                             </p>
                         )}
                     </div>
                     <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Current Price</p>
-                        <p className="text-3xl font-bold">{formatCurrency(current_price)}</p>
+                        <p className="text-3xl font-bold">{formatCurrency(current_price, currency)}</p>
                     </div>
                     <div className={cn(
                         "p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
@@ -1144,7 +1151,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 {models.dcf.intrinsic_value && (
                                     <div className="flex flex-col items-end">
                                         <Badge className="bg-emerald-500/20 text-emerald-500 border-none">
-                                            {formatCurrency(models.dcf.intrinsic_value)}
+                                            {formatCurrency(models.dcf.intrinsic_value, currency)}
                                         </Badge>
                                         {models.dcf.model !== 'DCF' && (
                                             <span className="text-[9px] text-muted-foreground mt-1">
@@ -1201,7 +1208,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     <div className="pt-4">
                                         <ParamItem
                                             label="Base Free Cash Flow"
-                                            value={formatCurrency(models.dcf.parameters.base_fcf)}
+                                            value={formatCurrency(models.dcf.parameters.base_fcf, currency)}
                                             info={VALUATION_INFO.base_fcf}
                                         />
                                         {models.dcf.parameters.fcf_margin && (
@@ -1221,21 +1228,21 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear)}</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear, currency)}</p>
                                                 </div>
                                                 <div
                                                     className="bg-indigo-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-indigo-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-indigo-500 font-bold uppercase mb-1">Median (50th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base)}</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base, currency)}</p>
                                                 </div>
                                                 <div
                                                     className="bg-emerald-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bull)}</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bull, currency)}</p>
                                                 </div>
                                             </div>
                                             <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
@@ -1255,7 +1262,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 {models.graham.intrinsic_value && (
                                     <div className="flex flex-col items-end">
                                         <Badge className="bg-amber-500/20 text-amber-500 border-none">
-                                            {formatCurrency(models.graham.intrinsic_value)}
+                                            {formatCurrency(models.graham.intrinsic_value, currency)}
                                         </Badge>
                                         {models.graham.model !== "Graham's Revised Formula" && (
                                             <span className="text-[9px] text-muted-foreground mt-1">
@@ -1362,7 +1369,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                 >
                                                     <div className="absolute -top-12 -right-12 w-24 h-24 blur-[30px] opacity-10 group-hover/mc:opacity-20 transition-opacity pointer-events-none bg-rose-500" />
                                                     <p className="text-[10px] text-rose-500 font-bold uppercase mb-1 relative z-10">Bear (10th)</p>
-                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.bear)}</p>
+                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.bear, currency)}</p>
                                                 </div>
                                                 <div
                                                     className="bg-amber-500/5 relative overflow-hidden p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-all group/mc shadow-none"
@@ -1370,7 +1377,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                 >
                                                     <div className="absolute -top-12 -right-12 w-24 h-24 blur-[30px] opacity-10 group-hover/mc:opacity-20 transition-opacity pointer-events-none bg-amber-500" />
                                                     <p className="text-[10px] text-amber-500 font-bold uppercase mb-1 relative z-10">Median (50th)</p>
-                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.base)}</p>
+                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.base, currency)}</p>
                                                 </div>
                                                 <div
                                                     className="bg-emerald-500/5 relative overflow-hidden p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-all group/mc"
@@ -1378,7 +1385,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                 >
                                                     <div className="absolute -top-12 -right-12 w-24 h-24 blur-[30px] opacity-10 group-hover/mc:opacity-20 transition-opacity pointer-events-none bg-emerald-500" />
                                                     <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1 relative z-10">Bull (90th)</p>
-                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.bull)}</p>
+                                                    <p className="text-sm font-bold relative z-10">{formatCurrency(models.graham.mc.bull, currency)}</p>
                                                 </div>
                                             </div>
                                             <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
@@ -1662,7 +1669,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                         dataKey="price"
                                                         type="number"
                                                         domain={[domainMin, domainMax]}
-                                                        tickFormatter={(val) => formatCurrency(val)}
+                                                        tickFormatter={(val) => formatCurrency(val, currency)}
                                                         fontSize={10}
                                                         tickLine={false}
                                                         axisLine={false}
@@ -1685,7 +1692,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                                         <p className={cn(
                                                                             "text-lg font-black",
                                                                             isDarkMode ? "text-white" : "text-slate-900"
-                                                                        )}>{formatCurrency(payload[0].payload.price)}</p>
+                                                                        )}>{formatCurrency(payload[0].payload.price, currency)}</p>
 
                                                                         <div className="flex flex-col gap-1 mt-3 pt-2">
                                                                             <div className="flex items-center justify-between gap-4">
@@ -1771,13 +1778,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     isDarkMode ? "bg-slate-800/50 text-slate-400" : "bg-slate-50 text-slate-500"
                                 )}>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear, currency)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base, currency)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull, currency)}</span>
                                     </div>
                                 </div>
                             </div>
