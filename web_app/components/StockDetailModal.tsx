@@ -1606,14 +1606,22 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 <div className="h-[300px] w-full">
                                     <ResponsiveContainer width="100%" height="100%">
                                         {(() => {
-                                            const histogram = intrinsicValue.models[viewingDistribution].mc?.histogram || [];
+                                            const rawHistogram = intrinsicValue.models[viewingDistribution].mc?.histogram || [];
                                             const mc = intrinsicValue.models[viewingDistribution].mc;
 
-                                            if (histogram.length === 0 || !mc) return null;
+                                            if (rawHistogram.length === 0 || !mc) return null;
+
+                                            // Scale all values by fxRate
+                                            const histogram = rawHistogram.map(h => ({ ...h, price: h.price * fxRate }));
+                                            const scaledMc = {
+                                                bear: mc.bear * fxRate,
+                                                base: mc.base * fxRate,
+                                                bull: mc.bull * fxRate
+                                            };
 
                                             const minPrice = histogram[0].price;
                                             const maxPrice = histogram[histogram.length - 1].price;
-                                            const currentPrice = intrinsicValue.current_price || fundamentals?.regularMarketPrice || 0;
+                                            const currentPrice = (intrinsicValue.current_price || fundamentals?.regularMarketPrice || 0) * fxRate;
 
                                             // Ensure the domain includes the current price
                                             const domainMin = Math.min(minPrice, currentPrice > 0 ? currentPrice * 0.95 : minPrice);
@@ -1621,12 +1629,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
                                             const range = maxPrice - minPrice;
 
-                                            // Calculate percentage offsets for the gradient stops (relative to the histogram data range, not the visual domain)
-                                            // Actually, for the gradient to match the bell curve shape, we should stick to using the data points.
-                                            // But for the ReferenceLine to show, the visual XAxis needs the full domain.
-
-                                            const bearOffset = Math.max(0, Math.min(100, ((mc.bear - minPrice) / range) * 100));
-                                            const bullOffset = Math.max(0, Math.min(100, ((mc.bull - minPrice) / range) * 100));
+                                            const bearOffset = Math.max(0, Math.min(100, ((scaledMc.bear - minPrice) / range) * 100));
+                                            const bullOffset = Math.max(0, Math.min(100, ((scaledMc.bull - minPrice) / range) * 100));
 
                                             return (
                                                 <AreaChart
@@ -1731,24 +1735,24 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                         animationDuration={1500}
                                                     />
                                                     {/* Reference Lines for Bear, Base, Bull */}
-                                                    {intrinsicValue.models[viewingDistribution].mc && (
+                                                    {scaledMc && (
                                                         <>
                                                             <ReferenceLine
-                                                                x={intrinsicValue.models[viewingDistribution].mc!.bear}
+                                                                x={scaledMc.bear}
                                                                 stroke="#f43f5e"
                                                                 strokeDasharray="4 4"
                                                                 strokeWidth={2}
                                                                 label={{ value: 'BEAR', position: 'top', fill: '#f43f5e', fontSize: 9, fontWeight: '900' }}
                                                             />
                                                             <ReferenceLine
-                                                                x={intrinsicValue.models[viewingDistribution].mc!.base}
+                                                                x={scaledMc.base}
                                                                 stroke="#06b6d4"
                                                                 strokeDasharray="4 4"
                                                                 strokeWidth={2}
                                                                 label={{ value: 'MEDIAN', position: 'top', fill: '#06b6d4', fontSize: 9, fontWeight: '900' }}
                                                             />
                                                             <ReferenceLine
-                                                                x={intrinsicValue.models[viewingDistribution].mc!.bull}
+                                                                x={scaledMc.bull}
                                                                 stroke="#10b981"
                                                                 strokeDasharray="4 4"
                                                                 strokeWidth={2}
@@ -1757,9 +1761,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                         </>
                                                     )}
                                                     {/* Current Price Reference */}
-                                                    {(intrinsicValue.current_price || fundamentals?.regularMarketPrice) && (
+                                                    {currentPrice > 0 && (
                                                         <ReferenceLine
-                                                            x={intrinsicValue.current_price || fundamentals?.regularMarketPrice}
+                                                            x={currentPrice}
                                                             stroke={isDarkMode ? "#cbd5e1" : "#475569"}
                                                             strokeWidth={2}
                                                             strokeDasharray="3 3"
@@ -1783,13 +1787,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     isDarkMode ? "bg-slate-800/50 text-slate-400" : "bg-slate-50 text-slate-500"
                                 )}>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear, currency)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear * fxRate, currency)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base, currency)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base * fxRate, currency)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull, currency)}</span>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull * fxRate, currency)}</span>
                                     </div>
                                 </div>
                             </div>

@@ -166,7 +166,7 @@ def get_sp500_tickers() -> List[str]:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         
-        tables = pd.read_html(response.text)
+        tables = pd.read_html(io.StringIO(response.text))
         # The first table usually contains the constituents
         df = tables[0]
         tickers = df["Symbol"].tolist()
