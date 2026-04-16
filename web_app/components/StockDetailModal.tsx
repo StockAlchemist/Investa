@@ -49,13 +49,9 @@ import {
     CheckCircle2,
     RotateCcw,
     Loader2,
-    AlertCircle,
-    ArrowUpRight,
-    ArrowDownRight
+    AlertCircle
 } from 'lucide-react';
 import {
-    LineChart,
-    Line,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -149,6 +145,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [viewingDistribution, setViewingDistribution] = useState<'dcf' | 'graham' | null>(null);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
     const [analysis, setAnalysis] = useState<any>(null);
     const [analysisLoading, setAnalysisLoading] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -213,7 +214,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 "Total Gain": acc["Total Gain"] + totalGain,
                 "Dividends": acc["Dividends"] + dividends,
                 "Weighted IRR": (acc["Weighted IRR"] || 0) + ((curr["IRR (%)"] || 0) * mktVal),
-                "fx_rate": curr.fx_rate || acc.fx_rate || 1, // Store fx_rate
+                "fx_rate": (typeof curr.fx_rate === 'number' ? curr.fx_rate : 0) || acc.fx_rate || 1, // Store fx_rate
             };
         }, {
             Quantity: 0,
@@ -328,7 +329,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         }
     };
 
-    if (!isOpen) return null;
+    if (!mounted || !isOpen) return null;
 
     const formatCurrency = (val: number | null | undefined, overrideCurrency?: string) => {
         if (val === undefined || val === null) return '-';
@@ -432,20 +433,20 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             <StatCard
                                 label="Unrealized G/L"
                                 value={formatCurrency(userPosition["Unreal. Gain"], currency)}
-                                subValue={`${userPosition["Unreal. Gain %"].toFixed(2)}%`}
-                                subValueColor={userPosition["Unreal. Gain %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
-                                valueColor={userPosition["Unreal. Gain"] >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                subValue={`${(userPosition["Unreal. Gain %"] || 0).toFixed(2)}%`}
+                                subValueColor={(userPosition["Unreal. Gain %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                valueColor={(userPosition["Unreal. Gain"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 icon={LucideActivity}
-                                color={userPosition["Unreal. Gain"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                                color={(userPosition?.["Unreal. Gain"] ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
                             />
                             <StatCard
                                 label="Total Return"
                                 value={formatCurrency(userPosition["Total Gain"], currency)}
-                                subValue={`${userPosition["Total Return %"].toFixed(2)}%`}
-                                subValueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
-                                valueColor={userPosition["Total Return %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                subValue={`${(userPosition["Total Return %"] || 0).toFixed(2)}%`}
+                                subValueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                valueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 icon={TrendingUp}
-                                color={userPosition["Total Return %"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                                color={(userPosition["Total Return %"] || 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
                                 extra={
                                     <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-500/90 leading-tight">
                                         Divs: {formatCurrency(userPosition["Dividends"], currency)}
@@ -454,10 +455,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             />
                             <StatCard
                                 label="IRR %"
-                                value={`${userPosition["IRR %"].toFixed(2)}%`}
+                                value={`${(userPosition["IRR %"] || 0).toFixed(2)}%`}
                                 icon={LineChartIcon}
-                                valueColor={userPosition["IRR %"] >= 0 ? "text-emerald-500" : "text-rose-500"}
-                                color={userPosition["IRR %"] >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                                valueColor={(userPosition["IRR %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
+                                color={(userPosition["IRR %"] || 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
                             />
                         </div>
 
@@ -482,29 +483,29 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
                     {intrinsicValue?.models?.dcf?.intrinsic_value && (
-                        <StatCard
-                            label="DCF Intrinsic Value"
-                            value={formatCurrency(intrinsicValue.models.dcf.intrinsic_value * fxRate, currency)}
-                            subValue={formatUpside(dcfUpside)}
-                            subValueColor={getUpsideColor(dcfUpside)}
-                            rangeMin={formatCurrency(intrinsicValue.models.dcf.mc?.bear * fxRate, currency)}
-                            rangeMax={formatCurrency(intrinsicValue.models.dcf.mc?.bull * fxRate, currency)}
-                            icon={TrendingUp}
-                            color="text-emerald-400"
-                        />
-                    )}
-                    {intrinsicValue?.models?.graham?.intrinsic_value && (
-                        <StatCard
-                            label="Graham Intrinsic Value"
-                            value={formatCurrency(intrinsicValue.models.graham.intrinsic_value * fxRate, currency)}
-                            subValue={formatUpside(grahamUpside)}
-                            subValueColor={getUpsideColor(grahamUpside)}
-                            rangeMin={formatCurrency(intrinsicValue.models.graham.mc?.bear * fxRate, currency)}
-                            rangeMax={formatCurrency(intrinsicValue.models.graham.mc?.bull * fxRate, currency)}
-                            icon={Scale}
-                            color="text-amber-400"
-                        />
-                    )}
+                                <StatCard
+                                    label="DCF Intrinsic Value"
+                                    value={formatCurrency((intrinsicValue.models.dcf.intrinsic_value ?? 0) * fxRate, currency)}
+                                    subValue={formatUpside(dcfUpside)}
+                                    subValueColor={getUpsideColor(dcfUpside)}
+                                    rangeMin={formatCurrency((intrinsicValue.models.dcf.mc?.bear ?? 0) * fxRate, currency)}
+                                    rangeMax={formatCurrency((intrinsicValue.models.dcf.mc?.bull ?? 0) * fxRate, currency)}
+                                    icon={TrendingUp}
+                                    color="text-emerald-400"
+                                />
+                            )}
+                            {intrinsicValue?.models?.graham?.intrinsic_value && (
+                                <StatCard
+                                    label="Graham Intrinsic Value"
+                                    value={formatCurrency((intrinsicValue.models.graham.intrinsic_value ?? 0) * fxRate, currency)}
+                                    subValue={formatUpside(grahamUpside)}
+                                    subValueColor={getUpsideColor(grahamUpside)}
+                                    rangeMin={formatCurrency((intrinsicValue.models.graham.mc?.bear ?? 0) * fxRate, currency)}
+                                    rangeMax={formatCurrency((intrinsicValue.models.graham.mc?.bull ?? 0) * fxRate, currency)}
+                                    icon={Scale}
+                                    color="text-amber-400"
+                                />
+                            )}
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
@@ -514,7 +515,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     <StatCard label="52W High" value={formatCurrency(fundamentals.fiftyTwoWeekHigh)} icon={TrendingUp} color="text-blue-400" />
                     <StatCard label="52W Low" value={formatCurrency(fundamentals.fiftyTwoWeekLow)} icon={TrendingUp} color="text-pink-400" className="rotate-180" />
                     {!fundamentals.etf_data && (
-                        <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={Activity} color="text-purple-400" />
+                        <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={LucideActivity} color="text-purple-400" />
                     )}
                     {(fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) && (
                         <StatCard
@@ -860,7 +861,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground opacity-30 italic">
-                                <Activity className="w-8 h-8 mb-2" />
+                                <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center text-muted-foreground mb-4">
+                                    <LucideActivity className="w-8 h-8 mb-2" />
+                                </div>
                                 <p className="text-xs">Sentiment data pending...</p>
                             </div>
                         )}
@@ -1070,13 +1073,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             description: "Expected annual growth (g) used in Graham's Formula.",
             default: "Historical CAGR"
         },
+        fcf_margin: {
+            description: "Free Cash Flow as a percentage of revenue, used to normalize future cash flow projections if current FCF is an outlier.",
+            default: "5-Year Average"
+        },
         bond_yield: {
             description: "Current yield on high-quality bonds (proxy for risk-free rate).",
             default: "10Y Treasury (~4.5%)"
-        },
-        fcf_margin: {
-            description: "Estimated Free Cash Flow margin (FCF / Revenue) used for normalization.",
-            default: "Historical Average"
         }
     };
 
@@ -1090,16 +1093,16 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Average Intrinsic Value</p>
-                        <p className="text-3xl font-bold text-indigo-500">{formatCurrency(average_intrinsic_value * fxRate, currency)}</p>
-                        {intrinsicValue.range && (
+                        <p className="text-3xl font-bold text-indigo-500">{formatCurrency((average_intrinsic_value ?? 0) * fxRate, currency)}</p>
+                        {intrinsicValue?.range && (
                             <p className="text-xs text-muted-foreground mt-2 font-medium">
-                                Range: {formatCurrency(intrinsicValue.range.bear * fxRate, currency)} - {formatCurrency(intrinsicValue.range.bull * fxRate, currency)}
+                                Range: {formatCurrency((intrinsicValue.range.bear ?? 0) * fxRate, currency)} - {formatCurrency((intrinsicValue.range.bull ?? 0) * fxRate, currency)}
                             </p>
                         )}
                     </div>
                     <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Current Price</p>
-                        <p className="text-3xl font-bold">{formatCurrency(current_price * fxRate, currency)}</p>
+                        <p className="text-3xl font-bold">{formatCurrency((current_price ?? 0) * fxRate, currency)}</p>
                     </div>
                     <div className={cn(
                         "p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
@@ -1153,10 +1156,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     <TrendingUp className="w-5 h-5 text-emerald-500" />
                                     {models.dcf.model}
                                 </h3>
-                                {models.dcf.intrinsic_value && (
+                                {models.dcf.intrinsic_value !== undefined && (
                                     <div className="flex flex-col items-end">
                                         <Badge className="bg-emerald-500/20 text-emerald-500 border-none">
-                                            {formatCurrency(models.dcf.intrinsic_value * fxRate, currency)}
+                                            {formatCurrency((models.dcf.intrinsic_value ?? 0) * fxRate, currency)}
                                         </Badge>
                                         {models.dcf.model !== 'DCF' && (
                                             <span className="text-[9px] text-muted-foreground mt-1">
@@ -1178,25 +1181,25 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     <div className="grid grid-cols-2 gap-4">
                                         <ParamItem
                                             label="Discount Rate (WACC)"
-                                            value={formatPercentShared(models.dcf.parameters.discount_rate)}
+                                            value={formatPercentShared(models.dcf.parameters.discount_rate ?? 0)}
                                             info={VALUATION_INFO.discount_rate}
                                         />
                                         <ParamItem
                                             label="Growth Rate"
-                                            value={formatPercentShared(models.dcf.parameters.growth_rate)}
+                                            value={formatPercentShared(models.dcf.parameters.growth_rate ?? 0)}
                                             info={VALUATION_INFO.growth_rate}
                                         />
                                         {models.dcf.parameters.applied_growth !== undefined && models.dcf.parameters.applied_growth !== models.dcf.parameters.growth_rate && (
                                             <ParamItem
                                                 label="Applied Growth"
-                                                value={formatPercentShared(models.dcf.parameters.applied_growth)}
+                                                value={formatPercentShared(models.dcf.parameters.applied_growth ?? 0)}
                                                 className="text-cyan-500 font-bold"
                                                 info={{ description: "The growth rate actually used in the projection after applying physical reality caps.", default: "100% Max" }}
                                             />
                                         )}
                                         <ParamItem
                                             label="Terminal Growth"
-                                            value={formatPercentShared(models.dcf.parameters.terminal_growth_rate)}
+                                            value={formatPercentShared(models.dcf.parameters.terminal_growth_rate ?? 0)}
                                             info={VALUATION_INFO.terminal_growth}
                                         />
                                         <ParamItem
@@ -1213,13 +1216,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     <div className="pt-4">
                                         <ParamItem
                                             label="Base Free Cash Flow"
-                                            value={formatCurrency(models.dcf.parameters.base_fcf * fxRate, currency)}
+                                            value={formatCurrency((models.dcf.parameters.base_fcf ?? 0) * fxRate, currency)}
                                             info={VALUATION_INFO.base_fcf}
                                         />
                                         {models.dcf.parameters.fcf_margin && (
                                             <ParamItem
                                                 label="Est. FCF Margin"
-                                                value={formatPercentShared(models.dcf.parameters.fcf_margin)}
+                                                value={formatPercentShared(models.dcf.parameters.fcf_margin ?? 0)}
                                                 info={VALUATION_INFO.fcf_margin}
                                             />
                                         )}
@@ -1233,21 +1236,21 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear * fxRate, currency)}</p>
+                                                    <p className="text-sm font-bold">{formatCurrency((models.dcf.mc.bear ?? 0) * fxRate, currency)}</p>
                                                 </div>
                                                 <div
                                                     className="bg-indigo-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-indigo-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-indigo-500 font-bold uppercase mb-1">Median (50th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base * fxRate, currency)}</p>
+                                                    <p className="text-sm font-bold">{formatCurrency((models.dcf.mc.base ?? 0) * fxRate, currency)}</p>
                                                 </div>
                                                 <div
                                                     className="bg-emerald-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
                                                     onClick={() => setViewingDistribution('dcf')}
                                                 >
                                                     <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
-                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bull * fxRate, currency)}</p>
+                                                    <p className="text-sm font-bold">{formatCurrency((models.dcf.mc.bull ?? 0) * fxRate, currency)}</p>
                                                 </div>
                                             </div>
                                             <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
@@ -1264,10 +1267,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     <Scale className="w-5 h-5 text-amber-500" />
                                     {models.graham.model}
                                 </h3>
-                                {models.graham.intrinsic_value && (
+                                {models.graham.intrinsic_value !== undefined && (
                                     <div className="flex flex-col items-end">
                                         <Badge className="bg-amber-500/20 text-amber-500 border-none">
-                                            {formatCurrency(models.graham.intrinsic_value * fxRate, currency)}
+                                            {formatCurrency((models.graham.intrinsic_value ?? 0) * fxRate, currency)}
                                         </Badge>
                                         {models.graham.model !== "Graham's Revised Formula" && (
                                             <span className="text-[9px] text-muted-foreground mt-1">
@@ -1294,7 +1297,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         />
                                         <ParamItem
                                             label="Growth Rate (g)"
-                                            value={`${(models.graham.parameters.growth_rate_pct || 0).toFixed(2)}%`}
+                                            value={`${(models.graham.parameters.growth_rate_pct ?? 0).toFixed(2)}%`}
                                             info={VALUATION_INFO.graham_growth}
                                         />
                                         {models.graham.parameters.applied_growth_pct !== undefined && models.graham.parameters.applied_growth_pct !== models.graham.parameters.growth_rate_pct && (
@@ -1606,17 +1609,21 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 <div className="h-[300px] w-full">
                                     <ResponsiveContainer width="100%" height="100%">
                                         {(() => {
-                                            const rawHistogram = intrinsicValue.models[viewingDistribution].mc?.histogram || [];
-                                            const mc = intrinsicValue.models[viewingDistribution].mc;
-
+                                            const modelKey = viewingDistribution;
+                                            if (!modelKey) return null;
+                                            
+                                            const model = intrinsicValue.models[modelKey];
+                                            const mc = model?.mc;
+                                            const rawHistogram = mc?.histogram || [];
+                                            
                                             if (rawHistogram.length === 0 || !mc) return null;
 
                                             // Scale all values by fxRate
                                             const histogram = rawHistogram.map(h => ({ ...h, price: h.price * fxRate }));
                                             const scaledMc = {
-                                                bear: mc.bear * fxRate,
-                                                base: mc.base * fxRate,
-                                                bull: mc.bull * fxRate
+                                                bear: (mc.bear ?? 0) * fxRate,
+                                                base: (mc.base ?? 0) * fxRate,
+                                                bull: (mc.bull ?? 0) * fxRate
                                             };
 
                                             const minPrice = histogram[0].price;
@@ -1639,10 +1646,6 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                 >
                                                     <defs>
                                                         <linearGradient id="colorBell" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
-                                                            {/* We use userSpaceOnUse to map exactly to the X-axis values, 
-                                                                but Recharts often works better with objectBoundingBox for horizontal gradients.
-                                                                Actually, simple 0-1 offsets work for x1=0, x2=1. 
-                                                            */}
                                                         </linearGradient>
 
                                                         {/* Horizontal Gradient for the categories */}
@@ -1690,7 +1693,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                         wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                                         content={({ active, payload }) => {
                                                             if (active && payload && payload.length) {
-                                                                const count = payload[0].value;
+                                                                const count = Number(payload[0].value);
                                                                 const probability = (count / 10000) * 100;
                                                                 return (
                                                                     <div className="p-3 rounded-xl outline-none scale-105 transition-transform bg-white/95 dark:bg-slate-950/95 backdrop-blur-md">
@@ -1786,15 +1789,26 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     "mt-6 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest p-4 rounded-2xl",
                                     isDarkMode ? "bg-slate-800/50 text-slate-400" : "bg-slate-50 text-slate-500"
                                 )}>
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear * fxRate, currency)}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base * fxRate, currency)}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull * fxRate, currency)}</span>
-                                    </div>
+                                    {(() => {
+                                        const modelKey = viewingDistribution;
+                                        if (!modelKey) return null;
+                                        const mc = intrinsicValue.models[modelKey]?.mc;
+                                        if (!mc) return null;
+
+                                        return (
+                                            <>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="hidden sm:inline">Bear: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency((mc.bear ?? 0) * fxRate, currency)}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> <span className="hidden sm:inline">Median: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency((mc.base ?? 0) * fxRate, currency)}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="hidden sm:inline">Bull: </span><span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency((mc.bull ?? 0) * fxRate, currency)}</span>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
@@ -1991,20 +2005,3 @@ function Sparkline({ data }: { data: number[] }) {
         </div>
     );
 }
-
-const Activity = (props: any) => (
-    <svg
-        {...props}
-        xmlns="http://www.w3.org/2000/svg"
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-    >
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-    </svg>
-)

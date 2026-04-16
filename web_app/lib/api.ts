@@ -146,6 +146,7 @@ export interface Holding {
     "IRR (%)"?: number;
     Country?: string;
     quoteType?: string;
+    fx_rate?: number;
     // Keys are dynamic based on currency, e.g., "Market Value (USD)"
     [key: string]: unknown;
     lots?: Lot[];
