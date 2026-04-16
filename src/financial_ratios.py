@@ -1146,6 +1146,18 @@ def get_intrinsic_value_for_symbol(
         if not info:
              return {"error": f"No fundamental data found for {yf_symbol}"}
              
+        # Patch with live price for accuracy (fundamentals cache can be up to 24h)
+        try:
+            # We use mdp to get a fresh quote (1-min cache)
+            q_res, _, _, _, _ = mdp.get_current_quotes([symbol], {getattr(config, 'DEFAULT_CURRENCY', 'USD')}, user_symbol_map, user_excluded_symbols)
+            if symbol in q_res:
+                live_p = q_res[symbol].get("price")
+                if live_p:
+                    info["regularMarketPrice"] = live_p
+                    info["currentPrice"] = live_p
+        except Exception as e_live:
+            logging.warning(f"Live price patch failed during intrinsic value calculation for {symbol}: {e_live}")
+
         # Use Prefetched or Fetch New
         financials = prefetched_financials if prefetched_financials is not None else mdp.get_financials(yf_symbol, "annual", force_refresh=force_refresh)
         balance_sheet = prefetched_balance_sheet if prefetched_balance_sheet is not None else mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force_refresh)

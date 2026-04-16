@@ -3637,18 +3637,18 @@ async def get_attribution(
                 # Check for match by Name (if valid) OR Symbol
                 # match if names are identical strings (and not None/empty)
                 name_match = (name and prev_item.get("name") and name == prev_item.get("name"))
-                symbol_match = (prev_item["symbol"] == symbol)
+                
+                # Check if this exact symbol is already part of this group (could be a comma-separated list)
+                existing_syms = [s.strip() for s in prev_item["symbol"].split(",")]
+                symbol_match = (symbol in existing_syms)
 
                 if name_match or symbol_match:
                      prev_item["gain"] += gain
                      prev_item["value"] += value
                      
-                     # If it was a name match but different symbol, merge the symbol string
+                     # If it was a name match but the specific symbol wasn't listed yet, merge it
                      if not symbol_match:
-                         # Split existing symbols to check for uniqueness
-                         existing_syms = [s.strip() for s in prev_item["symbol"].split(",")]
-                         if symbol not in existing_syms:
-                             prev_item["symbol"] += f", {symbol}"
+                         prev_item["symbol"] += f", {symbol}"
                      
                      found = True
                      break
@@ -3814,6 +3814,23 @@ async def get_fundamentals_endpoint(
         fundamental_data = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         if fundamental_data is None:
              raise HTTPException(status_code=404, detail=f"No fundamental data found for {yf_symbol}")
+        
+        # Patch with live price for accuracy (fundamentals cache can be up to 24h)
+        try:
+            live_quotes, _, _, _, _ = mdp.get_current_quotes([symbol], {config.DEFAULT_CURRENCY}, user_symbol_map, user_excluded_symbols)
+            if symbol in live_quotes:
+                live_price = live_quotes[symbol].get("price")
+                if live_price:
+                    fundamental_data["regularMarketPrice"] = live_price
+                    fundamental_data["currentPrice"] = live_price
+                    # Also update change stats if possible
+                    if "day_change" in live_quotes[symbol]:
+                        fundamental_data["regularMarketChange"] = live_quotes[symbol]["day_change"]
+                    if "day_change_percent" in live_quotes[symbol]:
+                        fundamental_data["regularMarketChangePercent"] = live_quotes[symbol]["day_change_percent"]
+        except Exception as e_live:
+            logging.warning(f"Live price patch failed for {symbol} in fundamentals endpoint: {e_live}")
+
         return clean_nans(fundamental_data)
     except Exception as e:
         logging.error(f"Error fetching fundamentals for {yf_symbol}: {e}")
