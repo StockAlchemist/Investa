@@ -701,6 +701,13 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     const formatValue = (val: number | string | string[] | number[] | null | undefined, field: string) => {
         if (val === undefined || val === null || val === '') return '-';
         if (Array.isArray(val)) return val.join(', ');
+
+        // Skip numeric conversion for known text fields
+        const textFields = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags', 'Name'];
+        if (textFields.some(tf => field.includes(tf)) && typeof val === 'string') {
+            return val;
+        }
+
         const num = typeof val === 'string' ? parseFloat(val.replace(/[^0-9.-]/g, '')) : val;
         if (isNaN(num)) return val;
 

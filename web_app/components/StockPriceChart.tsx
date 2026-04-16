@@ -28,6 +28,7 @@ interface StockPriceChartProps {
     benchmarks?: string[]; // Optional initial benchmarks
     avgCost?: number;
     hidePrice?: boolean;
+    fxRate?: number;
 }
 
 interface CustomTooltipProps {
@@ -74,7 +75,7 @@ const calculateSMA = (data: any[], period: number) => {
     return smaData;
 };
 
-export default function StockPriceChart({ symbol, currency, avgCost, hidePrice }: StockPriceChartProps) {
+export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, fxRate = 1 }: StockPriceChartProps) {
     const [view, setView] = useState<'price' | 'return'>('price');
     const [period, setPeriod] = useState('1y');
     const [showSMA50, setShowSMA50] = useState(false);
@@ -135,6 +136,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice }
         let processed = data.map(d => ({
             ...d,
             timestamp: new Date(d.date).getTime(),
+            value: d.value * fxRate,
         }));
 
         // Calculate SMAs on the FULL fetched dataset (including buffer)
@@ -212,7 +214,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice }
             changePct,
             currentPrice
         };
-    }, [data]);
+    }, [chartedData]);
 
     const gradientOffset = useMemo(() => {
         if (!chartedData || chartedData.length === 0) return 0;

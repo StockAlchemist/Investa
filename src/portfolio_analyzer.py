@@ -1383,6 +1383,7 @@ def _build_summary_rows(
                 "Tags": tags_list,  # Added Tags
                 "Market Value (Local)": market_value_local, # ADDED 
                 "Price (Local)": current_price_local, # ADDED
+                "Avg Cost (Local)": (cost_basis_display_local / current_qty) if abs(current_qty) > 1e-9 else np.nan, # ADDED
                 "fx_rate": fx_rate, # ADDED: Multiplier from Local -> Display
             }
         )
