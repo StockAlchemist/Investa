@@ -520,7 +520,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     {(fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) && (
                         <StatCard
                             label="Expense Ratio"
-                            value={formatPercent((fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) / 100)}
+                            value={formatPercent((fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio))}
                             icon={Receipt}
                             color="text-orange-400"
                         />
