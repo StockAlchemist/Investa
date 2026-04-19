@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface Optimization {
     type: 'tax_loss_harvesting' | 'rebalancing' | 'diversification';
@@ -28,6 +29,7 @@ interface PortfolioOptimizationProps {
 }
 
 export default function PortfolioOptimization({ optimizations }: PortfolioOptimizationProps) {
+    const { openStockDetail } = useStockModal();
     if (!optimizations || optimizations.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center p-8 text-center bg-card/30 rounded-[2rem] border border-dashed border-white/10 mt-6">
@@ -104,7 +106,12 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
                                 <ArrowUpRight className="w-3 h-3" />
                                 {opt.action} Recommended
                             </div>
-                            <Button variant="ghost" size="sm" className="h-8 rounded-full text-[10px] font-black uppercase tracking-widest group-hover:bg-indigo-500 group-hover:text-white transition-all">
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 rounded-full text-[10px] font-black uppercase tracking-widest group-hover:bg-indigo-500 group-hover:text-white transition-all"
+                                onClick={() => opt.symbol !== 'N/A' && openStockDetail(opt.symbol)}
+                            >
                                 Review Lot Details
                             </Button>
                         </div>
