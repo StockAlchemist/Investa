@@ -202,16 +202,22 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         return <TableSkeleton />;
     }
 
-    const uniqueTypes = new Set<string>();
+    const formatTransactionType = (type: string) => {
+        return type.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+    };
+
+    const uniqueTypes = new Set<string>([
+        'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Deposit', 'Withdrawal', 'Spin-off', 'Split'
+    ]);
     (transactions || []).forEach(tx => {
-        if (tx.Type) uniqueTypes.add(tx.Type);
+        if (tx.Type) uniqueTypes.add(formatTransactionType(tx.Type));
     });
     const existingTypes = Array.from(uniqueTypes).sort();
 
     const filteredTransactions = (transactions || []).filter(tx => {
         const symbolMatch = tx.Symbol.toLowerCase().includes(symbolFilter.toLowerCase());
         const accountMatch = tx.Account.toLowerCase().includes(accountFilter.toLowerCase());
-        const typeMatch = filterType ? tx.Type === filterType : true;
+        const typeMatch = filterType ? tx.Type.toLowerCase() === filterType.toLowerCase() : true;
         const internalCashMatch = showInternalCash
             ? true
             : (tx.Symbol !== '$CASH' || ['deposit', 'withdrawal', 'interest', 'dividend'].includes(tx.Type.toLowerCase()));
@@ -298,10 +304,6 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400';
         }
         return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
-    };
-
-    const formatTransactionType = (type: string) => {
-        return type.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
     };
 
     return (

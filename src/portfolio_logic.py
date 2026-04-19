@@ -2628,7 +2628,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                 else (
                     # Deposit: Increase cash by quantity MINUS commission
                     abs(qty) - commission
-                    if type_lower in ["buy", "deposit"]
+                    if type_lower in ["buy", "deposit", "dividend", "interest"]
                     # Withdrawal: Decrease cash by quantity PLUS commission
                     else (
                         -(abs(qty) + commission)
@@ -2849,6 +2849,8 @@ def _calculate_holdings_numba(
     buy_to_cover_type_id,  # type: ignore
     transfer_type_id,  # NEW argument
     fees_type_id,
+    dividend_type_id,
+    interest_type_id,
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
@@ -2888,7 +2890,7 @@ def _calculate_holdings_numba(
             if cash_currency_np[account_id] == -1:
                 cash_currency_np[account_id] = currency_id
 
-            if type_id == buy_type_id or type_id == deposit_type_id:
+            if type_id == buy_type_id or type_id == deposit_type_id or type_id == dividend_type_id or type_id == interest_type_id:
                 cash_balances_np[account_id] += qty - commission
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
                 cash_balances_np[account_id] -= qty + commission
@@ -3401,6 +3403,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
         transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
         fees_type_id = type_to_id.get("fees", -1)
+        dividend_type_id = type_to_id.get("dividend", -1)
+        interest_type_id = type_to_id.get("interest", -1)
         cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
         shortable_symbol_ids = np.array(
@@ -3451,6 +3455,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             buy_to_cover_type_id,
             transfer_type_id,  # Pass to Numba function
             fees_type_id,
+            dividend_type_id,
+            interest_type_id,
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,

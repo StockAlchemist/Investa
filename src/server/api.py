@@ -1648,6 +1648,7 @@ async def create_transaction(
             
         # Convert Pydantic model to dict with correct keys for DB
         tx_data = transaction.dict(by_alias=True)
+        tx_data["user_id"] = current_user.id
 
         success, new_id = add_transaction_to_db(conn, tx_data)
         
@@ -1790,6 +1791,7 @@ async def update_transaction(
              raise HTTPException(status_code=500, detail="Database connection failed")
 
         tx_data = transaction.dict(by_alias=True)
+        tx_data["user_id"] = current_user.id
 
         success = update_transaction_in_db(conn, transaction_id, tx_data)
         conn.close()

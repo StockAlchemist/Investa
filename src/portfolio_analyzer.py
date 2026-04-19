@@ -2467,7 +2467,9 @@ def extract_dividend_history(
         return pd.DataFrame()
 
     dividend_transactions = all_transactions_df[
-        all_transactions_df["Type"].str.lower() == "dividend"
+        (all_transactions_df["Type"].str.lower() == "dividend") |
+        ((all_transactions_df["Type"].str.lower() == "interest") & 
+         (all_transactions_df["Symbol"].str.upper() == "$CASH"))
     ].copy()
 
     # ADDED LOG: Log initial dividend transactions before account filtering
@@ -2498,7 +2500,9 @@ def extract_dividend_history(
             elif (
                 len(
                     all_transactions_df[
-                        all_transactions_df["Type"].str.lower() == "dividend"
+                        (all_transactions_df["Type"].str.lower() == "dividend") |
+                        ((all_transactions_df["Type"].str.lower() == "interest") & 
+                         (all_transactions_df["Symbol"].str.upper() == "$CASH"))
                     ]
                 )
                 > 0
