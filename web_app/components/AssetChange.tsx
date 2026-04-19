@@ -154,7 +154,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
+                                        <div className="bg-background/98 backdrop-blur-2xl p-3 rounded-xl !opacity-100 border border-border/60 shadow-2xl">
                                             <p className="font-medium text-foreground mb-1 text-sm">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -165,7 +165,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                     <div key={index} className="flex items-center gap-2 text-xs">
                                                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
                                                         <span className="text-muted-foreground">{entry.name}:</span>
-                                                        <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                                        <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                                                             {formatValue(Number(entry.value))}
                                                         </span>
                                                     </div>
@@ -186,7 +186,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                                 <div className="flex items-center gap-2 text-xs mt-1 pt-2">
                                                                     <span className="w-2 h-2 rounded-full bg-cyan-500" />
                                                                     <span className="text-muted-foreground">Net Flow:</span>
-                                                                    <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                                                    <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                                                                         {formatValue(netFlow)}
                                                                     </span>
                                                                 </div>
@@ -194,7 +194,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                                     <div className="flex items-center gap-2 text-xs">
                                                                         <span className="w-2 h-2 rounded-full bg-transparent" />
                                                                         <span className="text-muted-foreground">Total Change:</span>
-                                                                        <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                                                        <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                                                                             {formatValue(totalChange)}
                                                                         </span>
                                                                     </div>

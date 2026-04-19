@@ -281,7 +281,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
             });
 
             return (
-                <div className="bg-background/60 backdrop-blur-xl p-3 border border-border/50 shadow-2xl rounded-xl min-w-[240px] !opacity-100">
+                <div className="bg-background/98 backdrop-blur-2xl p-3 border border-border/60 shadow-2xl rounded-xl min-w-[240px] !opacity-100">
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
@@ -291,7 +291,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                             <span className="text-xs font-bold text-blue-500 uppercase">{symbol}</span>
                             <span className="text-sm font-bold text-foreground">
                                 {view === 'price' ? formatCurrency(dataPoint.value, currency) :
-                                    <span className={dataPoint.return_pct >= 0 ? "text-emerald-500" : "text-red-500"}>
+                                    <span className={dataPoint.return_pct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
                                         {dataPoint.return_pct.toFixed(2)}%
                                     </span>
                                 }

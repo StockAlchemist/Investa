@@ -162,7 +162,7 @@ export default function PerformanceGraph({
             const stats = [{
                 label: "Period TWR",
                 text: `${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
-                color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
+                color: twr >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
             }];
 
             // Calculate Annualized TWR if period > 1 year
@@ -175,7 +175,7 @@ export default function PerformanceGraph({
                 stats.push({
                     label: "Ann. TWR",
                     text: `${annualizedTwr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
-                    color: annualizedTwr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
+                    color: annualizedTwr >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
                 });
             }
 
@@ -189,7 +189,7 @@ export default function PerformanceGraph({
             return [{
                 label: "Period Change",
                 text: `${formatCurrency(change, currency)} (${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
-                color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
+                color: change >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
             }];
         }
         return null;
@@ -439,7 +439,7 @@ export default function PerformanceGraph({
             );
 
             return (
-                <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100 border border-border/50 shadow-2xl">
+                <div className="bg-background/98 backdrop-blur-2xl p-3 rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible !opacity-100 border border-border/60 shadow-2xl">
                     <p className="text-sm font-bold text-foreground mb-2 pb-1">
                         {dateStr}
                     </p>
@@ -471,7 +471,7 @@ export default function PerformanceGraph({
                         <div className="space-y-0.5">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Gain</span>
-                                <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                     {formatCurrency(dataPoint.abs_gain, currency)}
                                 </span>
                             </div>
@@ -517,7 +517,7 @@ export default function PerformanceGraph({
                                                 <span className="text-[10px] truncate max-w-[80px] font-bold uppercase tracking-wider" style={{ color: color }}>
                                                     {bKey}
                                                 </span>
-                                                <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                                     {Number(dataPoint[bKey]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                                 </span>
                                             </div>

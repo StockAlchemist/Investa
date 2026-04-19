@@ -198,12 +198,12 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-background/95 backdrop-blur-xl p-3 rounded-xl !opacity-100 border border-border/50 shadow-2xl">
+                                            <div className="bg-background/98 backdrop-blur-2xl p-3 rounded-xl !opacity-100 border border-border/60 shadow-2xl">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                                                     <span className="text-muted-foreground">Realized Gain:</span>
-                                                    <span className="font-medium text-emerald-500">
+                                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
                                                         {formatCurrency(payload[0].value as number, currency)}
                                                     </span>
                                                 </div>
