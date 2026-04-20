@@ -348,6 +348,20 @@ class MarketDatabase:
                     results[row[0]] = datetime.strptime(row[1], '%Y-%m-%d').date()
         return results
 
+    def get_first_dates(self, symbols: List[str], table: str = "daily_ohlcv") -> Dict[str, date]:
+        """Returns a dict of {symbol: first_date} for a list of symbols."""
+        col = "symbol" if table == "daily_ohlcv" else "pair"
+        placeholders = ', '.join(['?'] * len(symbols))
+        query = f"SELECT {col}, MIN(date) FROM {table} WHERE {col} IN ({placeholders}) GROUP BY {col}"
+        
+        results = {}
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, symbols)
+            for row in cursor:
+                if row[1]:
+                    results[row[0]] = datetime.strptime(row[1], '%Y-%m-%d').date()
+        return results
+
     def get_sync_metadata_batch(self, symbols: List[str]) -> Dict[str, datetime]:
         """Returns a dict of {symbol: last_synced_datetime} for a list of symbols."""
         placeholders = ', '.join(['?'] * len(symbols))

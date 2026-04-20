@@ -161,6 +161,13 @@ def _process_numba_core(
         typ = type_ids[i]
         qty = qtys[i]
         price = prices[i]
+        
+        # --- SAFEGUARD: Price Normalization for $CASH ---
+        # Ensure $CASH always maintains a 1.0 unit value in its local currency.
+        # This prevents absolute valuation jumps caused by zero or incorrect ledger prices.
+        if sym == cash_sym_id:
+            price = 1.0
+            
         comm = comms[i]
         split = split_ratios[i]
         to_acc = to_acc_ids[i]
@@ -383,7 +390,8 @@ def _process_numba_core(
                         current_state[0] = 0.0
             continue
 
-        # Buy / Deposit — treated identically for ALL symbols including $CASH.
+        # --- SAFEGUARD: Buy/Deposit Equivalence for $CASH ---
+        # For the $CASH symbol, Buy and Deposit are functionally equivalent. 
         # This ensures users who record internal cash settlements as "Buy $CASH"
         # get the same result as those using "Deposit $CASH" (via Auto-Cash).
         if typ == TYPE_BUY or typ == TYPE_DEPOSIT:
@@ -396,9 +404,11 @@ def _process_numba_core(
             current_state[9] += cost
             current_state[10] += (cost * fx_rate)
 
-        # Sell / Withdrawal — treated identically for ALL symbols including $CASH.
+        # --- SAFEGUARD: Sell/Withdrawal Equivalence for $CASH ---
+        # For the $CASH symbol, Sell and Withdrawal are functionally equivalent.
         # This ensures users who record internal cash settlements as "Sell $CASH"
         # get the same result as those using "Withdrawal $CASH".
+        # Synchronizing these ensures that selling a stock and 'Buying' cash results in a net zero flow.
         elif typ == TYPE_SELL or typ == TYPE_WITHDRAWAL:
             held_qty = current_state[0]
             if sym == cash_sym_id:

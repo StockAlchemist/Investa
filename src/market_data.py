@@ -2805,20 +2805,34 @@ class MarketDataProvider:
         if not potential_sync:
             return
 
-        # Batch 2: Get Last Data Dates in DB
+        # Batch 2: Get edge dates in DB
         table_name = "daily_ohlcv" if not is_fx else "daily_fx"
         last_db_dates_map = self.db.get_last_dates(potential_sync, table=table_name)
+        first_db_dates_map = self.db.get_first_dates(potential_sync, table=table_name)
         
         for sym in potential_sync:
             last_db_date = last_db_dates_map.get(sym)
+            first_db_date = first_db_dates_map.get(sym)
             
             fetch_start = start_date
-            if last_db_date:
-                # 5-day overlap for integrity
-                fetch_start = min(start_date, last_db_date - timedelta(days=5))
+            needs_sync = False
             
-            # If we don't have data up to end_date, we need to sync
-            if not last_db_date or last_db_date < end_date:
+            if not last_db_date:
+                needs_sync = True
+            else:
+                # Check for Forward Gap (New data)
+                if last_db_date < end_date:
+                    needs_sync = True
+                    # 5-day overlap for integrity
+                    fetch_start = min(start_date, last_db_date - timedelta(days=5))
+                
+                # Check for Backward Gap (Missing older history)
+                if first_db_date and start_date < first_db_date:
+                    needs_sync = True
+                    # Ensure we fetch from the earliest requested point
+                    fetch_start = min(fetch_start, start_date)
+
+            if needs_sync:
                 sync_needed.append((sym, fetch_start))
 
         if not sync_needed:
