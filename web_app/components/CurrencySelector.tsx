@@ -59,7 +59,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                         <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
                             {currentCurrency}
                         </span>
-                        <span className="text-cyan-500 font-black">
+                        <span className="text-cyan-500 font-bold">
                             {CURRENCY_SYMBOLS[currentCurrency] || ''}
                         </span>
                     </div>
@@ -80,7 +80,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     "w-48 rounded-2xl"
                 )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
-                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
+                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-cyan-500 mb-1">
                             Currencies
                         </div>
                         {currencies.map(currency => (
