@@ -4,6 +4,7 @@ import os
 import io
 import json
 import time
+import sqlite3
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import requests
