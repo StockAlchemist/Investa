@@ -12,7 +12,7 @@ export const CURRENCY_SYMBOLS: Record<string, string> = {
     JPY: '¥',
     CNY: '¥',
     THB: '฿',
-    SGD: 'S$',
+    SGD: '$',
 };
 
 export function formatCurrency(value: number, currency: string = 'USD'): string {

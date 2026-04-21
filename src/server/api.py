@@ -70,7 +70,7 @@ from server.auth import (
 )
 # from server.auth import get_current_user (Removed - moved to dependencies)
 from datetime import timedelta
-import ai_chat_service  # Added for chat integration
+from server import ai_chat_service  # Fixed package import
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -3805,6 +3805,22 @@ async def get_fundamentals_endpoint(
 ):
     """Returns fundamental data (ticker.info) for a symbol."""
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    if is_cash_symbol(symbol):
+        return {
+            "symbol": symbol,
+            "shortName": "Cash Balance",
+            "longName": "Cash and Cash Equivalents",
+            "regularMarketPrice": 1.0,
+            "currentPrice": 1.0,
+            "quoteType": "CASH",
+            "sector": "Cash",
+            "industry": "Cash",
+            "marketCap": 0,
+            "dividendYield": 0.0,
+            "trailingPE": None,
+            "forwardPE": None
+        }
+
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
@@ -3847,6 +3863,9 @@ async def get_financials_endpoint(
 ):
     """Returns historical financial statements for a symbol."""
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    if is_cash_symbol(symbol):
+        return {"symbol": symbol, "period": period_type, "income_statement": [], "balance_sheet": [], "cash_flow": []}
+
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
@@ -3900,6 +3919,9 @@ async def get_ratios_endpoint(
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    if is_cash_symbol(symbol):
+        return {"symbol": symbol, "historical_ratios": [], "current_valuation": {}}
+
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
@@ -3952,6 +3974,9 @@ async def get_intrinsic_value_endpoint(
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    if is_cash_symbol(symbol):
+        return {"symbol": symbol, "intrinsic_value": 1.0, "current_price": 1.0, "upside_potential": 0.0, "is_cash": True}
+
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, CURRENCY_SYMBOLS } from '@/lib/utils';
 import { ChevronDown, Globe } from 'lucide-react';
 
 const AVAILABLE_CURRENCIES = ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY'];
@@ -92,7 +92,12 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >
-                                <span className="flex-1">{currency}</span>
+                                <span className="flex-1 flex items-center gap-2">
+                                    {currency}
+                                    <span className="text-[12px] opacity-60 font-normal">
+                                        ({CURRENCY_SYMBOLS[currency] || ''})
+                                    </span>
+                                </span>
                                 {currentCurrency === currency && (
                                     <div className="w-1.5 h-1.5 rounded-full bg-white" />
                                 )}
