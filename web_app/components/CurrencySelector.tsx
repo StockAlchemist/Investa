@@ -59,7 +59,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                         <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
                             {currentCurrency}
                         </span>
-                        <span className="text-cyan-500 font-bold">
+                        <span className="text-cyan-500 font-normal">
                             {CURRENCY_SYMBOLS[currentCurrency] || ''}
                         </span>
                     </div>
@@ -100,7 +100,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                                 <span className="flex-1 flex items-center justify-between pr-4">
                                     <span className="font-bold uppercase tracking-wider">{currency}</span>
                                     <span className={cn(
-                                        "text-lg font-black leading-none",
+                                        "text-lg font-normal leading-none",
                                         currentCurrency === currency ? "text-cyan-100" : "text-cyan-500"
                                     )}>
                                         {CURRENCY_SYMBOLS[currency] || ''}
