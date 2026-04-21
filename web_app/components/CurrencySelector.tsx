@@ -52,12 +52,17 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     <Globe className={cn(side === 'bottom' ? "w-3.5 h-3.5" : "w-5 h-5")} />
                 </div>
                 <div className="flex flex-col items-center leading-none gap-0">
-                    <span className={cn(
-                        "bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate font-bold uppercase text-[14px]",
-                        side === 'right' ? "hidden lg:block max-w-[40px]" : "block max-w-[60px]"
+                    <div className={cn(
+                        "flex items-center gap-1 font-bold uppercase text-[14px]",
+                        side === 'right' ? "hidden lg:block" : "block"
                     )}>
-                        {currentCurrency}
-                    </span>
+                        <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                            {currentCurrency}
+                        </span>
+                        <span className="text-cyan-500 font-black">
+                            {CURRENCY_SYMBOLS[currentCurrency] || ''}
+                        </span>
+                    </div>
                     {currentCurrency !== 'USD' && fxRate && (
                         <div className="text-[12px] text-cyan-600 dark:text-cyan-400 font-black font-mono mt-0.5">
                             {fxRate.toFixed(2)}
@@ -92,10 +97,13 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >
-                                <span className="flex-1 flex items-center gap-2">
-                                    {currency}
-                                    <span className="text-[12px] opacity-60 font-normal">
-                                        ({CURRENCY_SYMBOLS[currency] || ''})
+                                <span className="flex-1 flex items-center justify-between pr-4">
+                                    <span className="font-bold uppercase tracking-wider">{currency}</span>
+                                    <span className={cn(
+                                        "text-lg font-black leading-none",
+                                        currentCurrency === currency ? "text-cyan-100" : "text-cyan-500"
+                                    )}>
+                                        {CURRENCY_SYMBOLS[currency] || ''}
                                     </span>
                                 </span>
                                 {currentCurrency === currency && (
