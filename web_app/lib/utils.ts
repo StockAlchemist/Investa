@@ -34,6 +34,10 @@ export function formatCurrency(value: number, currency: string = 'USD'): string 
 }
 
 export function formatPercent(value: number): string {
+    if (value === Infinity) return '∞';
+    if (value === -Infinity) return '-∞';
+    if (isNaN(value)) return '-';
+    
     return new Intl.NumberFormat('en-US', {
         style: 'percent',
         minimumFractionDigits: 2,

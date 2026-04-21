@@ -429,10 +429,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 (h as any)['Day Change %'] = 0;
             }
 
-            if (costBasis !== 0) {
+            const EPSILON = 0.0001;
+            const hasCost = Math.abs(costBasis) > EPSILON;
+
+            if (hasCost) {
                 (h as any)['Unreal. Gain %'] = (unrealGl / costBasis) * 100;
                 (h as any)['Div. Yield (Cost) %'] = (estIncome / costBasis) * 100;
                 (h as any)['Total Return %'] = (totalGl / costBasis) * 100;
+            } else {
+                (h as any)['Unreal. Gain %'] = unrealGl > EPSILON ? Infinity : 0;
+                (h as any)['Div. Yield (Cost) %'] = estIncome > EPSILON ? Infinity : 0;
+                (h as any)['Total Return %'] = totalGl > EPSILON ? Infinity : 0;
             }
 
             if (mktVal !== 0) {
@@ -712,6 +719,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         if (isNaN(num)) return val;
 
         if (field.includes('%') || field.includes('Yield') || field === 'Weight') {
+            if (num === Infinity) return '∞';
+            if (num === -Infinity) return '-∞';
             return `${num.toFixed(2)}%`;
         }
         if (field.includes('Price') || field.includes('Value') || field.includes('Cost') || field.includes('Gain') || field.includes('Div') || field.includes('Balance')) {

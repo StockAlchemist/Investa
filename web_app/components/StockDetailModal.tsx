@@ -227,10 +227,22 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             "fx_rate": 1
         });
 
-        const avgCost = aggregate.Quantity > 0 ? aggregate["Cost Basis"] / aggregate.Quantity : 0;
-        const totalReturnPct = aggregate["Cost Basis"] > 0 ? (aggregate["Total Gain"] / aggregate["Cost Basis"]) * 100 : 0;
-        const unrealizedGainPct = aggregate["Cost Basis"] > 0 ? (aggregate["Unreal. Gain"] / aggregate["Cost Basis"]) * 100 : 0;
-        const aggregateIrr = aggregate["Market Value"] > 0 ? aggregate["Weighted IRR"] / aggregate["Market Value"] : 0;
+        const costBasis = aggregate["Cost Basis"];
+        const avgCost = aggregate.Quantity > 0 ? costBasis / aggregate.Quantity : 0;
+        
+        // Use a small epsilon to avoid division by zero or near-zero floating point issues
+        const EPSILON = 0.0001;
+        const hasCost = Math.abs(costBasis) > EPSILON;
+        
+        const totalReturnPct = hasCost 
+            ? (aggregate["Total Gain"] / costBasis) * 100 
+            : (aggregate["Total Gain"] > EPSILON ? Infinity : 0);
+            
+        const unrealizedGainPct = hasCost 
+            ? (aggregate["Unreal. Gain"] / costBasis) * 100 
+            : (aggregate["Unreal. Gain"] > EPSILON ? Infinity : 0);
+            
+        const aggregateIrr = aggregate["Market Value"] > EPSILON ? aggregate["Weighted IRR"] / aggregate["Market Value"] : 0;
 
         return {
             ...aggregate,
@@ -433,7 +445,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             <StatCard
                                 label="Unrealized G/L"
                                 value={formatCurrency(userPosition["Unreal. Gain"], currency)}
-                                subValue={`${(userPosition["Unreal. Gain %"] || 0).toFixed(2)}%`}
+                                subValue={userPosition["Unreal. Gain %"] === Infinity ? "∞" : `${(userPosition["Unreal. Gain %"] || 0).toFixed(2)}%`}
                                 subValueColor={(userPosition["Unreal. Gain %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 valueColor={(userPosition["Unreal. Gain"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 icon={LucideActivity}
@@ -442,7 +454,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             <StatCard
                                 label="Total Return"
                                 value={formatCurrency(userPosition["Total Gain"], currency)}
-                                subValue={`${(userPosition["Total Return %"] || 0).toFixed(2)}%`}
+                                subValue={userPosition["Total Return %"] === Infinity ? "∞" : `${(userPosition["Total Return %"] || 0).toFixed(2)}%`}
                                 subValueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 valueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 icon={TrendingUp}
@@ -455,7 +467,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             />
                             <StatCard
                                 label="IRR %"
-                                value={`${(userPosition["IRR %"] || 0).toFixed(2)}%`}
+                                value={userPosition["IRR %"] === Infinity ? "∞" : `${(userPosition["IRR %"] || 0).toFixed(2)}%`}
                                 icon={LineChartIcon}
                                 valueColor={(userPosition["IRR %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
                                 color={(userPosition["IRR %"] || 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
