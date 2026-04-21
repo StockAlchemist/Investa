@@ -8,7 +8,7 @@ import os
 import json
 import time
 import sqlite3
-from datetime import datetime, date, time as dt_time
+from datetime import datetime, date, timedelta, time as dt_time
 import asyncio
 import shutil
 
@@ -830,8 +830,11 @@ async def _calculate_portfolio_summary_internal(
         logging.warning(f"Could not fetch pre-calculated TWR from portfolio_snapshots: {e_db}")
         precalculated_twr_used = False
 
-    if not precalculated_twr_used and not df.empty:
+    logging.info(f"Summary Metrics: Precalculated TWR used? {precalculated_twr_used}")
+
+    if not df.empty:
         try:
+            logging.info("Starting advanced risk metrics calculation via daily_df...")
             # Filter df by accounts to get correct baseline date for this selection
             df_for_twr = df
             if include_accounts:
@@ -853,7 +856,7 @@ async def _calculate_portfolio_summary_internal(
                     start_date=min_date, # Align with graph logic
                     end_date=max_date,
                     interval="D",
-                    benchmark_symbols_yf=[],
+                    benchmark_symbols_yf=['^GSPC'],
                     display_currency=currency,
                     include_accounts=include_accounts,
                     db_mtime=db_mtime
@@ -891,8 +894,49 @@ async def _calculate_portfolio_summary_internal(
                             if days > 0:
                                 annualized_factor = final_twr_factor ** (365.25 / days)
                                 annualized_twr = (annualized_factor - 1) * 100.0
+
+                        # --- NEW: Calculate Risk Metrics (Max Drawdown, Volatility, Sharpe, Beta) ---
+                        try:
+                            # Use the cumulative TWR series for risk metrics calculation (independent of currency swings)
+                            # but "Portfolio Accumulated Gain" is a factor from inception.
+                            # calculate_all_risk_metrics expects a value-like series.
+                            risk_input_series = daily_df["Portfolio Accumulated Gain"]
+                            
+                            # Get benchmark series if available
+                            bench_series = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
+                            
+                            adv_risk_metrics = calculate_all_risk_metrics(
+                                risk_input_series, 
+                                benchmark_values=bench_series
+                            )
+                            
+                            if adv_risk_metrics:
+                                overall_summary_metrics["max_drawdown"] = float(adv_risk_metrics.get("Max Drawdown", 0.0) * 100.0)
+                                overall_summary_metrics["volatility_ann"] = float(adv_risk_metrics.get("Volatility (Ann.)", 0.0) * 100.0)
+                                overall_summary_metrics["sharpe_ratio"] = float(adv_risk_metrics.get("Sharpe Ratio", 0.0))
+                                overall_summary_metrics["beta"] = float(adv_risk_metrics.get("Beta", 1.0))
+                        except Exception as e_risk:
+                            logging.warning(f"Failed to calculate advanced risk metrics: {e_risk}")
+
+                        # --- NEW: Calculate YTD Return ---
+                        try:
+                            # jan1 = pd.Timestamp(date(date.today().year, 1, 1)).tz_localize('UTC')
+                            target_tz = daily_df.index.tz
+                            jan1 = pd.Timestamp(date(date.today().year, 1, 1))
+                            if target_tz is not None:
+                                jan1 = jan1.tz_localize(target_tz)
+                            
+                            ytd_df = daily_df[daily_df.index >= jan1]
+                            if not ytd_df.empty:
+                                start_twr = ytd_df["Portfolio Accumulated Gain"].iloc[0]
+                                end_twr = ytd_df["Portfolio Accumulated Gain"].iloc[-1]
+                                if start_twr > 0 and pd.notna(start_twr):
+                                    ytd_ret = (end_twr / start_twr - 1) * 100.0
+                                    overall_summary_metrics["ytd_return"] = float(ytd_ret)
+                        except Exception as e_ytd:
+                            logging.warning(f"Failed to calculate YTD return: {e_ytd}")
         except Exception as e_twr:
-            logging.warning(f"Failed to calculate TWR in summary: {e_twr}")
+            logging.exception(f"Failed to calculate TWR and risk metrics in summary: {e_twr}")
 
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
@@ -3560,10 +3604,11 @@ async def get_risk_metrics(
             db_mtime=data[6] # db_mtime
         )
         
-        if daily_df is None or "Portfolio Value" not in daily_df.columns:
+        if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
             return {}
 
-        portfolio_values = daily_df["Portfolio Value"]
+        # Use Portfolio Accumulated Gain (TWR series) for consistent risk metrics
+        portfolio_values = daily_df["Portfolio Accumulated Gain"]
         benchmark_values = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
         metrics = calculate_all_risk_metrics(portfolio_values, benchmark_values=benchmark_values)
         if metrics.get('Beta') is None:

@@ -111,6 +111,11 @@ export interface PortfolioSummary {
         dividend_yield_pct?: number;
         cash_balance?: number; // Might not be directly in metrics, check account_metrics for Cash
         exchange_rate_to_display?: number;
+        max_drawdown?: number;
+        volatility_ann?: number;
+        sharpe_ratio?: number;
+        beta?: number;
+        ytd_return?: number;
         indices?: Record<string, {
             price: number;
             change: number;

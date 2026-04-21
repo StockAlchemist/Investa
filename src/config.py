@@ -53,7 +53,7 @@ AI_REVIEW_CACHE_TTL = 604800  # 1 week for AI stock analysis
 
 # --- Logging Configuration ---
 # This level is a default; main_gui.py might override it for its own logging.
-LOGGING_LEVEL = logging.WARNING  # Default logging level for the application
+LOGGING_LEVEL = logging.INFO  # Default logging level for the application
 
 # --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
 APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails
