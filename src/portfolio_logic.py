@@ -1895,7 +1895,11 @@ def _calculate_daily_net_cash_flow_vectorized(
         included_set = {str(a).upper().strip() for a in included_accounts}
     
     # --- 1. CASH SYMBOL FLOWS (Deposits/Withdrawals) ---
-    cash_mask = (df_period["Symbol"] == CASH_SYMBOL_CSV) & (df_period["Type"].isin(["deposit", "withdrawal"]))
+    # Robustly handle case sensitivity (Deposit vs deposit)
+    type_lower = df_period["Type"].str.lower()
+    symbol_upper = df_period["Symbol"].str.upper()
+    
+    cash_mask = (symbol_upper == CASH_SYMBOL_CSV.upper()) & (type_lower.isin(["deposit", "withdrawal"]))
     df_cash = df_period[cash_mask].copy()
 
     # --- FIX: Filter cash flows by included accounts ---
@@ -3874,7 +3878,7 @@ def _prepare_historical_inputs(
     end_date: date,
     benchmark_symbols_yf: List[str],
     display_currency: str,
-    current_hist_version: str = "v14",
+    current_hist_version: str = "v16",
     raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX,
     # preloaded_transactions_df: Optional[pd.DataFrame] = None, # Already added above
@@ -5394,13 +5398,25 @@ def _load_or_calculate_daily_results(
                 # Denom = PrevValue + max(0, NetFlow)
                 adjusted_prev_value = previous_value + net_flow_filled.clip(lower=0.0)
             
+                # Robustness: We ignore returns if capital at risk is too small (e.g. < 10 cents)
+                # to prevent division-by-nothing blowups.
                 valid_denom_mask = adjusted_prev_value.notna() & (
-                    abs(adjusted_prev_value) > 1e-9
+                    abs(adjusted_prev_value) > 0.1
                 )
                 daily_df.loc[valid_denom_mask, "daily_return"] = (
                     daily_df.loc[valid_denom_mask, "daily_gain"]
                     / adjusted_prev_value.loc[valid_denom_mask]
                 )
+                
+                # --- NEW: Artifact Guard ---
+                # If a daily return is > 1.0 (100%) AND the denominator was small (< $5),
+                # it is highly likely that a transaction was missed in the flow calculation
+                # (e.g. an asset transfer with missing mapping). 
+                # We limit such returns to prevent ruining the TWR and Volatility.
+                spike_mask = (daily_df["daily_return"] > 1.0) & (adjusted_prev_value < 5.0)
+                if spike_mask.any():
+                    logging.warning(f"Found {spike_mask.sum()} TWR SPIKES. Capping to 0% to avoid data artifacts.")
+                    daily_df.loc[spike_mask, "daily_return"] = 0.0
 
                 anomalies = daily_df[
                     (daily_df["value"] < 1.0) & 

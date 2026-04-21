@@ -929,6 +929,23 @@ async def _calculate_portfolio_summary_internal(
                             # Get benchmark series if available
                             bench_series = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
                             
+                            # --- DEBUG LOGGING: Inspect for Volatility Spikes ---
+                            daily_returns_debug = risk_input_series.pct_change(fill_method=None).dropna()
+                            logging.info(f"RISK DEBUG: First 50 daily returns: {daily_returns_debug.head(50).tolist()}")
+                            if not daily_returns_debug.empty:
+                                max_ret = daily_returns_debug.max()
+                                min_ret = daily_returns_debug.min()
+                                std_ret = daily_returns_debug.std()
+                                logging.info(f"RISK DEBUG (Scope: {include_accounts}): Max Daily Ret: {max_ret:.4f}, Min: {min_ret:.4f}, Std: {std_ret:.4f}")
+                                if max_ret > 0.5 or min_ret < -0.5:
+                                    spike_dates = daily_returns_debug[(daily_returns_debug > 0.5) | (daily_returns_debug < -0.5)].index
+                                    logging.warning(f"RISK SPIKE DETECTED on dates: {spike_dates.tolist()}")
+                                    for d in spike_dates[:5]:
+                                        val_today = daily_df.loc[d, "value"] if "value" in daily_df.columns else "N/A"
+                                        flow_today = daily_df.loc[d, "net_flow"] if "net_flow" in daily_df.columns else "N/A"
+                                        logging.warning(f"  Date {d}: Value={val_today}, Flow={flow_today}")
+                            # --- END DEBUG LOGGING ---
+                            
                             adv_risk_metrics = calculate_all_risk_metrics(
                                 risk_input_series, 
                                 benchmark_values=bench_series

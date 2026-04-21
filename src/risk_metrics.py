@@ -237,7 +237,30 @@ def calculate_all_risk_metrics(
     # Calculate returns
     returns = portfolio_values.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan).dropna()
     
+    # --- ROBUSTNESS: Handle extreme outliers that ruin metrics ---
+    # Daily returns > 1000% or < -95% are almost always data artifacts (missing flows, splits, etc.)
+    # especially for diversified portfolios. We clip them to prevent infinity/extreme volatility.
+    if not returns.empty:
+        # Check for suspected artifacts
+        outliers = returns[(returns > 1.0) | (returns < -0.90)]
+        if not outliers.empty:
+            # We clip while keeping the sign
+            returns = returns.clip(lower=-0.90, upper=1.0)
+            
+    # MDD ignores returns and works on value series (more robust)
     mdd = calculate_max_drawdown(portfolio_values)
+    
+    # If we have very few data points, metrics like Vol/Sharpe are statistically meaningless
+    # and highly subject to initialization bias.
+    if len(returns) < 5:
+        return {
+            "Max Drawdown": mdd,
+            "Volatility (Ann.)": 0.0,
+            "Sharpe Ratio": 0.0,
+            "Sortino Ratio": 0.0,
+            "insufficient_data": True
+        }
+
     vol = calculate_volatility(returns, periods_per_year)
     sharpe = calculate_sharpe_ratio(returns, risk_free_rate, periods_per_year)
     sortino = calculate_sortino_ratio(returns, risk_free_rate, periods_per_year)
