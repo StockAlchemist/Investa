@@ -756,11 +756,11 @@ def run_narrative_search(prompt: str) -> List[Dict[str, Any]]:
     "{prompt}"
     
     RULES:
-    1. ONLY return the SQL. No markdown blocks, no explanations.
+    1. ONLY return the SQL. Do not include markdown blocks (```sql) unless necessary.
     2. The query MUST start with "SELECT * FROM screener_cache WHERE".
     3. Use standard SQLite syntax. 
     4. For sector names or company names, use 'LIKE' with '%' wildcards for fuzzy matching.
-    5. Filter out rows where intrinsic_value is NULL unless explicitly asked.
+    5. Filter out rows where intrinsic_value is NULL unless explicitly asked (e.g. WHERE intrinsic_value IS NOT NULL).
     6. Sort by margin_of_safety DESC by default unless specified otherwise.
     7. LIMIT results to 100 maximum.
     
@@ -778,41 +778,83 @@ def run_narrative_search(prompt: str) -> List[Dict[str, Any]]:
 
     try:
         # --- MODEL FALLBACK CHAIN FOR NL2SQL ---
-        SCREENER_MODELS = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-1.5-flash"]
+        # Note: Some models (like Gemini 3 Preview) use tokens for "thoughts" (Chain of Thought), 
+        # which can exceed small maxOutputTokens limits.
+        SCREENER_MODELS = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-3-flash-preview"]
         sql = None
+        raw_response = None
         
+        # Increase token limit significantly to accommodate model reasoning/thoughts
+        gen_config = {
+            "temperature": 0.1,
+            "maxOutputTokens": 2048,
+            "topP": 0.95
+        }
+        payload["generationConfig"] = gen_config
+
+        # Add instruction to minimize reasoning if it helps with token usage
+        if "contents" in payload and payload["contents"]:
+            payload["contents"][0]["parts"][0]["text"] += "\n(Skip verbose reasoning, return ONLY the final SQL string.)"
+
         for model in SCREENER_MODELS:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             try:
                 response = requests.post(url, json=payload, timeout=30)
-                if response.status_code == 404 or response.status_code == 429:
+                if response.status_code in [404, 429, 503]:
                     continue
                 response.raise_for_status()
                 
                 data = response.json()
-                sql = data['candidates'][0]['content']['parts'][0]['text'].strip()
-                break # Success
+                if 'candidates' in data and data['candidates']:
+                    candidate = data['candidates'][0]
+                    # Check if model finished normally
+                    if candidate.get('finishReason') == 'SAFETY':
+                        logging.warning(f"Screener: Model '{model}' triggered safety filter.")
+                        continue
+                        
+                    if 'content' in candidate and 'parts' in candidate['content']:
+                        raw_response = candidate['content']['parts'][0]['text']
+                        sql = raw_response.strip()
+                        break 
             except Exception as e:
-                logging.warning(f"Screener: Model '{model}' failed for Narrative Search: {e}")
+                logging.warning(f"Screener: Model '{model}' error: {e}")
                 continue
 
         if not sql:
+            logging.error(f"Screener: No SQL generated. Last response keys: {data.keys() if 'data' in locals() else 'None'}")
             return []
         
-        # Strip potential markdown formatting
-        if sql.startswith("```"):
-            sql = sql.split("\n", 1)[1].rsplit("\n", 1)[0].replace("sql", "").strip()
+        logging.warning(f"Screener: AI Raw Output (Length {len(sql)}): {repr(sql)}")
         
-        # Safety Check: Must be a SELECT against screener_cache
+        # --- ROBUST SQL EXTRACTION ---
+        if "```" in sql:
+            import re
+            match = re.search(r'```(?:sql)?\s*(.*?)\s*```', sql, re.DOTALL | re.IGNORECASE)
+            if match:
+                sql = match.group(1).strip()
+            else:
+                sql = re.sub(r'```(?:sql)?', '', sql, flags=re.IGNORECASE).replace('```', '').strip()
+        
+        # AUTO-CORRECT common truncation
+        if "screener_" in sql.lower() and "screener_cache" not in sql.lower():
+            sql = sql.replace("screener_", "screener_cache")
+            
+        sql = sql.rstrip(';').strip()
+        
+        # Safety Check
         sql_lower = sql.lower()
-        if "select" not in sql_lower or "screener_cache" not in sql_lower or any(x in sql_lower for x in ["delete", "drop", "update", "insert", "alter"]):
-             logging.warning(f"Screener: AI suggested unsafe or invalid SQL: {sql}")
+        forbidden = ["delete", "drop", "update", "insert", "alter", "vacuum", "attach", "detach", "union", "join"]
+        
+        if not sql_lower.startswith("select") or "screener_cache" not in sql_lower or any(x in sql_lower for x in forbidden):
+             logging.warning(f"Screener: Invalid AI SQL: {repr(sql)}")
              return []
              
-        logging.info(f"Screener: Executing AI-Generated SQL: {sql}")
+        logging.info(f"Screener: Executing Code: {sql}")
         
         conn = get_db_connection()
-        if not conn: return []
+        if not conn: 
+             logging.error("Screener: DB Conn failed.")
+             return []
         
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()

@@ -153,11 +153,15 @@ DEFAULT_CURRENT_CACHE_FILE_PATH = (
 YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
 DEFAULT_INDEX_QUERY_SYMBOLS = list(YFINANCE_INDEX_TICKER_MAP.keys())
 
-SYMBOL_MAP_TO_YFINANCE = {}
+SYMBOL_MAP_TO_YFINANCE = {
+    "FISV": "FI",      # Fiserv changed to FI in May 2023
+    "FB": "META",      # Facebook changed to Meta
+    "SNA": "SNA",      # Placeholder if needed
+}
 
-YFINANCE_EXCLUDED_SYMBOLS = {}
+YFINANCE_EXCLUDED_SYMBOLS = set()
 # {"VTSAX", "VTIAX"} # Example: Mutual funds often don't have good YF data
-SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
+SHORTABLE_SYMBOLS = {"AAPL", "MSFT", "GOOG", "AMZN", "META", "TSLA", "NVDA"}
 
 # DEFAULT_CSV constant:
 # In the context of a DB-first application, this is less about the *primary data source*

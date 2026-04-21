@@ -186,6 +186,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         const matchingHoldings = holdings.filter(h => h.Symbol === symbol);
         if (!matchingHoldings.length) return null;
 
+        const isCash = symbol === '$CASH' || symbol === 'CASH' || symbol.toUpperCase().includes('CASH (');
+
         const aggregate = matchingHoldings.reduce((acc, curr) => {
             // Helper to get numeric value handling dynamic currency keys
             const getVal = (h: Holding, prefix: string) => {
@@ -202,6 +204,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             const qty = curr.Quantity || 0;
             const mktVal = getVal(curr, "Market Value");
             const costBasis = getVal(curr, "Cost Basis");
+            const totalBuyCost = getVal(curr, "Total Buy Cost");
             const unrealizedGain = getVal(curr, "Unreal. Gain");
             const totalGain = getVal(curr, "Total Gain") || unrealizedGain; // Fallback
             const dividends = getVal(curr, "Dividends") || 0;
@@ -210,6 +213,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 Quantity: acc.Quantity + qty,
                 "Market Value": acc["Market Value"] + mktVal,
                 "Cost Basis": acc["Cost Basis"] + costBasis,
+                "Total Buy Cost": acc["Total Buy Cost"] + totalBuyCost,
                 "Unreal. Gain": acc["Unreal. Gain"] + unrealizedGain,
                 "Total Gain": acc["Total Gain"] + totalGain,
                 "Dividends": acc["Dividends"] + dividends,
@@ -220,6 +224,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             Quantity: 0,
             "Market Value": 0,
             "Cost Basis": 0,
+            "Total Buy Cost": 0,
             "Unreal. Gain": 0,
             "Total Gain": 0,
             "Dividends": 0,
@@ -228,21 +233,26 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         });
 
         const costBasis = aggregate["Cost Basis"];
-        const avgCost = aggregate.Quantity > 0 ? costBasis / aggregate.Quantity : 0;
+        const totalBuyCost = aggregate["Total Buy Cost"];
         
         // Use a small epsilon to avoid division by zero or near-zero floating point issues
         const EPSILON = 0.0001;
-        const hasCost = Math.abs(costBasis) > EPSILON;
         
-        const totalReturnPct = hasCost 
-            ? (aggregate["Total Gain"] / costBasis) * 100 
+        // Use Total Buy Cost (Cumulative Purchases/Deposits) as the denominator if available
+        // to prevent extreme return percentages when current balance is small.
+        const denominator = (Math.abs(totalBuyCost) > EPSILON) ? totalBuyCost : costBasis;
+        const hasDenominator = Math.abs(denominator) > EPSILON;
+        
+        const totalReturnPct = hasDenominator 
+            ? (aggregate["Total Gain"] / denominator) * 100 
             : (aggregate["Total Gain"] > EPSILON ? Infinity : 0);
             
-        const unrealizedGainPct = hasCost 
-            ? (aggregate["Unreal. Gain"] / costBasis) * 100 
+        const unrealizedGainPct = hasDenominator 
+            ? (aggregate["Unreal. Gain"] / denominator) * 100 
             : (aggregate["Unreal. Gain"] > EPSILON ? Infinity : 0);
             
         const aggregateIrr = aggregate["Market Value"] > EPSILON ? aggregate["Weighted IRR"] / aggregate["Market Value"] : 0;
+        const avgCost = isCash ? 1.0 : (aggregate.Quantity > 0 ? costBasis / aggregate.Quantity : 0);
 
         return {
             ...aggregate,

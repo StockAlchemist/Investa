@@ -1482,7 +1482,37 @@ def _build_summary_rows(
                 total_gain_display = realized_gain_display + unrealized_gain_display + dividends_display - commissions_display
                 
             total_return_pct = np.nan
+            if pd.notna(total_gain_display) and pd.notna(total_buy_cost_display):
+                if abs(total_buy_cost_display) > 1e-9:
+                    # Use Total Buy Cost (Cumulative Deposits) as the denominator for cash
+                    # This provides a lifetime return on capital deposited.
+                    total_return_pct = (total_gain_display / total_buy_cost_display) * 100.0
+                elif abs(total_gain_display) <= 1e-9:
+                    total_return_pct = 0.0
+
             stock_irr = np.nan
+            try:
+                # Enable IRR for cash
+                cf_dates, cf_values = get_cash_flows_for_symbol_account(
+                    CASH_SYMBOL_CSV,
+                    account,
+                    transactions_df,
+                    abs(market_value_local),
+                    is_transfer_a_flow=True,
+                    report_date=report_date
+                )
+                if cf_dates and cf_values:
+                    for i in range(len(cf_dates)):
+                        d = cf_dates[i]
+                        if isinstance(d, (str, datetime)):
+                            cf_dates[i] = pd.to_datetime(d).date()
+                    
+                    duration_days = (cf_dates[-1] - cf_dates[0]).days
+                    if duration_days >= 365:
+                        stock_irr = calculate_irr(cf_dates, cf_values)
+            except Exception as e_irr_cash:
+                logging.debug(f"IRR skipped for cash {account}: {e_irr_cash}")
+
             div_yield_on_cost_pct_display = np.nan
             
             fx_gain_loss_display_holding = np.nan
@@ -2013,7 +2043,10 @@ def _calculate_aggregate_metrics(
             overall_day_change_percent = 0.0
 
     overall_total_return_pct = np.nan
-    overall_denominator = overall_cost_basis_display  # Use cost basis of held assets + cash as the denominator
+    # IMPROVEMENT: Use overall_total_buy_cost_display (Cumulative Deposits) as the denominator
+    # for the overall portfolio return to prevent extreme percentages when the remaining balance is small.
+    overall_denominator = overall_total_buy_cost_display 
+    
     if pd.notna(overall_total_gain_display) and pd.notna(overall_denominator):
         if abs(overall_denominator) > 1e-9:
             overall_total_return_pct = (

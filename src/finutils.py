@@ -800,8 +800,6 @@ def get_cash_flows_for_mwr(
                         (qty_abs * price_local) if qty_abs > 0 else price_local
                     )
                 cash_flow_local = dividend_amount_local_cf - commission_local  # IN (+)
-                if pd.notna(commission_local):
-                    cash_flow_local = -abs(commission_local)  # OUT (-)
             elif tx_type == "transfer":
                  # Cash Transfer Logic (Case-Insensitive)
                  # Determine direction based on `include_accounts` scope

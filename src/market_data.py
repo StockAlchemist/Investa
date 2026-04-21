@@ -1949,13 +1949,12 @@ class MarketDataProvider:
         
         # --- END FIX ---
 
-        # Clamp end date to today (exclusive in yfinance means up to yesterday) 
-        # if we are not asking for today's data (which we shouldn't be here).
-        # Actually, if we ask for end=tomorrow, yfinance tries to get today.
-        # If today isn't effectively over or started, it thinks we want today.
-        # Safer to clamp end to 'today' (fetching UP TO yesterday) for strict history.
-        if not is_intraday and yf_end_date > today:
-             yf_end_date = today
+        # --- FIX: Stop clamping end_date to today for daily data ---
+        # We want to allow yfinance to return today's partially closed bar 
+        # so that TWR and YTD metrics can update during the day.
+        # We only clamp if we are truly in the future (e.g. asking for next month).
+        if not is_intraday and yf_end_date > today + timedelta(days=1):
+             yf_end_date = today + timedelta(days=1)
         # --- END FIX ---
 
         # --- FIX: Check for business days to avoid YFPricesMissingError on weekends ---
@@ -2797,9 +2796,27 @@ class MarketDataProvider:
         # Determine which symbols *might* need sync based on time threshold
         potential_sync = []
         for sym in symbols:
-            last_ts = last_synced_map.get(sym)
-            if last_ts and (now - last_ts) < timedelta(hours=4):
-                continue
+            last_ts_str = last_synced_map.get(sym)
+            if last_ts_str:
+                try:
+                    last_ts = datetime.fromisoformat(last_ts_str)
+                    elapsed = now - last_ts
+                    is_stale = elapsed >= timedelta(hours=4)
+                    
+                    # RELAXATION: If synced today, allow 15-min staleness during market hours 
+                    # to keep the 'Today' daily bar fresh for TWR/YTD calculations.
+                    if not is_stale and last_ts.date() == now.date() and is_market_open():
+                        if elapsed >= timedelta(minutes=15):
+                            is_stale = True
+                    
+                    # If synced yesterday but market is now open today, force a sync to get 'Today' row
+                    if not is_stale and last_ts.date() < now.date() and is_market_open():
+                        is_stale = True
+                        
+                    if not is_stale:
+                        continue
+                except (ValueError, TypeError):
+                    pass # Corrupt timestamp, sync anyway
             potential_sync.append(sym)
             
         if not potential_sync:

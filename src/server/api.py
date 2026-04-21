@@ -817,6 +817,10 @@ async def _calculate_portfolio_summary_internal(
                     df_for_twr = df[df["Account"].isin(include_accounts)]
                 
                 if not df_for_twr.empty:
+                    # --- FIX: Apply live adjustment to snapshots ---
+                    day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
+                    final_twr_factor = final_twr_factor * (1.0 + day_pct)
+                    
                     actual_min_date = df_for_twr["Date"].min().date()
                     days = (date.today() - actual_min_date).days
                     cumulative_twr = (final_twr_factor - 1) * 100.0
@@ -887,10 +891,30 @@ async def _calculate_portfolio_summary_internal(
                         days = (date.today() - actual_min_date).days
                         
                         if pd.notna(final_twr_factor) and final_twr_factor > 0:
+                            # --- FIX: Robust Real-Time TWR ---
+                            # We always use history up to yesterday as the baseline and apply today's 
+                            # live percentage change for real-time responsiveness.
+                            today_date = get_est_today()
+                            target_tz = daily_df.index.tz
+                            today_start_ts = pd.Timestamp(today_date)
+                            if target_tz:
+                                today_start_ts = today_start_ts.tz_localize(target_tz)
+                            
+                            # Get last point before today
+                            df_history_only = daily_df[daily_df.index < today_start_ts]
+                            if not df_history_only.empty:
+                                baseline_factor = df_history_only[twr_col].dropna().iloc[-1]
+                                day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
+                                # Apply live day change to the baseline
+                                final_twr_factor = baseline_factor * (1.0 + day_pct)
+                                # logging.info(f"Summary TWR: Applied live adjustment ({day_pct*100:.2f}%) to baseline {baseline_factor:.4f} -> {final_twr_factor:.4f}")
+                            
                             # Cumulative TWR
                             cumulative_twr = (final_twr_factor - 1) * 100.0
                             
                             # Annualized TWR
+                            # Use current date for days count
+                            days = (date.today() - actual_min_date).days
                             if days > 0:
                                 annualized_factor = final_twr_factor ** (365.25 / days)
                                 annualized_twr = (annualized_factor - 1) * 100.0
@@ -926,12 +950,16 @@ async def _calculate_portfolio_summary_internal(
                             if target_tz is not None:
                                 jan1 = jan1.tz_localize(target_tz)
                             
-                            ytd_df = daily_df[daily_df.index >= jan1]
+                            ytd_df = daily_df[(daily_df.index >= jan1) & (daily_df.index < today_start_ts)]
                             if not ytd_df.empty:
                                 start_twr = ytd_df["Portfolio Accumulated Gain"].iloc[0]
-                                end_twr = ytd_df["Portfolio Accumulated Gain"].iloc[-1]
+                                end_twr_yesterday = ytd_df["Portfolio Accumulated Gain"].iloc[-1]
                                 if start_twr > 0 and pd.notna(start_twr):
-                                    ytd_ret = (end_twr / start_twr - 1) * 100.0
+                                    # --- FIX: Incorporate Live Intraday Performance into YTD ---
+                                    day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
+                                    end_twr_live = end_twr_yesterday * (1.0 + day_pct)
+                                    
+                                    ytd_ret = (end_twr_live / start_twr - 1) * 100.0
                                     overall_summary_metrics["ytd_return"] = float(ytd_ret)
                         except Exception as e_ytd:
                             logging.warning(f"Failed to calculate YTD return: {e_ytd}")

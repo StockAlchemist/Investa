@@ -430,12 +430,18 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             }
 
             const EPSILON = 0.0001;
-            const hasCost = Math.abs(costBasis) > EPSILON;
+            const isCash = h.Symbol === '$CASH' || h.Symbol === 'CASH' || h.Symbol.toUpperCase().includes('CASH (');
+            const totalBuyCost = getRawVal(h, 'Total Buy Cost');
 
-            if (hasCost) {
-                (h as any)['Unreal. Gain %'] = (unrealGl / costBasis) * 100;
-                (h as any)['Div. Yield (Cost) %'] = (estIncome / costBasis) * 100;
-                (h as any)['Total Return %'] = (totalGl / costBasis) * 100;
+            // Use Total Buy Cost (Cumulative Purchases/Deposits) as the denominator if available
+            // to prevent extreme return percentages when current balance is small.
+            const denominator = (Math.abs(totalBuyCost) > EPSILON) ? totalBuyCost : costBasis;
+            const hasDenominator = Math.abs(denominator) > EPSILON;
+
+            if (hasDenominator) {
+                (h as any)['Unreal. Gain %'] = (unrealGl / denominator) * 100;
+                (h as any)['Div. Yield (Cost) %'] = (estIncome / denominator) * 100;
+                (h as any)['Total Return %'] = (totalGl / denominator) * 100;
             } else {
                 (h as any)['Unreal. Gain %'] = unrealGl > EPSILON ? Infinity : 0;
                 (h as any)['Div. Yield (Cost) %'] = estIncome > EPSILON ? Infinity : 0;
@@ -502,6 +508,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         'Divs': 0,
                         'Fees': 0,
                         'Total G/L': 0,
+                        'Total Buy Cost': 0,
                     }
                 });
             }
@@ -523,6 +530,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             group.aggregates['Divs'] += getNum('Divs');
             group.aggregates['Fees'] += getNum('Fees');
             group.aggregates['Total G/L'] += getNum('Total G/L');
+            group.aggregates['Total Buy Cost'] += getNum('Total Buy Cost');
         });
 
         // Calculate Percentages for Groups and Sort Items
@@ -531,9 +539,14 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             if (g.aggregates['Mkt Val'] !== 0 && g.aggregates['Mkt Val'] - g.aggregates['Day Chg'] !== 0) {
                 g.aggregates['Day Chg %'] = (g.aggregates['Day Chg'] / (g.aggregates['Mkt Val'] - g.aggregates['Day Chg'])) * 100;
             }
-            if (g.aggregates['Cost Basis'] !== 0) {
-                g.aggregates['Unreal. G/L %'] = (g.aggregates['Unreal. G/L'] / g.aggregates['Cost Basis']) * 100;
-                g.aggregates['Total Ret %'] = (g.aggregates['Total G/L'] / g.aggregates['Cost Basis']) * 100;
+            // Use Total Buy Cost as the denominator for all groups to be consistent
+            const costDenominator = (Math.abs(g.aggregates['Total Buy Cost']) > 0.0001) 
+                ? g.aggregates['Total Buy Cost'] 
+                : g.aggregates['Cost Basis'];
+
+            if (Math.abs(costDenominator) > 0.0001) {
+                g.aggregates['Unreal. G/L %'] = (g.aggregates['Unreal. G/L'] / costDenominator) * 100;
+                g.aggregates['Total Ret %'] = (g.aggregates['Total G/L'] / costDenominator) * 100;
             }
 
             // Sort items within group
