@@ -154,24 +154,41 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
             </div>
         );
     }
-    if (symbol === '$CASH' || symbol.includes('Cash ($)') || symbol === 'Cash') {
+    if (symbol === '$CASH' || symbol.includes('Cash') || symbol.includes('฿CASH')) {
         const effectiveSize = typeof size === 'number' ? size : 24;
+        
+        // Extract currency symbol if formatted like "Cash (฿)" or "Cash ($)"
+        const cashSymbolMatch = symbol.match(/Cash \((.+)\)/);
+        const currencySymbol = cashSymbolMatch ? cashSymbolMatch[1] : (symbol.includes('$') ? '$' : (symbol.includes('฿') ? '฿' : null));
+        
+        const isTHB = currencySymbol === '฿' || symbol.includes('฿') || symbol.includes('THB');
+        const isUSD = !isTHB && (currencySymbol === '$' || symbol.includes('$') || symbol === 'Cash');
+
         return (
             <div
                 className={cn(
-                    "overflow-hidden rounded-full flex items-center justify-center",
+                    "overflow-hidden rounded-full flex items-center justify-center shrink-0",
                     mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100",
                     className
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <img
-                    src="cash_icon.png"
-                    alt="CASH"
-                    width={effectiveSize}
-                    height={effectiveSize}
-                    className="object-contain p-[2px]"
-                />
+                {isUSD ? (
+                    <img
+                        src="cash_icon.png"
+                        alt="CASH"
+                        width={effectiveSize}
+                        height={effectiveSize}
+                        className="object-contain p-[2px]"
+                    />
+                ) : (
+                    <span 
+                        className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center justify-center leading-none"
+                        style={{ fontSize: effectiveSize * 0.55 }}
+                    >
+                        {currencySymbol || (isTHB ? '฿' : '$')}
+                    </span>
+                )}
             </div>
         );
     }
