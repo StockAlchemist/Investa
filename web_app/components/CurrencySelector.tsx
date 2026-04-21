@@ -94,7 +94,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >
-                                <span className="flex-1 flex items-center justify-between pr-4">
+                                <span className="flex-1 flex items-center gap-3">
                                     <span className="font-bold uppercase tracking-wider">{currency}</span>
                                     <span className={cn(
                                         "text-lg font-normal leading-none",
