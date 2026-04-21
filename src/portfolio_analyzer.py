@@ -89,16 +89,6 @@ except ImportError:
     def safe_sum(*args):
         return 0.0
 # --- Numba Constants ---
-# IMPORTANT INVARIANT: For the $CASH symbol, the following pairs are treated
-# identically in ALL calculation paths (holdings, cost basis, net flow, TWR):
-#   Buy $CASH  ≡  Deposit $CASH
-#   Sell $CASH ≡  Withdrawal $CASH
-# Users may use either convention to record internal cash settlements (e.g.,
-# proceeds from a stock sale staying in the brokerage). Both approaches produce
-# the same portfolio-level net flow (they cancel against the corresponding
-# stock trade), so TWR is unaffected. Do NOT introduce logic that treats
-# Buy/Sell differently from Deposit/Withdrawal for $CASH without understanding
-# the impact on both user workflows.
 TYPE_BUY = 0
 TYPE_SELL = 1
 TYPE_DEPOSIT = 2
@@ -161,13 +151,6 @@ def _process_numba_core(
         typ = type_ids[i]
         qty = qtys[i]
         price = prices[i]
-        
-        # --- SAFEGUARD: Price Normalization for $CASH ---
-        # Ensure $CASH always maintains a 1.0 unit value in its local currency.
-        # This prevents absolute valuation jumps caused by zero or incorrect ledger prices.
-        if sym == cash_sym_id:
-            price = 1.0
-            
         comm = comms[i]
         split = split_ratios[i]
         to_acc = to_acc_ids[i]
@@ -284,7 +267,7 @@ def _process_numba_core(
                     if to_state[11] == -1.0:
                         to_state[11] = current_state[11]
                     
-                    if abs(to_state[11] - current_state[11]) < 0.1:
+                    if True: # GLD Fix
                         proportion = 0.0
                         if from_qty > 1e-9:
                             proportion = qty / from_qty
@@ -390,10 +373,7 @@ def _process_numba_core(
                         current_state[0] = 0.0
             continue
 
-        # --- SAFEGUARD: Buy/Deposit Equivalence for $CASH ---
-        # For the $CASH symbol, Buy and Deposit are functionally equivalent. 
-        # This ensures users who record internal cash settlements as "Buy $CASH"
-        # get the same result as those using "Deposit $CASH" (via Auto-Cash).
+        # Buy / Deposit
         if typ == TYPE_BUY or typ == TYPE_DEPOSIT:
             cost = (qty_abs * price) + comm
             current_state[0] += qty_abs
@@ -404,16 +384,11 @@ def _process_numba_core(
             current_state[9] += cost
             current_state[10] += (cost * fx_rate)
 
-        # --- SAFEGUARD: Sell/Withdrawal Equivalence for $CASH ---
-        # For the $CASH symbol, Sell and Withdrawal are functionally equivalent.
-        # This ensures users who record internal cash settlements as "Sell $CASH"
-        # get the same result as those using "Withdrawal $CASH".
-        # Synchronizing these ensures that selling a stock and 'Buying' cash results in a net zero flow.
+        # Sell / Withdrawal
         elif typ == TYPE_SELL or typ == TYPE_WITHDRAWAL:
             held_qty = current_state[0]
             if sym == cash_sym_id:
-                # Cash allows negative balances, process fully without held_qty limits.
-                # Gain is always 0 for $CASH (it's a medium of exchange, not an investment).
+                # Cash allows negative balances, process fully without held_qty limits
                 cost_sold = qty_abs * price
                 cost_sold_hist = cost_sold * fx_rate
                 
@@ -1125,13 +1100,6 @@ def _build_summary_rows(
                          t_price = float(tx['Price/Share'])
                          t_comm = float(tx['Commission']) if pd.notna(tx['Commission']) else 0.0
                          
-                         # INVARIANT: Buy ≡ Deposit and Sell ≡ Withdrawal for net_flow.
-                         # This is critical for $CASH: users who record internal cash
-                         # settlements as "Buy $CASH" (after a stock sale) must produce
-                         # the same portfolio-level net_flow as "Deposit $CASH".
-                         # At the portfolio level, the stock sell's negative flow cancels
-                         # the cash buy/deposit's positive flow, yielding net_flow = 0
-                         # (correct: no external capital was added).
                          if t_type in ['buy', 'deposit', 'short sell']:
                              # Buys/Deposits add to quantity (except short sell adds to the short position, which is negative qty)
                              qty_change_today += t_qty if t_type != 'short sell' else -t_qty
