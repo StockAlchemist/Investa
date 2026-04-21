@@ -59,9 +59,6 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                         <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
                             {currentCurrency}
                         </span>
-                        <span className="text-cyan-500 font-normal">
-                            {CURRENCY_SYMBOLS[currentCurrency] || ''}
-                        </span>
                     </div>
                     {currentCurrency !== 'USD' && fxRate && (
                         <div className="text-[12px] text-cyan-600 dark:text-cyan-400 font-black font-mono mt-0.5">
