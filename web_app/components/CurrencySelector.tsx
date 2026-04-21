@@ -74,7 +74,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     side === 'right'
                         ? "left-full top-0 ml-4 slide-in-from-left-2"
                         : cn("top-full mt-2 slide-in-from-top-2", align === 'left' ? "left-0" : "right-0"),
-                    "w-36 rounded-2xl"
+                    "w-32 rounded-2xl"
                 )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
                         <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-cyan-500 mb-1">
@@ -95,7 +95,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                                 )}
                             >
                                 <span className="flex-1 flex items-center">
-                                    <span className="w-12 font-bold uppercase tracking-wider">{currency}</span>
+                                    <span className="w-14 font-bold uppercase tracking-wider">{currency}</span>
                                     <span className={cn(
                                         "text-lg font-normal leading-none",
                                         currentCurrency === currency ? "text-cyan-100" : "text-cyan-500"
