@@ -5417,8 +5417,9 @@ def _load_or_calculate_daily_results(
                 if spike_mask.any():
                     try:
                         # --- NEW: List dates in terminal log ---
-                        spike_dates = daily_df.index[spike_mask].strftime('%Y-%m-%d').tolist()
-                        logging.warning(f"Found {len(spike_dates)} TWR SPIKES on: {', '.join(spike_dates[:15])}{'...' if len(spike_dates) > 15 else ''}. Capping to 0% to avoid data artifacts.")
+                        # --- NEW: List dates and spike values in terminal log ---
+                        spike_info = [f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return']*100:.1f}%)" for d in daily_df.index[spike_mask]]
+                        logging.warning(f"Found {len(spike_info)} TWR SPIKES: {', '.join(spike_info[:12])}{'...' if len(spike_info) > 12 else ''}. Capping to 0% to avoid data artifacts.")
                     except Exception as e:
                         logging.error(f"Failed to log spike info: {e}")
                     

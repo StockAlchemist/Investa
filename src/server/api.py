@@ -3473,6 +3473,7 @@ async def get_settings(
             "user_excluded_symbols": list(user_excluded_symbols),
             "account_currency_map": account_currency_map,
             "account_groups": config_manager.gui_config.get("account_groups", {}),
+            "account_group_order": config_manager.gui_config.get("account_group_order", []),
             "available_currencies": config_manager.gui_config.get("available_currencies", ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY']),
             "account_interest_rates": config_manager.manual_overrides.get("account_interest_rates", {}),
             "interest_free_thresholds": config_manager.manual_overrides.get("interest_free_thresholds", {}),
@@ -3495,6 +3496,7 @@ class SettingsUpdate(BaseModel):
     user_symbol_map: Optional[Dict[str, str]] = None
     user_excluded_symbols: Optional[List[str]] = None
     account_groups: Optional[Dict[str, List[str]]] = None
+    account_group_order: Optional[List[str]] = None
     account_currency_map: Optional[Dict[str, str]] = None
     available_currencies: Optional[List[str]] = None
     account_interest_rates: Optional[Dict[str, float]] = None
@@ -3565,6 +3567,10 @@ async def update_settings(
 
         if settings.account_groups is not None:
             config_manager.gui_config["account_groups"] = settings.account_groups
+            gui_config_changed = True
+
+        if settings.account_group_order is not None:
+            config_manager.gui_config["account_group_order"] = settings.account_group_order
             gui_config_changed = True
             
         if settings.account_currency_map is not None:

@@ -2156,7 +2156,7 @@ def _calculate_aggregate_metrics(
                     
                 # Get current market value for this account from the metrics we just built
                 # account_level_metrics is a dict of dicts
-                account_mv = account_level_metrics[account].get("market_value", 0.0)
+                account_mv = account_level_metrics[account].get("total_market_value_display", 0.0)
                 
                 # Calculate Cash Flows using the helper
                 mwr_dates, mwr_flows = get_cash_flows_for_mwr(

@@ -491,6 +491,7 @@ export interface Settings {
     user_excluded_symbols: string[];
     account_currency_map: Record<string, string>;
     account_groups: Record<string, string[]>;
+    account_group_order?: string[];
     available_currencies: string[];
     account_interest_rates: Record<string, number>;
     interest_free_thresholds: Record<string, number>;
@@ -516,6 +517,7 @@ export interface SettingsUpdate {
     user_symbol_map?: Record<string, string>;
     user_excluded_symbols?: string[];
     account_groups?: Record<string, string[]>;
+    account_group_order?: string[];
     account_currency_map?: Record<string, string>;
     available_currencies?: string[];
     account_interest_rates?: Record<string, number>;

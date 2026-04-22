@@ -474,8 +474,25 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         and np.isfinite(irr_result)
         and irr_result > -1.0
     ):
-        logging.debug(f"DEBUG IRR: Fail - Final result invalid: {irr_result}")
+        # Format flows for readability
+        readable_flows = [f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in zip(dates, solver_flows)]
+        # Truncate if too long
+        if len(readable_flows) > 100:
+            flow_str = f"[{', '.join(readable_flows[:10])} ... {', '.join(readable_flows[-10:])}] ({len(readable_flows)} flows)"
+        else:
+            flow_str = f"[{', '.join(readable_flows)}]"
+            
+        logging.warning(f"IRR Calculation Failed. Flows used: {flow_str}")
         return np.nan
+        
+    # --- DIAGNOSTIC LOGGING for extreme results ---
+    if irr_result > 10.0: # > 1000% p.a.
+        logging.warning(f"Extreme IRR detected ({irr_result*100:.1f}%). Investigating flows...")
+        # Log top 10 largest absolute flows for debugging
+        top_flows = sorted(list(zip(dates, solver_flows)), key=lambda x: abs(x[1]), reverse=True)[:10]
+        readable_top = [f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in top_flows]
+        logging.warning(f"Top Flows contributing to IRR: [{', '.join(readable_top)}]")
+        
     return irr_result
 
 
@@ -695,8 +712,21 @@ def get_cash_flows_for_mwr(
     dates_flows = defaultdict(float)
     acc_tx_copy.sort_values(by=["Date", "original_index"], inplace=True, ascending=True)
 
+    # Pre-calculate the scope of accounts for "Internal vs External" flow detection.
+    # Transfers between accounts WITHIN this scope are 0-flow (internal).
+    # Transfers to/from accounts OUTSIDE this scope are external flows (deposits/withdrawals).
+    if include_accounts:
+        included_set = {str(a).strip().upper() for a in include_accounts if a}
+    else:
+        # If no explicit list, the scope is the entire set of accounts in the provided transactions.
+        # This is critical for the "All Accounts" dashboard view.
+        all_accs = set(account_transactions["Account"].dropna().unique())
+        if "To Account" in account_transactions.columns:
+            all_accs.update(account_transactions["To Account"].dropna().unique())
+        included_set = {str(a).strip().upper() for a in all_accs if a}
+
     for _, row in acc_tx_copy.iterrows():
-        tx_type = str(row.get("Type", "")).lower().strip()
+        tx_type = str(row["Type"]).lower().strip()
         symbol = row["Symbol"]
         qty = pd.to_numeric(row["Quantity"], errors="coerce")
         price_local = pd.to_numeric(row["Price/Share"], errors="coerce")
@@ -709,8 +739,6 @@ def get_cash_flows_for_mwr(
         tx_date = row["Date"].date()
         
         # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
-        # Otherwise, the final market value condition (end_date >= final_dates[-1]) will evaluate to False
-        # and drop the entire multi-million dollar portfolio value from the cash flows array!
         if tx_date > end_date:
             continue
             
@@ -719,28 +747,40 @@ def get_cash_flows_for_mwr(
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
 
         if symbol != CASH_SYMBOL_CSV:
-            if tx_type in ["buy", "sell", "dividend", "short sell", "buy to cover", "fees"]:
-                # Internal transactions for stocks are NOT flows for portfolio-level MWR
-                # because the cash spent/received stays within the portfolio ($CASH balance).
-                # Including them would double-count the capital (once as cash, once as the trade).
-                # External flows are handled by 'deposit', 'withdrawal', and 'transfer'.
-                cash_flow_local = 0.0
-            elif tx_type == "deposit":
-                # External asset contribution (e.g. Stock Deposit)
+            if tx_type == "buy" or tx_type == "deposit":
+                # External asset contribution or purchase
                 if pd.notna(qty) and pd.notna(price_local):
                     cash_flow_local = -( (qty_abs * price_local) + commission_local ) # OUT from pocket (-)
-            elif tx_type == "withdrawal":
-                # External asset removal
+            elif tx_type == "sell" or tx_type == "withdrawal":
+                # External asset removal or sale
                 if pd.notna(qty) and pd.notna(price_local):
                     cash_flow_local = (qty_abs * price_local) - commission_local # IN to pocket (+)
+            elif tx_type == "dividend":
+                dividend_amount_local_cf = 0.0
+                if pd.notna(total_amount_local):
+                    dividend_amount_local_cf = total_amount_local
+                elif pd.notna(price_local):
+                    dividend_amount_local_cf = (
+                        (qty_abs * price_local)
+                        if (pd.notna(qty) and qty_abs > 0)
+                        else price_local
+                    )
+                if pd.notna(dividend_amount_local_cf):
+                    cash_flow_local = dividend_amount_local_cf - commission_local
+            elif tx_type == "short sell":
+                if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
+                    cash_flow_local = (qty_abs * price_local) - commission_local
+            elif tx_type == "buy to cover":
+                if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
+                    cash_flow_local = -((qty_abs * price_local) + commission_local)
+            elif tx_type == "fees":
+                cash_flow_local = -commission_local
             elif tx_type == "transfer":
-                # Asset Transfer logic (already handles scope)
+                # Asset Transfer logic
                 is_outbound = False
                 is_inbound = False
                 acct = str(row.get("Account", "")).strip().upper()
                 to_acct = str(row.get("To Account", "")).strip().upper()
-                included_set = {str(a).strip().upper() for a in (include_accounts or [])}
-                if not include_accounts: included_set = {acct}
 
                 if acct in included_set: is_outbound = True
                 if to_acct and to_acct in included_set: is_inbound = True
@@ -758,11 +798,11 @@ def get_cash_flows_for_mwr(
             if tx_type in ["deposit", "buy"]:
                 # External cash deposit
                 if pd.notna(qty):
-                    cash_flow_local = -(abs(qty) - commission_local) # OUT from pocket (-)
+                    cash_flow_local = -(abs(qty) + commission_local) # OUT from pocket (-)
             elif tx_type in ["withdrawal", "sell"]:
                 # External cash withdrawal
                 if pd.notna(qty):
-                    cash_flow_local = (abs(qty) + commission_local) # IN to pocket (+)
+                    cash_flow_local = (abs(qty) - commission_local) # IN to pocket (+)
             elif tx_type in ["dividend", "interest"]:
                 # Internal interest/dividends on cash are NOT external flows
                 cash_flow_local = 0.0
@@ -772,8 +812,6 @@ def get_cash_flows_for_mwr(
                 is_inbound = False
                 acct = str(row.get("Account", "")).strip().upper()
                 to_acct = str(row.get("To Account", "")).strip().upper()
-                included_set = {str(a).strip().upper() for a in (include_accounts or [])}
-                if not include_accounts: included_set = {acct}
 
                 if acct in included_set: is_outbound = True
                 if to_acct and to_acct in included_set: is_inbound = True
@@ -781,55 +819,35 @@ def get_cash_flows_for_mwr(
                 if is_outbound and not is_inbound:
                     # Money leaving the scope -> Withdrawal -> Positive MWR Flow
                     if pd.notna(qty):
-                        cash_flow_local = (abs(qty) + commission_local)
+                        cash_flow_local = (abs(qty) - commission_local)
                 elif not is_outbound and is_inbound:
                     # Money entering the scope -> Deposit -> Negative MWR Flow
                     if pd.notna(qty):
-                        cash_flow_local = -abs(qty)
-
-
+                        cash_flow_local = -(abs(qty) + commission_local)
 
         cash_flow_target = cash_flow_local
         if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
             if local_currency != target_currency:
                 rate = np.nan
-                
-                # 1. Try Historical Lookup via Pre-calculated Dictionary (Date, Curr) -> Rate
+                # Try Historical Lookup
                 if historical_fx_rates:
-                   # Ensure tx_date is a date object for lookup
                    lookup_date = tx_date
                    if isinstance(lookup_date, pd.Timestamp):
                        lookup_date = lookup_date.date()
                    elif isinstance(lookup_date, datetime):
                        lookup_date = lookup_date.date()
-                       
-                   # Lookup logic: 
-                   # The dict maps (date, local_currency) -> rate_to_target
-                   # We need Local -> Target.
                    if (lookup_date, local_currency) in historical_fx_rates:
                        rate = historical_fx_rates[(lookup_date, local_currency)]
-                   
-                   # Fallback: if exact date missing, try closest previous date (within reason)??
-                   # portfolio_logic already handles ffill/bfill, so missing here likely means
-                   # missing entirely or date mismatch.
-                   # Let's trust exact lookup for now given portfolio_logic prep.
 
-                # 2. Fallback to Current/Static Rate if Historical failed
+                # Fallback to Current Rate
                 if pd.isna(rate):
                     rate = get_conversion_rate(local_currency, target_currency, fx_rates)
                 
-                # 3. Log Warning if still NaN
-                if pd.isna(rate):  # Check for NaN explicitly
-                    logging.warning(
-                        f"Warning: MWR calc cannot convert flow on {tx_date} from {local_currency} to {target_currency} (FX rate missing/invalid). Skipping flow. FX_RATES_KEYS: {list(fx_rates.keys()) if fx_rates else 'None'}"
-                    )
+                if pd.isna(rate):
+                    logging.warning(f"MWR calc conversion failed for {local_currency} on {tx_date}. Skipping.")
                     cash_flow_target = 0.0
                 else:
                     cash_flow_target = cash_flow_local * rate
-            
-            # debug log for first few flows to verify conversion
-            # if len(dates_flows) < 5:
-            #    logging.debug(f"MWR Flow Debug: {tx_date} {local_currency}->{target_currency} ({cash_flow_local} -> {cash_flow_target}) Rate={rate if local_currency != target_currency else 1.0}")
 
             if pd.notna(cash_flow_target) and abs(cash_flow_target) > 1e-9:
                 dates_flows[tx_date] += cash_flow_target
@@ -837,8 +855,9 @@ def get_cash_flows_for_mwr(
     sorted_dates = sorted(dates_flows.keys())
     if not sorted_dates and abs(final_account_market_value) < 1e-9:
         return [], []
+        
     final_dates = list(sorted_dates)
-    final_flows = [dates_flows[d] for d in final_dates]  # Left as is (Buys-, Sells+) for XIRR
+    final_flows = [dates_flows[d] for d in final_dates]
     final_market_value_target = (
         float(final_account_market_value)
         if pd.notna(final_account_market_value)
@@ -848,25 +867,17 @@ def get_cash_flows_for_mwr(
 
     if final_market_value_abs > 1e-9 and isinstance(end_date, date):
         if not final_dates:
-            first_tx_date_for_account = (
-                acc_tx_copy["Date"].min().date() if not acc_tx_copy.empty else end_date
-            )
-            if end_date >= first_tx_date_for_account:
-                # If no flows but final value exists, need initial flow (usually 0)
-                # This case is complex for MWR, maybe return empty?
-                # For now, let's return empty if no flow dates exist.
-                return [], []
-            else:
-                return [], []  # End date is before first transaction
+            return [], []
         elif end_date >= final_dates[-1]:
             if final_dates[-1] == end_date:
-                final_flows[-1] += final_market_value_abs  # Add to last flow
+                final_flows[-1] += final_market_value_abs
             else:
                 final_dates.append(end_date)
-                final_flows.append(final_market_value_abs)  # Append as new flow
+                final_flows.append(final_market_value_abs)
 
     if len(final_dates) < 2:
         return [], []
+    
     non_zero_final_flows = [cf for cf in final_flows if abs(cf) > 1e-9]
     if (
         not non_zero_final_flows
