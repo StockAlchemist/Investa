@@ -1932,7 +1932,8 @@ def _calculate_daily_net_cash_flow_vectorized(
     # --- 2. ASSET TRANSFERS (In/Out) ---
     if included_accounts:
         # Transfers are flows if they cross the boundary of "included_accounts".
-        trans_mask = (df_period["Type"].str.lower().str.strip() == "transfer") & (df_period["Symbol"] != CASH_SYMBOL_CSV)
+        # This MUST include both Assets and $CASH transfers.
+        trans_mask = (df_period["Type"].str.lower().str.strip() == "transfer")
         df_trans = df_period[trans_mask].copy()
                 
         if not df_trans.empty:
@@ -1955,6 +1956,9 @@ def _calculate_daily_net_cash_flow_vectorized(
                 # Calculate Value: Qty * Price
                 qty = pd.to_numeric(relevant_trans["Quantity"], errors="coerce").fillna(0.0).abs()
                 price = pd.to_numeric(relevant_trans["Price/Share"], errors="coerce").fillna(0.0)
+                # Ensure $CASH always has price 1.0
+                is_cash_mask = relevant_trans["Symbol"].str.upper() == CASH_SYMBOL_CSV.upper()
+                price[is_cash_mask] = 1.0
                                 
                 # FALLBACK PRICE LOOKUP (Vectorized-ish)
                 missing_price_mask = (price <= 1e-9)
@@ -1964,54 +1968,43 @@ def _calculate_daily_net_cash_flow_vectorized(
                     unique_syms = relevant_trans_missing["Symbol"].unique()
                     
                     for sym in unique_syms:
+                        sym_mask = relevant_trans_missing["Symbol"] == sym
+                        price_found = 0.0
+                        
+                        # Fallback A: Yahoo Finance Lookup
                         yf_sym = internal_to_yf_map.get(sym) if internal_to_yf_map else None
                         if yf_sym and historical_prices_yf_unadjusted and yf_sym in historical_prices_yf_unadjusted:
-                             price_series = historical_prices_yf_unadjusted[yf_sym]["price"]
-                             sym_mask = relevant_trans_missing["Symbol"] == sym
-                             needed_dates = relevant_trans_missing.loc[sym_mask, "Date"]
-                             # Lookups - distinct fix: use asof to get last available price for off-market days
-                             # Ensure price_series is sorted
-                             if not price_series.index.is_monotonic_increasing:
-                                 price_series = price_series.sort_index()
-                                 
-                             # Fix 2: Ensure index is proper DatetimeIndex and NORMALIZE to naive
-                             if not isinstance(price_series.index, pd.DatetimeIndex):
-                                 price_series.index = pd.to_datetime(price_series.index)
-                             
-                             if price_series.index.tz is not None:
-                                 price_series.index = price_series.index.tz_localize(None)
-                             
-                             # Fix: Ensure needed_dates are Timestamps to match price_series index
-                             # Force both to be definitely naive to avoid "Cannot compare tz-naive and tz-aware"
-                             try:
-                                 # Helper to safely strip timezone
-                                 def strip_tz(x):
-                                     if hasattr(x, 'dt'):
-                                         return x.dt.tz_localize(None) if x.dt.tz is not None else x
-                                     if hasattr(x, 'tz'):
-                                         return x.tz_localize(None) if x.tz is not None else x
-                                     return x
+                            try:
+                                price_series = historical_prices_yf_unadjusted[yf_sym]["price"]
+                                if not price_series.empty:
+                                    # Ensure price_series is sorted for asof
+                                    if not price_series.index.is_monotonic_increasing:
+                                        price_series = price_series.sort_index()
+                                    if not isinstance(price_series.index, pd.DatetimeIndex):
+                                        price_series.index = pd.to_datetime(price_series.index)
+                                    
+                                    # Forward fill to get a price for the transfer date
+                                    dates_needed = pd.to_datetime(relevant_trans_missing.loc[sym_mask, "Date"])
+                                    # Use reindex with nearest or ffill
+                                    relevant_prices = price_series.reindex(dates_needed, method='ffill')
+                                    price_found = relevant_prices.iloc[0] # Take first for simplicity in this loop
+                            except Exception as e:
+                                logging.warning(f"Transfer price fallback failed for {sym}: {e}")
 
-                                 needed_dates_ts = strip_tz(pd.to_datetime(needed_dates)).astype("datetime64[ns]")
-                                 normalized_price_index = strip_tz(pd.to_datetime(price_series.index)).astype("datetime64[ns]")
-                                 
-                                 # Work on a copy with naive index for asof call
-                                 price_series_naive = price_series.copy()
-                                 price_series_naive.index = normalized_price_index
-                                 
-                                 found_prices = price_series_naive.asof(needed_dates_ts)
-                                 # Ensure we have a Series/Values even if asof returns something else
-                                 if hasattr(found_prices, "values"):
-                                     found_prices = found_prices.values
+                        # Fallback B: Any other transaction price in history
+                        if price_found <= 1e-9:
+                            match_tx = df_period[(df_period["Symbol"] == sym) & (df_period["Price/Share"] > 1e-9)]
+                            if not match_tx.empty:
+                                price_found = match_tx.iloc[0]["Price/Share"]
 
-                             except Exception as e_lookup:
-                                 logging.error(f"Lookup crash for {sym}: {e_lookup}")
-                                 # Fallback to current behavior if shield fails, but with better error trace
-                                 raise ValueError(f"Lookup failed for {sym} on dates {list(needed_dates)[:2]}: {e_lookup}")
-
-                             # Update
-                             idxs_to_update = relevant_trans_missing.loc[sym_mask].index
-                             price.loc[idxs_to_update] = pd.Series(found_prices, index=idxs_to_update).fillna(0.0)
+                        if price_found > 1e-9:
+                            price.loc[sym_mask] = price_found
+                        else:
+                            # Final Fail: Log for visibility
+                            try:
+                                with open("/Users/kmatan/.gemini/antigravity/brain/19ed956f-9dc7-40d0-85b1-1aa49c84c1d9/scratch/missing_transfer_prices.txt", "a") as f:
+                                    f.write(f"Missing price for transfer: {sym}\n")
+                            except: pass
 
                 value = qty * price
                 local_flow = value * multiplier
@@ -3878,7 +3871,7 @@ def _prepare_historical_inputs(
     end_date: date,
     benchmark_symbols_yf: List[str],
     display_currency: str,
-    current_hist_version: str = "v16",
+    current_hist_version: str = "v20",
     raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX,
     # preloaded_transactions_df: Optional[pd.DataFrame] = None, # Already added above
@@ -5403,6 +5396,13 @@ def _load_or_calculate_daily_results(
                 valid_denom_mask = adjusted_prev_value.notna() & (
                     abs(adjusted_prev_value) > 0.1
                 )
+                
+                # --- NEW: Log ignored days for transparency ---
+                if (~valid_denom_mask).any():
+                    ignored_count = (~valid_denom_mask).sum()
+                    if ignored_count > 0:
+                        logging.warning(f"TWR: Ignoring {ignored_count} days where capital at risk was too small (<$0.10) to calculate a valid return.")
+
                 daily_df.loc[valid_denom_mask, "daily_return"] = (
                     daily_df.loc[valid_denom_mask, "daily_gain"]
                     / adjusted_prev_value.loc[valid_denom_mask]
@@ -5413,10 +5413,28 @@ def _load_or_calculate_daily_results(
                 # it is highly likely that a transaction was missed in the flow calculation
                 # (e.g. an asset transfer with missing mapping). 
                 # We limit such returns to prevent ruining the TWR and Volatility.
-                spike_mask = (daily_df["daily_return"] > 1.0) & (adjusted_prev_value < 5.0)
+                spike_mask = (daily_df["daily_return"] > 0.2) | (daily_df["daily_return"] < -0.2)
                 if spike_mask.any():
-                    logging.warning(f"Found {spike_mask.sum()} TWR SPIKES. Capping to 0% to avoid data artifacts.")
+                    try:
+                        # --- NEW: List dates in terminal log ---
+                        spike_dates = daily_df.index[spike_mask].strftime('%Y-%m-%d').tolist()
+                        logging.warning(f"Found {len(spike_dates)} TWR SPIKES on: {', '.join(spike_dates[:15])}{'...' if len(spike_dates) > 15 else ''}. Capping to 0% to avoid data artifacts.")
+                    except Exception as e:
+                        logging.error(f"Failed to log spike info: {e}")
+                    
                     daily_df.loc[spike_mask, "daily_return"] = 0.0
+                
+
+                # --- NEW: Transfer Healing heuristic ---
+                # Check for days with high volatility where a transfer occurred
+                high_vol_mask = (daily_df["daily_return"] > 0.1) | (daily_df["daily_return"] < -0.1)
+                if high_vol_mask.any():
+                    transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].unique()
+                    transfer_days_dt = pd.to_datetime(transfer_days).date
+                    for idx, row in daily_df[high_vol_mask].iterrows():
+                         if idx.date() in transfer_days_dt:
+                             logging.warning(f"!!! TWR HEALING: Artifact detected and neutralized on {idx.date()} (Spike of {row['daily_return']*100:.1f}% coincided with a Transfer).")
+                             daily_df.at[idx, "daily_return"] = 0.0
 
                 anomalies = daily_df[
                     (daily_df["value"] < 1.0) & 

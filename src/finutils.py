@@ -719,120 +719,73 @@ def get_cash_flows_for_mwr(
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
 
         if symbol != CASH_SYMBOL_CSV:
-            if tx_type == "buy":
-                if pd.notna(qty) and qty > 0 and pd.notna(price_local):
-                    cash_flow_local = -(
-                        (qty_abs * price_local) + commission_local
-                    )  # OUT (-)
-            elif tx_type == "sell":
-                if pd.notna(price_local) and qty_abs > 0:
-                    cash_flow_local = (
-                        qty_abs * price_local
-                    ) - commission_local  # IN (+)
-            elif tx_type == "short sell" and symbol in SHORTABLE_SYMBOLS:
-                if pd.notna(price_local) and qty_abs > 0:
-                    cash_flow_local = (
-                        qty_abs * price_local
-                    ) - commission_local  # IN (+)
-            elif tx_type == "buy to cover" and symbol in SHORTABLE_SYMBOLS:
-                if pd.notna(price_local) and qty_abs > 0:
-                    cash_flow_local = -(
-                        (qty_abs * price_local) + commission_local
-                    )  # OUT (-)
-            elif tx_type == "dividend":
-                dividend_amount_local_cf = 0.0
-                if pd.notna(total_amount_local) and total_amount_local != 0:
-                    dividend_amount_local_cf = total_amount_local
-                elif pd.notna(price_local) and price_local != 0:
-                    dividend_amount_local_cf = (
-                        (qty_abs * price_local) if qty_abs > 0 else price_local
-                    )
-                cash_flow_local = dividend_amount_local_cf - commission_local  # IN (+)
-            elif tx_type == "fees":
-                if pd.notna(commission_local):
-                    cash_flow_local = -(abs(commission_local))  # OUT (-)
-                if pd.notna(commission_local) and commission_local != 0:
-                    cash_flow_local = -abs(commission_local)  # OUT (-)
+            if tx_type in ["buy", "sell", "dividend", "short sell", "buy to cover", "fees"]:
+                # Internal transactions for stocks are NOT flows for portfolio-level MWR
+                # because the cash spent/received stays within the portfolio ($CASH balance).
+                # Including them would double-count the capital (once as cash, once as the trade).
+                # External flows are handled by 'deposit', 'withdrawal', and 'transfer'.
+                cash_flow_local = 0.0
+            elif tx_type == "deposit":
+                # External asset contribution (e.g. Stock Deposit)
+                if pd.notna(qty) and pd.notna(price_local):
+                    cash_flow_local = -( (qty_abs * price_local) + commission_local ) # OUT from pocket (-)
+            elif tx_type == "withdrawal":
+                # External asset removal
+                if pd.notna(qty) and pd.notna(price_local):
+                    cash_flow_local = (qty_abs * price_local) - commission_local # IN to pocket (+)
             elif tx_type == "transfer":
-                # Asset Transfer: treated as a contribution/withdrawal in kind
+                # Asset Transfer logic (already handles scope)
                 is_outbound = False
                 is_inbound = False
-                
                 acct = str(row.get("Account", "")).strip().upper()
                 to_acct = str(row.get("To Account", "")).strip().upper()
-                
-                if include_accounts is None:
-                    # Assuming ALL accounts scope if none provided
-                    is_outbound = True
-                    is_inbound = True
-                else:
-                    included_set = {str(a).strip().upper() for a in include_accounts}
-                    if acct in included_set:
-                        is_outbound = True
-                    if to_acct and to_acct in included_set:
-                        is_inbound = True
+                included_set = {str(a).strip().upper() for a in (include_accounts or [])}
+                if not include_accounts: included_set = {acct}
 
-                if is_outbound and is_inbound:
-                    # Internal Asset Transfer -> Net Zero Flow
-                    cash_flow_local = 0.0
-                elif is_outbound:
+                if acct in included_set: is_outbound = True
+                if to_acct and to_acct in included_set: is_inbound = True
+                
+                if is_outbound and not is_inbound:
                     # Asset leaving scope -> Withdrawal -> Positive MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):
                         cash_flow_local = (abs(qty) * price_local) + commission_local
-                elif is_inbound:
+                elif not is_outbound and is_inbound:
                     # Asset entering scope -> Deposit -> Negative MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):
                         cash_flow_local = -(abs(qty) * price_local)
 
         elif symbol == CASH_SYMBOL_CSV:
-            if tx_type == "deposit" or tx_type == "buy":
+            if tx_type in ["deposit", "buy"]:
+                # External cash deposit
                 if pd.notna(qty):
-                    cash_flow_local = -(abs(qty) - commission_local)  # Matches test expectation
-            elif tx_type == "withdrawal" or tx_type == "sell":
+                    cash_flow_local = -(abs(qty) - commission_local) # OUT from pocket (-)
+            elif tx_type in ["withdrawal", "sell"]:
+                # External cash withdrawal
                 if pd.notna(qty):
-                    cash_flow_local = (abs(qty) + commission_local)  # Matches test expectation
-            elif tx_type == "dividend":
-                dividend_amount_local_cf = 0.0
-                if pd.notna(total_amount_local) and total_amount_local != 0:
-                    dividend_amount_local_cf = total_amount_local
-                elif pd.notna(price_local) and price_local != 0:
-                    dividend_amount_local_cf = (
-                        (qty_abs * price_local) if qty_abs > 0 else price_local
-                    )
-                cash_flow_local = dividend_amount_local_cf - commission_local  # IN (+)
+                    cash_flow_local = (abs(qty) + commission_local) # IN to pocket (+)
+            elif tx_type in ["dividend", "interest"]:
+                # Internal interest/dividends on cash are NOT external flows
+                cash_flow_local = 0.0
             elif tx_type == "transfer":
-                 # Cash Transfer Logic (Case-Insensitive)
-                 # Determine direction based on `include_accounts` scope
-                 
-                 is_outbound = False
-                 is_inbound = False
-                 
-                 acct = str(row.get("Account", "")).strip().upper()
-                 to_acct = str(row.get("To Account", "")).strip().upper()
-                 
-                 # Normalize include_accounts to UPPER for comparison
-                 included_set = {str(a).strip().upper() for a in (include_accounts or [])}
-                 if not include_accounts:
-                     # If none provided, assume we are focusing on 'acct' (fallback behavior)
-                     included_set = {acct}
+                # Cash Transfer logic
+                is_outbound = False
+                is_inbound = False
+                acct = str(row.get("Account", "")).strip().upper()
+                to_acct = str(row.get("To Account", "")).strip().upper()
+                included_set = {str(a).strip().upper() for a in (include_accounts or [])}
+                if not include_accounts: included_set = {acct}
 
-                 if acct in included_set:
-                     is_outbound = True
-                 if to_acct and to_acct in included_set:
-                     is_inbound = True
-                     
-                 if is_outbound and is_inbound:
-                     # Internal Transfer within the analyzed scope -> Net Zero flow
-                     cash_flow_local = 0.0
-                 elif is_outbound:
-                     # Money leaving the scope -> Withdrawal -> Positive MWR Flow
-                     if pd.notna(qty):
-                         cash_flow_local = (abs(qty) + commission_local)
-                 elif is_inbound:
-                     # Money entering the scope -> Deposit -> Negative MWR Flow
-                     # Note: Inbound usually just receives Qty. Sender pays commission.
-                     if pd.notna(qty):
-                         cash_flow_local = -abs(qty)
+                if acct in included_set: is_outbound = True
+                if to_acct and to_acct in included_set: is_inbound = True
+                
+                if is_outbound and not is_inbound:
+                    # Money leaving the scope -> Withdrawal -> Positive MWR Flow
+                    if pd.notna(qty):
+                        cash_flow_local = (abs(qty) + commission_local)
+                elif not is_outbound and is_inbound:
+                    # Money entering the scope -> Deposit -> Negative MWR Flow
+                    if pd.notna(qty):
+                        cash_flow_local = -abs(qty)
 
 
 
