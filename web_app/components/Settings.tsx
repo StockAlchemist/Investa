@@ -195,7 +195,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
         try {
             await updateSettings({ manual_price_overrides: cleanedOverrides });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
 
             // Reset form
             setOverrideSymbol('');
@@ -231,7 +231,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
         try {
             await updateSettings({ manual_price_overrides: cleanedOverrides });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
         } catch {
             alert('Failed to remove override');
         }
@@ -245,7 +245,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
         try {
             await updateSettings({ user_symbol_map: currentMap });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setMapFrom('');
             setMapTo('');
             // Removed loadSettings call
@@ -261,7 +261,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
         try {
             await updateSettings({ user_symbol_map: currentMap });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
         } catch {
             alert('Failed to remove mapping');
         }
@@ -278,7 +278,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
         try {
             await updateSettings({ user_excluded_symbols: currentList });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setExcludeSymbol('');
             // Removed loadSettings call
         } catch {
@@ -292,7 +292,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
         try {
             await updateSettings({ user_excluded_symbols: currentList });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
         } catch {
             alert('Failed to remove excluded symbol');
         }
@@ -307,7 +307,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
         }
         try {
             await updateSettings({ available_currencies: currentList });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setNewCurrency('');
         } catch {
             alert('Failed to add currency');
@@ -319,7 +319,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
         const currentList = (settings.available_currencies || ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY']).filter(c => c !== curr);
         try {
             await updateSettings({ available_currencies: currentList });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
         } catch {
             alert('Failed to remove currency');
         }
@@ -332,7 +332,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
         try {
             await updateSettings({ account_currency_map: currentMap });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
         } catch {
             alert('Failed to update account currency');
         }
@@ -351,7 +351,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                 account_interest_rates: currentRates,
                 interest_free_thresholds: currentThresholds
             });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
         } catch {
             alert('Failed to update yield settings');
         }
@@ -435,7 +435,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                 ibkr_token: ibkrToken,
                 ibkr_query_id: ibkrQueryId
             });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setSyncStatus("Settings saved successfully.");
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Failed to save IBKR settings";
@@ -585,7 +585,8 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                     {activeTab === 'groups' && settings && (
                         <AccountGroupManager
                             availableAccounts={availableAccounts}
-                            onUpdate={() => queryClient.invalidateQueries({ queryKey: ['settings'] })}
+                            settings={settings}
+                            onUpdate={() => queryClient.invalidateQueries({ queryKey: ['settings', user?.username] })}
                         />
                     )}
 
@@ -597,7 +598,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             holdings={holdings}
                             onSettingsUpdated={() => {
                                 // Trigger a reload of settings/portfolio data to ensure yield calculation uses fresh settings
-                                queryClient.invalidateQueries({ queryKey: ['settings'] });
+                                queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
                                 queryClient.invalidateQueries({ queryKey: ['portfolio'] });
                             }}
                         />

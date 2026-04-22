@@ -3422,31 +3422,45 @@ async def get_stock_analysis(
         logging.error(f"Error in stock analysis for {symbol}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+def _get_symbol_currency_map_sql(db_path: str) -> Dict[str, str]:
+    """Helper to get Symbol -> Local Currency mapping directly from DB without loading all transactions."""
+    if not os.path.exists(db_path):
+        return {}
+    try:
+        # Use a separate connection to avoid interfering with pool if any
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        # Query unique Symbol/Currency pairs
+        cursor.execute("SELECT DISTINCT Symbol, \"Local Currency\" FROM transactions WHERE Symbol IS NOT NULL AND Symbol != ''")
+        rows = cursor.fetchall()
+        conn.close()
+        return {row[0]: row[1] for row in rows}
+    except Exception as e:
+        logging.warning(f"Error fetching symbol currency map via SQL: {e}")
+        return {}
+
 @router.get("/settings")
 async def get_settings(
-    data: tuple = Depends(get_transaction_data),
-    config_manager = Depends(get_config_manager)
+    current_user: User = Depends(get_current_user),
+    config_manager: ConfigManager = Depends(get_config_manager)
 ):
     """
     Returns the current application configuration settings.
+    Fast version that avoids loading the full transaction dataframe.
     """
-    (
-        df,
-        manual_overrides,
-        user_symbol_map,
-        user_excluded_symbols,
-        account_currency_map,
-        _,
-        _
-    ) = data
-
     try:
-        # Build a mapping of Symbol -> Local Currency from transactions
-        symbol_to_currency = {}
-        if not df.empty:
-            # Get unique symbol/currency pairs from transactions
-            symbol_curr_df = df[['Symbol', 'Local Currency']].drop_duplicates()
-            symbol_to_currency = dict(zip(symbol_curr_df['Symbol'], symbol_curr_df['Local Currency']))
+        # Load fresh from disk
+        config_manager.load_all()
+        
+        manual_overrides = config_manager.manual_overrides.get("manual_price_overrides", {})
+        user_symbol_map = config_manager.manual_overrides.get("user_symbol_map", {})
+        user_excluded_symbols = config_manager.manual_overrides.get("user_excluded_symbols", [])
+        account_currency_map = config_manager.gui_config.get("account_currency_map", {"SET": "THB"})
+
+        # Build a mapping of Symbol -> Local Currency from transactions using LIGHTWEIGHT SQL
+        user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
+        db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+        symbol_to_currency = _get_symbol_currency_map_sql(db_path)
 
         # Enrich manual_overrides with currency info
         enriched_overrides = {}
@@ -3466,8 +3480,6 @@ async def get_settings(
             enriched_data["currency"] = currency
             enriched_overrides[symbol_upper] = enriched_data
 
-        groups = config_manager.gui_config.get("account_groups", {})
-
         return {
             "manual_overrides": enriched_overrides,
             "user_symbol_map": user_symbol_map,
@@ -3485,8 +3497,8 @@ async def get_settings(
             "display_currency": config_manager.gui_config.get("display_currency", "USD"),
             "selected_accounts": config_manager.gui_config.get("selected_accounts", []),
             "active_tab": config_manager.gui_config.get("active_tab", "performance"),
-            "ibkr_token": config_manager.manual_overrides.get("ibkr_token") or config.IBKR_TOKEN,
-            "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or config.IBKR_QUERY_ID
+            "ibkr_token": config_manager.manual_overrides.get("ibkr_token") or getattr(config, "IBKR_TOKEN", None),
+            "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or getattr(config, "IBKR_QUERY_ID", None)
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)

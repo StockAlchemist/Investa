@@ -3,6 +3,7 @@ import { Save, AlertCircle } from 'lucide-react';
 import { Settings as SettingsType, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { updateSettings } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 
 interface YieldSettingsProps {
     settings: SettingsType;
@@ -13,6 +14,7 @@ interface YieldSettingsProps {
 
 export default function YieldSettings({ settings, availableAccounts, holdings, onSettingsUpdated }: YieldSettingsProps) {
     const queryClient = useQueryClient();
+    const { user } = useAuth();
 
     // Local State for Form Values
     const [localRates, setLocalRates] = useState<Record<string, number>>({});
@@ -84,9 +86,9 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
     };
 
     const userQueryClientInvalidation = async () => {
-        await queryClient.invalidateQueries({ queryKey: ['settings'] });
-        await queryClient.invalidateQueries({ queryKey: ['portfolio'] });
-        await queryClient.invalidateQueries({ queryKey: ['dividends'] }); // Invalidate dividends too
+        await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
+        await queryClient.invalidateQueries({ queryKey: ['portfolio', user?.username] });
+        await queryClient.invalidateQueries({ queryKey: ['dividends', user?.username] }); 
     };
 
     // Pre-calculate cash balances to avoid expensive loops on every keystroke

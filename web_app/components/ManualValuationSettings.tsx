@@ -5,6 +5,7 @@ import { Trash2, Info, HelpCircle, Loader2, Edit2 } from 'lucide-react';
 import { updateSettings, Settings as SettingsType, fetchIntrinsicValue, IntrinsicValueResponse } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
 
 interface ManualValuationSettingsProps {
     settings: SettingsType;
@@ -69,6 +70,7 @@ const PARAM_INFO = {
 
 export default function ManualValuationSettings({ settings }: ManualValuationSettingsProps) {
     const queryClient = useQueryClient();
+    const { user } = useAuth();
     const [symbol, setSymbol] = useState('');
     const [formData, setFormData] = useState<Record<string, string>>({});
     const [liveDefaults, setLiveDefaults] = useState<Record<string, any>>({});
@@ -176,7 +178,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
 
         try {
             await updateSettings({ valuation_overrides: currentOverrides });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setSymbol('');
             setFormData({});
         } catch (err) {
@@ -190,7 +192,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
 
         try {
             await updateSettings({ valuation_overrides: currentOverrides });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
         } catch (err) {
             alert("Failed to remove override");
         }

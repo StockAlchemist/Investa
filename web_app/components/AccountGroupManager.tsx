@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, Loader2, Pencil, X, GripVertical } from 'lucide-react';
-import { Settings, updateSettings, fetchSettings } from '../lib/api';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { updateSettings, Settings, fetchSettings } from '../lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../context/AuthContext';
 import {
     DndContext,
     closestCenter,
@@ -22,6 +23,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 interface AccountGroupManagerProps {
     availableAccounts: string[];
+    settings: Settings | null;
     onUpdate?: () => void;
 }
 
@@ -97,20 +99,14 @@ function SortableGroupItem({ id, name, accounts, onEdit, onDelete }: SortableIte
     }
 }
 
-export default function AccountGroupManager({ availableAccounts, onUpdate }: AccountGroupManagerProps) {
+export default function AccountGroupManager({ availableAccounts, settings, onUpdate }: AccountGroupManagerProps) {
     const queryClient = useQueryClient();
+    const { user } = useAuth();
     const [newGroupName, setNewGroupName] = useState('');
     const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
     const [isCreating, setIsCreating] = useState(false);
     const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
     const [groupList, setGroupList] = useState<{name: string, accounts: string[]}[]>([]);
-
-    // Fetch settings directly to ensure we have the latest data
-    const { data: settings, isLoading, isError } = useQuery({
-        queryKey: ['settings'],
-        queryFn: fetchSettings,
-        staleTime: 5 * 60 * 1000,
-    });
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -160,7 +156,7 @@ export default function AccountGroupManager({ availableAccounts, onUpdate }: Acc
                 account_groups: newGroups,
                 account_group_order: order
             });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             if (onUpdate) onUpdate();
         } catch (error) {
             console.error("Failed to update group order", error);
@@ -210,7 +206,7 @@ export default function AccountGroupManager({ availableAccounts, onUpdate }: Acc
                 account_groups: newGroups,
                 account_group_order: newOrder
             });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setNewGroupName('');
             setSelectedAccounts([]);
             setIsCreating(false);
@@ -235,7 +231,7 @@ export default function AccountGroupManager({ availableAccounts, onUpdate }: Acc
                 account_groups: newGroups,
                 account_group_order: newOrder
             });
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             if (onUpdate) onUpdate();
         } catch (error) {
             console.error("Failed to delete group", error);
@@ -269,18 +265,10 @@ export default function AccountGroupManager({ availableAccounts, onUpdate }: Acc
     const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
     const labelClassName = "block text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide";
 
-    if (isLoading) {
+    if (!settings) {
         return (
-            <div className="flex justify-center p-8">
-                <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
-            </div>
-        );
-    }
-
-    if (isError) {
-        return (
-            <div className="p-4 text-red-500 bg-red-500/10 rounded-md text-sm text-center">
-                Failed to load account groups.
+            <div className="flex justify-center p-8 text-muted-foreground italic">
+                No settings data available.
             </div>
         );
     }
