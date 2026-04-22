@@ -13,7 +13,7 @@ import asyncio
 import shutil
 
 from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection, get_current_user, clear_settings_cache
-from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
+from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance, CURRENT_HIST_VERSION
 from utils_time import get_est_today, get_latest_trading_date, is_market_open
 from portfolio_analyzer import (
     calculate_periodic_returns, 
@@ -125,7 +125,7 @@ def trigger_background_precalculation(current_user: User):
                 logging.info("Skip precalc: dataframe is empty")
                 return
 
-            from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
+            from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance, CURRENT_HIST_VERSION
             from config import DEFAULT_CURRENCY
             import config
             import sqlite3
@@ -285,7 +285,8 @@ async def _get_historical_performance_cached(
         end_date,
         interval,
         db_mtime,
-        time_bucket
+        time_bucket,
+        CURRENT_HIST_VERSION
     )
     
     # 1. Check if we already have a cached result

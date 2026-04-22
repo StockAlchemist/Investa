@@ -61,6 +61,18 @@ def _normalize_series(series):
 # If running standalone, uncomment and configure basicConfig here.
 # logging.basicConfig(level=logging.DEBUG, format="...")
 
+# --- AUTO-CACHE INVALIDATION ---
+def _get_self_hash():
+    try:
+        # Use the absolute path of this file to generate a hash
+        with open(os.path.abspath(__file__), "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()[:8]
+    except Exception:
+        return "UNKNOWN"
+
+CURRENT_HIST_VERSION = f"v2.0_AUTO_{_get_self_hash()}"
+# -------------------------------
+
 # --- Import Configuration and Utilities ---
 try:
     from config import (
@@ -3153,6 +3165,11 @@ def _calculate_daily_holdings_chronological_numba(
                         for acc_idx in range(num_accounts):
                             if abs(current_holdings_qty[symbol_id, acc_idx]) > 1e-9:
                                 current_holdings_qty[symbol_id, acc_idx] *= split_ratio
+                            # --- FIX: Also adjust the fallback price for the split ---
+                            # This prevents valuation spikes if market data is missing on the split day.
+                            if abs(current_last_prices[symbol_id, acc_idx]) > 1e-9:
+                                current_last_prices[symbol_id, acc_idx] /= split_ratio
+
                 elif type_id == buy_type_id or type_id == deposit_type_id:
                     if qty > 1e-9:
                         current_holdings_qty[symbol_id, account_id] += qty
@@ -4118,6 +4135,11 @@ def _prepare_historical_inputs(
 
     splits_by_internal_symbol: Dict[str, List[Dict[str, Any]]] = {}
     if not split_transactions.empty:
+        # --- FIX: Deduplicate splits by (Symbol, Date) to prevent double-counting ---
+        # This can happen if a split is recorded for multiple accounts.
+        # We take the first one found for each day.
+        unique_splits = split_transactions.drop_duplicates(subset=["Symbol", "Date"])
+        
         splits_by_internal_symbol = {
             symbol: group[["Date", "Split Ratio"]]
             .apply(
@@ -4128,7 +4150,7 @@ def _prepare_historical_inputs(
                 axis=1,
             )
             .tolist()
-            for symbol, group in split_transactions.groupby("Symbol")
+            for symbol, group in unique_splits.groupby("Symbol")
         }
 
     # Symbols for stocks (from effective/filtered transactions)
@@ -5409,17 +5431,16 @@ def _load_or_calculate_daily_results(
                 )
                 
                 # --- NEW: Artifact Guard ---
-                # If a daily return is > 1.0 (100%) AND the denominator was small (< $5),
-                # it is highly likely that a transaction was missed in the flow calculation
-                # (e.g. an asset transfer with missing mapping). 
-                # We limit such returns to prevent ruining the TWR and Volatility.
-                spike_mask = (daily_df["daily_return"] > 0.2) | (daily_df["daily_return"] < -0.2)
+                # If a daily return is > 50% (0.5), it is suspicious unless the account is tiny.
+                # Capping prevents data artifacts from ruining TWR and Volatility metrics.
+                # INCREASED THRESHOLD: 20% was too low for volatile stocks. 50% is safer.
+                spike_threshold = 0.5
+                spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
                 if spike_mask.any():
                     try:
-                        # --- NEW: List dates in terminal log ---
                         # --- NEW: List dates and spike values in terminal log ---
                         spike_info = [f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return']*100:.1f}%)" for d in daily_df.index[spike_mask]]
-                        logging.warning(f"Found {len(spike_info)} TWR SPIKES: {', '.join(spike_info[:12])}{'...' if len(spike_info) > 12 else ''}. Capping to 0% to avoid data artifacts.")
+                        logging.warning(f"Found {len(spike_info)} TWR SPIKES (> {spike_threshold*100:.0f}%): {', '.join(spike_info[:12])}{'...' if len(spike_info) > 12 else ''}. Capping to 0% to avoid data artifacts.")
                     except Exception as e:
                         logging.error(f"Failed to log spike info: {e}")
                     
@@ -5535,9 +5556,9 @@ def _get_or_calculate_all_daily_holdings(
     tx_hash = hashlib.sha256(
         pd.util.hash_pandas_object(all_transactions_df, index=True).values
     ).hexdigest()
-    # Version bump for cache key
+    # Version bump for cache key - Now linked to global CURRENT_HIST_VERSION
     cache_key = (
-        f"ALL_HOLDINGS_v1.7_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
+        f"ALL_HOLDINGS_{CURRENT_HIST_VERSION}_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
     )
 
     cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
@@ -6109,15 +6130,6 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    # --- AUTO-CACHE INVALIDATION ---
-    def _get_self_hash():
-        try:
-            with open(__file__, "rb") as f:
-                return hashlib.md5(f.read()).hexdigest()[:8]
-        except Exception:
-            return "UNKNOWN"
-
-    CURRENT_HIST_VERSION = f"v2.0_AUTO_{_get_self_hash()}"
     # -------------------------------
     start_time_hist = time.time()
     has_errors = False
