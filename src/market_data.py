@@ -412,6 +412,10 @@ class MarketDataProvider:
         self.metadata_cache_dir = os.path.join(cache_dir, "metadata_cache")
         os.makedirs(self.metadata_cache_dir, exist_ok=True)
         
+        # Construct path for static_prices_dir (User-defined overrides)
+        self.static_prices_dir = os.path.join(app_data_dir, "static_prices")
+        os.makedirs(self.static_prices_dir, exist_ok=True)
+        
         # logging.info("MarketDataProvider initialized.")
 
     def _get_historical_cache_dir(self) -> str:
@@ -450,7 +454,25 @@ class MarketDataProvider:
         safe_sym = "".join(c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol)
         return os.path.join(self.metadata_cache_dir, f"{safe_sym}.json")
 
+    def _load_static_prices(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Loads static price data from the static_prices directory if it exists."""
+        static_path = os.path.join(self.static_prices_dir, f"{symbol}.json")
+        if os.path.exists(static_path):
+            try:
+                with open(static_path, "r") as f:
+                    data = json.load(f)
+                if not data:
+                    return None
+                df = pd.DataFrame.from_dict(data, orient="index")
+                df.index = pd.to_datetime(df.index)
+                df.index.name = "date"
+                return df
+            except Exception as e:
+                logging.error(f"Error loading static prices for {symbol}: {e}")
+        return None
+
     def _load_metadata_cache(self) -> Dict[str, Dict]:
+
         """Loads the metadata cache. Now just a shell for compatibility or return empty."""
         return {} # Force empty to signal we need to check per-symbol files
 
@@ -2912,10 +2934,23 @@ class MarketDataProvider:
         if interval != "1d":
             return self._fetch_yf_historical_data(symbols_yf, start_date, end_date, interval=interval, use_cache=use_cache), False
 
+        # 0.5 Check for Static Prices (User overrides)
+        static_data: Dict[str, pd.DataFrame] = {}
+        non_static_symbols = []
+        for sym in symbols_yf:
+            df_static = self._load_static_prices(sym)
+            if df_static is not None:
+                # Mask to requested range
+                mask = (df_static.index.date >= start_date) & (df_static.index.date <= end_date)
+                static_data[sym] = df_static.loc[mask]
+                logging.info(f"Hist Prices: Loaded {len(static_data[sym])} rows from STATIC price table for {sym}")
+            else:
+                non_static_symbols.append(sym)
+
         # 1. Sync missing range to DB (with 5-day overlap for integrity)
-        if use_cache:
+        if use_cache and non_static_symbols:
             try:
-                self._sync_to_db(symbols_yf, start_date, end_date, data_type="price", interval=interval)
+                self._sync_to_db(non_static_symbols, start_date, end_date, data_type="price", interval=interval)
             except Exception as e:
                 logging.error(f"Error syncing to Market DB: {e}")
                 # Continue anyway, we'll try to pull from DB what we have or YF directly if needed
@@ -2941,6 +2976,9 @@ class MarketDataProvider:
                      if "Volume" in df_db.columns:
                          df_clean["Volume"] = df_db["Volume"]
                      historical_prices_yf_adjusted[sym] = df_clean
+                     
+        # Merge static data back in
+        historical_prices_yf_adjusted.update(static_data)
                      
         # 3. Validation and fallback
         fetch_failed = False

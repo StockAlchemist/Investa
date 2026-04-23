@@ -11,6 +11,13 @@ import sqlite3
 from datetime import datetime, date, timedelta, time as dt_time
 import asyncio
 import shutil
+import sys
+
+# Ensure src is in path for imports
+current_file_path = os.path.abspath(__file__)
+src_path = os.path.dirname(os.path.dirname(current_file_path))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
 from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection, get_current_user, clear_settings_cache
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance, CURRENT_HIST_VERSION
@@ -782,15 +789,20 @@ async def _calculate_portfolio_summary_internal(
                 interest_free_thresholds=interest_free_thresholds
             )
 
-        (
-            overall_summary_metrics,
-            summary_df,
-            holdings_dict,
-            account_level_metrics,
-            _,
-            _,
-            _
-        ) = await run_in_threadpool(run_calc)
+        try:
+            (
+                overall_summary_metrics,
+                summary_df,
+                holdings_dict,
+                account_level_metrics,
+                _,
+                _,
+                _
+            ) = await run_in_threadpool(run_calc)
+        except Exception as e_calc:
+            logging.error(f"Error in calculate_portfolio_summary: {e_calc}", exc_info=True)
+            # Re-raise to return 500 but now it's logged
+            raise HTTPException(status_code=500, detail=f"Calculation Error: {str(e_calc)}")
     
     # --- Calculate Annualized TWR and include in metrics ---
     annualized_twr = None
