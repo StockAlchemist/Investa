@@ -2165,6 +2165,7 @@ class AddTransactionDialog(QDialog):
             "Transfer",  # <-- ADDED
             "Short Sell",
             "Buy to Cover",
+            "Tax",
         ]
         self.total_amount_locked_by_user = (
             False  # Flag to prevent auto-calc from overwriting manual/edited total
@@ -2324,6 +2325,9 @@ class AddTransactionDialog(QDialog):
         self.total_amount_edit.textEdited.connect(self._total_amount_edited_slot)
         # --- END FIX ---
 
+        # Tax Suggestion
+        self.total_amount_edit.textChanged.connect(self._suggest_tax_for_dividend)
+
         if edit_data:
             self._populate_fields_for_edit(edit_data)
         else:
@@ -2422,6 +2426,12 @@ class AddTransactionDialog(QDialog):
             split_enabled = True
         elif tx_type_lower == "fees":  # Fees on a stock holding (rare)
             pass  # commission_enabled is True
+        elif tx_type_lower == "tax":  # Tax transaction
+            total_enabled = True
+            commission_enabled = False
+            note_str = self.note_edit.text()
+            if not note_str:
+                self.note_edit.setPlaceholderText("e.g., Withholding tax")
 
         # Enable/disable and clear fields based on type
         self.quantity_edit.setEnabled(qty_enabled)
@@ -2507,6 +2517,15 @@ class AddTransactionDialog(QDialog):
                 Returns None if validation fails.
         """
         data_for_processing: Dict[str, Any] = {}
+        # Refresh current currency info if available (to check for USD)
+        is_usd_dividend = False
+        if self.type_combo.currentText().lower() == "dividend":
+            symbol_for_check = self.symbol_edit.text().strip().upper()
+            if self.parent() and hasattr(self.parent(), "_get_currency_for_symbol"):
+                curr = self.parent()._get_currency_for_symbol(symbol_for_check)
+                if curr == "USD":
+                    is_usd_dividend = True
+
         tx_type_display_case = (
             self.type_combo.currentText()
         )  # Original case for storing
@@ -2845,6 +2864,22 @@ class AddTransactionDialog(QDialog):
                     qty = total  # If qty wasn't provided, set it to total
                 if price is None:
                     price = 1.0  # If price wasn't provided, set it to 1.0
+
+        elif tx_type_lower == "tax":
+            if not total_str_from_field:
+                QMessageBox.warning(self, "Input Error", "Tax: Total Amount is required.")
+                self.total_amount_edit.setFocus()
+                return None
+            try:
+                total = float(total_str_from_field)
+                if total < 0:
+                    QMessageBox.warning(self, "Input Error", "Tax Amount cannot be negative.")
+                    self.total_amount_edit.setFocus()
+                    return None
+            except ValueError:
+                QMessageBox.warning(self, "Input Error", "Tax Amount is not a valid number.")
+                self.total_amount_edit.setFocus()
+                return None
 
         elif tx_type_lower in ["split", "stock split"]:
             if not self.split_ratio_edit.isEnabled() or not split_str:
@@ -3310,6 +3345,35 @@ class AddTransactionDialog(QDialog):
             f"_update_field_states_wrapper_symbol (symbol changed): symbol='{symbol}', current_tx_type='{current_tx_type}'"
         )
         self._update_field_states(current_tx_type, symbol)
+
+    def _suggest_tax_for_dividend(self, text):
+        """Suggests 15% tax in the note placeholder if this is a USD dividend."""
+        if self.type_combo.currentText().lower() != "dividend":
+            return
+        
+        symbol = self.symbol_edit.text().strip().upper()
+        if not symbol:
+            return
+
+        # Check if USD
+        is_usd = False
+        if self.parent() and hasattr(self.parent(), "_get_currency_for_symbol"):
+            try:
+                curr = self.parent()._get_currency_for_symbol(symbol)
+                if curr == "USD":
+                    is_usd = True
+            except:
+                pass
+        
+        if is_usd:
+            try:
+                val = float(text.replace(",", ""))
+                if val > 0:
+                    tax_suggestion = val * 0.15
+                    if not self.note_edit.text():
+                        self.note_edit.setPlaceholderText(f"Suggested Tax: {tax_suggestion:.2f}")
+            except (ValueError, TypeError):
+                pass
 
 
 

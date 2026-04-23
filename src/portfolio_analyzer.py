@@ -99,6 +99,7 @@ TYPE_SPLIT = 6
 TYPE_TRANSFER = 7
 TYPE_SHORT_SELL = 8
 TYPE_BUY_TO_COVER = 9
+TYPE_TAX = 10
 TYPE_UNKNOWN = -1
 
 # --- Helper to map string types to ints ---
@@ -109,11 +110,12 @@ def get_type_id(t):
     if t == 'deposit': return TYPE_DEPOSIT
     if t == 'withdrawal': return TYPE_WITHDRAWAL
     if t == 'dividend': return TYPE_DIVIDEND
-    if t == 'fees': return TYPE_FEES
+    if t in ['fees', 'fee']: return TYPE_FEES
     if t in ['split', 'stock split']: return TYPE_SPLIT
     if t == 'transfer': return TYPE_TRANSFER
     if t == 'short sell': return TYPE_SHORT_SELL
     if t == 'buy to cover': return TYPE_BUY_TO_COVER
+    if t in ['tax', 'withholding tax']: return TYPE_TAX
     return TYPE_UNKNOWN
 
 @jit(nopython=True, cache=True)
@@ -137,8 +139,9 @@ def _process_numba_core(
     # 10: total_cost_display_historical_fx
     # 11: local_curr_id (stored as float)
     # 12: realized_gain_display (accumulated at historical FX)
+    # 13: taxes_local
     
-    state = np.zeros((num_syms, num_accs, 13), dtype=np.float64)
+    state = np.zeros((num_syms, num_accs, 14), dtype=np.float64)
     # Initialize currency ID to -1.0 to detect first use
     state[:, :, 11] = -1.0
     
@@ -259,49 +262,52 @@ def _process_numba_core(
         if typ == TYPE_TRANSFER:
             if qty > 1e-9 and to_acc != -1 and to_acc != acc:
                 from_qty = current_state[0]
+                to_state = state[sym, to_acc]
                 
-                if from_qty >= qty - 1e-9:
-                    to_state = state[sym, to_acc]
+                # Initialize To State if needed
+                if to_state[11] == -1.0:
+                    to_state[11] = current_state[11]
+                
+                proportion = 0.0
+                if from_qty > 1e-9:
+                    proportion = qty / from_qty
+                
+                # Cap cost proportion at 1.0 to avoid inflating cost basis
+                # if we are transferring more than we think we have.
+                cost_prop = min(proportion, 1.0)
+                
+                cost_transferred = current_state[1] * cost_prop
+                cost_transferred_hist = current_state[10] * cost_prop
+                invested_transferred = current_state[7] * cost_prop
+                cumulative_transferred = current_state[8] * cost_prop
+                buy_cost_transferred = current_state[9] * cost_prop
+                
+                current_state[0] -= qty
+                current_state[1] -= cost_transferred
+                current_state[10] -= cost_transferred_hist
+                current_state[7] -= invested_transferred
+                current_state[8] -= cumulative_transferred
+                current_state[9] -= buy_cost_transferred
+                
+                if abs(current_state[0]) < stock_qty_tol:
+                    current_state[0] = 0.0
+                    current_state[1] = 0.0
+                    current_state[10] = 0.0
+                    current_state[7] = 0.0
+                    current_state[8] = 0.0
+                    current_state[9] = 0.0
                     
-                    # Initialize To State if needed
-                    if to_state[11] == -1.0:
-                        to_state[11] = current_state[11]
-                    
-                    if True: # GLD Fix
-                        proportion = 0.0
-                        if from_qty > 1e-9:
-                            proportion = qty / from_qty
-                        
-                        cost_transferred = current_state[1] * proportion
-                        cost_transferred_hist = current_state[10] * proportion
-                        invested_transferred = current_state[7] * proportion
-                        cumulative_transferred = current_state[8] * proportion
-                        buy_cost_transferred = current_state[9] * proportion
-                        
-                        current_state[0] -= qty
-                        current_state[1] -= cost_transferred
-                        current_state[10] -= cost_transferred_hist
-                        current_state[7] -= invested_transferred
-                        current_state[8] -= cumulative_transferred
-                        current_state[9] -= buy_cost_transferred
-                        
-                        if abs(current_state[0]) < stock_qty_tol:
-                            current_state[0] = 0.0
-                            current_state[1] = 0.0
-                            current_state[10] = 0.0
-                            current_state[7] = 0.0
-                            current_state[8] = 0.0
-                            current_state[9] = 0.0
-                            
-                        to_state[0] += qty
-                        to_state[1] += cost_transferred
-                        to_state[10] += cost_transferred_hist
-                        to_state[7] += invested_transferred
-                        to_state[8] += cumulative_transferred
-                        to_state[9] += buy_cost_transferred
-                        
-                        transfer_costs[i] = cost_transferred / qty
+                to_state[0] += qty
+                to_state[1] += cost_transferred
+                to_state[10] += cost_transferred_hist
+                to_state[7] += invested_transferred
+                to_state[8] += cumulative_transferred
+                to_state[9] += buy_cost_transferred
+                
+                if qty > 1e-9:
+                    transfer_costs[i] = cost_transferred / qty
             continue
+
 
         # --- STANDARD TYPES ---
         qty_abs = abs(qty)
@@ -456,6 +462,14 @@ def _process_numba_core(
             current_state[8] += fee_cost
             current_state[10] += (fee_cost * fx_rate)
 
+        # Tax
+        elif typ == TYPE_TAX:
+            # Tax is usually entered as a positive number representing the cost
+            tax_amt = abs(price) if abs(price) > 1e-9 else abs(comm)
+            current_state[13] += tax_amt # Track in tax column
+            current_state[3] -= tax_amt  # Subtract from dividends for net return calc
+            current_state[10] += (tax_amt * fx_rate) # Add to cost basis (reduces return)
+
     return state, transfer_costs
 
 @profile
@@ -550,6 +564,7 @@ def _process_transactions_to_holdings(
         df.sort_values(by=['Date', 'original_index'], inplace=True)
         # Force consolidation and new index to avoid Numba memory view issues
         df = df.reset_index(drop=True).copy()
+        n = len(df) # UPDATE: n must reflect the new size after deduplication
         # logging.debug(f"Transactions reduced from {len(transactions_df)} to {len(df)} after split deduplication.")
     
     sym_ids = df['Symbol'].map(sym_map).fillna(-1).astype(np.int64).values
@@ -558,8 +573,10 @@ def _process_transactions_to_holdings(
     type_map_dict = {
         'buy': TYPE_BUY, 'sell': TYPE_SELL, 'deposit': TYPE_DEPOSIT, 
         'withdrawal': TYPE_WITHDRAWAL, 'dividend': TYPE_DIVIDEND, 'fees': TYPE_FEES,
+        'fee': TYPE_FEES,
         'split': TYPE_SPLIT, 'stock split': TYPE_SPLIT, 'transfer': TYPE_TRANSFER,
-        'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER
+        'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER,
+        'tax': TYPE_TAX, 'withholding tax': TYPE_TAX
     }
     type_ids = df['Type'].map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
     
@@ -700,8 +717,8 @@ def _process_transactions_to_holdings(
             "cumulative_investment_local": val[8],
             "total_buy_cost_local": val[9],
             "total_cost_display_historical_fx": val[10],
-            "total_cost_display_historical_fx": val[10],
             "realized_gain_display": val[12],
+            "taxes_local": val[13],
             "tags": sorted(list(tags_map.get((sym, acc), set()))),
         }
         

@@ -156,6 +156,7 @@ DEFAULT_INDEX_QUERY_SYMBOLS = list(YFINANCE_INDEX_TICKER_MAP.keys())
 SYMBOL_MAP_TO_YFINANCE = {
     "FISV": "FI",      # Fiserv changed to FI in May 2023
     "FB": "META",      # Facebook changed to Meta
+    "KFT": "KHC",      # Kraft Foods changed to KRFT then KHC
     "SNA": "SNA",      # Placeholder if needed
 }
 

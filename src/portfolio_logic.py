@@ -1649,6 +1649,67 @@ def calculate_portfolio_summary(
 # --- NOTE: These functions remain in portfolio_logic.py as they were not moved ---
 
 
+def _deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Deduplicates split transactions using a fuzzy-month grouping strategy.
+    Prioritizes 'All Accounts' entries to avoid double-multiplication 
+    when both a global and account-specific split exist for the same event.
+    """
+    if df is None or df.empty:
+        return df
+    
+    type_col = "Type"
+    if type_col not in df.columns:
+        return df
+        
+    is_split = df[type_col].str.lower().str.strip().isin(["split", "stock split"])
+    if not is_split.any():
+        return df
+    
+    other_txs = df[~is_split]
+    splits_df = df[is_split].copy()
+    
+    # Priority: 'All Accounts' (0) > Others (1)
+    acc_col = "Account"
+    if acc_col in splits_df.columns:
+        splits_df['__split_priority'] = np.where(
+            splits_df[acc_col].astype(str).str.lower().str.strip() == 'all accounts', 0, 1
+        )
+    else:
+        splits_df['__split_priority'] = 1
+        
+    # Fuzzy grouping by Month
+    splits_df['__split_ym'] = pd.to_datetime(splits_df['Date']).dt.to_period('M')
+    
+    # --- FIX: Normalize Split Ratio for robust comparison ---
+    # Prevents 7.0 vs 7 from being treated as different splits
+    splits_df['Split Ratio'] = pd.to_numeric(splits_df['Split Ratio'], errors='coerce').fillna(1.0).astype(float)
+    
+    # Sort so 'All Accounts' comes first, and then by original index
+    sort_cols = ['Symbol', '__split_ym', '__split_priority']
+    if 'original_index' in splits_df.columns:
+        sort_cols.append('original_index')
+    
+    splits_df = splits_df.sort_values(by=sort_cols)
+    
+    # Drop duplicates by Symbol and Month. 
+    # Ratio included to distinguish multiple splits in one month if they exist.
+    deduped_splits = splits_df.drop_duplicates(subset=['Symbol', '__split_ym', 'Split Ratio'], keep='first')
+    
+    # Remove temp columns
+    deduped_splits = deduped_splits.drop(columns=['__split_priority', '__split_ym'])
+
+    
+    # Re-combine and maintain original order as much as possible
+    result = pd.concat([other_txs, deduped_splits])
+    if 'original_index' in result.columns:
+        result = result.sort_values(by='original_index')
+    else:
+        result = result.sort_index()
+        
+    return result
+
+
 # --- Function to Unadjust Prices (Keep as is) ---
 @profile
 def _unadjust_prices(
@@ -1786,9 +1847,11 @@ def _unadjust_prices(
                         )
                     continue  # Skip this invalid split
 
-                # FIX: Convert split_date to UTC Timestamp for comparison
-                split_ts = pd.Timestamp(split_date).tz_localize('UTC')
-                mask = forward_split_factor.index < split_ts
+                # FIX: Use date-based comparison to ensure precision and avoid off-by-one spikes
+                # All dates STRICTLY BEFORE the split_date get unadjusted.
+                # The split_date itself uses the already-adjusted (new) price.
+                mask = pd.Series(forward_split_factor.index).dt.date < split_date
+                mask = mask.values # Convert back to numpy mask for index selection
                 if IS_DEBUG_SYMBOL and split_date == date(
                     2020, 8, 31
                 ):  # Example debug date
@@ -1945,7 +2008,19 @@ def _calculate_daily_net_cash_flow_vectorized(
     if included_accounts:
         # Transfers are flows if they cross the boundary of "included_accounts".
         # This MUST include both Assets and $CASH transfers.
-        trans_mask = (df_period["Type"].str.lower().str.strip() == "transfer")
+        # --- NEW: Include Cleanup/Adjustment transactions as flows ---
+        # These are ledger corrections that should not affect portfolio performance metrics.
+        # Treating them as external flows (like transfers) neutralizes their impact on TWR.
+        cleanup_keywords = ["cleanup", "dust", "ghost", "artifact", "adjustment", "correction"]
+        note_col = "Note" if "Note" in df_period.columns else None
+        cleanup_mask = pd.Series(False, index=df_period.index)
+        if note_col:
+            cleanup_mask = df_period[note_col].fillna("").str.lower().apply(
+                lambda x: any(kw in x for kw in cleanup_keywords)
+            )
+        
+        # Transfers and Cleanup/Adjustments are both treated as boundary-crossing flows
+        trans_mask = (df_period["Type"].str.lower().str.strip() == "transfer") | cleanup_mask
         df_trans = df_period[trans_mask].copy()
                 
         if not df_trans.empty:
@@ -1955,14 +2030,25 @@ def _calculate_daily_net_cash_flow_vectorized(
             if "To Account" in df_trans.columns:
                  dest_in = df_trans["To Account"].astype(str).str.upper().str.strip().isin(included_set)
             
-            # Multiplier: src_in & ~dest_in -> -1 (OUT); ~src_in & dest_in -> +1 (IN)
+            # 1. Standard Transfer Multiplier: src_in & ~dest_in -> -1 (OUT); ~src_in & dest_in -> +1 (IN)
             multiplier = pd.Series(0.0, index=df_trans.index)
-            multiplier[src_in & ~dest_in] = -1.0
-            multiplier[~src_in & dest_in] = 1.0
+            is_real_transfer = df_trans["Type"].str.lower().str.strip() == "transfer"
+            
+            multiplier[is_real_transfer & src_in & ~dest_in] = -1.0
+            multiplier[is_real_transfer & ~src_in & dest_in] = 1.0
+            
+            # 2. Cleanup Multiplier: Buy -> +1 (IN); Sell/Withdrawal -> -1 (OUT)
+            # This ensures that fixing ledger artifacts doesn't create fake performance gains/losses.
+            is_cleanup = cleanup_mask.reindex(df_trans.index).fillna(False) & ~is_real_transfer
+            if is_cleanup.any():
+                type_l = df_trans["Type"].str.lower().str.strip()
+                multiplier[is_cleanup & type_l.isin(["buy", "deposit"])] = 1.0
+                multiplier[is_cleanup & type_l.isin(["sell", "withdrawal"])] = -1.0
                         
-            # Filter only relevant transfers
+            # Filter only relevant transactions (those that have a non-zero impact on the portfolio boundary)
             relevant_trans = df_trans[multiplier != 0.0].copy()
             multiplier = multiplier[multiplier != 0.0]
+
             
             if not relevant_trans.empty:
                 # Calculate Value: Qty * Price
@@ -3534,6 +3620,9 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             # total_market_value_display_curr_agg = np.nan
             # break
             
+        if current_price_local is None:
+            current_price_local = np.nan
+
         # Calculate local market value
         market_value_local = current_qty * current_price_local
         
@@ -4391,9 +4480,10 @@ def _value_daily_holdings_vectorized(
                     # 3. ffill/bfill for any remaining edges
                     aligned_series = price_series.reindex(date_range).interpolate(method='time').ffill().bfill()
                 else:
-                    # Standard daily/weekly: simple ffill is usually sufficient and faster
-                    price_series_clean = price_series.ffill().bfill()
-                    aligned_series = price_series_clean.reindex(date_range, method='ffill')
+                    # Standard daily/weekly: Use linear interpolation to smooth gaps
+                    # instead of simple ffill, which prevents "price restoration" spikes.
+                    aligned_series = price_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
+
                 
                 daily_prices_aligned[:, sym_id] = aligned_series.values
                 
@@ -4602,13 +4692,15 @@ def _value_daily_holdings_vectorized(
     daily_value_series = pd.Series(total_value, index=date_range)
     
     # --- FIX: Avoid zeroing out portfolio value due to missing data ---
-    # Instead of nan_to_num(nan=0.0), use forward-fill to maintain TWR integrity.
+    # We use linear interpolation to spread gains/losses over gaps, 
+    # which prevents "price restoration" spikes from ruining TWR and Volatility.
     if daily_value_series.isna().any():
-        status_msg += " (partial data missing, f-filled)"
-        # Identify which dates are missing
+        # Identify which dates are missing for logging
         missing_dates = daily_value_series.index[daily_value_series.isna()]
-        logging.warning(f"Valuation: Missing data for {len(missing_dates)} days. Using forward-fill.")
-        daily_value_series = daily_value_series.ffill().fillna(0.0) # fillna(0) only for very beginning
+        logging.warning(f"Valuation: Missing data for {len(missing_dates)} days. Using linear interpolation to smooth jumps.")
+        status_msg += " (partial data interpolated)"
+        daily_value_series = daily_value_series.interpolate(method='linear').ffill().fillna(0.0)
+
     
     return daily_value_series, has_errors, status_msg
 
@@ -5107,13 +5199,70 @@ def _load_or_calculate_daily_results(
                 # Include ALL accounts if list is empty (Global Scope)
                 account_ids_to_include_set = set(account_to_id.values())
 
+            # --- NEW: Split-Adjust Historical Prices to match Ledger Quantities ---
+            # Yahoo Finance returns split-adjusted prices for all historical points.
+            # Our ledger tracks raw quantities that multiply on split days.
+            # To avoid 7x/4x spikes, we must "un-adjust" historical prices by multiplying
+            # them by the cumulative split factor that occurs AFTER each historical point.
+            historical_prices_yf_raw = {}
+            split_txs = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip().isin(["split", "stock split"])]
+            
+            # --- DEDUPLICATE SPLITS (Match Numba core logic) ---
+            if not split_txs.empty:
+                split_txs = split_txs.copy()
+                # Priority 0 for 'All Accounts', 1 for others
+                split_txs['__split_priority'] = np.where(split_txs['Account'].astype(str).str.lower() == 'all accounts', 0, 1)
+                # Group by Symbol and Month for fuzzy deduplication
+                split_txs['__ym'] = pd.to_datetime(split_txs['Date']).dt.to_period('M')
+                
+                sort_cols = ['Symbol', '__ym', '__split_priority']
+                if 'original_index' in split_txs.columns:
+                    sort_cols.append('original_index')
+                
+                split_txs = split_txs.sort_values(by=sort_cols)
+                split_txs = split_txs.drop_duplicates(subset=['Symbol', '__ym', 'Split Ratio'])
+
+            for yf_sym, price_df in historical_prices_yf_unadjusted.items():
+                if price_df.empty:
+                    historical_prices_yf_raw[yf_sym] = price_df
+                    continue
+                
+                # Find ledger symbol(s) matching this YF ticker
+                ledger_syms = [k for k, v in internal_to_yf_map.items() if v == yf_sym]
+                sym_splits = split_txs[split_txs["Symbol"].isin(ledger_syms)]
+                
+                if sym_splits.empty:
+                    historical_prices_yf_raw[yf_sym] = price_df
+                else:
+                    new_df = price_df.copy()
+                    # Backwards cumulative product of splits
+                    factors = pd.Series(1.0, index=new_df.index)
+                    sorted_splits = sym_splits.sort_values(by="Date", ascending=False)
+                    for _, split_row in sorted_splits.iterrows():
+                        s_date = pd.to_datetime(split_row["Date"], utc=True)
+                        ratio = pd.to_numeric(split_row.get("Split Ratio"), errors='coerce')
+                        qty = pd.to_numeric(split_row.get("Quantity"), errors='coerce')
+                        
+                        # Fallback: Ratio might be in Quantity column for some importers
+                        if (ratio is None or ratio <= 1e-9) and (qty is not None and 0 < qty <= 20.0):
+                            ratio = qty
+                            
+                        if ratio and ratio > 1e-9:
+                            factors.index = pd.to_datetime(factors.index, utc=True)
+                            factors.loc[factors.index < s_date] *= ratio
+                    
+                    for col in ["price", "Close", "Adj Close", "Open", "High", "Low"]:
+                        if col in new_df.columns:
+                            new_df[col] = new_df[col] * factors
+                    historical_prices_yf_raw[yf_sym] = new_df
+
             # --- VECTORIZED VALUATION ---
             daily_value_series, val_errors, val_status = _value_daily_holdings_vectorized(
                 date_range=date_range_for_calc,
                 daily_holdings_qty_np=daily_holdings_qty_to_use,
                 daily_last_prices_np=daily_last_prices_to_use,
                 daily_cash_balances_np=daily_cash_balances_to_use,
-                historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+                historical_prices_yf_unadjusted=historical_prices_yf_raw, # USE RAW
                 historical_fx_yf=historical_fx_yf,
                 target_currency=display_currency,
                 account_currency_map=account_currency_map,
@@ -5135,7 +5284,7 @@ def _load_or_calculate_daily_results(
                 historical_fx_yf=historical_fx_yf,
                 default_currency=default_currency,
                 included_accounts=included_accounts_list,
-                historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+                historical_prices_yf_unadjusted=historical_prices_yf_raw, # USE RAW
                 internal_to_yf_map=internal_to_yf_map,
             )
             if flow_errors:
@@ -5430,33 +5579,74 @@ def _load_or_calculate_daily_results(
                     / adjusted_prev_value.loc[valid_denom_mask]
                 )
                 
-                # --- NEW: Artifact Guard ---
-                # If a daily return is > 50% (0.5), it is suspicious unless the account is tiny.
-                # Capping prevents data artifacts from ruining TWR and Volatility metrics.
-                # INCREASED THRESHOLD: 20% was too low for volatile stocks. 50% is safer.
-                spike_threshold = 0.5
-                spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
-                if spike_mask.any():
-                    try:
-                        # --- NEW: List dates and spike values in terminal log ---
-                        spike_info = [f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return']*100:.1f}%)" for d in daily_df.index[spike_mask]]
-                        logging.warning(f"Found {len(spike_info)} TWR SPIKES (> {spike_threshold*100:.0f}%): {', '.join(spike_info[:12])}{'...' if len(spike_info) > 12 else ''}. Capping to 0% to avoid data artifacts.")
-                    except Exception as e:
-                        logging.error(f"Failed to log spike info: {e}")
-                    
-                    daily_df.loc[spike_mask, "daily_return"] = 0.0
+                # --- NEW: Performance Stabilization & Artifact Normalization ---
+                # This replaces the hard capping logic with a more nuanced approach.
+                # It identifies spikes and checks if they coincide with valuation-neutral events 
+                # (Transfers, Splits, Cleanup).
                 
+                spike_threshold = 0.3  # 30% is a significant daily move for a diversified portfolio
+                extreme_spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
+                
+                if extreme_spike_mask.any():
+                    # 1. Gather context for spikes
+                    transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].dt.date.unique()
+                    
+                    # Also consider cleanup transactions as neutralization events
+                    cleanup_keywords = ["cleanup", "dust", "ghost", "artifact", "adjustment", "correction", "auto-generated"]
+                    note_col = "Note" if "Note" in transactions_df_effective.columns else None
+                    cleanup_days = set()
+                    if note_col:
+                        c_mask = transactions_df_effective[note_col].fillna("").str.lower().apply(
+                            lambda x: any(kw in x for kw in cleanup_keywords)
+                        )
+                        cleanup_days = set(transactions_df_effective[c_mask]["Date"].dt.date.unique())
+                    
+                    split_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip().isin(["split", "stock split"])]["Date"].dt.date.unique()
 
-                # --- NEW: Transfer Healing heuristic ---
-                # Check for days with high volatility where a transfer occurred
-                high_vol_mask = (daily_df["daily_return"] > 0.1) | (daily_df["daily_return"] < -0.1)
-                if high_vol_mask.any():
-                    transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].unique()
-                    transfer_days_dt = pd.to_datetime(transfer_days).date
-                    for idx, row in daily_df[high_vol_mask].iterrows():
-                         if idx.date() in transfer_days_dt:
-                             logging.warning(f"!!! TWR HEALING: Artifact detected and neutralized on {idx.date()} (Spike of {row['daily_return']*100:.1f}% coincided with a Transfer).")
-                             daily_df.at[idx, "daily_return"] = 0.0
+                    neutralized_count = 0
+                    neutralized_reasons = {}
+
+                    for idx, row in daily_df[extreme_spike_mask].iterrows():
+                        d = idx.date()
+                        ret_pct = row["daily_return"] * 100.0
+                        
+                        # Determine if spike is likely an artifact
+                        is_artifact = False
+                        reason = "Unknown"
+                        
+                        if d in transfer_days:
+                            is_artifact = True
+                            reason = "Transfer"
+                        elif d in split_days:
+                            is_artifact = True
+                            reason = "Stock Split"
+                        elif d in cleanup_days:
+                            is_artifact = True
+                            reason = "Ledger Adjustment/Cleanup"
+                        elif abs(row["daily_return"]) > 2.0: # > 200% move is almost certainly an error
+                            is_artifact = True
+                            reason = "Extreme Outlier (>200%)"
+                        
+                        if is_artifact:
+                            # NEUTRALIZE: Set to 0% (Neutral)
+                            logging.warning(f"!!! PERFORMANCE STABILIZATION: Neutralized {reason} artifact on {d} (Spike of {ret_pct:.1f}%).")
+                            daily_df.at[idx, "daily_return"] = 0.0
+                            neutralized_count += 1
+                            neutralized_reasons[reason] = neutralized_reasons.get(reason, 0) + 1
+                        else:
+                            # Log but DON'T neutralize if no clear artifact reason found and not extreme
+                            if abs(row["daily_return"]) > 0.5: # Only log >50% if not neutralized
+                                logging.warning(f"Found significant TWR spike of {ret_pct:.1f}% on {d}. Proceeding as it may be legitimate volatility.")
+                    
+                    if neutralized_count > 0:
+                        logging.warning("="*70)
+                        logging.warning("!!! PERFORMANCE STABILIZATION SUMMARY !!!")
+                        logging.warning(f"Successfully neutralized {neutralized_count} historical data artifacts.")
+                        for r, count in neutralized_reasons.items():
+                            logging.warning(f" - {r}: {count} corrections")
+                        logging.warning("="*70)
+
+
 
                 anomalies = daily_df[
                     (daily_df["value"] < 1.0) & 
@@ -6130,6 +6320,10 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
+    # --- CRITICAL FIX: Deduplicate split transactions to prevent double-multiplication ---
+    # This ensures both holdings and price unadjustment see the same consistent set of splits.
+    all_transactions_df_cleaned = _deduplicate_split_transactions(all_transactions_df_cleaned)
+    
     # -------------------------------
     start_time_hist = time.time()
     has_errors = False
@@ -6568,20 +6762,6 @@ def calculate_historical_performance(
                     
                     s_map[k] = v
 
-    # --- 4. Derive Unadjusted Prices ---
-    # logging.info("Deriving unadjusted prices using split data...")
-    historical_prices_yf_unadjusted = _unadjust_prices(
-        adjusted_prices_yf=historical_prices_yf_adjusted,
-        yf_to_internal_map=yf_to_internal_map_hist,
-        splits_by_internal_symbol=splits_by_internal_symbol,
-        processed_warnings=processed_warnings,
-    )
-    status_parts.append("Unadjusted prices derived")
-    if processed_warnings:
-        has_warnings = True  # If _unadjust_prices logged warnings
-
-    # --- Create String-to-ID Mappings (for Numba) ---
-
     # --- 5 & 6. Load or Calculate Daily Results ---
     # If it's None (e.g., data loaded from DB), the mtime check in daily results cache will be skipped or handled.
     
@@ -6601,7 +6781,7 @@ def calculate_historical_performance(
             transactions_df_effective=transactions_df_effective,
             start_date=start_date,  # FIX: Pass requested view start (2026), not loaded history start (2002)
             end_date=clamped_end_date,
-            historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+            historical_prices_yf_unadjusted=historical_prices_yf_adjusted,
             historical_prices_yf_adjusted=historical_prices_yf_adjusted,
             historical_fx_yf=historical_fx_yf,
             display_currency=display_currency,

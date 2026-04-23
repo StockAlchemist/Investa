@@ -212,103 +212,63 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
         # logging.debug("NPV Calculation Error: Invalid rate provided.")
         return np.nan
     if len(dates) != len(cash_flows):
-        logging.error("NPV Calculation Error: Dates and cash_flows lengths mismatch.")
-        raise ValueError(
-            "Dates and cash_flows must have the same length."
-        )  # Raise for IRR solver
-    if not dates:
-        return 0.0
+        return np.nan
     base = 1.0 + rate
-    if base <= 1e-9:
-        logging.debug(
-            f"NPV Calculation Warning: Base (1+rate) is <= 1e-9 ({base}). Returning NaN."
-        )
+    if base <= 1e-18:
+        # logging.debug(
+        #    f"NPV Calculation Warning: Base (1+rate) is <= 1e-18 ({base}). Returning NaN."
+        # )
         return np.nan  # Avoid issues with rate = -1 or less
 
     start_date = dates[0]
     npv = 0.0
     for i in range(len(cash_flows)):
         try:
-            if not isinstance(dates[i], date) or not isinstance(start_date, date):
-                logging.debug(f"NPV Calc Error: Invalid date type at index {i}.")
-                return np.nan
             time_delta_years = (dates[i] - start_date).days / 365.0
-            if not np.isfinite(time_delta_years) or (
-                time_delta_years < -1e-9 and i > 0
-            ):
-                logging.debug(
+            if time_delta_years < 0:
+                logging.warning(
                     f"NPV Calc Error: Invalid time delta ({time_delta_years}) at index {i}."
                 )
                 return np.nan
             if not np.isfinite(cash_flows[i]):
                 continue  # Skip non-finite flows silently
 
-            if abs(base) < 1e-9 and time_delta_years != 0:
-                logging.debug(
-                    "NPV Calc Warning: Base is near zero with non-zero time delta. Returning NaN."
-                )
-                return np.nan
-
             # Check for negative base with non-integer exponent
             if base < 0 and time_delta_years != int(time_delta_years):
-                logging.debug(
-                    f"NPV Calc Warning: Negative base ({base}) with non-integer exponent ({time_delta_years}). Returning NaN."
-                )
                 return np.nan
 
-            # Safe Exponentiation to avoid OverflowWarning
-            # We want to calculate denominator = base**time_delta_years
-            # Overflow occurs if denominator > 1.8e308 (approx). ln(1.8e308) ~= 709.7
-            if base <= 0:
-                 # Should be caught by base <= 1e-9 check above, but for safety
-                 denominator = np.nan
-            else:
-                try:
-                    # Check magnitude
-                    log_val = math.log(base) * time_delta_years
-                    if log_val > 709.0: # Exceeds max float
-                        denominator = np.inf
-                    elif log_val < -709.0: # Underflows to 0
-                        denominator = 0.0
-                    else:
-                        denominator = base**time_delta_years
-                except ValueError: # math.log domain error
-                     denominator = np.nan
-
-            if not np.isfinite(denominator) or denominator == 0.0:
-                if denominator == np.inf:
-                     # If denominator is infinite, the term (flow/denom) is 0.
-                     # We handle this below.
-                     pass 
+            # Safe Exponentiation
+            try:
+                # We want to calculate denominator = base**time_delta_years
+                # ln(1.8e308) ~= 709.7
+                log_val = math.log(base) * time_delta_years
+                if log_val > 700.0:
+                    denominator = np.inf
+                elif log_val < -700.0:
+                    denominator = 0.0
                 else:
-                    logging.debug(
-                        f"NPV Calc Warning: Invalid denominator ({denominator}) at index {i}. Returning NaN."
-                    )
-                    return np.nan
+                    denominator = base**time_delta_years
+            except (ValueError, OverflowError):
+                 denominator = np.nan
 
-            if np.isinf(denominator):
-                term_value = 0.0
-            else:
-                term_value = cash_flows[i] / denominator
-            if not np.isfinite(term_value):
-                logging.debug(
-                    f"NPV Calc Warning: Non-finite term value ({term_value}) at index {i}. Returning NaN."
-                )
-                return np.nan
-            npv += term_value
-        except OverflowError:
-            logging.warning(
-                f"NPV Calculation OverflowError at index {i} (Rate: {rate}, TimeDelta: {time_delta_years}). Returning NaN."
-            )
-            return np.nan
-        except TypeError as e:
-            logging.warning(
-                f"NPV Calculation TypeError at index {i}: {e}. Returning NaN."
-            )
-            return np.nan
+            if denominator == 0.0:
+                # If denominator is zero, term is +/- infinity (magnified at rate -> -1)
+                if cash_flows[i] > 0:
+                    npv += 1e150 
+                elif cash_flows[i] < 0:
+                    npv -= 1e150
+                continue
+                
+            if not np.isfinite(denominator) or np.isnan(denominator):
+                # If denominator is infinite (huge rate), term is effectively 0
+                # unless it's the first term (t=0)
+                if time_delta_years == 0:
+                    npv += cash_flows[i]
+                continue
+
+            npv += cash_flows[i] / denominator
         except Exception:
-            logging.exception(f"Unexpected error in NPV calculation loop at index {i}")
-            return np.nan  # Catch any other unexpected calculation errors
+            return np.nan
     return float(npv) if np.isfinite(npv) else np.nan
 
 
@@ -349,18 +309,23 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     ):
         logging.debug("DEBUG IRR: Fail - Non-finite cash flows")
         return np.nan
-    # Check dates are valid and sorted
-    try:
-        if not all(isinstance(d, date) for d in dates):
-            raise TypeError("Not all elements in dates are date objects")
-        for i in range(1, len(dates)):
-            if dates[i] < dates[i - 1]:
-                raise ValueError("Dates are not sorted")
-    except (TypeError, ValueError) as e:
-        logging.debug(f"DEBUG IRR: Fail - Date validation error: {e}")
+    # 2. Strip leading and trailing zeros
+    # Leading zeros change the start date, trailing zeros are just noise.
+    first_idx = 0
+    while first_idx < len(cash_flows) and abs(cash_flows[first_idx]) < 1e-9:
+        first_idx += 1
+    
+    last_idx = len(cash_flows) - 1
+    while last_idx > first_idx and abs(cash_flows[last_idx]) < 1e-9:
+        last_idx -= 1
+        
+    if last_idx - first_idx < 1:
         return np.nan
+        
+    dates = dates[first_idx : last_idx + 1]
+    cash_flows = cash_flows[first_idx : last_idx + 1]
 
-    # 2. Cash Flow Pattern Validation
+    # 3. Cash Flow Pattern Validation
     # A valid investment for IRR requires an initial outflow (negative) and at least one inflow (positive).
     first_non_zero_flow = None
     first_non_zero_idx = -1
@@ -421,52 +386,46 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         )
 
         irr_result = np.nan
-        # First, try the Newton-Raphson method. It's fast but can fail to converge.
+        # 1. Try Newton-Raphson with multiple initial guesses
         try:
-            irr_result = optimize.newton(
-                calculate_npv, x0=0.1, args=(dates, solver_flows), tol=1e-6, maxiter=100
-            )
-            if (
-                not np.isfinite(irr_result) or irr_result <= -1.0 or irr_result > 100.0
-            ):  # Check range
-                raise RuntimeError("Newton result out of reasonable range")
-            npv_check = calculate_npv(irr_result, dates, solver_flows)
-            if not np.isclose(
-                npv_check, 0.0, atol=1e-4
-            ):  # Check if it finds the root accurately
-                raise RuntimeError(
-                    f"Newton result did not produce zero NPV (NPV={npv_check:.4f})"
-                )
-        except (RuntimeError, OverflowError):
-            # If Newton fails, fall back to the more robust Brent's method (brentq).
-            # This method requires a bracket [a, b] where the NPV at a and b have opposite signs.
-            try:
-                # FIX: Increased upper bound from 50.0 to 100000.0 to handle high short-term returns.
-                # 20% in 9 days is > 5000% annualized, so 50.0 was too low.
-                lower_bound, upper_bound = -0.9999, 100000.0
-                npv_low = calculate_npv(lower_bound, dates, solver_flows)
-                npv_high = calculate_npv(upper_bound, dates, solver_flows)
-                logging.debug(
-                    f"DEBUG IRR: Newton failed. Brentq bounds NPV: Low={npv_low}, High={npv_high}"
-                )
-                if (
-                    pd.notna(npv_low) and pd.notna(npv_high) and npv_low * npv_high < 0
-                ):  # Check sign change
-                    irr_result = optimize.brentq(
-                        calculate_npv,
-                        a=lower_bound,
-                        b=upper_bound,
-                        args=(dates, solver_flows),
-                        xtol=1e-6,
-                        rtol=1e-6,
-                        maxiter=100,
+            for x0 in [0.1, 0.0, -0.2, 0.5, -0.5]:
+                try:
+                    res = optimize.newton(
+                        calculate_npv, x0=x0, args=(dates, solver_flows), tol=1e-6, maxiter=50
                     )
-                    if not np.isfinite(irr_result) or irr_result <= -1.0:
-                        irr_result = np.nan
-                else:
-                    irr_result = np.nan
-            except (ValueError, RuntimeError, OverflowError, Exception):
-                irr_result = np.nan
+                    if np.isfinite(res) and res > -1.0 and res < 1000.0:
+                        npv_check = calculate_npv(res, dates, solver_flows)
+                        if np.isclose(npv_check, 0.0, atol=1e-2):
+                            irr_result = res
+                            break
+                except:
+                    continue
+        except:
+            pass
+
+        # 2. If Newton fails, fallback to Brentq with expanding brackets
+        if np.isnan(irr_result):
+            for lb in [-0.9, -0.99, -0.999, -0.99999, -0.99999999]:
+                try:
+                    upper_bound = 100000.0
+                    npv_low = calculate_npv(lb, dates, solver_flows)
+                    npv_high = calculate_npv(upper_bound, dates, solver_flows)
+                    
+                    if pd.notna(npv_low) and pd.notna(npv_high) and npv_low * npv_high < 0:
+                        res = optimize.brentq(
+                            calculate_npv,
+                            a=lb,
+                            b=upper_bound,
+                            args=(dates, solver_flows),
+                            xtol=1e-6,
+                            rtol=1e-6,
+                            maxiter=100,
+                        )
+                        if np.isfinite(res) and res > -1.0:
+                            irr_result = res
+                            break
+                except:
+                    continue
 
     # 4. Final Validation and Return
     if not (
@@ -482,6 +441,12 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         else:
             flow_str = f"[{', '.join(readable_flows)}]"
             
+        # Suppress warning if it's a clear total loss case (buys followed by tiny value)
+        total_sum = sum(solver_flows)
+        if total_sum < 0 and solver_flows[-1] > 0 and abs(solver_flows[-1]) < abs(total_sum) * 0.20:
+             # This is a >80% loss. Returning -1.0 or nan is fine, but we don't need a loud warning.
+             return np.nan
+             
         logging.warning(f"IRR Calculation Failed. Flows used: {flow_str}")
         return np.nan
         
@@ -539,18 +504,25 @@ def get_cash_flows_for_symbol_account(
             (transactions_df["Symbol"] == symbol)
         ]
     elif "To Account" in transactions_df.columns:
+        account_mask = (
+            (transactions_df["Account"] == account)
+            | (transactions_df["To Account"] == account)
+        )
+        # --- ADDED: Check Note for account name (handles legacy transfers where Account col is misaligned) ---
+        if "Note" in transactions_df.columns:
+             account_mask |= (transactions_df["Note"].str.contains(account, case=False, na=False) & (transactions_df["Type"].str.lower() == "transfer"))
+        
         symbol_account_tx_filtered = transactions_df[
-            (transactions_df["Symbol"] == symbol)
-            & (
-                (transactions_df["Account"] == account)
-                | (transactions_df["To Account"] == account)
-            )
+            (transactions_df["Symbol"] == symbol) & account_mask
         ]
     else:
         # If 'To Account' is missing, fallback to filtering only by 'Account'
+        account_mask = (transactions_df["Account"] == account)
+        if "Note" in transactions_df.columns:
+             account_mask |= (transactions_df["Note"].str.contains(account, case=False, na=False) & (transactions_df["Type"].str.lower() == "transfer"))
+             
         symbol_account_tx_filtered = transactions_df[
-            (transactions_df["Symbol"] == symbol)
-            & (transactions_df["Account"] == account)
+            (transactions_df["Symbol"] == symbol) & account_mask
         ]
     # --- END MODIFIED ---
     if symbol_account_tx_filtered.empty:
@@ -561,6 +533,7 @@ def get_cash_flows_for_symbol_account(
         by=["Date", "original_index"], inplace=True, ascending=True
     )
 
+    last_seen_price = None
     for _, row in symbol_account_tx.iterrows():
         tx_type = str(row.get("Type", "")).lower().strip()
         qty_val = row.get("Quantity")
@@ -574,6 +547,11 @@ def get_cash_flows_for_symbol_account(
             0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
         )
         total_amount_local = pd.to_numeric(total_amount_val, errors="coerce")
+        
+        if pd.notna(price_local) and price_local > 1e-9:
+             last_seen_price = price_local
+        elif pd.notna(total_amount_local) and pd.notna(qty) and abs(qty) > 1e-9:
+             last_seen_price = abs(total_amount_local / qty)
         tx_date = row["Date"].date()
         cash_flow_local = 0.0
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
@@ -589,13 +567,37 @@ def get_cash_flows_for_symbol_account(
             # and an outgoing transfer is like a "sell" (inflow of cash as asset is disposed).
             # We determine if it's incoming or outgoing based on the 'To Account' column.
             to_account = str(row.get("To Account", "")).strip()
-            flow = qty * price_local  # Value of the asset being moved
-            if to_account == account:
+            
+            # Fallback for missing price in transfers
+            price_to_use = price_local
+            if (pd.isna(price_to_use) or price_to_use <= 1e-9) and last_seen_price is not None:
+                price_to_use = last_seen_price
+            
+            flow = qty * price_to_use if pd.notna(price_to_use) else 0.0
+            
+            # Determine direction if Account matches but To Account doesn't, or vice-versa, or Note matches
+            acct_col = str(row.get("Account", "")).strip()
+            note = str(row.get("Note", "")).lower()
+            
+            # Refined direction detection
+            is_from_note = (f"from {account.lower()}" in note)
+            is_to_note = (f"to {account.lower()}" in note)
+            
+            is_incoming = (to_account == account) or is_to_note
+            is_outgoing = (acct_col == account) or is_from_note
+            
+            if is_incoming and not is_outgoing:
                 # This is a transfer IN to the specified account. Treat as a cash outflow (like a buy).
                 cash_flow_local = -flow
-            else:
+            elif is_outgoing and not is_incoming:
                 # This is a transfer OUT of the specified account. Treat as a cash inflow (like a sell).
                 cash_flow_local = flow
+            else:
+                # Ambiguous or both columns match (internal). Fallback to To Account check.
+                if to_account == account:
+                    cash_flow_local = -flow
+                else:
+                    cash_flow_local = flow
         elif tx_type == "short sell" and symbol in SHORTABLE_SYMBOLS:
             if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
                 cash_flow_local = (qty_abs * price_local) - commission_local
