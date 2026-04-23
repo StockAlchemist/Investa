@@ -441,11 +441,6 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         else:
             flow_str = f"[{', '.join(readable_flows)}]"
             
-        # Suppress warning if it's a clear total loss case (buys followed by tiny value)
-        total_sum = sum(solver_flows)
-        if total_sum < 0 and solver_flows[-1] > 0 and abs(solver_flows[-1]) < abs(total_sum) * 0.20:
-             # This is a >80% loss. Returning -1.0 or nan is fine, but we don't need a loud warning.
-             return np.nan
              
         logging.warning(f"IRR Calculation Failed. Flows used: {flow_str}")
         return np.nan
@@ -1277,6 +1272,8 @@ def map_to_yf_symbol(
         "RDS.A": "RDS-A",
         "RDS.B": "RDS-B",
     }
+
+
     
     if normalized_symbol in normalized_map:
         mapped_symbol = normalized_map[normalized_symbol]
