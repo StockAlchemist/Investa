@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 
 import type { Dividend } from '../lib/api';
-import { formatCurrency, formatCompactNumber } from '../lib/utils';
+import { formatCurrency, formatCompactNumber, cn } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
 import StockDetailModal from './StockDetailModal';
@@ -72,6 +72,7 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
 
     // --- Calculations ---
     const totalDividends = data.reduce((sum, item) => sum + (item['DividendAmountDisplayCurrency'] || 0), 0);
+    const totalTaxes = data.reduce((sum, item) => sum + (item['TaxAmountDisplayCurrency'] || 0), 0);
 
     const requestSort = (key: keyof Dividend) => {
         let direction: 'ascending' | 'descending' = 'ascending';
@@ -125,6 +126,15 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                         icon={Percent}
                     />
                 )}
+
+                <MetricCard
+                    title="Total Tax Paid"
+                    value={totalTaxes}
+                    currency={currency}
+                    colorClass="text-red-600 dark:text-red-400"
+                    icon={CircleDollarSign}
+                    accentColor="red-500"
+                />
             </div>
 
             {/* Injected Content (e.g. Dividend Calendar) */}
@@ -193,13 +203,23 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                     <table className="min-w-full">
                         <thead className="bg-muted/30 dark:bg-white/[0.03] backdrop-blur-md sticky top-0 z-10 font-semibold">
                             <tr>
-                                {['Date', 'Symbol', 'Account', 'DividendAmountDisplayCurrency'].map((header) => (
+                                {['Date', 'Symbol', 'Account', 'Gross', 'Tax', 'Net'].map((header) => (
                                     <th
                                         key={header}
-                                        onClick={() => requestSort(header as keyof Dividend)}
-                                        className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground cursor-pointer hover:bg-accent/10 transition-colors"
+                                        onClick={() => {
+                                            const keyMap: Record<string, keyof Dividend> = {
+                                                'Gross': 'DividendAmountDisplayCurrency',
+                                                'Tax': 'TaxAmountDisplayCurrency',
+                                                'Net': 'DividendAmountDisplayCurrency' // Will need special handling or just default
+                                            };
+                                            requestSort(keyMap[header] || header as keyof Dividend);
+                                        }}
+                                        className={cn(
+                                            "px-6 py-3 text-left text-xs font-semibold text-muted-foreground cursor-pointer hover:bg-accent/10 transition-colors",
+                                            (header === 'Gross' || header === 'Tax' || header === 'Net') && "text-right"
+                                        )}
                                     >
-                                        {header === 'DividendAmountDisplayCurrency' ? 'Amount' : header}
+                                        {header}
                                     </th>
                                 ))}
                             </tr>
@@ -225,8 +245,14 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                                             </div>
                                         </td>
                                         <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
-                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-emerald-500 tabular-nums">
                                             {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
+                                        </td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-red-500/80 tabular-nums">
+                                            {item['TaxAmountDisplayCurrency'] ? formatCurrency(item['TaxAmountDisplayCurrency'], currency) : '-'}
+                                        </td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-foreground font-medium tabular-nums">
+                                            {formatCurrency((item['DividendAmountDisplayCurrency'] || 0) - (item['TaxAmountDisplayCurrency'] || 0), currency)}
                                         </td>
                                     </tr>
                                 ))
@@ -253,6 +279,14 @@ export default function Dividend({ data, currency, expectedDividends, dividendYi
                                 <div className="text-right">
                                     <div className="text-lg font-bold text-emerald-500">
                                         {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
+                                    </div>
+                                    {item['TaxAmountDisplayCurrency'] ? (
+                                        <div className="text-[10px] text-red-500/70">
+                                            Tax: {formatCurrency(item['TaxAmountDisplayCurrency'], currency)}
+                                        </div>
+                                    ) : null}
+                                    <div className="text-xs font-medium text-foreground">
+                                        Net: {formatCurrency((item['DividendAmountDisplayCurrency'] || 0) - (item['TaxAmountDisplayCurrency'] || 0), currency)}
                                     </div>
                                 </div>
                             </div>

@@ -74,16 +74,9 @@ export default function Dashboard({
     const m = summary?.metrics;
     const am = summary?.account_metrics;
 
-    if (!m && !isLoading) {
-        return (
-            <div className="flex items-center justify-center p-12">
-                <div className="animate-pulse flex flex-col items-center">
-                    <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded mb-4"></div>
-                    <div className="h-8 w-48 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                </div>
-            </div>
-        );
-    }
+    // We no longer return early here to ensure the dashboard layout (placement boxes) 
+    // stays visible even while loading or if data is temporarily missing.
+    // MetricCard handles its own loading/null states.
 
     // Prepare data helpers
 
@@ -352,6 +345,18 @@ export default function Dashboard({
                 return <MetricCard
                     title="Fees"
                     value={m?.commissions ?? 0}
+                    colorClass="text-red-600 dark:text-red-500"
+                    currency={currency}
+                    isLoading={isLoading}
+                    isRefreshing={isRefreshing}
+                    icon={Receipt}
+                    accentColor={themeColor}
+                    variant={variant}
+                />;
+            case 'taxes':
+                return <MetricCard
+                    title="Total Taxes"
+                    value={m?.total_taxes ?? 0}
                     colorClass="text-red-600 dark:text-red-500"
                     currency={currency}
                     isLoading={isLoading}

@@ -1,0 +1,60 @@
+CRITICAL:root:CRITICAL WARNING: `calculate_historical_performance` called with `use_daily_results_cache=True` but NO `original_csv_file_path`. Disabling cache to prevent stale data.
+WARNING:root:map_to_yf_symbol: Skipping symbol with invalid characters: ES-FIXED_INCOME
+WARNING:root:map_to_yf_symbol: Skipping symbol with invalid characters: SCBRMS&P500
+WARNING:root:Hist Prices: 15 symbols missing from DB after sync: ['DSV', 'EMV', 'ES-GQG', 'ES-JUMBO25', 'ES-SET50', 'ES-TRESURY', 'IDIOX', 'IDLOX', 'SCBCHA-SSF', 'SCBRCTECH', 'SCBRM1', 'SCBRMS50', 'SCBSFF', 'UOBBC', 'UOBCG']
+WARNING:root:History: Some symbols failed to fetch, but proceeding with available data.
+WARNING:root:TWR: Ignoring 1 days where capital at risk was too small (<$0.10) to calculate a valid return.
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2003-11-11 (Spike of -13.0%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2003-12-02 (Spike of -29.1%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2004-01-13 (Spike of -10.4%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2005-01-04 (Spike of -12.5%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2005-07-05 (Spike of -11.0%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2006-02-07 (Spike of -11.9%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2006-02-24 (Spike of 14.2%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2006-07-12 (Spike of 23.4%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike artifact on 2006-12-19 (Spike of -37.8%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2007-01-10 (Spike of 13.5%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2007-06-19 (Spike of 11.6%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2007-07-24 (Spike of 14.6%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2007-11-15 (Spike of 25.6%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2013-05-30 (Spike of -16.9%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2014-04-28 (Spike of 11.6%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2014-06-07 (Spike of -17.8%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike (>10%) artifact on 2014-06-08 (Spike of -21.6%).
+WARNING:root:!!! PERFORMANCE STABILIZATION: Neutralized Proximity Spike artifact on 2014-06-09 (Spike of 57.2%).
+WARNING:root:======================================================================
+WARNING:root:!!! PERFORMANCE STABILIZATION SUMMARY !!!
+WARNING:root:Successfully neutralized 18 historical data artifacts.
+WARNING:root: - Proximity Spike (>10%): 16 corrections
+WARNING:root: - Proximity Spike: 2 corrections
+WARNING:root:======================================================================
+
+--- Daily Portfolio Metrics ---
+                     Portfolio Value  Absolute ROI (%)  Cumulative Net Flow
+2016-12-20 21:00:00    367094.276372        499.032483         61281.197030
+2016-12-21 21:00:00    366942.387254        498.784627         61281.197030
+2016-12-22 21:00:00    364640.741223        495.028751         61281.197030
+2016-12-23 21:00:00    365680.051761        496.724721         61281.197030
+2016-12-24 21:00:00    365954.345771        497.172320         61281.197030
+2016-12-25 21:00:00    366228.601032        497.619855         61281.197030
+2016-12-26 21:00:00    366502.817521        498.067328         61281.197030
+2016-12-27 21:00:00    367144.845419        499.115003         61281.197030
+2016-12-28 21:00:00    365164.870106        495.236205         61347.892972
+2016-12-29 21:00:00    364427.579625        494.034386         61347.892972
+2016-12-30 21:00:00    338762.145647        452.198501         61347.892972
+2016-12-31 21:00:00    285903.582530        366.036515         61347.892972
+2017-01-01 21:00:00    286384.974789        366.821208         61347.892972
+2017-01-02 21:00:00    286866.597654        367.606276         61347.892972
+2017-01-03 21:00:00    287258.145372        368.244517         61347.892972
+2017-01-04 21:00:00    288060.812842        369.552904         61347.892972
+2017-01-05 21:00:00    294426.003877        379.928470         61347.892972
+2017-01-06 21:00:00    297582.049335        385.072975         61347.892972
+2017-01-07 21:00:00    297787.131368        385.407268         61347.892972
+2017-01-08 21:00:00    297992.327546        385.741748         61347.892972
+2017-01-09 21:00:00    298197.637722        386.076413         61347.892972
+2017-01-10 21:00:00    299244.436140        387.782745         61347.892972
+2017-01-11 21:00:00    300878.443711        390.446255         61347.892972
+2017-01-12 21:00:00    299832.757460        388.741737         61347.892972
+2017-01-13 21:00:00    299734.079028        388.580886         61347.892972
+2017-01-14 21:00:00    299734.079028        388.580886         61347.892972
+2017-01-15 21:00:00    299734.079028        388.580886         61347.892972

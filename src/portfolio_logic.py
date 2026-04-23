@@ -760,7 +760,7 @@ def calculate_portfolio_summary(
     # --- END ADDED ---
 
     # --- 3. Process Stock/ETF Transactions ---
-    holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, transfer_costs, warn_proc = (
+    holdings, _, _, _, taxes_local, ignored_indices_proc, ignored_reasons_proc, transfer_costs, warn_proc = (
         _process_transactions_to_holdings(
             transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
             default_currency=default_currency,
@@ -1615,6 +1615,15 @@ def calculate_portfolio_summary(
     
     # Store full FX rates list for downstream conversions (e.g. projected income)
     overall_summary_metrics["_fx_rates_vs_usd"] = current_fx_rates_vs_usd
+
+    # --- 11. Aggregate Taxes ---
+    total_taxes_display = 0.0
+    if taxes_local:
+        for curr, amt in taxes_local.items():
+            rate = get_conversion_rate(curr, display_currency, current_fx_rates_vs_usd)
+            if pd.notna(rate):
+                total_taxes_display += amt * rate
+    overall_summary_metrics["total_taxes"] = total_taxes_display
 
     # --- 9. Determine Final Status ---
     end_time_summary = time.time()
@@ -3977,7 +3986,7 @@ def _prepare_historical_inputs(
     end_date: date,
     benchmark_symbols_yf: List[str],
     display_currency: str,
-    current_hist_version: str = "v20",
+    current_hist_version: str = "v23",
     raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX,
     # preloaded_transactions_df: Optional[pd.DataFrame] = None, # Already added above
@@ -5585,66 +5594,107 @@ def _load_or_calculate_daily_results(
                 # (Transfers, Splits, Cleanup).
                 
                 spike_threshold = 0.3  # 30% is a significant daily move for a diversified portfolio
-                extreme_spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
+                extreme_spike_mask = (daily_df["daily_return"].abs() > spike_threshold)
                 
-                if extreme_spike_mask.any():
-                    # 1. Gather context for spikes
-                    transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].dt.date.unique()
-                    
-                    # Also consider cleanup transactions as neutralization events
-                    cleanup_keywords = ["cleanup", "dust", "ghost", "artifact", "adjustment", "correction", "auto-generated"]
-                    note_col = "Note" if "Note" in transactions_df_effective.columns else None
-                    cleanup_days = set()
-                    if note_col:
-                        c_mask = transactions_df_effective[note_col].fillna("").str.lower().apply(
-                            lambda x: any(kw in x for kw in cleanup_keywords)
-                        )
-                        cleanup_days = set(transactions_df_effective[c_mask]["Date"].dt.date.unique())
-                    
-                    split_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip().isin(["split", "stock split"])]["Date"].dt.date.unique()
+                # --- NEW: Context-Aware Artifact Detection ---
+                # 1. Gather context for spikes
+                transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].dt.date.unique()
+                
+                # Also consider cleanup transactions as neutralization events
+                cleanup_keywords = ["cleanup", "dust", "ghost", "artifact", "adjustment", "correction", "auto-generated", "fix"]
+                note_col = "Note" if "Note" in transactions_df_effective.columns else None
+                cleanup_days = set()
+                if note_col:
+                    c_mask = transactions_df_effective[note_col].fillna("").str.lower().apply(
+                        lambda x: any(kw in x for kw in cleanup_keywords)
+                    )
+                    cleanup_days = set(transactions_df_effective[c_mask]["Date"].dt.date.unique())
+                
+                split_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip().isin(["split", "stock split"])]["Date"].dt.date.unique()
 
-                    neutralized_count = 0
-                    neutralized_reasons = {}
+                # Expand context to +/- 2 days around events
+                event_proximity_days = set()
+                for d_set in [transfer_days, split_days, list(cleanup_days)]:
+                    for d in d_set:
+                        for offset in range(-2, 3):
+                            event_proximity_days.add(d + timedelta(days=offset))
 
-                    for idx, row in daily_df[extreme_spike_mask].iterrows():
-                        d = idx.date()
-                        ret_pct = row["daily_return"] * 100.0
-                        
-                        # Determine if spike is likely an artifact
-                        is_artifact = False
-                        reason = "Unknown"
-                        
-                        if d in transfer_days:
-                            is_artifact = True
-                            reason = "Transfer"
-                        elif d in split_days:
-                            is_artifact = True
-                            reason = "Stock Split"
-                        elif d in cleanup_days:
-                            is_artifact = True
-                            reason = "Ledger Adjustment/Cleanup"
-                        elif abs(row["daily_return"]) > 2.0: # > 200% move is almost certainly an error
-                            is_artifact = True
-                            reason = "Extreme Outlier (>200%)"
-                        
-                        if is_artifact:
-                            # NEUTRALIZE: Set to 0% (Neutral)
-                            logging.warning(f"!!! PERFORMANCE STABILIZATION: Neutralized {reason} artifact on {d} (Spike of {ret_pct:.1f}%).")
-                            daily_df.at[idx, "daily_return"] = 0.0
-                            neutralized_count += 1
-                            neutralized_reasons[reason] = neutralized_reasons.get(reason, 0) + 1
-                        else:
-                            # Log but DON'T neutralize if no clear artifact reason found and not extreme
-                            if abs(row["daily_return"]) > 0.5: # Only log >50% if not neutralized
-                                logging.warning(f"Found significant TWR spike of {ret_pct:.1f}% on {d}. Proceeding as it may be legitimate volatility.")
+                neutralized_count = 0
+                neutralized_reasons = {}
+                
+                # We iterate through all days with a significant return (> 10%)
+                potential_spike_mask = (daily_df["daily_return"].abs() > 0.1)
+                
+                # We keep track of which days we've already neutralized to avoid double-processing in V-check
+                already_processed = set()
+
+                for idx, row in daily_df[potential_spike_mask].iterrows():
+                    if idx in already_processed: continue
                     
-                    if neutralized_count > 0:
-                        logging.warning("="*70)
-                        logging.warning("!!! PERFORMANCE STABILIZATION SUMMARY !!!")
-                        logging.warning(f"Successfully neutralized {neutralized_count} historical data artifacts.")
-                        for r, count in neutralized_reasons.items():
-                            logging.warning(f" - {r}: {count} corrections")
-                        logging.warning("="*70)
+                    d = idx.date()
+                    ret_pct = row["daily_return"] * 100.0
+                    
+                    # 1. Determine if this day is near an event
+                    is_near_event = d in event_proximity_days
+                    
+                    is_artifact = False
+                    reason = "Unknown"
+                    
+                    # A. Extreme spike (>30%) near an event
+                    if abs(row["daily_return"]) > 0.3 and is_near_event:
+                        is_artifact = True
+                        reason = "Proximity Spike"
+                    # B. Moderate spike (>10%) on the EXACT day of an event
+                    elif abs(row["daily_return"]) > 0.1 and is_near_event:
+                        is_artifact = True
+                        reason = "Proximity Spike (>10%)"
+                    # C. Extreme Outlier (>200%)
+                    elif abs(row["daily_return"]) > 2.0:
+                        is_artifact = True
+                        reason = "Extreme Outlier (>200%)"
+                    
+                    # D. V-Shape / A-Shape Check (Look ahead 1-2 days)
+                    if not is_artifact:
+                        try:
+                            current_pos = daily_df.index.get_loc(idx)
+                            for lookahead in range(1, 5):
+                                if current_pos + lookahead >= len(daily_df): break
+                                next_idx = daily_df.index[current_pos + lookahead]
+                                next_ret = daily_df.iloc[current_pos + lookahead]["daily_return"]
+                                
+                                # If next day is a significant move in OPPOSITE direction
+                                if abs(next_ret) > 0.1 and np.sign(next_ret) != np.sign(row["daily_return"]):
+                                    # And net move is small
+                                    net_ret = (1 + row["daily_return"]) * (1 + next_ret) - 1
+                                    if abs(net_ret) < 0.05: # Net move < 5%
+                                        # If this pair is near an event, it's definitely an artifact
+                                        if is_near_event or next_idx.date() in event_proximity_days:
+                                            is_artifact = True
+                                            reason = "V-Shape Artifact"
+                                            # Also neutralize the other day in the pair
+                                            logging.warning(f"!!! PERFORMANCE STABILIZATION: Neutralized {reason} second leg on {next_idx.date()} ({next_ret*100:.1f}%)")
+                                            daily_df.at[next_idx, "daily_return"] = 0.0
+                                            already_processed.add(next_idx)
+                                            neutralized_count += 1
+                                            break
+                        except: pass # index.get_loc might fail on duplicates, though index should be unique
+
+                    if is_artifact:
+                        # NEUTRALIZE: Set to 0% (Neutral)
+                        logging.warning(f"!!! PERFORMANCE STABILIZATION: Neutralized {reason} artifact on {d} (Spike of {ret_pct:.1f}%).")
+                        daily_df.at[idx, "daily_return"] = 0.0
+                        already_processed.add(idx)
+                        neutralized_count += 1
+                        neutralized_reasons[reason] = neutralized_reasons.get(reason, 0) + 1
+                    
+                if neutralized_count > 0:
+                    logging.warning("="*70)
+                    logging.warning("!!! PERFORMANCE STABILIZATION SUMMARY !!!")
+                    logging.warning(f"Successfully neutralized {neutralized_count} historical data artifacts.")
+                    for r, count in neutralized_reasons.items():
+                        logging.warning(f" - {r}: {count} corrections")
+                    logging.warning("="*70)
+
 
 
 

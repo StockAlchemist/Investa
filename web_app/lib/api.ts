@@ -455,6 +455,8 @@ export interface Dividend {
     DividendAmountLocal: number;
     FXRateUsed: number;
     DividendAmountDisplayCurrency: number;
+    TaxAmountLocal?: number;
+    TaxAmountDisplayCurrency?: number;
     [key: string]: unknown;
 }
 

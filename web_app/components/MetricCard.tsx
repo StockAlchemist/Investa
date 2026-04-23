@@ -154,8 +154,11 @@ export function MetricCard({
                 <div className="flex items-start justify-between mb-3 relative z-10">
                     <p className="section-label pr-2 leading-tight">{title}</p>
                     <div className="flex items-center gap-1.5 shrink-0">
-                        {isRefreshing && !isLoading && (
-                            <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />
+                        {isRefreshing && (
+                            <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 hidden sm:inline">Refreshing</span>
+                                <Loader2 className="w-4 h-4 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
+                            </div>
                         )}
                         {Icon && (
                             <div className={cn(
@@ -243,8 +246,11 @@ export function MetricCard({
             <div className="flex items-start justify-between mb-4 relative z-10">
                 <div className="flex items-center gap-1.5">
                     <p className="section-label">{title}</p>
-                    {isRefreshing && !isLoading && (
-                        <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />
+                    {isRefreshing && (
+                        <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
+                            <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 hidden sm:inline">Refreshing</span>
+                            <Loader2 className="w-4 h-4 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
+                        </div>
                     )}
                 </div>
                 {Icon && (

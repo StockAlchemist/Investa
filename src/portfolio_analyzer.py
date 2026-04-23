@@ -555,7 +555,7 @@ def _process_transactions_to_holdings(
         splits_df.sort_values(by=['Date', 'Symbol', '__split_priority'], inplace=True)
         
         # Drop duplicates based on Symbol and Year-Month
-        deduped_splits = splits_df.drop_duplicates(subset=['__split_ym', 'Symbol'], keep='first').drop(columns=['__split_priority', '__split_ym'])
+        deduped_splits = splits_df.drop_duplicates(subset=['__split_ym', 'Symbol', 'Split Ratio'], keep='first').drop(columns=['__split_priority', '__split_ym'])
         
         # Recombine and sort by date/index to maintain chronology
         # Force a copy and consolidation to avoid internal pandas BlockManager AssertionErrors
@@ -578,7 +578,7 @@ def _process_transactions_to_holdings(
         'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER,
         'tax': TYPE_TAX, 'withholding tax': TYPE_TAX
     }
-    type_ids = df['Type'].map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
+    type_ids = df['Type'].str.lower().str.strip().map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
     
     qtys = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0.0).astype(np.float64).values
     
@@ -586,10 +586,11 @@ def _process_transactions_to_holdings(
     raw_totals = pd.to_numeric(df['Total Amount'], errors='coerce').fillna(0.0).astype(np.float64).values
     
     is_div = (type_ids == TYPE_DIVIDEND)
-    mask_div_total = is_div & (np.abs(raw_totals) > 1e-9)
-    raw_prices[mask_div_total] = raw_totals[mask_div_total]
+    is_tax = (type_ids == TYPE_TAX)
+    mask_total_price = (is_div | is_tax) & (np.abs(raw_totals) > 1e-9)
+    raw_prices[mask_total_price] = raw_totals[mask_total_price]
     
-    mask_div_calc = is_div & (~mask_div_total)
+    mask_div_calc = is_div & (~mask_total_price)
     raw_prices[mask_div_calc] = raw_prices[mask_div_calc] * np.abs(qtys[mask_div_calc])
     
     prices = raw_prices
@@ -685,6 +686,7 @@ def _process_transactions_to_holdings(
     overall_realized_gains_local = defaultdict(float)
     overall_dividends_local = defaultdict(float)
     overall_commissions_local = defaultdict(float)
+    overall_taxes_local = defaultdict(float)
     
     # Unpack 3D Array
     # Iterate only over initialized entries
@@ -725,6 +727,7 @@ def _process_transactions_to_holdings(
         overall_realized_gains_local[curr] += val[2]
         overall_dividends_local[curr] += val[3]
         overall_commissions_local[curr] += val[4]
+        overall_taxes_local[curr] += val[13]
         
     transfer_costs = {}
     orig_indices = df['original_index'].values
@@ -740,6 +743,7 @@ def _process_transactions_to_holdings(
         dict(overall_realized_gains_local), 
         dict(overall_dividends_local), 
         dict(overall_commissions_local), 
+        dict(overall_taxes_local),
         set(), {}, 
         transfer_costs, 
         False 
@@ -1392,6 +1396,7 @@ def _build_summary_rows(
                 f"Est. Ann. Income ({display_currency})": est_annual_income_display,
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
+                f"Tax ({display_currency})": (data.get("taxes_local", 0.0) * fx_rate) if pd.notna(fx_rate) else 0.0,
                 "Name": stock_data.get("name", ""),  # Add Company Name
                 "sparkline_7d": stock_data.get("sparkline_7d", []),
                 "exchange": stock_data.get("exchange"),
@@ -1732,6 +1737,7 @@ def _calculate_aggregate_metrics(
             "total_buy_cost_display": 0.0,
             "total_day_change_display": 0.0,
             "total_day_change_percent": np.nan,
+            "total_taxes_display": 0.0,
         }
     )
     overall_summary_metrics = {}
@@ -1758,6 +1764,7 @@ def _calculate_aggregate_metrics(
             "display_currency": display_currency,
             "cumulative_investment": 0.0,
             "total_return_pct": np.nan,
+            "total_taxes": 0.0,
             "est_annual_income_display": 0.0,  # ADDED: Ensure key exists
         }
         return (overall_summary_metrics, dict(account_level_metrics), has_errors, True)
@@ -1794,6 +1801,7 @@ def _calculate_aggregate_metrics(
                 f"Total Buy Cost ({display_currency})",
                 f"Day Change ({display_currency})",
                 f"FX Gain/Loss ({display_currency})",  # Add FX G/L for aggregation
+                f"Tax ({display_currency})",
             ]
             for col in cols_to_sum_display:
                 if col not in account_full_df.columns:
@@ -1840,6 +1848,10 @@ def _calculate_aggregate_metrics(
             # FIX: EXCLUDE FX Gain/Loss from Total Gain (Intrinsic)
             metrics_entry["total_gain_display"] = safe_sum(
                 account_full_df, f"Total Gain ({display_currency})"
+            )
+            
+            metrics_entry["total_taxes_display"] = safe_sum(
+                account_full_df, f"Tax ({display_currency})"
             )
             
             # Sum market value of rows identified as Cash
@@ -1977,6 +1989,7 @@ def _calculate_aggregate_metrics(
         cum_invest_col,
         day_change_col,
         fx_gain_loss_col,
+        f"Tax ({display_currency})",
     ]
     for col in cols_to_check:
         if col not in df_for_overall_summary.columns:
@@ -2010,6 +2023,10 @@ def _calculate_aggregate_metrics(
     
     # FIX: EXCLUDE FX Gain/Loss from Overall Total Gain (Intrinsic)
     overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col)
+    
+    overall_total_taxes_display = safe_sum(
+        df_for_overall_summary, f"Tax ({display_currency})"
+    )
     
     overall_total_cost_invested_display = safe_sum(
         df_for_overall_summary, cost_invest_col
@@ -2225,6 +2242,7 @@ def _calculate_aggregate_metrics(
         "est_annual_income_display": overall_est_annual_income_display,  # ADDED
         "dividend_yield_pct": overall_dividend_yield_pct,  # ADDED
         "cash_balance": overall_cash_balance_display,  # ADDED
+        "total_taxes": overall_total_taxes_display, # ADDED
     }
     logging.debug(
         f"--- Finished Aggregating Metrics. Overall Market Value: {overall_market_value_display} ---"
@@ -2516,11 +2534,14 @@ def extract_dividend_history(
         logging.warning("Dividend history: Input transactions DataFrame is empty.")
         return pd.DataFrame()
 
-    dividend_transactions = all_transactions_df[
-        (all_transactions_df["Type"].str.lower() == "dividend") |
-        ((all_transactions_df["Type"].str.lower() == "interest") & 
-         (all_transactions_df["Symbol"].str.upper() == "$CASH"))
-    ].copy()
+    # Capture both dividends and taxes
+    dividend_mask = (all_transactions_df["Type"].str.lower() == "dividend") | \
+                    ((all_transactions_df["Type"].str.lower() == "interest") & 
+                     (all_transactions_df["Symbol"].str.upper() == "$CASH"))
+    tax_mask = (all_transactions_df["Type"].str.lower().isin(["tax", "withholding tax"]))
+    
+    dividend_transactions = all_transactions_df[dividend_mask].copy()
+    tax_transactions = all_transactions_df[tax_mask].copy()
 
     # ADDED LOG: Log initial dividend transactions before account filtering
     logging.debug(
@@ -2534,32 +2555,13 @@ def extract_dividend_history(
     # Filter by include_accounts if specified
     if include_accounts is not None and isinstance(include_accounts, list):
         if "Account" in dividend_transactions.columns:
-            logging.debug(
-                f"  Filtering dividend transactions for accounts: {include_accounts}"
-            )
             dividend_transactions = dividend_transactions[
                 dividend_transactions["Account"].isin(include_accounts)
             ].copy()
-            logging.debug(
-                f"  Dividend transactions after account filter: {len(dividend_transactions)} rows."
-            )
-            if not dividend_transactions.empty:
-                logging.debug(
-                    f"    Accounts in filtered dividend transactions: {dividend_transactions['Account'].unique()}"
-                )
-            elif (
-                len(
-                    all_transactions_df[
-                        (all_transactions_df["Type"].str.lower() == "dividend") |
-                        ((all_transactions_df["Type"].str.lower() == "interest") & 
-                         (all_transactions_df["Symbol"].str.upper() == "$CASH"))
-                    ]
-                )
-                > 0
-            ):  # If initial had dividends but filter resulted in none
-                logging.warning(
-                    f"    No dividend transactions found for accounts {include_accounts} after filtering. Initial count was {len(all_transactions_df[all_transactions_df['Type'].str.lower() == 'dividend'])}."
-                )
+        if not tax_transactions.empty and "Account" in tax_transactions.columns:
+            tax_transactions = tax_transactions[
+                tax_transactions["Account"].isin(include_accounts)
+            ].copy()
 
     logging.debug(f"  Found {len(dividend_transactions)} dividend transactions.")
 
@@ -2574,8 +2576,25 @@ def extract_dividend_history(
                 "DividendAmountLocal",
                 "FXRateUsed",
                 "DividendAmountDisplayCurrency",
+                "TaxAmountLocal",
+                "TaxAmountDisplayCurrency",
             ]
         )  # Return empty DF with schema
+
+    # Index tax transactions for fast lookup by (Date, Symbol, Account)
+    tax_lookup = defaultdict(float)
+    for _, tx in tax_transactions.iterrows():
+        try:
+            d = tx["Date"].date()
+            s = tx["Symbol"]
+            a = tx["Account"]
+            amt = abs(pd.to_numeric(tx.get("Total Amount"), errors="coerce"))
+            if pd.isna(amt) or amt <= 1e-9:
+                amt = abs(pd.to_numeric(tx.get("Price/Share"), errors="coerce"))
+            if pd.notna(amt):
+                tax_lookup[(d, s, a)] += amt
+        except:
+            continue
 
     results = []
     for i, (_, row) in enumerate(
@@ -2607,12 +2626,20 @@ def extract_dividend_history(
             if pd.notna(commission_local):
                 dividend_local -= commission_local  # Subtract commission if present
 
+            # Lookup tax for this dividend
+            tax_local = tax_lookup.get((tx_date, symbol, account), 0.0)
+
             fx_rate = get_historical_rate_via_usd_bridge(
                 local_curr, display_currency, tx_date, historical_fx_yf
             )
-            dividend_display_curr = (
+            dividend_display = (
                 dividend_local * fx_rate
                 if pd.notna(fx_rate) and pd.notna(dividend_local)
+                else np.nan
+            )
+            tax_display = (
+                tax_local * fx_rate
+                if pd.notna(fx_rate) and pd.notna(tax_local)
                 else np.nan
             )
 
@@ -2624,7 +2651,7 @@ def extract_dividend_history(
                     f"      Date: {tx_date}, Symbol: {symbol}, Account: {account}, LocalCurr: {local_curr}"
                 )
                 logging.debug(
-                    f"      DividendLocal: {dividend_local}, FXRateUsed: {fx_rate}, DividendDisplayCurr: {dividend_display_curr}"
+                    f"      DividendLocal: {dividend_local}, FXRateUsed: {fx_rate}, DividendDisplayCurr: {dividend_display}"
                 )
 
             results.append(
@@ -2635,7 +2662,9 @@ def extract_dividend_history(
                     local_curr,
                     dividend_local,
                     fx_rate,
-                    dividend_display_curr,
+                    dividend_display,
+                    tax_local,
+                    tax_display,
                 ]
             )
         except Exception as e:
@@ -2658,6 +2687,8 @@ def extract_dividend_history(
             "DividendAmountLocal",
             "FXRateUsed",
             "DividendAmountDisplayCurrency",
+            "TaxAmountLocal",
+            "TaxAmountDisplayCurrency",
         ],
     )
     df_dividends.sort_values(by="Date", ascending=False, inplace=True)

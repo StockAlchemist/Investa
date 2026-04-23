@@ -128,13 +128,32 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
                 conn.execute("PRAGMA foreign_keys = ON;")
                 
                 # Check for cloud-synced paths to avoid WAL mode conflicts (disk I/O error)
-                if is_path_on_cloud_drive(db_path):
-                    logging.info(f"Cloud drive detected for {db_path}. Using safe journal mode (DELETE) and full synchronization.")
-                    conn.execute("PRAGMA journal_mode=DELETE;")
-                    conn.execute("PRAGMA synchronous=FULL;")
-                else:
-                    conn.execute("PRAGMA journal_mode=WAL;")
-                    conn.execute("PRAGMA synchronous=NORMAL;")
+                # Check current journal mode to avoid unnecessary (and lock-inducing) changes
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("PRAGMA journal_mode;")
+                    current_mode = cursor.fetchone()[0].upper()
+                    
+                    # Check for cloud-synced paths
+                    is_cloud = is_path_on_cloud_drive(db_path)
+                    
+                    if is_cloud:
+                        # On cloud drives, we PREFER to stay in WAL if already there, 
+                        # because converting WAL -> DELETE requires an EXCLUSIVE lock (fails if readers exist).
+                        if current_mode != "WAL":
+                            logging.info(f"Cloud drive detected for {db_path}. Using safe journal mode (DELETE).")
+                            conn.execute("PRAGMA journal_mode=DELETE;")
+                        conn.execute("PRAGMA synchronous=FULL;")
+                    else:
+                        if current_mode != "WAL":
+                            conn.execute("PRAGMA journal_mode=WAL;")
+                        conn.execute("PRAGMA synchronous=NORMAL;")
+                except sqlite3.OperationalError as e_pragma:
+                    if "database is locked" in str(e_pragma).lower():
+                        logging.warning(f"Could not set PRAGMA journal_mode/synchronous on {db_path} (locked). Continuing with current settings.")
+                    else:
+                        raise e_pragma
+                
                 break
             except sqlite3.OperationalError as e:
                 err_msg = str(e).lower()
