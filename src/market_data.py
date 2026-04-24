@@ -2773,7 +2773,7 @@ class MarketDataProvider:
         return deserialized_dict
 
     @profile
-    def _sync_to_db(self, symbols: List[str], start_date: date, end_date: date, data_type: str = "price", interval: str = "1d"):
+    def _sync_to_db(self, symbols: List[str], start_date: date, end_date: date, data_type: str = "price", interval: str = "1d", integrity_check_symbols: Optional[Set[str]] = None):
         """
         Internal helper to synchronize YF data to the persistent DB.
         Implements the 'Overlapping Refresh' logic for data integrity.
@@ -2867,7 +2867,14 @@ class MarketDataProvider:
                 fetched = self._fetch_yf_historical_data(syms, start, end_date, interval=interval)
                 for s, df in fetched.items():
                     if not df.empty:
-                        consistent, reason = self.db.check_integrity(s, df)
+                        # OPTIMIZATION: Only perform expensive integrity check (and potential full re-fetch)
+                        # for high-priority or currently held symbols.
+                        should_check = (integrity_check_symbols is None) or (s in integrity_check_symbols)
+                        
+                        consistent = True
+                        if should_check:
+                            consistent, reason = self.db.check_integrity(s, df)
+                            
                         if not consistent:
                             logging.warning(f"Market DB Integrity: {reason}. Triggering full re-fetch for {s}.")
                             inception = date(2000, 1, 1)
@@ -2900,6 +2907,7 @@ class MarketDataProvider:
         use_cache: bool = True,
         cache_key: Optional[str] = None,
         cache_file: Optional[str] = None,
+        integrity_check_symbols: Optional[Set[str]] = None,
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches ADJUSTED historical price data using persistent DB and YF."""
         if isinstance(start_date, pd.Timestamp): start_date = start_date.date()
@@ -2915,7 +2923,7 @@ class MarketDataProvider:
         # 1. Sync missing range to DB (with 5-day overlap for integrity)
         if use_cache:
             try:
-                self._sync_to_db(symbols_yf, start_date, end_date, data_type="price", interval=interval)
+                self._sync_to_db(symbols_yf, start_date, end_date, data_type="price", interval=interval, integrity_check_symbols=integrity_check_symbols)
             except Exception as e:
                 logging.error(f"Error syncing to Market DB: {e}")
                 # Continue anyway, we'll try to pull from DB what we have or YF directly if needed

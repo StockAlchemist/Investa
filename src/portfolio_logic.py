@@ -3520,6 +3520,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         if pd.isna(current_price_local):
             if last_price > 1e-9:
                 current_price_local = last_price
+            else:
+                current_price_local = np.nan # Ensure it's a float/NaN, not None
 
         currency_id = holdings_currency_np[symbol_id, account_id]
         local_currency = id_to_currency.get(currency_id, default_currency)
@@ -6346,6 +6348,29 @@ def calculate_historical_performance(
         status_parts.append("L1 Cache Error")
         has_errors = True  # This is a critical failure
 
+    # --- NEW: Identify Currently Held Symbols for Integrity Check Optimization ---
+    # We only care about integrity (drifts/splits) for symbols we actually hold today,
+    # or benchmarks we track. For symbols we no longer hold, small historical 
+    # drift doesn't justify a full history re-fetch during routine background syncs.
+    active_symbols_yf = set(clean_benchmark_symbols_yf)
+    try:
+        # all_holdings_qty is indexed by [date_idx, symbol_id]
+        # We check the last date index to find non-zero holdings
+        last_date_idx = all_holdings_qty.shape[0] - 1
+        if last_date_idx >= 0:
+            held_sym_ids = np.where(np.abs(all_holdings_qty[last_date_idx]) > 1e-6)[0]
+            for sid in held_sym_ids:
+                if sid in id_to_symbol:
+                    internal_sym = id_to_symbol[sid]
+                    yf_sym = internal_to_yf_map.get(internal_sym)
+                    if yf_sym:
+                        active_symbols_yf.add(yf_sym)
+        logging.info(f"Integrity check restricted to {len(active_symbols_yf)} active symbols.")
+    except Exception as e_active:
+        logging.warning(f"Failed to determine active symbols for integrity check: {e_active}")
+        active_symbols_yf = None # Fallback to checking everything if determination fails
+    # ----------------------------------------------------------------------------
+
 
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
@@ -6359,6 +6384,7 @@ def calculate_historical_performance(
         use_cache=use_raw_data_cache if interval == "1d" else False,
         # Append fetch_end_date to key to ensure we don't use stale cache for different fetch range
         cache_key=f"{raw_data_cache_key}_{fetch_end_date.isoformat()}",
+        integrity_check_symbols=active_symbols_yf, # Pass the optimized list
     )
     
     # --- INTRADAY PATCH: Fetch high-res data for active range ---

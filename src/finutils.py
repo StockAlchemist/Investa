@@ -995,7 +995,7 @@ def get_conversion_rate(
 # --- Historical Price/Rate Helpers ---
 def get_historical_price(
     symbol_key: str, target_date: date, prices_dict: Dict[str, pd.DataFrame]
-) -> Optional[float]:
+) -> float:
     """
     Gets the historical price for a symbol on a specific date, using forward fill for missing dates.
 
@@ -1011,16 +1011,16 @@ def get_historical_price(
             values are DataFrames indexed by date objects, containing a 'price' column.
 
     Returns:
-        Optional[float]: The price for the symbol on the target date (or the last available price
-                         before it). Returns None if the symbol is not found, the date is before
-                         the first available price point, or an error occurs during lookup.
+        float: The price for the symbol on the target date (or the last available price
+               before it). Returns np.nan if the symbol is not found, the date is before
+               the first available price point, or an error occurs during lookup.
     """
     if target_date is None or not isinstance(target_date, (date, datetime, pd.Timestamp)):
-        return None
+        return np.nan
     
     if symbol_key not in prices_dict or prices_dict[symbol_key].empty:
         # logging.debug(f"get_historical_price: {symbol_key} missing or empty.")
-        return None
+        return np.nan
     
     # Avoid modifying the original DataFrame in prices_dict (it might be shared)
     df = prices_dict[symbol_key]
@@ -1053,7 +1053,7 @@ def get_historical_price(
                  # index is likely date objects, asof(Timestamp) might fail.
                  # Convert target_ts back to date for lookup if index is date objects.
                  target_ts = target_ts.date()
-                      
+                       
              res = df.asof(target_ts)
             
 
@@ -1071,7 +1071,7 @@ def get_historical_price(
              res = df.asof(ts_target)
 
         # Extract price from result
-        price = None
+        price = np.nan
         if isinstance(res, pd.Series):
              price = res.get('price')
              if price is None or pd.isna(price):
@@ -1116,11 +1116,12 @@ def get_historical_price(
              except Exception as e_comp:
                  logging.debug(f"Comparison fail in get_historical_price: {e_comp}")
 
-        return float(price) if pd.notna(price) else None
+        return float(price) if pd.notna(price) else np.nan
 
     except Exception as e:
         logging.error(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}")
-        return None
+        return np.nan
+
 
 
 

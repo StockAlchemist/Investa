@@ -99,6 +99,7 @@ TYPE_SPLIT = 6
 TYPE_TRANSFER = 7
 TYPE_SHORT_SELL = 8
 TYPE_BUY_TO_COVER = 9
+TYPE_TAX = 10
 TYPE_UNKNOWN = -1
 
 # --- Helper to map string types to ints ---
@@ -114,6 +115,7 @@ def get_type_id(t):
     if t == 'transfer': return TYPE_TRANSFER
     if t == 'short sell': return TYPE_SHORT_SELL
     if t == 'buy to cover': return TYPE_BUY_TO_COVER
+    if t == 'tax': return TYPE_TAX
     return TYPE_UNKNOWN
 
 @jit(nopython=True, cache=True)
@@ -448,13 +450,13 @@ def _process_numba_core(
             current_state[4] += comm
             current_state[10] -= (div_effect * fx_rate)
 
-        # Fees
-        elif typ == TYPE_FEES:
-            fee_cost = abs(comm)
-            current_state[4] += fee_cost
-            current_state[7] += fee_cost
-            current_state[8] += fee_cost
-            current_state[10] += (fee_cost * fx_rate)
+        # Fees / Tax
+        elif typ == TYPE_FEES or typ == TYPE_TAX:
+            cost_val = abs(comm) if abs(comm) > 1e-9 else abs(price)
+            current_state[4] += cost_val
+            current_state[7] += cost_val
+            current_state[8] += cost_val
+            current_state[10] += (cost_val * fx_rate)
 
     return state, transfer_costs
 
