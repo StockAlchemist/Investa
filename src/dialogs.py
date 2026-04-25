@@ -2384,7 +2384,8 @@ class AddTransactionDialog(QDialog):
                 "withdrawal",
                 "buy",
                 "sell",
-            ]:  # 'buy'/'sell' for $CASH are cash movements
+                "transfer",
+            ]:  # 'buy'/'sell'/'transfer' for $CASH are cash movements
                 qty_enabled = True
                 price_text_override = "1.00"  # Price of cash is 1
                 price_readonly = True
@@ -2677,12 +2678,18 @@ class AddTransactionDialog(QDialog):
                 )
                 self.quantity_edit.setFocus()
                 return None
-            # For transfers, price, total, and commission are not applicable.
-            price, total, comm = (
-                None,
-                None,
-                0.0,
-            )  # Commission is 0, not None, for transfers.
+            # For transfers, price, total, and commission are not applicable for stocks.
+            # For $CASH, price is 1.0 and total is quantity.
+            if is_cash_symbol(symbol):
+                price = 1.0
+                total = qty
+                comm = 0.0
+            else:
+                price, total, comm = (
+                    None,
+                    None,
+                    0.0,
+                )  # Commission is 0, not None, for transfers.
 
         elif is_cash_op:  # $CASH Deposit/Withdrawal (or Buy/Sell aliased)
             if not self.quantity_edit.isEnabled() or not qty_str:

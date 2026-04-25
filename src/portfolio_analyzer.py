@@ -262,7 +262,7 @@ def _process_numba_core(
             if qty > 1e-9 and to_acc != -1 and to_acc != acc:
                 from_qty = current_state[0]
                 
-                if from_qty >= qty - 1e-9:
+                if sym == cash_sym_id or from_qty >= qty - 1e-9:
                     to_state = state[sym, to_acc]
                     
                     # Initialize To State if needed
@@ -270,15 +270,22 @@ def _process_numba_core(
                         to_state[11] = current_state[11]
                     
                     if True: # GLD Fix
-                        proportion = 0.0
-                        if from_qty > 1e-9:
-                            proportion = qty / from_qty
-                        
-                        cost_transferred = current_state[1] * proportion
-                        cost_transferred_hist = current_state[10] * proportion
-                        invested_transferred = current_state[7] * proportion
-                        cumulative_transferred = current_state[8] * proportion
-                        buy_cost_transferred = current_state[9] * proportion
+                        if sym == cash_sym_id:
+                            cost_transferred = qty
+                            cost_transferred_hist = qty * fx_rate
+                            invested_transferred = qty
+                            cumulative_transferred = qty
+                            buy_cost_transferred = qty
+                        else:
+                            proportion = 0.0
+                            if from_qty > 1e-9:
+                                proportion = qty / from_qty
+                            
+                            cost_transferred = current_state[1] * proportion
+                            cost_transferred_hist = current_state[10] * proportion
+                            invested_transferred = current_state[7] * proportion
+                            cumulative_transferred = current_state[8] * proportion
+                            buy_cost_transferred = current_state[9] * proportion
                         
                         current_state[0] -= qty
                         current_state[1] -= cost_transferred
