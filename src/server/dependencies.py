@@ -27,7 +27,23 @@ logging.info("DEPENDENCIES MODULE LOADED - VERSION 3 (Auth Enabled)")
 # --- Auth Dependency ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+def get_global_db_connection() -> sqlite3.Connection:
+    """Dependency for Global DB Connection (Auth)."""
+    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
+    conn = get_db_connection(global_db_path, check_same_thread=False, use_cache=False)
+    if not conn:
+        raise HTTPException(status_code=500, detail="Global Database unavailable")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+# Moved down to support get_current_user dependency
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    conn: sqlite3.Connection = Depends(get_global_db_connection)
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -37,16 +53,23 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     if token_data is None:
         raise credentials_exception
     
-    # In a real app we might fetch the user from DB to ensure they still exist/active
-    # For now, we trust the token's claim if signature is valid, 
-    # but let's do a quick DB check to fail if user deleted.
-    # Connect to GLOBAL DB for Auth
-    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, GLOBAL_DB_FILENAME)
-    conn = get_db_connection(global_db_path, check_same_thread=False)
-    if conn:
+    # Connect to GLOBAL DB for Auth - Now uses the 'conn' dependency which handles lifecycle and retries
+    try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?", (token_data.username,))
-        row = cursor.fetchone()
+        # Transient retry for cloud drives
+        for i in range(3):
+            try:
+                cursor.execute("SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?", (token_data.username,))
+                row = cursor.fetchone()
+                break
+            except sqlite3.OperationalError as e:
+                if "disk i/o error" in str(e).lower() and i < 2:
+                    logging.warning(f"Transient disk I/O error during auth query. Retry {i+1}/3...")
+                    import time
+                    time.sleep(0.1 * (i + 1))
+                    continue
+                raise
+                
         if row is None:
             raise credentials_exception
         user = User(
@@ -59,9 +82,21 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         if not user.is_active:
              raise HTTPException(status_code=400, detail="Inactive user")
         return user
-    
-    # Fallback if DB fails (shouldn't happen)
-    raise credentials_exception
+    except sqlite3.Error as e:
+        logging.error(f"Database error during authentication: {e}")
+        raise HTTPException(status_code=503, detail="Authentication database temporarily unavailable")
+
+def get_user_db_connection(current_user: User = Depends(get_current_user)) -> sqlite3.Connection:
+    """Dependency for User Portfolio DB Connection."""
+    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
+    db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+    conn = get_db_connection(db_path, check_same_thread=False, use_cache=False)
+    if not conn:
+        raise HTTPException(status_code=500, detail="User Database unavailable")
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 # Global cache for transactions to avoid reloading on every request
@@ -383,26 +418,5 @@ def reload_config():
     # But for immediate effect of overrides, we might need to clear _TRANSACTIONS_CACHE
     reload_data()
 
-def get_global_db_connection() -> sqlite3.Connection:
-    """Dependency for Global DB Connection (Auth)."""
-    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
-    conn = get_db_connection(global_db_path, check_same_thread=False, use_cache=False)
-    if not conn:
-        raise HTTPException(status_code=500, detail="Global Database unavailable")
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-def get_user_db_connection(current_user: User = Depends(get_current_user)) -> sqlite3.Connection:
-    """Dependency for User Portfolio DB Connection."""
-    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
-    db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
-    conn = get_db_connection(db_path, check_same_thread=False, use_cache=False)
-    if not conn:
-        raise HTTPException(status_code=500, detail="User Database unavailable")
-    try:
-        yield conn
-    finally:
-        conn.close()
+# Moved up to support get_current_user dependency
 

@@ -82,10 +82,12 @@ def run_screener_update():
         for user_name, db_path in db_paths:
             logging.info(f"  > Updating cache for user: {user_name}")
             try:
-                # We open a dedicated connection for this operation to ensure thread safety
-                # and avoid interference with any shared cache state if running concurrently (though this is single threaded)
-                conn = sqlite3.connect(db_path)
-                
+                # We use get_db_connection with use_cache=False to leverage retry logic and cloud drive safety
+                conn = get_db_connection(db_path, use_cache=False)
+                if not conn:
+                    logging.warning(f"    - Could not connect to {db_path}, skipping.")
+                    continue
+                    
                 for uni in universes:
                     uni_start = time.time()
                     # fast_mode=False forces a refresh of missing/stale data (calculates intrinsic value)

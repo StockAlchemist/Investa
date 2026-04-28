@@ -195,53 +195,59 @@ def trigger_background_precalculation(current_user: User):
             user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
             db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
             
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
-            
-            def sf(val):
-                if val is None: return 0.0
-                try:
-                    import math
-                    return 0.0 if math.isnan(float(val)) else float(val)
-                except:
-                    return 0.0
-            
-            if overall_metrics:
-                cursor.execute('''
-                    INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    today.isoformat(),
-                    'ALL',
-                    sf(overall_metrics.get('market_value')),
-                    sf(overall_metrics.get('total_buy_cost')),
-                    sf(overall_metrics.get('total_gain')),
-                    sf(overall_metrics.get('total_return_pct')),
-                    sf(overall_twr),
-                    sf(overall_metrics.get('portfolio_mwr')),
-                    datetime.now().isoformat()
-                ))
-
-            if account_metrics:
-                for acc, acc_data in account_metrics.items():
+            conn = get_db_connection(db_path, use_cache=False)
+            if not conn:
+                logging.error(f"Failed to connect to user database for precalculation: {db_path}")
+                return
+                
+            try:
+                cursor = conn.cursor()
+                
+                cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
+                
+                def sf(val):
+                    if val is None: return 0.0
+                    try:
+                        import math
+                        return 0.0 if math.isnan(float(val)) else float(val)
+                    except:
+                        return 0.0
+                
+                if overall_metrics:
                     cursor.execute('''
                         INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         today.isoformat(),
-                        acc,
-                        sf(acc_data.get('total_market_value_display')),
-                        sf(acc_data.get('total_buy_cost_display')),
-                        sf(acc_data.get('total_gain_display')),
-                        sf(acc_data.get('total_return_pct')),
-                        sf(acc_data.get('twr', 0.0)),
-                        sf(acc_data.get('mwr')),
+                        'ALL',
+                        sf(overall_metrics.get('market_value')),
+                        sf(overall_metrics.get('total_buy_cost')),
+                        sf(overall_metrics.get('total_gain')),
+                        sf(overall_metrics.get('total_return_pct')),
+                        sf(overall_twr),
+                        sf(overall_metrics.get('portfolio_mwr')),
                         datetime.now().isoformat()
                     ))
-            conn.commit()
-            conn.close()
+
+                if account_metrics:
+                    for acc, acc_data in account_metrics.items():
+                        cursor.execute('''
+                            INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            today.isoformat(),
+                            acc,
+                            sf(acc_data.get('total_market_value_display')),
+                            sf(acc_data.get('total_buy_cost_display')),
+                            sf(acc_data.get('total_gain_display')),
+                            sf(acc_data.get('total_return_pct')),
+                            sf(acc_data.get('twr', 0.0)),
+                            sf(acc_data.get('mwr')),
+                            datetime.now().isoformat()
+                        ))
+                conn.commit()
+            finally:
+                conn.close()
             logging.info(f"Finished background metric pre-calculation for user {current_user.username}")
         except Exception as e:
             logging.error(f"Error in background metric pre-calculation: {e}", exc_info=True)

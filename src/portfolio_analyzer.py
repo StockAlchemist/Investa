@@ -461,6 +461,22 @@ def _process_numba_core(
             current_state[3] += div_effect
             current_state[4] += comm
             current_state[10] -= (div_effect * fx_rate)
+            
+            # Explicit Cash Handling: 
+            # In Auto-mode, we update balance for explicit cash dividends (e.g. awards).
+            # In Manual-mode, we skip this to avoid double-counting or breaking legacy bookkeeping.
+            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
+                current_state[0] += div_effect
+                if div_effect > 0:
+                    current_state[1] += div_effect
+                    current_state[7] += div_effect
+                    current_state[8] += div_effect
+                    current_state[9] += div_effect
+                else:
+                    abs_div = abs(div_effect)
+                    current_state[1] -= abs_div
+                    current_state[7] -= abs_div
+                    current_state[8] -= abs_div
 
         # Fees / Tax
         elif typ == TYPE_FEES or typ == TYPE_TAX:
@@ -469,13 +485,26 @@ def _process_numba_core(
             current_state[7] += cost_val
             current_state[8] += cost_val
             current_state[10] += (cost_val * fx_rate)
+            
+            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
+                current_state[0] -= cost_val
+                current_state[1] -= cost_val
+                current_state[7] -= cost_val
+                current_state[8] -= cost_val
 
-        # Interest (treated like Dividend for the symbol it's recorded against)
+        # Interest
         elif typ == TYPE_INTEREST:
             int_amt = abs(price)
             current_state[3] += int_amt
             current_state[4] += comm
             current_state[10] -= (int_amt * fx_rate)
+            
+            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
+                current_state[0] += int_amt
+                current_state[1] += int_amt
+                current_state[7] += int_amt
+                current_state[8] += int_amt
+                current_state[9] += int_amt
 
         # --- AUTO CASH LOGIC ---
         # For Auto-mode accounts, generate implicit $CASH balance changes
@@ -648,22 +677,30 @@ def _process_transactions_to_holdings(
     raw_totals = pd.to_numeric(df['Total Amount'], errors='coerce').fillna(0.0).astype(np.float64).values
     
     # --- Robust Quantity/Price Handling for Cash ---
-    # For $CASH, if Quantity is 0 but Total Amount is not, use Total Amount as Quantity.
-    # This handles manual entries where users put the deposit amount in the 'Total' column.
+    # For $CASH, if Total Amount is provided, we should trust it.
+    # If Quantity is also provided and matches Total Amount, it means the user
+    # entered the amount in both columns (common in manual entries).
+    # In this case, we should set Price/Share to 1.0 to avoid squared values in calculations.
     cash_sym_mask = (df['Symbol'] == CASH_SYMBOL_CSV).values
     zero_qty_mask = (np.abs(qtys) < 1e-9)
     has_total_mask = (np.abs(raw_totals) > 1e-9)
     
-    fix_cash_qty_mask = cash_sym_mask & zero_qty_mask & has_total_mask
-    if np.any(fix_cash_qty_mask):
-        qtys[fix_cash_qty_mask] = np.abs(raw_totals[fix_cash_qty_mask])
-        # Force price to 1.0 for these fixed entries so cost = qty
-        raw_prices[fix_cash_qty_mask] = 1.0
+    fix_cash_mask = cash_sym_mask & has_total_mask
+    if np.any(fix_cash_mask):
+        # Case 1: Qty is 0, use Total
+        mask_qty_0 = fix_cash_mask & zero_qty_mask
+        qtys[mask_qty_0] = np.abs(raw_totals[mask_qty_0])
+        raw_prices[mask_qty_0] = 1.0
+        
+        # Case 2: Qty matches Total, force Price to 1.0
+        # (This prevents Dividend logic from doing Qty * Price = Amount * Amount)
+        mask_qty_match = fix_cash_mask & (~zero_qty_mask) & (np.abs(qtys - np.abs(raw_totals)) < 1e-4)
+        raw_prices[mask_qty_match] = 1.0
 
     # Use Total Amount for types where Price/Share might be zero (Dividends, Tax, Fees, Interest)
-    # OR for any Cash transaction with zero Price/Share
+    # OR for any Cash transaction with zero Price/Share OR zero Quantity
     income_expense_types = (type_ids == TYPE_DIVIDEND) | (type_ids == TYPE_TAX) | (type_ids == TYPE_FEES) | (type_ids == TYPE_INTEREST)
-    mask_use_total = (income_expense_types | cash_sym_mask) & (np.abs(raw_prices) < 1e-9) & has_total_mask
+    mask_use_total = (income_expense_types | cash_sym_mask) & ((np.abs(raw_prices) < 1e-9) | (np.abs(qtys) < 1e-9)) & has_total_mask
     raw_prices[mask_use_total] = raw_totals[mask_use_total]
     
     # Handle Dividends with Quantity (price per share)
