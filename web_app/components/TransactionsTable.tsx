@@ -220,7 +220,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         const typeMatch = filterType ? tx.Type.toLowerCase() === filterType.toLowerCase() : true;
         const internalCashMatch = showInternalCash
             ? true
-            : (tx.Symbol !== '$CASH' || ['deposit', 'withdrawal', 'interest', 'dividend'].includes(tx.Type.toLowerCase()));
+            : (tx.Symbol !== '$CASH' || ['deposit', 'withdrawal', 'interest', 'dividend', 'transfer'].includes(tx.Type.toLowerCase()));
         return symbolMatch && accountMatch && typeMatch && internalCashMatch;
     });
 

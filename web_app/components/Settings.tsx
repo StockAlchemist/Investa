@@ -338,6 +338,19 @@ export default function Settings({ settings, holdings, availableAccounts, initia
         }
     }
 
+    const updateAccountCashMode = async (account: string, mode: string) => {
+        if (!settings) return;
+        const currentMap = { ...(settings.account_cash_mode_map || {}) };
+        currentMap[account] = mode;
+
+        try {
+            await updateSettings({ account_cash_mode_map: currentMap });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
+        } catch {
+            alert('Failed to update cash management mode');
+        }
+    }
+
     const updateAccountYield = async (account: string, rate: number, threshold: number) => {
         if (!settings) return;
         const currentRates = { ...(settings.account_interest_rates || {}) };
@@ -531,7 +544,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
                             }`}
                     >
-                        Currencies
+                        Account Currencies
                     </button>
                     <button
                         onClick={() => setActiveTab('yield')}
@@ -1074,7 +1087,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                     {activeTab === 'currencies' && (
                         <div>
                             <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-                                Manage available currencies and assign default currencies to accounts.
+                                Manage available currencies, assign default currencies to accounts, and set cash management mode.
                             </p>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1126,6 +1139,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                 <tr>
                                                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Account</th>
                                                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Currency</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Cash Management</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-border">
@@ -1141,6 +1155,16 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                                 {availableCurrencies.map(curr => (
                                                                     <option key={curr} value={curr} className="bg-white dark:bg-black text-foreground">{curr}</option>
                                                                 ))}
+                                                            </select>
+                                                        </td>
+                                                        <td className="px-4 py-2">
+                                                            <select
+                                                                value={settings.account_cash_mode_map?.[account] || 'Manual'}
+                                                                onChange={(e) => updateAccountCashMode(account, e.target.value)}
+                                                                className={inputClassName}
+                                                            >
+                                                                <option value="Manual" className="bg-white dark:bg-black text-foreground">Manual</option>
+                                                                <option value="Auto" className="bg-white dark:bg-black text-foreground">Auto</option>
                                                             </select>
                                                         </td>
                                                     </tr>

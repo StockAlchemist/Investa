@@ -79,6 +79,7 @@ _MANUAL_OVERRIDES: Dict[int, Dict[str, Any]] = {}
 _USER_SYMBOL_MAP: Dict[int, Dict[str, str]] = {}
 _USER_EXCLUDED_SYMBOLS: Dict[int, Set[str]] = {}
 _ACCOUNT_CURRENCY_MAP: Dict[int, Dict[str, str]] = {}
+_ACCOUNT_CASH_MODE_MAP: Dict[int, Dict[str, str]] = {}
 
 _DB_PATHS: Dict[int, str] = {}
 _DB_MTIMES: Dict[int, float] = {}
@@ -136,6 +137,10 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
     
     if "account_currency_map" in gui_config:
          account_currency_map.update(gui_config["account_currency_map"])
+    
+    account_cash_mode_map = {}
+    if "account_cash_mode_map" in gui_config:
+         account_cash_mode_map.update(gui_config["account_cash_mode_map"])
 
     # --- 2. Determine DB Path for User ---
     db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
@@ -309,6 +314,7 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
                     _USER_SYMBOL_MAP[user_id] = user_symbol_map
                     _USER_EXCLUDED_SYMBOLS[user_id] = user_excluded_symbols
                     _ACCOUNT_CURRENCY_MAP[user_id] = account_currency_map
+                    _ACCOUNT_CASH_MODE_MAP[user_id] = account_cash_mode_map
                     
                     _DB_PATHS[user_id] = db_path
                     _DB_MTIMES[user_id] = current_mtime
@@ -325,6 +331,7 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
         _USER_SYMBOL_MAP.get(user_id, {}),
         _USER_EXCLUDED_SYMBOLS.get(user_id, set()),
         _ACCOUNT_CURRENCY_MAP.get(user_id, {}),
+        _ACCOUNT_CASH_MODE_MAP.get(user_id, {}),
         _DB_PATHS.get(user_id, ""),
         _DB_MTIMES.get(user_id, 0.0)
     )

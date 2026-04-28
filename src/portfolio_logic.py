@@ -205,6 +205,7 @@ def calculate_portfolio_summary(
     calc_method: Optional[str] = None, # Added for benchmarking override
     account_interest_rates: Optional[Dict[str, float]] = None,
     interest_free_thresholds: Optional[Dict[str, float]] = None,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -768,6 +769,7 @@ def calculate_portfolio_summary(
             historical_fx_lookup=historical_fx_for_processing,  # NEW ARG
             display_currency_for_hist_fx=display_currency,  # NEW ARG
             report_date=report_date,
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
         )
     )
 
@@ -1550,12 +1552,8 @@ def calculate_portfolio_summary(
             and "Symbol" in summary_df_unfiltered.columns
         ):
             held_mask = (
-                (
-                    summary_df_unfiltered["Quantity"].abs()
-                    >= STOCK_QUANTITY_CLOSE_TOLERANCE
-                )
-                | (summary_df_unfiltered["Symbol"] == CASH_SYMBOL_CSV)
-                | (summary_df_unfiltered["Symbol"].str.startswith("Cash (", na=False))
+                summary_df_unfiltered["Quantity"].abs()
+                >= STOCK_QUANTITY_CLOSE_TOLERANCE
             )
             summary_df_final = summary_df_unfiltered[held_mask].copy()
         else:  # Columns missing for filtering
@@ -2860,9 +2858,11 @@ def _calculate_holdings_numba(
     fees_type_id,
     dividend_type_id,
     interest_type_id,
+    tax_type_id,        # AUTO CASH
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
+    acc_cash_modes,     # AUTO CASH: int64 array, 0=Manual, 1=Auto
 ):
     # Initialize state arrays
     holdings_qty_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
@@ -3051,6 +3051,30 @@ def _calculate_holdings_numba(
             if abs(commission) > 1e-9:
                 holdings_cost_np[symbol_id, account_id] += commission
 
+        # --- AUTO CASH LOGIC (Single-date valuation) ---
+        # For Auto-mode accounts, generate implicit cash balance changes
+        # from non-cash stock transactions.
+        # Skip: Deposit/Withdrawal (in-kind shares), Split, Transfer
+        if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
+            cash_delta = 0.0
+            if type_id == buy_type_id:
+                cash_delta = -(abs(qty) * price + commission)
+            elif type_id == sell_type_id:
+                cash_delta = +(abs(qty) * price - commission)
+            elif type_id == dividend_type_id or type_id == interest_type_id:
+                cash_delta = +abs(price)  # price holds amount for dividends
+            elif type_id == fees_type_id or type_id == tax_type_id:
+                fee_val = abs(commission) if abs(commission) > 1e-9 else abs(price)
+                cash_delta = -fee_val
+            elif type_id == short_sell_type_id:
+                cash_delta = +(abs(qty) * price - commission)
+            elif type_id == buy_to_cover_type_id:
+                cash_delta = -(abs(qty) * price + commission)
+            # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
+
+            if abs(cash_delta) > 1e-9:
+                cash_balances_np[account_id] += cash_delta
+
     # Apply Final Tolerance
     for s_id in range(num_symbols):
         if s_id == cash_symbol_id:
@@ -3098,9 +3122,14 @@ def _calculate_daily_holdings_chronological_numba(
     short_sell_type_id,
     buy_to_cover_type_id,
     transfer_type_id,  # NEW argument
+    dividend_type_id,   # AUTO CASH
+    interest_type_id,   # AUTO CASH
+    fees_type_id,       # AUTO CASH
+    tax_type_id,        # AUTO CASH
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
+    acc_cash_modes,     # AUTO CASH: int64 array, 0=Manual, 1=Auto
 ):
     """
     Calculates holdings and cash balances chronologically for each day in the target range.
@@ -3143,7 +3172,7 @@ def _calculate_daily_holdings_chronological_numba(
             price = tx_prices_np[tx_idx]
 
             if symbol_id == cash_symbol_id:
-                if type_id == buy_type_id or type_id == deposit_type_id:
+                if type_id == buy_type_id or type_id == deposit_type_id or type_id == dividend_type_id or type_id == interest_type_id:
                     current_cash_balances[account_id] += abs(qty) - commission
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
                     current_cash_balances[account_id] -= abs(qty) + commission
@@ -3216,6 +3245,29 @@ def _calculate_daily_holdings_chronological_numba(
                             )
                             qty_covered = min(abs(qty), qty_currently_short)
                             current_holdings_qty[symbol_id, account_id] += qty_covered
+
+                # --- AUTO CASH LOGIC (Historical) ---
+                # For Auto-mode accounts, generate implicit cash balance changes
+                # Skip: Deposit/Withdrawal (in-kind shares), Split, Transfer
+                if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
+                    cash_delta = 0.0
+                    if type_id == buy_type_id:
+                        cash_delta = -(abs(qty) * price + commission)
+                    elif type_id == sell_type_id:
+                        cash_delta = +(abs(qty) * price - commission)
+                    elif type_id == dividend_type_id or type_id == interest_type_id:
+                        cash_delta = +abs(price)  # price holds amount for dividends
+                    elif type_id == fees_type_id or type_id == tax_type_id:
+                        fee_val = abs(commission) if abs(commission) > 1e-9 else abs(price)
+                        cash_delta = -fee_val
+                    elif type_id == short_sell_type_id:
+                        cash_delta = +(abs(qty) * price - commission)
+                    elif type_id == buy_to_cover_type_id:
+                        cash_delta = -(abs(qty) * price + commission)
+                    # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
+
+                    if abs(cash_delta) > 1e-9:
+                        current_cash_balances[account_id] += cash_delta
             
             tx_idx += 1
 
@@ -3255,6 +3307,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
     included_accounts: Optional[List[str]] = None,  # ADDED
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[float, bool]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Numba version).
@@ -3419,7 +3472,16 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         fees_type_id = type_to_id.get("fees", -1)
         dividend_type_id = type_to_id.get("dividend", -1)
         interest_type_id = type_to_id.get("interest", -1)
+        tax_type_id = type_to_id.get("tax", -1)  # AUTO CASH
         cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+
+        # AUTO CASH: Build acc_cash_modes array
+        num_accounts = len(account_to_id)
+        _acm_val = account_cash_mode_map if account_cash_mode_map else {}
+        acc_cash_modes_val = np.zeros(num_accounts, dtype=np.int64)
+        for _acc_name_v, _mode_str_v in _acm_val.items():
+            if _acc_name_v in account_to_id and _mode_str_v == "Auto":
+                acc_cash_modes_val[account_to_id[_acc_name_v]] = 1
 
         shortable_symbol_ids = np.array(
             [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
@@ -3471,9 +3533,11 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             fees_type_id,
             dividend_type_id,
             interest_type_id,
+            tax_type_id,
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
+            acc_cash_modes_val,
         )
         
     except Exception as e_numba_call:
@@ -3623,6 +3687,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
     id_to_currency: Dict[int, str],
     method: str = HISTORICAL_CALC_METHOD,
     included_accounts: Optional[List[str]] = None,  # ADDED
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[float, bool]:
     """
     Dispatcher function to calculate portfolio value using either Python or Numba method.
@@ -3647,6 +3712,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             currency_to_id,
             id_to_currency,
             included_accounts=included_accounts,  # Pass included_accounts
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
         )
     elif method == "python":
         return _calculate_portfolio_value_at_date_unadjusted_python(
@@ -3705,6 +3771,7 @@ def _calculate_daily_metrics_worker(
     id_to_currency: Dict[int, str],  # type: ignore
     calc_method: str = HISTORICAL_CALC_METHOD,  # Use config default
     included_accounts: Optional[List[str]] = None,  # ADDED
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Optional[Dict]:
     """
     Worker function (for multiprocessing) to calculate key metrics for a single date.
@@ -3775,6 +3842,7 @@ def _calculate_daily_metrics_worker(
                 # STOCK_QUANTITY_CLOSE_TOLERANCE is implicitly passed to numba version via _calculate_daily_metrics_worker
                 method=calc_method,
                 included_accounts=included_accounts,  # Pass included_accounts
+                account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
             )
         )
         end_time_main = time.time()
@@ -4652,6 +4720,7 @@ def _load_or_calculate_daily_results(
     current_hist_version: str = "v14",
     filter_desc: str = "All Accounts",
     calc_method: str = HISTORICAL_CALC_METHOD,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
     """
     Loads calculated daily results from cache or calculates them using parallel processing.
@@ -5068,9 +5137,19 @@ def _load_or_calculate_daily_results(
                 num_symbols = len(symbol_to_id)
                 num_accounts = len(account_to_id)
 
-                num_accounts = len(account_to_id)
-            
-                num_accounts = len(account_to_id)
+                # AUTO CASH: Resolve type IDs needed by auto-cash logic
+                dividend_type_id = type_to_id.get("dividend", -1)
+                interest_type_id = type_to_id.get("interest", -1)
+                fees_type_id = type_to_id.get("fees", -1)
+                tax_type_id = type_to_id.get("tax", -1)
+
+                # AUTO CASH: Build acc_cash_modes array
+                _acm = account_cash_mode_map if account_cash_mode_map else {}
+                acc_cash_modes_np = np.zeros(num_accounts, dtype=np.int64)
+                for _acc_name, _mode_str in _acm.items():
+                    _acc_upper = _acc_name.upper().strip()
+                    if _acc_upper in account_to_id and _mode_str == "Auto":
+                        acc_cash_modes_np[account_to_id[_acc_upper]] = 1
             
                 # Call Numba function
                 daily_holdings_qty_to_use, daily_cash_balances_to_use, daily_last_prices_to_use = _calculate_daily_holdings_chronological_numba(
@@ -5095,9 +5174,14 @@ def _load_or_calculate_daily_results(
                     short_sell_type_id,
                     buy_to_cover_type_id,
                     transfer_type_id,
+                    dividend_type_id,
+                    interest_type_id,
+                    fees_type_id,
+                    tax_type_id,
                     cash_symbol_id,
                     STOCK_QUANTITY_CLOSE_TOLERANCE,
                     shortable_symbol_ids,
+                    acc_cash_modes_np,
                 )
                 
         
@@ -5265,6 +5349,7 @@ def _load_or_calculate_daily_results(
                 id_to_currency=id_to_currency,
                 calc_method=HISTORICAL_CALC_METHOD,  # Pass method from config
                 included_accounts=included_accounts_list,  # Pass included_accounts_list
+                account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
             )
             daily_results_list = []
             pool_start_time = time.time()
@@ -5551,6 +5636,7 @@ def _get_or_calculate_all_daily_holdings(
     symbol_to_id: Dict,
     account_to_id: Dict,
     type_to_id: Dict,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ):
     """
     Layer 1 Cache: Calculates or loads from cache the daily holdings for ALL transactions.
@@ -5666,15 +5752,27 @@ def _get_or_calculate_all_daily_holdings(
     short_sell_type_id = type_to_id.get("short sell", -1)
     buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
     transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
+    dividend_type_id = type_to_id.get("dividend", -1)    # AUTO CASH
+    interest_type_id = type_to_id.get("interest", -1)    # AUTO CASH
+    fees_type_id = type_to_id.get("fees", -1)            # AUTO CASH
+    tax_type_id = type_to_id.get("tax", -1)              # AUTO CASH
     cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
+    # AUTO CASH: Build acc_cash_modes array
+    num_symbols = len(symbol_to_id)
+    num_accounts = len(account_to_id)
+    
+    _acm2 = account_cash_mode_map if account_cash_mode_map else {}
+    acc_cash_modes_np2 = np.zeros(num_accounts, dtype=np.int64)
+    for _acc_name2, _mode_str2 in _acm2.items():
+        _acc_upper2 = _acc_name2.upper().strip()
+        if _acc_upper2 in account_to_id and _mode_str2 == "Auto":
+            acc_cash_modes_np2[account_to_id[_acc_upper2]] = 1
 
     shortable_symbol_ids = np.array(
         [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
         dtype=np.int64,
     )
-    num_symbols = len(symbol_to_id)
-    num_accounts = len(account_to_id)
 
     daily_holdings_qty, daily_cash_balances, daily_last_prices = (
         _calculate_daily_holdings_chronological_numba(
@@ -5699,9 +5797,14 @@ def _get_or_calculate_all_daily_holdings(
             short_sell_type_id,
             buy_to_cover_type_id,
             transfer_type_id,
+            dividend_type_id,
+            interest_type_id,
+            fees_type_id,
+            tax_type_id,
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
+            acc_cash_modes_np2,
         )
     )
 
@@ -6124,6 +6227,7 @@ def calculate_historical_performance(
     # This is needed because we no longer pass the CSV path directly to this function for loading
     original_csv_file_path: Optional[str] = None,
     calc_method: Optional[str] = None, # ADDED for benchmarking
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[
     pd.DataFrame,  # daily_df
     Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
@@ -6342,6 +6446,7 @@ def calculate_historical_performance(
         symbol_to_id=symbol_to_id,
         account_to_id=account_to_id,
         type_to_id=type_to_id,
+        account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
     )
 
     if all_holdings_qty is None:
@@ -6651,6 +6756,7 @@ def calculate_historical_performance(
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
             calc_method=calc_method or HISTORICAL_CALC_METHOD,
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
         )
     )
     if status_update_daily:

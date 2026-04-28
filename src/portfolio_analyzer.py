@@ -55,7 +55,7 @@ except ImportError:
     # Define fallbacks if absolutely necessary
     CASH_SYMBOL_CSV = "$CASH"
     SHORTABLE_SYMBOLS = set()
-    STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-9  # Fallback if config fails
+    STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-6  # Fallback if config fails
     _AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
 
 # --- Import Utilities ---
@@ -100,6 +100,7 @@ TYPE_TRANSFER = 7
 TYPE_SHORT_SELL = 8
 TYPE_BUY_TO_COVER = 9
 TYPE_TAX = 10
+TYPE_INTEREST = 11
 TYPE_UNKNOWN = -1
 
 # --- Helper to map string types to ints ---
@@ -116,6 +117,7 @@ def get_type_id(t):
     if t == 'short sell': return TYPE_SHORT_SELL
     if t == 'buy to cover': return TYPE_BUY_TO_COVER
     if t == 'tax': return TYPE_TAX
+    if t == 'interest': return TYPE_INTEREST
     return TYPE_UNKNOWN
 
 @jit(nopython=True, cache=True)
@@ -123,7 +125,8 @@ def _process_numba_core(
     sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios, 
     to_acc_ids, local_curr_ids, fx_rates_hist, 
     shortable_sym_ids, stock_qty_tol, cash_sym_id,
-    num_tx, num_syms, num_accs
+    num_tx, num_syms, num_accs,
+    acc_cash_modes
 ):
     # State Array: (num_syms, num_accs, 13)
     # 0: qty
@@ -398,10 +401,12 @@ def _process_numba_core(
             held_qty = current_state[0]
             if sym == cash_sym_id:
                 # Cash allows negative balances, process fully without held_qty limits
-                cost_sold = qty_abs * price
+                # Ensure price is at least 1.0 if not specified (for cost basis)
+                eff_price = price if abs(price) > 1e-9 else 1.0
+                cost_sold = qty_abs * eff_price
                 cost_sold_hist = cost_sold * fx_rate
                 
-                proceeds = (qty_abs * price) - comm
+                proceeds = (qty_abs * eff_price) - comm
                 gain = 0.0
                 gain_display = 0.0
                 
@@ -465,6 +470,59 @@ def _process_numba_core(
             current_state[8] += cost_val
             current_state[10] += (cost_val * fx_rate)
 
+        # Interest (treated like Dividend for the symbol it's recorded against)
+        elif typ == TYPE_INTEREST:
+            int_amt = abs(price)
+            current_state[3] += int_amt
+            current_state[4] += comm
+            current_state[10] -= (int_amt * fx_rate)
+
+        # --- AUTO CASH LOGIC ---
+        # For Auto-mode accounts, generate implicit $CASH balance changes
+        # from non-cash stock transactions.
+        # Skip: $CASH symbol (explicit), Deposit/Withdrawal (in-kind shares),
+        #        Split (no cash impact), Transfer (handled separately).
+        if acc_cash_modes[acc] == 1 and sym != cash_sym_id and cash_sym_id >= 0:
+            cash_state = state[cash_sym_id, acc]
+            # Initialize cash position if needed
+            if cash_state[11] == -1.0:
+                cash_state[11] = float(curr)
+            
+            cash_delta = 0.0
+            if typ == TYPE_BUY:
+                cash_delta = -(qty_abs * price + comm)
+            elif typ == TYPE_SELL:
+                cash_delta = +(qty_abs * price - comm)
+            elif typ == TYPE_DIVIDEND:
+                # div_amt was computed above as 'price' (Total Amount for dividends)
+                cash_delta = +abs(price) - comm
+            elif typ == TYPE_INTEREST:
+                cash_delta = +abs(price) - comm
+            elif typ == TYPE_FEES or typ == TYPE_TAX:
+                fee_val = abs(comm) if abs(comm) > 1e-9 else abs(price)
+                cash_delta = -fee_val
+            elif typ == TYPE_SHORT_SELL:
+                cash_delta = +(qty_abs * price - comm)
+            elif typ == TYPE_BUY_TO_COVER:
+                cash_delta = -(qty_abs * price + comm)
+            # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
+            
+            if abs(cash_delta) > 1e-9:
+                cash_state[0] += cash_delta  # qty
+                if cash_delta > 0:
+                    cash_state[1] += cash_delta
+                    cash_state[7] += cash_delta
+                    cash_state[8] += cash_delta
+                    cash_state[9] += cash_delta
+                    cash_state[10] += cash_delta * fx_rate
+                else:
+                    abs_delta = abs(cash_delta)
+                    cash_state[1] -= abs_delta
+                    cash_state[7] -= abs_delta
+                    cash_state[8] -= abs_delta
+                    cash_state[10] -= abs_delta * fx_rate
+        
+
     return state, transfer_costs
 
 @profile
@@ -475,6 +533,7 @@ def _process_transactions_to_holdings(
     historical_fx_lookup: Dict[Tuple[date, str], float],
     display_currency_for_hist_fx: str,
     report_date: date,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,
 ) -> Tuple[
     Dict[Tuple[str, str], Dict],
     Dict[str, float],
@@ -491,9 +550,25 @@ def _process_transactions_to_holdings(
     if transactions_df.empty:
         return {}, {}, {}, {}, set(), {}, {}, {}, False
 
+    if account_cash_mode_map is None:
+        account_cash_mode_map = {}
+
+    # --- Normalize Columns EARLY ---
+    # Critical: Normalize strings BEFORE deduplication to ensure matching works
+    transactions_df['Symbol'] = transactions_df['Symbol'].astype(str).str.strip()
+    # Normalize cash-like symbols (e.g. 'Cash ($)') to the designated CASH_SYMBOL_CSV ($CASH)
+    transactions_df['Symbol'] = transactions_df['Symbol'].apply(lambda x: CASH_SYMBOL_CSV if is_cash_symbol(x) else x)
+    
+    transactions_df['Account'] = transactions_df['Account'].astype(str).str.strip()
+    transactions_df['Type'] = transactions_df['Type'].astype(str).str.strip().str.lower()
+
     # Create ID mappings
-    all_symbols = transactions_df['Symbol'].astype(str).str.strip().unique()
-    all_accounts = set(transactions_df['Account'].astype(str).str.strip().unique())
+    all_symbols_list = list(transactions_df['Symbol'].unique())
+    # Ensure $CASH is always in the symbol map for auto-cash accounting
+    if CASH_SYMBOL_CSV not in all_symbols_list:
+        all_symbols_list.append(CASH_SYMBOL_CSV)
+    all_symbols = all_symbols_list
+    all_accounts = set(transactions_df['Account'].unique())
     if 'To Account' in transactions_df.columns:
         all_accounts.update(transactions_df['To Account'].dropna().astype(str).str.strip().unique())
     all_accounts = list(all_accounts)
@@ -512,12 +587,6 @@ def _process_transactions_to_holdings(
     num_accs = len(all_accounts)
     # --- Prepare Data for Numba ---
     df = transactions_df.copy()
-    
-    # --- Normalize Columns EARLY ---
-    # Critical: Normalize strings BEFORE deduplication to ensure matching works
-    df['Symbol'] = df['Symbol'].astype(str).str.strip()
-    df['Account'] = df['Account'].astype(str).str.strip()
-    df['Type'] = df['Type'].astype(str).str.strip().str.lower()
 
     # --- Deduplicate Split Transactions (Robustness Fix) ---
     # Splits currently apply to ALL accounts in the Numba loop. 
@@ -568,7 +637,8 @@ def _process_transactions_to_holdings(
         'buy': TYPE_BUY, 'sell': TYPE_SELL, 'deposit': TYPE_DEPOSIT, 
         'withdrawal': TYPE_WITHDRAWAL, 'dividend': TYPE_DIVIDEND, 'fees': TYPE_FEES,
         'split': TYPE_SPLIT, 'stock split': TYPE_SPLIT, 'transfer': TYPE_TRANSFER,
-        'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER
+        'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER,
+        'tax': TYPE_TAX, 'interest': TYPE_INTEREST
     }
     type_ids = df['Type'].map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
     
@@ -577,11 +647,27 @@ def _process_transactions_to_holdings(
     raw_prices = pd.to_numeric(df['Price/Share'], errors='coerce').fillna(0.0).astype(np.float64).values
     raw_totals = pd.to_numeric(df['Total Amount'], errors='coerce').fillna(0.0).astype(np.float64).values
     
-    is_div = (type_ids == TYPE_DIVIDEND)
-    mask_div_total = is_div & (np.abs(raw_totals) > 1e-9)
-    raw_prices[mask_div_total] = raw_totals[mask_div_total]
+    # --- Robust Quantity/Price Handling for Cash ---
+    # For $CASH, if Quantity is 0 but Total Amount is not, use Total Amount as Quantity.
+    # This handles manual entries where users put the deposit amount in the 'Total' column.
+    cash_sym_mask = (df['Symbol'] == CASH_SYMBOL_CSV).values
+    zero_qty_mask = (np.abs(qtys) < 1e-9)
+    has_total_mask = (np.abs(raw_totals) > 1e-9)
     
-    mask_div_calc = is_div & (~mask_div_total)
+    fix_cash_qty_mask = cash_sym_mask & zero_qty_mask & has_total_mask
+    if np.any(fix_cash_qty_mask):
+        qtys[fix_cash_qty_mask] = np.abs(raw_totals[fix_cash_qty_mask])
+        # Force price to 1.0 for these fixed entries so cost = qty
+        raw_prices[fix_cash_qty_mask] = 1.0
+
+    # Use Total Amount for types where Price/Share might be zero (Dividends, Tax, Fees, Interest)
+    # OR for any Cash transaction with zero Price/Share
+    income_expense_types = (type_ids == TYPE_DIVIDEND) | (type_ids == TYPE_TAX) | (type_ids == TYPE_FEES) | (type_ids == TYPE_INTEREST)
+    mask_use_total = (income_expense_types | cash_sym_mask) & (np.abs(raw_prices) < 1e-9) & has_total_mask
+    raw_prices[mask_use_total] = raw_totals[mask_use_total]
+    
+    # Handle Dividends with Quantity (price per share)
+    mask_div_calc = (type_ids == TYPE_DIVIDEND) & (~mask_use_total)
     raw_prices[mask_div_calc] = raw_prices[mask_div_calc] * np.abs(qtys[mask_div_calc])
     
     prices = raw_prices
@@ -644,12 +730,21 @@ def _process_transactions_to_holdings(
         nb_shortable.append(sid)
         
     cash_sym_id = sym_map.get(CASH_SYMBOL_CSV, -1)
+
+    # --- Build acc_cash_modes array (0=Manual, 1=Auto) ---
+    acc_cash_modes = np.zeros(num_accs, dtype=np.int64)
+    # Normalize map keys to match stripped/normalized account names
+    normalized_mode_map = {str(k).strip(): v for k, v in account_cash_mode_map.items()}
+    for acc_name, mode_str in normalized_mode_map.items():
+        if acc_name in acc_map and mode_str == "Auto":
+            acc_cash_modes[acc_map[acc_name]] = 1
         
     final_state, transfer_costs_nb = _process_numba_core(
         sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios,
         to_acc_ids, local_curr_ids, fx_rates_hist,
         nb_shortable, STOCK_QUANTITY_CLOSE_TOLERANCE, cash_sym_id,
-        n, num_syms, num_accs
+        n, num_syms, num_accs,
+        acc_cash_modes
     )
 
     # --- Tags Aggregation (Outside Numba) ---
@@ -1096,11 +1191,19 @@ def _build_summary_rows(
              try:
                  # Filter transactions for this specific holding on the report date
                  # report_date is a datetime.date
-                 tx_today = transactions_df[
-                     (transactions_df['Symbol'] == symbol) & 
-                     (transactions_df['Account'] == account) & 
-                     (transactions_df['Date'].dt.date == report_date)
-                 ]
+                 # MODIFIED: Include 'To Account' in filter for incoming transfers
+                 if 'To Account' in transactions_df.columns:
+                     tx_today = transactions_df[
+                         (transactions_df['Symbol'] == symbol) & 
+                         ((transactions_df['Account'] == account) | (transactions_df['To Account'] == account)) & 
+                         (transactions_df['Date'].dt.date == report_date)
+                     ]
+                 else:
+                     tx_today = transactions_df[
+                         (transactions_df['Symbol'] == symbol) & 
+                         (transactions_df['Account'] == account) & 
+                         (transactions_df['Date'].dt.date == report_date)
+                     ]
                  
                  if not tx_today.empty:
                      for _, tx in tx_today.iterrows():
@@ -1108,6 +1211,8 @@ def _build_summary_rows(
                          t_qty = abs(float(tx['Quantity']))
                          t_price = float(tx['Price/Share'])
                          t_comm = float(tx['Commission']) if pd.notna(tx['Commission']) else 0.0
+                         t_acc = str(tx.get('Account', '')).strip()
+                         t_to_acc = str(tx.get('To Account', '')).strip()
                          
                          if t_type in ['buy', 'deposit', 'short sell']:
                              # Buys/Deposits add to quantity (except short sell adds to the short position, which is negative qty)
@@ -1118,6 +1223,16 @@ def _build_summary_rows(
                              net_flow_today_local -= (t_qty * t_price) - t_comm
                          elif t_type == 'fees':
                              net_flow_today_local += t_comm
+                         elif t_type == 'transfer':
+                             # Determine direction for this specific account
+                             if t_to_acc == account:
+                                 # Incoming Transfer (Deposit-like)
+                                 qty_change_today += t_qty
+                                 net_flow_today_local += (t_qty * t_price)
+                             elif t_acc == account:
+                                 # Outgoing Transfer (Withdrawal-like)
+                                 qty_change_today -= t_qty
+                                 net_flow_today_local -= (t_qty * t_price)
              except Exception as e_flow:
                  logging.warning(f"Error calculating intra-day flow for {symbol}/{account}: {e_flow}")
 
@@ -1305,7 +1420,7 @@ def _build_summary_rows(
             fx_gain_loss_display_holding = 0.0
             fx_gain_loss_pct_holding = 0.0  # If no FX G/L, percentage is 0%
         elif (  # Original conditions, but now as elif
-            not is_cash_symbol(symbol)  # Not cash
+            abs(current_total_cost_local) > 1e-9  # Has a local cost basis
             and abs(current_total_cost_local) > 1e-9  # Has a local cost basis
             and pd.notna(cost_basis_display)  # Cost basis in display currency is valid
             and abs(cost_basis_display)

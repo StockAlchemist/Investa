@@ -120,7 +120,7 @@ def trigger_background_precalculation(current_user: User):
             from server.dependencies import get_transaction_data
             
             # retrieve user transaction data manually
-            df, manual, user_map, excluded, acc_curr, path, mtime = get_transaction_data(current_user)
+            df, manual, user_map, excluded, acc_curr, cash_mode, path, mtime = get_transaction_data(current_user)
             if df.empty:
                 logging.info("Skip precalc: dataframe is empty")
                 return
@@ -146,7 +146,8 @@ def trigger_background_precalculation(current_user: User):
                 include_accounts=None, # ALL accounts
                 manual_overrides_dict=manual,
                 user_symbol_map=user_map,
-                user_excluded_symbols=excluded
+                user_excluded_symbols=excluded,
+                account_cash_mode_map=cash_mode  # account_cash_mode_map from get_transaction_data
             )
 
             # Calculate TWR synchronously for ALL account
@@ -174,6 +175,7 @@ def trigger_background_precalculation(current_user: User):
                     manual_overrides_dict=manual,
                     user_excluded_symbols=excluded,
                     original_csv_file_path=path,
+                    account_cash_mode_map=cash_mode,  # account_cash_mode_map
                     calc_method="STANDARD"
                 )
                 if "|||TWR_FACTOR:" in hist_status:
@@ -260,6 +262,7 @@ async def _get_historical_performance_cached(
     benchmark_symbols_yf: List[str],
     display_currency: str,
     include_accounts: Optional[List[str]],
+    account_cash_mode_map: Dict[str, str], # NEW
     db_mtime: float
 ) -> Tuple[pd.DataFrame, Dict, Dict, str]:
     """
@@ -329,7 +332,8 @@ async def _get_historical_performance_cached(
                 manual_overrides_dict=manual_overrides_dict,
                 user_symbol_map=user_symbol_map,
                 user_excluded_symbols=user_excluded_symbols,
-                original_csv_file_path=original_csv_file_path
+                original_csv_file_path=original_csv_file_path,
+                account_cash_mode_map=account_cash_mode_map # PASSING IT HERE
             )
             
         result = await run_in_threadpool(run_calc)
@@ -578,6 +582,7 @@ async def get_asset_change(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map, # NEW
         original_csv_path,
         _ # Ignore db_mtime
     ) = data
@@ -609,7 +614,8 @@ async def get_asset_change(
             include_accounts=accounts,
             benchmark_symbols_yf=mapped_benchmarks,
             interval="D",
-            db_mtime=data[6] # db_mtime
+            account_cash_mode_map=account_cash_mode_map, # PASSING IT HERE
+            db_mtime=data[7]  # db_mtime
         )
         
         if daily_df is None or daily_df.empty:
@@ -697,6 +703,7 @@ async def _calculate_portfolio_summary_internal(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         db_path,
         db_mtime
     ) = data
@@ -779,7 +786,8 @@ async def _calculate_portfolio_summary_internal(
                 default_currency=config.DEFAULT_CURRENCY,
                 market_provider=mdp,
                 account_interest_rates=account_interest_rates,
-                interest_free_thresholds=interest_free_thresholds
+                interest_free_thresholds=interest_free_thresholds,
+                account_cash_mode_map=account_cash_mode_map # PASSING IT HERE
             )
 
         (
@@ -864,6 +872,7 @@ async def _calculate_portfolio_summary_internal(
                     benchmark_symbols_yf=['^GSPC'],
                     display_currency=currency,
                     include_accounts=include_accounts,
+                    account_cash_mode_map=account_cash_mode_map,
                     db_mtime=db_mtime
                 )
                 
@@ -1074,6 +1083,7 @@ async def get_portfolio_summary(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         _
     ) = data
@@ -1141,7 +1151,7 @@ async def get_portfolio_ai_review(
     """
     from server.portfolio_ai_analyzer import generate_portfolio_review
     
-    (df, manual, user_map, excluded, acc_curr, path, mtime) = data
+    (df, manual, user_map, excluded, acc_curr, cash_mode, path, mtime) = data
     
     if df.empty:
         raise HTTPException(status_code=400, detail="Portfolio is empty.")
@@ -1172,6 +1182,7 @@ async def get_portfolio_ai_review(
             benchmark_symbols_yf=["SPY"], # Benchmark against SPY for Beta
             display_currency=currency,
             include_accounts=accounts,
+            account_cash_mode_map=cash_mode,
             db_mtime=mtime
         )
         
@@ -1182,7 +1193,7 @@ async def get_portfolio_ai_review(
         risk_metrics = {}
         try:
             # Unpack data dependency
-            df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path, mtime = data
+            df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, mtime = data
             
             start_date = date.today() - timedelta(days=365)
             end_date = date.today()
@@ -1200,6 +1211,7 @@ async def get_portfolio_ai_review(
                 include_accounts=accounts,
                 benchmark_symbols_yf=['^GSPC'], # Fetch S&P 500 for Beta/Alpha
                 interval="D",
+                account_cash_mode_map=account_cash_mode_map,
                 db_mtime=mtime
             )
             
@@ -1446,6 +1458,7 @@ async def get_holdings(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         _
     ) = data
@@ -1570,7 +1583,7 @@ async def get_transactions(
     Returns:
         List[Dict]: A list of transaction records.
     """
-    df, _, _, _, _, _, _ = data
+    df, _, _, _, _, _, _, _ = data
     
     if df.empty:
         return []
@@ -1731,7 +1744,7 @@ async def create_transaction(
         Dict: Status message and the new transaction ID.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1813,7 +1826,7 @@ async def add_transactions_batch(
     Used for Review & Confirm step after document parsing.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1875,7 +1888,7 @@ async def update_transaction(
         Dict: Status message.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1915,7 +1928,7 @@ async def delete_transaction(
         Dict: Status message.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1953,7 +1966,7 @@ async def update_holding_tags(
     Updates tags for all transactions associated with a specific holding (Symbol + Account).
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -2005,7 +2018,7 @@ async def sync_ibkr(
                 }
             )
             
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
@@ -2183,6 +2196,7 @@ async def _calculate_historical_performance_internal(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         _
     ) = data
@@ -2374,7 +2388,8 @@ async def _calculate_historical_performance_internal(
             include_accounts=accounts,
             benchmark_symbols_yf=benchmarks,
             interval=calc_interval,
-            db_mtime=data[6] # db_mtime
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=data[7]  # db_mtime
         )
         logging.info(f"API History: Calc returned daily_df with {len(daily_df)} rows. Columns: {list(daily_df.columns)}")
         if not daily_df.empty:
@@ -2668,7 +2683,7 @@ async def get_stock_history(
     Returns historical price data for a single stock, with optional benchmarks.
     """
     try:
-        _, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
+        _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         mdp = get_mdp()
         
         # 1. Map Symbol
@@ -2856,6 +2871,7 @@ async def get_capital_gains(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         db_mtime
     ) = data
@@ -2881,6 +2897,7 @@ async def get_capital_gains(
             benchmark_symbols_yf=[], # No benchmarks needed
             display_currency=currency,
             include_accounts=accounts,
+            account_cash_mode_map=account_cash_mode_map,
             db_mtime=db_mtime
         )
         
@@ -2947,6 +2964,7 @@ async def get_dividends(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         db_mtime
     ) = data
@@ -2972,6 +2990,7 @@ async def get_dividends(
             benchmark_symbols_yf=[], # No benchmarks needed
             display_currency=currency,
             include_accounts=accounts,
+            account_cash_mode_map=account_cash_mode_map,
             db_mtime=db_mtime
         )
         
@@ -3225,7 +3244,7 @@ async def get_projected_income(
             return []
 
         # 3. Use unified event generation logic
-        df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
+        df, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         
         # Calculate raw events using the robust logic (Calendar + Estimates + Cash Interest)
         events = await _generate_dividend_events(
@@ -3314,7 +3333,7 @@ async def get_stock_analysis(
     Returns AI-powered stock analysis for a given symbol.
     """
     try:
-        (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+        (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
         
         mdp = get_mdp()
@@ -3497,6 +3516,7 @@ async def get_settings(
             "display_currency": config_manager.gui_config.get("display_currency", "USD"),
             "selected_accounts": config_manager.gui_config.get("selected_accounts", []),
             "active_tab": config_manager.gui_config.get("active_tab", "performance"),
+            "account_cash_mode_map": config_manager.gui_config.get("account_cash_mode_map", {}),
             "ibkr_token": config_manager.manual_overrides.get("ibkr_token") or getattr(config, "IBKR_TOKEN", None),
             "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or getattr(config, "IBKR_QUERY_ID", None)
         }
@@ -3511,6 +3531,7 @@ class SettingsUpdate(BaseModel):
     account_groups: Optional[Dict[str, List[str]]] = None
     account_group_order: Optional[List[str]] = None
     account_currency_map: Optional[Dict[str, str]] = None
+    account_cash_mode_map: Optional[Dict[str, str]] = None
     available_currencies: Optional[List[str]] = None
     account_interest_rates: Optional[Dict[str, float]] = None
     interest_free_thresholds: Optional[Dict[str, float]] = None
@@ -3589,6 +3610,10 @@ async def update_settings(
         if settings.account_currency_map is not None:
              config_manager.gui_config["account_currency_map"] = settings.account_currency_map
              gui_config_changed = True
+             
+        if settings.account_cash_mode_map is not None:
+             config_manager.gui_config["account_cash_mode_map"] = settings.account_cash_mode_map
+             gui_config_changed = True
 
         if settings.available_currencies is not None:
              config_manager.gui_config["available_currencies"] = settings.available_currencies
@@ -3646,7 +3671,7 @@ async def get_risk_metrics(
     """
     Returns portfolio risk metrics (Sharpe, Volatility, Max Drawdown).
     """
-    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path, _ = data
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, _ = data
     if df.empty:
         return {}
 
@@ -3665,7 +3690,8 @@ async def get_risk_metrics(
             include_accounts=accounts,
             benchmark_symbols_yf=['^GSPC'], # Add S&P 500 for risk metrics
             interval="D",
-            db_mtime=data[6] # db_mtime
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=data[7]  # db_mtime
         )
         
         if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
@@ -3695,7 +3721,7 @@ async def get_attribution(
     """
     Returns performance attribution by sector and stock.
     """
-    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _, _ = data
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, _ = data
     if df.empty:
         return {}
 
@@ -3888,7 +3914,7 @@ async def get_dividend_calendar(
             return []
 
         # 3. Use unified event generation logic
-        df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
+        df, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         
         events = await _generate_dividend_events(
             holdings=holdings,
@@ -3913,7 +3939,7 @@ async def get_fundamentals_endpoint(
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns fundamental data (ticker.info) for a symbol."""
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {
             "symbol": symbol,
@@ -3971,7 +3997,7 @@ async def get_financials_endpoint(
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns historical financial statements for a symbol."""
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {"symbol": symbol, "period": period_type, "income_statement": [], "balance_sheet": [], "cash_flow": []}
 
@@ -4027,7 +4053,7 @@ async def get_ratios_endpoint(
     if not FINANCIAL_RATIOS_AVAILABLE:
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {"symbol": symbol, "historical_ratios": [], "current_valuation": {}}
 
@@ -4082,7 +4108,7 @@ async def get_intrinsic_value_endpoint(
     if not FINANCIAL_RATIOS_AVAILABLE:
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {"symbol": symbol, "intrinsic_value": 1.0, "current_price": 1.0, "upside_potential": 0.0, "is_cash": True}
 
