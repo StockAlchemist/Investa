@@ -24,7 +24,7 @@ import pandas as pd
 import threading
 import config
 
-DB_FILENAME = "investa_transactions.db"
+DB_FILENAME = "portfolio.db"
 DB_SCHEMA_VERSION = 14
 
 # --- Helper for JSON serialization with NaNs ---
@@ -62,8 +62,15 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
 
 
 def get_global_screener_db_path() -> str:
-    """Returns the path to the global master screener database."""
-    return os.path.join(config.get_app_data_dir(), config.DB_DIR, DB_FILENAME)
+    """Returns the path to the global public screener cache database.
+    
+    This is a SHARED/PUBLIC database containing AI reviews and intrinsic value
+    calculations for all stock universes (S&P 500, S&P 400, Russell 2000).
+    It is NOT a user-specific database.
+    """
+    screener_dir = os.path.join(config.get_app_data_dir(), config.SCREENER_DIR)
+    os.makedirs(screener_dir, exist_ok=True)
+    return os.path.join(screener_dir, config.SCREENER_DB_FILENAME)
 
 
 _DB_CONN_CACHE = threading.local()

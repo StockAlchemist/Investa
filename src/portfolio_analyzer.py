@@ -111,7 +111,7 @@ def get_type_id(t):
     if t == 'deposit': return TYPE_DEPOSIT
     if t == 'withdrawal': return TYPE_WITHDRAWAL
     if t == 'dividend': return TYPE_DIVIDEND
-    if t == 'fees': return TYPE_FEES
+    if t in ['fee', 'fees']: return TYPE_FEES
     if t in ['split', 'stock split']: return TYPE_SPLIT
     if t == 'transfer': return TYPE_TRANSFER
     if t == 'short sell': return TYPE_SHORT_SELL
@@ -122,7 +122,7 @@ def get_type_id(t):
 
 @jit(nopython=True, cache=True)
 def _process_numba_core(
-    sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios, 
+    sym_ids, acc_ids, type_ids, qtys, prices, comms, totals, split_ratios, 
     to_acc_ids, local_curr_ids, fx_rates_hist, 
     shortable_sym_ids, stock_qty_tol, cash_sym_id,
     num_tx, num_syms, num_accs,
@@ -157,6 +157,7 @@ def _process_numba_core(
         qty = qtys[i]
         price = prices[i]
         comm = comms[i]
+        total = totals[i]
         split = split_ratios[i]
         to_acc = to_acc_ids[i]
         curr = local_curr_ids[i]
@@ -387,7 +388,9 @@ def _process_numba_core(
 
         # Buy / Deposit
         if typ == TYPE_BUY or typ == TYPE_DEPOSIT:
-            cost = (qty_abs * price) + comm
+            # Prefer 'total' if provided and non-zero (it's the absolute cash/cost impact)
+            # otherwise fallback to qty * price + comm
+            cost = abs(total) if abs(total) > 1e-9 else (qty_abs * price) + comm
             current_state[0] += qty_abs
             current_state[1] += cost
             current_state[4] += comm
@@ -403,14 +406,15 @@ def _process_numba_core(
                 # Cash allows negative balances, process fully without held_qty limits
                 # Ensure price is at least 1.0 if not specified (for cost basis)
                 eff_price = price if abs(price) > 1e-9 else 1.0
-                cost_sold = qty_abs * eff_price
+                qty_to_deduct = abs(total) if abs(total) > 1e-9 else qty_abs
+                cost_sold = qty_to_deduct * eff_price
                 cost_sold_hist = cost_sold * fx_rate
                 
-                proceeds = (qty_abs * eff_price) - comm
+                proceeds = (qty_to_deduct * eff_price) - comm
                 gain = 0.0
                 gain_display = 0.0
                 
-                current_state[0] -= qty_abs
+                current_state[0] -= qty_to_deduct
                 current_state[1] -= cost_sold
                 current_state[10] -= cost_sold_hist
                 current_state[4] += comm
@@ -428,7 +432,7 @@ def _process_numba_core(
                     cost_sold = qty_sold * (current_state[1] / held_qty)
                     cost_sold_hist = qty_sold * (current_state[10] / held_qty)
                 
-                proceeds = (qty_sold * price) - comm
+                proceeds = abs(total) if abs(total) > 1e-9 else (qty_sold * price) - comm
                 gain = proceeds - cost_sold
                 
                 # Realized Gain Display Calculation (Long Sell)
@@ -480,7 +484,7 @@ def _process_numba_core(
 
         # Fees / Tax
         elif typ == TYPE_FEES or typ == TYPE_TAX:
-            cost_val = abs(comm) if abs(comm) > 1e-9 else abs(price)
+            cost_val = abs(total) if abs(total) > 1e-9 else (abs(comm) if abs(comm) > 1e-9 else abs(price))
             current_state[4] += cost_val
             current_state[7] += cost_val
             current_state[8] += cost_val
@@ -494,7 +498,7 @@ def _process_numba_core(
 
         # Interest
         elif typ == TYPE_INTEREST:
-            int_amt = abs(price)
+            int_amt = abs(total) if abs(total) > 1e-9 else abs(price)
             current_state[3] += int_amt
             current_state[4] += comm
             current_state[10] -= (int_amt * fx_rate)
@@ -519,21 +523,19 @@ def _process_numba_core(
             
             cash_delta = 0.0
             if typ == TYPE_BUY:
-                cash_delta = -(qty_abs * price + comm)
+                cash_delta = - (abs(total) if abs(total) > 1e-9 else (qty_abs * price) + abs(comm))
             elif typ == TYPE_SELL:
-                cash_delta = +(qty_abs * price - comm)
+                cash_delta = + (abs(total) if abs(total) > 1e-9 else (qty_abs * price) - abs(comm))
             elif typ == TYPE_DIVIDEND:
-                # div_amt was computed above as 'price' (Total Amount for dividends)
-                cash_delta = +abs(price) - comm
+                cash_delta = + abs(price)
             elif typ == TYPE_INTEREST:
-                cash_delta = +abs(price) - comm
+                cash_delta = + (abs(total) if abs(total) > 1e-9 else abs(price))
             elif typ == TYPE_FEES or typ == TYPE_TAX:
-                fee_val = abs(comm) if abs(comm) > 1e-9 else abs(price)
-                cash_delta = -fee_val
+                cash_delta = - (abs(total) if abs(total) > 1e-9 else (abs(comm) if abs(comm) > 1e-9 else abs(price)))
             elif typ == TYPE_SHORT_SELL:
-                cash_delta = +(qty_abs * price - comm)
+                cash_delta = + ((qty_abs * price) - abs(comm))
             elif typ == TYPE_BUY_TO_COVER:
-                cash_delta = -(qty_abs * price + comm)
+                cash_delta = - ((qty_abs * price) + abs(comm))
             # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
             
             if abs(cash_delta) > 1e-9:
@@ -570,14 +572,13 @@ def _process_transactions_to_holdings(
     Dict[str, float],
     Set[int],
     Dict[int, str],
-    Dict[int, str],
     Dict[int, float],
     bool,
 ]:
     logging.debug("Starting Numba-optimized transaction processing (Array-based)...")
     
     if transactions_df.empty:
-        return {}, {}, {}, {}, set(), {}, {}, {}, False
+        return {}, {}, {}, {}, set(), {}, {}, False
 
     if account_cash_mode_map is None:
         account_cash_mode_map = {}
@@ -664,7 +665,8 @@ def _process_transactions_to_holdings(
     
     type_map_dict = {
         'buy': TYPE_BUY, 'sell': TYPE_SELL, 'deposit': TYPE_DEPOSIT, 
-        'withdrawal': TYPE_WITHDRAWAL, 'dividend': TYPE_DIVIDEND, 'fees': TYPE_FEES,
+        'withdrawal': TYPE_WITHDRAWAL, 'dividend': TYPE_DIVIDEND, 
+        'fee': TYPE_FEES, 'fees': TYPE_FEES,
         'split': TYPE_SPLIT, 'stock split': TYPE_SPLIT, 'transfer': TYPE_TRANSFER,
         'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER,
         'tax': TYPE_TAX, 'interest': TYPE_INTEREST
@@ -777,7 +779,7 @@ def _process_transactions_to_holdings(
             acc_cash_modes[acc_map[acc_name]] = 1
         
     final_state, transfer_costs_nb = _process_numba_core(
-        sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios,
+        sym_ids, acc_ids, type_ids, qtys, prices, comms, raw_totals, split_ratios,
         to_acc_ids, local_curr_ids, fx_rates_hist,
         nb_shortable, STOCK_QUANTITY_CLOSE_TOLERANCE, cash_sym_id,
         n, num_syms, num_accs,

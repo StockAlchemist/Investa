@@ -96,12 +96,18 @@ _HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
 _SUMMARY_CALC_LOCK = asyncio.Lock() # Lock to prevent concurrent calculation on cache miss
 
 def reload_data_and_clear_cache(current_user: Optional[User] = None):
-    """Helper to clear both transaction data cache, portfolio summary cache, and market history cache."""
-    reload_data()
+    """Helper to clear transaction data cache, portfolio summary cache, and market history cache.
+    
+    Clears only the current user's transaction cache (targeted) to avoid invalidating
+    other users' in-memory data on every write operation.
+    """
+    # Targeted clear: only evict this user's transaction cache
+    username = current_user.username if current_user else None
+    reload_data(username)
     _PORTFOLIO_SUMMARY_CACHE.clear()
     _MARKET_HISTORY_CACHE.clear()
     _PORTFOLIO_HISTORY_CACHE.clear()
-    logging.info("Transaction, Summary, Market History, and Portfolio History caches cleared.")
+    logging.info(f"Caches cleared for user '{username or 'all'}'.")
     if current_user:
         trigger_background_precalculation(current_user)
 
@@ -1778,9 +1784,12 @@ async def create_transaction(
         logging.error(f"Error adding transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+import fastapi
 @router.post("/transactions/parse_document")
 async def parse_document(
     file: UploadFile = File(...),
+    cash_mode: Optional[str] = fastapi.Form(None),
+    account_override: Optional[str] = fastapi.Form(None),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -1800,7 +1809,12 @@ async def parse_document(
         # Parse the document
         transactions = []
         try:
-            transactions = extract_transactions_from_file(temp_file_path)
+            transactions = extract_transactions_from_file(
+                temp_file_path, 
+                user_id=current_user.id, 
+                cash_mode=cash_mode, 
+                account_override=account_override
+            )
         finally:
             # Always clean up temp file
             if os.path.exists(temp_file_path):
@@ -2120,8 +2134,8 @@ async def get_pending_ibkr(
 ):
     """Fetch pending transactions for review."""
     try:
-        query = "SELECT * FROM pending_transactions WHERE user_id = ? ORDER BY Date DESC"
-        df = pd.read_sql_query(query, conn, params=(current_user.id,))
+        query = "SELECT * FROM pending_transactions ORDER BY Date DESC"
+        df = pd.read_sql_query(query, conn)
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2143,7 +2157,7 @@ async def approve_ibkr(
         
         for p_id in ids:
             # Fetch from pending
-            cursor.execute(f"SELECT {cols_str} FROM pending_transactions WHERE id = ? AND user_id = ?", (p_id, current_user.id))
+            cursor.execute(f"SELECT {cols_str} FROM pending_transactions WHERE id = ?", (p_id,))
             row = cursor.fetchone()
             if row:
                 # Insert into main table
@@ -2171,7 +2185,7 @@ async def reject_ibkr(
     """Discard pending transactions."""
     try:
         cursor = conn.cursor()
-        cursor.execute(f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?']*len(ids))}) AND user_id = ?", (*ids, current_user.id))
+        cursor.execute(f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?']*len(ids))})", (*ids,))
         deleted_count = cursor.rowcount
         conn.commit()
         if deleted_count > 0:
@@ -3657,7 +3671,7 @@ async def update_settings(
 
             # OPTIMIZATION: Only reload settings and clear summary/history caches.
             # Avoid a full 'reload_data()' which wipes the transaction cache and forces a heavy DB reload.
-            clear_settings_cache(current_user.id)
+            clear_settings_cache(current_user.username)
             clear_portfolio_caches()
             trigger_background_precalculation(current_user)
             return {"status": "success", "message": "Settings updated and data reloaded"}

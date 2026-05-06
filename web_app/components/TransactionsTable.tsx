@@ -207,7 +207,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     };
 
     const uniqueTypes = new Set<string>([
-        'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Deposit', 'Withdrawal', 'Spin-off', 'Split'
+        'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Deposit', 'Withdrawal', 'Spin-off', 'Split', 'Short Sell', 'Buy to Cover'
     ]);
     (transactions || []).forEach(tx => {
         if (tx.Type) uniqueTypes.add(formatTransactionType(tx.Type));
@@ -294,10 +294,10 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
     const getTransactionTypeStyle = (type: string) => {
         const t = type.toUpperCase();
-        if (['BUY', 'DEPOSIT'].includes(t)) {
+        if (['BUY', 'DEPOSIT', 'BUY TO COVER'].includes(t)) {
             return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
         }
-        if (['SELL', 'WITHDRAWAL'].includes(t)) {
+        if (['SELL', 'WITHDRAWAL', 'SHORT SELL'].includes(t)) {
             return 'bg-red-500/10 text-red-600 dark:text-red-500';
         }
         if (['DIVIDEND', 'INTEREST'].includes(t)) {

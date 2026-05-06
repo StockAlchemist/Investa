@@ -40,11 +40,11 @@ UPDATE_INTERVAL_SECONDS = 4 * 3600  # 4 Hours
 RETRY_DELAY_SECONDS = 300           # 5 Minutes
 
 def get_user_databases():
-    """Finds all user portfolio.db files and the global DB."""
+    """Finds all user portfolio.db files and the global screener cache DB."""
     data_dir = config.get_app_data_dir()
     users_dir = os.path.join(data_dir, "users")
     db_paths = []
-    
+
     if os.path.exists(users_dir):
         for user_name in os.listdir(users_dir):
             user_path = os.path.join(users_dir, user_name)
@@ -52,12 +52,13 @@ def get_user_databases():
                 db_path = os.path.join(user_path, "portfolio.db")
                 if os.path.exists(db_path):
                     db_paths.append((user_name, db_path))
-    
-    # Also include the global DB for completeness if it exists
-    global_db = os.path.join(data_dir, "investa_transactions.db")
-    if os.path.exists(global_db):
-         db_paths.append(("GLOBAL", global_db))
-         
+
+    # Include the global screener cache DB (data/screener/screener_cache.db)
+    from db_utils import get_global_screener_db_path
+    global_screener_db = get_global_screener_db_path()
+    if os.path.exists(global_screener_db):
+        db_paths.append(("GLOBAL_SCREENER", global_screener_db))
+
     return db_paths
 
 def run_screener_update():
