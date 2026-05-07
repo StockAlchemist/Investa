@@ -906,7 +906,9 @@ def _build_summary_rows(
 
     logging.info(f"Calculating final portfolio summary rows in {display_currency}...")
 
-    # --- NEW: Separate cash from stock holdings ---
+    # --- BUG-12 FIX: Removed dead scaffold code that duplicated cash/stock separation ---
+
+    # --- Separate cash from stock holdings ---
     cash_holdings_by_currency: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     stock_holdings: Dict[Tuple[str, str], Dict] = {}
     
@@ -918,43 +920,6 @@ def _build_summary_rows(
             cash_holdings_by_currency[currency].append({"account": account, **data})
         else:
             stock_holdings[holding_key] = data
-    # --- END NEW ---
-
-    # --- Loop 1: Process Stock/ETF Holdings ---
-    for holding_key, data in stock_holdings.items():
-        # ... (Loop 1 content omitted for brevity, assumes unchanged) ...
-        # Use existing logic for stocks, but ensuring indentation matches.
-        # Since replace_file_content replaces a block, I must be careful not to delete Loop 1 if I select lines covering it.
-        # The user's selection 1198-1400 (Loop 2) does NOT cover Loop 1 (which starts before 1198).
-        # Ah, lines 609-650 cover the signature and init.
-        pass
-
-    # ... (I need to split this update because Loop 1 is between signature and Loop 2 in the file) ...
-    # Wait, the tool requires contiguous block? Yes.
-    # Lines 625-630 is signature.
-    # Lines 1198-1400 is Loop 2.
-    # They are far apart. I should make two calls.
-    # Call 1: Update Signature (lines 609-625)
-    # Call 2: Update Loop 2 logic (lines 1198-1276)
-    pass
-
-# Correct approach: Return error to myself to split calls.
-# I will make Call 1 for signature now.
-
-
-    # --- NEW: Separate cash from stock holdings ---
-    cash_holdings_by_currency: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    stock_holdings: Dict[Tuple[str, str], Dict] = {}
-    
-    for holding_key, data in holdings.items():
-        symbol, account = holding_key
-        if is_cash_symbol(symbol):
-            # Group cash holdings by their local currency for aggregation
-            currency = data.get("local_currency", default_currency)
-            cash_holdings_by_currency[currency].append({"account": account, **data})
-        else:
-            stock_holdings[holding_key] = data
-    # --- END NEW ---
 
     for holding_key, data in stock_holdings.items():
         symbol, account = holding_key

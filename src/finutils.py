@@ -774,7 +774,7 @@ def get_cash_flows_for_mwr(
                 if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
                     cash_flow_local = -((qty_abs * price_local) + commission_local)
             elif tx_type == "fees":
-                cash_flow_local = -commission_local
+                cash_flow_local = -abs(commission_local)  # BUG-08 FIX: Use abs() consistently
             elif tx_type == "transfer":
                 # Asset Transfer logic
                 is_outbound = False
@@ -788,7 +788,7 @@ def get_cash_flows_for_mwr(
                 if is_outbound and not is_inbound:
                     # Asset leaving scope -> Withdrawal -> Positive MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):
-                        cash_flow_local = (abs(qty) * price_local) + commission_local
+                        cash_flow_local = (abs(qty) * price_local) - abs(commission_local)  # BUG-09 FIX: Subtract commission (broker takes it)
                 elif not is_outbound and is_inbound:
                     # Asset entering scope -> Deposit -> Negative MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):

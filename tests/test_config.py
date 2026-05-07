@@ -65,7 +65,7 @@ def test_import_and_types():
     assert isinstance(YFINANCE_INDEX_TICKER_MAP, dict)
     assert isinstance(DEFAULT_INDEX_QUERY_SYMBOLS, list)
     assert isinstance(SYMBOL_MAP_TO_YFINANCE, dict)  # Remains dict, starts empty
-    assert isinstance(YFINANCE_EXCLUDED_SYMBOLS, dict)  # Changed from set to dict
+    assert isinstance(YFINANCE_EXCLUDED_SYMBOLS, set)
     assert isinstance(SHORTABLE_SYMBOLS, set)
     assert isinstance(DEFAULT_CURRENCY, str)
     assert isinstance(
