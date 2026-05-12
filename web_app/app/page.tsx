@@ -143,14 +143,17 @@ export default function Home() {
   }, []);
 
   // Stagger background fetches to prioritize essential data
+  // PERF FIX (BN-10): Increased delays to avoid flooding the backend before
+  // critical summary/holdings responses complete. Previous values (800ms, 3s)
+  // caused 10+ concurrent requests within the first 3 seconds.
   useEffect(() => {
     if (!mounted) return;
 
-    // Level 1: Performance Tab extras (Health, Risk, Attribution, Sparkline) after 800ms
-    const t1 = setTimeout(() => setBackgroundFetchLevel(1), 800);
+    // Level 1: Performance Tab extras (Health, Risk, Attribution, Sparkline) after 3s
+    const t1 = setTimeout(() => setBackgroundFetchLevel(1), 3000);
 
-    // Level 2: Other tabs (Transactions, Dividends, etc.) after 3s
-    const t2 = setTimeout(() => setBackgroundFetchLevel(2), 3000);
+    // Level 2: Other tabs (Transactions, Dividends, etc.) after 8s
+    const t2 = setTimeout(() => setBackgroundFetchLevel(2), 8000);
 
     return () => {
       clearTimeout(t1);

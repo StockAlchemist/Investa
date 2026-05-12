@@ -206,6 +206,7 @@ def calculate_portfolio_summary(
     account_interest_rates: Optional[Dict[str, float]] = None,
     interest_free_thresholds: Optional[Dict[str, float]] = None,
     account_cash_mode_map: Optional[Dict[str, str]] = None,
+    db_mtime: float = 0.0, # NEW: for caching FIFO results
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -901,19 +902,30 @@ def calculate_portfolio_summary(
         else:
              fifo_input_df.sort_values(by=["Date"], inplace=True)
 
-        # Call the new function that returns both gains and lots
-        # FAILSAFE CORRECTION: The API endpoint for Capital Gains (get_capital_gains) DOES pass 'current_fx_rates_vs_usd'.
-        # Previously, we thought it didn't and passed None, which caused a discrepancy (Dashboard lower by ~$9k)
-        # because the fallback to current FX for missing historical rates was blocked.
-        fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
-            transactions_df=fifo_input_df, # Use SORTED FULL history
-            display_currency=display_currency,
-            historical_fx_yf=historical_fx_data_usd_based,
-            default_currency=default_currency,
-            shortable_symbols=SHORTABLE_SYMBOLS,
-            stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
-            current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass the available rates!
-        )
+        # BN-08: Cache FIFO results keyed by db_mtime and display_currency
+        global _FIFO_CACHE
+        if '_FIFO_CACHE' not in globals():
+            _FIFO_CACHE = {}
+            
+        fifo_cache_key = (db_mtime, display_currency)
+        if db_mtime > 0 and fifo_cache_key in _FIFO_CACHE:
+            logging.info("Using cached FIFO Realized Gains & Lots...")
+            fifo_realized_gains_df, open_lots_dict = _FIFO_CACHE[fifo_cache_key]
+        else:
+            # Call the function that returns both gains and lots
+            fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
+                transactions_df=fifo_input_df, # Use SORTED FULL history
+                display_currency=display_currency,
+                historical_fx_yf=historical_fx_data_usd_based,
+                default_currency=default_currency,
+                shortable_symbols=SHORTABLE_SYMBOLS,
+                stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
+                current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass the available rates!
+            )
+            
+            if db_mtime > 0:
+                _FIFO_CACHE.clear() # keep only the latest
+                _FIFO_CACHE[fifo_cache_key] = (fifo_realized_gains_df, open_lots_dict)
         
         # --- DEBUG LOGGING ---
         logging.info(f"FIFO DF Shape: {fifo_realized_gains_df.shape}")
@@ -1136,6 +1148,32 @@ def calculate_portfolio_summary(
             symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
             sector_map, quote_type_map, country_map, industry_map, exchange_map = {}, {}, {}, {}, {}
 
+            # PERF FIX (BN-07): Batch pre-fetch metadata for ALL symbols at once.
+            # Previously, get_fundamental_data() was called per-symbol inside the loop,
+            # causing N sequential cache lookups (and potentially N subprocess calls).
+            # Now we fetch all metadata in one batch call and use the results in the loop.
+            yf_symbols_for_metadata = set()
+            internal_to_yf_for_sector = {}
+            for internal_symbol in symbols_in_summary:
+                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith("Cash ("):
+                    continue
+                yf_ticker = map_to_yf_symbol(
+                    internal_symbol,
+                    effective_user_symbol_map,
+                    effective_user_excluded_symbols,
+                )
+                if yf_ticker:
+                    yf_symbols_for_metadata.add(yf_ticker)
+                    internal_to_yf_for_sector[internal_symbol] = yf_ticker
+            
+            # Single batch fetch — returns cached metadata including sector, industry, country, quoteType
+            batch_metadata = {}
+            if yf_symbols_for_metadata and MARKET_PROVIDER_AVAILABLE and market_provider:
+                try:
+                    batch_metadata = market_provider._ensure_metadata_batch(yf_symbols_for_metadata)
+                except Exception as e_batch_meta:
+                    logging.warning(f"Batch metadata pre-fetch failed: {e_batch_meta}")
+
             for internal_symbol in symbols_in_summary:
                 symbol_overrides = manual_overrides_effective.get(
                     internal_symbol.upper(), {}
@@ -1162,11 +1200,7 @@ def calculate_portfolio_summary(
                 if internal_symbol == "SCBRM1":
                      logging.info(f"DEBUG_OVERRIDE_SCBRM1: ManualExchange={manual_exchange}, AllOverrides={symbol_overrides}")
 
-                yf_ticker_for_sector = map_to_yf_symbol(
-                    internal_symbol,
-                    effective_user_symbol_map,
-                    effective_user_excluded_symbols,
-                )
+                yf_ticker_for_sector = internal_to_yf_for_sector.get(internal_symbol)
                 sector_map[internal_symbol] = (
                     manual_sector if manual_sector else "N/A (No YF/Manual)"
                 )
@@ -1188,9 +1222,13 @@ def calculate_portfolio_summary(
                     or not manual_geography
                     or not manual_industry
                 ):
-                    fundamental_info = market_provider.get_fundamental_data(
-                        yf_ticker_for_sector
-                    )
+                    # PERF FIX (BN-07): Use batch-prefetched metadata instead of per-symbol fetch.
+                    # Falls back to get_fundamental_data only if metadata is missing for this symbol.
+                    fundamental_info = batch_metadata.get(yf_ticker_for_sector)
+                    if not fundamental_info and MARKET_PROVIDER_AVAILABLE and market_provider:
+                        fundamental_info = market_provider.get_fundamental_data(
+                            yf_ticker_for_sector
+                        )
                     if fundamental_info and isinstance(fundamental_info, dict):
                         if not manual_sector:
                             sector_map[internal_symbol] = fundamental_info.get(

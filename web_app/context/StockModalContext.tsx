@@ -1,7 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import StockDetailModal from '@/components/StockDetailModal';
+import dynamic from 'next/dynamic';
+const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 
 interface StockModalContextType {
     openStockDetail: (symbol: string, currency?: string) => void;

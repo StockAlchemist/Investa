@@ -179,7 +179,7 @@ HISTORICAL_COMPARE_METHODS = False  # If true, historical calc will run both met
 
 # --- Position Closing Tolerance ---
 STOCK_QUANTITY_CLOSE_TOLERANCE = (
-    1e-6  # Quantities smaller than this are considered closed
+    1e-4  # Quantities smaller than this are considered closed
 )
 
 # --- Bar Chart Configuration ---

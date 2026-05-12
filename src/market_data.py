@@ -193,12 +193,11 @@ SPDX-License-Identifier: MIT
 # --- Global Locks ---
 _SHARED_MDP_LOCK = threading.Lock()
 # Semaphore to limit concurrent isolated fetches (subprocesses)
-# Semaphore to limit concurrent isolated fetches (subprocesses)
 # Critical for preventing OOM on memory-constrained systems
-# INCREASED TO 3: Allow some parallelism on modern Macs while avoiding file limit exhaustion
-# REDUCED TO 1: Force serialized subprocess execution to survive memory-constrained environments
-# This prevents multiple yfinance instances from competing for RAM.
-_FETCH_SEMAPHORE = threading.Semaphore(1)
+# PERF FIX (BN-04): Increased from 1→2 to allow parallel independent fetches
+# (e.g. price history + FX rates can run concurrently). Kept at 2 (not 3+)
+# to avoid file descriptor exhaustion on macOS.
+_FETCH_SEMAPHORE = threading.Semaphore(2)
 _LAST_RATE_LIMIT_TIME = 0.0 # Track when we last saw a 429
 _RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
 
@@ -514,8 +513,10 @@ class MarketDataProvider:
 
     def _ensure_metadata_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
         """
-        Ensures metadata (Name, Currency) exists and is fresh for given symbols.
+        Ensures metadata (Name, Currency, Sector, Country, etc.) exists and is fresh for given symbols.
         Uses fragmented per-symbol caching to avoid OOM.
+        PERF FIX (BN-05): Also pre-populates fundamentals cache when fetching info,
+        eliminating the redundant second info subprocess call.
         """
         results = {}
         now_ts = datetime.now(timezone.utc)
@@ -579,11 +580,31 @@ class MarketDataProvider:
                             "currency": info.get("currency"),
                             "sector": info.get("sector"),
                             "industry": info.get("industry"),
+                            "country": info.get("country"),  # PERF FIX (BN-07): Added for batch sector enrichment
                             "exchange": info.get("exchange"),
                             "fullExchangeName": info.get("fullExchangeName"),
                             "quoteType": info.get("quoteType"),
                             "timestamp": now_ts.isoformat()
                         }
+                        
+                        # PERF FIX (BN-05): Also pre-populate fundamentals cache from same info fetch.
+                        # This eliminates the redundant second _run_isolated_fetch(task="info")
+                        # that get_fundamental_data_batch would otherwise trigger.
+                        try:
+                            div_rate = info.get("dividendRate", 0.0)
+                            fund_entry = {
+                                "dividendRate": div_rate if div_rate else 0.0,
+                                "trailingAnnualDividendRate": info.get("trailingAnnualDividendRate") or div_rate or 0.0,
+                                "dividendYield": info.get("dividendYield", 0.0) or 0.0,
+                                "exDividendDate": info.get("exDividendDate"),
+                                "lastDividendValue": info.get("lastDividendValue", 0.0),
+                                "lastDividendDate": info.get("lastDividendDate"),
+                                "timestamp": now_ts.isoformat(),
+                                "ticker_info": info
+                            }
+                            self._save_fundamentals_cache({sym: fund_entry})
+                        except Exception:
+                            pass  # Non-critical: fundamentals will be fetched on demand if needed
                     else:
                         logging.warning(f"Failed to fetch metadata for {sym}. Using placeholders.")
                         meta_entry = {
@@ -591,6 +612,7 @@ class MarketDataProvider:
                             "currency": None, 
                             "sector": None,
                             "industry": None,
+                            "country": None,
                             "exchange": None,
                             "fullExchangeName": None,
                             "quoteType": None,
@@ -884,8 +906,10 @@ class MarketDataProvider:
                     cache_timestamp_str = cache_data.get("timestamp")
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                        from utils_time import is_market_open
+                        cache_ttl_minutes = 1 if is_market_open() else 60
                         if datetime.now(timezone.utc) - cache_timestamp < timedelta(
-                            minutes=1 # Short 1-min cache to allow concurrency without crashing
+                            minutes=cache_ttl_minutes # BN-06: Adaptive 1min/60min cache
                         ):
                             cached_quotes = cache_data.get("quotes")
                             cached_fx = cache_data.get("fx_rates")
@@ -904,9 +928,13 @@ class MarketDataProvider:
         # --- 3. FETCHING FRESH DATA (Optimized) ---
         
         # 3a. Ensure Metadata (Name, Currency) - Long-lived cache
+        # PERF FIX (BN-05): This now also pre-populates fundamentals cache,
+        # so the separate get_fundamental_data_batch call below will find
+        # all data already cached and skip its own subprocess fetch.
         metadata_map = self._ensure_metadata_batch(yf_symbols_to_fetch)
         
         # 3c. Fetch Fundamentals (Dividends) - Cached
+        # After BN-05, this will mostly be cache hits (populated by metadata fetch above).
         fundamentals_map = self.get_fundamental_data_batch(yf_symbols_to_fetch)
 
         # 3b. Batch Fetch Prices using yf.download (Existing Logic)

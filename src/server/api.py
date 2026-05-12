@@ -701,6 +701,35 @@ def clean_nans(obj):
         return [clean_nans(v) for v in obj]
     return obj
 
+def _filter_closed_positions(result: Dict[str, Any], show_closed_positions: bool) -> Dict[str, Any]:
+    """Filter out closed positions from a portfolio summary result if requested.
+    
+    The cache always stores results with show_closed_positions=True (BN-01).
+    This helper applies the filter on cache retrieval when the caller requests
+    show_closed_positions=False.
+    """
+    if show_closed_positions:
+        return result
+    
+    sdf = result.get("summary_df")
+    if sdf is None or (hasattr(sdf, 'empty') and sdf.empty):
+        return result
+    
+    from portfolio_logic import STOCK_QUANTITY_CLOSE_TOLERANCE
+    
+    # Only filter if the DataFrame has a Quantity column
+    if hasattr(sdf, 'columns') and "Quantity" in sdf.columns:
+        mask = (
+            (sdf["Quantity"].abs() >= STOCK_QUANTITY_CLOSE_TOLERANCE) |
+            (sdf.get("is_total", False) == True) |
+            (sdf["Symbol"] == "Total")
+        )
+        filtered_result = result.copy()
+        filtered_result["summary_df"] = sdf[mask].copy()
+        return filtered_result
+    
+    return result
+
 async def _calculate_portfolio_summary_internal(
     currency: str = "USD",
     include_accounts: Optional[List[str]] = None,
@@ -750,13 +779,16 @@ async def _calculate_portfolio_summary_internal(
     # Create a unique key for this request configuration + data state
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
     
-    # ADDED: Time-based invalidation (bucketed to 5 seconds to allow fast retries)
-    time_key = int(time.time() / 5)
+    # PERF FIX (BN-03): Adaptive cache TTL — 60s during market hours, 300s after hours.
+    # The previous 5-second bucket caused near-constant recalculation, even though the
+    # frontend only refetches every 60s (market open) or 5min (staleTime).
+    # Cache invalidation on data changes is handled by db_mtime in the key.
+    cache_ttl_seconds = 60 if is_market_open() else 300
+    time_key = int(time.time() / cache_ttl_seconds)
     
     cache_key = (
         currency,
         accounts_key,
-        show_closed_positions,
         db_path,
         db_mtime,
         time_key
@@ -764,7 +796,7 @@ async def _calculate_portfolio_summary_internal(
     
     if cache_key in _PORTFOLIO_SUMMARY_CACHE:
         logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...") # Partial log for brevity
-        return _PORTFOLIO_SUMMARY_CACHE[cache_key]
+        return _filter_closed_positions(_PORTFOLIO_SUMMARY_CACHE[cache_key], show_closed_positions)
         
     logging.info(f"Summary Cache Miss. Waiting for lock. Time key: {time_key}")
 
@@ -772,7 +804,7 @@ async def _calculate_portfolio_summary_internal(
         # Double-check cache inside lock
         if cache_key in _PORTFOLIO_SUMMARY_CACHE:
             logging.info(f"Using cached portfolio summary (after acquiring lock) for key: {cache_key[:3]}...")
-            return _PORTFOLIO_SUMMARY_CACHE[cache_key]
+            return _filter_closed_positions(_PORTFOLIO_SUMMARY_CACHE[cache_key], show_closed_positions)
             
         logging.info(f"Acquired lock. Calculating summary. Time key: {time_key}")
 
@@ -789,7 +821,7 @@ async def _calculate_portfolio_summary_internal(
                 ignored_reasons_from_load={},
                 fmp_api_key=getattr(config, "FMP_API_KEY", None),
                 display_currency=currency,
-                show_closed_positions=show_closed_positions,
+                show_closed_positions=True, # ALWAYS compute all for cache sharing (BN-01)
                 manual_overrides_dict=manual_overrides,
                 user_symbol_map=user_symbol_map,
                 user_excluded_symbols=user_excluded_symbols,
@@ -799,7 +831,8 @@ async def _calculate_portfolio_summary_internal(
                 market_provider=mdp,
                 account_interest_rates=account_interest_rates,
                 interest_free_thresholds=interest_free_thresholds,
-                account_cash_mode_map=account_cash_mode_map # PASSING IT HERE
+                account_cash_mode_map=account_cash_mode_map, # PASSING IT HERE
+                db_mtime=db_mtime # BN-08: pass db_mtime for FIFO cache
             )
 
         (
@@ -857,153 +890,14 @@ async def _calculate_portfolio_summary_internal(
 
     logging.info(f"Summary Metrics: Precalculated TWR used? {precalculated_twr_used}")
 
-    if not df.empty:
-        try:
-            logging.info("Starting advanced risk metrics calculation via daily_df...")
-            # Filter df by accounts to get correct baseline date for this selection
-            df_for_twr = df
-            if include_accounts:
-                df_for_twr = df[df["Account"].isin(include_accounts)]
-            
-            if not df_for_twr.empty:
-                from datetime import timedelta
-                # Use global min date and proper end date to ensure exact alignment and cache hit with graph endpoint
-                min_date = df["Date"].min().date() 
-                max_date = get_est_today() + timedelta(days=1)
-                
-                daily_df, _, _, _ = await _get_historical_performance_cached(
-                    df=df,
-                    manual_overrides_dict=manual_overrides,
-                    user_symbol_map=user_symbol_map,
-                    user_excluded_symbols=user_excluded_symbols,
-                    account_currency_map=account_currency_map,
-                    original_csv_file_path=db_path,
-                    start_date=min_date, # Align with graph logic
-                    end_date=max_date,
-                    interval="D",
-                    benchmark_symbols_yf=['^GSPC'],
-                    display_currency=currency,
-                    include_accounts=include_accounts,
-                    account_cash_mode_map=account_cash_mode_map,
-                    db_mtime=db_mtime
-                )
-                
-                if daily_df is not None and not daily_df.empty:
-                    twr_col = "Portfolio Accumulated Gain"
-                    if twr_col in daily_df.columns:
-                        # Find the actual baseline date for the selected accounts
-                        display_start_date = df_for_twr["Date"].min().date()
-                        ds_ts = pd.Timestamp(display_start_date)
-                        if daily_df.index.tz is not None:
-                            ds_ts = ds_ts.tz_localize(daily_df.index.tz)
-                        
-                        df_before = daily_df[daily_df.index < ds_ts]
-                        # Normalize base to display_start_date just like the graph does!
-                        baseline_val = 1.0
-                        if not df_before.empty:
-                            baseline_val = df_before.iloc[-1][twr_col]
-                            if pd.isna(baseline_val) or baseline_val == 0:
-                                baseline_val = 1.0
-                                
-                        final_twr_raw = daily_df[twr_col].dropna().iloc[-1]
-                        final_twr_factor = final_twr_raw / baseline_val
-                        
-                        # Use the actual start date for the SELECTED accounts to compute annualized days
-                        actual_min_date = display_start_date
-                        days = (date.today() - actual_min_date).days
-                        
-                        if pd.notna(final_twr_factor) and final_twr_factor > 0:
-                            # --- FIX: Robust Real-Time TWR ---
-                            # We always use history up to yesterday as the baseline and apply today's 
-                            # live percentage change for real-time responsiveness.
-                            today_date = get_est_today()
-                            target_tz = daily_df.index.tz
-                            today_start_ts = pd.Timestamp(today_date)
-                            if target_tz:
-                                today_start_ts = today_start_ts.tz_localize(target_tz)
-                            
-                            # Get last point before today
-                            df_history_only = daily_df[daily_df.index < today_start_ts]
-                            if not df_history_only.empty:
-                                baseline_factor = df_history_only[twr_col].dropna().iloc[-1]
-                                day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
-                                # Apply live day change to the baseline
-                                final_twr_factor = baseline_factor * (1.0 + day_pct)
-                                # logging.info(f"Summary TWR: Applied live adjustment ({day_pct*100:.2f}%) to baseline {baseline_factor:.4f} -> {final_twr_factor:.4f}")
-                            
-                            # Cumulative TWR
-                            cumulative_twr = (final_twr_factor - 1) * 100.0
-                            
-                            # Annualized TWR
-                            # Use current date for days count
-                            days = (date.today() - actual_min_date).days
-                            if days > 0:
-                                annualized_factor = final_twr_factor ** (365.25 / days)
-                                annualized_twr = (annualized_factor - 1) * 100.0
-
-                        # --- NEW: Calculate Risk Metrics (Max Drawdown, Volatility, Sharpe, Beta) ---
-                        try:
-                            # Use the cumulative TWR series for risk metrics calculation (independent of currency swings)
-                            # but "Portfolio Accumulated Gain" is a factor from inception.
-                            # calculate_all_risk_metrics expects a value-like series.
-                            risk_input_series = daily_df["Portfolio Accumulated Gain"]
-                            
-                            # Get benchmark series if available
-                            bench_series = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
-                            
-                            # --- DEBUG LOGGING: Inspect for Volatility Spikes ---
-                            daily_returns_debug = risk_input_series.pct_change(fill_method=None).dropna()
-                            logging.info(f"RISK DEBUG: First 50 daily returns: {daily_returns_debug.head(50).tolist()}")
-                            if not daily_returns_debug.empty:
-                                max_ret = daily_returns_debug.max()
-                                min_ret = daily_returns_debug.min()
-                                std_ret = daily_returns_debug.std()
-                                logging.info(f"RISK DEBUG (Scope: {include_accounts}): Max Daily Ret: {max_ret:.4f}, Min: {min_ret:.4f}, Std: {std_ret:.4f}")
-                                if max_ret > 0.5 or min_ret < -0.5:
-                                    spike_dates = daily_returns_debug[(daily_returns_debug > 0.5) | (daily_returns_debug < -0.5)].index
-                                    logging.warning(f"RISK SPIKE DETECTED on dates: {spike_dates.tolist()}")
-                                    for d in spike_dates[:5]:
-                                        val_today = daily_df.loc[d, "value"] if "value" in daily_df.columns else "N/A"
-                                        flow_today = daily_df.loc[d, "net_flow"] if "net_flow" in daily_df.columns else "N/A"
-                                        logging.warning(f"  Date {d}: Value={val_today}, Flow={flow_today}")
-                            # --- END DEBUG LOGGING ---
-                            
-                            adv_risk_metrics = calculate_all_risk_metrics(
-                                risk_input_series, 
-                                benchmark_values=bench_series
-                            )
-                            
-                            if adv_risk_metrics:
-                                overall_summary_metrics["max_drawdown"] = float(adv_risk_metrics.get("Max Drawdown", 0.0) * 100.0)
-                                overall_summary_metrics["volatility_ann"] = float(adv_risk_metrics.get("Volatility (Ann.)", 0.0) * 100.0)
-                                overall_summary_metrics["sharpe_ratio"] = float(adv_risk_metrics.get("Sharpe Ratio", 0.0))
-                                overall_summary_metrics["beta"] = float(adv_risk_metrics.get("Beta", 1.0))
-                        except Exception as e_risk:
-                            logging.warning(f"Failed to calculate advanced risk metrics: {e_risk}")
-
-                        # --- NEW: Calculate YTD Return ---
-                        try:
-                            # jan1 = pd.Timestamp(date(date.today().year, 1, 1)).tz_localize('UTC')
-                            target_tz = daily_df.index.tz
-                            jan1 = pd.Timestamp(date(date.today().year, 1, 1))
-                            if target_tz is not None:
-                                jan1 = jan1.tz_localize(target_tz)
-                            
-                            ytd_df = daily_df[(daily_df.index >= jan1) & (daily_df.index < today_start_ts)]
-                            if not ytd_df.empty:
-                                start_twr = ytd_df["Portfolio Accumulated Gain"].iloc[0]
-                                end_twr_yesterday = ytd_df["Portfolio Accumulated Gain"].iloc[-1]
-                                if start_twr > 0 and pd.notna(start_twr):
-                                    # --- FIX: Incorporate Live Intraday Performance into YTD ---
-                                    day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
-                                    end_twr_live = end_twr_yesterday * (1.0 + day_pct)
-                                    
-                                    ytd_ret = (end_twr_live / start_twr - 1) * 100.0
-                                    overall_summary_metrics["ytd_return"] = float(ytd_ret)
-                        except Exception as e_ytd:
-                            logging.warning(f"Failed to calculate YTD return: {e_ytd}")
-        except Exception as e_twr:
-            logging.exception(f"Failed to calculate TWR and risk metrics in summary: {e_twr}")
+    # PERF FIX (BN-02): Removed inline _get_historical_performance_cached call.
+    # Previously, this block ran the FULL historical simulation (10-30s) to compute
+    # TWR, risk metrics (Sharpe, Beta, Volatility, Max Drawdown), and YTD return.
+    # This is now handled as follows:
+    #   - TWR: Sourced from portfolio_snapshots table above (lightweight DB query).
+    #   - Risk Metrics: Fetched by the frontend via the separate /risk_metrics endpoint.
+    #   - YTD Return: Also computed by the /risk_metrics endpoint.
+    # This change reduces /summary response time by 10-30 seconds on cold loads.
 
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
@@ -1062,13 +956,10 @@ async def _calculate_portfolio_summary_internal(
     
     # Optional: Simple cache eviction policy (e.g. keep only last 20 entries to prevent overflow)
     if len(_PORTFOLIO_SUMMARY_CACHE) > 20:
-        # Remove random or oldest item (simplest is popitem which removes LIFO in < 3.7 but FIFO in 3.7+)
-        # For a dict, popitem(last=False) is not available. standard dict preserves insertion order.
-        # So we can just remove the first key.
         first_key = next(iter(_PORTFOLIO_SUMMARY_CACHE))
         del _PORTFOLIO_SUMMARY_CACHE[first_key]
 
-    return result
+    return _filter_closed_positions(result, show_closed_positions)
 
 @router.get("/summary")
 async def get_portfolio_summary(
@@ -3721,6 +3612,32 @@ async def get_risk_metrics(
         portfolio_values = daily_df["Portfolio Accumulated Gain"]
         benchmark_values = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
         metrics = calculate_all_risk_metrics(portfolio_values, benchmark_values=benchmark_values)
+        
+        # --- FIX: Calculate YTD Return from daily_df ---
+        try:
+            if not daily_df.empty:
+                import pandas as pd
+                # Ensure index is datetime for filtering
+                if not pd.api.types.is_datetime64_any_dtype(daily_df.index):
+                    daily_df.index = pd.to_datetime(daily_df.index)
+                
+                current_year = date.today().year
+                prev_year_data = daily_df[daily_df.index.year < current_year]
+                
+                if not prev_year_data.empty:
+                    prev_year_twr = prev_year_data["Portfolio Accumulated Gain"].iloc[-1]
+                    current_twr = portfolio_values.iloc[-1]
+                    if prev_year_twr and prev_year_twr > 0:
+                        metrics["YTD Return"] = (current_twr / prev_year_twr) - 1.0
+                else:
+                    # Account started this year
+                    current_twr = portfolio_values.iloc[-1]
+                    start_twr = portfolio_values.iloc[0]
+                    if start_twr > 0:
+                        metrics["YTD Return"] = (current_twr / start_twr) - 1.0
+        except Exception as ytd_e:
+            logging.error(f"Error calculating YTD Return in risk_metrics: {ytd_e}")
+
         if metrics.get('Beta') is None:
             logging.warning(f"Risk Metrics: Beta is None. daily_df columns: {daily_df.columns.tolist()}, port_len={len(portfolio_values)}, bench_len={len(benchmark_values) if benchmark_values is not None else 0}")
         return clean_nans(metrics)

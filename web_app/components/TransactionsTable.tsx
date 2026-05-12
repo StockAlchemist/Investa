@@ -139,7 +139,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         try {
             setIsImporting(true);
             const result = await parseDocument(file);
-            
+
             if (result.transactions && result.transactions.length > 0) {
                 // Apply the selected import account to all extracted transactions if they don't have one
                 const enrichedTransactions = result.transactions.map(tx => ({
@@ -164,15 +164,15 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
     const handleReviewConfirm = async () => {
         if (reviewTransactions.length === 0) return;
-        
+
         setIsImporting(true);
         try {
             const result = await addTransactionsBatch(reviewTransactions, autoAddCashOnImport);
             alert(`Successfully imported ${result.count} transactions!`);
-            
+
             setReviewTransactions([]);
             setIsReviewing(false);
-            
+
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['summary'] });
             queryClient.invalidateQueries({ queryKey: ['holdings'] });
@@ -207,7 +207,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     };
 
     const uniqueTypes = new Set<string>([
-        'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Deposit', 'Withdrawal', 'Spin-off', 'Split', 'Short Sell', 'Buy to Cover'
+        'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Tax', 'Deposit', 'Withdrawal', 'Spin-off', 'Split', 'Short Sell', 'Buy To Cover'
     ]);
     (transactions || []).forEach(tx => {
         if (tx.Type) uniqueTypes.add(formatTransactionType(tx.Type));
@@ -359,16 +359,16 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 {reviewTransactions.map((tx, idx) => (
                                     <tr key={`review-${idx}`} className="hover:bg-indigo-500/5 transition-colors group">
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="text" 
-                                                value={tx.Date} 
+                                            <input
+                                                type="text"
+                                                value={tx.Date}
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Date: e.target.value })}
                                                 className="bg-transparent border-none text-[12px] p-0 w-full focus:ring-0 text-muted-foreground"
                                             />
                                         </td>
                                         <td className="px-4 py-3">
-                                            <select 
-                                                value={tx.Type} 
+                                            <select
+                                                value={tx.Type}
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Type: e.target.value })}
                                                 className="bg-transparent border-none text-[10px] p-0 font-bold uppercase tracking-widest focus:ring-0 text-indigo-500 appearance-none"
                                             >
@@ -378,48 +378,48 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                             </select>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="text" 
-                                                value={tx.Symbol} 
+                                            <input
+                                                type="text"
+                                                value={tx.Symbol}
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Symbol: e.target.value.toUpperCase() })}
                                                 className="bg-transparent border-none text-sm p-0 w-full font-bold focus:ring-0"
                                             />
                                         </td>
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="number" 
-                                                value={tx.Quantity} 
+                                            <input
+                                                type="number"
+                                                value={tx.Quantity}
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Quantity: parseFloat(e.target.value) })}
                                                 className="bg-transparent border-none text-right text-sm p-0 w-full focus:ring-0 tabular-nums"
                                             />
                                         </td>
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="number" 
-                                                value={tx["Price/Share"]} 
+                                            <input
+                                                type="number"
+                                                value={tx["Price/Share"]}
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, "Price/Share": parseFloat(e.target.value) })}
                                                 className="bg-transparent border-none text-right text-sm p-0 w-full focus:ring-0 tabular-nums"
                                             />
                                         </td>
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="number" 
-                                                value={tx["Total Amount"]} 
+                                            <input
+                                                type="number"
+                                                value={tx["Total Amount"]}
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, "Total Amount": parseFloat(e.target.value) })}
                                                 className="bg-transparent border-none text-right text-sm p-0 w-full focus:ring-0 font-bold tabular-nums"
                                             />
                                         </td>
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="text" 
-                                                value={tx.Account} 
+                                            <input
+                                                type="text"
+                                                value={tx.Account}
                                                 placeholder="Account"
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Account: e.target.value })}
                                                 className="bg-transparent border-none text-xs p-0 w-full focus:ring-0 text-muted-foreground"
                                             />
                                         </td>
                                         <td className="px-4 py-3 text-right">
-                                            <button 
+                                            <button
                                                 onClick={() => handleRemoveFromReview(idx)}
                                                 className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-all"
                                             >
@@ -488,8 +488,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <thead className="bg-cyan-500/5 text-[10px] font-black text-cyan-700 dark:text-cyan-400 uppercase tracking-tighter sticky top-0 bg-card/95 backdrop-blur-sm z-10">
                                 <tr>
                                     <th className="px-4 py-2 text-left w-8">
-                                        <input 
-                                            type="checkbox" 
+                                        <input
+                                            type="checkbox"
                                             checked={selectedPendingIds.size === pendingTransactions.length}
                                             onChange={() => {
                                                 if (selectedPendingIds.size === pendingTransactions.length) setSelectedPendingIds(new Set());
@@ -512,8 +512,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 {pendingTransactions.map((tx) => (
                                     <tr key={`pending-${tx.id}`} className={`hover:bg-cyan-500/5 transition-colors group ${selectedPendingIds.has(tx.id!) ? 'bg-cyan-500/10' : ''}`}>
                                         <td className="px-4 py-3">
-                                            <input 
-                                                type="checkbox" 
+                                            <input
+                                                type="checkbox"
                                                 checked={selectedPendingIds.has(tx.id!)}
                                                 onChange={() => {
                                                     const next = new Set(selectedPendingIds);
@@ -541,14 +541,14 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                         <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{tx.Account}</td>
                                         <td className="px-4 py-3 text-right">
                                             <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button 
+                                                <button
                                                     onClick={() => handlePendingAction('approve', [tx.id!])}
                                                     className="p-1.5 text-emerald-500 hover:bg-emerald-500/10 rounded transition-all"
                                                     title="Approve"
                                                 >
                                                     <CheckCircle className="h-4 w-4" />
                                                 </button>
-                                                <button 
+                                                <button
                                                     onClick={() => handlePendingAction('reject', [tx.id!])}
                                                     className="p-1.5 text-red-500 hover:bg-red-500/10 rounded transition-all"
                                                     title="Reject"
@@ -589,7 +589,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             <Plus className="h-3.5 w-3.5" />
                             <span>Add</span>
                         </button>
-                        
+
                         <div className="flex-shrink-0 flex items-center bg-purple-600 rounded-md overflow-hidden h-9">
                             <button
                                 onClick={handleImportClick}
@@ -618,7 +618,7 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 ))}
                             </select>
                             <div className="w-[1px] h-4 bg-white/20" />
-                            <label 
+                            <label
                                 className="flex items-center gap-1 px-2 h-full hover:bg-purple-700 transition-colors cursor-pointer select-none"
                                 htmlFor="auto-add-cash-import"
                             >
@@ -661,14 +661,14 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                         <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg">
                             <button
                                 onClick={() => { setShowFilters(!showFilters); if (showFilters) resetFilters(); }}
-                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${showFilters 
-                                    ? 'bg-[#0097b2] text-white shadow-sm' 
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${showFilters
+                                    ? 'bg-[#0097b2] text-white shadow-sm'
                                     : 'text-foreground hover:bg-accent/10'}`}
                             >
                                 <Filter className="h-3.5 w-3.5" />
                                 <span>Filters</span>
                             </button>
-                            
+
                             <button
                                 onClick={() => setShowInternalCash(!showInternalCash)}
                                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${showInternalCash

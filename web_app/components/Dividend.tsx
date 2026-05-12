@@ -4,7 +4,8 @@ import type { Dividend } from '../lib/api';
 import { formatCurrency, formatCompactNumber } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
-import StockDetailModal from './StockDetailModal';
+import dynamic from 'next/dynamic';
+const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 import { CircleDollarSign, CalendarClock, Percent } from 'lucide-react';

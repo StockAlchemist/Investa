@@ -292,57 +292,62 @@ export default function Dashboard({
             case 'ytdReturn':
                 return <MetricCard
                     title="YTD Return"
-                    value={m?.ytd_return !== undefined && m?.ytd_return !== null ? `${m.ytd_return.toFixed(2)}%` : '-'}
+                    value={riskMetrics?.['YTD Return'] !== undefined && riskMetrics?.['YTD Return'] !== null ? `${(riskMetrics['YTD Return'] * 100).toFixed(2)}%` :
+                        m?.ytd_return !== undefined && m?.ytd_return !== null ? `${m.ytd_return.toFixed(2)}%` : '-'}
                     isCurrency={false}
-                    colorClass={(m?.ytd_return ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
-                    isLoading={isLoading}
+                    colorClass={(riskMetrics?.['YTD Return'] ?? m?.ytd_return ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={TrendingUp}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'maxDrawdown':
+                const maxDD = riskMetrics?.['Max Drawdown'] !== undefined ? riskMetrics['Max Drawdown'] * 100 : m?.max_drawdown;
                 return <MetricCard
                     title="Max Drawdown"
-                    value={m?.max_drawdown !== undefined && m?.max_drawdown !== null ? `${m.max_drawdown.toFixed(2)}%` : '-'}
+                    value={maxDD !== undefined && maxDD !== null ? `${maxDD.toFixed(2)}%` : '-'}
                     isCurrency={false}
                     colorClass="text-red-600 dark:text-red-500"
-                    isLoading={isLoading}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={TrendingDown}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'volatility':
+                const vol = riskMetrics?.['Volatility (Ann.)'] !== undefined ? riskMetrics['Volatility (Ann.)'] * 100 : m?.volatility_ann;
                 return <MetricCard
                     title="Volatility (Ann.)"
-                    value={m?.volatility_ann !== undefined && m?.volatility_ann !== null ? `${m.volatility_ann.toFixed(2)}%` : '-'}
+                    value={vol !== undefined && vol !== null ? `${vol.toFixed(2)}%` : '-'}
                     isCurrency={false}
-                    isLoading={isLoading}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={Activity}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'sharpeRatio':
+                const sharpe = riskMetrics?.['Sharpe Ratio'] ?? m?.sharpe_ratio;
                 return <MetricCard
                     title="Sharpe Ratio"
-                    value={m?.sharpe_ratio !== undefined && m?.sharpe_ratio !== null ? m.sharpe_ratio.toFixed(2) : '-'}
+                    value={sharpe !== undefined && sharpe !== null ? sharpe.toFixed(2) : '-'}
                     isCurrency={false}
-                    colorClass={(m?.sharpe_ratio ?? 0) >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}
-                    isLoading={isLoading}
+                    colorClass={(sharpe ?? 0) >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={Zap}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'beta':
+                const beta = riskMetrics?.['Beta'] ?? m?.beta;
                 return <MetricCard
                     title="Portfolio Beta"
-                    value={m?.beta !== undefined && m?.beta !== null ? m.beta.toFixed(2) : '-'}
+                    value={beta !== undefined && beta !== null ? beta.toFixed(2) : '-'}
                     isCurrency={false}
-                    colorClass={(m?.beta ?? 1) > 1.2 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}
-                    isLoading={isLoading}
+                    colorClass={(beta ?? 1) > 1.2 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={Activity}
                     accentColor={themeColor}
