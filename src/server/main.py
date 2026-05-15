@@ -26,21 +26,23 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from db_utils import initialize_database, initialize_global_database
-    # Ensure DB is initialized
     initialize_database()
     initialize_global_database()
     yield
+    # Graceful shutdown: drain background precalculation pool
+    from server.api import _PRECALC_POOL
+    _PRECALC_POOL.shutdown(wait=False)
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)
 
 # Configure CORS to allow requests from the frontend (likely localhost:3000)
 # Configure CORS to allow requests from the frontend
-origins = ["*"] # Allow all for local networking convenience
-
+# Bearer-token auth — credentials (cookies) not needed, so wildcard origins are safe.
+# allow_credentials=True + allow_origins=["*"] is rejected by browsers per the CORS spec.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -67,4 +69,4 @@ if __name__ == "__main__":
 
     # reload=False for debugging stability vs potential thread deadlock issues with StatReload
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("server.main:app", host="0.0.0.0", port=port, reload=True, workers=1, log_config=log_config)
+    uvicorn.run("server.main:app", host="0.0.0.0", port=port, reload=False, workers=1, log_config=log_config)

@@ -80,6 +80,7 @@ from datetime import timedelta
 from server import ai_chat_service  # Fixed package import
 
 import logging
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
 router = APIRouter()
@@ -93,24 +94,77 @@ src_server_dir = os.path.dirname(current_file_path)
 src_dir = os.path.dirname(src_server_dir)
 project_root = os.path.dirname(src_dir)
 
-# ... (existing code)
-
 # Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
-_PORTFOLIO_SUMMARY_CACHE = {}
-_MARKET_HISTORY_CACHE = {}
-_PORTFOLIO_HISTORY_CACHE = {} # Shared cache for historical calculations
+# All three use OrderedDict so eviction is by true LRU (oldest-accessed) not insertion order.
+_PORTFOLIO_SUMMARY_CACHE: OrderedDict = OrderedDict()
+_MARKET_HISTORY_CACHE: OrderedDict = OrderedDict()
+_PORTFOLIO_HISTORY_CACHE: OrderedDict = OrderedDict()
 _HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
 _SUMMARY_CALC_LOCK = asyncio.Lock() # Lock to prevent concurrent calculation on cache miss
 
-def reload_data_and_clear_cache(current_user: Optional[User] = None):
-    """Helper to clear both transaction data cache, portfolio summary cache, and market history cache."""
-    reload_data()
-    _PORTFOLIO_SUMMARY_CACHE.clear()
-    _MARKET_HISTORY_CACHE.clear()
+_CACHE_MAX_SIZE = 20
+
+
+def _lru_get(cache: OrderedDict, key):
+    """Return cached value and promote to MRU position, or return sentinel."""
+    if key not in cache:
+        return None
+    cache.move_to_end(key)
+    return cache[key]
+
+
+def _lru_put(cache: OrderedDict, key, value, max_size: int = _CACHE_MAX_SIZE):
+    """Insert/update a cache entry, evicting the LRU entry when over capacity."""
+    if key in cache:
+        cache.move_to_end(key)
+    cache[key] = value
+    while len(cache) > max_size:
+        cache.popitem(last=False)  # Remove LRU (oldest-accessed) entry
+
+
+def _user_db_path(username: str) -> str:
+    """Reconstruct the per-user SQLite path from a username."""
+    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
+    return os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+
+
+def _evict_user_summary_cache(username: str):
+    """Remove only the given user's entries from _PORTFOLIO_SUMMARY_CACHE.
+
+    The summary cache key has db_path at index 2, which is unique per user.
+    """
+    user_path = _user_db_path(username)
+    stale = [k for k in _PORTFOLIO_SUMMARY_CACHE if k[2] == user_path]
+    for k in stale:
+        del _PORTFOLIO_SUMMARY_CACHE[k]
+
+
+def _evict_user_history_cache(username: str):
+    """Clear all portfolio history cache entries on a user write.
+
+    History cache keys don't include username (they use db_mtime for isolation),
+    so we conservatively clear the whole cache to avoid serving stale data.
+    """
     _PORTFOLIO_HISTORY_CACHE.clear()
-    logging.info("Transaction, Summary, Market History, and Portfolio History caches cleared.")
+
+
+def reload_data_and_clear_cache(current_user: Optional[User] = None):
+    """Clear only the current user's cached data, leaving other users' caches intact."""
+    username = current_user.username if current_user else None
+    reload_data(username)
+    if username:
+        _evict_user_summary_cache(username)
+        _evict_user_history_cache(username)
+        # Market history is shared benchmark data — safe to clear entirely on a write
+        _MARKET_HISTORY_CACHE.clear()
+    else:
+        _PORTFOLIO_SUMMARY_CACHE.clear()
+        _MARKET_HISTORY_CACHE.clear()
+        _PORTFOLIO_HISTORY_CACHE.clear()
+    logging.info(f"Caches cleared for user '{username or 'all'}'.")
     if current_user:
         trigger_background_precalculation(current_user)
+
 
 def clear_portfolio_caches():
     """Clears calculated caches (Summary, History) without wiping the transaction dataframe cache."""
@@ -127,7 +181,7 @@ def trigger_background_precalculation(current_user: User):
             from server.dependencies import get_transaction_data
             
             # retrieve user transaction data manually
-            df, manual, user_map, excluded, acc_curr, path, mtime = get_transaction_data(current_user)
+            df, manual, user_map, excluded, acc_curr, cash_mode, path, mtime = get_transaction_data(current_user)
             if df.empty:
                 logging.info("Skip precalc: dataframe is empty")
                 return
@@ -153,7 +207,8 @@ def trigger_background_precalculation(current_user: User):
                 include_accounts=None, # ALL accounts
                 manual_overrides_dict=manual,
                 user_symbol_map=user_map,
-                user_excluded_symbols=excluded
+                user_excluded_symbols=excluded,
+                account_cash_mode_map=cash_mode  # account_cash_mode_map from get_transaction_data
             )
 
             # Calculate TWR synchronously for ALL account
@@ -181,17 +236,16 @@ def trigger_background_precalculation(current_user: User):
                     manual_overrides_dict=manual,
                     user_excluded_symbols=excluded,
                     original_csv_file_path=path,
+                    account_cash_mode_map=cash_mode,  # account_cash_mode_map
                     calc_method="STANDARD"
                 )
                 if "|||TWR_FACTOR:" in hist_status:
                     try:
                         twr_part = hist_status.split("|||TWR_FACTOR:")[1].strip()
                         if twr_part != "NaN":
-                            # It is a factor like 1.25. Annualized or cumulative?
-                            # Backend history returns final_twr_factor.
                             overall_twr = float(twr_part)
-                    except:
-                        pass
+                    except (ValueError, IndexError) as e:
+                        logging.debug(f"TWR factor parse error: {e}")
             
             # Note: For simplicity and performance, we only pre-calculate TWR for the overall portfolio right now.
             # We can calculate for individual accounts if needed.
@@ -200,53 +254,59 @@ def trigger_background_precalculation(current_user: User):
             user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
             db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
             
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
-            
+            conn = get_db_connection(db_path, use_cache=False)
+            if not conn:
+                logging.error(f"Failed to connect to user database for precalculation: {db_path}")
+                return
+
             def sf(val):
                 if val is None: return 0.0
                 try:
                     import math
                     return 0.0 if math.isnan(float(val)) else float(val)
-                except:
+                except (TypeError, ValueError):
                     return 0.0
-            
-            if overall_metrics:
-                cursor.execute('''
-                    INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    today.isoformat(),
-                    'ALL',
-                    sf(overall_metrics.get('market_value')),
-                    sf(overall_metrics.get('total_buy_cost')),
-                    sf(overall_metrics.get('total_gain')),
-                    sf(overall_metrics.get('total_return_pct')),
-                    sf(overall_twr),
-                    sf(overall_metrics.get('portfolio_mwr')),
-                    datetime.now().isoformat()
-                ))
 
-            if account_metrics:
-                for acc, acc_data in account_metrics.items():
-                    cursor.execute('''
-                        INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        today.isoformat(),
-                        acc,
-                        sf(acc_data.get('total_market_value_display')),
-                        sf(acc_data.get('total_buy_cost_display')),
-                        sf(acc_data.get('total_gain_display')),
-                        sf(acc_data.get('total_return_pct')),
-                        sf(acc_data.get('twr', 0.0)),
-                        sf(acc_data.get('mwr')),
-                        datetime.now().isoformat()
-                    ))
-            conn.commit()
-            conn.close()
+            try:
+                # Use connection as context manager so any failure rolls back atomically.
+                with conn:
+                    cursor = conn.cursor()
+                    cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
+
+                    if overall_metrics:
+                        cursor.execute('''
+                            INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            today.isoformat(),
+                            'ALL',
+                            sf(overall_metrics.get('market_value')),
+                            sf(overall_metrics.get('total_buy_cost')),
+                            sf(overall_metrics.get('total_gain')),
+                            sf(overall_metrics.get('total_return_pct')),
+                            sf(overall_twr),
+                            sf(overall_metrics.get('portfolio_mwr')),
+                            datetime.now().isoformat()
+                        ))
+
+                    if account_metrics:
+                        for acc, acc_data in account_metrics.items():
+                            cursor.execute('''
+                                INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                today.isoformat(),
+                                acc,
+                                sf(acc_data.get('total_market_value_display')),
+                                sf(acc_data.get('total_buy_cost_display')),
+                                sf(acc_data.get('total_gain_display')),
+                                sf(acc_data.get('total_return_pct')),
+                                sf(acc_data.get('twr', 0.0)),
+                                sf(acc_data.get('mwr')),
+                                datetime.now().isoformat()
+                            ))
+            finally:
+                conn.close()
             logging.info(f"Finished background metric pre-calculation for user {current_user.username}")
         except Exception as e:
             logging.error(f"Error in background metric pre-calculation: {e}", exc_info=True)
@@ -267,6 +327,7 @@ async def _get_historical_performance_cached(
     benchmark_symbols_yf: List[str],
     display_currency: str,
     include_accounts: Optional[List[str]],
+    account_cash_mode_map: Dict[str, str], # NEW
     db_mtime: float
 ) -> Tuple[pd.DataFrame, Dict, Dict, str]:
     """
@@ -297,9 +358,10 @@ async def _get_historical_performance_cached(
     )
     
     # 1. Check if we already have a cached result
-    if cache_key in _PORTFOLIO_HISTORY_CACHE:
+    cached = _lru_get(_PORTFOLIO_HISTORY_CACHE, cache_key)
+    if cached is not None:
         logging.info(f"Using cached Portfolio History for key: {cache_key[:3]}...")
-        return _PORTFOLIO_HISTORY_CACHE[cache_key]
+        return cached
         
     # 2. Check if another request is already calculating this
     if cache_key in _HISTORY_CALC_FUTURES:
@@ -336,17 +398,12 @@ async def _get_historical_performance_cached(
                 manual_overrides_dict=manual_overrides_dict,
                 user_symbol_map=user_symbol_map,
                 user_excluded_symbols=user_excluded_symbols,
-                original_csv_file_path=original_csv_file_path
+                original_csv_file_path=original_csv_file_path,
+                account_cash_mode_map=account_cash_mode_map # PASSING IT HERE
             )
             
         result = await run_in_threadpool(run_calc)
-        
-        # Store in cache
-        _PORTFOLIO_HISTORY_CACHE[cache_key] = result
-        if len(_PORTFOLIO_HISTORY_CACHE) > 20:
-            first_key = next(iter(_PORTFOLIO_HISTORY_CACHE))
-            del _PORTFOLIO_HISTORY_CACHE[first_key]
-            
+        _lru_put(_PORTFOLIO_HISTORY_CACHE, cache_key, result)
         future.set_result(result)
         return result
     except Exception as e:
@@ -585,6 +642,7 @@ async def get_asset_change(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map, # NEW
         original_csv_path,
         _ # Ignore db_mtime
     ) = data
@@ -616,7 +674,8 @@ async def get_asset_change(
             include_accounts=accounts,
             benchmark_symbols_yf=mapped_benchmarks,
             interval="D",
-            db_mtime=data[6] # db_mtime
+            account_cash_mode_map=account_cash_mode_map, # PASSING IT HERE
+            db_mtime=data[7]  # db_mtime
         )
         
         if daily_df is None or daily_df.empty:
@@ -690,6 +749,35 @@ def clean_nans(obj):
         return [clean_nans(v) for v in obj]
     return obj
 
+def _filter_closed_positions(result: Dict[str, Any], show_closed_positions: bool) -> Dict[str, Any]:
+    """Filter out closed positions from a portfolio summary result if requested.
+    
+    The cache always stores results with show_closed_positions=True (BN-01).
+    This helper applies the filter on cache retrieval when the caller requests
+    show_closed_positions=False.
+    """
+    if show_closed_positions:
+        return result
+    
+    sdf = result.get("summary_df")
+    if sdf is None or (hasattr(sdf, 'empty') and sdf.empty):
+        return result
+    
+    from portfolio_logic import STOCK_QUANTITY_CLOSE_TOLERANCE
+    
+    # Only filter if the DataFrame has a Quantity column
+    if hasattr(sdf, 'columns') and "Quantity" in sdf.columns:
+        mask = (
+            (sdf["Quantity"].abs() >= STOCK_QUANTITY_CLOSE_TOLERANCE) |
+            (sdf.get("is_total", False) == True) |
+            (sdf["Symbol"] == "Total")
+        )
+        filtered_result = result.copy()
+        filtered_result["summary_df"] = sdf[mask].copy()
+        return filtered_result
+    
+    return result
+
 async def _calculate_portfolio_summary_internal(
     currency: str = "USD",
     include_accounts: Optional[List[str]] = None,
@@ -704,6 +792,7 @@ async def _calculate_portfolio_summary_internal(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         db_path,
         db_mtime
     ) = data
@@ -738,29 +827,34 @@ async def _calculate_portfolio_summary_internal(
     # Create a unique key for this request configuration + data state
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
     
-    # ADDED: Time-based invalidation (bucketed to 5 seconds to allow fast retries)
-    time_key = int(time.time() / 5)
+    # PERF FIX (BN-03): Adaptive cache TTL — 60s during market hours, 300s after hours.
+    # The previous 5-second bucket caused near-constant recalculation, even though the
+    # frontend only refetches every 60s (market open) or 5min (staleTime).
+    # Cache invalidation on data changes is handled by db_mtime in the key.
+    cache_ttl_seconds = 60 if is_market_open() else 300
+    time_key = int(time.time() / cache_ttl_seconds)
     
     cache_key = (
         currency,
         accounts_key,
-        show_closed_positions,
         db_path,
         db_mtime,
         time_key
     )
     
-    if cache_key in _PORTFOLIO_SUMMARY_CACHE:
-        logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...") # Partial log for brevity
-        return _PORTFOLIO_SUMMARY_CACHE[cache_key]
-        
+    cached = _lru_get(_PORTFOLIO_SUMMARY_CACHE, cache_key)
+    if cached is not None:
+        logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...")
+        return _filter_closed_positions(cached, show_closed_positions)
+
     logging.info(f"Summary Cache Miss. Waiting for lock. Time key: {time_key}")
 
     async with _SUMMARY_CALC_LOCK:
         # Double-check cache inside lock
-        if cache_key in _PORTFOLIO_SUMMARY_CACHE:
+        cached = _lru_get(_PORTFOLIO_SUMMARY_CACHE, cache_key)
+        if cached is not None:
             logging.info(f"Using cached portfolio summary (after acquiring lock) for key: {cache_key[:3]}...")
-            return _PORTFOLIO_SUMMARY_CACHE[cache_key]
+            return _filter_closed_positions(cached, show_closed_positions)
             
         logging.info(f"Acquired lock. Calculating summary. Time key: {time_key}")
 
@@ -777,7 +871,7 @@ async def _calculate_portfolio_summary_internal(
                 ignored_reasons_from_load={},
                 fmp_api_key=getattr(config, "FMP_API_KEY", None),
                 display_currency=currency,
-                show_closed_positions=show_closed_positions,
+                show_closed_positions=True, # ALWAYS compute all for cache sharing (BN-01)
                 manual_overrides_dict=manual_overrides,
                 user_symbol_map=user_symbol_map,
                 user_excluded_symbols=user_excluded_symbols,
@@ -786,7 +880,9 @@ async def _calculate_portfolio_summary_internal(
                 default_currency=config.DEFAULT_CURRENCY,
                 market_provider=mdp,
                 account_interest_rates=account_interest_rates,
-                interest_free_thresholds=interest_free_thresholds
+                interest_free_thresholds=interest_free_thresholds,
+                account_cash_mode_map=account_cash_mode_map, # PASSING IT HERE
+                db_mtime=db_mtime # BN-08: pass db_mtime for FIFO cache
             )
 
         try:
@@ -849,152 +945,64 @@ async def _calculate_portfolio_summary_internal(
 
     logging.info(f"Summary Metrics: Precalculated TWR used? {precalculated_twr_used}")
 
-    if not df.empty:
+    # PERF FIX (BN-02): Removed inline _get_historical_performance_cached call.
+    # Previously, this block ran the FULL historical simulation (10-30s) to compute
+    # TWR, risk metrics (Sharpe, Beta, Volatility, Max Drawdown), and YTD return.
+    # This is now handled as follows:
+    #   - TWR: Sourced from portfolio_snapshots table above (lightweight DB query).
+    #   - Risk Metrics: Fetched by the frontend via the separate /risk_metrics endpoint.
+    #   - YTD Return: Also computed by the /risk_metrics endpoint.
+    # This change reduces /summary response time by 10-30 seconds on cold loads.
+
+    # FALLBACK: portfolio_snapshots only stores per-single-account rows ("ALL" or
+    # a specific account name). When the user has selected a *subset* of accounts
+    # (e.g. 6 of 12), the snapshot lookup above misses and the TWR card would
+    # otherwise come back empty. Compute it on the fly using the same in-memory
+    # cache the chart uses — fast if the chart was already rendered for the same
+    # selection, otherwise a one-time live calc.
+    if not precalculated_twr_used and not df.empty:
         try:
-            logging.info("Starting advanced risk metrics calculation via daily_df...")
-            # Filter df by accounts to get correct baseline date for this selection
             df_for_twr = df
             if include_accounts:
                 df_for_twr = df[df["Account"].isin(include_accounts)]
-            
             if not df_for_twr.empty:
-                from datetime import timedelta
-                # Use global min date and proper end date to ensure exact alignment and cache hit with graph endpoint
-                min_date = df["Date"].min().date() 
-                max_date = get_est_today() + timedelta(days=1)
-                
-                daily_df, _, _, _ = await _get_historical_performance_cached(
+                hist_min_date = df_for_twr["Date"].min().date()
+                hist_end_date = date.today()
+                hist_daily_df, _, _, hist_status = await _get_historical_performance_cached(
                     df=df,
                     manual_overrides_dict=manual_overrides,
                     user_symbol_map=user_symbol_map,
                     user_excluded_symbols=user_excluded_symbols,
                     account_currency_map=account_currency_map,
                     original_csv_file_path=db_path,
-                    start_date=min_date, # Align with graph logic
-                    end_date=max_date,
-                    interval="D",
-                    benchmark_symbols_yf=['^GSPC'],
+                    start_date=hist_min_date,
+                    end_date=hist_end_date,
+                    interval="1d",
+                    benchmark_symbols_yf=[],
                     display_currency=currency,
                     include_accounts=include_accounts,
-                    db_mtime=db_mtime
+                    account_cash_mode_map=account_cash_mode_map,
+                    db_mtime=db_mtime,
                 )
-                
-                if daily_df is not None and not daily_df.empty:
-                    twr_col = "Portfolio Accumulated Gain"
-                    if twr_col in daily_df.columns:
-                        # Find the actual baseline date for the selected accounts
-                        display_start_date = df_for_twr["Date"].min().date()
-                        ds_ts = pd.Timestamp(display_start_date)
-                        if daily_df.index.tz is not None:
-                            ds_ts = ds_ts.tz_localize(daily_df.index.tz)
-                        
-                        df_before = daily_df[daily_df.index < ds_ts]
-                        # Normalize base to display_start_date just like the graph does!
-                        baseline_val = 1.0
-                        if not df_before.empty:
-                            baseline_val = df_before.iloc[-1][twr_col]
-                            if pd.isna(baseline_val) or baseline_val == 0:
-                                baseline_val = 1.0
-                                
-                        final_twr_raw = daily_df[twr_col].dropna().iloc[-1]
-                        final_twr_factor = final_twr_raw / baseline_val
-                        
-                        # Use the actual start date for the SELECTED accounts to compute annualized days
-                        actual_min_date = display_start_date
-                        days = (date.today() - actual_min_date).days
-                        
-                        if pd.notna(final_twr_factor) and final_twr_factor > 0:
-                            # --- FIX: Robust Real-Time TWR ---
-                            # We always use history up to yesterday as the baseline and apply today's 
-                            # live percentage change for real-time responsiveness.
-                            today_date = get_est_today()
-                            target_tz = daily_df.index.tz
-                            today_start_ts = pd.Timestamp(today_date)
-                            if target_tz:
-                                today_start_ts = today_start_ts.tz_localize(target_tz)
-                            
-                            # Get last point before today
-                            df_history_only = daily_df[daily_df.index < today_start_ts]
-                            if not df_history_only.empty:
-                                baseline_factor = df_history_only[twr_col].dropna().iloc[-1]
-                                day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
-                                # Apply live day change to the baseline
-                                final_twr_factor = baseline_factor * (1.0 + day_pct)
-                                # logging.info(f"Summary TWR: Applied live adjustment ({day_pct*100:.2f}%) to baseline {baseline_factor:.4f} -> {final_twr_factor:.4f}")
-                            
-                            # Cumulative TWR
-                            cumulative_twr = (final_twr_factor - 1) * 100.0
-                            
-                            # Annualized TWR
-                            # Use current date for days count
-                            days = (date.today() - actual_min_date).days
-                            if days > 0:
-                                annualized_factor = final_twr_factor ** (365.25 / days)
-                                annualized_twr = (annualized_factor - 1) * 100.0
-
-                        # --- NEW: Calculate Risk Metrics (Max Drawdown, Volatility, Sharpe, Beta) ---
+                final_twr_factor = None
+                if "|||TWR_FACTOR:" in hist_status:
+                    twr_part = hist_status.split("|||TWR_FACTOR:")[1].strip()
+                    if twr_part.upper() != "NAN":
                         try:
-                            # Use the cumulative TWR series for risk metrics calculation (independent of currency swings)
-                            # but "Portfolio Accumulated Gain" is a factor from inception.
-                            # calculate_all_risk_metrics expects a value-like series.
-                            risk_input_series = daily_df["Portfolio Accumulated Gain"]
-                            
-                            # Get benchmark series if available
-                            bench_series = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
-                            
-                            # --- DEBUG LOGGING: Inspect for Volatility Spikes ---
-                            daily_returns_debug = risk_input_series.pct_change(fill_method=None).dropna()
-                            logging.info(f"RISK DEBUG: First 50 daily returns: {daily_returns_debug.head(50).tolist()}")
-                            if not daily_returns_debug.empty:
-                                max_ret = daily_returns_debug.max()
-                                min_ret = daily_returns_debug.min()
-                                std_ret = daily_returns_debug.std()
-                                logging.info(f"RISK DEBUG (Scope: {include_accounts}): Max Daily Ret: {max_ret:.4f}, Min: {min_ret:.4f}, Std: {std_ret:.4f}")
-                                if max_ret > 0.5 or min_ret < -0.5:
-                                    spike_dates = daily_returns_debug[(daily_returns_debug > 0.5) | (daily_returns_debug < -0.5)].index
-                                    logging.warning(f"RISK SPIKE DETECTED on dates: {spike_dates.tolist()}")
-                                    for d in spike_dates[:5]:
-                                        val_today = daily_df.loc[d, "value"] if "value" in daily_df.columns else "N/A"
-                                        flow_today = daily_df.loc[d, "net_flow"] if "net_flow" in daily_df.columns else "N/A"
-                                        logging.warning(f"  Date {d}: Value={val_today}, Flow={flow_today}")
-                            # --- END DEBUG LOGGING ---
-                            
-                            adv_risk_metrics = calculate_all_risk_metrics(
-                                risk_input_series, 
-                                benchmark_values=bench_series
-                            )
-                            
-                            if adv_risk_metrics:
-                                overall_summary_metrics["max_drawdown"] = float(adv_risk_metrics.get("Max Drawdown", 0.0) * 100.0)
-                                overall_summary_metrics["volatility_ann"] = float(adv_risk_metrics.get("Volatility (Ann.)", 0.0) * 100.0)
-                                overall_summary_metrics["sharpe_ratio"] = float(adv_risk_metrics.get("Sharpe Ratio", 0.0))
-                                overall_summary_metrics["beta"] = float(adv_risk_metrics.get("Beta", 1.0))
-                        except Exception as e_risk:
-                            logging.warning(f"Failed to calculate advanced risk metrics: {e_risk}")
-
-                        # --- NEW: Calculate YTD Return ---
-                        try:
-                            # jan1 = pd.Timestamp(date(date.today().year, 1, 1)).tz_localize('UTC')
-                            target_tz = daily_df.index.tz
-                            jan1 = pd.Timestamp(date(date.today().year, 1, 1))
-                            if target_tz is not None:
-                                jan1 = jan1.tz_localize(target_tz)
-                            
-                            ytd_df = daily_df[(daily_df.index >= jan1) & (daily_df.index < today_start_ts)]
-                            if not ytd_df.empty:
-                                start_twr = ytd_df["Portfolio Accumulated Gain"].iloc[0]
-                                end_twr_yesterday = ytd_df["Portfolio Accumulated Gain"].iloc[-1]
-                                if start_twr > 0 and pd.notna(start_twr):
-                                    # --- FIX: Incorporate Live Intraday Performance into YTD ---
-                                    day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
-                                    end_twr_live = end_twr_yesterday * (1.0 + day_pct)
-                                    
-                                    ytd_ret = (end_twr_live / start_twr - 1) * 100.0
-                                    overall_summary_metrics["ytd_return"] = float(ytd_ret)
-                        except Exception as e_ytd:
-                            logging.warning(f"Failed to calculate YTD return: {e_ytd}")
-        except Exception as e_twr:
-            logging.exception(f"Failed to calculate TWR and risk metrics in summary: {e_twr}")
+                            final_twr_factor = float(twr_part)
+                        except ValueError:
+                            final_twr_factor = None
+                if final_twr_factor is not None and final_twr_factor > 0:
+                    days = (hist_end_date - hist_min_date).days
+                    cumulative_twr = (final_twr_factor - 1) * 100.0
+                    if days > 0:
+                        annualized_factor = final_twr_factor ** (365.25 / days)
+                        annualized_twr = (annualized_factor - 1) * 100.0
+                    logging.info(
+                        f"Summary Metrics: Live TWR fallback computed for {len(include_accounts) if include_accounts else 'ALL'} accounts: factor={final_twr_factor:.4f}"
+                    )
+        except Exception as e_live_twr:
+            logging.warning(f"Live-TWR fallback failed: {e_live_twr}")
 
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
@@ -1048,18 +1056,9 @@ async def _calculate_portfolio_summary_internal(
         "account_metrics": account_level_metrics
     }
     
-    # Store in cache
-    _PORTFOLIO_SUMMARY_CACHE[cache_key] = result
-    
-    # Optional: Simple cache eviction policy (e.g. keep only last 20 entries to prevent overflow)
-    if len(_PORTFOLIO_SUMMARY_CACHE) > 20:
-        # Remove random or oldest item (simplest is popitem which removes LIFO in < 3.7 but FIFO in 3.7+)
-        # For a dict, popitem(last=False) is not available. standard dict preserves insertion order.
-        # So we can just remove the first key.
-        first_key = next(iter(_PORTFOLIO_SUMMARY_CACHE))
-        del _PORTFOLIO_SUMMARY_CACHE[first_key]
+    _lru_put(_PORTFOLIO_SUMMARY_CACHE, cache_key, result)
 
-    return result
+    return _filter_closed_positions(result, show_closed_positions)
 
 @router.get("/summary")
 async def get_portfolio_summary(
@@ -1086,6 +1085,7 @@ async def get_portfolio_summary(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         _
     ) = data
@@ -1153,7 +1153,7 @@ async def get_portfolio_ai_review(
     """
     from server.portfolio_ai_analyzer import generate_portfolio_review
     
-    (df, manual, user_map, excluded, acc_curr, path, mtime) = data
+    (df, manual, user_map, excluded, acc_curr, cash_mode, path, mtime) = data
     
     if df.empty:
         raise HTTPException(status_code=400, detail="Portfolio is empty.")
@@ -1184,6 +1184,7 @@ async def get_portfolio_ai_review(
             benchmark_symbols_yf=["SPY"], # Benchmark against SPY for Beta
             display_currency=currency,
             include_accounts=accounts,
+            account_cash_mode_map=cash_mode,
             db_mtime=mtime
         )
         
@@ -1194,7 +1195,7 @@ async def get_portfolio_ai_review(
         risk_metrics = {}
         try:
             # Unpack data dependency
-            df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path, mtime = data
+            df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, mtime = data
             
             start_date = date.today() - timedelta(days=365)
             end_date = date.today()
@@ -1212,6 +1213,7 @@ async def get_portfolio_ai_review(
                 include_accounts=accounts,
                 benchmark_symbols_yf=['^GSPC'], # Fetch S&P 500 for Beta/Alpha
                 interval="D",
+                account_cash_mode_map=account_cash_mode_map,
                 db_mtime=mtime
             )
             
@@ -1309,8 +1311,9 @@ async def get_market_history(
     # 0. Global Cache Check
     cache_key = (tuple(sorted(benchmarks)), period, interval, currency)
     now_ts_cache = time.time()
-    if cache_key in _MARKET_HISTORY_CACHE:
-        entry, expiry = _MARKET_HISTORY_CACHE[cache_key]
+    cached_mh = _lru_get(_MARKET_HISTORY_CACHE, cache_key)
+    if cached_mh is not None:
+        entry, expiry = cached_mh
         if now_ts_cache < expiry:
             logging.info(f"Market History Cache HIT: {cache_key}")
             return entry
@@ -1417,8 +1420,7 @@ async def get_market_history(
 
         result = clean_nans(combined_df.to_dict(orient="records"))
         
-        # Cache the result for 15 minutes
-        _MARKET_HISTORY_CACHE[cache_key] = (result, now_ts_cache + 900)
+        _lru_put(_MARKET_HISTORY_CACHE, cache_key, (result, now_ts_cache + 900))
         
         return result
 
@@ -1458,6 +1460,7 @@ async def get_holdings(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         _
     ) = data
@@ -1582,7 +1585,7 @@ async def get_transactions(
     Returns:
         List[Dict]: A list of transaction records.
     """
-    df, _, _, _, _, _, _ = data
+    df, _, _, _, _, _, _, _ = data
     
     if df.empty:
         return []
@@ -1743,7 +1746,7 @@ async def create_transaction(
         Dict: Status message and the new transaction ID.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1771,9 +1774,12 @@ async def create_transaction(
         logging.error(f"Error adding transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+import fastapi
 @router.post("/transactions/parse_document")
 async def parse_document(
     file: UploadFile = File(...),
+    cash_mode: Optional[str] = fastapi.Form(None),
+    account_override: Optional[str] = fastapi.Form(None),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -1793,7 +1799,12 @@ async def parse_document(
         # Parse the document
         transactions = []
         try:
-            transactions = extract_transactions_from_file(temp_file_path)
+            transactions = extract_transactions_from_file(
+                temp_file_path, 
+                user_id=current_user.id, 
+                cash_mode=cash_mode, 
+                account_override=account_override
+            )
         finally:
             # Always clean up temp file
             if os.path.exists(temp_file_path):
@@ -1825,7 +1836,7 @@ async def add_transactions_batch(
     Used for Review & Confirm step after document parsing.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1887,7 +1898,7 @@ async def update_transaction(
         Dict: Status message.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1927,7 +1938,7 @@ async def delete_transaction(
         Dict: Status message.
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1965,7 +1976,7 @@ async def update_holding_tags(
     Updates tags for all transactions associated with a specific holding (Symbol + Account).
     """
     try:
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -2017,7 +2028,7 @@ async def sync_ibkr(
                 }
             )
             
-        _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
@@ -2113,8 +2124,8 @@ async def get_pending_ibkr(
 ):
     """Fetch pending transactions for review."""
     try:
-        query = "SELECT * FROM pending_transactions WHERE user_id = ? ORDER BY Date DESC"
-        df = pd.read_sql_query(query, conn, params=(current_user.id,))
+        query = "SELECT * FROM pending_transactions ORDER BY Date DESC"
+        df = pd.read_sql_query(query, conn)
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2136,7 +2147,7 @@ async def approve_ibkr(
         
         for p_id in ids:
             # Fetch from pending
-            cursor.execute(f"SELECT {cols_str} FROM pending_transactions WHERE id = ? AND user_id = ?", (p_id, current_user.id))
+            cursor.execute(f"SELECT {cols_str} FROM pending_transactions WHERE id = ?", (p_id,))
             row = cursor.fetchone()
             if row:
                 # Insert into main table
@@ -2164,7 +2175,7 @@ async def reject_ibkr(
     """Discard pending transactions."""
     try:
         cursor = conn.cursor()
-        cursor.execute(f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?']*len(ids))}) AND user_id = ?", (*ids, current_user.id))
+        cursor.execute(f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?']*len(ids))})", (*ids,))
         deleted_count = cursor.rowcount
         conn.commit()
         if deleted_count > 0:
@@ -2195,6 +2206,7 @@ async def _calculate_historical_performance_internal(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         _
     ) = data
@@ -2386,7 +2398,8 @@ async def _calculate_historical_performance_internal(
             include_accounts=accounts,
             benchmark_symbols_yf=benchmarks,
             interval=calc_interval,
-            db_mtime=data[6] # db_mtime
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=data[7]  # db_mtime
         )
         logging.info(f"API History: Calc returned daily_df with {len(daily_df)} rows. Columns: {list(daily_df.columns)}")
         if not daily_df.empty:
@@ -2680,7 +2693,7 @@ async def get_stock_history(
     Returns historical price data for a single stock, with optional benchmarks.
     """
     try:
-        _, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
+        _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         mdp = get_mdp()
         
         # 1. Map Symbol
@@ -2868,6 +2881,7 @@ async def get_capital_gains(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         db_mtime
     ) = data
@@ -2893,6 +2907,7 @@ async def get_capital_gains(
             benchmark_symbols_yf=[], # No benchmarks needed
             display_currency=currency,
             include_accounts=accounts,
+            account_cash_mode_map=account_cash_mode_map,
             db_mtime=db_mtime
         )
         
@@ -2959,6 +2974,7 @@ async def get_dividends(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        account_cash_mode_map,
         original_csv_path,
         db_mtime
     ) = data
@@ -2984,6 +3000,7 @@ async def get_dividends(
             benchmark_symbols_yf=[], # No benchmarks needed
             display_currency=currency,
             include_accounts=accounts,
+            account_cash_mode_map=account_cash_mode_map,
             db_mtime=db_mtime
         )
         
@@ -3101,17 +3118,20 @@ async def _generate_dividend_events(
                 if local_events:
                     try:
                         anchor = datetime.strptime(local_events[-1]["dividend_date"], "%Y-%m-%d").date()
-                    except: pass
-                
+                    except (ValueError, KeyError, IndexError) as e:
+                        logging.debug(f"Dividend anchor parse (local_events): {e}")
+
                 if not anchor and info.get("lastDividendDate"):
                     try:
                         anchor = date.fromtimestamp(info.get("lastDividendDate"))
-                    except: pass
-                    
+                    except (OSError, ValueError, TypeError) as e:
+                        logging.debug(f"Dividend anchor parse (lastDividendDate): {e}")
+
                 if not anchor and info.get("exDividendDate"):
                     try:
                         anchor = date.fromtimestamp(info.get("exDividendDate")) + timedelta(days=21)
-                    except: pass
+                    except (OSError, ValueError, TypeError) as e:
+                        logging.debug(f"Dividend anchor parse (exDividendDate): {e}")
                     
                 if anchor:
                     curr = anchor
@@ -3237,7 +3257,7 @@ async def get_projected_income(
             return []
 
         # 3. Use unified event generation logic
-        df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
+        df, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         
         # Calculate raw events using the robust logic (Calendar + Estimates + Cash Interest)
         events = await _generate_dividend_events(
@@ -3326,7 +3346,7 @@ async def get_stock_analysis(
     Returns AI-powered stock analysis for a given symbol.
     """
     try:
-        (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+        (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
         
         mdp = get_mdp()
@@ -3509,6 +3529,7 @@ async def get_settings(
             "display_currency": config_manager.gui_config.get("display_currency", "USD"),
             "selected_accounts": config_manager.gui_config.get("selected_accounts", []),
             "active_tab": config_manager.gui_config.get("active_tab", "performance"),
+            "account_cash_mode_map": config_manager.gui_config.get("account_cash_mode_map", {}),
             "ibkr_token": config_manager.manual_overrides.get("ibkr_token") or getattr(config, "IBKR_TOKEN", None),
             "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or getattr(config, "IBKR_QUERY_ID", None)
         }
@@ -3523,6 +3544,7 @@ class SettingsUpdate(BaseModel):
     account_groups: Optional[Dict[str, List[str]]] = None
     account_group_order: Optional[List[str]] = None
     account_currency_map: Optional[Dict[str, str]] = None
+    account_cash_mode_map: Optional[Dict[str, str]] = None
     available_currencies: Optional[List[str]] = None
     account_interest_rates: Optional[Dict[str, float]] = None
     interest_free_thresholds: Optional[Dict[str, float]] = None
@@ -3601,6 +3623,10 @@ async def update_settings(
         if settings.account_currency_map is not None:
              config_manager.gui_config["account_currency_map"] = settings.account_currency_map
              gui_config_changed = True
+             
+        if settings.account_cash_mode_map is not None:
+             config_manager.gui_config["account_cash_mode_map"] = settings.account_cash_mode_map
+             gui_config_changed = True
 
         if settings.available_currencies is not None:
              config_manager.gui_config["available_currencies"] = settings.available_currencies
@@ -3638,7 +3664,7 @@ async def update_settings(
 
             # OPTIMIZATION: Only reload settings and clear summary/history caches.
             # Avoid a full 'reload_data()' which wipes the transaction cache and forces a heavy DB reload.
-            clear_settings_cache(current_user.id)
+            clear_settings_cache(current_user.username)
             clear_portfolio_caches()
             trigger_background_precalculation(current_user)
             return {"status": "success", "message": "Settings updated and data reloaded"}
@@ -3658,7 +3684,7 @@ async def get_risk_metrics(
     """
     Returns portfolio risk metrics (Sharpe, Volatility, Max Drawdown).
     """
-    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path, _ = data
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, _ = data
     if df.empty:
         return {}
 
@@ -3677,7 +3703,8 @@ async def get_risk_metrics(
             include_accounts=accounts,
             benchmark_symbols_yf=['^GSPC'], # Add S&P 500 for risk metrics
             interval="D",
-            db_mtime=data[6] # db_mtime
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=data[7]  # db_mtime
         )
         
         if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
@@ -3687,6 +3714,32 @@ async def get_risk_metrics(
         portfolio_values = daily_df["Portfolio Accumulated Gain"]
         benchmark_values = daily_df['^GSPC Price'] if '^GSPC Price' in daily_df.columns else None
         metrics = calculate_all_risk_metrics(portfolio_values, benchmark_values=benchmark_values)
+        
+        # --- FIX: Calculate YTD Return from daily_df ---
+        try:
+            if not daily_df.empty:
+                import pandas as pd
+                # Ensure index is datetime for filtering
+                if not pd.api.types.is_datetime64_any_dtype(daily_df.index):
+                    daily_df.index = pd.to_datetime(daily_df.index)
+                
+                current_year = date.today().year
+                prev_year_data = daily_df[daily_df.index.year < current_year]
+                
+                if not prev_year_data.empty:
+                    prev_year_twr = prev_year_data["Portfolio Accumulated Gain"].iloc[-1]
+                    current_twr = portfolio_values.iloc[-1]
+                    if prev_year_twr and prev_year_twr > 0:
+                        metrics["YTD Return"] = (current_twr / prev_year_twr) - 1.0
+                else:
+                    # Account started this year
+                    current_twr = portfolio_values.iloc[-1]
+                    start_twr = portfolio_values.iloc[0]
+                    if start_twr > 0:
+                        metrics["YTD Return"] = (current_twr / start_twr) - 1.0
+        except Exception as ytd_e:
+            logging.error(f"Error calculating YTD Return in risk_metrics: {ytd_e}")
+
         if metrics.get('Beta') is None:
             logging.warning(f"Risk Metrics: Beta is None. daily_df columns: {daily_df.columns.tolist()}, port_len={len(portfolio_values)}, bench_len={len(benchmark_values) if benchmark_values is not None else 0}")
         return clean_nans(metrics)
@@ -3707,7 +3760,7 @@ async def get_attribution(
     """
     Returns performance attribution by sector and stock.
     """
-    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _, _ = data
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, _ = data
     if df.empty:
         return {}
 
@@ -3900,7 +3953,7 @@ async def get_dividend_calendar(
             return []
 
         # 3. Use unified event generation logic
-        df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
+        df, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         
         events = await _generate_dividend_events(
             holdings=holdings,
@@ -3925,7 +3978,7 @@ async def get_fundamentals_endpoint(
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns fundamental data (ticker.info) for a symbol."""
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {
             "symbol": symbol,
@@ -3983,7 +4036,7 @@ async def get_financials_endpoint(
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns historical financial statements for a symbol."""
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {"symbol": symbol, "period": period_type, "income_statement": [], "balance_sheet": [], "cash_flow": []}
 
@@ -4039,7 +4092,7 @@ async def get_ratios_endpoint(
     if not FINANCIAL_RATIOS_AVAILABLE:
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {"symbol": symbol, "historical_ratios": [], "current_valuation": {}}
 
@@ -4094,7 +4147,7 @@ async def get_intrinsic_value_endpoint(
     if not FINANCIAL_RATIOS_AVAILABLE:
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
-    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
         return {"symbol": symbol, "intrinsic_value": 1.0, "current_price": 1.0, "upside_potential": 0.0, "is_cash": True}
 

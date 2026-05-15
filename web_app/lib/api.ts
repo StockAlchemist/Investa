@@ -81,13 +81,13 @@ const authFetch = async (url: string, options: RequestInit = {}) => {
         ...(options.headers || {}),
     } as HeadersInit;
 
-    // Auto-redirect on 401?
-    // If we receive 401, we should probably clear token and redirect.
-    // However, api.ts is not a react component. 
-    // We can rely on the UI components (React Query) to handle errors, or dispatch a custom event.
-    // For now, let's just pass the 401 through, and AuthContext or specific components will handle it.
+    const response = await fetch(url, { ...options, headers });
 
-    return fetch(url, { ...options, headers });
+    if (response.status === 401 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+
+    return response;
 };
 
 export interface PortfolioSummary {
@@ -101,6 +101,7 @@ export interface PortfolioSummary {
         total_return_pct: number;
         dividends: number;
         commissions: number;
+        taxes?: number;
         fx_gain_loss_display?: number;
         fx_gain_loss_pct?: number;
         annualized_twr?: number;
@@ -187,15 +188,14 @@ export async function fetchSummary(currency: string = 'USD', accounts?: string[]
         params: {
             query: { currency, accounts: accounts || undefined, show_closed: showClosed }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch summary');
     return data as unknown as PortfolioSummary;
 }
 
 export async function fetchMarketStatus(): Promise<{ is_open: boolean }> {
-    const res = await authFetch(`${API_BASE_URL}/market_status`, { cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/market_status`, {});
     if (!res.ok) throw new Error('Failed to fetch market status');
     return res.json();
 }
@@ -205,8 +205,7 @@ export async function fetchHoldings(currency: string = 'USD', accounts?: string[
         params: {
             query: { currency, accounts: accounts || undefined, show_closed: showClosed }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch holdings');
     return data as unknown as Holding[];
@@ -228,8 +227,7 @@ export async function fetchTransactions(accounts?: string[], signal?: AbortSigna
         params: {
             query: { accounts: accounts || undefined }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch transactions');
     return data as unknown as Transaction[];
@@ -333,8 +331,7 @@ export async function fetchHistory(
                 to: toDate
             }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch history');
     return data as unknown as PerformanceData[];
@@ -351,8 +348,7 @@ export async function fetchMarketHistory(
         params: {
             query: { period, interval, currency, benchmarks }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch market history');
     return data as any[];
@@ -378,8 +374,7 @@ export async function fetchStockHistory(
             path: { symbol },
             query: { period, interval, benchmarks: benchmarks || undefined }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch stock history');
     return data as unknown as StockHistoryData[];
@@ -403,8 +398,7 @@ export async function fetchAssetChange(
         params: {
             query: { currency, accounts: accounts || undefined, benchmarks: benchmarks || undefined, show_closed: showClosed }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch asset change data');
     return data as unknown as AssetChangeData;
@@ -440,8 +434,7 @@ export async function fetchCapitalGains(
         params: {
             query: { currency, accounts: accounts || undefined, from: fromDate, to: toDate }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch capital gains');
     return data as unknown as CapitalGain[];
@@ -469,8 +462,7 @@ export async function fetchDividends(
         params: {
             query: { currency, accounts: accounts || undefined }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch dividends');
     return data as unknown as Dividend[];
@@ -492,6 +484,7 @@ export interface Settings {
     user_symbol_map: Record<string, string>;
     user_excluded_symbols: string[];
     account_currency_map: Record<string, string>;
+    account_cash_mode_map: Record<string, string>;
     account_groups: Record<string, string[]>;
     account_group_order?: string[];
     available_currencies: string[];
@@ -521,6 +514,7 @@ export interface SettingsUpdate {
     account_groups?: Record<string, string[]>;
     account_group_order?: string[];
     account_currency_map?: Record<string, string>;
+    account_cash_mode_map?: Record<string, string>;
     available_currencies?: string[];
     account_interest_rates?: Record<string, number>;
     interest_free_thresholds?: Record<string, number>;
@@ -556,8 +550,7 @@ export async function fetchRiskMetrics(currency: string = 'USD', accounts?: stri
         params: {
             query: { currency, accounts: accounts || undefined, show_closed: showClosed }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch risk metrics');
     return data as unknown as RiskMetrics;
@@ -586,8 +579,7 @@ export async function fetchAttribution(currency: string = 'USD', accounts?: stri
         params: {
             query: { currency, accounts: accounts || undefined, show_all: showAll, show_closed: showClosed }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch attribution');
     return data as unknown as AttributionData;
@@ -606,8 +598,7 @@ export async function fetchDividendCalendar(accounts?: string[], signal?: AbortS
         params: {
             query: { accounts: accounts || undefined, _t: Date.now().toString() as any }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch dividend calendar');
     return data as unknown as DividendEvent[];
@@ -653,7 +644,7 @@ export async function syncIbkr(): Promise<StatusResponse> {
 }
 
 export async function fetchPendingIbkr(): Promise<Transaction[]> {
-    const res = await authFetch(`${API_BASE_URL}/sync/ibkr/pending`, { cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/sync/ibkr/pending`, {});
     if (!res.ok) throw new Error('Failed to fetch pending transactions');
     return res.json();
 }
@@ -694,8 +685,7 @@ export async function fetchProjectedIncome(
         params: {
             query: { currency, accounts: accounts || undefined }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch projected income');
     return data as unknown as ProjectedIncome[];
@@ -728,8 +718,7 @@ export async function fetchPortfolioHealth(
         params: {
             query: { currency, accounts: accounts || undefined, show_closed: showClosed }
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) {
         console.error("Failed to fetch portfolio health");
@@ -767,7 +756,7 @@ export interface WatchlistMeta {
 }
 
 export async function getWatchlists(signal?: AbortSignal): Promise<WatchlistMeta[]> {
-    const { data, error } = await apiClient.GET("/api/watchlists", { signal, cache: 'no-store' });
+    const { data, error } = await apiClient.GET("/api/watchlists", { signal });
     if (error) throw new Error('Failed to fetch watchlists');
     return data as unknown as WatchlistMeta[];
 }
@@ -802,8 +791,7 @@ export async function fetchWatchlist(currency: string = 'USD', watchlistId: numb
         params: {
             query: { currency, id: watchlistId } as any
         },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch watchlist');
     return data as unknown as WatchlistItem[];
@@ -1004,8 +992,7 @@ export async function sendChatMessage(message: string, history: ChatMessage[] = 
 
 export async function fetchStockAnalysis(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
     const { data, error } = await apiClient.GET("/api/stock-analysis/{symbol}", {
-        params: { path: { symbol }, query: { force } as any },
-        cache: 'no-store'
+        params: { path: { symbol }, query: { force } as any }
     });
     if (error) throw new Error(`Failed to fetch AI analysis for ${symbol}`);
     return data as unknown as StockAnalysisResponse;
@@ -1060,8 +1047,7 @@ export async function runNarrativeSearch(prompt: string): Promise<ScreenerResult
 
 export async function fetchScreenerReview(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
     const { data, error } = await apiClient.POST("/api/screener/review/{symbol}", {
-        params: { path: { symbol }, query: { force } as any },
-        cache: 'no-store'
+        params: { path: { symbol }, query: { force } as any }
     });
     if (error) throw new Error(`Failed to fetch AI review for ${symbol}`);
     return data as unknown as StockAnalysisResponse;
@@ -1070,8 +1056,7 @@ export async function fetchScreenerReview(symbol: string, force: boolean = false
 export async function fetchPortfolioAIReview(currency: string = 'USD', accounts?: string[], refresh: boolean = false, signal?: AbortSignal): Promise<any> {
     const { data, error } = await apiClient.POST("/api/portfolio/ai_review", {
         params: { query: { currency, accounts: accounts || undefined, refresh: refresh } },
-        signal,
-        cache: 'no-store'
+        signal
     });
     if (error) throw new Error('Failed to fetch portfolio AI review');
     return data;

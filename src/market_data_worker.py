@@ -316,8 +316,14 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 interval=interval,
                 progress=False,
                 group_by="ticker",
-                auto_adjust=True,
-                actions=False,
+                # Use unadjusted Close so historical portfolio valuation reflects
+                # the real price the user paid/saw on each date. Adj Close (with
+                # split+dividend back-adjustment) would systematically deflate
+                # historical values for dividend-paying assets and create phantom
+                # day-1 losses on every buy. Adj Close is still returned in a
+                # separate column for benchmark/TWR consumers that need it.
+                auto_adjust=False,
+                actions=True,
                 timeout=30,
                 threads=1
             )
@@ -334,8 +340,14 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 interval=interval,
                 progress=False,
                 group_by="ticker",
-                auto_adjust=True,
-                actions=False,
+                # Use unadjusted Close so historical portfolio valuation reflects
+                # the real price the user paid/saw on each date. Adj Close (with
+                # split+dividend back-adjustment) would systematically deflate
+                # historical values for dividend-paying assets and create phantom
+                # day-1 losses on every buy. Adj Close is still returned in a
+                # separate column for benchmark/TWR consumers that need it.
+                auto_adjust=False,
+                actions=True,
                 timeout=30,
                 threads=1
             )

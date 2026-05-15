@@ -16,6 +16,7 @@ export const DEFAULT_ITEMS = [
     { id: 'fxGL', title: 'FX Gain/Loss', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'taxes', title: 'Total Taxes', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'fees', title: 'Fees', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'taxes', title: 'Taxes', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
     { id: 'portfolioDonut', title: 'Portfolio Composition', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
     { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },

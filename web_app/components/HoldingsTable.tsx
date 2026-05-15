@@ -540,8 +540,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 g.aggregates['Day Chg %'] = (g.aggregates['Day Chg'] / (g.aggregates['Mkt Val'] - g.aggregates['Day Chg'])) * 100;
             }
             // Use Total Buy Cost as the denominator for all groups to be consistent
-            const costDenominator = (Math.abs(g.aggregates['Total Buy Cost']) > 0.0001) 
-                ? g.aggregates['Total Buy Cost'] 
+            const costDenominator = (Math.abs(g.aggregates['Total Buy Cost']) > 0.0001)
+                ? g.aggregates['Total Buy Cost']
                 : g.aggregates['Cost Basis'];
 
             if (Math.abs(costDenominator) > 0.0001) {
@@ -738,6 +738,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         }
         if (field.includes('Price') || field.includes('Value') || field.includes('Cost') || field.includes('Gain') || field.includes('Div') || field.includes('Balance')) {
             return formatCurrency(num, currency);
+        }
+        if (field === 'Quantity') {
+            return num.toLocaleString(undefined, { maximumFractionDigits: 4 });
         }
         return num.toLocaleString();
     };
@@ -1197,7 +1200,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                         {val !== null && val !== undefined ? (
                                                                             <div
                                                                                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shadow-sm ${(val as number) >= 8.0 ? 'bg-emerald-500' :
-                                                                                        (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                                                    (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
                                                                                     }`}
                                                                             >
                                                                                 {(val as number).toFixed(1)}
@@ -1362,7 +1365,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 {val !== null && val !== undefined ? (
                                                                     <div
                                                                         className={`px-2 py-0.5 rounded text-xs font-bold text-white shadow-sm ${(val as number) >= 8.0 ? 'bg-emerald-500' :
-                                                                                (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                                            (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
                                                                             }`}
                                                                     >
                                                                         {(val as number).toFixed(1)}
@@ -1500,7 +1503,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     <div className="flex justify-end">
                                         {holding.ai_score !== null && holding.ai_score !== undefined ? (
                                             <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${holding.ai_score >= 8.0 ? 'bg-emerald-500' :
-                                                    holding.ai_score >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
+                                                holding.ai_score >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
                                                 }`}>
                                                 {holding.ai_score.toFixed(1)}
                                             </div>
@@ -1510,15 +1513,15 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Intrinsic:</span>
                                     <span className={`font-medium ${holding.intrinsic_value !== null && holding.intrinsic_value !== undefined && holding.Price !== undefined ? (
-                                            holding.intrinsic_value > (holding.Price as number) ? 'text-emerald-500' :
-                                                holding.intrinsic_value < (holding.Price as number) ? 'text-rose-500' : 'text-foreground'
-                                        ) : 'text-foreground'
+                                        holding.intrinsic_value > (holding.Price as number) ? 'text-emerald-500' :
+                                            holding.intrinsic_value < (holding.Price as number) ? 'text-rose-500' : 'text-foreground'
+                                    ) : 'text-foreground'
                                         }`}>
                                         {formatValue(holding.intrinsic_value, "Intrinsic Value")}
                                         {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
-                                                <span className="text-[10px] opacity-70 ml-1">
-                                                    ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
-                                                </span>
+                                            <span className="text-[10px] opacity-70 ml-1">
+                                                ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
+                                            </span>
                                         )}
                                     </span>
                                 </div>

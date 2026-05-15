@@ -39,32 +39,36 @@ YFINANCE_AVAILABLE = None
 
 def _ensure_yfinance():
     global yf, YFINANCE_AVAILABLE
+    # Fast path: already initialised (no lock needed — only written once)
     if YFINANCE_AVAILABLE is not None:
         return YFINANCE_AVAILABLE
 
-    try:
-        import yfinance as _yf
-        yf = _yf
-        YFINANCE_AVAILABLE = True
-    except ImportError:
-        logging.warning(
-            "Warning: yfinance library not found. Market data fetching will fail."
-        )
-        YFINANCE_AVAILABLE = False
-        
-        # Define dummy yf object if needed for type hinting or structure
-        class DummyYFinance:
-            def Tickers(self, *args, **kwargs):
-                raise ImportError("yfinance not installed")
+    with _YFINANCE_INIT_LOCK:
+        # Double-check inside lock in case another thread initialised first
+        if YFINANCE_AVAILABLE is not None:
+            return YFINANCE_AVAILABLE
+        try:
+            import yfinance as _yf
+            yf = _yf
+            YFINANCE_AVAILABLE = True
+        except ImportError:
+            logging.warning(
+                "Warning: yfinance library not found. Market data fetching will fail."
+            )
+            YFINANCE_AVAILABLE = False
 
-            def download(self, *args, **kwargs):
-                raise ImportError("yfinance not installed")
+            class DummyYFinance:
+                def Tickers(self, *args, **kwargs):
+                    raise ImportError("yfinance not installed")
 
-            def Ticker(self, *args, **kwargs):
-                raise ImportError("yfinance not installed")
-        
-        yf = DummyYFinance()
-    
+                def download(self, *args, **kwargs):
+                    raise ImportError("yfinance not installed")
+
+                def Ticker(self, *args, **kwargs):
+                    raise ImportError("yfinance not installed")
+
+            yf = DummyYFinance()
+
     return YFINANCE_AVAILABLE
 
 # --- Import constants from config.py ---
@@ -192,13 +196,14 @@ SPDX-License-Identifier: MIT
 
 # --- Global Locks ---
 _SHARED_MDP_LOCK = threading.Lock()
-# Semaphore to limit concurrent isolated fetches (subprocesses)
+_YFINANCE_INIT_LOCK = threading.Lock()   # Guards lazy yfinance import
+_RATE_LIMIT_LOCK = threading.Lock()       # Guards _LAST_RATE_LIMIT_TIME read/write
 # Semaphore to limit concurrent isolated fetches (subprocesses)
 # Critical for preventing OOM on memory-constrained systems
-# INCREASED TO 3: Allow some parallelism on modern Macs while avoiding file limit exhaustion
-# REDUCED TO 1: Force serialized subprocess execution to survive memory-constrained environments
-# This prevents multiple yfinance instances from competing for RAM.
-_FETCH_SEMAPHORE = threading.Semaphore(1)
+# PERF FIX (BN-04): Increased from 1→2 to allow parallel independent fetches
+# (e.g. price history + FX rates can run concurrently). Kept at 2 (not 3+)
+# to avoid file descriptor exhaustion on macOS.
+_FETCH_SEMAPHORE = threading.Semaphore(2)
 _LAST_RATE_LIMIT_TIME = 0.0 # Track when we last saw a 429
 _RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
 
@@ -215,6 +220,20 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         # Let the base class default method raise the TypeError
         return super(NpEncoder, self).default(obj)
+
+
+def _safe_json_load(path: str) -> Optional[Any]:
+    """Safely loads JSON from a file, returning None if the file is missing, empty, or corrupt."""
+    if not os.path.exists(path):
+        return None
+    try:
+        if os.path.getsize(path) == 0:
+            return None
+        with open(path, "r") as f:
+            return json.load(f)
+    except Exception:
+        # If corrupt, we might want to log it or delete it. For now, just return None.
+        return None
 
 
 def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="history", period=None, **kwargs):
@@ -236,11 +255,12 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
     Actual implementation of the isolated fetch.
     """
     global _LAST_RATE_LIMIT_TIME
-    
-    # Check for global cool-down before starting
-    elapsed_since_429 = time.time() - _LAST_RATE_LIMIT_TIME
-    if elapsed_since_429 < _RATE_LIMIT_COOLDOWN:
-        wait_time = _RATE_LIMIT_COOLDOWN - elapsed_since_429
+
+    # Check for global cool-down before starting (lock for consistent read)
+    with _RATE_LIMIT_LOCK:
+        elapsed_since_429 = time.time() - _LAST_RATE_LIMIT_TIME
+        wait_time = max(0.0, _RATE_LIMIT_COOLDOWN - elapsed_since_429)
+    if wait_time > 0:
         logging.warning(f"GLOBAL COOL-DOWN ACTIVE: Yahoo Finance rate limited us. Waiting {wait_time:.1f}s more before trying {task} batch...")
         time.sleep(wait_time)
 
@@ -346,7 +366,8 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
             msg = response.get('message', 'Unknown error')
             if "Too Many Requests" in msg or "429" in msg or "Rate Limit" in msg:
                 logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Triggering 60s Global Cool-down.")
-                _LAST_RATE_LIMIT_TIME = time.time()
+                with _RATE_LIMIT_LOCK:
+                    _LAST_RATE_LIMIT_TIME = time.time()
             else:
                 logging.error(f"Isolated fetch worker reported error: {msg}")
             
@@ -493,11 +514,8 @@ class MarketDataProvider:
     def _load_persistent_fx_cache(self, allow_stale: bool = True) -> Tuple[Dict[str, float], Dict[str, float]]:
         """Loads the persistent FX cache from disk."""
         path = self._get_persistent_fx_cache_path()
-        if not os.path.exists(path):
-            return {}, {}
-        try:
-            with open(path, "r") as f:
-                content = json.load(f)
+        content = _safe_json_load(path)
+        if content:
                 ts_str = content.get("timestamp")
                 if ts_str:
                     ts = datetime.fromisoformat(ts_str)
@@ -507,8 +525,6 @@ class MarketDataProvider:
                         if allow_stale and age_seconds >= PERSISTENT_FX_DURATION_HOURS * 3600:
                             logging.info(f"FX: Using STALE persistent cache (age: {age_seconds/3600:.1f}h)")
                         return content.get("fx_rates", {}), content.get("fx_prev_close", {})
-        except Exception as e:
-            logging.warning(f"Error loading persistent FX cache: {e}")
         return {}, {}
 
     def _save_persistent_fx_cache(self, fx_rates: Dict[str, float], fx_prev_close: Dict[str, float]):
@@ -527,8 +543,10 @@ class MarketDataProvider:
 
     def _ensure_metadata_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
         """
-        Ensures metadata (Name, Currency) exists and is fresh for given symbols.
+        Ensures metadata (Name, Currency, Sector, Country, etc.) exists and is fresh for given symbols.
         Uses fragmented per-symbol caching to avoid OOM.
+        PERF FIX (BN-05): Also pre-populates fundamentals cache when fetching info,
+        eliminating the redundant second info subprocess call.
         """
         results = {}
         now_ts = datetime.now(timezone.utc)
@@ -537,13 +555,7 @@ class MarketDataProvider:
         # 1. Check fragmented cache first
         for sym in yf_symbols:
             meta_path = self._get_symbol_metadata_path(sym)
-            cached_meta = None
-            if os.path.exists(meta_path):
-                try:
-                    with open(meta_path, "r") as f:
-                        cached_meta = json.load(f)
-                except Exception:
-                    pass
+            cached_meta = _safe_json_load(meta_path)
             
             if cached_meta:
                 ts_str = cached_meta.get("timestamp")
@@ -598,11 +610,31 @@ class MarketDataProvider:
                             "currency": info.get("currency"),
                             "sector": info.get("sector"),
                             "industry": info.get("industry"),
+                            "country": info.get("country"),  # PERF FIX (BN-07): Added for batch sector enrichment
                             "exchange": info.get("exchange"),
                             "fullExchangeName": info.get("fullExchangeName"),
                             "quoteType": info.get("quoteType"),
                             "timestamp": now_ts.isoformat()
                         }
+                        
+                        # PERF FIX (BN-05): Also pre-populate fundamentals cache from same info fetch.
+                        # This eliminates the redundant second _run_isolated_fetch(task="info")
+                        # that get_fundamental_data_batch would otherwise trigger.
+                        try:
+                            div_rate = info.get("dividendRate", 0.0)
+                            fund_entry = {
+                                "dividendRate": div_rate if div_rate else 0.0,
+                                "trailingAnnualDividendRate": info.get("trailingAnnualDividendRate") or div_rate or 0.0,
+                                "dividendYield": info.get("dividendYield", 0.0) or 0.0,
+                                "exDividendDate": info.get("exDividendDate"),
+                                "lastDividendValue": info.get("lastDividendValue", 0.0),
+                                "lastDividendDate": info.get("lastDividendDate"),
+                                "timestamp": now_ts.isoformat(),
+                                "ticker_info": info
+                            }
+                            self._save_fundamentals_cache({sym: fund_entry})
+                        except Exception:
+                            pass  # Non-critical: fundamentals will be fetched on demand if needed
                     else:
                         logging.warning(f"Failed to fetch metadata for {sym}. Using placeholders.")
                         meta_entry = {
@@ -610,6 +642,7 @@ class MarketDataProvider:
                             "currency": None, 
                             "sector": None,
                             "industry": None,
+                            "country": None,
                             "exchange": None,
                             "fullExchangeName": None,
                             "quoteType": None,
@@ -648,10 +681,7 @@ class MarketDataProvider:
             path = self._get_symbol_fundamentals_path(sym)
             try:
                 # Merge with existing data if any (legacy compatibility)
-                existing = {}
-                if os.path.exists(path):
-                    with open(path, "r") as f:
-                        existing = json.load(f)
+                existing = _safe_json_load(path) or {}
                 
                 # If existing is a legacy format (raw data directly), wrap it
                 if "data" not in existing:
@@ -682,17 +712,16 @@ class MarketDataProvider:
         # 1. Check fragmented cache
         for sym in yf_symbols:
             path = self._get_symbol_fundamentals_path(sym)
-            if os.path.exists(path):
+            entry = _safe_json_load(path)
+            if entry:
                 try:
-                    with open(path, "r") as f:
-                        entry = json.load(f)
-                        data = entry.get("data") if "data" in entry else entry
-                        ts_str = entry.get("timestamp")
-                        if ts_str:
-                            entry_ts = datetime.fromisoformat(ts_str)
-                            if (now_ts - entry_ts).days < 1:
-                                results[sym] = data
-                                continue
+                    data = entry.get("data") if "data" in entry else entry
+                    ts_str = entry.get("timestamp")
+                    if ts_str:
+                        entry_ts = datetime.fromisoformat(ts_str)
+                        if (now_ts - entry_ts).days < 1:
+                            results[sym] = data
+                            continue
                 except Exception:
                     pass
             missing_symbols.append(sym)
@@ -752,19 +781,18 @@ class MarketDataProvider:
         # 1. Check fragmented cache
         for sym in yf_symbols:
             path = self._get_symbol_fundamentals_path(sym)
-            if os.path.exists(path):
+            entry = _safe_json_load(path)
+            if entry:
                 try:
-                    with open(path, "r") as f:
-                        entry = json.load(f)
-                        # Ticker info might be in "data" (singular fetch) or directly in entry (batch fetch)
-                        info = entry.get("ticker_info") or entry.get("data")
-                        ts_str = entry.get("timestamp")
-                        
-                        if info and ts_str:
-                            entry_ts = datetime.fromisoformat(ts_str)
-                            if (now_ts - entry_ts).days < 1:
-                                results[sym] = info
-                                continue
+                    # Ticker info might be in "data" (singular fetch) or directly in entry (batch fetch)
+                    info = entry.get("ticker_info") or entry.get("data")
+                    ts_str = entry.get("timestamp")
+                    
+                    if info and ts_str:
+                        entry_ts = datetime.fromisoformat(ts_str)
+                        if (now_ts - entry_ts).days < 1:
+                            results[sym] = info
+                            continue
                 except Exception:
                     pass
             missing_symbols.append(sym)
@@ -908,8 +936,10 @@ class MarketDataProvider:
                     cache_timestamp_str = cache_data.get("timestamp")
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                        from utils_time import is_market_open
+                        cache_ttl_minutes = 1 if is_market_open() else 60
                         if datetime.now(timezone.utc) - cache_timestamp < timedelta(
-                            minutes=1 # Short 1-min cache to allow concurrency without crashing
+                            minutes=cache_ttl_minutes # BN-06: Adaptive 1min/60min cache
                         ):
                             cached_quotes = cache_data.get("quotes")
                             cached_fx = cache_data.get("fx_rates")
@@ -928,9 +958,13 @@ class MarketDataProvider:
         # --- 3. FETCHING FRESH DATA (Optimized) ---
         
         # 3a. Ensure Metadata (Name, Currency) - Long-lived cache
+        # PERF FIX (BN-05): This now also pre-populates fundamentals cache,
+        # so the separate get_fundamental_data_batch call below will find
+        # all data already cached and skip its own subprocess fetch.
         metadata_map = self._ensure_metadata_batch(yf_symbols_to_fetch)
         
         # 3c. Fetch Fundamentals (Dividends) - Cached
+        # After BN-05, this will mostly be cache hits (populated by metadata fetch above).
         fundamentals_map = self.get_fundamental_data_batch(yf_symbols_to_fetch)
 
         # 3b. Batch Fetch Prices using yf.download (Existing Logic)
@@ -1778,12 +1812,16 @@ class MarketDataProvider:
                 return df_raw
             df_clean = df_raw.copy()
             
-            # For intraday intervals, prefer 'Close' over 'Adj Close' 
-            # as yfinance often returns NaNs in Adj Close for short intervals.
+            # Always prefer raw 'Close' (the actual historical price). The
+            # worker fetches with auto_adjust=False so 'Close' is unadjusted,
+            # which is what portfolio valuation needs. 'Adj Close' folds in
+            # future dividends and creates phantom day-1 losses on every buy
+            # of a dividend-paying asset. Use 'Adj Close' only as a fallback
+            # when 'Close' is missing or all-NaN.
             is_intraday_local = any(x in interval for x in ["m", "h", "min"])
-            
-            primary = "Close" if is_intraday_local else "Adj Close"
-            secondary = "Adj Close" if is_intraday_local else "Close"
+            _ = is_intraday_local  # kept for diagnostic logging below
+            primary = "Close"
+            secondary = "Adj Close"
             
             if primary in df_clean.columns and df_clean[primary].notna().any():
                 df_clean["price"] = df_clean[primary]
@@ -2501,15 +2539,8 @@ class MarketDataProvider:
         # or to ensure "sections" key exists if loading an old manifest (though version check should handle this)
         manifest = {"global_version": "1.2", "sections": {}}
 
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                # ADD: Check file size before attempting to load
-                if os.path.getsize(manifest_path) == 0:
-                    logging.info(
-                        f"Hist Cache Load ({data_type}): Manifest file '{manifest_path}' is empty. Ignoring cache."
-                    )
-                    return loaded_symbol_data, False
-                loaded_manifest_content = json.load(f)
+        loaded_manifest_content = _safe_json_load(manifest_path)
+        if loaded_manifest_content:
                 if (
                     not isinstance(loaded_manifest_content, dict)
                     or loaded_manifest_content.get("global_version") != "1.2"
@@ -2520,25 +2551,16 @@ class MarketDataProvider:
                     # Optionally, delete the old manifest here to force a clean save later
                     return loaded_symbol_data, False
                 manifest = loaded_manifest_content
-        except json.JSONDecodeError as e_json:  # Specific catch for JSON error
-            logging.error(
-                f"Hist Cache Load ({data_type}): Error DECODING manifest '{manifest_path}': {e_json}. Attempting to delete corrupt manifest."
-            )
-            try:
-                os.remove(manifest_path)
-                logging.info(
-                    f"Hist Cache Load ({data_type}): Deleted corrupt manifest file '{manifest_path}'."
-                )
-            except OSError as e_del:
-                logging.error(
-                    f"Hist Cache Load ({data_type}): Failed to delete corrupt manifest '{manifest_path}': {e_del}"
-                )
+        else:
+            # If manifest exists but safe_load failed (corrupt), delete it
+            if os.path.exists(manifest_path):
+                logging.error(f"Hist Cache Load ({data_type}): Manifest '{manifest_path}' is corrupt. Deleting.")
+                try:
+                    os.remove(manifest_path)
+                except Exception:
+                    pass
             return loaded_symbol_data, False
-        except Exception as e:  # General catch for other IO errors
-            logging.error(
-                f"Hist Cache Load ({data_type}): Error reading manifest '{manifest_path}': {e}. Ignoring cache."
-            )
-            return loaded_symbol_data, False
+        # Global version check passed, manifest is valid
 
         # New logic: Access the specific cache key entry within the data type section
         sections = manifest.get("sections", {})
@@ -2795,7 +2817,7 @@ class MarketDataProvider:
         return deserialized_dict
 
     @profile
-    def _sync_to_db(self, symbols: List[str], start_date: date, end_date: date, data_type: str = "price", interval: str = "1d"):
+    def _sync_to_db(self, symbols: List[str], start_date: date, end_date: date, data_type: str = "price", interval: str = "1d", integrity_check_symbols: Optional[Set[str]] = None):
         """
         Internal helper to synchronize YF data to the persistent DB.
         Implements the 'Overlapping Refresh' logic for data integrity.
@@ -2889,7 +2911,14 @@ class MarketDataProvider:
                 fetched = self._fetch_yf_historical_data(syms, start, end_date, interval=interval)
                 for s, df in fetched.items():
                     if not df.empty:
-                        consistent, reason = self.db.check_integrity(s, df)
+                        # OPTIMIZATION: Only perform expensive integrity check (and potential full re-fetch)
+                        # for high-priority or currently held symbols.
+                        should_check = (integrity_check_symbols is None) or (s in integrity_check_symbols)
+                        
+                        consistent = True
+                        if should_check:
+                            consistent, reason = self.db.check_integrity(s, df)
+                            
                         if not consistent:
                             logging.warning(f"Market DB Integrity: {reason}. Triggering full re-fetch for {s}.")
                             inception = date(2000, 1, 1)
@@ -2922,6 +2951,7 @@ class MarketDataProvider:
         use_cache: bool = True,
         cache_key: Optional[str] = None,
         cache_file: Optional[str] = None,
+        integrity_check_symbols: Optional[Set[str]] = None,
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches ADJUSTED historical price data using persistent DB and YF."""
         if isinstance(start_date, pd.Timestamp): start_date = start_date.date()
@@ -2950,7 +2980,7 @@ class MarketDataProvider:
         # 1. Sync missing range to DB (with 5-day overlap for integrity)
         if use_cache and non_static_symbols:
             try:
-                self._sync_to_db(non_static_symbols, start_date, end_date, data_type="price", interval=interval)
+                self._sync_to_db(symbols_yf, start_date, end_date, data_type="price", interval=interval, integrity_check_symbols=integrity_check_symbols)
             except Exception as e:
                 logging.error(f"Error syncing to Market DB: {e}")
                 # Continue anyway, we'll try to pull from DB what we have or YF directly if needed
@@ -2965,11 +2995,14 @@ class MarketDataProvider:
                  if df_db.empty:
                      continue
                  
+                 # Prefer raw Close (the historical price the user saw). Adj
+                 # Close folds in future dividends and produces phantom
+                 # day-1 losses on every buy of a dividend-paying asset.
                  price_series = None
-                 if "Adj Close" in df_db.columns:
-                     price_series = df_db["Adj Close"]
-                 elif "Close" in df_db.columns:
+                 if "Close" in df_db.columns:
                      price_series = df_db["Close"]
+                 elif "Adj Close" in df_db.columns:
+                     price_series = df_db["Adj Close"]
                 
                  if price_series is not None:
                      df_clean = price_series.to_frame(name="price")
@@ -3102,11 +3135,8 @@ class MarketDataProvider:
         cache_valid = False  # Flag for the *specific symbol's file*
 
         if not force_refresh and os.path.exists(symbol_cache_file):
-            try:
-                # MODIFIED: Load only the specific symbol's cache file
-                with open(symbol_cache_file, "r", encoding="utf-8") as f:
-                    symbol_cache_entry = json.load(f)
-
+            symbol_cache_entry = _safe_json_load(symbol_cache_file)
+            if symbol_cache_entry:
                 # Check timestamp within the loaded entry
                 if symbol_cache_entry and isinstance(symbol_cache_entry, dict):
                     cache_timestamp_str = symbol_cache_entry.get("timestamp")
@@ -3134,8 +3164,6 @@ class MarketDataProvider:
                         if is_valid:
                             cached_data = symbol_cache_entry.get("data")
                             # CRITICAL: Reject "empty" or "poisoned" cache entries
-                            # For Equities, we expect more substantial info (identifiers).
-                            # Symbols with < 8 keys often indicate failed yfinance lookups.
                             is_poisoned = cached_data is None or len(cached_data) <= 8
                             if cached_data and cached_data.get("quoteType", "").upper() == "EQUITY":
                                 # If missing both identifiers, it's likely a poisoned lookup
@@ -3162,20 +3190,16 @@ class MarketDataProvider:
                          qt = str(cached_data.get('quoteType', '')).upper()
                          if qt in ('ETF', 'MUTUALFUND') and 'etf_data' not in cached_data:
                              # If cache is valid (within 24h) but missing ETF data, force refresh
-                             # UNLESS it's very recent (< 5 mins), implying we just tried and failed.
                              age = datetime.now(timezone.utc) - cache_timestamp
                              if age > timedelta(minutes=5):
                                  logging.info(f"Cache valid but missing ETF data for {yf_symbol} ({qt}). Forcing refresh (age: {age}).")
                                  cache_valid = False
                     # ---------------------------------
                     else:
-                        logging.info(
-                            f"Fundamentals cache file for {yf_symbol} missing timestamp. Treating as expired/invalid: {symbol_cache_file}"
-                        )
-            except (json.JSONDecodeError, IOError, Exception) as e:
-                logging.warning(
-                    f"Error reading fundamentals cache file '{symbol_cache_file}': {e}. Will refetch."
-                )
+                        if not cache_valid:
+                            logging.info(
+                                f"Fundamentals cache file for {yf_symbol} missing timestamp or invalid. Treating as expired: {symbol_cache_file}"
+                            )
 
         if cache_valid and cached_data is not None:
             return cached_data
@@ -3345,46 +3369,36 @@ class MarketDataProvider:
             f"{yf_symbol}_{statement_type}_{period_type}.json",
         )
 
-        if os.path.exists(statement_cache_file):
-            try:
-                with open(statement_cache_file, "r", encoding="utf-8") as f:
-                    cached_entry = json.load(f)
-
-                cache_timestamp_str = cached_entry.get("timestamp")
-                if cache_timestamp_str:
-                    cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                    data_json_str = cached_entry.get("data_df_json")
+        cached_entry = _safe_json_load(statement_cache_file)
+        if cached_entry:
+            cache_timestamp_str = cached_entry.get("timestamp")
+            if cache_timestamp_str:
+                cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                data_json_str = cached_entry.get("data_df_json")
+                
+                # Determine cache duration based on data content
+                # If data is empty, use a short cache (15 mins) to allow retries
+                is_empty_data = False
+                if not data_json_str or data_json_str == "{}" or '"data":[]' in data_json_str:
+                    is_empty_data = True
+                
+                cache_duration = timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS)
+                if is_empty_data:
+                    cache_duration = timedelta(minutes=15)
                     
-                    # Determine cache duration based on data content
-                    # If data is empty, use a short cache (15 mins) to allow retries
-                    is_empty_data = False
-                    if not data_json_str or data_json_str == "{}" or '"data":[]' in data_json_str:
-                        is_empty_data = True
-                    
-                    cache_duration = timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS)
-                    if is_empty_data:
-                        cache_duration = timedelta(minutes=15)
-                        
-                    if datetime.now(timezone.utc) - cache_timestamp < cache_duration:
-                        if data_json_str:
-                            # Deserialize DataFrame from JSON string
-                            df = pd.read_json(StringIO(data_json_str), orient="split")
-                            # yfinance statements often have Timestamps as columns, ensure they are parsed correctly
-                            # If columns are dates, convert them to simple date strings for consistency if needed,
-                            # or ensure they are Timestamps. For now, assume read_json handles it.
-                            logging.debug(
-                                f"Using valid cache for {period_type} {statement_type} of {yf_symbol} from {statement_cache_file} (Age: {datetime.now(timezone.utc) - cache_timestamp})"
-                            )
-                            return df
-                        elif is_empty_data:
-                                # return empty DF if within short cache window
-                                return pd.DataFrame()
-                    else:
-                            logging.debug(f"Cache expired for {period_type} {statement_type} of {yf_symbol} (Empty: {is_empty_data})")
-            except Exception as e:
-                logging.warning(
-                    f"Error reading {period_type} {statement_type} cache for {yf_symbol} from {statement_cache_file}: {e}"
-                )
+                if datetime.now(timezone.utc) - cache_timestamp < cache_duration:
+                    if data_json_str:
+                        # Deserialize DataFrame from JSON string
+                        df = pd.read_json(StringIO(data_json_str), orient="split")
+                        logging.debug(
+                            f"Using valid cache for {period_type} {statement_type} of {yf_symbol} from {statement_cache_file} (Age: {datetime.now(timezone.utc) - cache_timestamp})"
+                        )
+                        return df
+                    elif is_empty_data:
+                        # return empty DF if within short cache window
+                        return pd.DataFrame()
+                else:
+                    logging.debug(f"Cache expired for {period_type} {statement_type} of {yf_symbol} (Empty: {is_empty_data})")
         return None
 
     def _save_statement_data_to_cache(

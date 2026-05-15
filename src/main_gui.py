@@ -1420,9 +1420,10 @@ The CSV file should contain the following columns (header names must match exact
     # Add this NEW slot method to PortfolioApp
     @Slot()
     def show_account_currency_dialog(self):
-        """Shows the dialog to edit account currencies."""
+        """Shows the dialog to edit account currencies and cash management mode."""
         current_map = self.config.get("account_currency_map", {})
         current_default = self.config.get("default_currency", "USD")
+        current_cash_mode_map = self.config.get("account_cash_mode_map", {})
         # Use all accounts detected during the last load/refresh
         accounts_to_show = (
             self.available_accounts
@@ -1439,20 +1440,23 @@ The CSV file should contain the following columns (header names must match exact
             all_accounts=accounts_to_show,
             # Pass the list of currencies to the dialog
             user_currencies=user_currencies,
+            current_cash_mode_map=current_cash_mode_map,
         )
 
         if updated_settings:  # If user clicked Save
-            new_map, new_default = updated_settings
+            new_map, new_default, new_cash_mode_map = updated_settings
             # Check if settings actually changed
             map_changed = new_map != self.config.get("account_currency_map", {})
             default_changed = new_default != self.config.get("default_currency", "USD")
+            cash_mode_changed = new_cash_mode_map != self.config.get("account_cash_mode_map", {})
 
-            if map_changed or default_changed:
+            if map_changed or default_changed or cash_mode_changed:
                 logging.info(
-                    "Account currency settings changed. Saving and refreshing..."
+                    "Account currency/cash mode settings changed. Saving and refreshing..."
                 )
                 self.config["account_currency_map"] = new_map
                 self.config["default_currency"] = new_default
+                self.config["account_cash_mode_map"] = new_cash_mode_map
                 self.save_config()  # Save the updated config
                 self.refresh_data()  # Trigger a full refresh as currencies impact calculations
             else:
@@ -4187,9 +4191,10 @@ The CSV file should contain the following columns (header names must match exact
     # Add this NEW slot method to PortfolioApp
     @Slot()
     def show_account_currency_dialog(self):
-        """Shows the dialog to edit account currencies."""
+        """Shows the dialog to edit account currencies and cash management mode."""
         current_map = self.config.get("account_currency_map", {})
         current_default = self.config.get("default_currency", "USD")
+        current_cash_mode_map = self.config.get("account_cash_mode_map", {})
         # Use all accounts detected during the last load/refresh
         accounts_to_show = (
             self.available_accounts
@@ -4206,20 +4211,23 @@ The CSV file should contain the following columns (header names must match exact
             all_accounts=accounts_to_show,
             # Pass the list of currencies to the dialog
             user_currencies=user_currencies,
+            current_cash_mode_map=current_cash_mode_map,
         )
 
         if updated_settings:  # If user clicked Save
-            new_map, new_default = updated_settings
+            new_map, new_default, new_cash_mode_map = updated_settings
             # Check if settings actually changed
             map_changed = new_map != self.config.get("account_currency_map", {})
             default_changed = new_default != self.config.get("default_currency", "USD")
+            cash_mode_changed = new_cash_mode_map != self.config.get("account_cash_mode_map", {})
 
-            if map_changed or default_changed:
+            if map_changed or default_changed or cash_mode_changed:
                 logging.info(
-                    "Account currency settings changed. Saving and refreshing..."
+                    "Account currency/cash mode settings changed. Saving and refreshing..."
                 )
                 self.config["account_currency_map"] = new_map
                 self.config["default_currency"] = new_default
+                self.config["account_cash_mode_map"] = new_cash_mode_map
                 self.save_config()  # Save the updated config
                 self.refresh_data()  # Trigger a full refresh as currencies impact calculations
             else:
@@ -8355,6 +8363,7 @@ The CSV file should contain the following columns (header names must match exact
 
         # Account currency map and default currency from config
         acc_map_config = self.config.get("account_currency_map", {})
+        acc_cash_mode_config = self.config.get("account_cash_mode_map", {}) # AUTO CASH
         def_curr_config = self.config.get(
             "default_currency",
             config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
@@ -8381,6 +8390,7 @@ The CSV file should contain the following columns (header names must match exact
             "manual_overrides_dict": self.manual_overrides_dict,
             "user_symbol_map": self.user_symbol_map_config,
             "user_excluded_symbols": self.user_excluded_symbols_config,
+            "account_cash_mode_map": acc_cash_mode_config, # AUTO CASH
             "all_transactions_df_for_worker": self.all_transactions_df_cleaned_for_logic.copy(),  # Pass for correlation
         }
         current_cache_dir_base = QStandardPaths.writableLocation(
@@ -8411,6 +8421,7 @@ The CSV file should contain the following columns (header names must match exact
             "manual_overrides_dict": self.manual_overrides_dict,
             "user_symbol_map": self.user_symbol_map_config,
             "user_excluded_symbols": self.user_excluded_symbols_config,
+            "account_cash_mode_map": acc_cash_mode_config, # AUTO CASH
             "original_csv_file_path": self.DB_FILE_PATH,  # Pass DB path for cache key hash
         }
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:

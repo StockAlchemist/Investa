@@ -36,6 +36,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Listen for 401 events dispatched by authFetch so expired tokens trigger logout
+    useEffect(() => {
+        const handleExpired = () => logout();
+        window.addEventListener('auth:expired', handleExpired);
+        return () => window.removeEventListener('auth:expired', handleExpired);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const fetchUser = async (authToken: string) => {
         try {
             const userData = await fetchCurrentUser(authToken);

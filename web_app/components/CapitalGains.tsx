@@ -4,7 +4,8 @@ import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 
-import StockDetailModal from './StockDetailModal';
+import dynamic from 'next/dynamic';
+const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 import { CircleDollarSign, ArrowUpRight, Scale } from 'lucide-react';

@@ -55,7 +55,7 @@ except ImportError:
     # Define fallbacks if absolutely necessary
     CASH_SYMBOL_CSV = "$CASH"
     SHORTABLE_SYMBOLS = set()
-    STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-9  # Fallback if config fails
+    STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-6  # Fallback if config fails
     _AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
 
 # --- Import Utilities ---
@@ -100,6 +100,7 @@ TYPE_TRANSFER = 7
 TYPE_SHORT_SELL = 8
 TYPE_BUY_TO_COVER = 9
 TYPE_TAX = 10
+TYPE_INTEREST = 11
 TYPE_UNKNOWN = -1
 
 # --- Helper to map string types to ints ---
@@ -110,22 +111,24 @@ def get_type_id(t):
     if t == 'deposit': return TYPE_DEPOSIT
     if t == 'withdrawal': return TYPE_WITHDRAWAL
     if t == 'dividend': return TYPE_DIVIDEND
-    if t in ['fees', 'fee']: return TYPE_FEES
+    if t in ['fee', 'fees']: return TYPE_FEES
     if t in ['split', 'stock split']: return TYPE_SPLIT
     if t == 'transfer': return TYPE_TRANSFER
     if t == 'short sell': return TYPE_SHORT_SELL
     if t == 'buy to cover': return TYPE_BUY_TO_COVER
     if t in ['tax', 'withholding tax']: return TYPE_TAX
+    if t == 'interest': return TYPE_INTEREST
     return TYPE_UNKNOWN
 
 @jit(nopython=True, cache=True)
 def _process_numba_core(
-    sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios, 
+    sym_ids, acc_ids, type_ids, qtys, prices, comms, totals, split_ratios, 
     to_acc_ids, local_curr_ids, fx_rates_hist, 
     shortable_sym_ids, stock_qty_tol, cash_sym_id,
-    num_tx, num_syms, num_accs
+    num_tx, num_syms, num_accs,
+    acc_cash_modes
 ):
-    # State Array: (num_syms, num_accs, 13)
+    # State Array: (num_syms, num_accs, 14)
     # 0: qty
     # 1: total_cost_local
     # 2: realized_gain_local
@@ -139,8 +142,9 @@ def _process_numba_core(
     # 10: total_cost_display_historical_fx
     # 11: local_curr_id (stored as float)
     # 12: realized_gain_display (accumulated at historical FX)
-    # 13: taxes_local
-    
+    # 13: taxes_local (separate from commissions; tax withholding on dividends, etc.)
+
+
     state = np.zeros((num_syms, num_accs, 14), dtype=np.float64)
     # Initialize currency ID to -1.0 to detect first use
     state[:, :, 11] = -1.0
@@ -155,6 +159,7 @@ def _process_numba_core(
         qty = qtys[i]
         price = prices[i]
         comm = comms[i]
+        total = totals[i]
         split = split_ratios[i]
         to_acc = to_acc_ids[i]
         curr = local_curr_ids[i]
@@ -264,48 +269,54 @@ def _process_numba_core(
                 from_qty = current_state[0]
                 to_state = state[sym, to_acc]
                 
-                # Initialize To State if needed
-                if to_state[11] == -1.0:
-                    to_state[11] = current_state[11]
-                
-                proportion = 0.0
-                if from_qty > 1e-9:
-                    proportion = qty / from_qty
-                
-                # Cap cost proportion at 1.0 to avoid inflating cost basis
-                # if we are transferring more than we think we have.
-                cost_prop = min(proportion, 1.0)
-                
-                cost_transferred = current_state[1] * cost_prop
-                cost_transferred_hist = current_state[10] * cost_prop
-                invested_transferred = current_state[7] * cost_prop
-                cumulative_transferred = current_state[8] * cost_prop
-                buy_cost_transferred = current_state[9] * cost_prop
-                
-                current_state[0] -= qty
-                current_state[1] -= cost_transferred
-                current_state[10] -= cost_transferred_hist
-                current_state[7] -= invested_transferred
-                current_state[8] -= cumulative_transferred
-                current_state[9] -= buy_cost_transferred
-                
-                if abs(current_state[0]) < stock_qty_tol:
-                    current_state[0] = 0.0
-                    current_state[1] = 0.0
-                    current_state[10] = 0.0
-                    current_state[7] = 0.0
-                    current_state[8] = 0.0
-                    current_state[9] = 0.0
-                    
-                to_state[0] += qty
-                to_state[1] += cost_transferred
-                to_state[10] += cost_transferred_hist
-                to_state[7] += invested_transferred
-                to_state[8] += cumulative_transferred
-                to_state[9] += buy_cost_transferred
-                
-                if qty > 1e-9:
-                    transfer_costs[i] = cost_transferred / qty
+                if sym == cash_sym_id or from_qty >= qty - 1e-9:
+                    to_state = state[sym, to_acc]
+
+                    # Initialize To State if needed
+                    if to_state[11] == -1.0:
+                        to_state[11] = current_state[11]
+
+                    if True: # GLD Fix
+                        if sym == cash_sym_id:
+                            cost_transferred = qty
+                            cost_transferred_hist = qty * fx_rate
+                            invested_transferred = qty
+                            cumulative_transferred = qty
+                            buy_cost_transferred = qty
+                        else:
+                            proportion = 0.0
+                            if from_qty > 1e-9:
+                                proportion = qty / from_qty
+
+                            cost_transferred = current_state[1] * proportion
+                            cost_transferred_hist = current_state[10] * proportion
+                            invested_transferred = current_state[7] * proportion
+                            cumulative_transferred = current_state[8] * proportion
+                            buy_cost_transferred = current_state[9] * proportion
+
+                        current_state[0] -= qty
+                        current_state[1] -= cost_transferred
+                        current_state[10] -= cost_transferred_hist
+                        current_state[7] -= invested_transferred
+                        current_state[8] -= cumulative_transferred
+                        current_state[9] -= buy_cost_transferred
+
+                        if abs(current_state[0]) < stock_qty_tol:
+                            current_state[0] = 0.0
+                            current_state[1] = 0.0
+                            current_state[10] = 0.0
+                            current_state[7] = 0.0
+                            current_state[8] = 0.0
+                            current_state[9] = 0.0
+
+                        to_state[0] += qty
+                        to_state[1] += cost_transferred
+                        to_state[10] += cost_transferred_hist
+                        to_state[7] += invested_transferred
+                        to_state[8] += cumulative_transferred
+                        to_state[9] += buy_cost_transferred
+
+                        transfer_costs[i] = cost_transferred / qty
             continue
 
 
@@ -381,7 +392,9 @@ def _process_numba_core(
 
         # Buy / Deposit
         if typ == TYPE_BUY or typ == TYPE_DEPOSIT:
-            cost = (qty_abs * price) + comm
+            # Prefer 'total' if provided and non-zero (it's the absolute cash/cost impact)
+            # otherwise fallback to qty * price + comm
+            cost = abs(total) if abs(total) > 1e-9 else (qty_abs * price) + comm
             current_state[0] += qty_abs
             current_state[1] += cost
             current_state[4] += comm
@@ -395,14 +408,17 @@ def _process_numba_core(
             held_qty = current_state[0]
             if sym == cash_sym_id:
                 # Cash allows negative balances, process fully without held_qty limits
-                cost_sold = qty_abs * price
+                # Ensure price is at least 1.0 if not specified (for cost basis)
+                eff_price = price if abs(price) > 1e-9 else 1.0
+                qty_to_deduct = abs(total) if abs(total) > 1e-9 else qty_abs
+                cost_sold = qty_to_deduct * eff_price
                 cost_sold_hist = cost_sold * fx_rate
                 
-                proceeds = (qty_abs * price) - comm
+                proceeds = (qty_to_deduct * eff_price) - comm
                 gain = 0.0
                 gain_display = 0.0
                 
-                current_state[0] -= qty_abs
+                current_state[0] -= qty_to_deduct
                 current_state[1] -= cost_sold
                 current_state[10] -= cost_sold_hist
                 current_state[4] += comm
@@ -420,7 +436,7 @@ def _process_numba_core(
                     cost_sold = qty_sold * (current_state[1] / held_qty)
                     cost_sold_hist = qty_sold * (current_state[10] / held_qty)
                 
-                proceeds = (qty_sold * price) - comm
+                proceeds = abs(total) if abs(total) > 1e-9 else (qty_sold * price) - comm
                 gain = proceeds - cost_sold
                 
                 # Realized Gain Display Calculation (Long Sell)
@@ -453,14 +469,97 @@ def _process_numba_core(
             current_state[3] += div_effect
             current_state[4] += comm
             current_state[10] -= (div_effect * fx_rate)
+            
+            # Explicit Cash Handling: 
+            # In Auto-mode, we update balance for explicit cash dividends (e.g. awards).
+            # In Manual-mode, we skip this to avoid double-counting or breaking legacy bookkeeping.
+            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
+                current_state[0] += div_effect
+                if div_effect > 0:
+                    current_state[1] += div_effect
+                    current_state[7] += div_effect
+                    current_state[8] += div_effect
+                    current_state[9] += div_effect
+                else:
+                    abs_div = abs(div_effect)
+                    current_state[1] -= abs_div
+                    current_state[7] -= abs_div
+                    current_state[8] -= abs_div
 
-        # Fees
-        elif typ == TYPE_FEES:
-            fee_cost = abs(comm)
-            current_state[4] += fee_cost
-            current_state[7] += fee_cost
-            current_state[8] += fee_cost
-            current_state[10] += (fee_cost * fx_rate)
+        # Fees / Tax
+        elif typ == TYPE_FEES or typ == TYPE_TAX:
+            cost_val = abs(total) if abs(total) > 1e-9 else (abs(comm) if abs(comm) > 1e-9 else abs(price))
+            if typ == TYPE_TAX:
+                current_state[13] += cost_val  # taxes_local (separate bucket)
+            else:
+                current_state[4] += cost_val   # commissions_local
+            current_state[7] += cost_val
+            current_state[8] += cost_val
+            current_state[10] += (cost_val * fx_rate)
+
+            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
+                current_state[0] -= cost_val
+                current_state[1] -= cost_val
+                current_state[7] -= cost_val
+                current_state[8] -= cost_val
+
+        # Interest
+        elif typ == TYPE_INTEREST:
+            int_amt = abs(total) if abs(total) > 1e-9 else abs(price)
+            current_state[3] += int_amt
+            current_state[4] += comm
+            current_state[10] -= (int_amt * fx_rate)
+            
+            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
+                current_state[0] += int_amt
+                current_state[1] += int_amt
+                current_state[7] += int_amt
+                current_state[8] += int_amt
+                current_state[9] += int_amt
+
+        # --- AUTO CASH LOGIC ---
+        # For Auto-mode accounts, generate implicit $CASH balance changes
+        # from non-cash stock transactions.
+        # Skip: $CASH symbol (explicit), Deposit/Withdrawal (in-kind shares),
+        #        Split (no cash impact), Transfer (handled separately).
+        if acc_cash_modes[acc] == 1 and sym != cash_sym_id and cash_sym_id >= 0:
+            cash_state = state[cash_sym_id, acc]
+            # Initialize cash position if needed
+            if cash_state[11] == -1.0:
+                cash_state[11] = float(curr)
+            
+            cash_delta = 0.0
+            if typ == TYPE_BUY:
+                cash_delta = - (abs(total) if abs(total) > 1e-9 else (qty_abs * price) + abs(comm))
+            elif typ == TYPE_SELL:
+                cash_delta = + (abs(total) if abs(total) > 1e-9 else (qty_abs * price) - abs(comm))
+            elif typ == TYPE_DIVIDEND:
+                cash_delta = + abs(price)
+            elif typ == TYPE_INTEREST:
+                cash_delta = + (abs(total) if abs(total) > 1e-9 else abs(price))
+            elif typ == TYPE_FEES or typ == TYPE_TAX:
+                cash_delta = - (abs(total) if abs(total) > 1e-9 else (abs(comm) if abs(comm) > 1e-9 else abs(price)))
+            elif typ == TYPE_SHORT_SELL:
+                cash_delta = + ((qty_abs * price) - abs(comm))
+            elif typ == TYPE_BUY_TO_COVER:
+                cash_delta = - ((qty_abs * price) + abs(comm))
+            # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
+            
+            if abs(cash_delta) > 1e-9:
+                cash_state[0] += cash_delta  # qty
+                if cash_delta > 0:
+                    cash_state[1] += cash_delta
+                    cash_state[7] += cash_delta
+                    cash_state[8] += cash_delta
+                    cash_state[9] += cash_delta
+                    cash_state[10] += cash_delta * fx_rate
+                else:
+                    abs_delta = abs(cash_delta)
+                    cash_state[1] -= abs_delta
+                    cash_state[7] -= abs_delta
+                    cash_state[8] -= abs_delta
+                    cash_state[10] -= abs_delta * fx_rate
+        
 
         # Tax
         elif typ == TYPE_TAX:
@@ -480,6 +579,7 @@ def _process_transactions_to_holdings(
     historical_fx_lookup: Dict[Tuple[date, str], float],
     display_currency_for_hist_fx: str,
     report_date: date,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,
 ) -> Tuple[
     Dict[Tuple[str, str], Dict],
     Dict[str, float],
@@ -487,18 +587,33 @@ def _process_transactions_to_holdings(
     Dict[str, float],
     Set[int],
     Dict[int, str],
-    Dict[int, str],
     Dict[int, float],
     bool,
 ]:
     logging.debug("Starting Numba-optimized transaction processing (Array-based)...")
     
     if transactions_df.empty:
-        return {}, {}, {}, {}, set(), {}, {}, {}, False
+        return {}, {}, {}, {}, set(), {}, {}, False
+
+    if account_cash_mode_map is None:
+        account_cash_mode_map = {}
+
+    # --- Normalize Columns EARLY ---
+    # Critical: Normalize strings BEFORE deduplication to ensure matching works
+    transactions_df['Symbol'] = transactions_df['Symbol'].astype(str).str.strip()
+    # Normalize cash-like symbols (e.g. 'Cash ($)') to the designated CASH_SYMBOL_CSV ($CASH)
+    transactions_df['Symbol'] = transactions_df['Symbol'].apply(lambda x: CASH_SYMBOL_CSV if is_cash_symbol(x) else x)
+    
+    transactions_df['Account'] = transactions_df['Account'].astype(str).str.strip()
+    transactions_df['Type'] = transactions_df['Type'].astype(str).str.strip().str.lower()
 
     # Create ID mappings
-    all_symbols = transactions_df['Symbol'].astype(str).str.strip().unique()
-    all_accounts = set(transactions_df['Account'].astype(str).str.strip().unique())
+    all_symbols_list = list(transactions_df['Symbol'].unique())
+    # Ensure $CASH is always in the symbol map for auto-cash accounting
+    if CASH_SYMBOL_CSV not in all_symbols_list:
+        all_symbols_list.append(CASH_SYMBOL_CSV)
+    all_symbols = all_symbols_list
+    all_accounts = set(transactions_df['Account'].unique())
     if 'To Account' in transactions_df.columns:
         all_accounts.update(transactions_df['To Account'].dropna().astype(str).str.strip().unique())
     all_accounts = list(all_accounts)
@@ -517,12 +632,6 @@ def _process_transactions_to_holdings(
     num_accs = len(all_accounts)
     # --- Prepare Data for Numba ---
     df = transactions_df.copy()
-    
-    # --- Normalize Columns EARLY ---
-    # Critical: Normalize strings BEFORE deduplication to ensure matching works
-    df['Symbol'] = df['Symbol'].astype(str).str.strip()
-    df['Account'] = df['Account'].astype(str).str.strip()
-    df['Type'] = df['Type'].astype(str).str.strip().str.lower()
 
     # --- Deduplicate Split Transactions (Robustness Fix) ---
     # Splits currently apply to ALL accounts in the Numba loop. 
@@ -572,11 +681,11 @@ def _process_transactions_to_holdings(
     
     type_map_dict = {
         'buy': TYPE_BUY, 'sell': TYPE_SELL, 'deposit': TYPE_DEPOSIT, 
-        'withdrawal': TYPE_WITHDRAWAL, 'dividend': TYPE_DIVIDEND, 'fees': TYPE_FEES,
-        'fee': TYPE_FEES,
+        'withdrawal': TYPE_WITHDRAWAL, 'dividend': TYPE_DIVIDEND,
+        'fee': TYPE_FEES, 'fees': TYPE_FEES,
         'split': TYPE_SPLIT, 'stock split': TYPE_SPLIT, 'transfer': TYPE_TRANSFER,
         'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER,
-        'tax': TYPE_TAX, 'withholding tax': TYPE_TAX
+        'tax': TYPE_TAX, 'withholding tax': TYPE_TAX, 'interest': TYPE_INTEREST
     }
     type_ids = df['Type'].str.lower().str.strip().map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
     
@@ -585,12 +694,35 @@ def _process_transactions_to_holdings(
     raw_prices = pd.to_numeric(df['Price/Share'], errors='coerce').fillna(0.0).astype(np.float64).values
     raw_totals = pd.to_numeric(df['Total Amount'], errors='coerce').fillna(0.0).astype(np.float64).values
     
-    is_div = (type_ids == TYPE_DIVIDEND)
-    is_tax = (type_ids == TYPE_TAX)
-    mask_total_price = (is_div | is_tax) & (np.abs(raw_totals) > 1e-9)
-    raw_prices[mask_total_price] = raw_totals[mask_total_price]
-    
-    mask_div_calc = is_div & (~mask_total_price)
+    # --- Robust Quantity/Price Handling for Cash ---
+    # For $CASH, if Total Amount is provided, we should trust it.
+    # If Quantity is also provided and matches Total Amount, it means the user
+    # entered the amount in both columns (common in manual entries).
+    # In this case, we should set Price/Share to 1.0 to avoid squared values in calculations.
+    cash_sym_mask = (df['Symbol'] == CASH_SYMBOL_CSV).values
+    zero_qty_mask = (np.abs(qtys) < 1e-9)
+    has_total_mask = (np.abs(raw_totals) > 1e-9)
+
+    fix_cash_mask = cash_sym_mask & has_total_mask
+    if np.any(fix_cash_mask):
+        # Case 1: Qty is 0, use Total
+        mask_qty_0 = fix_cash_mask & zero_qty_mask
+        qtys[mask_qty_0] = np.abs(raw_totals[mask_qty_0])
+        raw_prices[mask_qty_0] = 1.0
+
+        # Case 2: Qty matches Total, force Price to 1.0
+        # (This prevents Dividend logic from doing Qty * Price = Amount * Amount)
+        mask_qty_match = fix_cash_mask & (~zero_qty_mask) & (np.abs(qtys - np.abs(raw_totals)) < 1e-4)
+        raw_prices[mask_qty_match] = 1.0
+
+    # Use Total Amount for types where Price/Share might be zero (Dividends, Tax, Fees, Interest)
+    # OR for any Cash transaction with zero Price/Share OR zero Quantity
+    income_expense_types = (type_ids == TYPE_DIVIDEND) | (type_ids == TYPE_TAX) | (type_ids == TYPE_FEES) | (type_ids == TYPE_INTEREST)
+    mask_use_total = (income_expense_types | cash_sym_mask) & ((np.abs(raw_prices) < 1e-9) | (np.abs(qtys) < 1e-9)) & has_total_mask
+    raw_prices[mask_use_total] = raw_totals[mask_use_total]
+
+    # Handle Dividends with Quantity (price per share)
+    mask_div_calc = (type_ids == TYPE_DIVIDEND) & (~mask_use_total)
     raw_prices[mask_div_calc] = raw_prices[mask_div_calc] * np.abs(qtys[mask_div_calc])
     
     prices = raw_prices
@@ -653,12 +785,21 @@ def _process_transactions_to_holdings(
         nb_shortable.append(sid)
         
     cash_sym_id = sym_map.get(CASH_SYMBOL_CSV, -1)
+
+    # --- Build acc_cash_modes array (0=Manual, 1=Auto) ---
+    acc_cash_modes = np.zeros(num_accs, dtype=np.int64)
+    # Normalize map keys to match stripped/normalized account names
+    normalized_mode_map = {str(k).strip(): v for k, v in account_cash_mode_map.items()}
+    for acc_name, mode_str in normalized_mode_map.items():
+        if acc_name in acc_map and mode_str == "Auto":
+            acc_cash_modes[acc_map[acc_name]] = 1
         
     final_state, transfer_costs_nb = _process_numba_core(
-        sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios,
+        sym_ids, acc_ids, type_ids, qtys, prices, comms, raw_totals, split_ratios,
         to_acc_ids, local_curr_ids, fx_rates_hist,
         nb_shortable, STOCK_QUANTITY_CLOSE_TOLERANCE, cash_sym_id,
-        n, num_syms, num_accs
+        n, num_syms, num_accs,
+        acc_cash_modes
     )
 
     # --- Tags Aggregation (Outside Numba) ---
@@ -723,7 +864,7 @@ def _process_transactions_to_holdings(
             "taxes_local": val[13],
             "tags": sorted(list(tags_map.get((sym, acc), set()))),
         }
-        
+
         overall_realized_gains_local[curr] += val[2]
         overall_dividends_local[curr] += val[3]
         overall_commissions_local[curr] += val[4]
@@ -784,7 +925,9 @@ def _build_summary_rows(
 
     logging.info(f"Calculating final portfolio summary rows in {display_currency}...")
 
-    # --- NEW: Separate cash from stock holdings ---
+    # --- BUG-12 FIX: Removed dead scaffold code that duplicated cash/stock separation ---
+
+    # --- Separate cash from stock holdings ---
     cash_holdings_by_currency: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     stock_holdings: Dict[Tuple[str, str], Dict] = {}
     
@@ -796,43 +939,6 @@ def _build_summary_rows(
             cash_holdings_by_currency[currency].append({"account": account, **data})
         else:
             stock_holdings[holding_key] = data
-    # --- END NEW ---
-
-    # --- Loop 1: Process Stock/ETF Holdings ---
-    for holding_key, data in stock_holdings.items():
-        # ... (Loop 1 content omitted for brevity, assumes unchanged) ...
-        # Use existing logic for stocks, but ensuring indentation matches.
-        # Since replace_file_content replaces a block, I must be careful not to delete Loop 1 if I select lines covering it.
-        # The user's selection 1198-1400 (Loop 2) does NOT cover Loop 1 (which starts before 1198).
-        # Ah, lines 609-650 cover the signature and init.
-        pass
-
-    # ... (I need to split this update because Loop 1 is between signature and Loop 2 in the file) ...
-    # Wait, the tool requires contiguous block? Yes.
-    # Lines 625-630 is signature.
-    # Lines 1198-1400 is Loop 2.
-    # They are far apart. I should make two calls.
-    # Call 1: Update Signature (lines 609-625)
-    # Call 2: Update Loop 2 logic (lines 1198-1276)
-    pass
-
-# Correct approach: Return error to myself to split calls.
-# I will make Call 1 for signature now.
-
-
-    # --- NEW: Separate cash from stock holdings ---
-    cash_holdings_by_currency: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    stock_holdings: Dict[Tuple[str, str], Dict] = {}
-    
-    for holding_key, data in holdings.items():
-        symbol, account = holding_key
-        if is_cash_symbol(symbol):
-            # Group cash holdings by their local currency for aggregation
-            currency = data.get("local_currency", default_currency)
-            cash_holdings_by_currency[currency].append({"account": account, **data})
-        else:
-            stock_holdings[holding_key] = data
-    # --- END NEW ---
 
     for holding_key, data in stock_holdings.items():
         symbol, account = holding_key
@@ -840,6 +946,7 @@ def _build_summary_rows(
         realized_gain_local = data.get("realized_gain_local", 0.0)
         dividends_local = data.get("dividends_local", 0.0)
         commissions_local = data.get("commissions_local", 0.0)
+        taxes_local = data.get("taxes_local", 0.0)
         local_currency = data.get("local_currency", default_currency)
         current_total_cost_local = data.get("total_cost_local", 0.0)
         short_proceeds_local = data.get("short_proceeds_local", 0.0)
@@ -1108,11 +1215,19 @@ def _build_summary_rows(
              try:
                  # Filter transactions for this specific holding on the report date
                  # report_date is a datetime.date
-                 tx_today = transactions_df[
-                     (transactions_df['Symbol'] == symbol) & 
-                     (transactions_df['Account'] == account) & 
-                     (transactions_df['Date'].dt.date == report_date)
-                 ]
+                 # MODIFIED: Include 'To Account' in filter for incoming transfers
+                 if 'To Account' in transactions_df.columns:
+                     tx_today = transactions_df[
+                         (transactions_df['Symbol'] == symbol) & 
+                         ((transactions_df['Account'] == account) | (transactions_df['To Account'] == account)) & 
+                         (transactions_df['Date'].dt.date == report_date)
+                     ]
+                 else:
+                     tx_today = transactions_df[
+                         (transactions_df['Symbol'] == symbol) & 
+                         (transactions_df['Account'] == account) & 
+                         (transactions_df['Date'].dt.date == report_date)
+                     ]
                  
                  if not tx_today.empty:
                      for _, tx in tx_today.iterrows():
@@ -1120,6 +1235,8 @@ def _build_summary_rows(
                          t_qty = abs(float(tx['Quantity']))
                          t_price = float(tx['Price/Share'])
                          t_comm = float(tx['Commission']) if pd.notna(tx['Commission']) else 0.0
+                         t_acc = str(tx.get('Account', '')).strip()
+                         t_to_acc = str(tx.get('To Account', '')).strip()
                          
                          if t_type in ['buy', 'deposit', 'short sell']:
                              # Buys/Deposits add to quantity (except short sell adds to the short position, which is negative qty)
@@ -1130,6 +1247,16 @@ def _build_summary_rows(
                              net_flow_today_local -= (t_qty * t_price) - t_comm
                          elif t_type == 'fees':
                              net_flow_today_local += t_comm
+                         elif t_type == 'transfer':
+                             # Determine direction for this specific account
+                             if t_to_acc == account:
+                                 # Incoming Transfer (Deposit-like)
+                                 qty_change_today += t_qty
+                                 net_flow_today_local += (t_qty * t_price)
+                             elif t_acc == account:
+                                 # Outgoing Transfer (Withdrawal-like)
+                                 qty_change_today -= t_qty
+                                 net_flow_today_local -= (t_qty * t_price)
              except Exception as e_flow:
                  logging.warning(f"Error calculating intra-day flow for {symbol}/{account}: {e_flow}")
 
@@ -1225,6 +1352,9 @@ def _build_summary_rows(
         commissions_display = (
             commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
+        taxes_display = (
+            taxes_local * fx_rate if pd.notna(fx_rate) else np.nan
+        )
         total_cost_invested_display = (
             total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
@@ -1238,12 +1368,16 @@ def _build_summary_rows(
         unrealized_gain_comp = (
             unrealized_gain_display if pd.notna(unrealized_gain_display) else 0.0
         )
+        # Tax is treated like a cost subtraction in total gain (same as commissions).
+        # If taxes_display is NaN (older snapshot or no tax data), treat as 0.
+        taxes_comp = taxes_display if pd.notna(taxes_display) else 0.0
         total_gain_display = (
             (
                 realized_gain_display
                 + unrealized_gain_comp
                 + dividends_display
                 - commissions_display
+                - taxes_comp
             )
             if all(
                 pd.notna(v)
@@ -1317,7 +1451,7 @@ def _build_summary_rows(
             fx_gain_loss_display_holding = 0.0
             fx_gain_loss_pct_holding = 0.0  # If no FX G/L, percentage is 0%
         elif (  # Original conditions, but now as elif
-            not is_cash_symbol(symbol)  # Not cash
+            abs(current_total_cost_local) > 1e-9  # Has a local cost basis
             and abs(current_total_cost_local) > 1e-9  # Has a local cost basis
             and pd.notna(cost_basis_display)  # Cost basis in display currency is valid
             and abs(cost_basis_display)
@@ -1384,6 +1518,7 @@ def _build_summary_rows(
                 f"Realized Gain ({display_currency})": realized_gain_display,
                 f"Dividends ({display_currency})": dividends_display,
                 f"Commissions ({display_currency})": commissions_display,
+                f"Taxes ({display_currency})": taxes_display,
                 f"Total Gain ({display_currency})": total_gain_display,
                 f"Total Cost Invested ({display_currency})": total_cost_invested_display,
                 "Total Return %": total_return_pct,
@@ -1431,6 +1566,7 @@ def _build_summary_rows(
             realized_gain_local = h.get("realized_gain_local", 0.0)
             dividends_local = h.get("dividends_local", 0.0)
             commissions_local = h.get("commissions_local", 0.0)
+            taxes_local = h.get("taxes_local", 0.0)
             current_total_cost_local = h.get("total_cost_local", 0.0)
             total_cost_invested_local = h.get("total_cost_invested_local", 0.0)
             cumulative_investment_local = h.get("cumulative_investment_local", 0.0)
@@ -1495,13 +1631,15 @@ def _build_summary_rows(
             realized_gain_display = (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
             dividends_display = (dividends_local * fx_rate if pd.notna(fx_rate) else np.nan)
             commissions_display = (commissions_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            taxes_display = (taxes_local * fx_rate if pd.notna(fx_rate) else np.nan)
             total_cost_invested_display = (total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan)
             cumulative_investment_display = (cumulative_investment_local * fx_rate if pd.notna(fx_rate) else np.nan)
             total_buy_cost_display = (total_buy_cost_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            
+
+            taxes_comp = taxes_display if pd.notna(taxes_display) else 0.0
             total_gain_display = np.nan
             if all(pd.notna(v) for v in [realized_gain_display, dividends_display, commissions_display]):
-                total_gain_display = realized_gain_display + unrealized_gain_display + dividends_display - commissions_display
+                total_gain_display = realized_gain_display + unrealized_gain_display + dividends_display - commissions_display - taxes_comp
                 
             total_return_pct = np.nan
             if pd.notna(total_gain_display) and pd.notna(total_buy_cost_display):
@@ -1568,6 +1706,7 @@ def _build_summary_rows(
                 f"Realized Gain ({display_currency})": realized_gain_display,
                 f"Dividends ({display_currency})": dividends_display,
                 f"Commissions ({display_currency})": commissions_display,
+                f"Taxes ({display_currency})": taxes_display,
                 f"Total Gain ({display_currency})": total_gain_display,
                 f"Total Cost Invested ({display_currency})": total_cost_invested_display,
                 "Total Return %": total_return_pct,
@@ -1731,6 +1870,7 @@ def _calculate_aggregate_metrics(
             "total_unrealized_gain_display": 0.0,
             "total_dividends_display": 0.0,
             "total_commissions_display": 0.0,
+            "total_taxes_display": 0.0,
             "total_gain_display": 0.0,
             "total_cash_display": 0.0,
             "total_cost_invested_display": 0.0,
@@ -1754,6 +1894,7 @@ def _calculate_aggregate_metrics(
             "realized_gain": 0.0,
             "dividends": 0.0,
             "commissions": 0.0,
+            "taxes": 0.0,
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
             "total_buy_cost": 0.0,
@@ -1842,6 +1983,9 @@ def _calculate_aggregate_metrics(
             metrics_entry["total_dividends_display"] = safe_sum(
                 account_full_df, f"Dividends ({display_currency})"
             )
+            metrics_entry["total_taxes_display"] = safe_sum(
+                account_full_df, f"Taxes ({display_currency})"
+            ) if f"Taxes ({display_currency})" in account_full_df.columns else 0.0
             metrics_entry["total_commissions_display"] = safe_sum(
                 account_full_df, f"Commissions ({display_currency})"
             )
@@ -1972,6 +2116,7 @@ def _calculate_aggregate_metrics(
     real_gain_col = f"Realized Gain ({display_currency})"
     divs_col = f"Dividends ({display_currency})"
     comm_col = f"Commissions ({display_currency})"
+    taxes_col = f"Taxes ({display_currency})"
     cost_invest_col = f"Total Cost Invested ({display_currency})"
     cum_invest_col = f"Cumulative Investment ({display_currency})"
     day_change_col = f"Day Change ({display_currency})"
@@ -2020,6 +2165,7 @@ def _calculate_aggregate_metrics(
     overall_realized_gain_display_agg = safe_sum(df_for_overall_summary, real_gain_col)
     overall_dividends_display_agg = safe_sum(df_for_overall_summary, divs_col)
     overall_commissions_display_agg = safe_sum(df_for_overall_summary, comm_col)
+    overall_taxes_display_agg = safe_sum(df_for_overall_summary, taxes_col) if taxes_col in df_for_overall_summary.columns else 0.0
     
     # FIX: EXCLUDE FX Gain/Loss from Overall Total Gain (Intrinsic)
     overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col)
@@ -2142,7 +2288,7 @@ def _calculate_aggregate_metrics(
                 
                 tx_for_mwr = transactions_df[mask]
         
-        # Calculate Cash Flows
+        # Calculate Cash Flows (portfolio-level basis: buys/sells/divs are internal, not flows)
         mwr_dates, mwr_flows = get_cash_flows_for_mwr(
             account_transactions=tx_for_mwr,
             final_account_market_value=overall_market_value_display,
@@ -2151,7 +2297,8 @@ def _calculate_aggregate_metrics(
             fx_rates=fx_rates,
             historical_fx_rates=historical_fx_rates, # ADDED: Historical FX Data
             display_currency=display_currency,
-            include_accounts=(include_accounts if include_accounts else all_available_accounts) # PASS SCOPE for Transfer logic
+            include_accounts=(include_accounts if include_accounts else all_available_accounts), # PASS SCOPE for Transfer logic
+            flow_basis="portfolio",
         )
         
         if mwr_dates and mwr_flows:
@@ -2192,7 +2339,7 @@ def _calculate_aggregate_metrics(
                 # account_level_metrics is a dict of dicts
                 account_mv = account_level_metrics[account].get("total_market_value_display", 0.0)
                 
-                # Calculate Cash Flows using the helper
+                # Calculate Cash Flows using the helper (portfolio basis for per-account MWR)
                 mwr_dates, mwr_flows = get_cash_flows_for_mwr(
                     account_transactions=account_tx,
                     final_account_market_value=account_mv,
@@ -2201,7 +2348,8 @@ def _calculate_aggregate_metrics(
                     fx_rates=fx_rates,
                     historical_fx_rates=historical_fx_rates,
                     display_currency=display_currency,
-                    include_accounts=[account] # PASS SINGLE ACCOUNT SCOPE
+                    include_accounts=[account], # PASS SINGLE ACCOUNT SCOPE
+                    flow_basis="portfolio",
                 )
                 
                 if mwr_dates and mwr_flows:
@@ -2227,6 +2375,7 @@ def _calculate_aggregate_metrics(
         "realized_gain": overall_realized_gain_display_agg,
         "dividends": overall_dividends_display_agg,
         "commissions": overall_commissions_display_agg,
+        "taxes": overall_taxes_display_agg,
         "total_gain": overall_total_gain_display,
         "total_cost_invested": overall_total_cost_invested_display,
         "total_buy_cost": overall_total_buy_cost_display,

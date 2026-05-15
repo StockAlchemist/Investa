@@ -79,6 +79,7 @@ class ConfigManager:
             "last_csv_import_path": QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation) or os.getcwd(),
             "theme": "light",
             "account_groups": {},
+            "account_cash_mode_map": {},
             "available_currencies": ["USD", "THB", "EUR", "GBP", "JPY", "CNY"],
             "visible_items": [],
             "benchmarks": ['S&P 500', 'Dow Jones', 'NASDAQ'],
@@ -123,6 +124,17 @@ class ConfigManager:
         # Basic validation (simplified from main_gui.py)
         if not isinstance(self.gui_config.get("selected_accounts"), list):
             self.gui_config["selected_accounts"] = []
+
+        # Validate account_cash_mode_map
+        cash_mode_map = self.gui_config.get("account_cash_mode_map")
+        if not isinstance(cash_mode_map, dict):
+            self.gui_config["account_cash_mode_map"] = {}
+        else:
+            # Strip invalid entries — only "Manual" and "Auto" are valid
+            self.gui_config["account_cash_mode_map"] = {
+                k: v for k, v in cash_mode_map.items()
+                if isinstance(k, str) and isinstance(v, str) and v in ("Manual", "Auto")
+            }
 
     def save_gui_config(self, config_dict: Optional[Dict[str, Any]] = None):
         if config_dict is not None:

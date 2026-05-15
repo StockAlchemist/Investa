@@ -955,15 +955,17 @@ class AccountCurrencyDialog(QDialog):
         all_accounts: List[str],
         parent=None,
         user_currencies: Optional[List[str]] = None,
+        current_cash_mode_map: Optional[Dict[str, str]] = None,
     ):
         super().__init__(parent)
         self._parent_app = parent  # Store reference if needed
         self.setWindowTitle("Account Currency Settings")
-        self.setMinimumSize(450, 400)  # Adjust size as needed
+        self.setMinimumSize(600, 400)  # Wider to accommodate 3rd column
 
         # Store original values and all unique accounts found
         self._original_map = current_map.copy()
         self._original_default = current_default
+        self._original_cash_mode_map = current_cash_mode_map.copy() if current_cash_mode_map else {}
         self._user_currencies = (
             user_currencies if user_currencies else COMMON_CURRENCIES.copy()
         )
@@ -973,6 +975,7 @@ class AccountCurrencyDialog(QDialog):
         # Attributes to store results on accept
         self.updated_map = self._original_map.copy()
         self.updated_default = self._original_default
+        self.updated_cash_mode_map = self._original_cash_mode_map.copy()
 
         # --- Layout ---
         main_layout = QVBoxLayout(self)
@@ -993,11 +996,11 @@ class AccountCurrencyDialog(QDialog):
         main_layout.addLayout(default_layout)
 
         # --- Account Mapping Table ---
-        main_layout.addWidget(QLabel("Assign Currency per Account:"))
+        main_layout.addWidget(QLabel("Assign Currency and Cash Management per Account:"))
         self.table_widget = QTableWidget()
         self.table_widget.setObjectName("AccountCurrencyTable")
-        self.table_widget.setColumnCount(2)
-        self.table_widget.setHorizontalHeaderLabels(["Account", "Assigned Currency"])
+        self.table_widget.setColumnCount(3)
+        self.table_widget.setHorizontalHeaderLabels(["Account", "Assigned Currency", "Cash Management"])
         self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table_widget.verticalHeader().setVisible(False)
@@ -1013,6 +1016,9 @@ class AccountCurrencyDialog(QDialog):
         self.table_widget.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeToContents
         )  # Currency fits content
+        self.table_widget.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeToContents
+        )  # Cash mode fits content
         self.table_widget.setMinimumHeight(250)  # Give table some minimum space
 
         main_layout.addWidget(self.table_widget)
@@ -1033,7 +1039,7 @@ class AccountCurrencyDialog(QDialog):
                 self.setFont(parent.font())
 
     def _populate_table(self):
-        """Fills the table with accounts and currency combo boxes."""
+        """Fills the table with accounts, currency combo boxes, and cash mode combo boxes."""
         self.table_widget.setRowCount(len(self._all_accounts))
         self.table_widget.setSortingEnabled(False)  # Disable sorting during population
 
@@ -1068,21 +1074,35 @@ class AccountCurrencyDialog(QDialog):
             # Add the combo box widget to the cell
             self.table_widget.setCellWidget(row_idx, 1, combo_currency)
 
+            # Column 2: Cash Management ComboBox
+            combo_cash_mode = QComboBox()
+            combo_cash_mode.addItems(["Manual", "Auto"])
+            current_cash_mode = self._original_cash_mode_map.get(account_name, "Manual")
+            combo_cash_mode.setCurrentText(current_cash_mode)
+            self.table_widget.setCellWidget(row_idx, 2, combo_cash_mode)
+
         self.table_widget.setSortingEnabled(True)  # Re-enable sorting
 
     def accept(self):
         """Overrides accept to gather data before closing."""
         new_map = {}
+        new_cash_mode_map = {}
         new_default = self.default_currency_combo.currentText()
 
         for row_idx in range(self.table_widget.rowCount()):
             account_item = self.table_widget.item(row_idx, 0)
             currency_combo = self.table_widget.cellWidget(row_idx, 1)
+            cash_mode_combo = self.table_widget.cellWidget(row_idx, 2)
 
             if account_item and currency_combo:
                 account_name = account_item.text()
                 selected_currency = currency_combo.currentText()
                 new_map[account_name] = selected_currency
+
+                # Collect cash mode
+                if cash_mode_combo:
+                    selected_cash_mode = cash_mode_combo.currentText()
+                    new_cash_mode_map[account_name] = selected_cash_mode
             else:
                 logging.warning(
                     f"Could not read data from row {row_idx} in AccountCurrencyDialog."
@@ -1092,8 +1112,10 @@ class AccountCurrencyDialog(QDialog):
         # Store the results
         self.updated_map = new_map
         self.updated_default = new_default
+        self.updated_cash_mode_map = new_cash_mode_map
         logging.info(
-            f"AccountCurrencyDialog accepted. New Default: {self.updated_default}, New Map: {self.updated_map}"
+            f"AccountCurrencyDialog accepted. New Default: {self.updated_default}, "
+            f"New Map: {self.updated_map}, Cash Modes: {self.updated_cash_mode_map}"
         )
         super().accept()  # Call the original accept to close the dialog
 
@@ -1105,8 +1127,14 @@ class AccountCurrencyDialog(QDialog):
         current_default=None,
         all_accounts=None,
         user_currencies=None,
-    ) -> Optional[Tuple[Dict[str, str], str]]:
-        """Creates, shows dialog, and returns updated settings if saved."""
+        current_cash_mode_map=None,
+    ) -> Optional[Tuple[Dict[str, str], str, Dict[str, str]]]:
+        """Creates, shows dialog, and returns updated settings if saved.
+        
+        Returns:
+            Tuple of (currency_map, default_currency, cash_mode_map) if saved,
+            or None if cancelled.
+        """
         if current_map is None:
             current_map = {}
         if current_default is None:
@@ -1115,12 +1143,15 @@ class AccountCurrencyDialog(QDialog):
             all_accounts = list(current_map.keys())
         if user_currencies is None:
             user_currencies = COMMON_CURRENCIES.copy()
+        if current_cash_mode_map is None:
+            current_cash_mode_map = {}
 
         dialog = AccountCurrencyDialog(
-            current_map, current_default, all_accounts, parent, user_currencies
+            current_map, current_default, all_accounts, parent, user_currencies,
+            current_cash_mode_map=current_cash_mode_map,
         )
         if dialog.exec():  # Returns 1 if accepted (Save clicked), 0 if rejected
-            return dialog.updated_map, dialog.updated_default
+            return dialog.updated_map, dialog.updated_default, dialog.updated_cash_mode_map
         return None  # Return None if Cancel was clicked
 
 
@@ -2388,7 +2419,8 @@ class AddTransactionDialog(QDialog):
                 "withdrawal",
                 "buy",
                 "sell",
-            ]:  # 'buy'/'sell' for $CASH are cash movements
+                "transfer",
+            ]:  # 'buy'/'sell'/'transfer' for $CASH are cash movements
                 qty_enabled = True
                 price_text_override = "1.00"  # Price of cash is 1
                 price_readonly = True
@@ -2696,12 +2728,18 @@ class AddTransactionDialog(QDialog):
                 )
                 self.quantity_edit.setFocus()
                 return None
-            # For transfers, price, total, and commission are not applicable.
-            price, total, comm = (
-                None,
-                None,
-                0.0,
-            )  # Commission is 0, not None, for transfers.
+            # For transfers, price, total, and commission are not applicable for stocks.
+            # For $CASH, price is 1.0 and total is quantity.
+            if is_cash_symbol(symbol):
+                price = 1.0
+                total = qty
+                comm = 0.0
+            else:
+                price, total, comm = (
+                    None,
+                    None,
+                    0.0,
+                )  # Commission is 0, not None, for transfers.
 
         elif is_cash_op:  # $CASH Deposit/Withdrawal (or Buy/Sell aliased)
             if not self.quantity_edit.isEnabled() or not qty_str:

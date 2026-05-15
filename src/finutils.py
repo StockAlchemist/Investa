@@ -675,6 +675,7 @@ def get_cash_flows_for_mwr(
     display_currency: str,  # Used for warning msg only (REMOVED - fx_rates needed)
     historical_fx_rates: Optional[Dict[Tuple[date, str], float]] = None, # ADDED: Historical FX Data
     include_accounts: Optional[List[str]] = None, # ADDED: To determine transfer direction
+    flow_basis: str = "per_trade",  # "per_trade" (legacy/symbol-level) or "portfolio"
 ) -> Tuple[List[date], List[float]]:
     """
     Calculates cash flows for Money-Weighted Return (MWR) for a specific account in the target currency.
@@ -738,13 +739,37 @@ def get_cash_flows_for_mwr(
         # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
         if tx_date > end_date:
             continue
-            
+
         local_currency = row["Local Currency"]
         cash_flow_local = 0.0
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
 
+        # Under "portfolio" flow basis, buys/sells/dividends/short-sells/buy-to-cover/fees
+        # are INTERNAL rotations of cash within the portfolio and emit NO external flow.
+        # Only $CASH deposit/withdrawal and scope-crossing transfers contribute flows.
+        # Under "per_trade" basis (default, used by symbol-level IRR), every trade is a
+        # flow from that symbol/account's perspective.
+        portfolio_basis = (flow_basis == "portfolio")
+
         if symbol != CASH_SYMBOL_CSV:
-            if tx_type == "buy" or tx_type == "deposit":
+            if portfolio_basis:
+                if tx_type == "transfer":
+                    is_outbound = False
+                    is_inbound = False
+                    acct = str(row.get("Account", "")).strip().upper()
+                    to_acct = str(row.get("To Account", "")).strip().upper()
+
+                    if acct in included_set: is_outbound = True
+                    if to_acct and to_acct in included_set: is_inbound = True
+
+                    if is_outbound and not is_inbound:
+                        if pd.notna(qty) and pd.notna(price_local):
+                            cash_flow_local = (abs(qty) * price_local) - abs(commission_local)
+                    elif not is_outbound and is_inbound:
+                        if pd.notna(qty) and pd.notna(price_local):
+                            cash_flow_local = -(abs(qty) * price_local)
+                # buy/sell/dividend/short sell/buy to cover/fees/tax/interest: 0.0 (internal)
+            elif tx_type == "buy" or tx_type == "deposit":
                 # External asset contribution or purchase
                 if pd.notna(qty) and pd.notna(price_local):
                     cash_flow_local = -( (qty_abs * price_local) + commission_local ) # OUT from pocket (-)
@@ -771,7 +796,7 @@ def get_cash_flows_for_mwr(
                 if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
                     cash_flow_local = -((qty_abs * price_local) + commission_local)
             elif tx_type == "fees":
-                cash_flow_local = -commission_local
+                cash_flow_local = -abs(commission_local)  # BUG-08 FIX: Use abs() consistently
             elif tx_type == "transfer":
                 # Asset Transfer logic
                 is_outbound = False
@@ -781,23 +806,36 @@ def get_cash_flows_for_mwr(
 
                 if acct in included_set: is_outbound = True
                 if to_acct and to_acct in included_set: is_inbound = True
-                
+
                 if is_outbound and not is_inbound:
                     # Asset leaving scope -> Withdrawal -> Positive MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):
-                        cash_flow_local = (abs(qty) * price_local) + commission_local
+                        cash_flow_local = (abs(qty) * price_local) - abs(commission_local)  # BUG-09 FIX: Subtract commission (broker takes it)
                 elif not is_outbound and is_inbound:
                     # Asset entering scope -> Deposit -> Negative MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):
                         cash_flow_local = -(abs(qty) * price_local)
 
         elif symbol == CASH_SYMBOL_CSV:
-            if tx_type in ["deposit", "buy"]:
-                # External cash deposit
+            if portfolio_basis:
+                # Portfolio-level MWR: only Deposit/Withdrawal are external flows.
+                # $CASH "buy" (cash settlement from a stock sell) and $CASH "sell"
+                # (cash settlement for a stock buy) are internal trade rotations.
+                # This aligns IRR with the TWR engine's filter (which matches
+                # Type IN ('deposit','withdrawal') for $CASH only).
+                if tx_type == "deposit":
+                    if pd.notna(qty):
+                        cash_flow_local = -(abs(qty) + commission_local)
+                elif tx_type == "withdrawal":
+                    if pd.notna(qty):
+                        cash_flow_local = (abs(qty) - commission_local)
+                # $CASH buy/sell: 0 flow (internal settlement)
+            elif tx_type in ["deposit", "buy"]:
+                # External cash deposit (legacy per_trade)
                 if pd.notna(qty):
                     cash_flow_local = -(abs(qty) + commission_local) # OUT from pocket (-)
             elif tx_type in ["withdrawal", "sell"]:
-                # External cash withdrawal
+                # External cash withdrawal (legacy per_trade)
                 if pd.notna(qty):
                     cash_flow_local = (abs(qty) - commission_local) # IN to pocket (+)
             elif tx_type in ["dividend", "interest"]:
@@ -992,7 +1030,7 @@ def get_conversion_rate(
 # --- Historical Price/Rate Helpers ---
 def get_historical_price(
     symbol_key: str, target_date: date, prices_dict: Dict[str, pd.DataFrame]
-) -> Optional[float]:
+) -> float:
     """
     Gets the historical price for a symbol on a specific date, using forward fill for missing dates.
 
@@ -1008,16 +1046,16 @@ def get_historical_price(
             values are DataFrames indexed by date objects, containing a 'price' column.
 
     Returns:
-        Optional[float]: The price for the symbol on the target date (or the last available price
-                         before it). Returns None if the symbol is not found, the date is before
-                         the first available price point, or an error occurs during lookup.
+        float: The price for the symbol on the target date (or the last available price
+               before it). Returns np.nan if the symbol is not found, the date is before
+               the first available price point, or an error occurs during lookup.
     """
     if target_date is None or not isinstance(target_date, (date, datetime, pd.Timestamp)):
-        return None
+        return np.nan
     
     if symbol_key not in prices_dict or prices_dict[symbol_key].empty:
         # logging.debug(f"get_historical_price: {symbol_key} missing or empty.")
-        return None
+        return np.nan
     
     # Avoid modifying the original DataFrame in prices_dict (it might be shared)
     df = prices_dict[symbol_key]
@@ -1050,7 +1088,7 @@ def get_historical_price(
                  # index is likely date objects, asof(Timestamp) might fail.
                  # Convert target_ts back to date for lookup if index is date objects.
                  target_ts = target_ts.date()
-                      
+                       
              res = df.asof(target_ts)
             
 
@@ -1068,7 +1106,7 @@ def get_historical_price(
              res = df.asof(ts_target)
 
         # Extract price from result
-        price = None
+        price = np.nan
         if isinstance(res, pd.Series):
              price = res.get('price')
              if price is None or pd.isna(price):
@@ -1113,11 +1151,12 @@ def get_historical_price(
              except Exception as e_comp:
                  logging.debug(f"Comparison fail in get_historical_price: {e_comp}")
 
-        return float(price) if pd.notna(price) else None
+        return float(price) if pd.notna(price) else np.nan
 
     except Exception as e:
         logging.error(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}")
-        return None
+        return np.nan
+
 
 
 

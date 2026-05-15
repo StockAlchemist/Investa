@@ -24,7 +24,7 @@ import pandas as pd
 import threading
 import config
 
-DB_FILENAME = "investa_transactions.db"
+DB_FILENAME = "portfolio.db"
 DB_SCHEMA_VERSION = 14
 
 # --- Helper for JSON serialization with NaNs ---
@@ -62,8 +62,15 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
 
 
 def get_global_screener_db_path() -> str:
-    """Returns the path to the global master screener database."""
-    return os.path.join(config.get_app_data_dir(), config.DB_DIR, DB_FILENAME)
+    """Returns the path to the global public screener cache database.
+    
+    This is a SHARED/PUBLIC database containing AI reviews and intrinsic value
+    calculations for all stock universes (S&P 500, S&P 400, Russell 2000).
+    It is NOT a user-specific database.
+    """
+    screener_dir = os.path.join(config.get_app_data_dir(), config.SCREENER_DIR)
+    os.makedirs(screener_dir, exist_ok=True)
+    return os.path.join(screener_dir, config.SCREENER_DB_FILENAME)
 
 
 _DB_CONN_CACHE = threading.local()
@@ -157,11 +164,11 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
                 break
             except sqlite3.OperationalError as e:
                 err_msg = str(e).lower()
-                if "unable to open database file" in err_msg or "database is locked" in err_msg or "disk i/o error" in err_msg:
-                    if i < retries - 1:
-                        logging.warning(f"Database access issue ({e}). Retrying in {0.2 * (i + 1)}s... (attempt {i+1}/{retries})")
-                        time.sleep(0.2 * (i + 1))
-                        continue
+                if i < retries - 1:
+                    logging.warning(f"Database access issue ({e}) for {db_path}. Retrying in {0.2 * (i + 1)}s... (attempt {i+1}/{retries})")
+                    time.sleep(0.2 * (i + 1))
+                    continue
+                logging.error(f"Failed to connect to database after {retries} attempts: {db_path} - Error: {e}")
                 raise e
         
         if conn:
@@ -1298,38 +1305,42 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
             is_isolated = os.path.abspath(current_db_path) != os.path.abspath(global_path)
             
         if is_isolated and os.path.exists(global_path):
-            with sqlite_lib.connect(global_path) as global_conn:
-                # Normalize symbols to uppercase for consistent lookup
-                upper_symbols = [s.upper() for s in symbols]
-                global_data = fetch_and_map(global_conn, upper_symbols)
-                
-                # Merge AI data from global into user results
-                for symbol, g_info in global_data.items():
-                    u_sym = symbol.upper()
-                    if u_sym not in results:
-                        # If not in user cache at all, just use the global entry
-                        results[u_sym] = g_info
-                    else:
-                        # If in user cache but missing substantial AI data, merge AI fields from global
-                        u_info = results[u_sym]
-                        
-                        # Check if user entry lacks AI rating fields or summary that global might have
-                        # Since ai_score is calculated in fetch_and_map, we can use it as a proxy for ratings presence
-                        u_has_rating = u_info.get("ai_score") is not None
-                        g_has_rating = g_info.get("ai_score") is not None
-                        u_has_summary = u_info.get("ai_summary") and len(u_info["ai_summary"]) > 0
-                        g_has_summary = g_info.get("ai_summary") and len(g_info["ai_summary"]) > 0
-                        
-                        if (not u_has_rating and g_has_rating) or (not u_has_summary and g_has_summary):
-                            ai_fields = [
-                                "ai_moat", "ai_financial_strength", "ai_predictability", 
-                                "ai_growth", "ai_summary", "ai_score", "has_ai_review",
-                                "ai_sentiment", "ai_catalysts",
-                                "intrinsic_value", "margin_of_safety", "valuation_details"
-                            ]
-                            for field in ai_fields:
-                                if g_info.get(field) is not None:
-                                    u_info[field] = g_info.get(field)
+            global_conn = get_db_connection(global_path, use_cache=False)
+            if global_conn:
+                try:
+                    # Normalize symbols to uppercase for consistent lookup
+                    upper_symbols = [s.upper() for s in symbols]
+                    global_data = fetch_and_map(global_conn, upper_symbols)
+                    
+                    # Merge AI data from global into user results
+                    for symbol, g_info in global_data.items():
+                        u_sym = symbol.upper()
+                        if u_sym not in results:
+                            # If not in user cache at all, just use the global entry
+                            results[u_sym] = g_info
+                        else:
+                            # If in user cache but missing substantial AI data, merge AI fields from global
+                            u_info = results[u_sym]
+                            
+                            # Check if user entry lacks AI rating fields or summary that global might have
+                            # Since ai_score is calculated in fetch_and_map, we can use it as a proxy for ratings presence
+                            u_has_rating = u_info.get("ai_score") is not None
+                            g_has_rating = g_info.get("ai_score") is not None
+                            u_has_summary = u_info.get("ai_summary") and len(u_info["ai_summary"]) > 0
+                            g_has_summary = g_info.get("ai_summary") and len(g_info["ai_summary"]) > 0
+                            
+                            if (not u_has_rating and g_has_rating) or (not u_has_summary and g_has_summary):
+                                ai_fields = [
+                                    "ai_moat", "ai_financial_strength", "ai_predictability", 
+                                    "ai_growth", "ai_summary", "ai_score", "has_ai_review",
+                                    "ai_sentiment", "ai_catalysts",
+                                    "intrinsic_value", "margin_of_safety", "valuation_details"
+                                ]
+                                for field in ai_fields:
+                                    if g_info.get(field) is not None:
+                                        u_info[field] = g_info.get(field)
+                finally:
+                    global_conn.close()
     except Exception as e:
         logging.warning(f"Failed to merge global AI data: {e}")
 
@@ -1603,10 +1614,13 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
         
         if current_db_path and os.path.abspath(current_db_path) != os.path.abspath(global_path):
             if os.path.exists(global_path):
-                import sqlite3 as sqlite_lib
-                with sqlite_lib.connect(global_path) as global_conn:
-                    do_update(global_conn, symbol, ai_data, info, universe)
-                    logging.info(f"Synchronized AI review for {symbol} to global DB.")
+                global_conn = get_db_connection(global_path, use_cache=False)
+                if global_conn:
+                    try:
+                        do_update(global_conn, symbol, ai_data, info, universe)
+                        logging.info(f"Synchronized AI review for {symbol} to global DB.")
+                    finally:
+                        global_conn.close()
     except Exception as e:
         logging.warning(f"Failed to synchronize AI review to global DB: {e}")
 

@@ -434,17 +434,17 @@ def test_get_historical_price_before_start(sample_prices_dict):
 
 
 def test_get_historical_price_symbol_missing(sample_prices_dict):
-    assert get_historical_price("GOOG", date(2023, 1, 11), sample_prices_dict) is None
+    assert np.isnan(get_historical_price("GOOG", date(2023, 1, 11), sample_prices_dict))
 
 
 def test_get_historical_price_empty_df(sample_prices_dict):
-    assert get_historical_price("EMPTY", date(2023, 1, 11), sample_prices_dict) is None
+    assert np.isnan(get_historical_price("EMPTY", date(2023, 1, 11), sample_prices_dict))
 
 
 def test_get_historical_price_invalid_date(sample_prices_dict):
-    assert get_historical_price("AAPL", None, sample_prices_dict) is None
-    assert (
-        get_historical_price("AAPL", "2023-01-11", sample_prices_dict) is None
+    assert np.isnan(get_historical_price("AAPL", None, sample_prices_dict))
+    assert np.isnan(
+        get_historical_price("AAPL", "2023-01-11", sample_prices_dict)
     )  # Must be date object
 
 
@@ -623,11 +623,11 @@ def test_get_cash_flows_mwr_conversion(mock_conv_rate, sample_transactions_mwr_d
     ]
 
     # Expected flows for SET (THB -> USD @ 35, MWR sign flip):
-    # 2023-02-10: Deposit 50000 THB - 100 comm = +49900 THB -> +49900 / 35 USD (MWR)
-    # 2023-04-20: Withdraw 10000 THB - 50 comm = -10050 THB -> -(-10050 / 35) USD (MWR) = +10050 / 35 USD
+    # 2023-02-10: Deposit 50000 THB + 100 comm = -50100 THB -> -50100 / 35 USD (OUT from pocket)
+    # 2023-04-20: Withdraw 10000 THB - 50 comm = +9950 THB -> +9950 / 35 USD (IN to pocket)
     # 2023-05-01: Final MV = +40000 / 35 USD
     expected_dates = [date(2023, 2, 10), date(2023, 4, 20), date(2023, 5, 1)]
-    expected_flows = [-49900.0 / 35.0, 10050.0 / 35.0, 40000.0 / 35.0]
+    expected_flows = [-50100.0 / 35.0, 9950.0 / 35.0, 40000.0 / 35.0]
 
     dates, flows = get_cash_flows_for_mwr(
         account_tx,
@@ -664,13 +664,13 @@ def test_get_cash_flows_mwr_with_historical_fx(sample_transactions_mwr_df):
     ]
 
     # Expected flows:
-    # 2023-02-10: Deposit 50000 - 100 comm = +49900 THB -> -49900 * (1/32.4) USD (Buy/Outflow)
-    # 2023-04-20: Withdraw 10000 - 50 comm = -10050 THB -> -(-10050 * (1/33.0)) USD (Sell/Inflow) = +10050/33.0
+    # 2023-02-10: Deposit 50000 + 100 comm = -50100 THB -> -50100 * (1/32.4) USD (OUT from pocket)
+    # 2023-04-20: Withdraw 10000 - 50 comm = +9950 THB -> +9950 * (1/33.0) USD (IN to pocket)
     # 2023-05-01: Final MV = +40000 / 31.54 USD
     expected_dates = [date(2023, 2, 10), date(2023, 4, 20), date(2023, 5, 1)]
     expected_flows = [
-        -49900.0 / 32.4,
-        10050.0 / 33.0,
+        -50100.0 / 32.4,
+        9950.0 / 33.0,
         40000.0 / 31.54,
     ]
 

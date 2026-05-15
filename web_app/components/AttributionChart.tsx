@@ -1,6 +1,7 @@
 'use client';
 
-import StockDetailModal from './StockDetailModal';
+import dynamic from 'next/dynamic';
+const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, TrendingUp, TrendingDown, X, Info, LayoutDashboard } from 'lucide-react';

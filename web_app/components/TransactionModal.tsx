@@ -13,7 +13,7 @@ interface TransactionModalProps {
 }
 
 const TRANSACTION_TYPES = [
-    'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Deposit', 'Withdrawal', 'Spin-off', 'Split'
+    'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Tax', 'Deposit', 'Withdrawal', 'Spin-off', 'Split', 'Short Sell', 'Buy To Cover'
 ];
 
 // Helper matching src/finutils.py
@@ -324,7 +324,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
 
             let signedAmount = Math.abs(finalAmount || 0);
 
-            if (['Buy', 'Withdrawal', 'Fees', 'Split'].includes(formData.Type)) {
+            if (['Buy', 'Withdrawal', 'Fees', 'Tax', 'Split', 'Buy To Cover'].includes(formData.Type)) {
                 signedAmount = -Math.abs(signedAmount);
             } else {
                 signedAmount = Math.abs(signedAmount);
@@ -356,7 +356,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const isTransfer = txType === 'transfer';
     const isCash = isCashSymbol(formData.Symbol);
     const isSplit = txType === 'split' || txType === 'stock split';
-    const canAutoAddCash = (txType === 'buy' || txType === 'sell') && !isCash;
+    const canAutoAddCash = (['buy', 'sell', 'short sell', 'buy to cover'].includes(txType)) && !isCash;
     const isDividend = txType === 'dividend';
 
     const isQtyDisabled = isSplit;

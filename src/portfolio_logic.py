@@ -205,6 +205,8 @@ def calculate_portfolio_summary(
     calc_method: Optional[str] = None, # Added for benchmarking override
     account_interest_rates: Optional[Dict[str, float]] = None,
     interest_free_thresholds: Optional[Dict[str, float]] = None,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,
+    db_mtime: float = 0.0, # NEW: for caching FIFO results
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -274,6 +276,7 @@ def calculate_portfolio_summary(
             "realized_gain": 0.0 if is_empty_data_case else np.nan,
             "dividends": 0.0 if is_empty_data_case else np.nan,
             "commissions": 0.0 if is_empty_data_case else np.nan,
+            "taxes": 0.0 if is_empty_data_case else np.nan,
             "total_gain": 0.0 if is_empty_data_case else np.nan,
             "total_cost_invested": 0.0 if is_empty_data_case else np.nan,
             "total_buy_cost": 0.0 if is_empty_data_case else np.nan,
@@ -768,6 +771,7 @@ def calculate_portfolio_summary(
             historical_fx_lookup=historical_fx_for_processing,  # NEW ARG
             display_currency_for_hist_fx=display_currency,  # NEW ARG
             report_date=report_date,
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
         )
     )
 
@@ -899,19 +903,30 @@ def calculate_portfolio_summary(
         else:
              fifo_input_df.sort_values(by=["Date"], inplace=True)
 
-        # Call the new function that returns both gains and lots
-        # FAILSAFE CORRECTION: The API endpoint for Capital Gains (get_capital_gains) DOES pass 'current_fx_rates_vs_usd'.
-        # Previously, we thought it didn't and passed None, which caused a discrepancy (Dashboard lower by ~$9k)
-        # because the fallback to current FX for missing historical rates was blocked.
-        fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
-            transactions_df=fifo_input_df, # Use SORTED FULL history
-            display_currency=display_currency,
-            historical_fx_yf=historical_fx_data_usd_based,
-            default_currency=default_currency,
-            shortable_symbols=SHORTABLE_SYMBOLS,
-            stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
-            current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass the available rates!
-        )
+        # BN-08: Cache FIFO results keyed by db_mtime and display_currency
+        global _FIFO_CACHE
+        if '_FIFO_CACHE' not in globals():
+            _FIFO_CACHE = {}
+            
+        fifo_cache_key = (db_mtime, display_currency)
+        if db_mtime > 0 and fifo_cache_key in _FIFO_CACHE:
+            logging.info("Using cached FIFO Realized Gains & Lots...")
+            fifo_realized_gains_df, open_lots_dict = _FIFO_CACHE[fifo_cache_key]
+        else:
+            # Call the function that returns both gains and lots
+            fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
+                transactions_df=fifo_input_df, # Use SORTED FULL history
+                display_currency=display_currency,
+                historical_fx_yf=historical_fx_data_usd_based,
+                default_currency=default_currency,
+                shortable_symbols=SHORTABLE_SYMBOLS,
+                stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
+                current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass the available rates!
+            )
+            
+            if db_mtime > 0:
+                _FIFO_CACHE.clear() # keep only the latest
+                _FIFO_CACHE[fifo_cache_key] = (fifo_realized_gains_df, open_lots_dict)
         
         # --- DEBUG LOGGING ---
         logging.info(f"FIFO DF Shape: {fifo_realized_gains_df.shape}")
@@ -1134,6 +1149,32 @@ def calculate_portfolio_summary(
             symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
             sector_map, quote_type_map, country_map, industry_map, exchange_map = {}, {}, {}, {}, {}
 
+            # PERF FIX (BN-07): Batch pre-fetch metadata for ALL symbols at once.
+            # Previously, get_fundamental_data() was called per-symbol inside the loop,
+            # causing N sequential cache lookups (and potentially N subprocess calls).
+            # Now we fetch all metadata in one batch call and use the results in the loop.
+            yf_symbols_for_metadata = set()
+            internal_to_yf_for_sector = {}
+            for internal_symbol in symbols_in_summary:
+                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith("Cash ("):
+                    continue
+                yf_ticker = map_to_yf_symbol(
+                    internal_symbol,
+                    effective_user_symbol_map,
+                    effective_user_excluded_symbols,
+                )
+                if yf_ticker:
+                    yf_symbols_for_metadata.add(yf_ticker)
+                    internal_to_yf_for_sector[internal_symbol] = yf_ticker
+            
+            # Single batch fetch — returns cached metadata including sector, industry, country, quoteType
+            batch_metadata = {}
+            if yf_symbols_for_metadata and MARKET_PROVIDER_AVAILABLE and market_provider:
+                try:
+                    batch_metadata = market_provider._ensure_metadata_batch(yf_symbols_for_metadata)
+                except Exception as e_batch_meta:
+                    logging.warning(f"Batch metadata pre-fetch failed: {e_batch_meta}")
+
             for internal_symbol in symbols_in_summary:
                 symbol_overrides = manual_overrides_effective.get(
                     internal_symbol.upper(), {}
@@ -1160,11 +1201,7 @@ def calculate_portfolio_summary(
                 if internal_symbol == "SCBRM1":
                      logging.info(f"DEBUG_OVERRIDE_SCBRM1: ManualExchange={manual_exchange}, AllOverrides={symbol_overrides}")
 
-                yf_ticker_for_sector = map_to_yf_symbol(
-                    internal_symbol,
-                    effective_user_symbol_map,
-                    effective_user_excluded_symbols,
-                )
+                yf_ticker_for_sector = internal_to_yf_for_sector.get(internal_symbol)
                 sector_map[internal_symbol] = (
                     manual_sector if manual_sector else "N/A (No YF/Manual)"
                 )
@@ -1186,9 +1223,13 @@ def calculate_portfolio_summary(
                     or not manual_geography
                     or not manual_industry
                 ):
-                    fundamental_info = market_provider.get_fundamental_data(
-                        yf_ticker_for_sector
-                    )
+                    # PERF FIX (BN-07): Use batch-prefetched metadata instead of per-symbol fetch.
+                    # Falls back to get_fundamental_data only if metadata is missing for this symbol.
+                    fundamental_info = batch_metadata.get(yf_ticker_for_sector)
+                    if not fundamental_info and MARKET_PROVIDER_AVAILABLE and market_provider:
+                        fundamental_info = market_provider.get_fundamental_data(
+                            yf_ticker_for_sector
+                        )
                     if fundamental_info and isinstance(fundamental_info, dict):
                         if not manual_sector:
                             sector_map[internal_symbol] = fundamental_info.get(
@@ -1265,6 +1306,7 @@ def calculate_portfolio_summary(
             "realized_gain": 0.0,
             "dividends": 0.0,
             "commissions": 0.0,
+            "taxes": 0.0,
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
             "total_buy_cost": 0.0,
@@ -1391,8 +1433,9 @@ def calculate_portfolio_summary(
                 unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
                 realized = overall_summary_metrics.get("realized_gain", 0.0)
                 commissions = overall_summary_metrics.get("commissions", 0.0)
-                
-                new_total_gain_div = realized + unrealized + total_dividends_override - commissions
+                taxes = overall_summary_metrics.get("taxes", 0.0)
+
+                new_total_gain_div = realized + unrealized + total_dividends_override - commissions - taxes
                 overall_summary_metrics["total_gain"] = new_total_gain_div
                 
                 # Recalc Total Return %
@@ -1413,6 +1456,7 @@ def calculate_portfolio_summary(
                              "total_unrealized_gain_display": 0.0,
                              "total_dividends_display": 0.0,
                              "total_commissions_display": 0.0,
+                             "total_taxes_display": 0.0,
                              "total_gain_display": 0.0,
                              "total_buy_cost_display": 0.0,
                              "total_return_pct": 0.0,
@@ -1426,8 +1470,9 @@ def calculate_portfolio_summary(
                     acct_realized = metrics.get("total_realized_gain_display", 0.0)
                     acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
                     acct_commissions = metrics.get("total_commissions_display", 0.0)
-                    
-                    acct_new_total_gain = acct_realized + acct_unrealized + div_amt - acct_commissions
+                    acct_taxes = metrics.get("total_taxes_display", 0.0)
+
+                    acct_new_total_gain = acct_realized + acct_unrealized + div_amt - acct_commissions - acct_taxes
                     metrics["total_gain_display"] = acct_new_total_gain
                     
                     acct_buy_cost = metrics.get("total_buy_cost_display", 0.0)
@@ -1481,8 +1526,9 @@ def calculate_portfolio_summary(
             unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
             dividends = overall_summary_metrics.get("dividends", 0.0) # Already overridden (if applicable)
             commissions = overall_summary_metrics.get("commissions", 0.0)
-            
-            new_total_gain = total_fifo_gain + unrealized + dividends - commissions
+            taxes = overall_summary_metrics.get("taxes", 0.0)
+
+            new_total_gain = total_fifo_gain + unrealized + dividends - commissions - taxes
             overall_summary_metrics["total_gain"] = new_total_gain
             
             # Recalculate Total Return %
@@ -1509,6 +1555,7 @@ def calculate_portfolio_summary(
                              "total_unrealized_gain_display": 0.0,
                              "total_dividends_display": 0.0,
                              "total_commissions_display": 0.0,
+                             "total_taxes_display": 0.0,
                              "total_gain_display": 0.0,
                              "total_buy_cost_display": 0.0,
                              "total_return_pct": 0.0,
@@ -1524,8 +1571,9 @@ def calculate_portfolio_summary(
                 acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
                 acct_dividends = metrics.get("total_dividends_display", 0.0)
                 acct_commissions = metrics.get("total_commissions_display", 0.0)
-                
-                acct_new_total_gain = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions
+                acct_taxes = metrics.get("total_taxes_display", 0.0)
+
+                acct_new_total_gain = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions - acct_taxes
                 metrics["total_gain_display"] = acct_new_total_gain
                 
                 # Update Account Total Return %
@@ -1550,12 +1598,8 @@ def calculate_portfolio_summary(
             and "Symbol" in summary_df_unfiltered.columns
         ):
             held_mask = (
-                (
-                    summary_df_unfiltered["Quantity"].abs()
-                    >= STOCK_QUANTITY_CLOSE_TOLERANCE
-                )
-                | (summary_df_unfiltered["Symbol"] == CASH_SYMBOL_CSV)
-                | (summary_df_unfiltered["Symbol"].str.startswith("Cash (", na=False))
+                summary_df_unfiltered["Quantity"].abs()
+                >= STOCK_QUANTITY_CLOSE_TOLERANCE
             )
             summary_df_final = summary_df_unfiltered[held_mask].copy()
         else:  # Columns missing for filtering
@@ -1768,11 +1812,18 @@ def _unadjust_prices(
 
 
         # --- Handle Empty/Invalid Input DataFrame ---
+        # Prefer the UNADJUSTED Close column. yfinance is fetched with
+        # auto_adjust=False so "Close" is the raw historical price (the price
+        # the user actually saw/paid on that date). "Adj Close" includes
+        # split + dividend back-adjustment, which systematically deflates
+        # historical values for dividend-paying assets — never use it here.
+        # "price" is kept first only for legacy cache compatibility (the
+        # function may also be passed an already-renamed DataFrame).
         col_to_use = None
         if not adj_price_df.empty:
             if "price" in adj_price_df.columns: col_to_use = "price"
-            elif "Adj Close" in adj_price_df.columns: col_to_use = "Adj Close"
             elif "Close" in adj_price_df.columns: col_to_use = "Close"
+            elif "Adj Close" in adj_price_df.columns: col_to_use = "Adj Close"
         
         if not col_to_use:
             if IS_DEBUG_SYMBOL:
@@ -1982,7 +2033,7 @@ def _calculate_daily_net_cash_flow_vectorized(
     # Robustly handle case sensitivity (Deposit vs deposit)
     type_lower = df_period["Type"].str.lower()
     symbol_upper = df_period["Symbol"].str.upper()
-    
+
     cash_mask = (symbol_upper == CASH_SYMBOL_CSV.upper()) & (type_lower.isin(["deposit", "withdrawal"]))
     df_cash = df_period[cash_mask].copy()
 
@@ -2073,11 +2124,15 @@ def _calculate_daily_net_cash_flow_vectorized(
                 if missing_price_mask.any():
                     relevant_trans_missing = relevant_trans[missing_price_mask]
                     unique_syms = relevant_trans_missing["Symbol"].unique()
-                    
+
                     for sym in unique_syms:
-                        sym_mask = relevant_trans_missing["Symbol"] == sym
+                        # Build sym_mask over the FULL relevant_trans index (not just
+                        # the missing-subset) so it aligns with `price` for boolean
+                        # indexing. The "& missing_price_mask" restricts assignment
+                        # to rows that actually need a fallback price.
+                        sym_mask = (relevant_trans["Symbol"] == sym) & missing_price_mask
                         price_found = 0.0
-                        
+
                         # Fallback A: Yahoo Finance Lookup
                         yf_sym = internal_to_yf_map.get(sym) if internal_to_yf_map else None
                         if yf_sym and historical_prices_yf_unadjusted and yf_sym in historical_prices_yf_unadjusted:
@@ -2089,9 +2144,9 @@ def _calculate_daily_net_cash_flow_vectorized(
                                         price_series = price_series.sort_index()
                                     if not isinstance(price_series.index, pd.DatetimeIndex):
                                         price_series.index = pd.to_datetime(price_series.index)
-                                    
+
                                     # Forward fill to get a price for the transfer date
-                                    dates_needed = pd.to_datetime(relevant_trans_missing.loc[sym_mask, "Date"])
+                                    dates_needed = pd.to_datetime(relevant_trans.loc[sym_mask, "Date"])
                                     # Use reindex with nearest or ffill
                                     relevant_prices = price_series.reindex(dates_needed, method='ffill')
                                     price_found = relevant_prices.iloc[0] # Take first for simplicity in this loop
@@ -2111,7 +2166,8 @@ def _calculate_daily_net_cash_flow_vectorized(
                             try:
                                 with open("/Users/kmatan/.gemini/antigravity/brain/19ed956f-9dc7-40d0-85b1-1aa49c84c1d9/scratch/missing_transfer_prices.txt", "a") as f:
                                     f.write(f"Missing price for transfer: {sym}\n")
-                            except: pass
+                            except OSError:
+                                pass
 
                 value = qty * price
                 local_flow = value * multiplier
@@ -2338,7 +2394,7 @@ def _calculate_daily_net_cash_flow(
                                         else:
                                             if not prices_df.empty:
                                                 price_local = prices_df.loc[target_ts].iloc[0]
-                                except:
+                                except (KeyError, IndexError, ValueError):
                                     pass
 
                 if not pd.isna(price_local) and price_local > 0:
@@ -2437,7 +2493,7 @@ def _calculate_daily_net_cash_flow(
                                         price_local = prices_df.loc[target_ts, "Adj Close"]
                                     elif not prices_df.empty:
                                         price_local = prices_df.loc[target_ts].iloc[0]
-                            except:
+                            except (KeyError, IndexError, ValueError):
                                 pass
                                 
             if not is_cash and (pd.isna(price_local) or price_local <= 0):
@@ -2570,14 +2626,18 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         tx_type = str(row.get("Type", "UNKNOWN_TYPE")).lower().strip()
         tx_date_row = row["Date"].date()
 
-        # --- ADDED: Update last known price from transaction ---
-        try:
-            tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
-            if pd.notna(tx_price) and tx_price > 1e-9:
-                last_known_prices[holding_key_from_row] = float(tx_price)
-        except Exception:
-            pass
-        # --- END ADDED ---
+        # Update last known price ONLY for transaction types where Price/Share is
+        # the stock price. Dividend / Tax / Interest / Fee rows store the
+        # per-share dividend or fee amount in that column, which would poison
+        # the last-known-price fallback and create huge phantom valuation jumps
+        # on days where yfinance returns NaN for that symbol.
+        if tx_type in ("buy", "sell", "short sell", "buy to cover", "transfer"):
+            try:
+                tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+                if pd.notna(tx_price) and tx_price > 1e-9:
+                    last_known_prices[holding_key_from_row] = float(tx_price)
+            except Exception:
+                pass
 
         if symbol != CASH_SYMBOL_CSV and holding_key_from_row not in holdings:
             holdings[holding_key_from_row] = {
@@ -2955,9 +3015,11 @@ def _calculate_holdings_numba(
     fees_type_id,
     dividend_type_id,
     interest_type_id,
+    tax_type_id,        # AUTO CASH
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
+    acc_cash_modes,     # AUTO CASH: int64 array, 0=Manual, 1=Auto
 ):
     # Initialize state arrays
     holdings_qty_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
@@ -2998,6 +3060,12 @@ def _calculate_holdings_numba(
                 cash_balances_np[account_id] += qty - commission
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
                 cash_balances_np[account_id] -= qty + commission
+            elif type_id == fees_type_id or type_id == tax_type_id:
+                # Account-level fee/tax recorded on $CASH symbol (wire fees,
+                # margin interest, withholding, etc.). Debit cash by qty (the
+                # fee amount in dollars). Fall back to commission if qty is 0.
+                fee_val = abs(qty) if abs(qty) > 1e-9 else abs(commission)
+                cash_balances_np[account_id] -= fee_val
             elif type_id == transfer_type_id:
                 dest_account_id = tx_to_accounts_np[i]
                 if dest_account_id != -1:
@@ -3013,9 +3081,19 @@ def _calculate_holdings_numba(
         # --- Handle STOCK transactions ---
         if holdings_currency_np[symbol_id, account_id] == -1:
             holdings_currency_np[symbol_id, account_id] = currency_id
-            
-        # --- NEW: Update Last Price ---
-        if price > 1e-9:
+
+        # Update Last Price ONLY for transaction types where Price/Share is the
+        # stock price. Dividend / Tax / Interest / Fee rows store the per-share
+        # dividend or fee amount in that column, which would poison the
+        # last-known-price fallback and create phantom valuation jumps on days
+        # where yfinance returns NaN for that symbol.
+        if price > 1e-9 and (
+            type_id == buy_type_id
+            or type_id == sell_type_id
+            or type_id == short_sell_type_id
+            or type_id == buy_to_cover_type_id
+            or type_id == transfer_type_id
+        ):
             last_prices_np[symbol_id, account_id] = price
 
         # --- STOCK TRANSFER LOGIC ---
@@ -3146,6 +3224,30 @@ def _calculate_holdings_numba(
             if abs(commission) > 1e-9:
                 holdings_cost_np[symbol_id, account_id] += commission
 
+        # --- AUTO CASH LOGIC (Single-date valuation) ---
+        # For Auto-mode accounts, generate implicit cash balance changes
+        # from non-cash stock transactions.
+        # Skip: Deposit/Withdrawal (in-kind shares), Split, Transfer
+        if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
+            cash_delta = 0.0
+            if type_id == buy_type_id:
+                cash_delta = -(abs(qty) * price + commission)
+            elif type_id == sell_type_id:
+                cash_delta = +(abs(qty) * price - commission)
+            elif type_id == dividend_type_id or type_id == interest_type_id:
+                cash_delta = +abs(price)  # price holds amount for dividends
+            elif type_id == fees_type_id or type_id == tax_type_id:
+                fee_val = abs(commission) if abs(commission) > 1e-9 else abs(price)
+                cash_delta = -fee_val
+            elif type_id == short_sell_type_id:
+                cash_delta = +(abs(qty) * price - commission)
+            elif type_id == buy_to_cover_type_id:
+                cash_delta = -(abs(qty) * price + commission)
+            # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
+
+            if abs(cash_delta) > 1e-9:
+                cash_balances_np[account_id] += cash_delta
+
     # Apply Final Tolerance
     for s_id in range(num_symbols):
         if s_id == cash_symbol_id:
@@ -3182,6 +3284,7 @@ def _calculate_daily_holdings_chronological_numba(
     tx_commissions_np,
     tx_split_ratios_np,
     tx_prices_np,  # NEW argument
+    tx_totals_np,  # BUG-06 FIX: Total Amount for accurate Auto Cash deltas
     num_symbols,
     num_accounts,
     split_type_id,
@@ -3193,9 +3296,14 @@ def _calculate_daily_holdings_chronological_numba(
     short_sell_type_id,
     buy_to_cover_type_id,
     transfer_type_id,  # NEW argument
+    dividend_type_id,   # AUTO CASH
+    interest_type_id,   # AUTO CASH
+    fees_type_id,       # AUTO CASH
+    tax_type_id,        # AUTO CASH
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
+    acc_cash_modes,     # AUTO CASH: int64 array, 0=Manual, 1=Auto
 ):
     """
     Calculates holdings and cash balances chronologically for each day in the target range.
@@ -3236,12 +3344,20 @@ def _calculate_daily_holdings_chronological_numba(
             split_ratio = tx_split_ratios_np[tx_idx]
             # --- NEW: Get price for fallback ---
             price = tx_prices_np[tx_idx]
+            # BUG-06 FIX: Get Total Amount for accurate Auto Cash deltas
+            total_amount = tx_totals_np[tx_idx]
 
             if symbol_id == cash_symbol_id:
-                if type_id == buy_type_id or type_id == deposit_type_id:
+                if type_id == buy_type_id or type_id == deposit_type_id or type_id == dividend_type_id or type_id == interest_type_id:
                     current_cash_balances[account_id] += abs(qty) - commission
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
                     current_cash_balances[account_id] -= abs(qty) + commission
+                elif type_id == fees_type_id or type_id == tax_type_id:
+                    # Account-level fee/tax recorded on $CASH symbol (wire fees,
+                    # margin interest, withholding, etc.). Debit cash by Total
+                    # Amount (preferred) or quantity if total is missing.
+                    fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                    current_cash_balances[account_id] -= fee_val
                 elif type_id == transfer_type_id:
                     dest_account_id = tx_to_accounts_np[tx_idx]
                     if dest_account_id != -1:
@@ -3251,8 +3367,17 @@ def _calculate_daily_holdings_chronological_numba(
                         current_cash_balances[dest_account_id] += abs(qty)
 
             else:
-                # --- NEW: Update Last Price ---
-                if price > 1e-9:
+                # Update Last Price ONLY for transaction types where Price/Share
+                # is the stock price. See the matching note in the target-date
+                # function. Prevents dividend/tax/etc rows from poisoning the
+                # last-known-price fallback.
+                if price > 1e-9 and (
+                    type_id == buy_type_id
+                    or type_id == sell_type_id
+                    or type_id == short_sell_type_id
+                    or type_id == buy_to_cover_type_id
+                    or type_id == transfer_type_id
+                ):
                     current_last_prices[symbol_id, account_id] = price
 
                 if type_id == split_type_id or type_id == stock_split_type_id:
@@ -3311,6 +3436,31 @@ def _calculate_daily_holdings_chronological_numba(
                             )
                             qty_covered = min(abs(qty), qty_currently_short)
                             current_holdings_qty[symbol_id, account_id] += qty_covered
+
+                # --- AUTO CASH LOGIC (Historical) ---
+                # For Auto-mode accounts, generate implicit cash balance changes
+                # Skip: Deposit/Withdrawal (in-kind shares), Split, Transfer
+                # BUG-02/03 FIX: Aligned with analyzer's three-tier fallback (total → qty*price ± comm)
+                if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
+                    cash_delta = 0.0
+                    if type_id == buy_type_id:
+                        cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price + commission))
+                    elif type_id == sell_type_id:
+                        cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price - commission))
+                    elif type_id == dividend_type_id:
+                        cash_delta = +abs(price)  # price holds amount for dividends
+                    elif type_id == interest_type_id:
+                        cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else abs(price))
+                    elif type_id == fees_type_id or type_id == tax_type_id:
+                        cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(commission) if abs(commission) > 1e-9 else abs(price)))
+                    elif type_id == short_sell_type_id:
+                        cash_delta = +(abs(qty) * price - commission)
+                    elif type_id == buy_to_cover_type_id:
+                        cash_delta = -(abs(qty) * price + commission)
+                    # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
+
+                    if abs(cash_delta) > 1e-9:
+                        current_cash_balances[account_id] += cash_delta
             
             tx_idx += 1
 
@@ -3350,6 +3500,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
     included_accounts: Optional[List[str]] = None,  # ADDED
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[float, bool]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Numba version).
@@ -3514,7 +3665,16 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         fees_type_id = type_to_id.get("fees", -1)
         dividend_type_id = type_to_id.get("dividend", -1)
         interest_type_id = type_to_id.get("interest", -1)
+        tax_type_id = type_to_id.get("tax", -1)  # AUTO CASH
         cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+
+        # AUTO CASH: Build acc_cash_modes array
+        num_accounts = len(account_to_id)
+        _acm_val = account_cash_mode_map if account_cash_mode_map else {}
+        acc_cash_modes_val = np.zeros(num_accounts, dtype=np.int64)
+        for _acc_name_v, _mode_str_v in _acm_val.items():
+            if _acc_name_v in account_to_id and _mode_str_v == "Auto":
+                acc_cash_modes_val[account_to_id[_acc_name_v]] = 1
 
         shortable_symbol_ids = np.array(
             [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
@@ -3566,9 +3726,11 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             fees_type_id,
             dividend_type_id,
             interest_type_id,
+            tax_type_id,
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
+            acc_cash_modes_val,
         )
         
     except Exception as e_numba_call:
@@ -3615,6 +3777,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         if pd.isna(current_price_local):
             if last_price > 1e-9:
                 current_price_local = last_price
+            else:
+                current_price_local = np.nan # Ensure it's a float/NaN, not None
 
         currency_id = holdings_currency_np[symbol_id, account_id]
         local_currency = id_to_currency.get(currency_id, default_currency)
@@ -3719,6 +3883,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
     id_to_currency: Dict[int, str],
     method: str = HISTORICAL_CALC_METHOD,
     included_accounts: Optional[List[str]] = None,  # ADDED
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[float, bool]:
     """
     Dispatcher function to calculate portfolio value using either Python or Numba method.
@@ -3743,6 +3908,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             currency_to_id,
             id_to_currency,
             included_accounts=included_accounts,  # Pass included_accounts
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
         )
     elif method == "python":
         return _calculate_portfolio_value_at_date_unadjusted_python(
@@ -3801,6 +3967,7 @@ def _calculate_daily_metrics_worker(
     id_to_currency: Dict[int, str],  # type: ignore
     calc_method: str = HISTORICAL_CALC_METHOD,  # Use config default
     included_accounts: Optional[List[str]] = None,  # ADDED
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Optional[Dict]:
     """
     Worker function (for multiprocessing) to calculate key metrics for a single date.
@@ -3871,6 +4038,7 @@ def _calculate_daily_metrics_worker(
                 # STOCK_QUANTITY_CLOSE_TOLERANCE is implicitly passed to numba version via _calculate_daily_metrics_worker
                 method=calc_method,
                 included_accounts=included_accounts,  # Pass included_accounts
+                account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
             )
         )
         end_time_main = time.time()
@@ -4343,16 +4511,30 @@ def _prepare_historical_inputs(
     daily_results_cache_file: Optional[str] = None
     daily_results_cache_key: Optional[str] = None
     try:
-        # Use placeholder if original_csv_file_path is not available (loading from DB)
-        tx_file_hash_component = (
-            _get_file_hash(original_csv_file_path)
-            if original_csv_file_path and os.path.exists(original_csv_file_path)
-            else "FROM_DB_OR_DATAFRAME"
-        )
-        if original_csv_file_path and not os.path.exists(original_csv_file_path):
-            logging.warning(
-                f"Hist Prep: Original CSV path '{original_csv_file_path}' for hash not found. Using placeholder."
-            )
+        # Cache must invalidate whenever the transaction data changes. With a
+        # CSV path we hash the file; when loaded from DB (no CSV path) we hash
+        # the actual DataFrame contents so DB edits force a recompute.
+        if original_csv_file_path and os.path.exists(original_csv_file_path):
+            tx_file_hash_component = _get_file_hash(original_csv_file_path)
+        else:
+            if original_csv_file_path:
+                logging.warning(
+                    f"Hist Prep: Original CSV path '{original_csv_file_path}' for hash not found. Hashing DataFrame contents instead."
+                )
+            _hash_cols = [
+                c for c in ("Date", "Type", "Symbol", "Quantity",
+                            "Price/Share", "Total Amount", "Commission",
+                            "Account", "Local Currency", "To Account")
+                if preloaded_transactions_df is not None and c in preloaded_transactions_df.columns
+            ]
+            if preloaded_transactions_df is not None and not preloaded_transactions_df.empty and _hash_cols:
+                tx_file_hash_component = hashlib.sha256(
+                    pd.util.hash_pandas_object(
+                        preloaded_transactions_df[_hash_cols], index=False
+                    ).values.tobytes()
+                ).hexdigest()[:16]
+            else:
+                tx_file_hash_component = "EMPTY_DATAFRAME"
 
         acc_map_str = json.dumps(account_currency_map, sort_keys=True)
         included_accounts_str = json.dumps(
@@ -4465,13 +4647,16 @@ def _value_daily_holdings_vectorized(
         if yf_symbol and yf_symbol in historical_prices_yf_unadjusted:
             price_df = historical_prices_yf_unadjusted[yf_symbol]
             if not price_df.empty:
+                # Prefer "price" (already set to raw Close by normalize_df), then
+                # raw Close, then Adj Close. Adj Close is dividend-adjusted and
+                # would deflate historical valuations.
                 col_to_use = None
                 if "price" in price_df.columns:
                     col_to_use = "price"
-                elif "Adj Close" in price_df.columns:
-                    col_to_use = "Adj Close"
                 elif "Close" in price_df.columns:
                     col_to_use = "Close"
+                elif "Adj Close" in price_df.columns:
+                    col_to_use = "Adj Close"
                 
                 if col_to_use:
                     # Reindex to date_range
@@ -4529,8 +4714,8 @@ def _value_daily_holdings_vectorized(
             if not t_df.empty:
                 col_to_use = None
                 if "price" in t_df.columns: col_to_use = "price"
-                elif "Adj Close" in t_df.columns: col_to_use = "Adj Close"
                 elif "Close" in t_df.columns: col_to_use = "Close"
+                elif "Adj Close" in t_df.columns: col_to_use = "Adj Close"
                 elif "rate" in t_df.columns: col_to_use = "rate"
 
                 if col_to_use:
@@ -4594,8 +4779,8 @@ def _value_daily_holdings_vectorized(
                  if not l_df.empty:
                     col_to_use = None
                     if "price" in l_df.columns: col_to_use = "price"
-                    elif "Adj Close" in l_df.columns: col_to_use = "Adj Close"
                     elif "Close" in l_df.columns: col_to_use = "Close"
+                    elif "Adj Close" in l_df.columns: col_to_use = "Adj Close"
                     elif "rate" in l_df.columns: col_to_use = "rate"
                     
                     if col_to_use:
@@ -4751,6 +4936,7 @@ def _load_or_calculate_daily_results(
     current_hist_version: str = "v14",
     filter_desc: str = "All Accounts",
     calc_method: str = HISTORICAL_CALC_METHOD,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
     """
     Loads calculated daily results from cache or calculates them using parallel processing.
@@ -5151,6 +5337,8 @@ def _load_or_calculate_daily_results(
             
                 price_col = "Price/Share" if "Price/Share" in sorted_df.columns else "Price"
                 tx_prices_np = sorted_df[price_col].fillna(0.0).values.astype(np.float64) if price_col in sorted_df.columns else np.zeros(len(sorted_df), dtype=np.float64)
+                # BUG-06 FIX: Prepare Total Amount for Auto Cash delta alignment
+                tx_totals_np = sorted_df["Total Amount"].fillna(0.0).values.astype(np.float64) if "Total Amount" in sorted_df.columns else np.zeros(len(sorted_df), dtype=np.float64)
 
                 split_type_id = type_to_id.get("split", -1)
                 stock_split_type_id = type_to_id.get("stock split", -1)
@@ -5167,9 +5355,19 @@ def _load_or_calculate_daily_results(
                 num_symbols = len(symbol_to_id)
                 num_accounts = len(account_to_id)
 
-                num_accounts = len(account_to_id)
-            
-                num_accounts = len(account_to_id)
+                # AUTO CASH: Resolve type IDs needed by auto-cash logic
+                dividend_type_id = type_to_id.get("dividend", -1)
+                interest_type_id = type_to_id.get("interest", -1)
+                fees_type_id = type_to_id.get("fees", -1)
+                tax_type_id = type_to_id.get("tax", -1)
+
+                # AUTO CASH: Build acc_cash_modes array
+                _acm = account_cash_mode_map if account_cash_mode_map else {}
+                acc_cash_modes_np = np.zeros(num_accounts, dtype=np.int64)
+                for _acc_name, _mode_str in _acm.items():
+                    _acc_upper = _acc_name.upper().strip()
+                    if _acc_upper in account_to_id and _mode_str == "Auto":
+                        acc_cash_modes_np[account_to_id[_acc_upper]] = 1
             
                 # Call Numba function
                 daily_holdings_qty_to_use, daily_cash_balances_to_use, daily_last_prices_to_use = _calculate_daily_holdings_chronological_numba(
@@ -5183,6 +5381,7 @@ def _load_or_calculate_daily_results(
                     tx_commissions_np,
                     tx_split_ratios_np,
                     tx_prices_np,
+                    tx_totals_np,  # BUG-06 FIX: Total Amount
                     num_symbols,
                     num_accounts,
                     split_type_id,
@@ -5194,9 +5393,14 @@ def _load_or_calculate_daily_results(
                     short_sell_type_id,
                     buy_to_cover_type_id,
                     transfer_type_id,
+                    dividend_type_id,
+                    interest_type_id,
+                    fees_type_id,
+                    tax_type_id,
                     cash_symbol_id,
                     STOCK_QUANTITY_CLOSE_TOLERANCE,
                     shortable_symbol_ids,
+                    acc_cash_modes_np,
                 )
                 
         
@@ -5421,6 +5625,7 @@ def _load_or_calculate_daily_results(
                 id_to_currency=id_to_currency,
                 calc_method=HISTORICAL_CALC_METHOD,  # Pass method from config
                 included_accounts=included_accounts_list,  # Pass included_accounts_list
+                account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
             )
             daily_results_list = []
             pool_start_time = time.time()
@@ -5471,11 +5676,31 @@ def _load_or_calculate_daily_results(
                     results_iterator = map(worker_partial, all_dates_to_process)
                     consume_results(results_iterator)
                 else:
-                    with multiprocessing.Pool(processes=num_processes) as pool:
+                    pool = None
+                    try:
+                        pool = multiprocessing.Pool(
+                            processes=num_processes,
+                            maxtasksperchild=50,  # Prevent memory leaks in long-running workers
+                        )
                         results_iterator = pool.imap_unordered(
                             worker_partial, all_dates_to_process, chunksize=chunksize
                         )
                         consume_results(results_iterator)
+                    finally:
+                        # Graceful shutdown: close() stops accepting new tasks,
+                        # join() waits for workers to finish sending results.
+                        # This prevents BrokenPipeError from terminate() killing
+                        # workers while they're still writing to the result pipe.
+                        if pool is not None:
+                            try:
+                                pool.close()
+                                pool.join()
+                            except Exception as e_pool_shutdown:
+                                logging.warning(f"Pool shutdown warning: {e_pool_shutdown}")
+                                try:
+                                    pool.terminate()
+                                except Exception:
+                                    pass
             except Exception as e_pool:
                 logging.error(
                     f"Hist CRITICAL (Scope: {filter_desc}): Pool failed: {e_pool}"
@@ -5588,115 +5813,49 @@ def _load_or_calculate_daily_results(
                     / adjusted_prev_value.loc[valid_denom_mask]
                 )
                 
-                # --- NEW: Performance Stabilization & Artifact Normalization ---
-                # This replaces the hard capping logic with a more nuanced approach.
-                # It identifies spikes and checks if they coincide with valuation-neutral events 
-                # (Transfers, Splits, Cleanup).
-                
-                spike_threshold = 0.3  # 30% is a significant daily move for a diversified portfolio
-                extreme_spike_mask = (daily_df["daily_return"].abs() > spike_threshold)
-                
-                # --- NEW: Context-Aware Artifact Detection ---
-                # 1. Gather context for spikes
-                transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].dt.date.unique()
-                
-                # Also consider cleanup transactions as neutralization events
-                cleanup_keywords = ["cleanup", "dust", "ghost", "artifact", "adjustment", "correction", "auto-generated", "fix"]
-                note_col = "Note" if "Note" in transactions_df_effective.columns else None
-                cleanup_days = set()
-                if note_col:
-                    c_mask = transactions_df_effective[note_col].fillna("").str.lower().apply(
-                        lambda x: any(kw in x for kw in cleanup_keywords)
+                # --- BUG-04 FIX: Contextual Spike Guard ---
+                # Only cap returns that are clearly flow-driven artifacts, NOT legitimate market moves.
+                # A spike is flow-driven if: portfolio value is small AND net flow is large relative to value.
+                spike_threshold = 0.5
+                spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
+                if spike_mask.any():
+                    net_flow_filled_abs = daily_df["net_flow"].fillna(0.0).abs()
+                    portfolio_value_abs = daily_df["value"].abs()
+                    # Only cap if: value < $1000 AND |net_flow| > 50% of value (flow-driven spike)
+                    flow_driven_mask = spike_mask & (
+                        (portfolio_value_abs < 1000.0) & (net_flow_filled_abs > portfolio_value_abs * 0.5)
                     )
-                    cleanup_days = set(transactions_df_effective[c_mask]["Date"].dt.date.unique())
-                
-                split_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip().isin(["split", "stock split"])]["Date"].dt.date.unique()
-
-                # Expand context to +/- 2 days around events
-                event_proximity_days = set()
-                for d_set in [transfer_days, split_days, list(cleanup_days)]:
-                    for d in d_set:
-                        for offset in range(-2, 3):
-                            event_proximity_days.add(d + timedelta(days=offset))
-
-                neutralized_count = 0
-                neutralized_reasons = {}
-                
-                # We iterate through all days with a significant return (> 10%)
-                potential_spike_mask = (daily_df["daily_return"].abs() > 0.1)
-                
-                # We keep track of which days we've already neutralized to avoid double-processing in V-check
-                already_processed = set()
-
-                for idx, row in daily_df[potential_spike_mask].iterrows():
-                    if idx in already_processed: continue
-                    
-                    d = idx.date()
-                    ret_pct = row["daily_return"] * 100.0
-                    
-                    # 1. Determine if this day is near an event
-                    is_near_event = d in event_proximity_days
-                    
-                    is_artifact = False
-                    reason = "Unknown"
-                    
-                    # A. Extreme spike (>30%) near an event
-                    if abs(row["daily_return"]) > 0.3 and is_near_event:
-                        is_artifact = True
-                        reason = "Proximity Spike"
-                    # B. Moderate spike (>10%) on the EXACT day of an event
-                    elif abs(row["daily_return"]) > 0.1 and is_near_event:
-                        is_artifact = True
-                        reason = "Proximity Spike (>10%)"
-                    # C. Extreme Outlier (>200%)
-                    elif abs(row["daily_return"]) > 2.0:
-                        is_artifact = True
-                        reason = "Extreme Outlier (>200%)"
-                    
-                    # D. V-Shape / A-Shape Check (Look ahead 1-2 days)
-                    if not is_artifact:
+                    if flow_driven_mask.any():
                         try:
-                            current_pos = daily_df.index.get_loc(idx)
-                            for lookahead in range(1, 5):
-                                if current_pos + lookahead >= len(daily_df): break
-                                next_idx = daily_df.index[current_pos + lookahead]
-                                next_ret = daily_df.iloc[current_pos + lookahead]["daily_return"]
-                                
-                                # If next day is a significant move in OPPOSITE direction
-                                if abs(next_ret) > 0.1 and np.sign(next_ret) != np.sign(row["daily_return"]):
-                                    # And net move is small
-                                    net_ret = (1 + row["daily_return"]) * (1 + next_ret) - 1
-                                    if abs(net_ret) < 0.05: # Net move < 5%
-                                        # If this pair is near an event, it's definitely an artifact
-                                        if is_near_event or next_idx.date() in event_proximity_days:
-                                            is_artifact = True
-                                            reason = "V-Shape Artifact"
-                                            # Also neutralize the other day in the pair
-                                            logging.warning(f"!!! PERFORMANCE STABILIZATION: Neutralized {reason} second leg on {next_idx.date()} ({next_ret*100:.1f}%)")
-                                            daily_df.at[next_idx, "daily_return"] = 0.0
-                                            already_processed.add(next_idx)
-                                            neutralized_count += 1
-                                            break
-                        except: pass # index.get_loc might fail on duplicates, though index should be unique
+                            spike_info = [f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return']*100:.1f}%)" for d in daily_df.index[flow_driven_mask]]
+                            logging.warning(f"BUG-04 FIX: Capped {len(spike_info)} FLOW-DRIVEN TWR spikes (> {spike_threshold*100:.0f}%): {', '.join(spike_info[:12])}{'...' if len(spike_info) > 12 else ''}")
+                        except Exception as e:
+                            logging.error(f"Failed to log spike info: {e}")
+                        daily_df.loc[flow_driven_mask, "daily_return"] = 0.0
 
-                    if is_artifact:
-                        # NEUTRALIZE: Set to 0% (Neutral)
-                        logging.warning(f"!!! PERFORMANCE STABILIZATION: Neutralized {reason} artifact on {d} (Spike of {ret_pct:.1f}%).")
-                        daily_df.at[idx, "daily_return"] = 0.0
-                        already_processed.add(idx)
-                        neutralized_count += 1
-                        neutralized_reasons[reason] = neutralized_reasons.get(reason, 0) + 1
-                    
-                if neutralized_count > 0:
-                    logging.warning("="*70)
-                    logging.warning("!!! PERFORMANCE STABILIZATION SUMMARY !!!")
-                    logging.warning(f"Successfully neutralized {neutralized_count} historical data artifacts.")
-                    for r, count in neutralized_reasons.items():
-                        logging.warning(f" - {r}: {count} corrections")
-                    logging.warning("="*70)
+                    # Log but DON'T cap legitimate market-driven spikes
+                    market_spikes = spike_mask & ~flow_driven_mask
+                    if market_spikes.any():
+                        try:
+                            market_info = [f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return']*100:.1f}%)" for d in daily_df.index[market_spikes]]
+                            logging.info(f"BUG-04 FIX: Preserved {len(market_info)} legitimate market-driven returns (> {spike_threshold*100:.0f}%): {', '.join(market_info[:12])}{'...' if len(market_info) > 12 else ''}")
+                        except Exception:
+                            pass
 
-
-
+                # --- BUG-05 FIX: Flow-Aware Transfer Healing ---
+                # Only heal transfer-day spikes when the spike is clearly caused by the flow, not the market.
+                high_vol_mask = (daily_df["daily_return"] > 0.1) | (daily_df["daily_return"] < -0.1)
+                if high_vol_mask.any():
+                    transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].unique()
+                    transfer_days_dt = pd.to_datetime(transfer_days).date
+                    for idx, row in daily_df[high_vol_mask].iterrows():
+                         if idx.date() in transfer_days_dt:
+                             # BUG-05 FIX: Only heal if the net flow magnitude exceeds the daily gain
+                             net_flow_val = abs(row.get("net_flow", 0.0)) if pd.notna(row.get("net_flow")) else 0.0
+                             daily_gain_val = abs(row.get("daily_gain", 0.0)) if pd.notna(row.get("daily_gain")) else 0.0
+                             if net_flow_val > daily_gain_val * 0.5:
+                                 logging.warning(f"!!! TWR HEALING: Flow-driven artifact on {idx.date()} (Return: {row['daily_return']*100:.1f}%, NetFlow: {net_flow_val:.0f}, Gain: {daily_gain_val:.0f}).")
+                                 daily_df.at[idx, "daily_return"] = 0.0
 
                 anomalies = daily_df[
                     (daily_df["value"] < 1.0) & 
@@ -5789,6 +5948,7 @@ def _get_or_calculate_all_daily_holdings(
     symbol_to_id: Dict,
     account_to_id: Dict,
     type_to_id: Dict,
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ):
     """
     Layer 1 Cache: Calculates or loads from cache the daily holdings for ALL transactions.
@@ -5894,6 +6054,12 @@ def _get_or_calculate_all_daily_holdings(
         if price_col in sorted_tx_df.columns
         else np.zeros(len(sorted_tx_df), dtype=np.float64)
     )
+    # BUG-06 FIX: Prepare Total Amount for Auto Cash delta alignment
+    tx_totals_np = (
+        sorted_tx_df["Total Amount"].fillna(0.0).values.astype(np.float64)
+        if "Total Amount" in sorted_tx_df.columns
+        else np.zeros(len(sorted_tx_df), dtype=np.float64)
+    )
 
     split_type_id = type_to_id.get("split", -1)
     stock_split_type_id = type_to_id.get("stock split", -1)
@@ -5904,15 +6070,27 @@ def _get_or_calculate_all_daily_holdings(
     short_sell_type_id = type_to_id.get("short sell", -1)
     buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
     transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
+    dividend_type_id = type_to_id.get("dividend", -1)    # AUTO CASH
+    interest_type_id = type_to_id.get("interest", -1)    # AUTO CASH
+    fees_type_id = type_to_id.get("fees", -1)            # AUTO CASH
+    tax_type_id = type_to_id.get("tax", -1)              # AUTO CASH
     cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
+    # AUTO CASH: Build acc_cash_modes array
+    num_symbols = len(symbol_to_id)
+    num_accounts = len(account_to_id)
+    
+    _acm2 = account_cash_mode_map if account_cash_mode_map else {}
+    acc_cash_modes_np2 = np.zeros(num_accounts, dtype=np.int64)
+    for _acc_name2, _mode_str2 in _acm2.items():
+        _acc_upper2 = _acc_name2.upper().strip()
+        if _acc_upper2 in account_to_id and _mode_str2 == "Auto":
+            acc_cash_modes_np2[account_to_id[_acc_upper2]] = 1
 
     shortable_symbol_ids = np.array(
         [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
         dtype=np.int64,
     )
-    num_symbols = len(symbol_to_id)
-    num_accounts = len(account_to_id)
 
     daily_holdings_qty, daily_cash_balances, daily_last_prices = (
         _calculate_daily_holdings_chronological_numba(
@@ -5926,6 +6104,7 @@ def _get_or_calculate_all_daily_holdings(
             tx_commissions_np,
             tx_split_ratios_np,
             tx_prices_np,  # NEW argument
+            tx_totals_np,  # BUG-06 FIX: Total Amount
             num_symbols,
             num_accounts,
             split_type_id,
@@ -5937,9 +6116,14 @@ def _get_or_calculate_all_daily_holdings(
             short_sell_type_id,
             buy_to_cover_type_id,
             transfer_type_id,
+            dividend_type_id,
+            interest_type_id,
+            fees_type_id,
+            tax_type_id,
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
+            acc_cash_modes_np2,
         )
     )
 
@@ -6273,12 +6457,9 @@ def _calculate_accumulated_gains_and_resample(
                 visible_dates = available_dates[visible_mask]
                 
                 if not visible_dates.empty:
-                    # 3. Find the first valid baseline in the visible range
-                    # Instead of just taking [0], we search for the first point where value != 0 and not NaN
-                    # This prevents "flatlining" or jumps if the start date falls on a zero-value period
+                    # 3. Find the normalization baseline
                     for col in final_df_output.columns:
                         if "Accumulated Gain" in col:
-                            # Search for first valid baseline
                             divisor = 0.0
                             found_valid = False
                             
@@ -6288,20 +6469,33 @@ def _calculate_accumulated_gains_and_resample(
                                 logging.debug(f"Normalization skipped for {col}: Column is empty or all zeros.")
                                 continue
                             
-                            # Try t0 first
-                            t0_val = final_df_output.loc[visible_dates[0], col]
-                            if pd.notnull(t0_val) and t0_val != 0:
-                                divisor = t0_val
-                                found_valid = True
-                            else:
-                                # t0 is invalid, search forwards
-                                logging.debug(f"t0 baseline invalid for {col} (val={t0_val}). Searching forward...")
-                                for d in visible_dates:
-                                    val = final_df_output.loc[d, col]
-                                    if pd.notnull(val) and val != 0:
-                                        divisor = val
+                            # BUG-10 FIX: Try t-1 (last point BEFORE visible range) from full data
+                            if col in resampled_naive.columns:
+                                pre_range_data = resampled_naive.loc[resampled_naive.index < visible_dates[0], col].dropna()
+                                if not pre_range_data.empty:
+                                    t_minus_1_val = pre_range_data.iloc[-1]
+                                    if pd.notnull(t_minus_1_val) and t_minus_1_val != 0:
+                                        divisor = t_minus_1_val
                                         found_valid = True
-                                        logging.debug(f"Found valid baseline for {col} at {d}: {divisor}")
+                                        logging.debug(f"BUG-10 FIX: Using t-1 baseline for {col}: {divisor}")
+                            
+                            # Fallback: t0 if t-1 not available
+                            if not found_valid:
+                                t0_val = final_df_output.loc[visible_dates[0], col]
+                                if pd.notnull(t0_val) and t0_val != 0:
+                                    divisor = t0_val
+                                    found_valid = True
+                                    logging.debug(f"BUG-10 FIX: Fallback to t0 baseline for {col}: {divisor}")
+                                else:
+                                    # t0 is invalid, search forwards
+                                    logging.debug(f"t0 baseline invalid for {col} (val={t0_val}). Searching forward...")
+                                    for d in visible_dates:
+                                        val = final_df_output.loc[d, col]
+                                        if pd.notnull(val) and val != 0:
+                                            divisor = val
+                                            found_valid = True
+                                            logging.debug(f"Found valid baseline for {col} at {d}: {divisor}")
+                                            break
                                         break
                             
                             if found_valid and divisor != 0:
@@ -6362,6 +6556,7 @@ def calculate_historical_performance(
     # This is needed because we no longer pass the CSV path directly to this function for loading
     original_csv_file_path: Optional[str] = None,
     calc_method: Optional[str] = None, # ADDED for benchmarking
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[
     pd.DataFrame,  # daily_df
     Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
@@ -6584,11 +6779,35 @@ def calculate_historical_performance(
         symbol_to_id=symbol_to_id,
         account_to_id=account_to_id,
         type_to_id=type_to_id,
+        account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
     )
 
     if all_holdings_qty is None:
         status_parts.append("L1 Cache Error")
         has_errors = True  # This is a critical failure
+
+    # --- NEW: Identify Currently Held Symbols for Integrity Check Optimization ---
+    # We only care about integrity (drifts/splits) for symbols we actually hold today,
+    # or benchmarks we track. For symbols we no longer hold, small historical 
+    # drift doesn't justify a full history re-fetch during routine background syncs.
+    active_symbols_yf = set(clean_benchmark_symbols_yf)
+    try:
+        # all_holdings_qty is indexed by [date_idx, symbol_id]
+        # We check the last date index to find non-zero holdings
+        last_date_idx = all_holdings_qty.shape[0] - 1
+        if last_date_idx >= 0:
+            held_sym_ids = np.where(np.abs(all_holdings_qty[last_date_idx]) > 1e-6)[0]
+            for sid in held_sym_ids:
+                if sid in id_to_symbol:
+                    internal_sym = id_to_symbol[sid]
+                    yf_sym = internal_to_yf_map.get(internal_sym)
+                    if yf_sym:
+                        active_symbols_yf.add(yf_sym)
+        logging.info(f"Integrity check restricted to {len(active_symbols_yf)} active symbols.")
+    except Exception as e_active:
+        logging.warning(f"Failed to determine active symbols for integrity check: {e_active}")
+        active_symbols_yf = None # Fallback to checking everything if determination fails
+    # ----------------------------------------------------------------------------
 
 
 
@@ -6603,6 +6822,7 @@ def calculate_historical_performance(
         use_cache=use_raw_data_cache if interval == "1d" else False,
         # Append fetch_end_date to key to ensure we don't use stale cache for different fetch range
         cache_key=f"{raw_data_cache_key}_{fetch_end_date.isoformat()}",
+        integrity_check_symbols=active_symbols_yf, # Pass the optimized list
     )
     
     # --- INTRADAY PATCH: Fetch high-res data for active range ---
@@ -6671,51 +6891,10 @@ def calculate_historical_performance(
         except Exception as e_intra:
             logging.error(f"Failed to fetch/merge intraday data: {e_intra}")
 
-    
-    
-    # If intraday interval requested, fetch intraday data for the RECENT/ACTIVE range
-    if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
-        # Determined strictly by loop logic in market_data, but we pass full range here.
-        # Market data provider handles limits (e.g. 730d for 1h, 30d for 1m).
-        # We start from max(start_date, limit) usually, but let's just pass full range and let provider clip if needed?
-        # Provider clips start date. So we can just pass start_date.
-        # BUT, to be efficient, we might only want intraday for the *relevant* recent period if the user asked for "All" but visualized as 1h?
-        # No, if user asks for 1h, they get 1h for as long as possible.
-        
-        intraday_prices, _ = market_provider.get_historical_data(
-            symbols_yf=symbols_for_stocks_and_benchmarks_yf,
-            start_date=start_date, # Let provider clip
-            end_date=fetch_end_date,
-            interval=interval,
-            use_cache=use_raw_data_cache,
-        )
-        # Merge intraday data into the adjusted map
-        # Use a case-insensitive lookup for matching symbols
-        adj_prices_upper = {k.upper(): k for k in historical_prices_yf_adjusted.keys()}
-        
 
-        for s, h_df in intraday_prices.items():
-            s_upper = s.upper()
-            if s_upper in adj_prices_upper:
-                original_key = adj_prices_upper[s_upper]
-                d_df = historical_prices_yf_adjusted[original_key]
-                # Force standardized UTC DatetimeIndex
-                d_df.index = pd.to_datetime(d_df.index, utc=True)
-                
-                h_df_proc = h_df.copy()
-                h_df_proc.index = pd.to_datetime(h_df_proc.index, utc=True)
-                
-                if not h_df_proc.empty:
-                    # --- FIX: Aggressive filling for intraday prices ---
-                    h_df_proc = h_df_proc.ffill().bfill()
-                    
-                    h_start_ts = h_df_proc.index.min()
-                    
-                    combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
-                    final_df = combined[~combined.index.duplicated(keep='last')]
-                    historical_prices_yf_adjusted[original_key] = final_df
-            else:
-                historical_prices_yf_adjusted[s] = h_df.ffill().bfill()
+    # BUG-11 FIX: Removed duplicate intraday fetch block that was here.
+    # The intraday fetch and merge is already handled by the block above (lines ~6540-6600).
+
 
     logging.info(
         f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."
@@ -6855,6 +7034,7 @@ def calculate_historical_performance(
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
             calc_method=calc_method or HISTORICAL_CALC_METHOD,
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
         )
     )
     if status_update_daily:

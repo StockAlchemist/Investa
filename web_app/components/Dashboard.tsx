@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { memo, lazy, Suspense } from 'react';
 import { PortfolioSummary, PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard'; // Use new component
@@ -38,6 +38,8 @@ interface DashboardProps {
     history?: PerformanceData[];
     isLoading?: boolean;
     isRefreshing?: boolean;
+    isError?: boolean;
+    onRetry?: () => void;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     riskMetrics?: any;
@@ -54,11 +56,14 @@ interface DashboardProps {
     showClosed?: boolean;
 }
 
-export default function Dashboard({
+function DashboardInner({
     summary,
     currency,
     history = [],
     isLoading = false,
+    isRefreshing = false,
+    isError = false,
+    onRetry,
     riskMetrics = {},
     riskMetricsLoading = false,
     portfolioHealth = null,
@@ -67,16 +72,38 @@ export default function Dashboard({
     holdings = [],
     visibleItems,
     accounts,
-    isRefreshing = false,
     themeColor = 'cyan-500',
     showClosed = false
 }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
 
-    // We no longer return early here to ensure the dashboard layout (placement boxes) 
-    // stays visible even while loading or if data is temporarily missing.
-    // MetricCard handles its own loading/null states.
+    if (isError && !isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 gap-4">
+                <p className="text-muted-foreground text-sm">Failed to load portfolio data.</p>
+                {onRetry && (
+                    <button
+                        onClick={onRetry}
+                        className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 transition-opacity"
+                    >
+                        Retry
+                    </button>
+                )}
+            </div>
+        );
+    }
+
+    if (!m && !isLoading) {
+        return (
+            <div className="flex items-center justify-center p-12">
+                <div className="animate-pulse flex flex-col items-center">
+                    <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded mb-4"></div>
+                    <div className="h-8 w-48 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                </div>
+            </div>
+        );
+    }
 
     // Prepare data helpers
 
@@ -285,57 +312,62 @@ export default function Dashboard({
             case 'ytdReturn':
                 return <MetricCard
                     title="YTD Return"
-                    value={m?.ytd_return !== undefined && m?.ytd_return !== null ? `${m.ytd_return.toFixed(2)}%` : '-'}
+                    value={riskMetrics?.['YTD Return'] !== undefined && riskMetrics?.['YTD Return'] !== null ? `${(riskMetrics['YTD Return'] * 100).toFixed(2)}%` :
+                        m?.ytd_return !== undefined && m?.ytd_return !== null ? `${m.ytd_return.toFixed(2)}%` : '-'}
                     isCurrency={false}
-                    colorClass={(m?.ytd_return ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
-                    isLoading={isLoading}
+                    colorClass={(riskMetrics?.['YTD Return'] ?? m?.ytd_return ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={TrendingUp}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'maxDrawdown':
+                const maxDD = riskMetrics?.['Max Drawdown'] !== undefined ? riskMetrics['Max Drawdown'] * 100 : m?.max_drawdown;
                 return <MetricCard
                     title="Max Drawdown"
-                    value={m?.max_drawdown !== undefined && m?.max_drawdown !== null ? `${m.max_drawdown.toFixed(2)}%` : '-'}
+                    value={maxDD !== undefined && maxDD !== null ? `${maxDD.toFixed(2)}%` : '-'}
                     isCurrency={false}
                     colorClass="text-red-600 dark:text-red-500"
-                    isLoading={isLoading}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={TrendingDown}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'volatility':
+                const vol = riskMetrics?.['Volatility (Ann.)'] !== undefined ? riskMetrics['Volatility (Ann.)'] * 100 : m?.volatility_ann;
                 return <MetricCard
                     title="Volatility (Ann.)"
-                    value={m?.volatility_ann !== undefined && m?.volatility_ann !== null ? `${m.volatility_ann.toFixed(2)}%` : '-'}
+                    value={vol !== undefined && vol !== null ? `${vol.toFixed(2)}%` : '-'}
                     isCurrency={false}
-                    isLoading={isLoading}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={Activity}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'sharpeRatio':
+                const sharpe = riskMetrics?.['Sharpe Ratio'] ?? m?.sharpe_ratio;
                 return <MetricCard
                     title="Sharpe Ratio"
-                    value={m?.sharpe_ratio !== undefined && m?.sharpe_ratio !== null ? m.sharpe_ratio.toFixed(2) : '-'}
+                    value={sharpe !== undefined && sharpe !== null ? sharpe.toFixed(2) : '-'}
                     isCurrency={false}
-                    colorClass={(m?.sharpe_ratio ?? 0) >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}
-                    isLoading={isLoading}
+                    colorClass={(sharpe ?? 0) >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={Zap}
                     accentColor={themeColor}
                     variant={variant}
                 />;
             case 'beta':
+                const beta = riskMetrics?.['Beta'] ?? m?.beta;
                 return <MetricCard
                     title="Portfolio Beta"
-                    value={m?.beta !== undefined && m?.beta !== null ? m.beta.toFixed(2) : '-'}
+                    value={beta !== undefined && beta !== null ? beta.toFixed(2) : '-'}
                     isCurrency={false}
-                    colorClass={(m?.beta ?? 1) > 1.2 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}
-                    isLoading={isLoading}
+                    colorClass={(beta ?? 1) > 1.2 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}
+                    isLoading={isLoading || riskMetricsLoading}
                     isRefreshing={isRefreshing}
                     icon={Activity}
                     accentColor={themeColor}
@@ -355,8 +387,8 @@ export default function Dashboard({
                 />;
             case 'taxes':
                 return <MetricCard
-                    title="Total Taxes"
-                    value={m?.total_taxes ?? 0}
+                    title="Taxes"
+                    value={m?.taxes ?? 0}
                     colorClass="text-red-600 dark:text-red-500"
                     currency={currency}
                     isLoading={isLoading}
@@ -438,3 +470,6 @@ export default function Dashboard({
         </div>
     );
 }
+
+const Dashboard = memo(DashboardInner);
+export default Dashboard;

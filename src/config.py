@@ -63,9 +63,11 @@ ORG_NAME = "StockAlchemist"  # Used for cache path consistency
 # --- Directory Names ---
 DB_DIR = "db"
 CACHE_DIR = "cache"
-CONFIG_DIR = "config"
+CONFIG_DIR = "config"          # Canonical location for user config files (<user_dir>/config/)
 EXPORTS_DIR = "exports"
 USERS_DIR = "users"
+SCREENER_DIR = "screener"      # Dedicated public screener cache directory
+SCREENER_DB_FILENAME = "screener_cache.db"  # Global AI/valuation screener cache
 
 
 def get_app_data_dir() -> str:
@@ -178,7 +180,7 @@ HISTORICAL_COMPARE_METHODS = False  # If true, historical calc will run both met
 
 # --- Position Closing Tolerance ---
 STOCK_QUANTITY_CLOSE_TOLERANCE = (
-    1e-6  # Quantities smaller than this are considered closed
+    1e-4  # Quantities smaller than this are considered closed
 )
 
 # --- Bar Chart Configuration ---

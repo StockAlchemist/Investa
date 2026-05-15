@@ -1,4 +1,5 @@
-import StockDetailModal from './StockDetailModal';
+import dynamic from 'next/dynamic';
+const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import StockIcon from './StockIcon';
 import { useState, useMemo } from 'react';
 import { CheckCircle2, Clock } from 'lucide-react';
