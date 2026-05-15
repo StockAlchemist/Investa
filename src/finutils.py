@@ -187,79 +187,58 @@ def is_cash_symbol(symbol: str) -> bool:
 # --- External-Flow Classifier (Bookkeeping-Mode-Independent) ---
 #
 # Single source of truth for whether a transaction row represents money
-# crossing the portfolio boundary (a real ACH/wire transfer from/to the user's
-# bank), as opposed to an internal rotation (stock buy → cash debit, stock sell
-# → cash credit, dividend → cash credit, etc.).
+# crossing the portfolio boundary. This classifier is consumed by both the
+# TWR engine (`_calculate_daily_net_cash_flow_vectorized` in portfolio_logic.py)
+# and the IRR/MWR engine (`get_cash_flows_for_mwr` in this file under
+# `flow_basis="portfolio"`). Centralizing the rule guarantees both engines see
+# the same external flows regardless of whether the source account is in
+# auto-cash mode (cash leg of trades implicit) or manual mode (cash leg encoded
+# as explicit $CASH buy/sell settlement rows).
 #
-# This classifier is consumed by both the TWR engine
-# (`_calculate_daily_net_cash_flow_vectorized` in portfolio_logic.py) and the
-# IRR/MWR engine (`get_cash_flows_for_mwr` in this file under
-# `flow_basis="portfolio"`). By centralizing the rule, both engines see the
-# same external flows regardless of whether the source account is in auto-cash
-# mode (cash leg of trades implicit) or manual mode (cash leg encoded as
-# explicit $CASH buy/sell settlement rows).
+# Rule — "always external" convention (trading-account view):
+#   External iff
+#     Symbol == $CASH
+#     AND Type IN {Deposit, Withdrawal}  (case-insensitive)
 #
-# Rule:
-#   1. Symbol must be the cash symbol ($CASH).
-#   2. Type must be 'Deposit' or 'Withdrawal' (case-insensitive).
-#      $CASH 'buy'/'sell' rows are kitmatan-style internal settlement; not
-#      external. $CASH 'dividend'/'interest' is internal income on cash; not
-#      external.
-#   3. Note must NOT start with 'Auto-generated:' (case-insensitive).
-#      The import tool wraps per-trade synthetic deposits/withdrawals with this
-#      prefix (e.g., "Auto-generated: Cash deposit for SPY buy"). These mirror
-#      a stock buy/sell rather than a real bank-to-broker movement.
-#   4. Stock transfers crossing the portfolio scope boundary are handled
-#      separately by per-engine scope logic and are NOT covered by this
-#      classifier — it operates on individual rows without account-scope
-#      context.
-
-_AUTO_GENERATED_NOTE_PREFIX = "auto-generated:"
-
-# Note-prefix tokens that mark a Deposit/Withdrawal row as INTERNAL even
-# though it isn't tagged Auto-generated. Some imports (kitmatan-style) encoded
-# broker commissions and fees as $CASH Deposit/Withdrawal rows with descriptive
-# notes like "Commission for MSFT Buy" or "Fee on buying AMZN". These are
-# trade-related costs, not external bank-to-broker movements, so they're
-# filtered out of the external-flow stream.
-_INTERNAL_NOTE_PREFIXES = (
-    "commission",
-    "fee on",
-    "fee for",
-    "fees on",
-    "fees for",
-    "comm ",
-    "comm.",
-)
+# Notes:
+#   - $CASH buy/sell, $CASH dividend/interest, $CASH tax/fees, and all stock
+#     activity are INTERNAL under this convention.
+#   - Note content is NOT inspected. Whether a Deposit/Withdrawal row carries
+#     "Auto-generated:", "Commission for X buy", or any other prefix, it is
+#     still treated as an external flow at face value. This matches the
+#     trading-account mental model where every Deposit/Withdrawal — whether a
+#     real bank wire or a synthetic per-trade entry — represents money flowing
+#     through the user's hands. It also avoids fragile string-prefix
+#     heuristics that couple the engine to a particular import tool's labels.
+#   - Stock transfers crossing the portfolio scope boundary are handled
+#     separately by per-engine scope logic and are NOT covered here.
+#   - If the data contains $CASH Deposit/Withdrawal rows that should NOT be
+#     external (e.g. broker commissions miscategorized as Withdrawal), fix
+#     them at the data layer by retyping to Fees/Tax — don't paper over with
+#     classifier heuristics here.
 
 
-def is_external_flow_row(symbol: Any, tx_type: Any, note: Any) -> bool:
+def is_external_flow_row(symbol: Any, tx_type: Any, note: Any = None) -> bool:
     """Returns True if a single transaction row represents an external portfolio flow.
 
     Mode-independent — does not inspect account_cash_mode_map. The caller is
     responsible for applying scope-crossing transfer detection separately.
+
+    `note` is accepted for backward compatibility but no longer consulted; the
+    classifier looks only at Symbol and Type.
     """
     if not isinstance(symbol, str) or symbol.upper() != CASH_SYMBOL_CSV.upper():
         return False
     if not isinstance(tx_type, str):
         return False
-    if tx_type.strip().lower() not in ("deposit", "withdrawal"):
-        return False
-    note_str = "" if note is None else str(note)
-    note_lower = note_str.strip().lower()
-    if note_lower.startswith(_AUTO_GENERATED_NOTE_PREFIX):
-        return False
-    if any(note_lower.startswith(p) for p in _INTERNAL_NOTE_PREFIXES):
-        return False
-    return True
+    return tx_type.strip().lower() in ("deposit", "withdrawal")
 
 
 def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     """Vectorized version of `is_external_flow_row` for a DataFrame.
 
     Returns a boolean pd.Series aligned with df.index. Expects df to have
-    'Symbol', 'Type', and optionally 'Note' columns. Missing 'Note' is treated
-    as empty string (no rows match the internal-note prefixes).
+    'Symbol' and 'Type' columns. 'Note' is not consulted.
     """
     if df.empty:
         return pd.Series([], dtype=bool, index=df.index)
@@ -267,21 +246,10 @@ def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     symbol_upper = df["Symbol"].astype(str).str.upper()
     type_lower = df["Type"].astype(str).str.lower().str.strip()
 
-    if "Note" in df.columns:
-        note_lower = df["Note"].astype(str).str.lower().fillna("").str.strip()
-    else:
-        note_lower = pd.Series("", index=df.index)
-
-    is_internal_note = note_lower.str.startswith(_AUTO_GENERATED_NOTE_PREFIX)
-    for prefix in _INTERNAL_NOTE_PREFIXES:
-        is_internal_note = is_internal_note | note_lower.str.startswith(prefix)
-
-    mask = (
+    return (
         (symbol_upper == CASH_SYMBOL_CSV.upper())
         & (type_lower.isin(["deposit", "withdrawal"]))
-        & (~is_internal_note)
     )
-    return mask
 
 
 # --- IRR/MWR Calculation Functions ---
