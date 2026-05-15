@@ -276,6 +276,7 @@ def calculate_portfolio_summary(
             "realized_gain": 0.0 if is_empty_data_case else np.nan,
             "dividends": 0.0 if is_empty_data_case else np.nan,
             "commissions": 0.0 if is_empty_data_case else np.nan,
+            "taxes": 0.0 if is_empty_data_case else np.nan,
             "total_gain": 0.0 if is_empty_data_case else np.nan,
             "total_cost_invested": 0.0 if is_empty_data_case else np.nan,
             "total_buy_cost": 0.0 if is_empty_data_case else np.nan,
@@ -1305,6 +1306,7 @@ def calculate_portfolio_summary(
             "realized_gain": 0.0,
             "dividends": 0.0,
             "commissions": 0.0,
+            "taxes": 0.0,
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
             "total_buy_cost": 0.0,
@@ -1431,8 +1433,9 @@ def calculate_portfolio_summary(
                 unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
                 realized = overall_summary_metrics.get("realized_gain", 0.0)
                 commissions = overall_summary_metrics.get("commissions", 0.0)
-                
-                new_total_gain_div = realized + unrealized + total_dividends_override - commissions
+                taxes = overall_summary_metrics.get("taxes", 0.0)
+
+                new_total_gain_div = realized + unrealized + total_dividends_override - commissions - taxes
                 overall_summary_metrics["total_gain"] = new_total_gain_div
                 
                 # Recalc Total Return %
@@ -1453,6 +1456,7 @@ def calculate_portfolio_summary(
                              "total_unrealized_gain_display": 0.0,
                              "total_dividends_display": 0.0,
                              "total_commissions_display": 0.0,
+                             "total_taxes_display": 0.0,
                              "total_gain_display": 0.0,
                              "total_buy_cost_display": 0.0,
                              "total_return_pct": 0.0,
@@ -1466,8 +1470,9 @@ def calculate_portfolio_summary(
                     acct_realized = metrics.get("total_realized_gain_display", 0.0)
                     acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
                     acct_commissions = metrics.get("total_commissions_display", 0.0)
-                    
-                    acct_new_total_gain = acct_realized + acct_unrealized + div_amt - acct_commissions
+                    acct_taxes = metrics.get("total_taxes_display", 0.0)
+
+                    acct_new_total_gain = acct_realized + acct_unrealized + div_amt - acct_commissions - acct_taxes
                     metrics["total_gain_display"] = acct_new_total_gain
                     
                     acct_buy_cost = metrics.get("total_buy_cost_display", 0.0)
@@ -1521,8 +1526,9 @@ def calculate_portfolio_summary(
             unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
             dividends = overall_summary_metrics.get("dividends", 0.0) # Already overridden (if applicable)
             commissions = overall_summary_metrics.get("commissions", 0.0)
-            
-            new_total_gain = total_fifo_gain + unrealized + dividends - commissions
+            taxes = overall_summary_metrics.get("taxes", 0.0)
+
+            new_total_gain = total_fifo_gain + unrealized + dividends - commissions - taxes
             overall_summary_metrics["total_gain"] = new_total_gain
             
             # Recalculate Total Return %
@@ -1549,6 +1555,7 @@ def calculate_portfolio_summary(
                              "total_unrealized_gain_display": 0.0,
                              "total_dividends_display": 0.0,
                              "total_commissions_display": 0.0,
+                             "total_taxes_display": 0.0,
                              "total_gain_display": 0.0,
                              "total_buy_cost_display": 0.0,
                              "total_return_pct": 0.0,
@@ -1564,8 +1571,9 @@ def calculate_portfolio_summary(
                 acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
                 acct_dividends = metrics.get("total_dividends_display", 0.0)
                 acct_commissions = metrics.get("total_commissions_display", 0.0)
-                
-                acct_new_total_gain = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions
+                acct_taxes = metrics.get("total_taxes_display", 0.0)
+
+                acct_new_total_gain = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions - acct_taxes
                 metrics["total_gain_display"] = acct_new_total_gain
                 
                 # Update Account Total Return %
@@ -1953,7 +1961,7 @@ def _calculate_daily_net_cash_flow_vectorized(
     # Robustly handle case sensitivity (Deposit vs deposit)
     type_lower = df_period["Type"].str.lower()
     symbol_upper = df_period["Symbol"].str.upper()
-    
+
     cash_mask = (symbol_upper == CASH_SYMBOL_CSV.upper()) & (type_lower.isin(["deposit", "withdrawal"]))
     df_cash = df_period[cash_mask].copy()
 

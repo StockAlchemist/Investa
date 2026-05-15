@@ -128,7 +128,7 @@ def _process_numba_core(
     num_tx, num_syms, num_accs,
     acc_cash_modes
 ):
-    # State Array: (num_syms, num_accs, 13)
+    # State Array: (num_syms, num_accs, 14)
     # 0: qty
     # 1: total_cost_local
     # 2: realized_gain_local
@@ -142,8 +142,9 @@ def _process_numba_core(
     # 10: total_cost_display_historical_fx
     # 11: local_curr_id (stored as float)
     # 12: realized_gain_display (accumulated at historical FX)
-    
-    state = np.zeros((num_syms, num_accs, 13), dtype=np.float64)
+    # 13: taxes_local (separate from commissions; tax withholding on dividends, etc.)
+
+    state = np.zeros((num_syms, num_accs, 14), dtype=np.float64)
     # Initialize currency ID to -1.0 to detect first use
     state[:, :, 11] = -1.0
     
@@ -485,11 +486,14 @@ def _process_numba_core(
         # Fees / Tax
         elif typ == TYPE_FEES or typ == TYPE_TAX:
             cost_val = abs(total) if abs(total) > 1e-9 else (abs(comm) if abs(comm) > 1e-9 else abs(price))
-            current_state[4] += cost_val
+            if typ == TYPE_TAX:
+                current_state[13] += cost_val  # taxes_local (separate bucket)
+            else:
+                current_state[4] += cost_val   # commissions_local
             current_state[7] += cost_val
             current_state[8] += cost_val
             current_state[10] += (cost_val * fx_rate)
-            
+
             if sym == cash_sym_id and acc_cash_modes[acc] == 1:
                 current_state[0] -= cost_val
                 current_state[1] -= cost_val
@@ -811,6 +815,7 @@ def _process_transactions_to_holdings(
     overall_realized_gains_local = defaultdict(float)
     overall_dividends_local = defaultdict(float)
     overall_commissions_local = defaultdict(float)
+    overall_taxes_local = defaultdict(float)
     
     # Unpack 3D Array
     # Iterate only over initialized entries
@@ -845,12 +850,14 @@ def _process_transactions_to_holdings(
             "total_cost_display_historical_fx": val[10],
             "total_cost_display_historical_fx": val[10],
             "realized_gain_display": val[12],
+            "taxes_local": val[13],
             "tags": sorted(list(tags_map.get((sym, acc), set()))),
         }
-        
+
         overall_realized_gains_local[curr] += val[2]
         overall_dividends_local[curr] += val[3]
         overall_commissions_local[curr] += val[4]
+        overall_taxes_local[curr] += val[13]
         
     transfer_costs = {}
     orig_indices = df['original_index'].values
@@ -927,6 +934,7 @@ def _build_summary_rows(
         realized_gain_local = data.get("realized_gain_local", 0.0)
         dividends_local = data.get("dividends_local", 0.0)
         commissions_local = data.get("commissions_local", 0.0)
+        taxes_local = data.get("taxes_local", 0.0)
         local_currency = data.get("local_currency", default_currency)
         current_total_cost_local = data.get("total_cost_local", 0.0)
         short_proceeds_local = data.get("short_proceeds_local", 0.0)
@@ -1332,6 +1340,9 @@ def _build_summary_rows(
         commissions_display = (
             commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
+        taxes_display = (
+            taxes_local * fx_rate if pd.notna(fx_rate) else np.nan
+        )
         total_cost_invested_display = (
             total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
@@ -1345,12 +1356,16 @@ def _build_summary_rows(
         unrealized_gain_comp = (
             unrealized_gain_display if pd.notna(unrealized_gain_display) else 0.0
         )
+        # Tax is treated like a cost subtraction in total gain (same as commissions).
+        # If taxes_display is NaN (older snapshot or no tax data), treat as 0.
+        taxes_comp = taxes_display if pd.notna(taxes_display) else 0.0
         total_gain_display = (
             (
                 realized_gain_display
                 + unrealized_gain_comp
                 + dividends_display
                 - commissions_display
+                - taxes_comp
             )
             if all(
                 pd.notna(v)
@@ -1491,6 +1506,7 @@ def _build_summary_rows(
                 f"Realized Gain ({display_currency})": realized_gain_display,
                 f"Dividends ({display_currency})": dividends_display,
                 f"Commissions ({display_currency})": commissions_display,
+                f"Taxes ({display_currency})": taxes_display,
                 f"Total Gain ({display_currency})": total_gain_display,
                 f"Total Cost Invested ({display_currency})": total_cost_invested_display,
                 "Total Return %": total_return_pct,
@@ -1537,6 +1553,7 @@ def _build_summary_rows(
             realized_gain_local = h.get("realized_gain_local", 0.0)
             dividends_local = h.get("dividends_local", 0.0)
             commissions_local = h.get("commissions_local", 0.0)
+            taxes_local = h.get("taxes_local", 0.0)
             current_total_cost_local = h.get("total_cost_local", 0.0)
             total_cost_invested_local = h.get("total_cost_invested_local", 0.0)
             cumulative_investment_local = h.get("cumulative_investment_local", 0.0)
@@ -1601,13 +1618,15 @@ def _build_summary_rows(
             realized_gain_display = (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
             dividends_display = (dividends_local * fx_rate if pd.notna(fx_rate) else np.nan)
             commissions_display = (commissions_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            taxes_display = (taxes_local * fx_rate if pd.notna(fx_rate) else np.nan)
             total_cost_invested_display = (total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan)
             cumulative_investment_display = (cumulative_investment_local * fx_rate if pd.notna(fx_rate) else np.nan)
             total_buy_cost_display = (total_buy_cost_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            
+
+            taxes_comp = taxes_display if pd.notna(taxes_display) else 0.0
             total_gain_display = np.nan
             if all(pd.notna(v) for v in [realized_gain_display, dividends_display, commissions_display]):
-                total_gain_display = realized_gain_display + unrealized_gain_display + dividends_display - commissions_display
+                total_gain_display = realized_gain_display + unrealized_gain_display + dividends_display - commissions_display - taxes_comp
                 
             total_return_pct = np.nan
             if pd.notna(total_gain_display) and pd.notna(total_buy_cost_display):
@@ -1674,6 +1693,7 @@ def _build_summary_rows(
                 f"Realized Gain ({display_currency})": realized_gain_display,
                 f"Dividends ({display_currency})": dividends_display,
                 f"Commissions ({display_currency})": commissions_display,
+                f"Taxes ({display_currency})": taxes_display,
                 f"Total Gain ({display_currency})": total_gain_display,
                 f"Total Cost Invested ({display_currency})": total_cost_invested_display,
                 "Total Return %": total_return_pct,
@@ -1837,6 +1857,7 @@ def _calculate_aggregate_metrics(
             "total_unrealized_gain_display": 0.0,
             "total_dividends_display": 0.0,
             "total_commissions_display": 0.0,
+            "total_taxes_display": 0.0,
             "total_gain_display": 0.0,
             "total_cash_display": 0.0,
             "total_cost_invested_display": 0.0,
@@ -1859,6 +1880,7 @@ def _calculate_aggregate_metrics(
             "realized_gain": 0.0,
             "dividends": 0.0,
             "commissions": 0.0,
+            "taxes": 0.0,
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
             "total_buy_cost": 0.0,
@@ -1945,6 +1967,9 @@ def _calculate_aggregate_metrics(
             metrics_entry["total_dividends_display"] = safe_sum(
                 account_full_df, f"Dividends ({display_currency})"
             )
+            metrics_entry["total_taxes_display"] = safe_sum(
+                account_full_df, f"Taxes ({display_currency})"
+            ) if f"Taxes ({display_currency})" in account_full_df.columns else 0.0
             metrics_entry["total_commissions_display"] = safe_sum(
                 account_full_df, f"Commissions ({display_currency})"
             )
@@ -2071,6 +2096,7 @@ def _calculate_aggregate_metrics(
     real_gain_col = f"Realized Gain ({display_currency})"
     divs_col = f"Dividends ({display_currency})"
     comm_col = f"Commissions ({display_currency})"
+    taxes_col = f"Taxes ({display_currency})"
     cost_invest_col = f"Total Cost Invested ({display_currency})"
     cum_invest_col = f"Cumulative Investment ({display_currency})"
     day_change_col = f"Day Change ({display_currency})"
@@ -2118,6 +2144,7 @@ def _calculate_aggregate_metrics(
     overall_realized_gain_display_agg = safe_sum(df_for_overall_summary, real_gain_col)
     overall_dividends_display_agg = safe_sum(df_for_overall_summary, divs_col)
     overall_commissions_display_agg = safe_sum(df_for_overall_summary, comm_col)
+    overall_taxes_display_agg = safe_sum(df_for_overall_summary, taxes_col) if taxes_col in df_for_overall_summary.columns else 0.0
     
     # FIX: EXCLUDE FX Gain/Loss from Overall Total Gain (Intrinsic)
     overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col)
@@ -2236,7 +2263,7 @@ def _calculate_aggregate_metrics(
                 
                 tx_for_mwr = transactions_df[mask]
         
-        # Calculate Cash Flows
+        # Calculate Cash Flows (portfolio-level basis: buys/sells/divs are internal, not flows)
         mwr_dates, mwr_flows = get_cash_flows_for_mwr(
             account_transactions=tx_for_mwr,
             final_account_market_value=overall_market_value_display,
@@ -2245,7 +2272,8 @@ def _calculate_aggregate_metrics(
             fx_rates=fx_rates,
             historical_fx_rates=historical_fx_rates, # ADDED: Historical FX Data
             display_currency=display_currency,
-            include_accounts=(include_accounts if include_accounts else all_available_accounts) # PASS SCOPE for Transfer logic
+            include_accounts=(include_accounts if include_accounts else all_available_accounts), # PASS SCOPE for Transfer logic
+            flow_basis="portfolio",
         )
         
         if mwr_dates and mwr_flows:
@@ -2286,7 +2314,7 @@ def _calculate_aggregate_metrics(
                 # account_level_metrics is a dict of dicts
                 account_mv = account_level_metrics[account].get("total_market_value_display", 0.0)
                 
-                # Calculate Cash Flows using the helper
+                # Calculate Cash Flows using the helper (portfolio basis for per-account MWR)
                 mwr_dates, mwr_flows = get_cash_flows_for_mwr(
                     account_transactions=account_tx,
                     final_account_market_value=account_mv,
@@ -2295,7 +2323,8 @@ def _calculate_aggregate_metrics(
                     fx_rates=fx_rates,
                     historical_fx_rates=historical_fx_rates,
                     display_currency=display_currency,
-                    include_accounts=[account] # PASS SINGLE ACCOUNT SCOPE
+                    include_accounts=[account], # PASS SINGLE ACCOUNT SCOPE
+                    flow_basis="portfolio",
                 )
                 
                 if mwr_dates and mwr_flows:
@@ -2321,6 +2350,7 @@ def _calculate_aggregate_metrics(
         "realized_gain": overall_realized_gain_display_agg,
         "dividends": overall_dividends_display_agg,
         "commissions": overall_commissions_display_agg,
+        "taxes": overall_taxes_display_agg,
         "total_gain": overall_total_gain_display,
         "total_cost_invested": overall_total_cost_invested_display,
         "total_buy_cost": overall_total_buy_cost_display,

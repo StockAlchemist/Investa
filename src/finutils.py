@@ -678,6 +678,7 @@ def get_cash_flows_for_mwr(
     display_currency: str,  # Used for warning msg only (REMOVED - fx_rates needed)
     historical_fx_rates: Optional[Dict[Tuple[date, str], float]] = None, # ADDED: Historical FX Data
     include_accounts: Optional[List[str]] = None, # ADDED: To determine transfer direction
+    flow_basis: str = "per_trade",  # "per_trade" (legacy/symbol-level) or "portfolio"
 ) -> Tuple[List[date], List[float]]:
     """
     Calculates cash flows for Money-Weighted Return (MWR) for a specific account in the target currency.
@@ -741,13 +742,37 @@ def get_cash_flows_for_mwr(
         # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
         if tx_date > end_date:
             continue
-            
+
         local_currency = row["Local Currency"]
         cash_flow_local = 0.0
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
 
+        # Under "portfolio" flow basis, buys/sells/dividends/short-sells/buy-to-cover/fees
+        # are INTERNAL rotations of cash within the portfolio and emit NO external flow.
+        # Only $CASH deposit/withdrawal and scope-crossing transfers contribute flows.
+        # Under "per_trade" basis (default, used by symbol-level IRR), every trade is a
+        # flow from that symbol/account's perspective.
+        portfolio_basis = (flow_basis == "portfolio")
+
         if symbol != CASH_SYMBOL_CSV:
-            if tx_type == "buy" or tx_type == "deposit":
+            if portfolio_basis:
+                if tx_type == "transfer":
+                    is_outbound = False
+                    is_inbound = False
+                    acct = str(row.get("Account", "")).strip().upper()
+                    to_acct = str(row.get("To Account", "")).strip().upper()
+
+                    if acct in included_set: is_outbound = True
+                    if to_acct and to_acct in included_set: is_inbound = True
+
+                    if is_outbound and not is_inbound:
+                        if pd.notna(qty) and pd.notna(price_local):
+                            cash_flow_local = (abs(qty) * price_local) - abs(commission_local)
+                    elif not is_outbound and is_inbound:
+                        if pd.notna(qty) and pd.notna(price_local):
+                            cash_flow_local = -(abs(qty) * price_local)
+                # buy/sell/dividend/short sell/buy to cover/fees/tax/interest: 0.0 (internal)
+            elif tx_type == "buy" or tx_type == "deposit":
                 # External asset contribution or purchase
                 if pd.notna(qty) and pd.notna(price_local):
                     cash_flow_local = -( (qty_abs * price_local) + commission_local ) # OUT from pocket (-)
@@ -784,7 +809,7 @@ def get_cash_flows_for_mwr(
 
                 if acct in included_set: is_outbound = True
                 if to_acct and to_acct in included_set: is_inbound = True
-                
+
                 if is_outbound and not is_inbound:
                     # Asset leaving scope -> Withdrawal -> Positive MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):

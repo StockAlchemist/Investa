@@ -385,6 +385,18 @@ function DashboardInner({
                     accentColor={themeColor}
                     variant={variant}
                 />;
+            case 'taxes':
+                return <MetricCard
+                    title="Taxes"
+                    value={m?.taxes ?? 0}
+                    colorClass="text-red-600 dark:text-red-500"
+                    currency={currency}
+                    isLoading={isLoading}
+                    isRefreshing={isRefreshing}
+                    icon={Receipt}
+                    accentColor={themeColor}
+                    variant={variant}
+                />;
             case 'riskMetrics':
                 return <Suspense fallback={<AnalyticsFallback />}><RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} isRefreshing={isRefreshing} /></Suspense>;
             case 'sectorContribution':

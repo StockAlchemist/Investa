@@ -101,6 +101,7 @@ export interface PortfolioSummary {
         total_return_pct: number;
         dividends: number;
         commissions: number;
+        taxes?: number;
         fx_gain_loss_display?: number;
         fx_gain_loss_pct?: number;
         annualized_twr?: number;
