@@ -820,12 +820,25 @@ def get_cash_flows_for_mwr(
                         cash_flow_local = -(abs(qty) * price_local)
 
         elif symbol == CASH_SYMBOL_CSV:
-            if tx_type in ["deposit", "buy"]:
-                # External cash deposit
+            if portfolio_basis:
+                # Portfolio-level MWR: only Deposit/Withdrawal are external flows.
+                # $CASH "buy" (cash settlement from a stock sell) and $CASH "sell"
+                # (cash settlement for a stock buy) are internal trade rotations.
+                # This aligns IRR with the TWR engine's filter (which matches
+                # Type IN ('deposit','withdrawal') for $CASH only).
+                if tx_type == "deposit":
+                    if pd.notna(qty):
+                        cash_flow_local = -(abs(qty) + commission_local)
+                elif tx_type == "withdrawal":
+                    if pd.notna(qty):
+                        cash_flow_local = (abs(qty) - commission_local)
+                # $CASH buy/sell: 0 flow (internal settlement)
+            elif tx_type in ["deposit", "buy"]:
+                # External cash deposit (legacy per_trade)
                 if pd.notna(qty):
                     cash_flow_local = -(abs(qty) + commission_local) # OUT from pocket (-)
             elif tx_type in ["withdrawal", "sell"]:
-                # External cash withdrawal
+                # External cash withdrawal (legacy per_trade)
                 if pd.notna(qty):
                     cash_flow_local = (abs(qty) - commission_local) # IN to pocket (+)
             elif tx_type in ["dividend", "interest"]:

@@ -2965,6 +2965,12 @@ def _calculate_holdings_numba(
                 cash_balances_np[account_id] += qty - commission
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
                 cash_balances_np[account_id] -= qty + commission
+            elif type_id == fees_type_id or type_id == tax_type_id:
+                # Account-level fee/tax recorded on $CASH symbol (wire fees,
+                # margin interest, withholding, etc.). Debit cash by qty (the
+                # fee amount in dollars). Fall back to commission if qty is 0.
+                fee_val = abs(qty) if abs(qty) > 1e-9 else abs(commission)
+                cash_balances_np[account_id] -= fee_val
             elif type_id == transfer_type_id:
                 dest_account_id = tx_to_accounts_np[i]
                 if dest_account_id != -1:
@@ -3251,6 +3257,12 @@ def _calculate_daily_holdings_chronological_numba(
                     current_cash_balances[account_id] += abs(qty) - commission
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
                     current_cash_balances[account_id] -= abs(qty) + commission
+                elif type_id == fees_type_id or type_id == tax_type_id:
+                    # Account-level fee/tax recorded on $CASH symbol (wire fees,
+                    # margin interest, withholding, etc.). Debit cash by Total
+                    # Amount (preferred) or quantity if total is missing.
+                    fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                    current_cash_balances[account_id] -= fee_val
                 elif type_id == transfer_type_id:
                     dest_account_id = tx_to_accounts_np[tx_idx]
                     if dest_account_id != -1:
