@@ -13,6 +13,15 @@ class MarketDatabase:
     Manages a persistent SQLite database for historical market data.
     Provides methods for upserting, querying, and checking data integrity.
     """
+    # Class-level lock to serialize WRITES across threadpool workers.
+    # When market_data.db lives on a cloud-synced path (e.g. Google Drive),
+    # db_utils forces journal_mode=DELETE, which requires exclusive locking
+    # for writes. Multiple concurrent threadpool tasks trying to upsert the
+    # same file would otherwise hit "database is locked".
+    # Reads (get_ohlcv, get_ohlcv_batch, get_fx) don't take this lock —
+    # SQLite handles concurrent reads natively.
+    _write_lock = threading.Lock()
+
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
             db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, "market_data.db")
@@ -25,7 +34,7 @@ class MarketDatabase:
 
     def _init_db(self):
         """Initializes the database schema if it doesn't exist."""
-        with self._get_connection() as conn:
+        with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Historical OHLCV Table (Daily)
@@ -91,8 +100,7 @@ class MarketDatabase:
         if df.empty:
             return
 
-
-        with self._get_connection() as conn:
+        with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
             for timestamp, row in df.iterrows():
                 # Ensure date is string YYYY-MM-DD
@@ -151,12 +159,12 @@ class MarketDatabase:
         if not col:
             return
 
-        with self._get_connection() as conn:
+        with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
             for timestamp, row in df.iterrows():
                 date_str = timestamp.strftime('%Y-%m-%d') if hasattr(timestamp, 'strftime') else str(timestamp)[:10]
                 cursor.execute("""
-                    INSERT OR REPLACE INTO daily_fx 
+                    INSERT OR REPLACE INTO daily_fx
                     (pair, date, rate, interval)
                     VALUES (?, ?, ?, ?)
                 """, (pair, date_str, row[col], interval))
@@ -233,11 +241,11 @@ class MarketDatabase:
         if df.empty:
             return
 
-        with self._get_connection() as conn:
+        with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
             for timestamp, row in df.iterrows():
                 # Store full timestamp ISO string
-                ts_str = timestamp.isoformat() 
+                ts_str = timestamp.isoformat()
                 
                 # Helper to clean NaNs
                 def clean(val):

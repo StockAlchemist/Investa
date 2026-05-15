@@ -39,32 +39,36 @@ YFINANCE_AVAILABLE = None
 
 def _ensure_yfinance():
     global yf, YFINANCE_AVAILABLE
+    # Fast path: already initialised (no lock needed — only written once)
     if YFINANCE_AVAILABLE is not None:
         return YFINANCE_AVAILABLE
 
-    try:
-        import yfinance as _yf
-        yf = _yf
-        YFINANCE_AVAILABLE = True
-    except ImportError:
-        logging.warning(
-            "Warning: yfinance library not found. Market data fetching will fail."
-        )
-        YFINANCE_AVAILABLE = False
-        
-        # Define dummy yf object if needed for type hinting or structure
-        class DummyYFinance:
-            def Tickers(self, *args, **kwargs):
-                raise ImportError("yfinance not installed")
+    with _YFINANCE_INIT_LOCK:
+        # Double-check inside lock in case another thread initialised first
+        if YFINANCE_AVAILABLE is not None:
+            return YFINANCE_AVAILABLE
+        try:
+            import yfinance as _yf
+            yf = _yf
+            YFINANCE_AVAILABLE = True
+        except ImportError:
+            logging.warning(
+                "Warning: yfinance library not found. Market data fetching will fail."
+            )
+            YFINANCE_AVAILABLE = False
 
-            def download(self, *args, **kwargs):
-                raise ImportError("yfinance not installed")
+            class DummyYFinance:
+                def Tickers(self, *args, **kwargs):
+                    raise ImportError("yfinance not installed")
 
-            def Ticker(self, *args, **kwargs):
-                raise ImportError("yfinance not installed")
-        
-        yf = DummyYFinance()
-    
+                def download(self, *args, **kwargs):
+                    raise ImportError("yfinance not installed")
+
+                def Ticker(self, *args, **kwargs):
+                    raise ImportError("yfinance not installed")
+
+            yf = DummyYFinance()
+
     return YFINANCE_AVAILABLE
 
 # --- Import constants from config.py ---
@@ -192,6 +196,8 @@ SPDX-License-Identifier: MIT
 
 # --- Global Locks ---
 _SHARED_MDP_LOCK = threading.Lock()
+_YFINANCE_INIT_LOCK = threading.Lock()   # Guards lazy yfinance import
+_RATE_LIMIT_LOCK = threading.Lock()       # Guards _LAST_RATE_LIMIT_TIME read/write
 # Semaphore to limit concurrent isolated fetches (subprocesses)
 # Critical for preventing OOM on memory-constrained systems
 # PERF FIX (BN-04): Increased from 1→2 to allow parallel independent fetches
@@ -249,11 +255,12 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
     Actual implementation of the isolated fetch.
     """
     global _LAST_RATE_LIMIT_TIME
-    
-    # Check for global cool-down before starting
-    elapsed_since_429 = time.time() - _LAST_RATE_LIMIT_TIME
-    if elapsed_since_429 < _RATE_LIMIT_COOLDOWN:
-        wait_time = _RATE_LIMIT_COOLDOWN - elapsed_since_429
+
+    # Check for global cool-down before starting (lock for consistent read)
+    with _RATE_LIMIT_LOCK:
+        elapsed_since_429 = time.time() - _LAST_RATE_LIMIT_TIME
+        wait_time = max(0.0, _RATE_LIMIT_COOLDOWN - elapsed_since_429)
+    if wait_time > 0:
         logging.warning(f"GLOBAL COOL-DOWN ACTIVE: Yahoo Finance rate limited us. Waiting {wait_time:.1f}s more before trying {task} batch...")
         time.sleep(wait_time)
 
@@ -359,7 +366,8 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
             msg = response.get('message', 'Unknown error')
             if "Too Many Requests" in msg or "429" in msg or "Rate Limit" in msg:
                 logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Triggering 60s Global Cool-down.")
-                _LAST_RATE_LIMIT_TIME = time.time()
+                with _RATE_LIMIT_LOCK:
+                    _LAST_RATE_LIMIT_TIME = time.time()
             else:
                 logging.error(f"Isolated fetch worker reported error: {msg}")
             
@@ -1782,12 +1790,16 @@ class MarketDataProvider:
                 return df_raw
             df_clean = df_raw.copy()
             
-            # For intraday intervals, prefer 'Close' over 'Adj Close' 
-            # as yfinance often returns NaNs in Adj Close for short intervals.
+            # Always prefer raw 'Close' (the actual historical price). The
+            # worker fetches with auto_adjust=False so 'Close' is unadjusted,
+            # which is what portfolio valuation needs. 'Adj Close' folds in
+            # future dividends and creates phantom day-1 losses on every buy
+            # of a dividend-paying asset. Use 'Adj Close' only as a fallback
+            # when 'Close' is missing or all-NaN.
             is_intraday_local = any(x in interval for x in ["m", "h", "min"])
-            
-            primary = "Close" if is_intraday_local else "Adj Close"
-            secondary = "Adj Close" if is_intraday_local else "Close"
+            _ = is_intraday_local  # kept for diagnostic logging below
+            primary = "Close"
+            secondary = "Adj Close"
             
             if primary in df_clean.columns and df_clean[primary].notna().any():
                 df_clean["price"] = df_clean[primary]
@@ -2948,11 +2960,14 @@ class MarketDataProvider:
                  if df_db.empty:
                      continue
                  
+                 # Prefer raw Close (the historical price the user saw). Adj
+                 # Close folds in future dividends and produces phantom
+                 # day-1 losses on every buy of a dividend-paying asset.
                  price_series = None
-                 if "Adj Close" in df_db.columns:
-                     price_series = df_db["Adj Close"]
-                 elif "Close" in df_db.columns:
+                 if "Close" in df_db.columns:
                      price_series = df_db["Close"]
+                 elif "Adj Close" in df_db.columns:
+                     price_series = df_db["Adj Close"]
                 
                  if price_series is not None:
                      df_clean = price_series.to_frame(name="price")

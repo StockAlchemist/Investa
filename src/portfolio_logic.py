@@ -1734,11 +1734,18 @@ def _unadjust_prices(
 
 
         # --- Handle Empty/Invalid Input DataFrame ---
+        # Prefer the UNADJUSTED Close column. yfinance is fetched with
+        # auto_adjust=False so "Close" is the raw historical price (the price
+        # the user actually saw/paid on that date). "Adj Close" includes
+        # split + dividend back-adjustment, which systematically deflates
+        # historical values for dividend-paying assets — never use it here.
+        # "price" is kept first only for legacy cache compatibility (the
+        # function may also be passed an already-renamed DataFrame).
         col_to_use = None
         if not adj_price_df.empty:
             if "price" in adj_price_df.columns: col_to_use = "price"
-            elif "Adj Close" in adj_price_df.columns: col_to_use = "Adj Close"
             elif "Close" in adj_price_df.columns: col_to_use = "Close"
+            elif "Adj Close" in adj_price_df.columns: col_to_use = "Adj Close"
         
         if not col_to_use:
             if IS_DEBUG_SYMBOL:
@@ -2014,11 +2021,15 @@ def _calculate_daily_net_cash_flow_vectorized(
                 if missing_price_mask.any():
                     relevant_trans_missing = relevant_trans[missing_price_mask]
                     unique_syms = relevant_trans_missing["Symbol"].unique()
-                    
+
                     for sym in unique_syms:
-                        sym_mask = relevant_trans_missing["Symbol"] == sym
+                        # Build sym_mask over the FULL relevant_trans index (not just
+                        # the missing-subset) so it aligns with `price` for boolean
+                        # indexing. The "& missing_price_mask" restricts assignment
+                        # to rows that actually need a fallback price.
+                        sym_mask = (relevant_trans["Symbol"] == sym) & missing_price_mask
                         price_found = 0.0
-                        
+
                         # Fallback A: Yahoo Finance Lookup
                         yf_sym = internal_to_yf_map.get(sym) if internal_to_yf_map else None
                         if yf_sym and historical_prices_yf_unadjusted and yf_sym in historical_prices_yf_unadjusted:
@@ -2030,9 +2041,9 @@ def _calculate_daily_net_cash_flow_vectorized(
                                         price_series = price_series.sort_index()
                                     if not isinstance(price_series.index, pd.DatetimeIndex):
                                         price_series.index = pd.to_datetime(price_series.index)
-                                    
+
                                     # Forward fill to get a price for the transfer date
-                                    dates_needed = pd.to_datetime(relevant_trans_missing.loc[sym_mask, "Date"])
+                                    dates_needed = pd.to_datetime(relevant_trans.loc[sym_mask, "Date"])
                                     # Use reindex with nearest or ffill
                                     relevant_prices = price_series.reindex(dates_needed, method='ffill')
                                     price_found = relevant_prices.iloc[0] # Take first for simplicity in this loop
@@ -2052,7 +2063,8 @@ def _calculate_daily_net_cash_flow_vectorized(
                             try:
                                 with open("/Users/kmatan/.gemini/antigravity/brain/19ed956f-9dc7-40d0-85b1-1aa49c84c1d9/scratch/missing_transfer_prices.txt", "a") as f:
                                     f.write(f"Missing price for transfer: {sym}\n")
-                            except: pass
+                            except OSError:
+                                pass
 
                 value = qty * price
                 local_flow = value * multiplier
@@ -2279,7 +2291,7 @@ def _calculate_daily_net_cash_flow(
                                         else:
                                             if not prices_df.empty:
                                                 price_local = prices_df.loc[target_ts].iloc[0]
-                                except:
+                                except (KeyError, IndexError, ValueError):
                                     pass
 
                 if not pd.isna(price_local) and price_local > 0:
@@ -2378,7 +2390,7 @@ def _calculate_daily_net_cash_flow(
                                         price_local = prices_df.loc[target_ts, "Adj Close"]
                                     elif not prices_df.empty:
                                         price_local = prices_df.loc[target_ts].iloc[0]
-                            except:
+                            except (KeyError, IndexError, ValueError):
                                 pass
                                 
             if not is_cash and (pd.isna(price_local) or price_local <= 0):
@@ -2511,14 +2523,18 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         tx_type = str(row.get("Type", "UNKNOWN_TYPE")).lower().strip()
         tx_date_row = row["Date"].date()
 
-        # --- ADDED: Update last known price from transaction ---
-        try:
-            tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
-            if pd.notna(tx_price) and tx_price > 1e-9:
-                last_known_prices[holding_key_from_row] = float(tx_price)
-        except Exception:
-            pass
-        # --- END ADDED ---
+        # Update last known price ONLY for transaction types where Price/Share is
+        # the stock price. Dividend / Tax / Interest / Fee rows store the
+        # per-share dividend or fee amount in that column, which would poison
+        # the last-known-price fallback and create huge phantom valuation jumps
+        # on days where yfinance returns NaN for that symbol.
+        if tx_type in ("buy", "sell", "short sell", "buy to cover", "transfer"):
+            try:
+                tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+                if pd.notna(tx_price) and tx_price > 1e-9:
+                    last_known_prices[holding_key_from_row] = float(tx_price)
+            except Exception:
+                pass
 
         if symbol != CASH_SYMBOL_CSV and holding_key_from_row not in holdings:
             holdings[holding_key_from_row] = {
@@ -2956,9 +2972,19 @@ def _calculate_holdings_numba(
         # --- Handle STOCK transactions ---
         if holdings_currency_np[symbol_id, account_id] == -1:
             holdings_currency_np[symbol_id, account_id] = currency_id
-            
-        # --- NEW: Update Last Price ---
-        if price > 1e-9:
+
+        # Update Last Price ONLY for transaction types where Price/Share is the
+        # stock price. Dividend / Tax / Interest / Fee rows store the per-share
+        # dividend or fee amount in that column, which would poison the
+        # last-known-price fallback and create phantom valuation jumps on days
+        # where yfinance returns NaN for that symbol.
+        if price > 1e-9 and (
+            type_id == buy_type_id
+            or type_id == sell_type_id
+            or type_id == short_sell_type_id
+            or type_id == buy_to_cover_type_id
+            or type_id == transfer_type_id
+        ):
             last_prices_np[symbol_id, account_id] = price
 
         # --- STOCK TRANSFER LOGIC ---
@@ -3226,8 +3252,17 @@ def _calculate_daily_holdings_chronological_numba(
                         current_cash_balances[dest_account_id] += abs(qty)
 
             else:
-                # --- NEW: Update Last Price ---
-                if price > 1e-9:
+                # Update Last Price ONLY for transaction types where Price/Share
+                # is the stock price. See the matching note in the target-date
+                # function. Prevents dividend/tax/etc rows from poisoning the
+                # last-known-price fallback.
+                if price > 1e-9 and (
+                    type_id == buy_type_id
+                    or type_id == sell_type_id
+                    or type_id == short_sell_type_id
+                    or type_id == buy_to_cover_type_id
+                    or type_id == transfer_type_id
+                ):
                     current_last_prices[symbol_id, account_id] = price
 
                 if type_id == split_type_id or type_id == stock_split_type_id:
@@ -4358,16 +4393,30 @@ def _prepare_historical_inputs(
     daily_results_cache_file: Optional[str] = None
     daily_results_cache_key: Optional[str] = None
     try:
-        # Use placeholder if original_csv_file_path is not available (loading from DB)
-        tx_file_hash_component = (
-            _get_file_hash(original_csv_file_path)
-            if original_csv_file_path and os.path.exists(original_csv_file_path)
-            else "FROM_DB_OR_DATAFRAME"
-        )
-        if original_csv_file_path and not os.path.exists(original_csv_file_path):
-            logging.warning(
-                f"Hist Prep: Original CSV path '{original_csv_file_path}' for hash not found. Using placeholder."
-            )
+        # Cache must invalidate whenever the transaction data changes. With a
+        # CSV path we hash the file; when loaded from DB (no CSV path) we hash
+        # the actual DataFrame contents so DB edits force a recompute.
+        if original_csv_file_path and os.path.exists(original_csv_file_path):
+            tx_file_hash_component = _get_file_hash(original_csv_file_path)
+        else:
+            if original_csv_file_path:
+                logging.warning(
+                    f"Hist Prep: Original CSV path '{original_csv_file_path}' for hash not found. Hashing DataFrame contents instead."
+                )
+            _hash_cols = [
+                c for c in ("Date", "Type", "Symbol", "Quantity",
+                            "Price/Share", "Total Amount", "Commission",
+                            "Account", "Local Currency", "To Account")
+                if preloaded_transactions_df is not None and c in preloaded_transactions_df.columns
+            ]
+            if preloaded_transactions_df is not None and not preloaded_transactions_df.empty and _hash_cols:
+                tx_file_hash_component = hashlib.sha256(
+                    pd.util.hash_pandas_object(
+                        preloaded_transactions_df[_hash_cols], index=False
+                    ).values.tobytes()
+                ).hexdigest()[:16]
+            else:
+                tx_file_hash_component = "EMPTY_DATAFRAME"
 
         acc_map_str = json.dumps(account_currency_map, sort_keys=True)
         included_accounts_str = json.dumps(
@@ -4480,13 +4529,16 @@ def _value_daily_holdings_vectorized(
         if yf_symbol and yf_symbol in historical_prices_yf_unadjusted:
             price_df = historical_prices_yf_unadjusted[yf_symbol]
             if not price_df.empty:
+                # Prefer "price" (already set to raw Close by normalize_df), then
+                # raw Close, then Adj Close. Adj Close is dividend-adjusted and
+                # would deflate historical valuations.
                 col_to_use = None
                 if "price" in price_df.columns:
                     col_to_use = "price"
-                elif "Adj Close" in price_df.columns:
-                    col_to_use = "Adj Close"
                 elif "Close" in price_df.columns:
                     col_to_use = "Close"
+                elif "Adj Close" in price_df.columns:
+                    col_to_use = "Adj Close"
                 
                 if col_to_use:
                     # Reindex to date_range
@@ -4543,8 +4595,8 @@ def _value_daily_holdings_vectorized(
             if not t_df.empty:
                 col_to_use = None
                 if "price" in t_df.columns: col_to_use = "price"
-                elif "Adj Close" in t_df.columns: col_to_use = "Adj Close"
                 elif "Close" in t_df.columns: col_to_use = "Close"
+                elif "Adj Close" in t_df.columns: col_to_use = "Adj Close"
                 elif "rate" in t_df.columns: col_to_use = "rate"
 
                 if col_to_use:
@@ -4608,8 +4660,8 @@ def _value_daily_holdings_vectorized(
                  if not l_df.empty:
                     col_to_use = None
                     if "price" in l_df.columns: col_to_use = "price"
-                    elif "Adj Close" in l_df.columns: col_to_use = "Adj Close"
                     elif "Close" in l_df.columns: col_to_use = "Close"
+                    elif "Adj Close" in l_df.columns: col_to_use = "Adj Close"
                     elif "rate" in l_df.columns: col_to_use = "rate"
                     
                     if col_to_use:

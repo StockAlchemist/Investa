@@ -81,13 +81,13 @@ const authFetch = async (url: string, options: RequestInit = {}) => {
         ...(options.headers || {}),
     } as HeadersInit;
 
-    // Auto-redirect on 401?
-    // If we receive 401, we should probably clear token and redirect.
-    // However, api.ts is not a react component. 
-    // We can rely on the UI components (React Query) to handle errors, or dispatch a custom event.
-    // For now, let's just pass the 401 through, and AuthContext or specific components will handle it.
+    const response = await fetch(url, { ...options, headers });
 
-    return fetch(url, { ...options, headers });
+    if (response.status === 401 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+
+    return response;
 };
 
 export interface PortfolioSummary {

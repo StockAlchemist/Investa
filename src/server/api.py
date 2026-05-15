@@ -73,6 +73,7 @@ from datetime import timedelta
 from server import ai_chat_service  # Fixed package import
 
 import logging
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
 router = APIRouter()
@@ -86,30 +87,77 @@ src_server_dir = os.path.dirname(current_file_path)
 src_dir = os.path.dirname(src_server_dir)
 project_root = os.path.dirname(src_dir)
 
-# ... (existing code)
-
 # Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
-_PORTFOLIO_SUMMARY_CACHE = {}
-_MARKET_HISTORY_CACHE = {}
-_PORTFOLIO_HISTORY_CACHE = {} # Shared cache for historical calculations
+# All three use OrderedDict so eviction is by true LRU (oldest-accessed) not insertion order.
+_PORTFOLIO_SUMMARY_CACHE: OrderedDict = OrderedDict()
+_MARKET_HISTORY_CACHE: OrderedDict = OrderedDict()
+_PORTFOLIO_HISTORY_CACHE: OrderedDict = OrderedDict()
 _HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
 _SUMMARY_CALC_LOCK = asyncio.Lock() # Lock to prevent concurrent calculation on cache miss
 
-def reload_data_and_clear_cache(current_user: Optional[User] = None):
-    """Helper to clear transaction data cache, portfolio summary cache, and market history cache.
-    
-    Clears only the current user's transaction cache (targeted) to avoid invalidating
-    other users' in-memory data on every write operation.
+_CACHE_MAX_SIZE = 20
+
+
+def _lru_get(cache: OrderedDict, key):
+    """Return cached value and promote to MRU position, or return sentinel."""
+    if key not in cache:
+        return None
+    cache.move_to_end(key)
+    return cache[key]
+
+
+def _lru_put(cache: OrderedDict, key, value, max_size: int = _CACHE_MAX_SIZE):
+    """Insert/update a cache entry, evicting the LRU entry when over capacity."""
+    if key in cache:
+        cache.move_to_end(key)
+    cache[key] = value
+    while len(cache) > max_size:
+        cache.popitem(last=False)  # Remove LRU (oldest-accessed) entry
+
+
+def _user_db_path(username: str) -> str:
+    """Reconstruct the per-user SQLite path from a username."""
+    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
+    return os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+
+
+def _evict_user_summary_cache(username: str):
+    """Remove only the given user's entries from _PORTFOLIO_SUMMARY_CACHE.
+
+    The summary cache key has db_path at index 2, which is unique per user.
     """
-    # Targeted clear: only evict this user's transaction cache
+    user_path = _user_db_path(username)
+    stale = [k for k in _PORTFOLIO_SUMMARY_CACHE if k[2] == user_path]
+    for k in stale:
+        del _PORTFOLIO_SUMMARY_CACHE[k]
+
+
+def _evict_user_history_cache(username: str):
+    """Clear all portfolio history cache entries on a user write.
+
+    History cache keys don't include username (they use db_mtime for isolation),
+    so we conservatively clear the whole cache to avoid serving stale data.
+    """
+    _PORTFOLIO_HISTORY_CACHE.clear()
+
+
+def reload_data_and_clear_cache(current_user: Optional[User] = None):
+    """Clear only the current user's cached data, leaving other users' caches intact."""
     username = current_user.username if current_user else None
     reload_data(username)
-    _PORTFOLIO_SUMMARY_CACHE.clear()
-    _MARKET_HISTORY_CACHE.clear()
-    _PORTFOLIO_HISTORY_CACHE.clear()
+    if username:
+        _evict_user_summary_cache(username)
+        _evict_user_history_cache(username)
+        # Market history is shared benchmark data — safe to clear entirely on a write
+        _MARKET_HISTORY_CACHE.clear()
+    else:
+        _PORTFOLIO_SUMMARY_CACHE.clear()
+        _MARKET_HISTORY_CACHE.clear()
+        _PORTFOLIO_HISTORY_CACHE.clear()
     logging.info(f"Caches cleared for user '{username or 'all'}'.")
     if current_user:
         trigger_background_precalculation(current_user)
+
 
 def clear_portfolio_caches():
     """Clears calculated caches (Summary, History) without wiping the transaction dataframe cache."""
@@ -188,11 +236,9 @@ def trigger_background_precalculation(current_user: User):
                     try:
                         twr_part = hist_status.split("|||TWR_FACTOR:")[1].strip()
                         if twr_part != "NaN":
-                            # It is a factor like 1.25. Annualized or cumulative?
-                            # Backend history returns final_twr_factor.
                             overall_twr = float(twr_part)
-                    except:
-                        pass
+                    except (ValueError, IndexError) as e:
+                        logging.debug(f"TWR factor parse error: {e}")
             
             # Note: For simplicity and performance, we only pre-calculate TWR for the overall portfolio right now.
             # We can calculate for individual accounts if needed.
@@ -205,53 +251,53 @@ def trigger_background_precalculation(current_user: User):
             if not conn:
                 logging.error(f"Failed to connect to user database for precalculation: {db_path}")
                 return
-                
-            try:
-                cursor = conn.cursor()
-                
-                cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
-                
-                def sf(val):
-                    if val is None: return 0.0
-                    try:
-                        import math
-                        return 0.0 if math.isnan(float(val)) else float(val)
-                    except:
-                        return 0.0
-                
-                if overall_metrics:
-                    cursor.execute('''
-                        INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        today.isoformat(),
-                        'ALL',
-                        sf(overall_metrics.get('market_value')),
-                        sf(overall_metrics.get('total_buy_cost')),
-                        sf(overall_metrics.get('total_gain')),
-                        sf(overall_metrics.get('total_return_pct')),
-                        sf(overall_twr),
-                        sf(overall_metrics.get('portfolio_mwr')),
-                        datetime.now().isoformat()
-                    ))
 
-                if account_metrics:
-                    for acc, acc_data in account_metrics.items():
+            def sf(val):
+                if val is None: return 0.0
+                try:
+                    import math
+                    return 0.0 if math.isnan(float(val)) else float(val)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            try:
+                # Use connection as context manager so any failure rolls back atomically.
+                with conn:
+                    cursor = conn.cursor()
+                    cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
+
+                    if overall_metrics:
                         cursor.execute('''
                             INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
                             today.isoformat(),
-                            acc,
-                            sf(acc_data.get('total_market_value_display')),
-                            sf(acc_data.get('total_buy_cost_display')),
-                            sf(acc_data.get('total_gain_display')),
-                            sf(acc_data.get('total_return_pct')),
-                            sf(acc_data.get('twr', 0.0)),
-                            sf(acc_data.get('mwr')),
+                            'ALL',
+                            sf(overall_metrics.get('market_value')),
+                            sf(overall_metrics.get('total_buy_cost')),
+                            sf(overall_metrics.get('total_gain')),
+                            sf(overall_metrics.get('total_return_pct')),
+                            sf(overall_twr),
+                            sf(overall_metrics.get('portfolio_mwr')),
                             datetime.now().isoformat()
                         ))
-                conn.commit()
+
+                    if account_metrics:
+                        for acc, acc_data in account_metrics.items():
+                            cursor.execute('''
+                                INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                today.isoformat(),
+                                acc,
+                                sf(acc_data.get('total_market_value_display')),
+                                sf(acc_data.get('total_buy_cost_display')),
+                                sf(acc_data.get('total_gain_display')),
+                                sf(acc_data.get('total_return_pct')),
+                                sf(acc_data.get('twr', 0.0)),
+                                sf(acc_data.get('mwr')),
+                                datetime.now().isoformat()
+                            ))
             finally:
                 conn.close()
             logging.info(f"Finished background metric pre-calculation for user {current_user.username}")
@@ -305,9 +351,10 @@ async def _get_historical_performance_cached(
     )
     
     # 1. Check if we already have a cached result
-    if cache_key in _PORTFOLIO_HISTORY_CACHE:
+    cached = _lru_get(_PORTFOLIO_HISTORY_CACHE, cache_key)
+    if cached is not None:
         logging.info(f"Using cached Portfolio History for key: {cache_key[:3]}...")
-        return _PORTFOLIO_HISTORY_CACHE[cache_key]
+        return cached
         
     # 2. Check if another request is already calculating this
     if cache_key in _HISTORY_CALC_FUTURES:
@@ -349,13 +396,7 @@ async def _get_historical_performance_cached(
             )
             
         result = await run_in_threadpool(run_calc)
-        
-        # Store in cache
-        _PORTFOLIO_HISTORY_CACHE[cache_key] = result
-        if len(_PORTFOLIO_HISTORY_CACHE) > 20:
-            first_key = next(iter(_PORTFOLIO_HISTORY_CACHE))
-            del _PORTFOLIO_HISTORY_CACHE[first_key]
-            
+        _lru_put(_PORTFOLIO_HISTORY_CACHE, cache_key, result)
         future.set_result(result)
         return result
     except Exception as e:
@@ -794,17 +835,19 @@ async def _calculate_portfolio_summary_internal(
         time_key
     )
     
-    if cache_key in _PORTFOLIO_SUMMARY_CACHE:
-        logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...") # Partial log for brevity
-        return _filter_closed_positions(_PORTFOLIO_SUMMARY_CACHE[cache_key], show_closed_positions)
-        
+    cached = _lru_get(_PORTFOLIO_SUMMARY_CACHE, cache_key)
+    if cached is not None:
+        logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...")
+        return _filter_closed_positions(cached, show_closed_positions)
+
     logging.info(f"Summary Cache Miss. Waiting for lock. Time key: {time_key}")
 
     async with _SUMMARY_CALC_LOCK:
         # Double-check cache inside lock
-        if cache_key in _PORTFOLIO_SUMMARY_CACHE:
+        cached = _lru_get(_PORTFOLIO_SUMMARY_CACHE, cache_key)
+        if cached is not None:
             logging.info(f"Using cached portfolio summary (after acquiring lock) for key: {cache_key[:3]}...")
-            return _filter_closed_positions(_PORTFOLIO_SUMMARY_CACHE[cache_key], show_closed_positions)
+            return _filter_closed_positions(cached, show_closed_positions)
             
         logging.info(f"Acquired lock. Calculating summary. Time key: {time_key}")
 
@@ -899,6 +942,56 @@ async def _calculate_portfolio_summary_internal(
     #   - YTD Return: Also computed by the /risk_metrics endpoint.
     # This change reduces /summary response time by 10-30 seconds on cold loads.
 
+    # FALLBACK: portfolio_snapshots only stores per-single-account rows ("ALL" or
+    # a specific account name). When the user has selected a *subset* of accounts
+    # (e.g. 6 of 12), the snapshot lookup above misses and the TWR card would
+    # otherwise come back empty. Compute it on the fly using the same in-memory
+    # cache the chart uses — fast if the chart was already rendered for the same
+    # selection, otherwise a one-time live calc.
+    if not precalculated_twr_used and not df.empty:
+        try:
+            df_for_twr = df
+            if include_accounts:
+                df_for_twr = df[df["Account"].isin(include_accounts)]
+            if not df_for_twr.empty:
+                hist_min_date = df_for_twr["Date"].min().date()
+                hist_end_date = date.today()
+                hist_daily_df, _, _, hist_status = await _get_historical_performance_cached(
+                    df=df,
+                    manual_overrides_dict=manual_overrides,
+                    user_symbol_map=user_symbol_map,
+                    user_excluded_symbols=user_excluded_symbols,
+                    account_currency_map=account_currency_map,
+                    original_csv_file_path=db_path,
+                    start_date=hist_min_date,
+                    end_date=hist_end_date,
+                    interval="1d",
+                    benchmark_symbols_yf=[],
+                    display_currency=currency,
+                    include_accounts=include_accounts,
+                    account_cash_mode_map=account_cash_mode_map,
+                    db_mtime=db_mtime,
+                )
+                final_twr_factor = None
+                if "|||TWR_FACTOR:" in hist_status:
+                    twr_part = hist_status.split("|||TWR_FACTOR:")[1].strip()
+                    if twr_part.upper() != "NAN":
+                        try:
+                            final_twr_factor = float(twr_part)
+                        except ValueError:
+                            final_twr_factor = None
+                if final_twr_factor is not None and final_twr_factor > 0:
+                    days = (hist_end_date - hist_min_date).days
+                    cumulative_twr = (final_twr_factor - 1) * 100.0
+                    if days > 0:
+                        annualized_factor = final_twr_factor ** (365.25 / days)
+                        annualized_twr = (annualized_factor - 1) * 100.0
+                    logging.info(
+                        f"Summary Metrics: Live TWR fallback computed for {len(include_accounts) if include_accounts else 'ALL'} accounts: factor={final_twr_factor:.4f}"
+                    )
+        except Exception as e_live_twr:
+            logging.warning(f"Live-TWR fallback failed: {e_live_twr}")
+
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
         overall_summary_metrics["cumulative_twr"] = cumulative_twr
@@ -951,13 +1044,7 @@ async def _calculate_portfolio_summary_internal(
         "account_metrics": account_level_metrics
     }
     
-    # Store in cache
-    _PORTFOLIO_SUMMARY_CACHE[cache_key] = result
-    
-    # Optional: Simple cache eviction policy (e.g. keep only last 20 entries to prevent overflow)
-    if len(_PORTFOLIO_SUMMARY_CACHE) > 20:
-        first_key = next(iter(_PORTFOLIO_SUMMARY_CACHE))
-        del _PORTFOLIO_SUMMARY_CACHE[first_key]
+    _lru_put(_PORTFOLIO_SUMMARY_CACHE, cache_key, result)
 
     return _filter_closed_positions(result, show_closed_positions)
 
@@ -1212,8 +1299,9 @@ async def get_market_history(
     # 0. Global Cache Check
     cache_key = (tuple(sorted(benchmarks)), period, interval, currency)
     now_ts_cache = time.time()
-    if cache_key in _MARKET_HISTORY_CACHE:
-        entry, expiry = _MARKET_HISTORY_CACHE[cache_key]
+    cached_mh = _lru_get(_MARKET_HISTORY_CACHE, cache_key)
+    if cached_mh is not None:
+        entry, expiry = cached_mh
         if now_ts_cache < expiry:
             logging.info(f"Market History Cache HIT: {cache_key}")
             return entry
@@ -1320,8 +1408,7 @@ async def get_market_history(
 
         result = clean_nans(combined_df.to_dict(orient="records"))
         
-        # Cache the result for 15 minutes
-        _MARKET_HISTORY_CACHE[cache_key] = (result, now_ts_cache + 900)
+        _lru_put(_MARKET_HISTORY_CACHE, cache_key, (result, now_ts_cache + 900))
         
         return result
 
@@ -3019,17 +3106,20 @@ async def _generate_dividend_events(
                 if local_events:
                     try:
                         anchor = datetime.strptime(local_events[-1]["dividend_date"], "%Y-%m-%d").date()
-                    except: pass
-                
+                    except (ValueError, KeyError, IndexError) as e:
+                        logging.debug(f"Dividend anchor parse (local_events): {e}")
+
                 if not anchor and info.get("lastDividendDate"):
                     try:
                         anchor = date.fromtimestamp(info.get("lastDividendDate"))
-                    except: pass
-                    
+                    except (OSError, ValueError, TypeError) as e:
+                        logging.debug(f"Dividend anchor parse (lastDividendDate): {e}")
+
                 if not anchor and info.get("exDividendDate"):
                     try:
                         anchor = date.fromtimestamp(info.get("exDividendDate")) + timedelta(days=21)
-                    except: pass
+                    except (OSError, ValueError, TypeError) as e:
+                        logging.debug(f"Dividend anchor parse (exDividendDate): {e}")
                     
                 if anchor:
                     curr = anchor

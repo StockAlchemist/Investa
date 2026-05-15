@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { memo, lazy, Suspense } from 'react';
 import { PortfolioSummary, PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard'; // Use new component
@@ -38,6 +38,8 @@ interface DashboardProps {
     history?: PerformanceData[];
     isLoading?: boolean;
     isRefreshing?: boolean;
+    isError?: boolean;
+    onRetry?: () => void;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     riskMetrics?: any;
@@ -54,11 +56,14 @@ interface DashboardProps {
     showClosed?: boolean;
 }
 
-export default function Dashboard({
+function DashboardInner({
     summary,
     currency,
     history = [],
     isLoading = false,
+    isRefreshing = false,
+    isError = false,
+    onRetry,
     riskMetrics = {},
     riskMetricsLoading = false,
     portfolioHealth = null,
@@ -67,12 +72,27 @@ export default function Dashboard({
     holdings = [],
     visibleItems,
     accounts,
-    isRefreshing = false,
     themeColor = 'cyan-500',
     showClosed = false
 }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
+
+    if (isError && !isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 gap-4">
+                <p className="text-muted-foreground text-sm">Failed to load portfolio data.</p>
+                {onRetry && (
+                    <button
+                        onClick={onRetry}
+                        className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 transition-opacity"
+                    >
+                        Retry
+                    </button>
+                )}
+            </div>
+        );
+    }
 
     if (!m && !isLoading) {
         return (
@@ -438,3 +458,6 @@ export default function Dashboard({
         </div>
     );
 }
+
+const Dashboard = memo(DashboardInner);
+export default Dashboard;
