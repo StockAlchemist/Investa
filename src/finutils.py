@@ -184,6 +184,106 @@ def is_cash_symbol(symbol: str) -> bool:
     )
 
 
+# --- External-Flow Classifier (Bookkeeping-Mode-Independent) ---
+#
+# Single source of truth for whether a transaction row represents money
+# crossing the portfolio boundary (a real ACH/wire transfer from/to the user's
+# bank), as opposed to an internal rotation (stock buy → cash debit, stock sell
+# → cash credit, dividend → cash credit, etc.).
+#
+# This classifier is consumed by both the TWR engine
+# (`_calculate_daily_net_cash_flow_vectorized` in portfolio_logic.py) and the
+# IRR/MWR engine (`get_cash_flows_for_mwr` in this file under
+# `flow_basis="portfolio"`). By centralizing the rule, both engines see the
+# same external flows regardless of whether the source account is in auto-cash
+# mode (cash leg of trades implicit) or manual mode (cash leg encoded as
+# explicit $CASH buy/sell settlement rows).
+#
+# Rule:
+#   1. Symbol must be the cash symbol ($CASH).
+#   2. Type must be 'Deposit' or 'Withdrawal' (case-insensitive).
+#      $CASH 'buy'/'sell' rows are kitmatan-style internal settlement; not
+#      external. $CASH 'dividend'/'interest' is internal income on cash; not
+#      external.
+#   3. Note must NOT start with 'Auto-generated:' (case-insensitive).
+#      The import tool wraps per-trade synthetic deposits/withdrawals with this
+#      prefix (e.g., "Auto-generated: Cash deposit for SPY buy"). These mirror
+#      a stock buy/sell rather than a real bank-to-broker movement.
+#   4. Stock transfers crossing the portfolio scope boundary are handled
+#      separately by per-engine scope logic and are NOT covered by this
+#      classifier — it operates on individual rows without account-scope
+#      context.
+
+_AUTO_GENERATED_NOTE_PREFIX = "auto-generated:"
+
+# Note-prefix tokens that mark a Deposit/Withdrawal row as INTERNAL even
+# though it isn't tagged Auto-generated. Some imports (kitmatan-style) encoded
+# broker commissions and fees as $CASH Deposit/Withdrawal rows with descriptive
+# notes like "Commission for MSFT Buy" or "Fee on buying AMZN". These are
+# trade-related costs, not external bank-to-broker movements, so they're
+# filtered out of the external-flow stream.
+_INTERNAL_NOTE_PREFIXES = (
+    "commission",
+    "fee on",
+    "fee for",
+    "fees on",
+    "fees for",
+    "comm ",
+    "comm.",
+)
+
+
+def is_external_flow_row(symbol: Any, tx_type: Any, note: Any) -> bool:
+    """Returns True if a single transaction row represents an external portfolio flow.
+
+    Mode-independent — does not inspect account_cash_mode_map. The caller is
+    responsible for applying scope-crossing transfer detection separately.
+    """
+    if not isinstance(symbol, str) or symbol.upper() != CASH_SYMBOL_CSV.upper():
+        return False
+    if not isinstance(tx_type, str):
+        return False
+    if tx_type.strip().lower() not in ("deposit", "withdrawal"):
+        return False
+    note_str = "" if note is None else str(note)
+    note_lower = note_str.strip().lower()
+    if note_lower.startswith(_AUTO_GENERATED_NOTE_PREFIX):
+        return False
+    if any(note_lower.startswith(p) for p in _INTERNAL_NOTE_PREFIXES):
+        return False
+    return True
+
+
+def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
+    """Vectorized version of `is_external_flow_row` for a DataFrame.
+
+    Returns a boolean pd.Series aligned with df.index. Expects df to have
+    'Symbol', 'Type', and optionally 'Note' columns. Missing 'Note' is treated
+    as empty string (no rows match the internal-note prefixes).
+    """
+    if df.empty:
+        return pd.Series([], dtype=bool, index=df.index)
+
+    symbol_upper = df["Symbol"].astype(str).str.upper()
+    type_lower = df["Type"].astype(str).str.lower().str.strip()
+
+    if "Note" in df.columns:
+        note_lower = df["Note"].astype(str).str.lower().fillna("").str.strip()
+    else:
+        note_lower = pd.Series("", index=df.index)
+
+    is_internal_note = note_lower.str.startswith(_AUTO_GENERATED_NOTE_PREFIX)
+    for prefix in _INTERNAL_NOTE_PREFIXES:
+        is_internal_note = is_internal_note | note_lower.str.startswith(prefix)
+
+    mask = (
+        (symbol_upper == CASH_SYMBOL_CSV.upper())
+        & (type_lower.isin(["deposit", "withdrawal"]))
+        & (~is_internal_note)
+    )
+    return mask
+
+
 # --- IRR/MWR Calculation Functions ---
 def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> float:
     """
@@ -818,18 +918,23 @@ def get_cash_flows_for_mwr(
 
         elif symbol == CASH_SYMBOL_CSV:
             if portfolio_basis:
-                # Portfolio-level MWR: only Deposit/Withdrawal are external flows.
-                # $CASH "buy" (cash settlement from a stock sell) and $CASH "sell"
-                # (cash settlement for a stock buy) are internal trade rotations.
-                # This aligns IRR with the TWR engine's filter (which matches
-                # Type IN ('deposit','withdrawal') for $CASH only).
-                if tx_type == "deposit":
-                    if pd.notna(qty):
-                        cash_flow_local = -(abs(qty) + commission_local)
-                elif tx_type == "withdrawal":
-                    if pd.notna(qty):
-                        cash_flow_local = (abs(qty) - commission_local)
-                # $CASH buy/sell: 0 flow (internal settlement)
+                # Portfolio-level MWR: use the centralized external-flow
+                # classifier (see is_external_flow_row above). This means:
+                #   - $CASH Deposit/Withdrawal with non-Auto-generated Note → flow
+                #   - $CASH buy/sell (kitmatan-style settlement) → 0
+                #   - $CASH Deposit/Withdrawal with Auto-generated: Note → 0
+                #     (dheematan-style synthetic per-trade entries)
+                #   - $CASH dividend/interest → 0 (internal income)
+                # Same definition as the TWR engine — see
+                # _calculate_daily_net_cash_flow_vectorized in portfolio_logic.py.
+                if is_external_flow_row(symbol, tx_type, row.get("Note", "")):
+                    if tx_type == "deposit":
+                        if pd.notna(qty):
+                            cash_flow_local = -(abs(qty) + commission_local)
+                    elif tx_type == "withdrawal":
+                        if pd.notna(qty):
+                            cash_flow_local = (abs(qty) - commission_local)
+                # else: 0 (internal trade rotation, synthetic, or income on cash)
             elif tx_type in ["deposit", "buy"]:
                 # External cash deposit (legacy per_trade)
                 if pd.notna(qty):

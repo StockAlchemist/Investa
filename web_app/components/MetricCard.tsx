@@ -156,7 +156,6 @@ export function MetricCard({
                     <div className="flex items-center gap-1.5 shrink-0">
                         {isRefreshing && (
                             <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
-                                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 hidden sm:inline">Refreshing</span>
                                 <Loader2 className="w-4 h-4 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
                             </div>
                         )}
@@ -248,7 +247,6 @@ export function MetricCard({
                     <p className="section-label">{title}</p>
                     {isRefreshing && (
                         <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
-                            <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 hidden sm:inline">Refreshing</span>
                             <Loader2 className="w-4 h-4 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
                         </div>
                     )}

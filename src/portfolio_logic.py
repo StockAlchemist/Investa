@@ -2030,11 +2030,15 @@ def _calculate_daily_net_cash_flow_vectorized(
         included_set = {str(a).upper().strip() for a in included_accounts}
     
     # --- 1. CASH SYMBOL FLOWS (Deposits/Withdrawals) ---
-    # Robustly handle case sensitivity (Deposit vs deposit)
-    type_lower = df_period["Type"].str.lower()
-    symbol_upper = df_period["Symbol"].str.upper()
-
-    cash_mask = (symbol_upper == CASH_SYMBOL_CSV.upper()) & (type_lower.isin(["deposit", "withdrawal"]))
+    # Use the centralized bookkeeping-mode-independent classifier from
+    # finutils. This collapses three previously divergent rules across the TWR
+    # engine, the IRR engine, and ad-hoc checks into one definition: an
+    # external flow is a $CASH Deposit/Withdrawal whose Note does NOT begin
+    # with "Auto-generated:" (the import tool's marker for per-trade synthetic
+    # entries). $CASH buy/sell, $CASH dividend/interest, and stock-symbol
+    # buy/sell are all internal under this classifier.
+    from finutils import compute_external_flow_mask
+    cash_mask = compute_external_flow_mask(df_period)
     df_cash = df_period[cash_mask].copy()
 
     # --- FIX: Filter cash flows by included accounts ---
