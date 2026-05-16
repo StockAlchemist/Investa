@@ -195,71 +195,65 @@ def is_cash_symbol(symbol: str) -> bool:
 # account (auto-cash with implicit trade-side cash legs, or manual with
 # explicit $CASH buy/sell settlement rows).
 #
-# Convention — GIPS / professional standard:
-#   An external flow is a REAL ACH/wire/check between the investor's outside
-#   funds and the brokerage account. Stock trades, dividends, interest,
-#   taxes, fees, and per-trade $CASH settlement rows are all INTERNAL.
-#
-# Rule:
+# Convention — "always external" (trading-account view):
 #   External iff
 #     Symbol == $CASH
 #     AND Type ∈ {Deposit, Withdrawal} (case-insensitive)
-#     AND Note does NOT start with "Auto-generated:" — import-tool synthetic
-#         per-trade entries that mirror a stock buy/sell (e.g.
-#         "Auto-generated: Cash deposit for SPY buy").
-#     AND Note does NOT start with broker-cost prefixes that imports use to
-#         encode commissions/fees as Deposit/Withdrawal rather than Fees:
-#         "Commission", "Fee on", "Fee for", "Fees on", "Fees for",
-#         "Comm ", "Comm.". If you find your real ACH being mis-filtered,
-#         retype the row's Type to Fees at the data layer rather than weaken
-#         this filter.
 #
-# Out of scope here:
+# Why not the GIPS heuristic (filtering "Auto-generated:" or "Commission" Notes)?
+#   Because in this project's data, the import tool tags BOTH real ACH/wire
+#   deposits AND synthetic per-trade settlement entries with the same
+#   "Auto-generated: Cash deposit for X buy" prefix. The two cannot be
+#   distinguished by Note content. Filtering them all out causes a critical
+#   bug in the TWR engine: on early-portfolio buy days the NAV engine still
+#   credits cash from the deposit row (because that's how cash balance works
+#   regardless of mode), the auto-cash logic debits it on the paired buy, and
+#   stock value rises by the cost — net NAV change is +cost. With the flow
+#   filtered to 0, the engine attributes this NAV jump to RETURN, producing
+#   massive phantom spikes when prior NAV is small. Concretely: dheematan's
+#   2003 portfolio inception produced ~292% phantom TWR over 3 months under
+#   the GIPS heuristic.
+#
+#   The trading-account convention sidesteps this by treating every
+#   $CASH Deposit/Withdrawal at face value. Synthetic per-trade entries
+#   slightly inflate "external capital deployed" but never produce phantom
+#   returns — the deposit credit and the resulting NAV jump cancel in the
+#   daily-return formula.
+#
+# Notes on what's NOT external:
+#   - $CASH buy/sell rows (kitmatan-style settlement) — wrong Type.
+#   - $CASH dividend/interest/fees/tax — wrong Type.
+#   - Stock buy/sell/dividend/tax/fees/transfer — wrong Symbol.
 #   - Inter-portfolio transfers crossing the included-accounts boundary are
 #     handled by per-engine scope logic, not this row-level classifier.
-
-_AUTO_GENERATED_NOTE_PREFIX = "auto-generated:"
-
-# Note-prefix tokens marking a Deposit/Withdrawal row as INTERNAL (broker
-# commissions/fees recorded against the cash account rather than as Fees).
-_INTERNAL_NOTE_PREFIXES = (
-    "commission",
-    "fee on",
-    "fee for",
-    "fees on",
-    "fees for",
-    "comm ",
-    "comm.",
-)
+#
+# Data hygiene note: if your data contains $CASH Deposit/Withdrawal rows
+# that semantically should NOT be external (e.g. broker commissions
+# miscategorized as Withdrawal), fix them at the data layer by retyping to
+# Type=Fees rather than adding string-prefix heuristics here.
 
 
-def is_external_flow_row(symbol: Any, tx_type: Any, note: Any) -> bool:
+def is_external_flow_row(symbol: Any, tx_type: Any, note: Any = None) -> bool:
     """Returns True if a single transaction row represents an external portfolio flow.
 
     Mode-independent — does not inspect account_cash_mode_map. The caller is
     responsible for applying scope-crossing transfer detection separately.
+
+    `note` is accepted for backward compatibility but no longer consulted;
+    the classifier looks only at Symbol and Type.
     """
     if not isinstance(symbol, str) or symbol.upper() != CASH_SYMBOL_CSV.upper():
         return False
     if not isinstance(tx_type, str):
         return False
-    if tx_type.strip().lower() not in ("deposit", "withdrawal"):
-        return False
-    note_str = "" if note is None else str(note)
-    note_lower = note_str.strip().lower()
-    if note_lower.startswith(_AUTO_GENERATED_NOTE_PREFIX):
-        return False
-    if any(note_lower.startswith(p) for p in _INTERNAL_NOTE_PREFIXES):
-        return False
-    return True
+    return tx_type.strip().lower() in ("deposit", "withdrawal")
 
 
 def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     """Vectorized version of `is_external_flow_row` for a DataFrame.
 
     Returns a boolean pd.Series aligned with df.index. Expects df to have
-    'Symbol' and 'Type' columns, and optionally 'Note'. Missing 'Note' is
-    treated as empty string (no rows match the internal-note prefixes).
+    'Symbol' and 'Type' columns. 'Note' is not consulted.
     """
     if df.empty:
         return pd.Series([], dtype=bool, index=df.index)
@@ -267,19 +261,9 @@ def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     symbol_upper = df["Symbol"].astype(str).str.upper()
     type_lower = df["Type"].astype(str).str.lower().str.strip()
 
-    if "Note" in df.columns:
-        note_lower = df["Note"].astype(str).str.lower().fillna("").str.strip()
-    else:
-        note_lower = pd.Series("", index=df.index)
-
-    is_internal_note = note_lower.str.startswith(_AUTO_GENERATED_NOTE_PREFIX)
-    for prefix in _INTERNAL_NOTE_PREFIXES:
-        is_internal_note = is_internal_note | note_lower.str.startswith(prefix)
-
     return (
         (symbol_upper == CASH_SYMBOL_CSV.upper())
         & (type_lower.isin(["deposit", "withdrawal"]))
-        & (~is_internal_note)
     )
 
 
