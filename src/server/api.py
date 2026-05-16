@@ -87,6 +87,7 @@ router = APIRouter()
 
 # Global thread pool for background metric pre-calculations
 _PRECALC_POOL = ThreadPoolExecutor(max_workers=2)
+_PRECALC_IN_FLIGHT: set = set()
 
 
 current_file_path = os.path.abspath(__file__)
@@ -175,6 +176,11 @@ def clear_portfolio_caches():
 
 def trigger_background_precalculation(current_user: User):
     """Triggers background task to calculate and store portfolio snapshots."""
+    if current_user.username in _PRECALC_IN_FLIGHT:
+        logging.debug(f"Precalc already in flight for {current_user.username}, skipping duplicate submission.")
+        return
+    _PRECALC_IN_FLIGHT.add(current_user.username)
+
     def run_precalc():
         try:
             logging.info(f"Starting background metric pre-calculation for user {current_user.username}")
@@ -310,6 +316,8 @@ def trigger_background_precalculation(current_user: User):
             logging.info(f"Finished background metric pre-calculation for user {current_user.username}")
         except Exception as e:
             logging.error(f"Error in background metric pre-calculation: {e}", exc_info=True)
+        finally:
+            _PRECALC_IN_FLIGHT.discard(current_user.username)
 
     _PRECALC_POOL.submit(run_precalc)
 

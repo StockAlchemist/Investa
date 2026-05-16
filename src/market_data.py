@@ -1871,7 +1871,7 @@ class MarketDataProvider:
             if s in invalid_cache:
                 timestamp = invalid_cache[s]
                 if now_ts - timestamp < INVALID_SYMBOLS_DURATION:
-                    logging.warning(f"Hist Fetch Helper: Skipping cached invalid symbol: {s}")
+                    logging.debug(f"Hist Fetch Helper: Skipping cached invalid symbol: {s}")
                     filtered_count += 1
                     continue  # Skip this symbol
                 else:
@@ -2410,7 +2410,7 @@ class MarketDataProvider:
                     # SAFETY: Don't mark as invalid if rate limiting was detected earlier in the loop
                     # Note: all_missing_symbols was built from responses that might have 429s.
                     
-                    logging.warning(f"  Hist Fetch Helper: Marking {s} as invalid (cached for 24h).")
+                    logging.warning(f"  Hist Fetch Helper: Marking {s} as invalid (cached for {INVALID_SYMBOLS_DURATION // 3600}h).")
                     invalid_cache[s] = now_ts
                     cache_needs_update = True
 

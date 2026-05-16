@@ -5810,7 +5810,7 @@ def _load_or_calculate_daily_results(
                 if (~valid_denom_mask).any():
                     ignored_count = (~valid_denom_mask).sum()
                     if ignored_count > 0:
-                        logging.warning(f"TWR: Ignoring {ignored_count} days where capital at risk was too small (<$0.10) to calculate a valid return.")
+                        logging.debug(f"TWR: Ignoring {ignored_count} days where capital at risk was too small (<$0.10) — likely pre-funding period.")
 
                 daily_df.loc[valid_denom_mask, "daily_return"] = (
                     daily_df.loc[valid_denom_mask, "daily_gain"]
@@ -5858,7 +5858,7 @@ def _load_or_calculate_daily_results(
                              net_flow_val = abs(row.get("net_flow", 0.0)) if pd.notna(row.get("net_flow")) else 0.0
                              daily_gain_val = abs(row.get("daily_gain", 0.0)) if pd.notna(row.get("daily_gain")) else 0.0
                              if net_flow_val > daily_gain_val * 0.5:
-                                 logging.warning(f"!!! TWR HEALING: Flow-driven artifact on {idx.date()} (Return: {row['daily_return']*100:.1f}%, NetFlow: {net_flow_val:.0f}, Gain: {daily_gain_val:.0f}).")
+                                 logging.info(f"TWR HEALING: Zeroed flow-driven artifact on {idx.date()} (Return: {row['daily_return']*100:.1f}%, NetFlow: {net_flow_val:.0f}, Gain: {daily_gain_val:.0f}).")
                                  daily_df.at[idx, "daily_return"] = 0.0
 
                 anomalies = daily_df[
@@ -6500,7 +6500,6 @@ def _calculate_accumulated_gains_and_resample(
                                             found_valid = True
                                             logging.debug(f"Found valid baseline for {col} at {d}: {divisor}")
                                             break
-                                        break
                             
                             if found_valid and divisor != 0:
                                 # --- FIX: Safety check for massive spikes due to near-zero divisor ---
