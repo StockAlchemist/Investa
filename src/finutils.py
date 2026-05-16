@@ -187,58 +187,79 @@ def is_cash_symbol(symbol: str) -> bool:
 # --- External-Flow Classifier (Bookkeeping-Mode-Independent) ---
 #
 # Single source of truth for whether a transaction row represents money
-# crossing the portfolio boundary. This classifier is consumed by both the
-# TWR engine (`_calculate_daily_net_cash_flow_vectorized` in portfolio_logic.py)
-# and the IRR/MWR engine (`get_cash_flows_for_mwr` in this file under
+# crossing the portfolio boundary. Consumed by both the TWR engine
+# (`_calculate_daily_net_cash_flow_vectorized` in portfolio_logic.py) and the
+# IRR/MWR engine (`get_cash_flows_for_mwr` in this file under
 # `flow_basis="portfolio"`). Centralizing the rule guarantees both engines see
-# the same external flows regardless of whether the source account is in
-# auto-cash mode (cash leg of trades implicit) or manual mode (cash leg encoded
-# as explicit $CASH buy/sell settlement rows).
+# the same external flows regardless of the bookkeeping mode of the source
+# account (auto-cash with implicit trade-side cash legs, or manual with
+# explicit $CASH buy/sell settlement rows).
 #
-# Rule — "always external" convention (trading-account view):
+# Convention — GIPS / professional standard:
+#   An external flow is a REAL ACH/wire/check between the investor's outside
+#   funds and the brokerage account. Stock trades, dividends, interest,
+#   taxes, fees, and per-trade $CASH settlement rows are all INTERNAL.
+#
+# Rule:
 #   External iff
 #     Symbol == $CASH
-#     AND Type IN {Deposit, Withdrawal}  (case-insensitive)
+#     AND Type ∈ {Deposit, Withdrawal} (case-insensitive)
+#     AND Note does NOT start with "Auto-generated:" — import-tool synthetic
+#         per-trade entries that mirror a stock buy/sell (e.g.
+#         "Auto-generated: Cash deposit for SPY buy").
+#     AND Note does NOT start with broker-cost prefixes that imports use to
+#         encode commissions/fees as Deposit/Withdrawal rather than Fees:
+#         "Commission", "Fee on", "Fee for", "Fees on", "Fees for",
+#         "Comm ", "Comm.". If you find your real ACH being mis-filtered,
+#         retype the row's Type to Fees at the data layer rather than weaken
+#         this filter.
 #
-# Notes:
-#   - $CASH buy/sell, $CASH dividend/interest, $CASH tax/fees, and all stock
-#     activity are INTERNAL under this convention.
-#   - Note content is NOT inspected. Whether a Deposit/Withdrawal row carries
-#     "Auto-generated:", "Commission for X buy", or any other prefix, it is
-#     still treated as an external flow at face value. This matches the
-#     trading-account mental model where every Deposit/Withdrawal — whether a
-#     real bank wire or a synthetic per-trade entry — represents money flowing
-#     through the user's hands. It also avoids fragile string-prefix
-#     heuristics that couple the engine to a particular import tool's labels.
-#   - Stock transfers crossing the portfolio scope boundary are handled
-#     separately by per-engine scope logic and are NOT covered here.
-#   - If the data contains $CASH Deposit/Withdrawal rows that should NOT be
-#     external (e.g. broker commissions miscategorized as Withdrawal), fix
-#     them at the data layer by retyping to Fees/Tax — don't paper over with
-#     classifier heuristics here.
+# Out of scope here:
+#   - Inter-portfolio transfers crossing the included-accounts boundary are
+#     handled by per-engine scope logic, not this row-level classifier.
+
+_AUTO_GENERATED_NOTE_PREFIX = "auto-generated:"
+
+# Note-prefix tokens marking a Deposit/Withdrawal row as INTERNAL (broker
+# commissions/fees recorded against the cash account rather than as Fees).
+_INTERNAL_NOTE_PREFIXES = (
+    "commission",
+    "fee on",
+    "fee for",
+    "fees on",
+    "fees for",
+    "comm ",
+    "comm.",
+)
 
 
-def is_external_flow_row(symbol: Any, tx_type: Any, note: Any = None) -> bool:
+def is_external_flow_row(symbol: Any, tx_type: Any, note: Any) -> bool:
     """Returns True if a single transaction row represents an external portfolio flow.
 
     Mode-independent — does not inspect account_cash_mode_map. The caller is
     responsible for applying scope-crossing transfer detection separately.
-
-    `note` is accepted for backward compatibility but no longer consulted; the
-    classifier looks only at Symbol and Type.
     """
     if not isinstance(symbol, str) or symbol.upper() != CASH_SYMBOL_CSV.upper():
         return False
     if not isinstance(tx_type, str):
         return False
-    return tx_type.strip().lower() in ("deposit", "withdrawal")
+    if tx_type.strip().lower() not in ("deposit", "withdrawal"):
+        return False
+    note_str = "" if note is None else str(note)
+    note_lower = note_str.strip().lower()
+    if note_lower.startswith(_AUTO_GENERATED_NOTE_PREFIX):
+        return False
+    if any(note_lower.startswith(p) for p in _INTERNAL_NOTE_PREFIXES):
+        return False
+    return True
 
 
 def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     """Vectorized version of `is_external_flow_row` for a DataFrame.
 
     Returns a boolean pd.Series aligned with df.index. Expects df to have
-    'Symbol' and 'Type' columns. 'Note' is not consulted.
+    'Symbol' and 'Type' columns, and optionally 'Note'. Missing 'Note' is
+    treated as empty string (no rows match the internal-note prefixes).
     """
     if df.empty:
         return pd.Series([], dtype=bool, index=df.index)
@@ -246,9 +267,19 @@ def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     symbol_upper = df["Symbol"].astype(str).str.upper()
     type_lower = df["Type"].astype(str).str.lower().str.strip()
 
+    if "Note" in df.columns:
+        note_lower = df["Note"].astype(str).str.lower().fillna("").str.strip()
+    else:
+        note_lower = pd.Series("", index=df.index)
+
+    is_internal_note = note_lower.str.startswith(_AUTO_GENERATED_NOTE_PREFIX)
+    for prefix in _INTERNAL_NOTE_PREFIXES:
+        is_internal_note = is_internal_note | note_lower.str.startswith(prefix)
+
     return (
         (symbol_upper == CASH_SYMBOL_CSV.upper())
         & (type_lower.isin(["deposit", "withdrawal"]))
+        & (~is_internal_note)
     )
 
 
