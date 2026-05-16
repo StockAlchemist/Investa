@@ -1,4 +1,4 @@
-import { memo, lazy, Suspense } from 'react';
+import { memo, lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { PortfolioSummary, PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard';
@@ -45,6 +45,35 @@ interface DashboardProps {
     showClosed?: boolean;
 }
 
+// ── Animated number hook ─────────────────────────────────────────────────────
+function useAnimatedNumber(target: number, duration = 600): number {
+    const [current, setCurrent] = useState(target);
+    const prevRef = useRef(target);
+    const rafRef  = useRef<number>(0);
+    const startRef = useRef<number>(0);
+
+    useEffect(() => {
+        const from = prevRef.current;
+        if (from === target) return;
+        prevRef.current = target;
+        const startTime = performance.now();
+        startRef.current = startTime;
+
+        const tick = (now: number) => {
+            const elapsed = now - startTime;
+            const t = Math.min(elapsed / duration, 1);
+            const ease = 1 - Math.pow(1 - t, 3); // ease-out-cubic
+            setCurrent(from + (target - from) * ease);
+            if (t < 1) rafRef.current = requestAnimationFrame(tick);
+        };
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(rafRef.current);
+    }, [target, duration]);
+
+    return current;
+}
+
 // ── Portfolio hero card ───────────────────────────────────────────────────────
 interface HeroCardProps {
     marketValue: number | null | undefined;
@@ -59,18 +88,52 @@ interface HeroCardProps {
     themeColor: string;
 }
 
+function StatPill({
+    label, value, sub, isLoading,
+}: {
+    label: string;
+    value: number | null | undefined;
+    sub?: string;
+    isLoading: boolean;
+}) {
+    if (value == null) return null;
+    const positive = value >= 0;
+    return (
+        <div className="flex flex-col gap-1 min-w-0">
+            <p className="section-label text-[10px] uppercase tracking-wider">{label}</p>
+            {isLoading ? (
+                <Skeleton className="h-6 w-16 rounded" />
+            ) : (
+                <p className={cn(
+                    'text-lg sm:text-xl font-bold tabular-nums leading-none',
+                    positive ? 'text-emerald-500' : 'text-red-500',
+                )}>
+                    {positive ? '+' : ''}{value.toFixed(2)}%
+                </p>
+            )}
+            {sub && !isLoading && (
+                <p className="text-[10px] text-muted-foreground tabular-nums leading-none">{sub}</p>
+            )}
+        </div>
+    );
+}
+
 function PortfolioHeroCard({
     marketValue, dayGL, dayGLPct, cumTWR, annTWR, irr,
     currency, isLoading, isRefreshing, themeColor,
 }: HeroCardProps) {
+    const animatedValue  = useAnimatedNumber(marketValue ?? 0);
+    const animatedDayGL  = useAnimatedNumber(dayGL ?? 0);
+    const animatedDayPct = useAnimatedNumber(dayGLPct ?? 0);
     const positive = (dayGL ?? 0) >= 0;
+    const hasPerf = cumTWR != null || irr != null;
 
     return (
         <div className="metric-card card-shine relative overflow-hidden p-5 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-6 sm:gap-8">
 
                 {/* Left: main value + day change */}
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-2">
                         <Wallet className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                         <span className="section-label">Total Portfolio Value</span>
@@ -87,7 +150,7 @@ function PortfolioHeroCard({
                     ) : (
                         <>
                             <div className="text-4xl sm:text-5xl font-black tabular-nums text-foreground leading-none tracking-tight">
-                                {formatCurrency(marketValue ?? 0, currency)}
+                                {formatCurrency(animatedValue, currency)}
                             </div>
 
                             {dayGL !== null && (
@@ -99,14 +162,14 @@ function PortfolioHeroCard({
                                         ? <ArrowUpRight className="w-4 h-4 shrink-0" />
                                         : <ArrowDownRight className="w-4 h-4 shrink-0" />}
                                     <span className="text-sm font-semibold tabular-nums">
-                                        {positive ? '+' : ''}{formatCurrency(dayGL, currency)}
+                                        {animatedDayGL >= 0 ? '+' : ''}{formatCurrency(animatedDayGL, currency)}
                                     </span>
                                     {dayGLPct !== null && (
                                         <span className={cn(
                                             'text-xs font-bold px-2 py-0.5 rounded-full',
                                             positive ? 'bg-emerald-500/10' : 'bg-red-500/10',
                                         )}>
-                                            {positive ? '+' : ''}{dayGLPct.toFixed(2)}%
+                                            {animatedDayPct >= 0 ? '+' : ''}{animatedDayPct.toFixed(2)}%
                                         </span>
                                     )}
                                     <span className="text-xs text-muted-foreground font-normal">today</span>
@@ -116,43 +179,24 @@ function PortfolioHeroCard({
                     )}
                 </div>
 
-                {/* Right: quick performance stats */}
-                <div className="flex items-center gap-5 sm:gap-8 shrink-0">
-                    {cumTWR !== null && cumTWR !== undefined && (
-                        <div className="text-right">
-                            <p className="section-label mb-1">Total TWR</p>
-                            {isLoading
-                                ? <Skeleton className="h-7 w-16 rounded" />
-                                : <p className={cn(
-                                    'text-xl font-bold tabular-nums leading-none',
-                                    (cumTWR ?? 0) >= 0 ? 'text-emerald-500' : 'text-red-500',
-                                )}>
-                                    {(cumTWR ?? 0) >= 0 ? '+' : ''}{(cumTWR ?? 0).toFixed(2)}%
-                                </p>
-                            }
-                            {annTWR !== null && annTWR !== undefined && !isLoading && (
-                                <p className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
-                                    {(annTWR ?? 0) >= 0 ? '+' : ''}{(annTWR ?? 0).toFixed(2)}% p.a.
-                                </p>
-                            )}
+                {/* Right: performance stats separated by vertical dividers */}
+                {hasPerf && (
+                    <div className="hidden sm:flex items-stretch gap-0 shrink-0 divide-x divide-border/50">
+                        <div className="px-6 first:pl-0">
+                            <StatPill label="Total TWR" value={cumTWR} isLoading={isLoading} />
                         </div>
-                    )}
-
-                    {irr !== null && irr !== undefined && (
-                        <div className="text-right">
-                            <p className="section-label mb-1">IRR p.a.</p>
-                            {isLoading
-                                ? <Skeleton className="h-7 w-16 rounded" />
-                                : <p className={cn(
-                                    'text-xl font-bold tabular-nums leading-none',
-                                    (irr ?? 0) >= 0 ? 'text-emerald-500' : 'text-red-500',
-                                )}>
-                                    {(irr ?? 0) >= 0 ? '+' : ''}{(irr ?? 0).toFixed(2)}%
-                                </p>
-                            }
-                        </div>
-                    )}
-                </div>
+                        {annTWR != null && (
+                            <div className="px-6">
+                                <StatPill label="Ann. TWR" value={annTWR} sub="per year" isLoading={isLoading} />
+                            </div>
+                        )}
+                        {irr != null && (
+                            <div className="px-6">
+                                <StatPill label="IRR (MWR)" value={irr} sub="per year" isLoading={isLoading} />
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );

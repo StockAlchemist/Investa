@@ -28,9 +28,11 @@ import { cn } from '@/lib/utils';
 import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
+import { EmptyState } from '@/components/EmptyState';
 import AppShellSkeleton from '@/components/skeletons/AppShellSkeleton';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { MobileNav } from '@/components/layout/MobileNav';
 import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
 import { Home as HomeIcon, Activity, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
@@ -79,6 +81,7 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed]     = useState(false);
   const [isIndexGraphModalOpen, setIsIndexGraphModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen]   = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen]             = useState(false);
   const [benchmarks, setBenchmarks]                 = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
   const [graphPeriod, setGraphPeriod]               = useState('1y');
   const [graphView, setGraphView]                   = useState<'return' | 'value' | 'drawdown'>('return');
@@ -339,6 +342,9 @@ export default function Home() {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'performance':
+        if (!summaryQuery.isLoading && !summaryQuery.data && summaryQuery.isFetched) {
+          return <EmptyState onNavigate={handleNavigate} />;
+        }
         return (
           <>
             <Dashboard
@@ -401,6 +407,9 @@ export default function Home() {
         );
 
       case 'allocation':
+        if (!holdingsQuery.isLoading && holdings.length === 0 && holdingsQuery.isFetched) {
+          return <EmptyState onNavigate={handleNavigate} />;
+        }
         return (
           <div className="space-y-6">
             <HoldingsTable
@@ -503,6 +512,18 @@ export default function Home() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(c => !c)}
         onUserClick={handleUserIconClick}
+        dayChangePct={summary?.metrics?.day_change_pct as number | undefined}
+      />
+
+      {/* ── Mobile navigation drawer ── */}
+      <MobileNav
+        isOpen={isMobileNavOpen}
+        onClose={() => setIsMobileNavOpen(false)}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        user={user}
+        onLogout={logout}
+        onUserClick={handleUserIconClick}
       />
 
       {/* ── Main content ── */}
@@ -524,6 +545,9 @@ export default function Home() {
           availableCurrencies={settingsQuery.data?.available_currencies}
           isFetching={summaryQuery.isFetching}
           onIndexClick={() => setIsIndexGraphModalOpen(true)}
+          isMarketOpen={isMarketOpen}
+          lastUpdated={summaryQuery.dataUpdatedAt ? new Date(summaryQuery.dataUpdatedAt) : null}
+          onMobileMenuOpen={() => setIsMobileNavOpen(true)}
         />
 
         {/* Scrollable content area */}

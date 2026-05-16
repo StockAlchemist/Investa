@@ -41,6 +41,8 @@ interface PageHeaderProps {
   isFetching?: boolean;
   onIndexClick?: () => void;
   onMobileMenuOpen?: () => void;
+  isMarketOpen?: boolean;
+  lastUpdated?: Date | null;
 }
 
 export function PageHeader({
@@ -60,6 +62,8 @@ export function PageHeader({
   isFetching,
   onIndexClick,
   onMobileMenuOpen,
+  isMarketOpen,
+  lastUpdated,
 }: PageHeaderProps) {
   return (
     <header className="sticky top-0 z-40 flex items-center h-[52px] border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/90 shrink-0 px-3 sm:px-5 gap-2 sm:gap-3">
@@ -75,6 +79,29 @@ export function PageHeader({
       <h1 className="hidden md:block text-sm font-semibold text-foreground shrink-0 select-none">
         {TAB_LABELS[activeTab] ?? activeTab}
       </h1>
+
+      {/* Market status + last updated */}
+      <div className="hidden md:flex items-center gap-2 shrink-0">
+        {isMarketOpen !== undefined && (
+          <span className={cn(
+            'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
+            isMarketOpen
+              ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+              : 'text-muted-foreground border-border bg-muted/40',
+          )}>
+            <span className={cn(
+              'w-1.5 h-1.5 rounded-full',
+              isMarketOpen ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
+            )} />
+            {isMarketOpen ? 'Live' : 'Closed'}
+          </span>
+        )}
+        {lastUpdated && (
+          <span className="text-[10px] text-muted-foreground/60 font-medium tabular-nums">
+            {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
 
       <div className="flex-1" />
 

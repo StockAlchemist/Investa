@@ -32,10 +32,11 @@ interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
   onUserClick: () => void;
+  dayChangePct?: number;
 }
 
 export function Sidebar({
-  activeTab, onTabChange, user, onLogout, collapsed, onToggle, onUserClick,
+  activeTab, onTabChange, user, onLogout, collapsed, onToggle, onUserClick, dayChangePct,
 }: SidebarProps) {
   const { resolvedTheme, setTheme } = useTheme();
 
@@ -78,7 +79,7 @@ export function Sidebar({
       <div
         className={cn(
           'flex items-center h-[52px] border-b border-border shrink-0',
-          collapsed ? 'justify-center' : 'px-4 gap-2.5',
+          collapsed ? 'flex-col justify-center gap-0.5' : 'px-4 gap-2.5',
         )}
       >
         <img src="logo-dark.png?v=5" alt="Investa" className="w-7 h-7 rounded-lg shrink-0 hidden dark:block" />
@@ -90,6 +91,14 @@ export function Sidebar({
               StockAlchemist
             </div>
           </div>
+        )}
+        {collapsed && dayChangePct !== undefined && (
+          <span className={cn(
+            'text-[9px] font-bold tabular-nums leading-none',
+            dayChangePct >= 0 ? 'text-emerald-500' : 'text-red-500',
+          )}>
+            {dayChangePct >= 0 ? '+' : ''}{dayChangePct.toFixed(1)}%
+          </span>
         )}
       </div>
 

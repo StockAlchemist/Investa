@@ -600,36 +600,25 @@ export default function PerformanceGraph({
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}
-                        <div className="flex bg-secondary rounded-lg p-1 shrink-0">
-                            <button
-                                onClick={() => onViewChange('return')}
-                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
-                                    ? 'bg-[#0097b2] text-white'
-                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
-                                    }`}
-                            >
-                                Return %
-                            </button>
-                            <div className="relative">
+                        <div className="inline-flex items-center gap-0.5 bg-muted/60 border border-border/60 rounded-lg p-0.5 shrink-0">
+                            {([
+                                { value: 'return',   label: 'Return %' },
+                                { value: 'value',    label: 'Value' },
+                                { value: 'drawdown', label: 'Drawdown' },
+                            ] as const).map(({ value: v, label }) => (
                                 <button
-                                    onClick={() => onViewChange('value')}
-                                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'value'
-                                        ? 'bg-[#0097b2] text-white'
-                                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
-                                        }`}
+                                    key={v}
+                                    onClick={() => onViewChange(v)}
+                                    className={cn(
+                                        'px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all duration-150 whitespace-nowrap',
+                                        view === v
+                                            ? 'bg-background text-foreground shadow-sm border border-border/80'
+                                            : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
+                                    )}
                                 >
-                                    Value
+                                    {label}
                                 </button>
-                            </div>
-                            <button
-                                onClick={() => onViewChange('drawdown')}
-                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'drawdown'
-                                    ? 'bg-[#0097b2] text-white'
-                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
-                                    }`}
-                            >
-                                Drawdown
-                            </button>
+                            ))}
                         </div>
                     </div>
                 </div>
