@@ -2,18 +2,18 @@
 @variant dark (&:where(.dark, .dark *));
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); }
+  50%       { transform: translateY(-6px); }
 }
 
 @keyframes pulse-glow {
   0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+  50%       { opacity: 0.7; }
 }
 
 @layer base {
@@ -21,7 +21,6 @@
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
-    /* Card: kept as solid HSL so hsl(var(--card)) works in Tailwind utilities */
     --card: 220 35% 97%;
     --card-foreground: 222.2 84% 4.9%;
 
@@ -50,22 +49,24 @@
     --radius: 0.75rem;
     --glass-hover: rgba(0, 0, 0, 0.03);
 
-    /* Card elevation layers — glassy like index boxes */
     --card-elevated: rgba(255,255,255,0.55);
     --card-border: rgba(255,255,255,0.55);
     --shine: rgba(255,255,255,0.6);
 
-    /* Solid Menu Backgrounds - Explicit HEX */
     --menu-solid: #ffffff;
     --ring-track: #f3f4f6;
     --pie-stroke: #ffffff;
+
+    /* Sidebar */
+    --sidebar-width: 216px;
+    --sidebar-width-collapsed: 56px;
+    --header-height: 52px;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
 
-    /* Card is distinctly elevated from background */
     --card: 217 50% 8%;
     --card-foreground: 210 40% 98%;
 
@@ -92,16 +93,13 @@
     --ring: 224.3 76.3% 48%;
     --glass-hover: rgba(255, 255, 255, 0.05);
 
-    /* Card elevation layers */
     --card-elevated: rgba(255,255,255,0.04);
     --card-border: rgba(255,255,255,0.08);
     --shine: rgba(255,255,255,0.04);
 
-    /* Solid Menu Backgrounds - Explicit HEX */
     --menu-solid: #030d1a;
     --ring-track: #27272a;
     --pie-stroke: #030d1a;
-    /* zinc-800 */
   }
 }
 
