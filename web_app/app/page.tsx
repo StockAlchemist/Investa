@@ -374,13 +374,6 @@ export default function Home() {
               customToDate={graphCustomToDate}
               onCustomToDateChange={setGraphCustomToDate}
             />
-            <HoldingsTable
-              holdings={holdings}
-              currency={currency}
-              isLoading={holdingsQuery.isLoading && !holdingsQuery.data}
-              showClosed={showClosed}
-              onToggleShowClosed={setShowClosed}
-            />
           </>
         );
 
@@ -408,7 +401,18 @@ export default function Home() {
         );
 
       case 'allocation':
-        return <Allocation holdings={holdings} currency={currency} />;
+        return (
+          <div className="space-y-6">
+            <HoldingsTable
+              holdings={holdings}
+              currency={currency}
+              isLoading={holdingsQuery.isLoading && !holdingsQuery.data}
+              showClosed={showClosed}
+              onToggleShowClosed={setShowClosed}
+            />
+            <Allocation holdings={holdings} currency={currency} />
+          </div>
+        );
 
       case 'asset_change':
         return <AssetChange data={assetChangeData} currency={currency} isLoading={assetChangeQuery.isPending && !assetChangeQuery.data} />;
