@@ -94,6 +94,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Symbols
+         * @description Symbol / name autocomplete using yfinance Search.
+         */
+        get: operations["search_symbols_api_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/markets/news": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Market News
+         * @description Fetch latest market news.
+         *     When symbols are provided, uses yfinance Search + relatedTickers filtering so
+         *     only articles explicitly tagged to that ticker are returned.
+         *     When no symbols are provided, returns general market news via the SPY RSS feed.
+         */
+        get: operations["get_market_news_api_markets_news_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/asset_change": {
         parameters: {
             query?: never;
@@ -251,6 +294,48 @@ export interface paths {
          *         Dict: Status message and the new transaction ID.
          */
         post: operations["create_transaction_api_transactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transactions/parse_document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Document
+         * @description Parses a brokerage statement (PDF or Image) and returns extracted transactions.
+         *     Supports IBKR trade confirmations (deterministic) and general statements (AI fallback).
+         */
+        post: operations["parse_document_api_transactions_parse_document_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transactions/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Transactions Batch
+         * @description Adds a batch of transactions to the database.
+         *     Used for Review & Confirm step after document parsing.
+         */
+        post: operations["add_transactions_batch_api_transactions_batch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -542,6 +627,7 @@ export interface paths {
         /**
          * Get Settings
          * @description Returns the current application configuration settings.
+         *     Fast version that avoids loading the full transaction dataframe.
          */
         get: operations["get_settings_api_settings_get"];
         put?: never;
@@ -906,6 +992,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/screener/narrative": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Narrative Screener
+         * @description Executes a narrative search using natural language via Gemini.
+         */
+        post: operations["narrative_screener_api_screener_narrative_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/screener/review/{symbol}": {
         parameters: {
             query?: never;
@@ -920,6 +1026,26 @@ export interface paths {
          * @description Triggers (or retrieves cached) AI review for a specific stock.
          */
         post: operations["trigger_ai_review_api_screener_review__symbol__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat Message Endpoint
+         * @description Conversational AI interface for portfolio and market insights.
+         */
+        post: operations["chat_message_endpoint_api_chat_message_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1008,6 +1134,49 @@ export interface paths {
          * @description Returns whether the US stock market is currently open.
          */
         get: operations["get_market_status_market_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Symbols
+         * @description Symbol / name autocomplete using yfinance Search.
+         */
+        get: operations["search_symbols_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/markets/news": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Market News
+         * @description Fetch latest market news.
+         *     When symbols are provided, uses yfinance Search + relatedTickers filtering so
+         *     only articles explicitly tagged to that ticker are returned.
+         *     When no symbols are provided, returns general market news via the SPY RSS feed.
+         */
+        get: operations["get_market_news_markets_news_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1173,6 +1342,48 @@ export interface paths {
          *         Dict: Status message and the new transaction ID.
          */
         post: operations["create_transaction_transactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transactions/parse_document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Document
+         * @description Parses a brokerage statement (PDF or Image) and returns extracted transactions.
+         *     Supports IBKR trade confirmations (deterministic) and general statements (AI fallback).
+         */
+        post: operations["parse_document_transactions_parse_document_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transactions/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Transactions Batch
+         * @description Adds a batch of transactions to the database.
+         *     Used for Review & Confirm step after document parsing.
+         */
+        post: operations["add_transactions_batch_transactions_batch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1464,6 +1675,7 @@ export interface paths {
         /**
          * Get Settings
          * @description Returns the current application configuration settings.
+         *     Fast version that avoids loading the full transaction dataframe.
          */
         get: operations["get_settings_settings_get"];
         put?: never;
@@ -1828,6 +2040,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/screener/narrative": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Narrative Screener
+         * @description Executes a narrative search using natural language via Gemini.
+         */
+        post: operations["narrative_screener_screener_narrative_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/screener/review/{symbol}": {
         parameters: {
             query?: never;
@@ -1842,6 +2074,26 @@ export interface paths {
          * @description Triggers (or retrieves cached) AI review for a specific stock.
          */
         post: operations["trigger_ai_review_screener_review__symbol__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat Message Endpoint
+         * @description Conversational AI interface for portfolio and market insights.
+         */
+        post: operations["chat_message_endpoint_chat_message_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1917,6 +2169,44 @@ export interface components {
              */
             client_secret?: string | null;
         };
+        /** Body_parse_document_api_transactions_parse_document_post */
+        Body_parse_document_api_transactions_parse_document_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Cash Mode */
+            cash_mode?: string | null;
+            /** Account Override */
+            account_override?: string | null;
+        };
+        /** Body_parse_document_transactions_parse_document_post */
+        Body_parse_document_transactions_parse_document_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /** Cash Mode */
+            cash_mode?: string | null;
+            /** Account Override */
+            account_override?: string | null;
+        };
+        /** ChatMessage */
+        ChatMessage: {
+            /** Role */
+            role: string;
+            /** Text */
+            text: string;
+        };
+        /** ChatRequest */
+        ChatRequest: {
+            /** Message */
+            message: string;
+            /** History */
+            history?: components["schemas"]["ChatMessage"][] | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1942,7 +2232,7 @@ export interface components {
         ScreenerRequest: {
             /**
              * Universe Type
-             * @description watchlist, manual, or sp500
+             * @description watchlist, manual, sp500, russell2000, sp400, holdings, or all
              */
             universe_type: string;
             /** Universe Id */
@@ -1969,8 +2259,14 @@ export interface components {
             account_groups?: {
                 [key: string]: string[];
             } | null;
+            /** Account Group Order */
+            account_group_order?: string[] | null;
             /** Account Currency Map */
             account_currency_map?: {
+                [key: string]: string;
+            } | null;
+            /** Account Cash Mode Map */
+            account_cash_mode_map?: {
                 [key: string]: string;
             } | null;
             /** Available Currencies */
@@ -2009,6 +2305,16 @@ export interface components {
             /** Token Type */
             token_type: string;
         };
+        /** TransactionBatchInput */
+        TransactionBatchInput: {
+            /** Transactions */
+            transactions: components["schemas"]["TransactionInput"][];
+            /**
+             * Auto Add Cash
+             * @default false
+             */
+            auto_add_cash: boolean;
+        };
         /** TransactionInput */
         TransactionInput: {
             /** Date */
@@ -2043,6 +2349,11 @@ export interface components {
             "To Account"?: string | null;
             /** Tags */
             Tags?: string | null;
+            /**
+             * Auto-Add Cash
+             * @default false
+             */
+            "Auto-add Cash": boolean;
         };
         /** UpdateUserProfile */
         UpdateUserProfile: {
@@ -2319,6 +2630,69 @@ export interface operations {
             };
         };
     };
+    search_symbols_api_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_market_news_api_markets_news_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                symbols?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_asset_change_api_asset_change_get: {
         parameters: {
             query?: {
@@ -2357,6 +2731,7 @@ export interface operations {
             query?: {
                 currency?: string;
                 accounts?: string[] | null;
+                show_closed?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -2525,6 +2900,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TransactionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_document_api_transactions_parse_document_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_document_api_transactions_parse_document_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_transactions_batch_api_transactions_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransactionBatchInput"];
             };
         };
         responses: {
@@ -3048,6 +3489,7 @@ export interface operations {
                 currency?: string;
                 accounts?: string[] | null;
                 show_all?: boolean;
+                show_closed?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -3277,6 +3719,7 @@ export interface operations {
             query?: {
                 currency?: string;
                 accounts?: string[] | null;
+                show_closed?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -3607,6 +4050,41 @@ export interface operations {
             };
         };
     };
+    narrative_screener_api_screener_narrative_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     trigger_ai_review_api_screener_review__symbol__post: {
         parameters: {
             query?: {
@@ -3619,6 +4097,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_message_endpoint_api_chat_message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -3832,6 +4343,69 @@ export interface operations {
             };
         };
     };
+    search_symbols_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_market_news_markets_news_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                symbols?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_asset_change_asset_change_get: {
         parameters: {
             query?: {
@@ -3870,6 +4444,7 @@ export interface operations {
             query?: {
                 currency?: string;
                 accounts?: string[] | null;
+                show_closed?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -4038,6 +4613,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TransactionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_document_transactions_parse_document_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_document_transactions_parse_document_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_transactions_batch_transactions_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransactionBatchInput"];
             };
         };
         responses: {
@@ -4561,6 +5202,7 @@ export interface operations {
                 currency?: string;
                 accounts?: string[] | null;
                 show_all?: boolean;
+                show_closed?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -4790,6 +5432,7 @@ export interface operations {
             query?: {
                 currency?: string;
                 accounts?: string[] | null;
+                show_closed?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -5120,6 +5763,41 @@ export interface operations {
             };
         };
     };
+    narrative_screener_screener_narrative_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     trigger_ai_review_screener_review__symbol__post: {
         parameters: {
             query?: {
@@ -5132,6 +5810,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_message_endpoint_chat_message_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

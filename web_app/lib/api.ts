@@ -919,9 +919,11 @@ export interface SymbolSearchResult {
 }
 
 export async function fetchSymbolSearch(q: string): Promise<SymbolSearchResult[]> {
-    const res = await authFetch(`${API_BASE_URL}/search?q=${encodeURIComponent(q)}`);
-    if (!res.ok) return [];
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/search", {
+        params: { query: { q } }
+    });
+    if (error) return [];
+    return data as unknown as SymbolSearchResult[];
 }
 
 export interface MarketNewsItem {
@@ -935,17 +937,20 @@ export interface MarketNewsItem {
 }
 
 export async function fetchMarketNews(limit = 20): Promise<MarketNewsItem[]> {
-    const res = await authFetch(`${API_BASE_URL}/markets/news?limit=${limit}`);
-    if (!res.ok) return [];
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/markets/news", {
+        params: { query: { limit } }
+    });
+    if (error) return [];
+    return data as unknown as MarketNewsItem[];
 }
 
 export async function fetchStockNews(symbols: string[], limit = 30): Promise<MarketNewsItem[]> {
     if (!symbols.length) return [];
-    const q = `symbols=${encodeURIComponent(symbols.join(','))}&limit=${limit}`;
-    const res = await authFetch(`${API_BASE_URL}/markets/news?${q}`);
-    if (!res.ok) return [];
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/markets/news", {
+        params: { query: { symbols: symbols.join(','), limit } }
+    });
+    if (error) return [];
+    return data as unknown as MarketNewsItem[];
 }
 
 export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {

@@ -25,6 +25,7 @@ const PALETTE = [
 interface AggregatedData {
     name: string;
     value: number;
+    [key: string]: unknown;
 }
 
 interface AllocationPieChartProps {
@@ -62,8 +63,7 @@ function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) 
                                 dataKey="value"
                                 stroke="none"
                                 paddingAngle={1.5}
-                                activeIndex={activeIndex ?? undefined}
-                                activeShape={ActiveSlice}
+                                {...({ activeIndex: activeIndex ?? undefined, activeShape: ActiveSlice } as object)}
                                 onMouseEnter={(_, index) => setActiveIndex(index)}
                                 onMouseLeave={() => setActiveIndex(null)}
                             >
