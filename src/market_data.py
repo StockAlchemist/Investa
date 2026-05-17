@@ -563,14 +563,13 @@ class MarketDataProvider:
                     try:
                         entry_ts = datetime.fromisoformat(ts_str)
                         if (now_ts - entry_ts).days <= METADATA_CACHE_DURATION_DAYS:
-                            # --- 1.1 Cache Validation (Check for new fields) ---
-                            # Ensure 'exchange' key exists (added in v1.1 update)
-                            # If missing, treat as stale/invalid to force re-fetch.
-                            if "exchange" in cached_meta:
+                            # --- 1.1 Cache Validation (Check for required fields) ---
+                            # Require both 'exchange' and 'country'; older entries lack 'country'.
+                            if "exchange" in cached_meta and "country" in cached_meta:
                                 results[sym] = cached_meta
                                 continue
                             else:
-                                logging.debug(f"Metadata cache for {sym} is missing 'exchange' field. Invalidating.")
+                                logging.debug(f"Metadata cache for {sym} is missing required fields. Invalidating.")
                     except ValueError:
                         pass
             

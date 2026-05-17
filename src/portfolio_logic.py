@@ -1242,7 +1242,7 @@ def calculate_portfolio_summary(
                         if not manual_geography:
                             country_map[internal_symbol] = fundamental_info.get(
                                 "country", "Unknown Region"
-                            )
+                            ) or "Unknown Region"
                         if not manual_industry:
                             industry_map[internal_symbol] = fundamental_info.get(
                                 "industry", "Unknown Industry"
@@ -1253,7 +1253,7 @@ def calculate_portfolio_summary(
                         if not manual_asset_type:
                             quote_type_map[internal_symbol] = "N/A (Fetch Error)"
                         if not manual_geography:
-                            country_map[internal_symbol] = "N/A (Fetch Error)"
+                            country_map[internal_symbol] = "Unknown Region"
                         if not manual_industry:
                             industry_map[internal_symbol] = "N/A (Fetch Error)"
 
