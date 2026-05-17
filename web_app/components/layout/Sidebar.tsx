@@ -27,7 +27,7 @@ const SECONDARY_NAV = [
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  user: { username: string } | null;
+  user: { username: string; alias?: string } | null;
   onLogout: () => void;
   collapsed: boolean;
   onToggle: () => void;
@@ -138,12 +138,12 @@ export function Sidebar({
           )}
         >
           <div className="w-6 h-6 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center shrink-0 select-none">
-            {user?.username?.[0]?.toUpperCase() ?? 'U'}
+            {(user?.alias || user?.username)?.[0]?.toUpperCase() ?? 'U'}
           </div>
           {!collapsed && (
             <>
               <span className="text-sm font-medium text-foreground truncate flex-1 min-w-0">
-                {user?.username}
+                {user?.alias || user?.username}
               </span>
               <button
                 onClick={e => { e.stopPropagation(); onLogout(); }}

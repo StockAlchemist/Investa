@@ -548,6 +548,8 @@ export default function Home() {
           isMarketOpen={isMarketOpen}
           lastUpdated={summaryQuery.dataUpdatedAt ? new Date(summaryQuery.dataUpdatedAt) : null}
           onMobileMenuOpen={() => setIsMobileNavOpen(true)}
+          marketValue={summary?.metrics?.market_value ?? null}
+          dayChangePct={summary?.metrics?.day_change_percent ?? null}
         />
 
         {/* Scrollable content area */}

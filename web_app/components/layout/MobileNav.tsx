@@ -27,7 +27,7 @@ interface MobileNavProps {
   onClose: () => void;
   activeTab: string;
   onTabChange: (tab: string) => void;
-  user: { username: string } | null;
+  user: { username: string; alias?: string } | null;
   onLogout: () => void;
   onUserClick: () => void;
 }
@@ -170,9 +170,9 @@ export function MobileNav({
             className="flex items-center h-10 px-3 gap-3 rounded-lg hover:bg-muted transition-all duration-150 cursor-pointer"
           >
             <div className="w-6 h-6 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center shrink-0 select-none">
-              {user?.username?.[0]?.toUpperCase() ?? 'U'}
+              {(user?.alias || user?.username)?.[0]?.toUpperCase() ?? 'U'}
             </div>
-            <span className="text-sm font-medium text-foreground truncate flex-1">{user?.username}</span>
+            <span className="text-sm font-medium text-foreground truncate flex-1">{user?.alias || user?.username}</span>
             <button
               onClick={e => { e.stopPropagation(); onLogout(); onClose(); }}
               title="Sign out"

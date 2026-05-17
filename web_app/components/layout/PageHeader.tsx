@@ -1,10 +1,11 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { cn } from '@/lib/utils';
-import { Search, Menu } from 'lucide-react';
+import { cn, formatCompactNumber } from '@/lib/utils';
+import { Menu, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
+import { StockSearchBar } from '@/components/StockSearchBar';
 
 const MarketIndicesBox  = dynamic(() => import('@/components/MarketIndicesBox'),  { ssr: false });
 const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
@@ -35,7 +36,7 @@ interface PageHeaderProps {
   indices?: Record<string, any>;
   visibleItems: string[];
   onVisibleItemsChange: (items: string[]) => void;
-  onCommandPaletteOpen: () => void;
+  onCommandPaletteOpen?: () => void;
   fxRate?: number;
   availableCurrencies?: string[];
   isFetching?: boolean;
@@ -43,6 +44,8 @@ interface PageHeaderProps {
   onMobileMenuOpen?: () => void;
   isMarketOpen?: boolean;
   lastUpdated?: Date | null;
+  marketValue?: number | null;
+  dayChangePct?: number | null;
 }
 
 export function PageHeader({
@@ -64,11 +67,24 @@ export function PageHeader({
   onMobileMenuOpen,
   isMarketOpen,
   lastUpdated,
+  marketValue,
+  dayChangePct,
 }: PageHeaderProps) {
-  return (
-    <header className="sticky top-0 z-40 flex items-center h-[52px] border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/90 shrink-0 px-3 sm:px-5 gap-2 sm:gap-3">
+  const hasKpi = marketValue != null;
+  const dayPositive = (dayChangePct ?? 0) >= 0;
 
-      {/* Mobile: logo + hamburger */}
+  return (
+    <header
+      className={cn(
+        'sticky top-0 z-40 flex items-center h-[52px] shrink-0 px-3 sm:px-5 gap-2 sm:gap-3',
+        // Glass backdrop with subtle gradient
+        'border-b border-border/60',
+        'bg-gradient-to-r from-background/85 via-background/75 to-background/85',
+        'backdrop-blur-xl supports-[backdrop-filter]:bg-background/60',
+      )}
+    >
+
+      {/* Mobile: logo + name */}
       <div className="flex items-center gap-2 md:hidden">
         <img src="logo-dark.png?v=5" alt="Investa" className="w-6 h-6 rounded-md hidden dark:block" />
         <img src="logo.png?v=5"      alt="Investa" className="w-6 h-6 rounded-md dark:hidden" />
@@ -80,45 +96,70 @@ export function PageHeader({
         {TAB_LABELS[activeTab] ?? activeTab}
       </h1>
 
-      {/* Market status + last updated */}
-      <div className="hidden md:flex items-center gap-2 shrink-0">
-        {isMarketOpen !== undefined && (
-          <span className={cn(
-            'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
-            isMarketOpen
-              ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-              : 'text-muted-foreground border-border bg-muted/40',
-          )}>
-            <span className={cn(
-              'w-1.5 h-1.5 rounded-full',
-              isMarketOpen ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
-            )} />
-            {isMarketOpen ? 'Live' : 'Closed'}
-          </span>
-        )}
-        {lastUpdated && (
-          <span className="text-[10px] text-muted-foreground/60 font-medium tabular-nums">
-            {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        )}
-      </div>
+      {/* ── Mini KPI: portfolio value + day change ── */}
+      {hasKpi && (
+        <>
+          <span className="hidden md:block w-px h-5 bg-border/70" />
+          <div className="hidden md:flex items-baseline gap-2 shrink-0 select-none">
+            <span className="text-sm font-bold tabular-nums text-foreground leading-none">
+              {formatCompactNumber(marketValue!, currency)}
+            </span>
+            {dayChangePct != null && (
+              <span
+                className={cn(
+                  'flex items-center gap-0.5 text-[11px] font-bold tabular-nums leading-none px-1.5 py-0.5 rounded-full',
+                  dayPositive
+                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
+                    : 'text-red-600 dark:text-red-400 bg-red-500/10',
+                )}
+              >
+                {dayPositive
+                  ? <ArrowUpRight className="w-3 h-3" />
+                  : <ArrowDownRight className="w-3 h-3" />}
+                {dayPositive ? '+' : ''}{dayChangePct.toFixed(2)}%
+              </span>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Market status + last updated ── */}
+      {(isMarketOpen !== undefined || lastUpdated) && (
+        <>
+          <span className="hidden md:block w-px h-5 bg-border/70" />
+          <div className="hidden md:flex items-center gap-2 shrink-0">
+            {isMarketOpen !== undefined && (
+              <span className={cn(
+                'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
+                isMarketOpen
+                  ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                  : 'text-muted-foreground border-border bg-muted/40',
+              )}>
+                <span className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  isMarketOpen ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
+                )} />
+                {isMarketOpen ? 'Live' : 'Closed'}
+              </span>
+            )}
+            {lastUpdated && (
+              <span className="text-[10px] text-muted-foreground/70 font-medium tabular-nums">
+                {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="flex-1" />
 
-      {/* Controls row */}
+      {/* ── Right cluster: controls ── */}
       <div className="flex items-center gap-1 sm:gap-1.5">
 
-        {/* Search / command palette */}
-        <button
-          onClick={onCommandPaletteOpen}
-          className="hidden sm:flex items-center gap-2 h-7 px-2.5 rounded-md border border-border bg-muted/40 text-muted-foreground text-xs hover:bg-muted hover:text-foreground transition-all"
-        >
-          <Search className="w-3 h-3 shrink-0" />
-          <span className="hidden md:inline">Search</span>
-          <kbd className="hidden lg:inline px-1.5 py-0.5 rounded bg-background/80 border border-border text-[10px] font-mono leading-none">
-            ⌘K
-          </kbd>
-        </button>
+        {/* Stock symbol search */}
+        <div className="hidden sm:block">
+          <StockSearchBar currency={currency} />
+        </div>
 
         {/* Market indices ticker — hidden below xl */}
         {indices && (
@@ -131,8 +172,7 @@ export function PageHeader({
           </div>
         )}
 
-        {/* Separator */}
-        <span className="hidden sm:block w-px h-4 bg-border" />
+        <span className="hidden sm:block w-px h-4 bg-border/70" />
 
         {/* Dashboard widget configurator */}
         {activeTab === 'performance' && (

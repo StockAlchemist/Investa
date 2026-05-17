@@ -148,14 +148,14 @@ function PortfolioHeroCard({
                             <Skeleton className="h-5 w-36 rounded-lg" />
                         </div>
                     ) : (
-                        <>
-                            <div className="text-4xl sm:text-5xl font-black tabular-nums text-foreground leading-none tracking-tight">
+                        <div className="flex items-baseline gap-4 flex-wrap">
+                            <span className="text-4xl sm:text-5xl font-black tabular-nums text-foreground leading-none tracking-tight">
                                 {formatCurrency(animatedValue, currency)}
-                            </div>
+                            </span>
 
                             {dayGL !== null && (
                                 <div className={cn(
-                                    'flex items-center gap-2 mt-2 flex-wrap',
+                                    'flex items-center gap-2 flex-wrap',
                                     positive ? 'text-emerald-500' : 'text-red-500',
                                 )}>
                                     {positive
@@ -175,7 +175,7 @@ function PortfolioHeroCard({
                                     <span className="text-xs text-muted-foreground font-normal">today</span>
                                 </div>
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
 
@@ -187,12 +187,12 @@ function PortfolioHeroCard({
                         </div>
                         {annTWR != null && (
                             <div className="px-6">
-                                <StatPill label="Ann. TWR" value={annTWR} sub="per year" isLoading={isLoading} />
+                                <StatPill label="Ann. TWR" value={annTWR} sub="p.a." isLoading={isLoading} />
                             </div>
                         )}
                         {irr != null && (
                             <div className="px-6">
-                                <StatPill label="IRR (MWR)" value={irr} sub="per year" isLoading={isLoading} />
+                                <StatPill label="IRR (MWR)" value={irr} sub="p.a." isLoading={isLoading} />
                             </div>
                         )}
                     </div>
@@ -268,6 +268,10 @@ function DashboardInner({
         unrealizedGLPct = 0;
 
     const pos = (v: number | null) => v !== null && v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const subBadge = (v: number | null | undefined) =>
+        v != null && v >= 0
+            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+            : 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20';
 
     const renderContent = (id: string, variant: 'card' | 'seamless' = 'card') => {
         switch (id) {
@@ -277,9 +281,9 @@ function DashboardInner({
             case 'totalReturn':
                 return <MetricCard title="Total Return" value={totalGain} subValue={m?.total_return_pct} colorClass={pos(totalGain)} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
             case 'annualTWR':
-                return <MetricCard title="Total TWR" value={m?.cumulative_twr != null ? `${Math.abs(m.cumulative_twr).toFixed(2)}%` : '-'} subValue={m?.annualized_twr != null ? `${Math.abs(m.annualized_twr).toFixed(2)}% p.a.` : undefined} isCurrency={false} colorClass={pos(m?.cumulative_twr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Total TWR" value={m?.cumulative_twr != null ? `${Math.abs(m.cumulative_twr).toFixed(2)}%` : '-'} subValue={m?.annualized_twr != null ? `${Math.abs(m.annualized_twr).toFixed(2)}% p.a.` : undefined} subValueClassName={subBadge(m?.annualized_twr)} isCurrency={false} colorClass={pos(m?.cumulative_twr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
             case 'mwr':
-                return <MetricCard title="IRR (MWR)" value={m?.portfolio_mwr != null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'} subValue="p.a." isCurrency={false} colorClass={pos(m?.portfolio_mwr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="IRR (MWR)" value={m?.portfolio_mwr != null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'} subValue="p.a." subValueClassName={subBadge(m?.portfolio_mwr)} isCurrency={false} colorClass={pos(m?.portfolio_mwr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
             case 'unrealizedGL':
                 return <MetricCard title="Unrealized G/L" value={unrealizedGL} subValue={unrealizedGLPct} colorClass={pos(unrealizedGL)} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={TrendingUp} accentColor={themeColor} variant={variant} />;
             case 'fxGL':
@@ -291,7 +295,7 @@ function DashboardInner({
             case 'ytdDividends':
                 return <MetricCard title="Total Dividends" value={m?.dividends ?? 0} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={DollarSign} accentColor={themeColor} variant={variant} />;
             case 'dividendYield':
-                return <MetricCard title="Dividend Yield" value={m?.dividend_return_cumulative != null ? `${Math.abs(m.dividend_return_cumulative).toFixed(2)}%` : '-'} subValue={m?.dividend_return_annualized != null ? `${Math.abs(m.dividend_return_annualized).toFixed(2)}% p.a.` : undefined} isCurrency={false} colorClass={pos(m?.dividend_return_cumulative ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Dividend Yield" value={m?.dividend_return_cumulative != null ? `${Math.abs(m.dividend_return_cumulative).toFixed(2)}%` : '-'} subValue={m?.dividend_return_annualized != null ? `${Math.abs(m.dividend_return_annualized).toFixed(2)}% p.a.` : undefined} subValueClassName={subBadge(m?.dividend_return_annualized)} isCurrency={false} colorClass={pos(m?.dividend_return_cumulative ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
             case 'ytdReturn':
                 return <MetricCard title="YTD Return" value={riskMetrics?.['YTD Return'] != null ? `${(riskMetrics['YTD Return'] * 100).toFixed(2)}%` : m?.ytd_return != null ? `${m.ytd_return.toFixed(2)}%` : '-'} isCurrency={false} colorClass={pos((riskMetrics?.['YTD Return'] ?? m?.ytd_return ?? 0))} isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={TrendingUp} accentColor={themeColor} variant={variant} />;
             case 'maxDrawdown': {

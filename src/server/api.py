@@ -625,6 +625,24 @@ async def get_market_status():
     return {"is_open": is_market_open()}
 
 
+@router.get("/search")
+async def search_symbols(q: str = Query("", min_length=1)):
+    """Symbol / name autocomplete using yfinance Search."""
+    try:
+        import yfinance as yf
+        results = yf.Search(q, max_results=8).quotes
+        out = []
+        for r in results:
+            symbol = r.get("symbol") or ""
+            name = r.get("shortname") or r.get("longname") or ""
+            kind = r.get("typeDisp") or r.get("quoteType") or ""
+            if symbol:
+                out.append({"symbol": symbol, "name": name, "type": kind})
+        return out
+    except Exception:
+        return []
+
+
 @router.get("/asset_change")
 async def get_asset_change(
     currency: str = "USD",

@@ -33,7 +33,7 @@ export default function PeriodSelector({ selectedPeriod, onPeriodChange }: Perio
                         className={cn(
                             'relative px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all duration-150 whitespace-nowrap',
                             active
-                                ? 'bg-background text-foreground shadow-sm border border-border/80'
+                                ? 'bg-indigo-600 text-white font-bold shadow'
                                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
                         )}
                     >
