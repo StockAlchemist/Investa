@@ -49,6 +49,13 @@ FUNDAMENTALS_CACHE_DURATION_HOURS = 24  # Reduced from 3 months to ensure fresh 
 CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes (prices, fx)
 METADATA_CACHE_FILE_NAME = "yf_metadata_cache.json"  # Long-lived cache for static data (Name, Currency)
 METADATA_CACHE_DURATION_DAYS = 30
+# Schema version for per-symbol metadata cache files.
+# Bump when adding required fields; entries with a lower (or missing) version are
+# treated as stale and re-fetched. History:
+#   1 — initial (name, currency, sector, industry, quoteType)
+#   2 — added 'exchange'
+#   3 — added 'country' (foreign ADRs were misclassified without it)
+METADATA_SCHEMA_VERSION = 3
 AI_REVIEW_CACHE_TTL = 604800  # 1 week for AI stock analysis
 
 # --- Logging Configuration ---

@@ -88,6 +88,7 @@ try:
         APP_NAME,  # <-- ADDED
         METADATA_CACHE_FILE_NAME,  # <-- ADDED
         METADATA_CACHE_DURATION_DAYS,  # <-- ADDED
+        METADATA_SCHEMA_VERSION,
     )
 except ImportError:
     logging.error(
@@ -563,13 +564,19 @@ class MarketDataProvider:
                     try:
                         entry_ts = datetime.fromisoformat(ts_str)
                         if (now_ts - entry_ts).days <= METADATA_CACHE_DURATION_DAYS:
-                            # --- 1.1 Cache Validation (Check for required fields) ---
-                            # Require both 'exchange' and 'country'; older entries lack 'country'.
-                            if "exchange" in cached_meta and "country" in cached_meta:
+                            # --- 1.1 Cache Validation ---
+                            # Entries below the current schema version are stale, UNLESS they
+                            # already have all the v3-required keys (legacy entries get grandfathered).
+                            entry_version = cached_meta.get("schema_version", 0)
+                            v3_keys = ("exchange", "country", "sector", "industry", "quoteType")
+                            if entry_version >= METADATA_SCHEMA_VERSION or all(k in cached_meta for k in v3_keys):
                                 results[sym] = cached_meta
                                 continue
                             else:
-                                logging.debug(f"Metadata cache for {sym} is missing required fields. Invalidating.")
+                                logging.debug(
+                                    f"Metadata cache for {sym} is schema v{entry_version} "
+                                    f"(current v{METADATA_SCHEMA_VERSION}). Invalidating."
+                                )
                     except ValueError:
                         pass
             
@@ -613,7 +620,8 @@ class MarketDataProvider:
                             "exchange": info.get("exchange"),
                             "fullExchangeName": info.get("fullExchangeName"),
                             "quoteType": info.get("quoteType"),
-                            "timestamp": now_ts.isoformat()
+                            "timestamp": now_ts.isoformat(),
+                            "schema_version": METADATA_SCHEMA_VERSION,
                         }
                         
                         # PERF FIX (BN-05): Also pre-populate fundamentals cache from same info fetch.
@@ -638,14 +646,15 @@ class MarketDataProvider:
                         logging.warning(f"Failed to fetch metadata for {sym}. Using placeholders.")
                         meta_entry = {
                             "name": sym,
-                            "currency": None, 
+                            "currency": None,
                             "sector": None,
                             "industry": None,
                             "country": None,
                             "exchange": None,
                             "fullExchangeName": None,
                             "quoteType": None,
-                            "timestamp": now_ts.isoformat()
+                            "timestamp": now_ts.isoformat(),
+                            "schema_version": METADATA_SCHEMA_VERSION,
                         }
                     
                     if meta_entry:
