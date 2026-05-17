@@ -20,8 +20,9 @@ from datetime import date
 from typing import Optional
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file. `override=True` so .env wins over
+# any stale shell exports (a long-lived terminal can hold outdated API keys).
+load_dotenv(override=True)
 
 # --- API Keys ---
 # FMP API Key is managed here but can also be overridden by env

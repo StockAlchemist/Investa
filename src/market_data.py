@@ -237,6 +237,44 @@ def _safe_json_load(path: str) -> Optional[Any]:
         return None
 
 
+def _maybe_enrich_with_fmp(meta_entry: dict, symbol: str) -> None:
+    """
+    In-place merge: if `country`, `sector`, or `industry` are missing on `meta_entry`,
+    try FMP and fill the gaps. No-op if FMP_API_KEY isn't configured or the call fails.
+    Adds an `enriched_by: "fmp"` marker so we can audit how much enrichment happened.
+    """
+    needs = (
+        not meta_entry.get("country")
+        or not meta_entry.get("sector")
+        or not meta_entry.get("industry")
+    )
+    if not needs:
+        return
+
+    api_key = getattr(config, "FMP_API_KEY", None)
+    if not api_key:
+        return
+
+    try:
+        from fmp_provider import get_company_profile
+    except ImportError:
+        return
+
+    profile = get_company_profile(symbol, api_key)
+    if not profile:
+        return
+
+    filled = []
+    for key in ("country", "sector", "industry", "currency", "exchange", "fullExchangeName", "quoteType", "name"):
+        if not meta_entry.get(key) and profile.get(key):
+            meta_entry[key] = profile[key]
+            filled.append(key)
+
+    if filled:
+        meta_entry["enriched_by"] = "fmp"
+        logging.info(f"FMP enriched {symbol}: filled {', '.join(filled)}")
+
+
 def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="history", period=None, **kwargs):
     """
     Runs yfinance fetch in a separate process using file I/O to prevent crashing the main server.
@@ -623,6 +661,9 @@ class MarketDataProvider:
                             "timestamp": now_ts.isoformat(),
                             "schema_version": METADATA_SCHEMA_VERSION,
                         }
+                        # Fallback: if yfinance left country/sector/industry empty,
+                        # try FMP. Common for ADRs (ASML, TSM) and thin coverage.
+                        _maybe_enrich_with_fmp(meta_entry, sym)
                         
                         # PERF FIX (BN-05): Also pre-populate fundamentals cache from same info fetch.
                         # This eliminates the redundant second _run_isolated_fetch(task="info")
@@ -656,6 +697,8 @@ class MarketDataProvider:
                             "timestamp": now_ts.isoformat(),
                             "schema_version": METADATA_SCHEMA_VERSION,
                         }
+                        # yfinance fully failed — try FMP from scratch
+                        _maybe_enrich_with_fmp(meta_entry, sym)
                     
                     if meta_entry:
                         results[sym] = meta_entry

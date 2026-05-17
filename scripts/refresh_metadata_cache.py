@@ -26,6 +26,75 @@ import config
 V3_REQUIRED_KEYS = ("exchange", "country", "sector", "industry", "quoteType")
 
 
+def _enrich_with_fmp(cache_dir: str, files: list, current_version: int, dry_run: bool) -> int:
+    """Walk cache entries with missing country/sector/industry and fill them from FMP."""
+    import time
+
+    api_key = getattr(config, "FMP_API_KEY", None)
+    if not api_key:
+        print("FMP_API_KEY not set in .env — cannot enrich.")
+        return 1
+
+    candidates = []
+    for fname in files:
+        path = os.path.join(cache_dir, fname)
+        try:
+            with open(path, "r") as f:
+                entry = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not entry.get("country") or not entry.get("sector") or not entry.get("industry"):
+            candidates.append((fname, path, entry))
+
+    if not candidates:
+        print("\nNo entries need enrichment — country/sector/industry are populated everywhere.")
+        return 0
+
+    if dry_run:
+        print(f"\nDRY RUN — {len(candidates)} entries are missing country/sector/industry.")
+        sample = [c[0][:-5] for c in candidates[:20]]
+        print(f"First 20: {', '.join(sample)}")
+        print("Re-run without --dry-run to fetch from FMP and patch them in place.")
+        return 0
+
+    from fmp_provider import get_company_profile
+
+    print(f"\nEnriching {len(candidates)} entries via FMP (~{len(candidates) * 0.3:.0f}s with throttle)...")
+    enriched = 0
+    failed = 0
+    for i, (fname, path, entry) in enumerate(candidates, 1):
+        symbol = fname[:-5]  # strip .json
+        profile = get_company_profile(symbol, api_key)
+        if i % 25 == 0:
+            print(f"  [{i}/{len(candidates)}] processed...")
+        if not profile:
+            failed += 1
+            continue
+
+        filled = []
+        for key in ("country", "sector", "industry", "currency", "exchange", "fullExchangeName", "quoteType", "name"):
+            if not entry.get(key) and profile.get(key):
+                entry[key] = profile[key]
+                filled.append(key)
+
+        if filled:
+            entry["enriched_by"] = "fmp"
+            entry["schema_version"] = current_version
+            try:
+                with open(path, "w") as f:
+                    json.dump(entry, f, indent=2)
+            except OSError as e:
+                print(f"  {symbol}: write failed: {e}")
+                continue
+            enriched += 1
+        # Throttle so we stay under FMP free-tier rate limit (~300/min)
+        time.sleep(0.25)
+
+    print(f"\nEnriched {enriched}/{len(candidates)} entries"
+          + (f" ({failed} FMP lookups failed)" if failed else ""))
+    return 0
+
+
 def classify(entry: dict, current_version: int) -> str:
     version = entry.get("schema_version", 0)
     if version >= current_version:
@@ -44,6 +113,9 @@ def main() -> int:
                         help="Delete stale entries (below current schema version).")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would be deleted without removing anything.")
+    parser.add_argument("--enrich-with-fmp", action="store_true",
+                        help="For entries missing country/sector/industry, fetch from FMP and patch in place. "
+                             "Requires FMP_API_KEY in .env.")
     args = parser.parse_args()
 
     cache_dir = os.path.join(config.get_app_data_dir(), "cache", "metadata_cache")
@@ -82,10 +154,14 @@ def main() -> int:
     for bucket in sorted(counts):
         print(f"  {bucket:14s} {counts[bucket]:5d}")
 
+    if args.enrich_with_fmp:
+        return _enrich_with_fmp(cache_dir, files, current_version, dry_run=args.dry_run)
+
     if not args.clear:
         if stale_files:
             print(f"\n{len(stale_files)} stale entries would be invalidated.")
             print("Re-run with --clear to delete them (they will be re-fetched on next portfolio load).")
+            print("Or run with --enrich-with-fmp to fill country/sector/industry from FMP without re-fetching everything.")
         return 0
 
     if not stale_files:
