@@ -869,13 +869,13 @@ export interface paths {
         };
         /**
          * Get Watchlists Endpoint
-         * @description Fetches all available watchlists.
+         * @description List all watchlists for the current user.
          */
         get: operations["get_watchlists_endpoint_api_watchlists_get"];
         put?: never;
         /**
          * Create Watchlist Endpoint
-         * @description Creates a new watchlist.
+         * @description Create a new watchlist.
          */
         post: operations["create_watchlist_endpoint_api_watchlists_post"];
         delete?: never;
@@ -894,13 +894,13 @@ export interface paths {
         get?: never;
         /**
          * Rename Watchlist Endpoint
-         * @description Renames a watchlist.
+         * @description Rename a watchlist.
          */
         put: operations["rename_watchlist_endpoint_api_watchlists__watchlist_id__put"];
         post?: never;
         /**
          * Delete Watchlist Endpoint
-         * @description Deletes a watchlist.
+         * @description Delete a watchlist.
          */
         delete: operations["delete_watchlist_endpoint_api_watchlists__watchlist_id__delete"];
         options?: never;
@@ -917,13 +917,13 @@ export interface paths {
         };
         /**
          * Get Watchlist Endpoint
-         * @description Fetches the watchlist enriched with current market prices.
+         * @description Fetch a watchlist enriched with current market prices, AI ratings, and fundamentals.
          */
         get: operations["get_watchlist_endpoint_api_watchlist_get"];
         put?: never;
         /**
          * Add To Watchlist Api
-         * @description Adds a symbol to the watchlist.
+         * @description Add a symbol to a watchlist.
          */
         post: operations["add_to_watchlist_api_api_watchlist_post"];
         delete?: never;
@@ -944,7 +944,7 @@ export interface paths {
         post?: never;
         /**
          * Remove From Watchlist Api
-         * @description Removes a symbol from the watchlist.
+         * @description Remove a symbol from a watchlist.
          */
         delete: operations["remove_from_watchlist_api_api_watchlist__symbol__delete"];
         options?: never;
@@ -1917,13 +1917,13 @@ export interface paths {
         };
         /**
          * Get Watchlists Endpoint
-         * @description Fetches all available watchlists.
+         * @description List all watchlists for the current user.
          */
         get: operations["get_watchlists_endpoint_watchlists_get"];
         put?: never;
         /**
          * Create Watchlist Endpoint
-         * @description Creates a new watchlist.
+         * @description Create a new watchlist.
          */
         post: operations["create_watchlist_endpoint_watchlists_post"];
         delete?: never;
@@ -1942,13 +1942,13 @@ export interface paths {
         get?: never;
         /**
          * Rename Watchlist Endpoint
-         * @description Renames a watchlist.
+         * @description Rename a watchlist.
          */
         put: operations["rename_watchlist_endpoint_watchlists__watchlist_id__put"];
         post?: never;
         /**
          * Delete Watchlist Endpoint
-         * @description Deletes a watchlist.
+         * @description Delete a watchlist.
          */
         delete: operations["delete_watchlist_endpoint_watchlists__watchlist_id__delete"];
         options?: never;
@@ -1965,13 +1965,13 @@ export interface paths {
         };
         /**
          * Get Watchlist Endpoint
-         * @description Fetches the watchlist enriched with current market prices.
+         * @description Fetch a watchlist enriched with current market prices, AI ratings, and fundamentals.
          */
         get: operations["get_watchlist_endpoint_watchlist_get"];
         put?: never;
         /**
          * Add To Watchlist Api
-         * @description Adds a symbol to the watchlist.
+         * @description Add a symbol to a watchlist.
          */
         post: operations["add_to_watchlist_api_watchlist_post"];
         delete?: never;
@@ -1992,7 +1992,7 @@ export interface paths {
         post?: never;
         /**
          * Remove From Watchlist Api
-         * @description Removes a symbol from the watchlist.
+         * @description Remove a symbol from a watchlist.
          */
         delete: operations["remove_from_watchlist_api_watchlist__symbol__delete"];
         options?: never;
