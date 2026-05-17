@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Sector } from 'recharts';
 import { Holding } from '../lib/api';
 import { formatCompactNumber, cn } from '../lib/utils';
+import AllocationDrift from './AllocationDrift';
 
 interface AllocationProps {
     holdings: Holding[];
@@ -196,11 +197,32 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     const countryData   = aggregateData('Country');
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            <AllocationPieChart title="By Asset Type" data={assetTypeData} currency={currency} />
-            <AllocationPieChart title="By Sector"     data={sectorData}    currency={currency} />
-            <AllocationPieChart title="By Industry"   data={industryData}  currency={currency} />
-            <AllocationPieChart title="By Country"    data={countryData}   currency={currency} />
+        <div className="p-4 space-y-6">
+            {/* Target vs actual drift */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <AllocationDrift
+                    holdings={holdings}
+                    currency={currency}
+                    bucketKey="quoteType"
+                    title="Asset Type — drift vs target"
+                    storageKey="allocation-target-quoteType"
+                />
+                <AllocationDrift
+                    holdings={holdings}
+                    currency={currency}
+                    bucketKey="Sector"
+                    title="Sector — drift vs target"
+                    storageKey="allocation-target-sector"
+                />
+            </div>
+
+            {/* Donut charts */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <AllocationPieChart title="By Asset Type" data={assetTypeData} currency={currency} />
+                <AllocationPieChart title="By Sector"     data={sectorData}    currency={currency} />
+                <AllocationPieChart title="By Industry"   data={industryData}  currency={currency} />
+                <AllocationPieChart title="By Country"    data={countryData}   currency={currency} />
+            </div>
         </div>
     );
 }
