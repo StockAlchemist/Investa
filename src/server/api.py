@@ -625,6 +625,132 @@ async def get_market_status():
     return {"is_open": is_market_open()}
 
 
+@router.get("/search")
+async def search_symbols(q: str = Query("", min_length=1)):
+    """Symbol / name autocomplete using yfinance Search."""
+    try:
+        import yfinance as yf
+        results = yf.Search(q, max_results=8).quotes
+        out = []
+        for r in results:
+            symbol = r.get("symbol") or ""
+            name = r.get("shortname") or r.get("longname") or ""
+            kind = r.get("typeDisp") or r.get("quoteType") or ""
+            if symbol:
+                out.append({"symbol": symbol, "name": name, "type": kind})
+        return out
+    except Exception:
+        return []
+
+
+@router.get("/markets/news")
+async def get_market_news(
+    limit: int = Query(20, ge=1, le=50),
+    symbols: Optional[str] = Query(None),
+):
+    """Fetch latest market news.
+    When symbols are provided, uses yfinance Search + relatedTickers filtering so
+    only articles explicitly tagged to that ticker are returned.
+    When no symbols are provided, returns general market news via the SPY RSS feed."""
+    import yfinance as yf
+    import urllib.request
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    from datetime import datetime, timezone
+
+    def _search_news(symbol: str, fetch_count: int = 30) -> list:
+        """Fetch news via yf.Search and keep only articles tagged to this symbol."""
+        try:
+            raw = yf.Search(symbol, news_count=fetch_count, max_results=0).news or []
+        except Exception:
+            return []
+        sym_upper = symbol.upper()
+        out = []
+        for n in raw:
+            related = [t.upper() for t in n.get("relatedTickers", [])]
+            if sym_upper not in related:
+                continue
+            title = n.get("title", "").strip()
+            if not title:
+                continue
+            # Thumbnail: pick smallest resolution ≥ 100px wide, or first available
+            thumb = None
+            resolutions = (n.get("thumbnail") or {}).get("resolutions", [])
+            for r in resolutions:
+                if r.get("width", 0) >= 100:
+                    thumb = r.get("url")
+                    break
+            if not thumb and resolutions:
+                thumb = resolutions[0].get("url")
+            # Convert unix timestamp to ISO-8601
+            ts = n.get("providerPublishTime", 0)
+            pub_date = (
+                datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                if ts else ""
+            )
+            out.append({
+                "title": title,
+                "summary": "",
+                "url": n.get("link", ""),
+                "thumbnail": thumb,
+                "provider": n.get("publisher", ""),
+                "pub_date": pub_date,
+                "symbol": symbol,
+            })
+        return out
+
+    def _fetch_rss(symbol: str, rss_limit: int = 20) -> list:
+        """Fallback: Yahoo Finance RSS for general / SPY market news."""
+        url = (
+            f"https://feeds.finance.yahoo.com/rss/2.0/headline"
+            f"?s={symbol}&region=US&lang=en-US"
+        )
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                xml_data = resp.read()
+            root = ET.fromstring(xml_data)
+            out = []
+            for item in root.findall(".//item")[:rss_limit]:
+                title = item.findtext("title", "").strip()
+                if not title:
+                    continue
+                link = item.findtext("link", "").strip()
+                pub_date_str = item.findtext("pubDate", "")
+                pub_date = ""
+                if pub_date_str:
+                    try:
+                        pub_date = parsedate_to_datetime(pub_date_str).isoformat()
+                    except Exception:
+                        pub_date = pub_date_str
+                out.append({
+                    "title": title,
+                    "summary": item.findtext("description", "").strip(),
+                    "url": link,
+                    "thumbnail": None,
+                    "provider": "Yahoo Finance",
+                    "pub_date": pub_date,
+                    "symbol": symbol,
+                })
+            return out
+        except Exception:
+            return []
+
+    if symbols:
+        symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:20]
+        seen: set = set()
+        all_news: list = []
+        for sym in symbol_list:
+            for item in _search_news(sym, fetch_count=30):
+                if item["title"] not in seen:
+                    seen.add(item["title"])
+                    all_news.append(item)
+        all_news.sort(key=lambda x: x.get("pub_date") or "", reverse=True)
+        return all_news[:limit]
+    else:
+        return _fetch_rss("SPY", limit)
+
+
 @router.get("/asset_change")
 async def get_asset_change(
     currency: str = "USD",

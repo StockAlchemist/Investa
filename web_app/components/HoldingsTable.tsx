@@ -902,30 +902,70 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="relative" ref={columnMenuRef}>
                             <button
                                 onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none transition-colors
                                 ${isColumnMenuOpen
-                                        ? 'bg-[#0097b2] text-white'
-                                        : 'text-foreground bg-secondary hover:bg-accent/10'
+                                        ? 'bg-primary/10 text-primary border border-primary/30'
+                                        : 'text-foreground bg-secondary hover:bg-accent/10 border border-transparent'
                                     }`}
                             >
                                 <Settings2 className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">Columns</span>
+                                <span className="hidden sm:inline text-[10px] font-bold bg-primary/15 text-primary px-1.5 rounded-full leading-4">
+                                    {visibleColumns.length}
+                                </span>
                             </button>
                             {isColumnMenuOpen && (
-                                <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-56 origin-top-left sm:origin-top-right bg-white dark:bg-zinc-950 rounded-md shadow-none ring-0 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
-                                    <div className="py-1">
-                                        {Object.keys(COLUMN_DEFINITIONS).map(header => (
-                                            <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={visibleColumns.includes(header)}
-                                                    onChange={() => toggleColumn(header)}
-                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                                />
-                                                <span className="ml-2">{header}</span>
-                                            </label>
-                                        ))}
+                                <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-72 origin-top-left sm:origin-top-right bg-card border border-border rounded-xl shadow-xl overflow-hidden">
+                                    {/* Header */}
+                                    <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+                                        <span className="text-xs font-bold text-foreground">Visible Columns</span>
+                                        <button
+                                            onClick={() => setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)}
+                                            className="text-[10px] font-semibold text-primary hover:underline"
+                                        >
+                                            Reset
+                                        </button>
                                     </div>
+                                    {/* Column groups */}
+                                    {[
+                                        { label: 'Core', cols: ['Symbol', 'Account', 'Quantity', 'Price', 'Mkt Val', '% of Total', '7d Trend'] },
+                                        { label: 'Daily', cols: ['Day Chg', 'Day Chg %'] },
+                                        { label: 'Returns', cols: ['Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'IRR (%)'] },
+                                        { label: 'Cost', cols: ['Avg Cost', 'Cost Basis', 'Total Buy Cost'] },
+                                        { label: 'Income', cols: ['Divs', 'Est. Income', 'Yield (Cost) %', 'Yield (Mkt) %'] },
+                                        { label: 'Details', cols: ['Sector', 'Industry', 'FX G/L %', 'Fees', 'Tags', 'Contribution %', 'AI Score', 'Intrinsic Value'] },
+                                    ].map(group => (
+                                        <div key={group.label} className="px-2 py-1.5">
+                                            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5 mb-1">{group.label}</p>
+                                            <div className="grid grid-cols-2 gap-0.5">
+                                                {group.cols.map(header => (
+                                                    <label
+                                                        key={header}
+                                                        className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-muted/60 cursor-pointer group"
+                                                    >
+                                                        <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                                            visibleColumns.includes(header)
+                                                                ? 'bg-primary border-primary'
+                                                                : 'border-border group-hover:border-primary/50'
+                                                        }`}>
+                                                            {visibleColumns.includes(header) && (
+                                                                <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 10" fill="none">
+                                                                    <path d="M2 5.5L4 7.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                </svg>
+                                                            )}
+                                                        </span>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={visibleColumns.includes(header)}
+                                                            onChange={() => toggleColumn(header)}
+                                                            className="sr-only"
+                                                        />
+                                                        <span className="text-xs text-foreground truncate">{header}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -980,7 +1020,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 </div>
 
                 {/* Desktop Table View (also visible on mobile if toggled) */}
-                <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto`}>
+                <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto [overflow-y:clip]`}>
                     <table className="min-w-full">
                         <thead className="bg-secondary sticky top-0 z-30 font-semibold border-b">
                             <tr>

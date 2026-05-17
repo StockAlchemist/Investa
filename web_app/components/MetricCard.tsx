@@ -193,14 +193,19 @@ export function MetricCard({
                         <Skeleton className="h-5 w-12 rounded-full opacity-50" />
                     ) : subValue !== undefined && subValue !== null && (
                         <Badge
-                            variant={(typeof subValue === 'number' ? subValue >= 0 : true) ? 'success' : 'destructive'}
+                            variant="outline"
                             className={cn(
-                                'text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full border-none shrink-0',
+                                'text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full shrink-0',
+                                typeof subValue === 'number'
+                                    ? (subValue >= 0
+                                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                                        : 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20')
+                                    : '',
                                 subValueClassName
                             )}
                         >
                             {typeof subValue === 'number'
-                                ? (subValue === Infinity ? '∞' : `${subValue.toFixed(2)}%`)
+                                ? (subValue === Infinity ? '∞' : `${subValue >= 0 ? '+' : ''}${subValue.toFixed(2)}%`)
                                 : subValue}
                         </Badge>
                     )}
@@ -291,7 +296,7 @@ export function MetricCard({
                         )}
                     >
                         {typeof subValue === 'number'
-                            ? (subValue === Infinity ? '∞' : `${subValue.toFixed(2)}%`)
+                            ? (subValue === Infinity ? '∞' : `${subValue >= 0 ? '+' : ''}${subValue.toFixed(2)}%`)
                             : subValue}
                     </Badge>
                 )}

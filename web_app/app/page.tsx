@@ -16,7 +16,6 @@ import {
   fetchDividendCalendar,
   fetchHistory,
   fetchWatchlist,
-
   fetchSettings,
   updateSettings,
   SettingsUpdate,
@@ -26,49 +25,36 @@ import {
   PerformanceData
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
-// recharts is NOT imported here — it's deferred to lazy-loaded components
-import { DEFAULT_ITEMS, INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
-// import { CURRENCY_SYMBOLS } from '@/lib/utils';
+import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
-import AccountSelector from '@/components/AccountSelector';
-import CurrencySelector from '@/components/CurrencySelector';
-import TabNavigation from '@/components/TabNavigation';
-import ThemeToggle from '@/components/ThemeToggle';
+import { EmptyState } from '@/components/EmptyState';
+import AppShellSkeleton from '@/components/skeletons/AppShellSkeleton';
+import { Sidebar } from '@/components/layout/Sidebar';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { MobileNav } from '@/components/layout/MobileNav';
 import dynamic from 'next/dynamic';
-import AppShellSkeleton from "@/components/skeletons/AppShellSkeleton";
+import { useTheme } from 'next-themes';
+import { Home as HomeIcon, Activity, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
 
 const PerformanceGraph = dynamic(() => import('@/components/PerformanceGraph'), {
   loading: () => <div className="h-[400px] bg-card border border-border/50 rounded-2xl mb-6 animate-pulse" />,
-  ssr: false
+  ssr: false,
 });
-
-const TransactionsTable = dynamic(() => import('@/components/TransactionsTable'));
-const Allocation = dynamic(() => import('@/components/Allocation'));
-const AssetChange = dynamic(() => import('@/components/AssetChange'));
-const CapitalGains = dynamic(() => import('@/components/CapitalGains'));
-const DividendComponent = dynamic(() => import('@/components/Dividend'));
-const DividendCalendar = dynamic(() => import('@/components/DividendCalendar'));
-const IncomeProjector = dynamic(() => import('@/components/IncomeProjector').then(mod => mod.IncomeProjector));
-const Settings = dynamic(() => import('@/components/Settings'));
-const CommandPalette = dynamic(() => import('@/components/CommandPalette'));
-const Watchlist = dynamic(() => import('@/components/Watchlist'));
-const ScreenerView = dynamic(() => import('@/components/ScreenerView'));
-const PortfolioAIReview = dynamic(() => import('@/components/PortfolioAIReview'));
-const MarketIndicesBox = dynamic(() => import('@/components/MarketIndicesBox'), { ssr: false });
-const MarketsTab = dynamic(() => import('@/components/MarketsTab'), { ssr: false });
-const IndexGraphModal = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
-
-
-import { useTheme } from 'next-themes';
-import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Activity, Moon, Sun, LogOut, UserCircle } from 'lucide-react';
-import ControlBar from '@/components/ControlBar';
-import UserMenu from '@/components/UserMenu';
-const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
-
-// Static import for ThemeToggle since it's in the sidebar always visible
-// const ThemeToggle = dynamic(() => import('@/components/ThemeToggle'));
-
+const TransactionsTable    = dynamic(() => import('@/components/TransactionsTable'));
+const Allocation           = dynamic(() => import('@/components/Allocation'));
+const AssetChange          = dynamic(() => import('@/components/AssetChange'));
+const CapitalGains         = dynamic(() => import('@/components/CapitalGains'));
+const DividendComponent    = dynamic(() => import('@/components/Dividend'));
+const DividendCalendar     = dynamic(() => import('@/components/DividendCalendar'));
+const IncomeProjector      = dynamic(() => import('@/components/IncomeProjector').then(mod => mod.IncomeProjector));
+const Settings             = dynamic(() => import('@/components/Settings'));
+const CommandPalette       = dynamic(() => import('@/components/CommandPalette'));
+const Watchlist            = dynamic(() => import('@/components/Watchlist'));
+const ScreenerView         = dynamic(() => import('@/components/ScreenerView'));
+const PortfolioAIReview    = dynamic(() => import('@/components/PortfolioAIReview'));
+const IndexGraphModal      = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
+const MarketsTab           = dynamic(() => import('@/components/MarketsTab'), { ssr: false });
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
@@ -85,83 +71,78 @@ export default function Home() {
     }
   }, [user, authLoading, router]);
 
-  // Hydration-safe state initialization
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [currency, setCurrency] = useState('USD');
-  const [activeTab, setActiveTab] = useState('performance');
-  const [showClosed, setShowClosed] = useState(false);
+  const [selectedAccounts, setSelectedAccounts]     = useState<string[]>([]);
+  const [currency, setCurrency]                     = useState('USD');
+  const [activeTab, setActiveTab]                   = useState('performance');
+  const [showClosed, setShowClosed]                 = useState(false);
   const [backgroundFetchLevel, setBackgroundFetchLevel] = useState(0);
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted]                       = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'overrides' | 'account' | undefined>(undefined);
+  const [sidebarCollapsed, setSidebarCollapsed]     = useState(false);
+  const [isIndexGraphModalOpen, setIsIndexGraphModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen]   = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen]             = useState(false);
+  const [benchmarks, setBenchmarks]                 = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
+  const [graphPeriod, setGraphPeriod]               = useState('1y');
+  const [graphView, setGraphView]                   = useState<'return' | 'value' | 'drawdown'>('return');
+  const [graphCustomFromDate, setGraphCustomFromDate] = useState(() => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().split('T')[0];
+  });
+  const [graphCustomToDate, setGraphCustomToDate]   = useState(() => new Date().toISOString().split('T')[0]);
+  const [capitalGainsDates, setCapitalGainsDates]   = useState<{ from?: string; to?: string }>({});
+  const [visibleItems, setVisibleItems]             = useState<string[]>(INITIAL_VISIBLE_ITEMS);
 
-  const handleUserIconClick = () => {
-    setSettingsInitialTab('account');
-    setActiveTab('settings');
-  };
-
+  const handleUserIconClick = () => { setSettingsInitialTab('account'); setActiveTab('settings'); };
   const handleTabChange = (tab: string) => {
-    if (tab === 'settings') {
-      setSettingsInitialTab(undefined);
-    }
+    if (tab === 'settings') setSettingsInitialTab(undefined);
     setActiveTab(tab);
   };
 
-  const [isIndexGraphModalOpen, setIsIndexGraphModalOpen] = useState(false);
-
-  // Hydrate ALL state from localStorage in a single effect to minimize re-renders
+  // Hydrate all state from localStorage in one effect
   useEffect(() => {
     try {
-      // Batch all localStorage reads together
-      const savedAccounts = localStorage.getItem('investa_selected_accounts');
-      const savedCurrency = localStorage.getItem('investa_currency');
-      const savedTab = localStorage.getItem('investa_active_tab');
-      const savedShowClosed = localStorage.getItem('investa_show_closed');
-      const savedBenchmarks = localStorage.getItem('investa_graph_benchmarks');
-      const savedVisibleItems = localStorage.getItem('investa_dashboard_visible_items');
-      const savedGraphPeriod = localStorage.getItem('investa_graph_period');
-      const savedGraphView = localStorage.getItem('investa_graph_view');
+      const savedAccounts      = localStorage.getItem('investa_selected_accounts');
+      const savedCurrency      = localStorage.getItem('investa_currency');
+      const savedTab           = localStorage.getItem('investa_active_tab');
+      const savedShowClosed    = localStorage.getItem('investa_show_closed');
+      const savedBenchmarks    = localStorage.getItem('investa_graph_benchmarks');
+      const savedVisibleItems  = localStorage.getItem('investa_dashboard_visible_items');
+      const savedGraphPeriod   = localStorage.getItem('investa_graph_period');
+      const savedGraphView     = localStorage.getItem('investa_graph_view');
+      const savedSidebarState  = localStorage.getItem('investa_sidebar_collapsed');
 
-      // Apply all state updates (React 18+ batches these automatically)
-      if (savedAccounts) setSelectedAccounts(JSON.parse(savedAccounts));
-      if (savedCurrency) setCurrency(savedCurrency);
-      if (savedTab) setActiveTab(savedTab);
-      if (savedShowClosed) setShowClosed(savedShowClosed === 'true');
-      if (savedBenchmarks) setBenchmarks(JSON.parse(savedBenchmarks));
-      if (savedVisibleItems) {
-        const parsed = JSON.parse(savedVisibleItems);
-        if (parsed.length > 0) setVisibleItems(parsed);
-      }
-      if (savedGraphPeriod) setGraphPeriod(savedGraphPeriod);
+      if (savedAccounts)     setSelectedAccounts(JSON.parse(savedAccounts));
+      if (savedCurrency)     setCurrency(savedCurrency);
+      if (savedTab)          setActiveTab(savedTab);
+      if (savedShowClosed)   setShowClosed(savedShowClosed === 'true');
+      if (savedBenchmarks)   setBenchmarks(JSON.parse(savedBenchmarks));
+      if (savedVisibleItems) { const p = JSON.parse(savedVisibleItems); if (p.length > 0) setVisibleItems(p); }
+      if (savedGraphPeriod)  setGraphPeriod(savedGraphPeriod);
       if (savedGraphView && ['return', 'value', 'drawdown'].includes(savedGraphView)) {
         setGraphView(savedGraphView as 'return' | 'value' | 'drawdown');
       }
+      if (savedSidebarState !== null) setSidebarCollapsed(savedSidebarState === 'true');
     } catch (e) {
-      console.error("Failed to hydrate state from localStorage", e);
+      console.error('Failed to hydrate state from localStorage', e);
     } finally {
       setMounted(true);
     }
   }, []);
 
-  // Stagger background fetches to prioritize essential data
-  // PERF FIX (BN-10): Increased delays to avoid flooding the backend before
-  // critical summary/holdings responses complete. Previous values (800ms, 3s)
-  // caused 10+ concurrent requests within the first 3 seconds.
   useEffect(() => {
     if (!mounted) return;
-
-    // Level 1: Performance Tab extras (Health, Risk, Attribution, Sparkline) after 3s
     const t1 = setTimeout(() => setBackgroundFetchLevel(1), 3000);
-
-    // Level 2: Other tabs (Transactions, Dividends, etc.) after 8s
     const t2 = setTimeout(() => setBackgroundFetchLevel(2), 8000);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [mounted]);
 
-  // Settings sync effect (condensed)
+  // Persist sidebar state
+  useEffect(() => {
+    if (mounted) localStorage.setItem('investa_sidebar_collapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed, mounted]);
+
+  const queryClient = useQueryClient();
+
   const settingsQuery = useQuery({
     queryKey: ['settings', user?.username],
     queryFn: fetchSettings,
@@ -169,139 +150,65 @@ export default function Home() {
     enabled: !!user,
   });
 
-  // ... (keep existing effects)
-
-  const [benchmarks, setBenchmarks] = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
-
-  // Benchmarks now loaded in the consolidated localStorage effect above
-
-
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-
-  // Graph State (Lifted from PerformanceGraph)
-  const [graphPeriod, setGraphPeriod] = useState('1y');
-  const [graphView, setGraphView] = useState<'return' | 'value' | 'drawdown'>('return');
-  const [graphCustomFromDate, setGraphCustomFromDate] = useState(() => {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 1);
-    return d.toISOString().split('T')[0];
-  });
-  const [graphCustomToDate, setGraphCustomToDate] = useState(() => {
-    return new Date().toISOString().split('T')[0];
-  });
-
-
-  // Removed duplicate showClosed init
-
-  const [capitalGainsDates, setCapitalGainsDates] = useState<{ from?: string, to?: string }>({});
-
-  // Lazy init visibleItems
-  const [visibleItems, setVisibleItems] = useState<string[]>(INITIAL_VISIBLE_ITEMS);
-
-  // visibleItems, graph settings now loaded in the consolidated localStorage effect above
-
-  const queryClient = useQueryClient();
-
   const settingsMutation = useMutation({
     mutationFn: updateSettings,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', user?.username] }),
   });
 
-  // Unified Settings Sync & Persistence
+  // Persist + sync settings to server
   useEffect(() => {
-    // 1. Persist to localStorage immediately
-    localStorage.setItem('investa_currency', currency);
-    localStorage.setItem('investa_active_tab', activeTab);
-    localStorage.setItem('investa_show_closed', showClosed.toString());
+    localStorage.setItem('investa_currency',                       currency);
+    localStorage.setItem('investa_active_tab',                     activeTab);
+    localStorage.setItem('investa_show_closed',                    showClosed.toString());
+    localStorage.setItem('investa_selected_accounts',              JSON.stringify(selectedAccounts));
+    localStorage.setItem('investa_graph_period',                   graphPeriod);
+    localStorage.setItem('investa_graph_view',                     graphView);
     if (visibleItems.length > 0) localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
-    if (benchmarks.length > 0) localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
-    localStorage.setItem('investa_selected_accounts', JSON.stringify(selectedAccounts));
-    localStorage.setItem('investa_graph_period', graphPeriod);
-    localStorage.setItem('investa_graph_view', graphView);
+    if (benchmarks.length > 0)   localStorage.setItem('investa_graph_benchmarks',        JSON.stringify(benchmarks));
 
-    // 2. Sync to Server (Debounced)
-    // Only proceed if we have server data to compare against
     if (!settingsQuery.data) return;
-
-    const timeoutId = setTimeout(() => {
+    const id = setTimeout(() => {
       const updates: Partial<SettingsUpdate> = {};
-      const server = settingsQuery.data;
+      const s = settingsQuery.data;
+      if (s.display_currency !== currency)        updates.display_currency    = currency;
+      if (s.active_tab !== activeTab)             updates.active_tab          = activeTab;
+      if (s.show_closed !== showClosed)           updates.show_closed         = showClosed;
+      const eq = (a: string[] | undefined | null, b: string[]) =>
+        !!a && a.length === b.length && a.every((v, i) => v === b[i]);
+      if (!eq(s.selected_accounts, selectedAccounts))               updates.selected_accounts = selectedAccounts;
+      if (!eq(s.visible_items, visibleItems) && visibleItems.length > 0) updates.visible_items = visibleItems;
+      if (!eq(s.benchmarks, benchmarks) && benchmarks.length > 0)  updates.benchmarks = benchmarks;
+      if (Object.keys(updates).length > 0) settingsMutation.mutate(updates);
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, settingsQuery.data]);
 
-      if (server.display_currency !== currency) updates.display_currency = currency;
-      if (server.active_tab !== activeTab) updates.active_tab = activeTab;
-      if (server.show_closed !== showClosed) updates.show_closed = showClosed;
-
-      // Fast array comparison for shallow arrays of strings
-      const arraysEqual = (a: string[] | undefined | null, b: string[]) => {
-        if (!a) return false;
-        if (a.length !== b.length) return false;
-        for (let i = 0; i < a.length; i++) {
-          if (a[i] !== b[i]) return false;
-        }
-        return true;
-      };
-
-      if (!arraysEqual(server.selected_accounts, selectedAccounts)) {
-        updates.selected_accounts = selectedAccounts;
-      }
-      if (!arraysEqual(server.visible_items, visibleItems) && visibleItems.length > 0) {
-        updates.visible_items = visibleItems;
-      }
-      if (!arraysEqual(server.benchmarks, benchmarks) && benchmarks.length > 0) {
-        updates.benchmarks = benchmarks;
-      }
-
-      if (Object.keys(updates).length > 0) {
-        settingsMutation.mutate(updates);
-      }
-    }, 1000); // 1 second debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [
-    // Dependencies: trigger on any local change or when server data updates
-    currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems,
-    settingsQuery.data
-  ]);
-
-  // Command Palette Keyboard Listener
+  // Command palette keyboard shortcut
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsCommandPaletteOpen(prev => !prev);
-      }
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setIsCommandPaletteOpen(p => !p); }
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Handler for navigation from Command Palette
-  const handleNavigate = (tab: string) => {
-    setActiveTab(tab);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const handleNavigate = (tab: string) => { setActiveTab(tab); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
-  // Queries
+  // ── Queries ──────────────────────────────────────────────────────────────
   const marketStatusQuery = useQuery({
     queryKey: ['marketStatus'],
     queryFn: fetchMarketStatus,
     staleTime: 60 * 1000,
-    refetchInterval: 5 * 60 * 1000, // Check market status every 5 minutes
+    refetchInterval: 5 * 60 * 1000,
     enabled: !!user,
   });
-
   const isMarketOpen = marketStatusQuery.data?.is_open ?? false;
-
-
 
   const summaryQuery = useQuery({
     queryKey: ['summary', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
-    refetchInterval: isMarketOpen ? 60 * 1000 : false, // Update summary every minute if market is open
+    refetchInterval: isMarketOpen ? 60 * 1000 : false,
     placeholderData: keepPreviousData,
     enabled: !!user,
   });
@@ -313,11 +220,6 @@ export default function Home() {
     placeholderData: keepPreviousData,
     enabled: !!user,
   });
-
-  // --- PRIORITIZATION LOGIC REMOVED ---
-  // Queries now run in parallel or on-demand based on active tab
-  // const isHighPriorityLoaded = summaryQuery.isSuccess && holdingsQuery.isSuccess;
-
 
   const transactionsQuery = useQuery({
     queryKey: ['transactions', user?.username, selectedAccounts],
@@ -375,7 +277,6 @@ export default function Home() {
     enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
   });
 
-  // Defer sparkline to background level 1 to avoid competing with critical summary+holdings
   const historySparklineQuery = useQuery({
     queryKey: ['history', user?.username, currency, selectedAccounts, 'sparkline'],
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
@@ -384,7 +285,6 @@ export default function Home() {
     enabled: !!user && backgroundFetchLevel >= 1,
   });
 
-  // Main Graph Query
   const graphInterval = useMemo(() => {
     if (graphPeriod === '1d') return '2m';
     if (graphPeriod === '5d') return '15m';
@@ -393,7 +293,7 @@ export default function Home() {
   }, [graphPeriod]);
 
   const graphFromDate = graphPeriod === 'custom' ? graphCustomFromDate : undefined;
-  const graphToDate = graphPeriod === 'custom' ? graphCustomToDate : undefined;
+  const graphToDate   = graphPeriod === 'custom' ? graphCustomToDate   : undefined;
 
   const historyQuery = useQuery({
     queryKey: ['history', user?.username, currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate],
@@ -401,19 +301,14 @@ export default function Home() {
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
     refetchInterval: isMarketOpen && (graphPeriod === '1d' || graphPeriod === '5d') ? 60000 : false,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1)
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
-
-  const graphData = historyQuery.data || [];
-  const graphLoading = historyQuery.isFetching;
-
 
   const watchlistQuery = useQuery({
     queryKey: ['watchlist', user?.username, currency, 1],
     queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
     staleTime: 1 * 60 * 1000,
-    // No keepPreviousData needed for watchlist as it's not dependent on accounts
-    enabled: !!user && (activeTab === 'watchlist' || backgroundFetchLevel >= 2),
+    enabled: !!user && (activeTab === 'watchlist' || activeTab === 'markets' || backgroundFetchLevel >= 2),
   });
 
   const portfolioHealthQuery = useQuery({
@@ -424,8 +319,6 @@ export default function Home() {
     enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
 
-
-
   const incomeProjectionQuery = useQuery({
     queryKey: ['incomeProjection', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
@@ -434,26 +327,31 @@ export default function Home() {
     enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
   });
 
-  const summary = summaryQuery.data;
-  const holdings = holdingsQuery.data || [];
-  const transactions = transactionsQuery.data || [];
-  const assetChangeData = assetChangeQuery.data || null;
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const summary          = summaryQuery.data;
+  const holdings         = holdingsQuery.data || [];
+  const transactions     = transactionsQuery.data || [];
+  const assetChangeData  = assetChangeQuery.data || null;
   const capitalGainsData = capitalGainsQuery.data || null;
-  const dividendData = dividendsQuery.data || null;
-  const loading = summaryQuery.isPending; // Use isPending to show initial load, but fetch status for background
-
+  const dividendData     = dividendsQuery.data || null;
   const availableAccounts = (summary?.metrics?._available_accounts as string[]) || [];
+  const graphData        = historyQuery.data || [];
+  const graphLoading     = historyQuery.isFetching;
 
+  // ── Tab content ───────────────────────────────────────────────────────────
   const renderTabContent = () => {
     switch (activeTab) {
       case 'performance':
+        if (!summaryQuery.isLoading && !summaryQuery.data && summaryQuery.isFetched) {
+          return <EmptyState onNavigate={handleNavigate} />;
+        }
         return (
           <>
             <Dashboard
               summary={summary || { metrics: null, account_metrics: null }}
               currency={currency}
               history={historySparklineQuery.data || []}
-              isLoading={summaryQuery.isLoading && !summaryQuery.data} // Only show skeleton if no data
+              isLoading={summaryQuery.isLoading && !summaryQuery.data}
               isRefreshing={summaryQuery.isFetching || historySparklineQuery.isFetching}
               riskMetrics={riskMetricsQuery.data || {}}
               riskMetricsLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
@@ -482,6 +380,40 @@ export default function Home() {
               customToDate={graphCustomToDate}
               onCustomToDateChange={setGraphCustomToDate}
             />
+          </>
+        );
+
+      case 'watchlist':
+        return <Watchlist currency={currency} />;
+
+      case 'screener':
+        return null;
+
+      case 'ai_review':
+        return <PortfolioAIReview currency={currency} accounts={selectedAccounts} />;
+
+      case 'transactions':
+        return <TransactionsTable transactions={transactions} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;
+
+      case 'markets':
+        return !summary?.metrics?.indices ? (
+          <p className="text-muted-foreground text-sm">Market data unavailable.</p>
+        ) : (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          <MarketsTab
+            indices={summary.metrics.indices as any}
+            onIndexClick={() => setIsIndexGraphModalOpen(true)}
+            portfolioSymbols={holdings.map(h => h.Symbol).filter(Boolean)}
+            watchlistSymbols={(watchlistQuery.data || []).map((w: any) => w.Symbol).filter(Boolean)}
+          />
+        );
+
+      case 'allocation':
+        if (!holdingsQuery.isLoading && holdings.length === 0 && holdingsQuery.isFetched) {
+          return <EmptyState onNavigate={handleNavigate} />;
+        }
+        return (
+          <div className="space-y-6">
             <HoldingsTable
               holdings={holdings}
               currency={currency}
@@ -489,30 +421,13 @@ export default function Home() {
               showClosed={showClosed}
               onToggleShowClosed={setShowClosed}
             />
-          </>
+            <Allocation holdings={holdings} currency={currency} />
+          </div>
         );
-      case 'watchlist':
-        return <Watchlist currency={currency} />;
-      case 'screener':
-        return null; // Screener is separate
-      case 'ai_review':
-        return <PortfolioAIReview currency={currency} accounts={selectedAccounts} />;
 
-      case 'transactions':
-        return <TransactionsTable transactions={transactions} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;
-      case 'markets':
-        return !summary?.metrics?.indices ? (
-          <p className="text-muted-foreground">Market data unavailable.</p>
-        ) : (
-          <MarketsTab
-            indices={summary.metrics.indices}
-            onIndexClick={() => setIsIndexGraphModalOpen(true)}
-          />
-        );
-      case 'allocation':
-        return <Allocation holdings={holdings} currency={currency} />;
       case 'asset_change':
         return <AssetChange data={assetChangeData} currency={currency} isLoading={assetChangeQuery.isPending && !assetChangeQuery.data} />;
+
       case 'capital_gains':
         return (
           <CapitalGains
@@ -546,18 +461,21 @@ export default function Home() {
             </DividendComponent>
           </div>
         );
+
       case 'settings':
         return (
           <Settings
             settings={settingsQuery.data || null}
             holdings={holdings}
             availableAccounts={availableAccounts}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             initialTab={settingsInitialTab as any}
           />
         );
+
       default:
         return (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+          <div className="p-8 text-center text-muted-foreground">
             <p className="text-lg font-medium">Coming Soon</p>
             <p className="text-sm mt-2">The {activeTab} tab is under construction.</p>
           </div>
@@ -566,63 +484,95 @@ export default function Home() {
   };
 
   const { resolvedTheme } = useTheme();
-  // mounted state moved to top
 
-  if (!mounted || authLoading || !user) {
-    return <AppShellSkeleton />;
-  }
+  if (!mounted || authLoading || !user) return <AppShellSkeleton />;
 
-  // Inside Home component
   const currentTheme = TAB_THEMES[activeTab] || TAB_THEMES.performance;
 
   return (
-    <main className="min-h-screen pb-20 selection:bg-indigo-500/20 selection:text-indigo-500">
-      {/* Background Ambient Layers */}
+    <div className="flex h-screen overflow-hidden bg-background selection:bg-indigo-500/20 selection:text-indigo-500">
+
+      {/* Ambient background glows */}
       <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
-        {/* Primary glow - top-left */}
-        <div
-          className={cn(
-            "absolute -top-[30%] -left-[15%] w-[70%] h-[70%] rounded-full blur-[120px] md:blur-[160px] transition-all duration-1500 animate-pulse-glow",
-            currentTheme.bgGlow,
-            "opacity-30"
-          )}
-        />
-        {/* Secondary glow - right */}
-        <div
-          className={cn(
-            "absolute top-[20%] -right-[25%] w-[60%] h-[60%] rounded-full blur-[100px] md:blur-[140px] transition-all duration-1500",
-            currentTheme.bgGlow,
-            "opacity-20"
-          )}
-        />
-        {/* Accent glow - bottom */}
-        <div
-          className="absolute -bottom-[10%] left-[15%] w-[70%] h-[50%] rounded-full blur-[80px] md:blur-[130px] opacity-10 bg-indigo-400/30 dark:bg-indigo-500/20 transition-all duration-1500"
-        />
+        <div className={cn(
+          'absolute -top-[30%] -left-[15%] w-[70%] h-[70%] rounded-full blur-[120px] transition-all duration-[1500ms] animate-pulse-glow opacity-20',
+          currentTheme.bgGlow,
+        )} />
+        <div className={cn(
+          'absolute top-[20%] -right-[25%] w-[60%] h-[60%] rounded-full blur-[100px] transition-all duration-[1500ms] opacity-10',
+          currentTheme.bgGlow,
+        )} />
       </div>
+      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/10 via-background to-background pointer-events-none" />
 
-      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/15 via-background to-background pointer-events-none" />
-
-      {/* Control Bar - Desktop */}
-      <ControlBar
+      {/* ── Sidebar (desktop) ── */}
+      <Sidebar
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        onLogout={logout}
-        currency={currency}
-        onCurrencyChange={setCurrency}
-        fxRate={summary?.metrics?.exchange_rate_to_display}
-        availableCurrencies={settingsQuery.data?.available_currencies}
-        onSettingsClick={() => handleTabChange('settings')}
-        onUserClick={handleUserIconClick}
         user={user}
+        onLogout={logout}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed(c => !c)}
+        onUserClick={handleUserIconClick}
+        dayChangePct={summary?.metrics?.day_change_pct as number | undefined}
       />
 
+      {/* ── Mobile navigation drawer ── */}
+      <MobileNav
+        isOpen={isMobileNavOpen}
+        onClose={() => setIsMobileNavOpen(false)}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        user={user}
+        onLogout={logout}
+        onUserClick={handleUserIconClick}
+        currency={currency}
+      />
+
+      {/* ── Main content ── */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+
+        <PageHeader
+          activeTab={activeTab}
+          currency={currency}
+          onCurrencyChange={setCurrency}
+          availableAccounts={availableAccounts}
+          selectedAccounts={selectedAccounts}
+          onAccountsChange={setSelectedAccounts}
+          accountGroups={settingsQuery.data?.account_groups}
+          indices={summary?.metrics?.indices as Record<string, unknown> | undefined}
+          visibleItems={visibleItems}
+          onVisibleItemsChange={setVisibleItems}
+          onCommandPaletteOpen={() => setIsCommandPaletteOpen(true)}
+          fxRate={summary?.metrics?.exchange_rate_to_display as number | undefined}
+          availableCurrencies={settingsQuery.data?.available_currencies}
+          isFetching={summaryQuery.isFetching}
+          onIndexClick={() => setIsIndexGraphModalOpen(true)}
+          isMarketOpen={isMarketOpen}
+          lastUpdated={summaryQuery.dataUpdatedAt ? new Date(summaryQuery.dataUpdatedAt) : null}
+          onMobileMenuOpen={() => setIsMobileNavOpen(true)}
+          marketValue={summary?.metrics?.market_value ?? null}
+          dayChangePct={summary?.metrics?.day_change_percent ?? null}
+        />
+
+        {/* Scrollable content area */}
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-8">
+          <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-5 sm:py-6">
+            {renderTabContent()}
+            <div className={activeTab === 'screener' ? 'block' : 'hidden'}>
+              <ScreenerView currency={currency} />
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* ── Modals ── */}
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         onNavigate={handleNavigate}
+        currency={currency}
       />
-
       <IndexGraphModal
         isOpen={isIndexGraphModalOpen}
         onClose={() => setIsIndexGraphModalOpen(false)}
@@ -630,149 +580,48 @@ export default function Home() {
         currentIndices={summary?.metrics?.indices}
       />
 
-      <header className="sticky top-0 md:top-[61px] z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 py-3 sm:py-4 flex justify-between items-center gap-4 sm:gap-8">
-          <div className="flex items-center gap-4">
-            {/* Logo and App Title */}
-            <div className="flex items-center gap-2.5 sm:gap-3 transition-all duration-300">
-              {/* logo-dark.png is the dark mode logo, logo.png is light mode */}
-              {/* Using display classes for instant switching based on next-themes class */}
-              <div className="relative">
-                <img
-                  src="logo.png?v=5"
-                  alt="Investa Logo"
-                  className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/25 ring-1 ring-border/50 block dark:hidden"
-                />
-                <img
-                  src="logo-dark.png?v=5"
-                  alt="Investa Logo"
-                  className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/25 ring-1 ring-white/10 hidden dark:block"
-                />
-              </div>
-              <div className="hidden sm:flex md:hidden lg:flex flex-col -space-y-0.5">
-                <h1 className="text-2xl md:text-2xl font-black text-foreground leading-none tracking-tight">
-                  Investa
-                </h1>
-                <span className="text-[10px] md:text-[10px] text-muted-foreground/60 font-semibold tracking-widest uppercase">
-                  by StockAlchemist
-                </span>
-              </div>
-            </div>
-          </div>
-
-
-          <div className="flex items-center gap-4">
-            {summary?.metrics?.indices && (
-              <MarketIndicesBox
-                indices={summary.metrics.indices}
-                isFetching={summaryQuery.isFetching}
-                onClick={() => setIsIndexGraphModalOpen(true)}
-              />
-            )}
-
-            <div className="h-6 w-px bg-border hidden md:block" />
-
-            <div className="md:hidden flex items-center gap-1">
-              <CurrencySelector
-                currentCurrency={currency}
-                onChange={setCurrency}
-                fxRate={summary?.metrics?.exchange_rate_to_display}
-                availableCurrencies={settingsQuery.data?.available_currencies}
-                align="left"
-              />
-              {activeTab === 'performance' && (
-                <LayoutConfigurator
-                  visibleItems={visibleItems}
-                  onVisibleItemsChange={setVisibleItems}
-                  variant="ghost"
-                  align="left"
-                />
-              )}
-              <AccountSelector
-                availableAccounts={availableAccounts}
-                selectedAccounts={selectedAccounts}
-                onChange={setSelectedAccounts}
-                accountGroups={settingsQuery.data?.account_groups}
-                variant="ghost"
-                align="left"
-              />
-              <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={logout} side="bottom" />
-              <UserMenu
-                user={user}
-                onLogout={logout}
-                onUserClick={handleUserIconClick}
-                align="right"
-              />
-            </div>
-
-            {activeTab === 'performance' && (
-              <div className="hidden md:block">
-                <LayoutConfigurator
-                  visibleItems={visibleItems}
-                  onVisibleItemsChange={setVisibleItems}
-                />
-              </div>
-            )}
-
-            <div className="hidden md:block">
-              <AccountSelector
-                availableAccounts={availableAccounts}
-                selectedAccounts={selectedAccounts}
-                onChange={setSelectedAccounts}
-                accountGroups={settingsQuery.data?.account_groups}
-              />
-            </div>
-
-          </div>
-        </div>
-
-      </header >
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 pt-6 transition-all duration-300">
-
-
-        {renderTabContent()}
-        <div className={activeTab === 'screener' ? 'block' : 'hidden'}>
-          <ScreenerView currency={currency} />
-        </div>
-      </div>
-
-      {/* Bottom Nav (Visual only for now) */}
-      {/* Bottom Nav */}
+      {/* ── Mobile bottom nav ── */}
       <div
-        className="fixed bottom-0 left-0 right-0 border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest md:hidden z-50 transition-all duration-300"
+        className={cn("fixed bottom-0 left-0 right-0 border-t border-border px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest md:hidden z-50 transition-all duration-300", isMobileNavOpen && "hidden")}
         style={{ backgroundColor: 'var(--menu-solid)' }}
       >
         <div
-          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab !== 'settings' && activeTab !== 'markets' && activeTab !== 'screener' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           onClick={() => { setActiveTab('performance'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          className={cn(
+            'flex flex-col items-center flex-1 cursor-pointer transition-colors',
+            activeTab !== 'settings' && activeTab !== 'markets' && activeTab !== 'screener'
+              ? 'text-indigo-600 dark:text-indigo-400'
+              : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400',
+          )}
         >
-          <HomeIcon className="w-5 h-5" />
-          <span className="mt-1">Home</span>
+          <HomeIcon className="w-5 h-5" /><span className="mt-1">Home</span>
         </div>
         <div
-          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'markets' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           onClick={() => { setActiveTab('markets'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          className={cn(
+            'flex flex-col items-center flex-1 cursor-pointer transition-colors',
+            activeTab === 'markets' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400',
+          )}
         >
-          <Activity className="w-5 h-5" />
-          <span className="mt-1">Indices</span>
+          <Activity className="w-5 h-5" /><span className="mt-1">Indices</span>
         </div>
         <div
-          className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab === 'settings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
           onClick={() => { setActiveTab('settings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          className={cn(
+            'flex flex-col items-center flex-1 cursor-pointer transition-colors',
+            activeTab === 'settings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400',
+          )}
         >
-          <SettingsIcon className="w-5 h-5" />
-          <span className="mt-1">Settings</span>
+          <SettingsIcon className="w-5 h-5" /><span className="mt-1">Settings</span>
         </div>
         <div
-          className="flex flex-col items-center flex-1 cursor-pointer transition-colors text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="flex flex-col items-center flex-1 cursor-pointer transition-colors text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
         >
-          {mounted && theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          <span className="mt-1">{mounted && theme === 'dark' ? 'Light' : 'Dark'}</span>
+          {mounted && resolvedTheme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          <span className="mt-1">{mounted && resolvedTheme === 'dark' ? 'Light' : 'Dark'}</span>
         </div>
       </div>
-    </main >
+    </div>
   );
 }
-

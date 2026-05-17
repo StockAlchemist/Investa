@@ -1159,7 +1159,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                         </td>
                                                         <td className="px-4 py-2">
                                                             <select
-                                                                value={settings.account_cash_mode_map?.[account] || 'Manual'}
+                                                                value={settings?.account_cash_mode_map?.[account] || 'Manual'}
                                                                 onChange={(e) => updateAccountCashMode(account, e.target.value)}
                                                                 className={inputClassName}
                                                             >
