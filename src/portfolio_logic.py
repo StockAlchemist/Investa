@@ -1702,65 +1702,7 @@ def calculate_portfolio_summary(
 # --- NOTE: These functions remain in portfolio_logic.py as they were not moved ---
 
 
-def _deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Deduplicates split transactions using a fuzzy-month grouping strategy.
-    Prioritizes 'All Accounts' entries to avoid double-multiplication 
-    when both a global and account-specific split exist for the same event.
-    """
-    if df is None or df.empty:
-        return df
-    
-    type_col = "Type"
-    if type_col not in df.columns:
-        return df
-        
-    is_split = df[type_col].str.lower().str.strip().isin(["split", "stock split"])
-    if not is_split.any():
-        return df
-    
-    other_txs = df[~is_split]
-    splits_df = df[is_split].copy()
-    
-    # Priority: 'All Accounts' (0) > Others (1)
-    acc_col = "Account"
-    if acc_col in splits_df.columns:
-        splits_df['__split_priority'] = np.where(
-            splits_df[acc_col].astype(str).str.lower().str.strip() == 'all accounts', 0, 1
-        )
-    else:
-        splits_df['__split_priority'] = 1
-        
-    # Fuzzy grouping by Month
-    splits_df['__split_ym'] = pd.to_datetime(splits_df['Date']).dt.to_period('M')
-    
-    # --- FIX: Normalize Split Ratio for robust comparison ---
-    # Prevents 7.0 vs 7 from being treated as different splits
-    splits_df['Split Ratio'] = pd.to_numeric(splits_df['Split Ratio'], errors='coerce').fillna(1.0).astype(float)
-    
-    # Sort so 'All Accounts' comes first, and then by original index
-    sort_cols = ['Symbol', '__split_ym', '__split_priority']
-    if 'original_index' in splits_df.columns:
-        sort_cols.append('original_index')
-    
-    splits_df = splits_df.sort_values(by=sort_cols)
-    
-    # Drop duplicates by Symbol and Month. 
-    # Ratio included to distinguish multiple splits in one month if they exist.
-    deduped_splits = splits_df.drop_duplicates(subset=['Symbol', '__split_ym', 'Split Ratio'], keep='first')
-    
-    # Remove temp columns
-    deduped_splits = deduped_splits.drop(columns=['__split_priority', '__split_ym'])
-
-    
-    # Re-combine and maintain original order as much as possible
-    result = pd.concat([other_txs, deduped_splits])
-    if 'original_index' in result.columns:
-        result = result.sort_values(by='original_index')
-    else:
-        result = result.sort_index()
-        
-    return result
+from corporate_actions import deduplicate_split_transactions as _deduplicate_split_transactions  # noqa: E402
 
 
 # --- Function to Unadjust Prices (Keep as is) ---
