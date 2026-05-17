@@ -308,7 +308,7 @@ export default function Home() {
     queryKey: ['watchlist', user?.username, currency, 1],
     queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
     staleTime: 1 * 60 * 1000,
-    enabled: !!user && (activeTab === 'watchlist' || backgroundFetchLevel >= 2),
+    enabled: !!user && (activeTab === 'watchlist' || activeTab === 'markets' || backgroundFetchLevel >= 2),
   });
 
   const portfolioHealthQuery = useQuery({
@@ -403,6 +403,8 @@ export default function Home() {
           <MarketsTab
             indices={summary.metrics.indices as any}
             onIndexClick={() => setIsIndexGraphModalOpen(true)}
+            portfolioSymbols={holdings.map(h => h.Symbol).filter(Boolean)}
+            watchlistSymbols={(watchlistQuery.data || []).map((w: any) => w.Symbol).filter(Boolean)}
           />
         );
 
@@ -578,7 +580,7 @@ export default function Home() {
 
       {/* ── Mobile bottom nav ── */}
       <div
-        className="fixed bottom-0 left-0 right-0 border-t border-border px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest md:hidden z-50 transition-all duration-300"
+        className={cn("fixed bottom-0 left-0 right-0 border-t border-border px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest md:hidden z-50 transition-all duration-300", isMobileNavOpen && "hidden")}
         style={{ backgroundColor: 'var(--menu-solid)' }}
       >
         <div

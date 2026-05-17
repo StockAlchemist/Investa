@@ -2,11 +2,10 @@
 
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, PieChart, TrendingUp, ArrowLeftRight,
   DollarSign, BarChart3, Search, Star, Globe, Sparkles,
-  Settings, Sun, Moon, LogOut, X,
+  LogOut, X,
 } from 'lucide-react';
 
 const ALL_NAV = [
@@ -35,8 +34,6 @@ interface MobileNavProps {
 export function MobileNav({
   isOpen, onClose, activeTab, onTabChange, user, onLogout, onUserClick,
 }: MobileNavProps) {
-  const { resolvedTheme, setTheme } = useTheme();
-
   // Lock body scroll when open
   useEffect(() => {
     if (isOpen) {
@@ -73,7 +70,7 @@ export function MobileNav({
       {/* Drawer */}
       <div
         className={cn(
-          'fixed top-0 left-0 bottom-0 z-50 w-72 flex flex-col bg-card border-r border-border shadow-2xl transition-transform duration-300 ease-in-out md:hidden',
+          'fixed top-0 left-0 z-50 h-dvh w-72 flex flex-col bg-white dark:bg-zinc-900 border-r border-border shadow-2xl transition-transform duration-300 ease-in-out md:hidden',
           isOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
@@ -96,7 +93,7 @@ export function MobileNav({
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-0.5">
           <p className="section-label px-2 mb-2">Portfolio</p>
           {ALL_NAV.filter(n => n.section === 'main').map(({ id, label, icon: Icon }) => (
             <button
@@ -140,30 +137,7 @@ export function MobileNav({
         </nav>
 
         {/* Bottom utilities */}
-        <div className="border-t border-border px-3 py-3 space-y-0.5 shrink-0">
-          <button
-            onClick={() => { handleTabSelect('settings'); }}
-            className={cn(
-              'relative flex items-center w-full h-10 px-3 gap-3 rounded-lg text-sm font-medium transition-all duration-150',
-              activeTab === 'settings'
-                ? 'bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )}
-          >
-            <Settings className="w-4 h-4 shrink-0" />
-            Settings
-          </button>
-
-          <button
-            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="flex items-center w-full h-10 px-3 gap-3 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
-          >
-            {resolvedTheme === 'dark'
-              ? <Sun className="w-4 h-4 shrink-0" />
-              : <Moon className="w-4 h-4 shrink-0" />}
-            {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
-          </button>
-
+        <div className="border-t border-border px-3 pt-3 pb-3 space-y-0.5 shrink-0" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
           {/* User row */}
           <div
             onClick={() => { onUserClick(); onClose(); }}

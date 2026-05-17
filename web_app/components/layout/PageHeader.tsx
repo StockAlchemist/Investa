@@ -176,13 +176,11 @@ export function PageHeader({
 
         {/* Dashboard widget configurator */}
         {activeTab === 'performance' && (
-          <div className="hidden sm:block">
-            <LayoutConfigurator
-              visibleItems={visibleItems}
-              onVisibleItemsChange={onVisibleItemsChange}
-              variant="ghost"
-            />
-          </div>
+          <LayoutConfigurator
+            visibleItems={visibleItems}
+            onVisibleItemsChange={onVisibleItemsChange}
+            variant="ghost"
+          />
         )}
 
         <CurrencySelector

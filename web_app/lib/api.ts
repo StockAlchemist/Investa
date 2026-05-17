@@ -924,6 +924,30 @@ export async function fetchSymbolSearch(q: string): Promise<SymbolSearchResult[]
     return res.json();
 }
 
+export interface MarketNewsItem {
+    title: string;
+    summary: string;
+    url: string;
+    thumbnail: string | null;
+    provider: string;
+    pub_date: string;
+    symbol?: string | null;
+}
+
+export async function fetchMarketNews(limit = 20): Promise<MarketNewsItem[]> {
+    const res = await authFetch(`${API_BASE_URL}/markets/news?limit=${limit}`);
+    if (!res.ok) return [];
+    return res.json();
+}
+
+export async function fetchStockNews(symbols: string[], limit = 30): Promise<MarketNewsItem[]> {
+    if (!symbols.length) return [];
+    const q = `symbols=${encodeURIComponent(symbols.join(','))}&limit=${limit}`;
+    const res = await authFetch(`${API_BASE_URL}/markets/news?${q}`);
+    if (!res.ok) return [];
+    return res.json();
+}
+
 export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {
     const params = new URLSearchParams();
     if (force) params.append('force', 'true');
