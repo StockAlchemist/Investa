@@ -12,8 +12,92 @@ them straightforward to unit-test in isolation.
 """
 from __future__ import annotations
 
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Transaction type registry
+# ---------------------------------------------------------------------------
+# Types the engine currently understands end-to-end (data loader, all three
+# JIT dispatchers in portfolio_logic.py).
+SUPPORTED_TYPES = frozenset({
+    "buy", "sell",
+    "deposit", "withdrawal",
+    "dividend", "interest", "tax", "fees",
+    "split", "stock split",
+    "short sell", "buy to cover",
+    "transfer",
+})
+
+# Types the engine recognises as valid corporate actions but does NOT yet
+# apply mathematically. Rows of these types pass data-loader validation
+# (no warning spam) but no holding state is mutated. The math is defined
+# below as pure functions; wiring those into the JIT inner loops is the
+# remaining work for this epic.
+RESERVED_CORPORATE_ACTION_TYPES = frozenset({
+    "return of capital",   # apply_return_of_capital
+    "stock dividend",      # apply_stock_dividend
+    # Multi-symbol actions deferred (need a separate transaction shape):
+    "spin off",
+    "merger",
+})
+
+
+# ---------------------------------------------------------------------------
+# Pure-function arithmetic for the deferred types.
+#
+# Each function takes the current holding state for a single (symbol, account)
+# pair and returns the post-action state. These are intentionally Numba-friendly
+# (only floats in, only floats out) so they can be inlined into the JIT
+# dispatcher when the integration is wired up. Until then they are exercised
+# only by unit tests.
+# ---------------------------------------------------------------------------
+
+def apply_return_of_capital(
+    current_qty: float,
+    current_cost: float,
+    cash_distributed: float,
+) -> Tuple[float, float, float]:
+    """
+    A Return-of-Capital distribution returns part of the investor's principal.
+    Cost basis is reduced by the cash received; share count is unchanged. If
+    the distribution exceeds the remaining basis, the excess becomes a realised
+    capital gain (the third return value).
+
+    Returns: (new_qty, new_cost, realised_excess_gain).
+    """
+    if current_qty <= 1e-9:
+        # No position to reduce basis against; the entire distribution is a gain.
+        return current_qty, current_cost, cash_distributed
+
+    if cash_distributed <= current_cost:
+        return current_qty, current_cost - cash_distributed, 0.0
+
+    # Distribution exceeds basis — basis goes to zero, the remainder is gain.
+    excess = cash_distributed - current_cost
+    return current_qty, 0.0, excess
+
+
+def apply_stock_dividend(
+    current_qty: float,
+    current_cost: float,
+    shares_received: float,
+) -> Tuple[float, float]:
+    """
+    A stock dividend distributes additional shares to existing holders without
+    requiring payment. The total cost basis is unchanged; the per-share cost
+    drops proportionally as share count rises. Equivalent in math to a split
+    with ratio = (current_qty + shares_received) / current_qty, but specified
+    as an additive share count instead of a multiplier.
+
+    Returns: (new_qty, new_cost).
+    """
+    if current_qty <= 1e-9 or shares_received <= 1e-9:
+        return current_qty, current_cost
+    return current_qty + shares_received, current_cost
 
 
 def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:

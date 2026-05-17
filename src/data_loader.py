@@ -615,6 +615,24 @@ def load_and_clean_transactions(
             .str.lower()
         )
 
+        # Surface corporate-action types the engine recognises but does NOT
+        # yet apply. The rows are kept (won't be filtered) but the user
+        # should know their numbers won't reflect these events until the
+        # JIT dispatchers are extended. See src/corporate_actions.py.
+        try:
+            from corporate_actions import RESERVED_CORPORATE_ACTION_TYPES
+            reserved_mask = df["Type"].isin(RESERVED_CORPORATE_ACTION_TYPES)
+            if reserved_mask.any():
+                counts = df.loc[reserved_mask, "Type"].value_counts().to_dict()
+                logging.warning(
+                    f"Found {reserved_mask.sum()} transaction(s) of reserved "
+                    f"corporate-action types not yet applied by the engine: {counts}. "
+                    f"Math is defined in corporate_actions.py; integration into "
+                    f"portfolio_logic.py JIT dispatchers is pending."
+                )
+        except ImportError:
+            pass  # corporate_actions module missing — skip silently
+
     # --- Tags Cleaning ---
     if "Tags" in df.columns:
         # Ensure string, strip whitespace, remove 'nan' strings
