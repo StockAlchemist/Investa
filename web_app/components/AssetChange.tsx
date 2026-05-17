@@ -103,10 +103,10 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
             <div className="h-64 mb-6">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart key={`${viewMode}-${config.key}`} data={displayData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                         <XAxis
                             dataKey="Date"
-                            tick={{ fontSize: 10, fill: '#6b7280' }}
+                            tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
                             tickFormatter={(val) => {
                                 if (!val || typeof val !== 'string') return '';
                                 const datePart = val.split(' ')[0];
@@ -115,13 +115,13 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                 }
                                 return datePart;
                             }}
-                            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
                         />
                         <YAxis
                             tickFormatter={(val) => viewMode === 'percent' ? `${val.toFixed(0)}%` : new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
                             domain={['auto', 'auto']}
-                            tick={{ fill: '#6b7280', fontSize: 10 }}
-                            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
                             width={35}
                         />
                         {keysToPlot.map((key, index) => {

@@ -650,14 +650,14 @@ export default function PerformanceGraph({
                                 scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
                                 allowDataOverflow={isContinuous}
-                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
-                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 domain={([dataMin, dataMax]) => {
@@ -710,7 +710,7 @@ export default function PerformanceGraph({
                                     dot={false}
                                 />
                             )}
-                            <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
+                            <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="3 3" />
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 contentStyle={{ backgroundColor: 'transparent', border: 'none' }}
@@ -735,14 +735,14 @@ export default function PerformanceGraph({
                                 scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
                                 allowDataOverflow={isContinuous}
-                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
-                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 width={60}
@@ -789,7 +789,7 @@ export default function PerformanceGraph({
                                     dot={false}
                                 />
                             )}
-                            <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
+                            <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="3 3" />
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 content={<CustomTooltip />}
@@ -813,14 +813,14 @@ export default function PerformanceGraph({
                                 scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
                                 allowDataOverflow={isContinuous}
-                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
-                                tick={{ fontSize: 12, fill: '#6b7280' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 width={60}
@@ -839,7 +839,7 @@ export default function PerformanceGraph({
                                 fill="url(#colorDrawdown)"
                                 strokeWidth={2}
                             />
-                            <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
+                            <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="3 3" />
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
                                 content={<CustomTooltip />}

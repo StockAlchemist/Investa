@@ -171,12 +171,12 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                             margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                             className="outline-none focus:outline-none [&_.recharts-surface]:outline-none"
                         >
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
-                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} axisLine={{ stroke: 'hsl(var(--border))' }} />
                             <YAxis
                                 tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
-                                tick={{ fill: '#6b7280', fontSize: 10 }}
-                                axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+                                axisLine={{ stroke: 'hsl(var(--border))' }}
                                 width={35}
                             />
                             <Bar

@@ -435,7 +435,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                 type={isContinuous ? "number" : "category"}
                                 scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={40}
@@ -444,7 +444,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                 yAxisId="main"
                                 tickFormatter={(val) => view === 'return' ? `${val.toFixed(1)}%` : new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 2 }).format(val)}
                                 domain={['auto', 'auto']}
-                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
                                 axisLine={false}
                                 tickLine={false}
                                 width={50}
@@ -536,7 +536,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
 
 
 
-                            {view === 'return' && <ReferenceLine y={0} yAxisId="main" stroke="#9ca3af" strokeDasharray="3 3" />}
+                            {view === 'return' && <ReferenceLine y={0} yAxisId="main" stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />}
                         </ComposedChart>
                     </ResponsiveContainer>
                 ) : (
