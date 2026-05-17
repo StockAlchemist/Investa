@@ -499,6 +499,7 @@ export interface Settings {
     active_tab?: string;
     ibkr_token?: string;
     ibkr_query_id?: string;
+    target_allocation?: Record<string, Record<string, number>>;
 }
 
 export async function fetchSettings(): Promise<Settings> {
@@ -527,6 +528,7 @@ export interface SettingsUpdate {
     active_tab?: string;
     ibkr_token?: string;
     ibkr_query_id?: string;
+    target_allocation?: Record<string, Record<string, number>>;
 }
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {

@@ -204,6 +204,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                     holdings={holdings}
                     currency={currency}
                     bucketKey="quoteType"
+                    settingsBucket="quoteType"
                     title="Asset Type — drift vs target"
                     storageKey="allocation-target-quoteType"
                 />
@@ -211,6 +212,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                     holdings={holdings}
                     currency={currency}
                     bucketKey="Sector"
+                    settingsBucket="sector"
                     title="Sector — drift vs target"
                     storageKey="allocation-target-sector"
                 />

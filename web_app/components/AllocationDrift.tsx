@@ -1,7 +1,8 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Check, X, AlertTriangle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { Holding } from '../lib/api';
+import { Holding, fetchSettings, updateSettings } from '../lib/api';
 import { cn } from '../lib/utils';
 
 interface AllocationDriftProps {
@@ -13,14 +14,22 @@ interface AllocationDriftProps {
      */
     bucketKey: keyof Holding | 'Sector' | 'quoteType';
     title: string;
-    /** Local-storage key — separate per bucket type so multiple cards don't collide. */
+    /**
+     * Local-storage key — used as a cold-start cache before the server settings
+     * load, and as a fallback for users without a backend session.
+     */
     storageKey: string;
+    /**
+     * Settings-side bucket key. Used as the outer key in target_allocation
+     * (e.g. "quoteType", "sector"). Falls back to bucketKey if omitted.
+     */
+    settingsBucket?: string;
 }
 
 const DRIFT_WARN_PCT = 5;
 const DRIFT_ALERT_PCT = 10;
 
-function loadTargets(key: string): Record<string, number> {
+function loadLocalTargets(key: string): Record<string, number> {
     if (typeof window === 'undefined') return {};
     try {
         const raw = window.localStorage.getItem(key);
@@ -30,7 +39,7 @@ function loadTargets(key: string): Record<string, number> {
     }
 }
 
-function saveTargets(key: string, targets: Record<string, number>) {
+function saveLocalTargets(key: string, targets: Record<string, number>) {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(key, JSON.stringify(targets));
 }
@@ -41,14 +50,38 @@ export default function AllocationDrift({
     bucketKey,
     title,
     storageKey,
+    settingsBucket,
 }: AllocationDriftProps) {
-    const [targets, setTargets] = useState<Record<string, number>>({});
+    const bucket = settingsBucket ?? (bucketKey as string);
+    const queryClient = useQueryClient();
+
+    const settingsQuery = useQuery({
+        queryKey: ['settings'],
+        queryFn: fetchSettings,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const settingsMutation = useMutation({
+        mutationFn: updateSettings,
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
+    });
+
+    // Render-time source of truth: server settings if loaded, else localStorage cache.
+    const targets: Record<string, number> = useMemo(() => {
+        const serverMap = (settingsQuery.data?.target_allocation as Record<string, Record<string, number>> | undefined)?.[bucket];
+        if (serverMap && Object.keys(serverMap).length > 0) return serverMap;
+        return loadLocalTargets(storageKey);
+    }, [settingsQuery.data, bucket, storageKey]);
+
+    // Keep localStorage warm so a reload before the server settings query
+    // resolves still renders the same numbers.
+    useEffect(() => {
+        const serverMap = (settingsQuery.data?.target_allocation as Record<string, Record<string, number>> | undefined)?.[bucket];
+        if (serverMap) saveLocalTargets(storageKey, serverMap);
+    }, [settingsQuery.data, bucket, storageKey]);
+
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<Record<string, string>>({});
-
-    useEffect(() => {
-        setTargets(loadTargets(storageKey));
-    }, [storageKey]);
 
     const mvKey = `Market Value (${currency})`;
 
@@ -98,8 +131,13 @@ export default function AllocationDrift({
             const n = parseFloat(v);
             if (!isNaN(n) && n > 0) next[k] = n;
         }
-        setTargets(next);
-        saveTargets(storageKey, next);
+        // Persist to backend (single settings call merges per bucket).
+        const existing = (settingsQuery.data?.target_allocation as Record<string, Record<string, number>> | undefined) ?? {};
+        const merged: Record<string, Record<string, number>> = { ...existing, [bucket]: next };
+        settingsMutation.mutate({ target_allocation: merged });
+        // Optimistically update the local cache so the UI doesn't flicker
+        // while the mutation round-trips.
+        saveLocalTargets(storageKey, next);
         setEditing(false);
         setDraft({});
     };

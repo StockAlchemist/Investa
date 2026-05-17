@@ -3665,7 +3665,8 @@ async def get_settings(
             "active_tab": config_manager.gui_config.get("active_tab", "performance"),
             "account_cash_mode_map": config_manager.gui_config.get("account_cash_mode_map", {}),
             "ibkr_token": config_manager.manual_overrides.get("ibkr_token") or getattr(config, "IBKR_TOKEN", None),
-            "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or getattr(config, "IBKR_QUERY_ID", None)
+            "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or getattr(config, "IBKR_QUERY_ID", None),
+            "target_allocation": config_manager.gui_config.get("target_allocation", {}),
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -3691,6 +3692,9 @@ class SettingsUpdate(BaseModel):
     active_tab: Optional[str] = None
     ibkr_token: Optional[str] = None
     ibkr_query_id: Optional[str] = None
+    # Per-bucket target allocation. Outer key is bucket type (e.g. "quoteType",
+    # "sector"); inner maps bucket name → target % of portfolio.
+    target_allocation: Optional[Dict[str, Dict[str, float]]] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -3740,6 +3744,10 @@ async def update_settings(
         
         if settings.benchmarks is not None:
             config_manager.gui_config["benchmarks"] = settings.benchmarks
+            gui_config_changed = True
+
+        if settings.target_allocation is not None:
+            config_manager.gui_config["target_allocation"] = settings.target_allocation
             gui_config_changed = True
             
         if settings.show_closed is not None:

@@ -2297,6 +2297,12 @@ export interface components {
             ibkr_token?: string | null;
             /** Ibkr Query Id */
             ibkr_query_id?: string | null;
+            /** Target Allocation */
+            target_allocation?: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            } | null;
         };
         /** Token */
         Token: {
