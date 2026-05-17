@@ -36,9 +36,10 @@ function TypeBadge({ type }: { type: string }) {
 interface StockSearchBarProps {
     currency: string;
     placeholder?: string;
+    fullWidth?: boolean;
 }
 
-export function StockSearchBar({ currency, placeholder = 'Search symbol…' }: StockSearchBarProps) {
+export function StockSearchBar({ currency, placeholder = 'Search symbol…', fullWidth = false }: StockSearchBarProps) {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SymbolSearchResult[]>([]);
     const [loading, setLoading] = useState(false);
@@ -136,10 +137,12 @@ export function StockSearchBar({ currency, placeholder = 'Search symbol…' }: S
             <div ref={containerRef} className="relative">
                 {/* Input */}
                 <div className={cn(
-                    'flex items-center gap-2 h-7 rounded-md border transition-all duration-200',
-                    open
-                        ? 'w-48 sm:w-56 border-primary/40 bg-background ring-1 ring-primary/20'
-                        : 'w-32 sm:w-40 border-border/60 bg-muted/30',
+                    'flex items-center gap-2 h-8 rounded-md border transition-all duration-200',
+                    fullWidth
+                        ? 'w-full border-primary/40 bg-background ring-1 ring-primary/20'
+                        : open
+                            ? 'w-48 sm:w-56 border-primary/40 bg-background ring-1 ring-primary/20'
+                            : 'w-32 sm:w-40 border-border/60 bg-muted/30',
                 )}>
                     {loading
                         ? <Loader2 className="w-3 h-3 ml-2.5 shrink-0 text-muted-foreground animate-spin" />
@@ -165,7 +168,7 @@ export function StockSearchBar({ currency, placeholder = 'Search symbol…' }: S
                             <X className="w-3 h-3" />
                         </button>
                     )}
-                    {!query && (
+                    {!query && !fullWidth && (
                         <kbd className="hidden lg:inline mr-2 px-1 py-0.5 rounded border border-border/60 bg-background/80 text-[10px] font-mono text-muted-foreground leading-none">
                             ⌘K
                         </kbd>

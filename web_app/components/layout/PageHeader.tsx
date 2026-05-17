@@ -92,15 +92,15 @@ export function PageHeader({
       </div>
 
       {/* Desktop: page title */}
-      <h1 className="hidden md:block text-sm font-semibold text-foreground shrink-0 select-none">
+      <h1 className="hidden md:block text-sm font-semibold text-foreground shrink-0 select-none truncate max-w-[120px] lg:max-w-none">
         {TAB_LABELS[activeTab] ?? activeTab}
       </h1>
 
       {/* ── Mini KPI: portfolio value + day change ── */}
       {hasKpi && (
         <>
-          <span className="hidden md:block w-px h-5 bg-border/70" />
-          <div className="hidden md:flex items-baseline gap-2 shrink-0 select-none">
+          <span className="hidden lg:block w-px h-5 bg-border/70" />
+          <div className="hidden lg:flex items-baseline gap-2 shrink-0 select-none">
             <span className="text-sm font-bold tabular-nums text-foreground leading-none">
               {formatCompactNumber(marketValue!, currency)}
             </span>
@@ -126,8 +126,8 @@ export function PageHeader({
       {/* ── Market status + last updated ── */}
       {(isMarketOpen !== undefined || lastUpdated) && (
         <>
-          <span className="hidden md:block w-px h-5 bg-border/70" />
-          <div className="hidden md:flex items-center gap-2 shrink-0">
+          <span className="hidden xl:block w-px h-5 bg-border/70" />
+          <div className="hidden xl:flex items-center gap-2 shrink-0">
             {isMarketOpen !== undefined && (
               <span className={cn(
                 'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
@@ -151,7 +151,7 @@ export function PageHeader({
         </>
       )}
 
-      <div className="flex-1" />
+      <div className="flex-1 min-w-0" />
 
       {/* ── Right cluster: controls ── */}
       <div className="flex items-center gap-1 sm:gap-1.5">

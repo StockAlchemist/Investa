@@ -49,7 +49,7 @@ export function formatCompactNumber(number: number, currency?: string): string {
     if (number === 0) return '0';
     const formatter = new Intl.NumberFormat('en-US', {
         notation: 'compact',
-        maximumFractionDigits: 1,
+        maximumFractionDigits: 2,
         style: currency ? 'currency' : 'decimal',
         currency: currency,
     });

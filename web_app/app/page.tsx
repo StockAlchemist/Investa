@@ -526,6 +526,7 @@ export default function Home() {
         user={user}
         onLogout={logout}
         onUserClick={handleUserIconClick}
+        currency={currency}
       />
 
       {/* ── Main content ── */}
@@ -570,6 +571,7 @@ export default function Home() {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         onNavigate={handleNavigate}
+        currency={currency}
       />
       <IndexGraphModal
         isOpen={isIndexGraphModalOpen}

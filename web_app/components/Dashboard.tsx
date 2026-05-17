@@ -130,10 +130,10 @@ function PortfolioHeroCard({
 
     return (
         <div className="metric-card card-shine relative overflow-hidden p-5 sm:p-6">
-            <div className="flex items-center gap-6 sm:gap-8">
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
 
                 {/* Left: main value + day change */}
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1" style={{ minWidth: 'min(100%, 260px)' }}>
                     <div className="flex items-center gap-2 mb-2">
                         <Wallet className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                         <span className="section-label">Total Portfolio Value</span>
@@ -181,7 +181,7 @@ function PortfolioHeroCard({
 
                 {/* Right: performance stats separated by vertical dividers */}
                 {hasPerf && (
-                    <div className="hidden sm:flex items-stretch gap-0 shrink-0 divide-x divide-border/50">
+                    <div className="hidden sm:flex items-stretch gap-0 divide-x divide-border/50">
                         <div className="px-6 first:pl-0">
                             <StatPill label="Total TWR" value={cumTWR} isLoading={isLoading} />
                         </div>

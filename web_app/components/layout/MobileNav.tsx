@@ -7,6 +7,7 @@ import {
   DollarSign, BarChart3, Search, Star, Globe, Sparkles,
   LogOut, X,
 } from 'lucide-react';
+import { StockSearchBar } from '@/components/StockSearchBar';
 
 const ALL_NAV = [
   { id: 'performance',   label: 'Dashboard',     icon: LayoutDashboard, section: 'main' },
@@ -29,10 +30,11 @@ interface MobileNavProps {
   user: { username: string; alias?: string } | null;
   onLogout: () => void;
   onUserClick: () => void;
+  currency: string;
 }
 
 export function MobileNav({
-  isOpen, onClose, activeTab, onTabChange, user, onLogout, onUserClick,
+  isOpen, onClose, activeTab, onTabChange, user, onLogout, onUserClick, currency,
 }: MobileNavProps) {
   // Lock body scroll when open
   useEffect(() => {
@@ -90,6 +92,11 @@ export function MobileNav({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Stock search */}
+        <div className="px-3 py-2.5 border-b border-border shrink-0">
+          <StockSearchBar currency={currency} placeholder="Search symbol…" fullWidth />
         </div>
 
         {/* Nav */}
