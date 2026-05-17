@@ -45,6 +45,7 @@ const TransactionsTable    = dynamic(() => import('@/components/TransactionsTabl
 const Allocation           = dynamic(() => import('@/components/Allocation'));
 const AssetChange          = dynamic(() => import('@/components/AssetChange'));
 const CapitalGains         = dynamic(() => import('@/components/CapitalGains'));
+const UnrealizedTaxView    = dynamic(() => import('@/components/UnrealizedTaxView'));
 const DividendComponent    = dynamic(() => import('@/components/Dividend'));
 const DividendCalendar     = dynamic(() => import('@/components/DividendCalendar'));
 const IncomeProjector      = dynamic(() => import('@/components/IncomeProjector').then(mod => mod.IncomeProjector));
@@ -430,12 +431,15 @@ export default function Home() {
 
       case 'capital_gains':
         return (
-          <CapitalGains
-            data={capitalGainsData}
-            currency={currency}
-            onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
-            isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
-          />
+          <div className="space-y-6 p-4">
+            <UnrealizedTaxView holdings={holdings} currency={currency} />
+            <CapitalGains
+              data={capitalGainsData}
+              currency={currency}
+              onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
+              isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
+            />
+          </div>
         );
 
       case 'dividend':
