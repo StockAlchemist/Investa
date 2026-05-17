@@ -1,5 +1,6 @@
 import sys
 import os
+import asyncio
 
 import logging
 from contextlib import asynccontextmanager
@@ -26,12 +27,24 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from db_utils import initialize_database, initialize_global_database
+    from server.refresh_worker import refresh_loop
     initialize_database()
     initialize_global_database()
-    yield
-    # Graceful shutdown: drain background precalculation pool
-    from server.api import _PRECALC_POOL
-    _PRECALC_POOL.shutdown(wait=False)
+
+    # Kick off the periodic metadata refresh in the background.
+    refresh_task = asyncio.create_task(refresh_loop(), name="metadata-refresh")
+
+    try:
+        yield
+    finally:
+        # Graceful shutdown: cancel the refresh worker and drain the precalc pool.
+        refresh_task.cancel()
+        try:
+            await refresh_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        from server.api import _PRECALC_POOL
+        _PRECALC_POOL.shutdown(wait=False)
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)
 
