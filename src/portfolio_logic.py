@@ -1092,6 +1092,7 @@ def calculate_portfolio_summary(
         manual_prices_dict=manual_prices_for_build_rows,
         account_interest_rates=account_interest_rates, # NEW
         interest_free_thresholds=interest_free_thresholds, # NEW
+        include_accounts=include_accounts,
     )
 
     if err_build:
@@ -1697,6 +1698,20 @@ def calculate_portfolio_summary(
     logging.info(
         f"Total Summary Calc Time: {end_time_summary - start_time_summary:.2f} seconds"
     )
+
+    # Strip source-only accounts from the holdings dict for parity with the
+    # summary_df filter — see _build_summary_rows for the rationale. The
+    # engine kept these entries during cost-basis backfill, but they should
+    # not leak into the API response when the user explicitly excluded the
+    # account (otherwise StockDetailModal lots, the AI review fallback, and
+    # any other consumer of holdings_dict will re-introduce the phantom row).
+    if include_accounts:
+        _include_norm = {str(a).strip().upper() for a in include_accounts}
+        holdings = {
+            k: v
+            for k, v in holdings.items()
+            if str(k[1] if isinstance(k, tuple) and len(k) > 1 else "").strip().upper() in _include_norm
+        }
 
     return (
         overall_summary_metrics,
@@ -2815,6 +2830,11 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         if pd.isna(fx_rate):
             any_lookup_nan_on_date = True
             total_market_value_display_curr_agg = np.nan
+            logging.warning(
+                f"Valuation NaN for {internal_symbol}/{account} on {target_date}: "
+                f"FX lookup failed ({local_currency}->{target_currency}). "
+                f"Whole-day total set to NaN."
+            )
             if DO_DETAILED_LOG:
                 logging.debug("      CRITICAL: FX lookup failed. Aborting.")
             break
@@ -2928,6 +2948,11 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         if pd.isna(market_value_display):
             any_lookup_nan_on_date = True
             total_market_value_display_curr_agg = np.nan
+            logging.warning(
+                f"Valuation NaN for {internal_symbol}/{account} on {target_date}: "
+                f"qty={current_qty:.4f}, price={current_price_local}, fx={fx_rate}. "
+                f"Whole-day total set to NaN."
+            )
             if DO_DETAILED_LOG:
                 logging.debug("      CRITICAL: MV Display is NaN. Aborting.")
             break
@@ -2956,6 +2981,7 @@ def _calculate_holdings_numba(
     tx_types_np,
     tx_quantities_np,
     tx_prices_np,
+    tx_totals_np,       # Total Amount per tx; primary fallback for cash math
     tx_commissions_np,
     tx_split_ratios_np,
     tx_local_currencies_np,
@@ -3006,6 +3032,7 @@ def _calculate_holdings_numba(
         type_id = tx_types_np[i]
         qty = tx_quantities_np[i]
         price = tx_prices_np[i]
+        total_amount = tx_totals_np[i]
         commission = tx_commissions_np[i]
         split_ratio = tx_split_ratios_np[i]
         currency_id = tx_local_currencies_np[i]
@@ -3015,27 +3042,25 @@ def _calculate_holdings_numba(
             if cash_currency_np[account_id] == -1:
                 cash_currency_np[account_id] = currency_id
 
+            # Cash-amount fallback chain — see chronological version for the
+            # convention rationale. Total Amount preferred; falls back to
+            # Quantity (Style A) or commission for fee-style rows.
+            cash_amt = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
             if type_id == buy_type_id or type_id == deposit_type_id or type_id == dividend_type_id or type_id == interest_type_id:
-                cash_balances_np[account_id] += qty - commission
+                cash_balances_np[account_id] += cash_amt - commission
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                cash_balances_np[account_id] -= qty + commission
+                cash_balances_np[account_id] -= cash_amt + commission
             elif type_id == fees_type_id or type_id == tax_type_id:
-                # Account-level fee/tax recorded on $CASH symbol (wire fees,
-                # margin interest, withholding, etc.). Debit cash by qty (the
-                # fee amount in dollars). Fall back to commission if qty is 0.
-                fee_val = abs(qty) if abs(qty) > 1e-9 else abs(commission)
+                fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
                 cash_balances_np[account_id] -= fee_val
             elif type_id == transfer_type_id:
                 dest_account_id = tx_to_accounts_np[i]
                 if dest_account_id != -1:
-                    # Initialize Dest Currency if needed
                     if cash_currency_np[dest_account_id] == -1:
                         cash_currency_np[dest_account_id] = currency_id
 
-                    # Move Cash: Deduct from Source, Add to Dest
-                    # Assuming commission is paid by source
-                    cash_balances_np[account_id] -= qty + commission
-                    cash_balances_np[dest_account_id] += qty
+                    cash_balances_np[account_id] -= cash_amt + commission
+                    cash_balances_np[dest_account_id] += cash_amt
             continue
         # --- Handle STOCK transactions ---
         if holdings_currency_np[symbol_id, account_id] == -1:
@@ -3184,24 +3209,27 @@ def _calculate_holdings_numba(
                 holdings_cost_np[symbol_id, account_id] += commission
 
         # --- AUTO CASH LOGIC (Single-date valuation) ---
-        # For Auto-mode accounts, generate implicit cash balance changes
-        # from non-cash stock transactions.
-        # Skip: Deposit/Withdrawal (in-kind shares), Split, Transfer
+        # Mirror the conventions used in the chronological version: prefer
+        # Total Amount for cash math; fall back to qty * price (or price
+        # alone for dividends entered with the legacy "price holds amount"
+        # convention).
         if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
             cash_delta = 0.0
             if type_id == buy_type_id:
-                cash_delta = -(abs(qty) * price + commission)
+                cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price + commission))
             elif type_id == sell_type_id:
-                cash_delta = +(abs(qty) * price - commission)
-            elif type_id == dividend_type_id or type_id == interest_type_id:
-                cash_delta = +abs(price)  # price holds amount for dividends
+                cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price - commission))
+            elif type_id == dividend_type_id:
+                div_amt = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * abs(price) if abs(qty) > 1e-9 and abs(price) > 1e-9 else abs(price))
+                cash_delta = +div_amt
+            elif type_id == interest_type_id:
+                cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else abs(price))
             elif type_id == fees_type_id or type_id == tax_type_id:
-                fee_val = abs(commission) if abs(commission) > 1e-9 else abs(price)
-                cash_delta = -fee_val
+                cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(commission) if abs(commission) > 1e-9 else abs(price)))
             elif type_id == short_sell_type_id:
-                cash_delta = +(abs(qty) * price - commission)
+                cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price - commission))
             elif type_id == buy_to_cover_type_id:
-                cash_delta = -(abs(qty) * price + commission)
+                cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price + commission))
             # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
 
             if abs(cash_delta) > 1e-9:
@@ -3307,14 +3335,20 @@ def _calculate_daily_holdings_chronological_numba(
             total_amount = tx_totals_np[tx_idx]
 
             if symbol_id == cash_symbol_id:
+                # Cash-amount fallback chain: prefer Total Amount, then
+                # Quantity, then commission. Manual entries historically
+                # store the amount in Quantity (Style A); PDF imports and
+                # some manual entries store it in Total Amount (Style B).
+                # Reading both keeps the engine resilient to either.
+                cash_amt = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
                 if type_id == buy_type_id or type_id == deposit_type_id or type_id == dividend_type_id or type_id == interest_type_id:
-                    current_cash_balances[account_id] += abs(qty) - commission
+                    current_cash_balances[account_id] += cash_amt - commission
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                    current_cash_balances[account_id] -= abs(qty) + commission
+                    current_cash_balances[account_id] -= cash_amt + commission
                 elif type_id == fees_type_id or type_id == tax_type_id:
                     # Account-level fee/tax recorded on $CASH symbol (wire fees,
                     # margin interest, withholding, etc.). Debit cash by Total
-                    # Amount (preferred) or quantity if total is missing.
+                    # Amount (preferred), quantity, or commission as fallback.
                     fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
                     current_cash_balances[account_id] -= fee_val
                 elif type_id == transfer_type_id:
@@ -3322,8 +3356,8 @@ def _calculate_daily_holdings_chronological_numba(
                     if dest_account_id != -1:
                         # Move Cash: Deduct from Source, Add to Dest
                         # Assuming commission is paid by source
-                        current_cash_balances[account_id] -= abs(qty) + commission
-                        current_cash_balances[dest_account_id] += abs(qty)
+                        current_cash_balances[account_id] -= cash_amt + commission
+                        current_cash_balances[dest_account_id] += cash_amt
 
             else:
                 # Update Last Price ONLY for transaction types where Price/Share
@@ -3407,7 +3441,13 @@ def _calculate_daily_holdings_chronological_numba(
                     elif type_id == sell_type_id:
                         cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price - commission))
                     elif type_id == dividend_type_id:
-                        cash_delta = +abs(price)  # price holds amount for dividends
+                        # Three accepted conventions for Dividend on a stock
+                        # symbol: Total=amount (canonical / PDF import), or
+                        # Qty=shares & Price=div_per_share (Style A), or
+                        # Price=amount with Qty=0 (legacy). Prefer Total, fall
+                        # back through qty*price, then bare price.
+                        div_amt = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * abs(price) if abs(qty) > 1e-9 and abs(price) > 1e-9 else abs(price))
+                        cash_delta = +div_amt
                     elif type_id == interest_type_id:
                         cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else abs(price))
                     elif type_id == fees_type_id or type_id == tax_type_id:
@@ -3603,6 +3643,14 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         tx_prices_np = (
             transactions_til_date["Price/Share"].fillna(0.0).values.astype(np.float64)
         )
+        # Total Amount column drives the cash-math fallback chain. Missing
+        # column (older fixtures) → zeros, which keeps callers backward-compat.
+        if "Total Amount" in transactions_til_date.columns:
+            tx_totals_np = (
+                transactions_til_date["Total Amount"].fillna(0.0).values.astype(np.float64)
+            )
+        else:
+            tx_totals_np = np.zeros(len(transactions_til_date), dtype=np.float64)
         tx_commissions_series = transactions_til_date["Commission"].fillna(0.0)
         tx_commissions_np = tx_commissions_series.values.astype(np.float64)
         tx_split_ratios_series = transactions_til_date["Split Ratio"].fillna(0.0)
@@ -3667,6 +3715,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             tx_types_np,
             tx_quantities_np,
             tx_prices_np,
+            tx_totals_np,       # Total Amount for cash-math fallback
             tx_commissions_np,
             tx_split_ratios_np,
             tx_local_currencies_np,
@@ -3769,6 +3818,21 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
                 market_value_display = 0.0
             else:
                  any_lookup_nan_on_date = True
+                 # Identify which position failed so the outer "Valuation failed
+                 # for date" warning is actionable. Common cause: a Buy/Transfer
+                 # row with Price/Share = 0 (e.g. a stock spinoff entered as
+                 # zero-cost shares) leaves last_prices_np[symbol] = 0, so when
+                 # yfinance also has no historical row for that ticker (delisted
+                 # or short-lived spinoff symbol like KRFT 2012-2015) the
+                 # fallback chain produces NaN and the position drops out of
+                 # the day's total. Naming the symbol points the user straight
+                 # at the offending transaction.
+                 logging.warning(
+                     f"Valuation NaN for {internal_symbol}/{account} on {target_date}: "
+                     f"qty={current_qty:.4f}, yfinance price={current_price_local}, "
+                     f"last_tx_price={last_price}, fx={fx_rate}. "
+                     f"Add a manual price override or enter the acquiring transaction with a non-zero Price/Share."
+                 )
         else:
             total_market_value_display_curr_agg += market_value_display
 
@@ -4049,7 +4113,10 @@ def _calculate_daily_metrics_worker(
         val_lookup_failed = val_lookup_failed_main
 
         if val_lookup_failed_main:
-            logging.warning(f"Valuation failed for date: {eval_date}")
+            # Per-position cause was already logged at WARNING level inside the
+            # valuation loop with symbol/account context. Demote this aggregate
+            # marker to debug so logs aren't doubled.
+            logging.debug(f"Valuation failed for date: {eval_date}")
         if pd.isna(portfolio_value):
             net_cash_flow = np.nan
             flow_lookup_failed = True  # If value failed, flow is irrelevant/failed

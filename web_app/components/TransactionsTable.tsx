@@ -372,9 +372,22 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Type: e.target.value })}
                                                 className="bg-transparent border-none text-[10px] p-0 font-bold uppercase tracking-widest focus:ring-0 text-indigo-500 appearance-none"
                                             >
+                                                {/* Must cover every Type the PDF parser can emit, otherwise
+                                                    Transfer / Interest / Fees / Tax / Deposit / Withdrawal
+                                                    rows render with no selected option and get silently
+                                                    overwritten the first time the user opens this select. */}
                                                 <option value="Buy">BUY</option>
                                                 <option value="Sell">SELL</option>
                                                 <option value="Dividend">DIVIDEND</option>
+                                                <option value="Transfer">TRANSFER</option>
+                                                <option value="Interest">INTEREST</option>
+                                                <option value="Fees">FEES</option>
+                                                <option value="Tax">TAX</option>
+                                                <option value="Deposit">DEPOSIT</option>
+                                                <option value="Withdrawal">WITHDRAWAL</option>
+                                                <option value="Split">SPLIT</option>
+                                                <option value="Short Sell">SHORT SELL</option>
+                                                <option value="Buy To Cover">BUY TO COVER</option>
                                             </select>
                                         </td>
                                         <td className="px-4 py-3">

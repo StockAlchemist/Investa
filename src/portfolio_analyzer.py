@@ -910,15 +910,33 @@ def _build_summary_rows(
     manual_prices_dict: Dict[str, float],
     account_interest_rates: Optional[Dict[str, float]] = None, # NEW
     interest_free_thresholds: Optional[Dict[str, float]] = None, # NEW
+    include_accounts: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str], bool, bool]:
     """
     Builds the detailed list of portfolio summary rows, converting values to the display currency.
-    (Implementation remains the same as provided previously - relies only on input data and helpers)
+
+    When ``include_accounts`` is supplied, rows for accounts not in that list
+    are dropped at the end. This matters because ``calculate_portfolio_summary``
+    intentionally pulls in a source account's prior history when one of its
+    stock positions was transferred *into* a selected account (so cost basis
+    survives the transfer). That backfill is needed for the engine but leaks
+    a phantom cash balance for the source account in Auto cash mode — the
+    Buy/Sell rows generate negative auto-cash deltas without the offsetting
+    $CASH deposits, leaving a large negative cash row attributed to an
+    account the user explicitly excluded. Filtering at the row-emit stage
+    keeps the cost-basis machinery intact while hiding the side-effect.
     """
     portfolio_summary_rows: List[Dict[str, Any]] = []
     account_local_currency_map: Dict[str, str] = {}
     has_errors = False
     has_warnings = False
+
+    # Normalize once so the filter is case/whitespace-insensitive — the
+    # holdings dict uses the raw account string from transactions, which may
+    # differ in case from the user's filter list.
+    include_accounts_norm: Optional[Set[str]] = None
+    if include_accounts:
+        include_accounts_norm = {str(a).strip().upper() for a in include_accounts}
     
     if account_interest_rates is None: account_interest_rates = {}
     if interest_free_thresholds is None: interest_free_thresholds = {}
@@ -1833,6 +1851,18 @@ def _build_summary_rows(
                  # Account-level IRR for transferred assets is fundamentally flawed without this.
                  r["IRR (%)"] = agg_irrs[sym]
     # --- END AGGREGATE IRR ---
+
+    # Drop rows belonging to accounts that are NOT in the user's selected
+    # scope. See the docstring for the rationale — the upstream filter
+    # deliberately keeps source-of-transfer transactions in the working set,
+    # so this is the right place to hide the resulting phantom cash row.
+    if include_accounts_norm is not None:
+        kept_rows = []
+        for r in portfolio_summary_rows:
+            acc = str(r.get("Account") or "").strip().upper()
+            if acc in include_accounts_norm:
+                kept_rows.append(r)
+        portfolio_summary_rows = kept_rows
 
     return (
         portfolio_summary_rows,

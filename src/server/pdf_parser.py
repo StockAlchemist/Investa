@@ -5,6 +5,28 @@ import os
 import mimetypes
 from typing import List, Dict, Any, Optional
 
+# When pdfplumber merges several logical sections into one wide table (common
+# in multi-account IBKR Activity Statements), the first cell of a row can act
+# as an inline section header. Map those values to the section name the rest
+# of the loop expects. "SKIP" is a sentinel for rows we should not import as
+# transactions (e.g. accrual tracking tables).
+_INLINE_SECTION_HEADERS = {
+    "trades": "Trades",
+    "transfers": "Transfers",
+    "dividends": "Dividends",
+    "withholding tax": "Tax",
+    "deposits & withdrawals": "Cash",
+    "other fees": "Fees",
+    "interest": "Interest",
+    "change in dividend accruals": "SKIP",
+    "change in interest accruals": "SKIP",
+    "financial instrument information": "SKIP",
+    "codes": "SKIP",
+    "notes/legal notes": "SKIP",
+    "disclosure": "SKIP",
+}
+
+
 def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
     transactions = []
     account_name = account_override or "IBKR Account"
@@ -13,11 +35,11 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
             for page in pdf.pages:
                 tables = page.extract_tables()
                 if not tables: continue
-                
+
                 for table in tables:
                     if not table or not table[0]: continue
                     header_text = " ".join([str(x) for x in table[0] if x is not None])
-                    
+
                     section = None
                     if "Trades" in header_text: section = "Trades"
                     elif "Transfers" in header_text: section = "Transfers"
@@ -26,14 +48,30 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                     elif "Deposits & Withdrawals" in header_text: section = "Cash"
                     elif "Other Fees" in header_text: section = "Fees"
                     elif "Interest" in header_text: section = "Interest"
-                    
+
                     if not section: continue
-                    
+
+                    # Track section state across rows — a single pdfplumber
+                    # table can splice several IBKR logical sections together.
+                    current_section = section
+
                     for row in table:
                         if not row or len(row) < 3: continue
                         row = [str(x).replace("\n", " ").strip() if x is not None else "" for x in row]
-                        
+
                         first_val = row[0]
+
+                        # Mid-table section switch: when first cell exactly
+                        # matches a known section heading, swap and skip.
+                        fv_key = first_val.lower()
+                        if fv_key in _INLINE_SECTION_HEADERS:
+                            current_section = _INLINE_SECTION_HEADERS[fv_key]
+                            continue
+                        if current_section == "SKIP":
+                            continue
+                        # Rebind for the rest of the loop body below.
+                        section = current_section
+
                         if any(x in first_val for x in [section, "Symbol", "Date", "Total", "Stocks", "USD", "Description"]): continue
                         if not first_val or first_val == "None": continue
 
@@ -71,20 +109,86 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 })
                                 
                             elif section in ["Dividends", "Tax", "Cash", "Fees", "Interest"]:
+                                # IBKR Activity Statements vary column counts:
+                                # 3-4 columns for single-account dividends,
+                                # but Withholding Tax tables in multi-account
+                                # PDFs balloon to 15 columns with the amount at
+                                # index 6 (not 2). Locate date / description /
+                                # amount by content rather than fixed index so
+                                # both layouts work.
                                 if row[0].startswith("U"):
                                     account = row[0]
-                                    date_str, desc, amt_str = row[1], row[2], row[3]
+                                    scan_start = 1
                                 else:
                                     account = account_name
-                                    date_str, desc, amt_str = row[0], row[1], row[2]
-                                
-                                if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_str): continue
+                                    scan_start = 0
+
+                                # Date: first cell matching YYYY-MM-DD.
+                                date_str = None
+                                for c in row[scan_start:]:
+                                    if c and re.match(r"^\d{4}-\d{2}-\d{2}$", c):
+                                        date_str = c
+                                        break
+                                if not date_str: continue
+
+                                # Amount: rightmost cell that parses as a
+                                # signed decimal. Scanning right-to-left skips
+                                # the trailing empty "Code" column naturally.
+                                amt_str = None
+                                for c in reversed(row):
+                                    if not c: continue
+                                    s = c.replace(",", "").strip()
+                                    if not s: continue
+                                    try:
+                                        float(s)
+                                        amt_str = c
+                                        break
+                                    except ValueError:
+                                        continue
+                                if amt_str is None: continue
+
+                                # Description: longest concat of non-numeric,
+                                # non-date text cells. Single-char codes like
+                                # "R" or "Po" at the end are filtered by
+                                # length to avoid polluting symbol detection.
+                                desc_pieces = []
+                                for c in row:
+                                    if not c or c == date_str or c == amt_str:
+                                        continue
+                                    s = c.strip()
+                                    if not s: continue
+                                    try:
+                                        float(s.replace(",", ""))
+                                        continue
+                                    except ValueError:
+                                        pass
+                                    if len(s) > 2:
+                                        desc_pieces.append(s)
+                                desc = " ".join(desc_pieces).strip()
+                                if not desc: continue
+
                                 if "Total" in desc or "Starting" in desc: continue
-                                
+
                                 amt = float(amt_str.replace(",", ""))
                                 sym = "$CASH"
-                                if "(" in desc: sym = desc.split("(")[0].strip()
-                                
+                                # Only treat the parenthesised payload as a
+                                # ticker identifier (CUSIP/ISIN) when the
+                                # prefix is plausibly a ticker — short and
+                                # alphanumeric. Otherwise this misparses
+                                # IBKR Interest descriptions like "USD IBKR
+                                # Managed Securities (SYEP) for Apr-2026"
+                                # into a fake symbol.
+                                if "(" in desc:
+                                    prefix = desc.split("(", 1)[0].strip()
+                                    tokens = prefix.split()
+                                    if (
+                                        prefix
+                                        and len(prefix) <= 12
+                                        and len(tokens) <= 2
+                                        and prefix.replace(" ", "").replace(".", "").replace("-", "").isalnum()
+                                    ):
+                                        sym = prefix
+
                                 l_desc = desc.lower()
                                 t_type = "Other"
                                 if section == "Dividends": t_type = "Dividend"
@@ -95,15 +199,41 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 elif "withdrawal" in l_desc: t_type = "Withdrawal"
                                 elif "acats transfer" in l_desc or "transfer" in l_desc: t_type = "Transfer"
                                 elif "commission adj" in l_desc: t_type = "Deposit" if amt > 0 else "Fees"
-                                
-                                if cash_mode == "Auto" and t_type in ["Deposit", "Withdrawal"]:
-                                    if "sweep" in l_desc or "internal" in l_desc:
-                                        continue # skip internal sweeps for auto cash
-                                
+
+                                # Always drop internal sweeps — they aren't
+                                # real external cash movements and they double-
+                                # count once the engine reconciles trades.
+                                if t_type in ["Deposit", "Withdrawal"] and ("sweep" in l_desc or "internal" in l_desc):
+                                    continue
+
+                                abs_amt = abs(amt)
+                                signed_amt = abs_amt if amt >= 0 else -abs_amt
+
+                                # Canonical row format expected by the engine:
+                                #   - $CASH-symbol rows (Deposit / Withdrawal /
+                                #     Interest / standalone Fees-on-cash): the
+                                #     engine reads `qty` for cash math. Put the
+                                #     dollar amount in BOTH Quantity and Total
+                                #     Amount so it works whichever side the
+                                #     engine ends up reading.
+                                #   - Stock-symbol rows (Dividend / Tax / Fees
+                                #     tied to a ticker): leave Qty=0; the
+                                #     engine's auto-cash path uses Total Amount.
+                                if sym == "$CASH":
+                                    tx_qty = abs_amt
+                                    tx_price = 1.0
+                                else:
+                                    tx_qty = 0.0
+                                    tx_price = 0.0
+
                                 transactions.append({
-                                    "Date": date_str, "Type": t_type, "Symbol": sym, "Quantity": 0.0,
-                                    "Price/Share": 0.0, "Total Amount": abs(amt), "Commission": 0.0,
-                                    "Account": account, "Note": desc[:100], "Local Currency": "USD", "user_id": user_id
+                                    "Date": date_str, "Type": t_type, "Symbol": sym,
+                                    "Quantity": tx_qty,
+                                    "Price/Share": tx_price,
+                                    "Total Amount": signed_amt,
+                                    "Commission": 0.0,
+                                    "Account": account, "Note": desc[:100],
+                                    "Local Currency": "USD", "user_id": user_id
                                 })
                         except (ValueError, IndexError): continue
     except Exception as e:
