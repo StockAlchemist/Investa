@@ -32,6 +32,13 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Batch Recalculation:** Dedicated scripts for bulk updating valuations for large universes like the S&P 500.
 * **IBKR Integration:** Automated syncing of transactions from Interactive Brokers via Web Flex Service with a staging area for review and approval.
 * **Annualized Performance:** Key metrics like **IRR (MWR)** are clearly labeled as **"Ann."** when displayed as annualized returns for better clarity.
+* **Interactive Donut Charts:** The Portfolio tab features large, fully interactive allocation donut charts (by Asset Type, Sector, Geography, Industry) with hover-to-highlight slices and an inline legend showing value and percentage.
+* **Allocation Drift Alerts:** Set a target allocation per group (e.g., 60% Sector/Technology) via the Portfolio tab. Live drift cards show how far each slice has moved from its target, colour-coded by severity, and persist across sessions.
+* **Tax-Lot View:** The Capital Gains tab now includes a **short-term vs. long-term** lot summary with a ranked table of **tax-loss harvesting candidates**, wash-sale warnings, and a "ripening" section for short-term lots graduating to long-term within 30 days.
+* **Custom Benchmark Tickers:** Add any valid ticker (e.g., `VT`, `TQQQ`, individual stocks) as a custom benchmark in the Performance graph alongside the built-in presets.
+* **Enhanced Fundamentals (FMP Fallback):** For stocks that yfinance misclassifies — including foreign companies listed on US exchanges as ADRs — a Financial Modeling Prep (FMP) enrichment layer correctly identifies the domicile country, sector, and industry.
+* **Collapsible Sidebar & Search:** The web app navigation is a collapsible sidebar. Press **⌘K** (or Ctrl+K) at any time to open a symbol search palette for quick stock lookups without leaving the current view.
+* **News Feed:** A dedicated **Markets** tab aggregates general market news alongside per-stock news, accessible directly from the sidebar.
 
 ## Getting Started
 

@@ -394,38 +394,74 @@ This direct database management provides a seamless and integrated way to keep y
 
 ## Part 7: Asset Allocation Insights
 
-The **"Asset Allocation"** tab offers valuable pie charts that visually break down your portfolio's diversification across several key dimensions. These charts help you understand your exposure and concentration in different areas. The data primarily comes from the fundamental information fetched for your holdings via Yahoo Finance, which can be supplemented or corrected with manual overrides.
+### Web Dashboard — Portfolio Tab (Primary)
 
-* **Allocation by Asset Type:**
-  * Displays a pie chart categorizing your portfolio by asset classes such as "Stock", "ETF", "Cash", "Mutual Fund", "Currency", etc.
-  * This classification is typically derived from the `quoteType` provided by Yahoo Finance for each symbol.
-  * `$CASH` holdings are explicitly shown as "Cash".
+In the Web Dashboard, allocation analysis lives in the **Portfolio** tab (sidebar icon: chart). The tab shows your Holdings table at the top, followed by interactive allocation charts and drift cards below.
 
-* **Allocation by Sector:**
-  * Shows a pie chart of your portfolio's distribution across various market sectors (e.g., "Technology", "Healthcare", "Financial Services", "Consumer Cyclical").
-  * This relies on the "Sector" information fetched for your individual stock and ETF holdings.
+#### Interactive Donut Charts
 
-* **Allocation by Geography:**
-  * Visualizes the geographical spread of your investments (e.g., "United States", "Canada", "United Kingdom", "India").
-  * This uses the "Country" information associated with your holdings. For ETFs, this often reflects the domicile of the ETF itself, though the underlying assets might be global.
+Four large donut charts break down your portfolio across:
 
-* **Allocation by Industry:**
-  * Provides a more granular breakdown than Sector, showing a pie chart of your portfolio's allocation across specific industries (e.g., "Software - Infrastructure", "Banks - Regional", "Auto Manufacturers").
-  * This relies on the "Industry" information fetched for your holdings.
+* **Asset Type** — Stock, ETF, Cash, Mutual Fund, etc.
+* **Sector** — Technology, Healthcare, Financial Services, etc.
+* **Geography** — Country of domicile (see note on ADRs below).
+* **Industry** — Fine-grained classification within a sector.
+
+**How to use:**
+* Hover over any **slice** to highlight it and see the name, value, and percentage in the centre label.
+* Hover over a **legend row** to do the same from the list.
+* The centre label shows the total portfolio value when nothing is hovered.
+
+**Country classification note:** For foreign companies listed on US exchanges as ADRs (e.g. ASML on NASDAQ), yfinance sometimes returns the wrong country. Investa supplements yfinance data with a **Financial Modeling Prep (FMP)** enrichment layer that correctly identifies the domicile. If a symbol still shows as "Unknown" or the wrong country, add a manual override under **Settings > Symbol Settings...** (set the `geography` field).
+
+#### Allocation Drift Cards
+
+Below the donut charts, **Allocation Drift** cards let you set a target allocation for each group and then track how far the live portfolio has drifted from it.
+
+**Setting targets:**
+1. In the Allocation Drift card for the relevant dimension (e.g. Sector), click the **pencil / Edit** icon.
+2. Enter a target percentage for each slice (they must sum to 100%).
+3. Click **Save**. Targets persist in your user settings.
+
+**Reading the drift:**
+* Each row shows the current %, the target %, and the drift (+/−).
+* Rows colour-code by severity: neutral for small deviations, amber for moderate drift, red for large.
+* A total-target display reminds you whether your targets sum to exactly 100%.
+
+### Desktop App (Legacy) — "Asset Allocation" Tab
+
+The PySide6 desktop app shows four static pie charts on the **"Asset Allocation"** tab with the same four dimensions. Data sources and manual-override behaviour are identical to the web app.
 
 **Important Notes on Allocation Data:**
 
-* **Data Source:** The accuracy and completeness of these charts depend heavily on the fundamental data available for your holdings through Yahoo Finance.
-* **Missing Data:** If Yahoo Finance does not provide data for a specific category (like Sector or Industry) for some of your holdings, those holdings might be grouped under an "Unknown" or "N/A" slice in the pie chart, or they might not contribute to that specific chart if the information is entirely absent.
-* **Manual Overrides:** You have the power to correct or specify these classifications. Use **Settings > Symbol Settings...** to manually set the `Asset Type`, `Sector`, `Geography`, and `Industry` for any symbol. These overrides are stored in `manual_overrides.json` and will be used by the allocation charts. This is particularly useful for:
-  * Assets not well-covered by Yahoo Finance.
-  * Correcting data that you believe is misclassified by the API.
-  * Defining custom classifications that suit your analysis style.
-* **Account Filtering:** Like other dashboard elements, these allocation charts respect the currently selected account filter.
-
-By regularly reviewing these charts and ensuring your data (including manual overrides) is accurate, you can gain significant insights into your investment strategy and risk exposures.
+* **Data Source:** Classification accuracy depends on data from Yahoo Finance, supplemented by FMP for ADRs and foreign listings.
+* **Missing Data:** Holdings without sector/country data appear under "Unknown". Use manual overrides to fix them.
+* **Manual Overrides:** In **Settings > Symbol Settings...**, set `asset_type`, `sector`, `geography`, or `industry` for any symbol. Overrides are stored in `manual_overrides.json`.
+* **Account Filtering:** All allocation charts respect the currently selected account filter.
 
 ## Part 8: Understanding Capital Gains
+
+The **"Capital Gains"** tab has two sections: a **Tax-Lot View** at the top (unrealized positions) and a **Realized Gains** history below.
+
+### Tax-Lot View (Unrealized)
+
+This section, visible at the top of the Capital Gains tab in the Web Dashboard, classifies every open lot by holding period and surfaces planning opportunities.
+
+**Summary tiles:**
+
+* **Short-term** — Total unrealized gain/loss across lots held ≤ 1 year (taxed as ordinary income if sold).
+* **Long-term** — Total unrealized gain/loss across lots held > 1 year (taxed at LTCG rates if sold).
+* **Total unrealized** — Combined figure, with a count of open tax lots.
+
+**Tax-loss harvesting candidates table:**
+Lists all open lots with an unrealized loss larger than $100, sorted deepest loss first. For each lot you can see the acquisition date, quantity, cost basis, current market value, loss amount, and whether it is short-term (ST) or long-term (LT).
+
+> **Wash-sale caution:** Selling a lot at a loss and re-purchasing the same (or substantially identical) security within 30 days before or after the sale disallows the tax deduction under IRS wash-sale rules. A reminder is shown at the bottom of the table.
+
+**Ripening lots:**
+A secondary card lists short-term lots that will graduate to long-term status within the next 30 days and currently carry an unrealized gain. Waiting out these lots converts future gains to the lower LTCG rate. Each row shows the symbol, acquisition date, gain amount, and exact days remaining.
+
+### Realized Gains History
 
 The **"Capital Gains"** tab provides a focused view of the profits or losses you've realized from selling assets (stocks, ETFs). This is distinct from unrealized gains/losses on assets you still hold.
 
@@ -654,19 +690,18 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
 
 ## Part 13: The Investa Web Dashboard
 
-Investa now includes a modern Web Dashboard that allows you to view your portfolio from any device on your local network (e.g., your smartphone, tablet, or another computer).
+Investa includes a modern Web Dashboard that allows you to view your portfolio from any device on your local network (e.g., your smartphone, tablet, or another computer).
 
 ### Getting Started with the Web App
 
-
 1.  **Start the Application:**
     We've made this easy with a single script that launches both the backend and frontend for you. Open your terminal in the project root and run:
-    
+
     ```bash
     ./start_investa.sh
     ```
-    
-    This command starts the API server and the web interface. It will also print your machine's local network IP address (e.g., providing a Tailscale IP or local IP) for remote access.
+
+    This command starts the API server and the web interface. It will also print your machine's local network IP address for remote access.
 
 2.  **Setting Up HTTPS (Recommended):**
     For the best experience (especially on mobile) and to enable secure features like password autofill, run the HTTPS configuration script once:
@@ -677,27 +712,45 @@ Investa now includes a modern Web Dashboard that allows you to view your portfol
 
 3.  **Accessing the Dashboard:**
     *   **Local Machine:** Open your browser and go to `http://localhost:3000` (or your HTTPS URL).
-    *   **Login/Register:** You will be greeted by a login screen.
-        *   **First Time?** Click "Register" to create a new account. Your data is isolated to your user profile.
-        *   **Returning User?** Log in with your username and password.
-    *   **Remote Device:** Use the HTTPS URL provided by step 2 for secure access on your phone or tablet.
+    *   **Login/Register:** You will be greeted by a login screen. Click "Register" to create a new account (data is isolated per user) or log in with existing credentials.
+    *   **Remote Device:** Use the HTTPS URL for secure access on your phone or tablet.
+
+### Navigation
+
+The Web Dashboard uses a **collapsible sidebar** on desktop and a bottom navigation bar on mobile. Click the arrow at the top of the sidebar to collapse it and reclaim screen space; your preference is saved between sessions.
+
+**Tabs available in the sidebar:**
+
+| Tab | Content |
+| --- | --- |
+| **Dashboard** | Hero summary card (Net Value, TWR, IRR, Day P&L) + Performance graph |
+| **Portfolio** | Holdings table + interactive allocation donut charts + drift cards |
+| **Watchlist** | Your saved symbols with live prices, AI scores, and fundamentals |
+| **Screener** | Market screener with quantitative and AI filters |
+| **AI Review** | Full AI analysis of your portfolio |
+| **Transactions** | Transaction history log |
+| **Capital Gains** | Tax-lot view + realized gains history |
+| **Dividends** | Income history, projections, and calendar |
+| **Markets** | Market indices, news feed, and per-stock news |
+| **Settings** | Manual overrides, account currencies, IBKR, and more |
+
+**Quick symbol search:** Press **⌘K** (Mac) or **Ctrl+K** (Windows/Linux) from any tab to open a floating search palette. Type a ticker or company name to look up a stock, then click through to its detail modal.
 
 ### Features
 
-The Web Dashboard mirrors many of the key features of the desktop application:
+*   **Customizable Layout:** Use the "Layout" button on the Dashboard tab to toggle the visibility of any widget, including "Sector Contribution" and "Top Contributors".
+*   **Dashboard Summary:** Hero card with Net Value, Daily P&L, TWR, IRR, and sparkline. Key metrics are annotated — annualized IRR displays an "Ann." sub-label.
+*   **Performance Graph:** Interactive charts for TWR and Portfolio Value with date-range presets. Add **custom benchmark tickers** (any valid symbol, e.g. `VT`, `TQQQ`) alongside the built-in SPY/QQQ presets using the "+ Custom" input in the benchmark selector.
+*   **Portfolio Tab:** Combined view of the Holdings table and four interactive donut charts (Asset Type, Sector, Geography, Industry) with inline legends and Allocation Drift cards. See **Part 7** for details.
+*   **Tax-Lot View & Harvesting Candidates:** Top of the Capital Gains tab — short/long-term unrealized summary, loss harvesting table, and ripening lots. See **Part 8** for details.
+*   **Mobile-Optimized Tables:** Toggle between "Card" and "Table" views for Holdings and Transactions on mobile devices.
+*   **Markets & News Tab:** Tracks major market indices (Dow, Nasdaq, S&P 500) and displays a market news feed alongside per-stock news for your portfolio symbols and watchlist.
+*   **Holdings:** Sorted list of your current positions including AI Scores, contribution %, and per-lot unrealized data.
+*   **Market Screener:** Discover opportunities across your Watchlist, Holdings, or the entire database ("All Stocks").
+*   **Dividend History:** Detailed income tracking with Annual Yield %, income projector, and dividend calendar.
+*   **Dark Mode:** Full dark/light theme support including theme-aware chart colours that adapt to your selected theme.
 
-*   **Customizable Layout:** Use the "Layout" button to toggle the visibility of any dashboard metric, including "Sector Contribution" and "Top Contributors". The **Account Selector** has been moved to the right of the Import button for a more streamlined experience.
-*   **Dashboard Summary:** View your Net Value, Daily P&L, Total Return, and key metrics at a glance.
-*   **Performance Graph:** Interactive charts for TWR and Portfolio Value.
-*   **Mobile-Optimized Tables:** Toggle between "Card" and "Table" views for Holdings and Transactions on mobile devices for better readability.
-*   **Markets Tab (Mobile):** Dedicated tab to track major market indices (Dow, Nasdaq, S&P 500) while on the go.
-*   **Holdings:** A sorted list of your current positions, now including **AI Scores** to help rank your holdings.
-*   **Market Screener:** A comprehensive tool to identify new opportunities across your Watchlist, Holdings, or the **entire database ("All Stocks")**.
-*   **Transactions Log:** View your history of trades and cash movements.
-*   **Dividend History:** Detailed tracking of income, including **Annual Yield %** metrics.
-*   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
-
-*Note: Currently, the Web Dashboard is primarily for **viewing** and **analyzing** your data. For heavy transaction management (bulk imports, editing past records), we recommend using the Desktop Application.*
+*Note: The Web Dashboard is primarily for **viewing** and **analyzing** your data. For bulk transaction imports or editing past records, use the Desktop Application or the CSV import flow.*
 
 ## Part 14: Intrinsic Value Analysis
  
