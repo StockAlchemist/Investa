@@ -151,7 +151,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Annual Gains Chart */}
-            <div className="metric-card card-shine p-6 relative overflow-hidden group">
+            <div className="metric-card p-6 relative overflow-hidden group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
                 <h3 className="section-label mb-4 relative z-10">Annual Realized Gains</h3>
                 <style>{`
@@ -222,7 +222,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             </div>
 
             {/* Transactions Table */}
-            <div className="metric-card card-shine overflow-hidden relative group">
+            <div className="metric-card overflow-hidden relative group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
                 <div className="p-4 flex justify-between items-center relative z-10">
                     <h3 className="section-label">Realized Gain Transactions</h3>

@@ -195,19 +195,22 @@
     0 1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
-/* Top-shine highlight on cards */
+/* Top-shine highlight on cards — kept subtle to preserve readability of text,
+   tables, and charts beneath. Past versions used 0.4 opacity which washed out
+   content over light backgrounds; the gradient is now confined to the top edge
+   and limited in opacity in both themes. */
 .card-shine::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 40%);
+  background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 25%);
   pointer-events: none;
   z-index: 0;
 }
 
 .dark .card-shine::before {
-  background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 40%);
+  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 25%);
 }
 
 .premium-shadow {
