@@ -9,24 +9,55 @@ import requests
 
 # --- Helpers ---
 
-def _compute_portfolio_hash(portfolio_data: dict) -> str:
-    """Computes a stable hash of the portfolio state for caching."""
+
+def _compute_portfolio_hash(portfolio_data: dict, db_conn=None) -> str:
+    """Computes a stable hash of the portfolio state for caching.
+
+    When ``db_conn`` is supplied it MUST be the same user-scoped portfolio DB
+    that ``generate_portfolio_review`` will read screener rows from — otherwise
+    the hash and the review would be fingerprinting different databases and the
+    staleness check is meaningless.
+    """
     key_components = []
-    
+
     metrics = portfolio_data.get("metrics", {})
     key_components.append(str(int(metrics.get("market_value", 0))))
-    
+
     holdings_dict = portfolio_data.get("holdings_dict", {})
-    sorted_holdings = sorted(holdings_dict.items()) 
+    sorted_holdings = sorted(holdings_dict.items())
+    symbols: set = set()
     for k, v in sorted_holdings:
-        qty = v.get('qty', 0)
+        qty = v.get("qty", 0)
         if abs(qty) > 0.01:
             key_components.append(f"{k[0]}:{k[1]}:{qty:.2f}")
-            
+            if k and k[0]:
+                symbols.add(str(k[0]).upper())
+
     key_components.append(datetime.now().strftime("%Y-%m-%d"))
-    
+
+    # Fingerprint the screener-cache rows for held symbols so a mid-day IV/MoS
+    # refresh busts this AI-review cache. Without this, a cached review that
+    # used stale screener data keeps being served until the date rolls over.
+    if symbols and db_conn is not None:
+        try:
+            from db_utils import get_cached_screener_results
+
+            rows = get_cached_screener_results(db_conn, list(symbols)) or {}
+            stamps = [
+                str(row.get("updated_at"))
+                for row in rows.values()
+                if row and row.get("updated_at")
+            ]
+            if stamps:
+                key_components.append("scr:" + max(stamps))
+        except Exception as e:
+            logging.warning(
+                f"Portfolio AI hash: could not fingerprint screener cache: {e}"
+            )
+
     combined_str = "|".join(key_components)
     return hashlib.md5(combined_str.encode()).hexdigest()
+
 
 def _detect_tax_loss_candidates(holdings: list) -> list:
     """Identifies positions with significant unrealized losses for TLH suggestions."""
@@ -34,48 +65,72 @@ def _detect_tax_loss_candidates(holdings: list) -> list:
     for h in holdings:
         gain = h.get("unrealized_gain", 0)
         symbol = h.get("symbol")
-        if gain < -500 or (h.get("market_value", 0) > 0 and gain / (h.get("market_value", 0) - gain) < -0.10):
-            candidates.append({
-                "symbol": symbol,
-                "loss": gain,
-                "loss_percent": (gain / (h.get("market_value", 0) - gain) * 100) if (h.get("market_value", 0) - gain) != 0 else 0
-            })
+        if gain < -500 or (
+            h.get("market_value", 0) > 0
+            and gain / (h.get("market_value", 0) - gain) < -0.10
+        ):
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "loss": gain,
+                    "loss_percent": (
+                        (gain / (h.get("market_value", 0) - gain) * 100)
+                        if (h.get("market_value", 0) - gain) != 0
+                        else 0
+                    ),
+                }
+            )
     return sorted(candidates, key=lambda x: x["loss"])
+
 
 def _calculate_sector_allocation(holdings: list) -> dict:
     """Groups holdings by sector to identify over-concentration."""
     sectors = {}
     total_val = sum(h.get("market_value", 0) for h in holdings)
-    if total_val == 0: return {}
-    
+    if total_val == 0:
+        return {}
+
     for h in holdings:
         s = h.get("sector", "Unknown")
         val = h.get("market_value", 0)
         sectors[s] = sectors.get(s, 0) + val
-        
+
     return {s: (v / total_val * 100) for s, v in sectors.items()}
 
-def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_refresh: bool = False) -> dict:
+
+def generate_portfolio_review(
+    portfolio_data: dict,
+    risk_metrics: dict,
+    force_refresh: bool = False,
+    db_conn=None,
+) -> dict:
     """
     Generates an AI review for the entire portfolio.
-    
+
     Args:
         portfolio_data (dict): The result from calculate_portfolio_summary
         risk_metrics (dict): The result from risk_metrics.calculate_all_risk_metrics
         force_refresh (bool): Whether to bypass cache
-        
+        db_conn: The user-scoped portfolio DB connection used to look up
+            intrinsic-value / margin-of-safety rows from ``screener_cache``.
+            MUST be the user's DB — the default ``get_db_connection()`` returns
+            the shared ``data/db/portfolio.db`` which can hold days-old rows
+            and produces an MoS the user will see nowhere else in the UI.
+
     Returns:
         dict: The AI review JSON (scorecard + analysis)
     """
     logging.info("AI Analysis: Generating PORTFOLIO review...")
-    
+
     # 1. Check Cache
-    cache_dir = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "portfolio_ai_cache")
+    cache_dir = os.path.join(
+        config.get_app_data_dir(), config.CACHE_DIR, "portfolio_ai_cache"
+    )
     os.makedirs(cache_dir, exist_ok=True)
-    
-    pf_hash = _compute_portfolio_hash(portfolio_data)
+
+    pf_hash = _compute_portfolio_hash(portfolio_data, db_conn=db_conn)
     cache_path = os.path.join(cache_dir, f"pf_{pf_hash}.json")
-    
+
     if not force_refresh and os.path.exists(cache_path):
         try:
             with open(cache_path, "r") as f:
@@ -88,74 +143,92 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
 
     # 2. Prepare Data for Prompt
     metrics = portfolio_data.get("metrics", {})
-    
+
     # Top Holdings Calculation
     holdings_raw = portfolio_data.get("holdings_dict", {})
-    
+
     # Removed unused holdings iteration that did not compute aggregated positions.
-    
+
     # We will pass the TOP 10 positions by weight if possible.
-    # Since we might not have prices easily here without reprocessing, 
+    # Since we might not have prices easily here without reprocessing,
     # we can rely on what's available or ask the caller to pass a simplified view.
     # For now, let's assume we can dump the 'metrics' and 'risk_metrics' which are high level.
-    
+
     # 2. Extract key metrics
     # Map from API portfolio summary keys to analyzer keys
-    metrics = portfolio_data.get('metrics', {})
-    total_value = metrics.get('market_value', 0)
-    total_change = metrics.get('total_gain', 0)
-    total_change_percent = metrics.get('total_return_pct', 0)
+    metrics = portfolio_data.get("metrics", {})
+    total_value = metrics.get("market_value", 0)
+    total_change = metrics.get("total_gain", 0)
+    total_change_percent = metrics.get("total_return_pct", 0)
 
     # Risk Metrics - Map keys from risk_metrics.py
     # Keys seen in log: 'Max Drawdown', 'Volatility (Ann.)', 'Sharpe Ratio', 'Sortino Ratio'
-    sharpe = risk_metrics.get('Sharpe Ratio', risk_metrics.get('sharpe_ratio', 'N/A'))
-    sortino = risk_metrics.get('Sortino Ratio', risk_metrics.get('sortino_ratio', 'N/A'))
-    volatility = risk_metrics.get('Volatility (Ann.)', risk_metrics.get('volatility', 'N/A'))
-    max_drawdown = risk_metrics.get('Max Drawdown', risk_metrics.get('max_drawdown', 'N/A'))
-    beta = risk_metrics.get('Beta', risk_metrics.get('beta', 'N/A')) # Beta might be missing in pure portfolio stats
-    alpha = risk_metrics.get('Alpha', risk_metrics.get('alpha', 'N/A')) 
+    sharpe = risk_metrics.get("Sharpe Ratio", risk_metrics.get("sharpe_ratio", "N/A"))
+    sortino = risk_metrics.get(
+        "Sortino Ratio", risk_metrics.get("sortino_ratio", "N/A")
+    )
+    volatility = risk_metrics.get(
+        "Volatility (Ann.)", risk_metrics.get("volatility", "N/A")
+    )
+    max_drawdown = risk_metrics.get(
+        "Max Drawdown", risk_metrics.get("max_drawdown", "N/A")
+    )
+    beta = risk_metrics.get(
+        "Beta", risk_metrics.get("beta", "N/A")
+    )  # Beta might be missing in pure portfolio stats
+    alpha = risk_metrics.get("Alpha", risk_metrics.get("alpha", "N/A"))
 
     # Asset Allocation (if available)
-    holdings = portfolio_data.get('holdings', [])
+    holdings = portfolio_data.get("holdings", [])
     # Group by sector if available, otherwise just list top holdings
-    
+
     holdings_summary = ""
     sorted_holdings: list = []
     if holdings:
         sorted_holdings = sorted(
             holdings,
-            key=lambda x: x.get('market_value', x.get('value', 0)) or 0,
+            key=lambda x: x.get("market_value", x.get("value", 0)) or 0,
             reverse=True,
         )
 
         # Enrich with intrinsic-value + moat signals from the screener cache
         # so the prompt can ground "value discipline" judgements in concrete data
-        # rather than guessing from price alone.
+        # rather than guessing from price alone. Reads from the caller-supplied
+        # user DB; do NOT fall back to the default get_db_connection() — that
+        # returns the shared data/db/portfolio.db which is not kept in sync
+        # with the user's actual screener_cache rows.
         iv_lookup: dict = {}
-        try:
-            from db_utils import get_db_connection, get_cached_screener_results
-            top_symbols = [h.get('symbol') for h in sorted_holdings[:10] if h.get('symbol')]
-            if top_symbols:
-                conn = get_db_connection()
-                if conn:
-                    iv_lookup = get_cached_screener_results(conn, top_symbols) or {}
-                    conn.close()
-        except Exception as e_iv:
-            logging.warning(f"Portfolio AI: could not enrich with screener-cache signals: {e_iv}")
+        if db_conn is not None:
+            try:
+                from db_utils import get_cached_screener_results
+
+                top_symbols = [
+                    h.get("symbol") for h in sorted_holdings[:10] if h.get("symbol")
+                ]
+                if top_symbols:
+                    iv_lookup = get_cached_screener_results(db_conn, top_symbols) or {}
+            except Exception as e_iv:
+                logging.warning(
+                    f"Portfolio AI: could not enrich with screener-cache signals: {e_iv}"
+                )
+        else:
+            logging.warning(
+                "Portfolio AI: no db_conn supplied; skipping screener-cache enrichment"
+            )
 
         holdings_summary = "Top 10 Holdings (weight, sector, intrinsic-value signals where available):\n"
         for h in sorted_holdings[:10]:
-            symbol = h.get('symbol', '?')
-            val = h.get('market_value', h.get('value', 0)) or 0
-            pct = h.get('allocation_percent', h.get('percent', 0)) or 0
+            symbol = h.get("symbol", "?")
+            val = h.get("market_value", h.get("value", 0)) or 0
+            pct = h.get("allocation_percent", h.get("percent", 0)) or 0
             if pct == 0 and total_value > 0:
                 pct = (val / total_value) * 100
-            sector = h.get('sector', 'Unknown')
+            sector = h.get("sector", "Unknown")
 
             iv_data = iv_lookup.get(str(symbol).upper(), {}) if symbol else {}
-            iv = iv_data.get('intrinsic_value')
-            mos = iv_data.get('margin_of_safety')
-            moat = iv_data.get('ai_moat')
+            iv = iv_data.get("intrinsic_value")
+            mos = iv_data.get("margin_of_safety")
+            moat = iv_data.get("ai_moat")
 
             iv_bits = []
             if iv is not None:
@@ -165,7 +238,7 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
                     pass
             if mos is not None:
                 try:
-                    iv_bits.append(f"MoS {float(mos) * 100:+.0f}%")
+                    iv_bits.append(f"MoS {float(mos) * 1.0:+.0f}%")
                 except (TypeError, ValueError):
                     pass
             if moat is not None:
@@ -182,9 +255,23 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
     # 3. Optimization Data
     tlh_candidates = _detect_tax_loss_candidates(holdings)
     sector_alloc = _calculate_sector_allocation(holdings)
-    
-    tlh_summary = "\n".join([f"- {c['symbol']}: {c['loss']:,.2f} ({c['loss_percent']:.1f}%)" for c in tlh_candidates]) if tlh_candidates else "No major tax-loss candidates found."
-    sector_summary = "\n".join([f"- {s}: {v:.1f}%" for s, v in sorted(sector_alloc.items(), key=lambda x: x[1], reverse=True)])
+
+    tlh_summary = (
+        "\n".join(
+            [
+                f"- {c['symbol']}: {c['loss']:,.2f} ({c['loss_percent']:.1f}%)"
+                for c in tlh_candidates
+            ]
+        )
+        if tlh_candidates
+        else "No major tax-loss candidates found."
+    )
+    sector_summary = "\n".join(
+        [
+            f"- {s}: {v:.1f}%"
+            for s, v in sorted(sector_alloc.items(), key=lambda x: x[1], reverse=True)
+        ]
+    )
 
     # 4. Construct Prompt
     prompt = f"""
@@ -280,7 +367,7 @@ OUTPUT — strict JSON, no markdown, no commentary outside the JSON:
     ]
 }}
 """
-    
+
     # 3. Call LLM (using Fallback Chain from ai_analyzer)
     api_key = config.GEMINI_API_KEY
     if not api_key:
@@ -288,60 +375,69 @@ OUTPUT — strict JSON, no markdown, no commentary outside the JSON:
             "scorecard": {
                 "business_quality": 0,
                 "value_discipline": 0,
-                "thesis_integrity": 0
+                "thesis_integrity": 0,
             },
             "summary": "Unable to generate analysis. Error: API Key is missing.",
             "analysis": {
                 "business_quality": "Analysis unavailable.",
                 "value_discipline": "Analysis unavailable.",
                 "thesis_integrity": "Analysis unavailable.",
-                "actionable_recommendations": "No recommendations available."
+                "actionable_recommendations": "No recommendations available.",
             },
             "recommendations": [],
-            "optimizations": []
+            "optimizations": [],
         }
-        
+
     base_payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"response_mime_type": "application/json"}
+        "generationConfig": {"response_mime_type": "application/json"},
     }
-    
+
     rate_limit_count = 0
     other_error_count = 0
-            
+
     for model in FALLBACK_MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         try:
             resp = requests.post(url, json=base_payload, timeout=60)
             if resp.status_code == 200:
                 data = resp.json()
-                text = data['candidates'][0]['content']['parts'][0]['text']
-                
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+
                 if "```json" in text:
                     text = text.split("```json")[1].split("```")[0]
                 elif "```" in text:
                     text = text.split("```")[1].split("```")[0]
-                    
+
                 result = json.loads(text)
-                
-                default_scorecard = {"business_quality": 0, "value_discipline": 0, "thesis_integrity": 0}
+
+                default_scorecard = {
+                    "business_quality": 0,
+                    "value_discipline": 0,
+                    "thesis_integrity": 0,
+                }
                 default_analysis = {
                     "business_quality": "Analysis unavailable.",
                     "value_discipline": "Analysis unavailable.",
                     "thesis_integrity": "Analysis unavailable.",
-                    "actionable_recommendations": "No recommendations available."
+                    "actionable_recommendations": "No recommendations available.",
                 }
-                
-                if "scorecard" not in result: result["scorecard"] = default_scorecard
-                if "analysis" not in result: result["analysis"] = default_analysis
-                if "summary" not in result: result["summary"] = "AI analysis generated, but summary missing."
-                if "recommendations" not in result: result["recommendations"] = []
-                if "optimizations" not in result: result["optimizations"] = []
-                
+
+                if "scorecard" not in result:
+                    result["scorecard"] = default_scorecard
+                if "analysis" not in result:
+                    result["analysis"] = default_analysis
+                if "summary" not in result:
+                    result["summary"] = "AI analysis generated, but summary missing."
+                if "recommendations" not in result:
+                    result["recommendations"] = []
+                if "optimizations" not in result:
+                    result["optimizations"] = []
+
                 # Cache it
                 with open(cache_path, "w") as f:
                     json.dump(result, f)
-                    
+
                 return result
             elif resp.status_code == 429:
                 logging.warning(f"Portfolio AI: Model {model} rate limited.")
@@ -349,30 +445,33 @@ OUTPUT — strict JSON, no markdown, no commentary outside the JSON:
                 continue
             else:
                 other_error_count += 1
-                logging.warning(f"Portfolio AI: Model {model} error {resp.status_code}: {resp.text}")
-                
+                logging.warning(
+                    f"Portfolio AI: Model {model} error {resp.status_code}: {resp.text}"
+                )
+
         except Exception as e:
             logging.error(f"Portfolio AI: Error with {model}: {e}")
             other_error_count += 1
             continue
-            
-    if rate_limit_count > 0 and other_error_count == 0:
-         # Try to fallback to cache if available
-         if os.path.exists(cache_path):
-             try:
-                 with open(cache_path, "r") as f:
-                     cached = json.load(f)
-                     cached["warning"] = "RateLimit"
-                     cached["message"] = "AI service is busy. Showing cached analysis from earlier."
-                     logging.info("AI Analysis: Rate limited, falling back to cache.")
-                     return cached
-             except Exception as e:
-                 logging.warning(f"Failed to read portfolio cache for fallback: {e}")
 
-         return {
-             "error": "RateLimit",
-             "message": "AI service usage limit reached. Please try again in a few minutes or check your quota."
-         }
+    if rate_limit_count > 0 and other_error_count == 0:
+        # Try to fallback to cache if available
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r") as f:
+                    cached = json.load(f)
+                    cached["warning"] = "RateLimit"
+                    cached["message"] = (
+                        "AI service is busy. Showing cached analysis from earlier."
+                    )
+                    logging.info("AI Analysis: Rate limited, falling back to cache.")
+                    return cached
+            except Exception as e:
+                logging.warning(f"Failed to read portfolio cache for fallback: {e}")
+
+        return {
+            "error": "RateLimit",
+            "message": "AI service usage limit reached. Please try again in a few minutes or check your quota.",
+        }
 
     return {"error": "Failed to generate portfolio review."}
-

@@ -33,10 +33,24 @@ try:
     from server.screener_service import get_sp500_tickers, get_sp400_tickers
     from server.ai_analyzer import generate_stock_review
     from financial_ratios import calculate_key_ratios_timeseries, get_comprehensive_intrinsic_value
-    from db_utils import get_db_connection, update_intrinsic_value_in_cache, update_ai_review_in_cache
+    from db_utils import (
+        get_db_connection,
+        get_global_screener_db_path,
+        update_intrinsic_value_in_cache,
+        update_ai_review_in_cache,
+    )
 except ImportError as e:
     print(f"CRITICAL: Failed to import modules. Make sure you are running with 'src' in PYTHONPATH. Error: {e}")
     sys.exit(1)
+
+
+# Background worker has no per-user context, so all reads/writes target the
+# shared global screener DB directly. The accidental default
+# ``data/db/portfolio.db`` returned by ``get_db_connection()`` with no args is
+# not the right store — it isn't the file the API serves from and isn't kept
+# in sync with anything else.
+def _open_screener_conn():
+    return get_db_connection(get_global_screener_db_path(), use_cache=False)
 
 BATCH_DELAY_SECONDS = 15 # Increased to 15s to respect Gemini 3 Flash 5 RPM limit (60s / 5 = 12s + buffer)
 USE_GROUNDING = True # Toggle Google Search (True uses search, False disables it)
@@ -68,7 +82,7 @@ def check_if_review_exists(symbol: str, fund_data: dict = None, universe: str = 
     Checks if a valid AI review already exists for the symbol in the cache for the specified universe.
     Performs smart invalidation based on fiscal year/quarter data.
     """
-    conn = get_db_connection()
+    conn = _open_screener_conn()
     if not conn:
         return False
         
@@ -119,7 +133,7 @@ def save_review_to_screener(symbol: str, review: dict, fund_data: dict, universe
     """
     Saves the generated AI review to the screener cache with the specified universe.
     """
-    conn = get_db_connection()
+    conn = _open_screener_conn()
     if not conn:
         return
 
@@ -190,20 +204,22 @@ def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') ->
             )
             
             # 6. Update Cache with Intrinsic Value
-            conn = get_db_connection()
+            conn = _open_screener_conn()
             if conn:
-                update_intrinsic_value_in_cache(
-                    conn,
-                    symbol,
-                    iv_results.get("average_intrinsic_value"),
-                    iv_results.get("margin_of_safety_pct"),
-                    fund_data.get("lastFiscalYearEnd"),
-                    fund_data.get("mostRecentQuarter"),
-                    info=fund_data,
-                    universe=universe # Ensure we update the correct universe row
-                )
-                conn.close()
-                logging.info(f"Updated intrinsic value cache for {symbol}.")
+                try:
+                    update_intrinsic_value_in_cache(
+                        conn,
+                        symbol,
+                        iv_results.get("average_intrinsic_value"),
+                        iv_results.get("margin_of_safety_pct"),
+                        fund_data.get("lastFiscalYearEnd"),
+                        fund_data.get("mostRecentQuarter"),
+                        info=fund_data,
+                        universe=universe # Ensure we update the correct universe row
+                    )
+                    logging.info(f"Updated intrinsic value cache for {symbol}.")
+                finally:
+                    conn.close()
         except Exception as iv_e:
             logging.error(f"Failed to calculate/update intrinsic value for {symbol}: {iv_e}")
 

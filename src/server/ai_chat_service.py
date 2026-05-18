@@ -117,39 +117,46 @@ def get_market_data_tool(symbols: List[str]) -> Dict[str, Any]:
         logging.error(f"Chat Tool Error (Market Data): {e}")
         return {"error": f"Failed to fetch market data: {str(e)}"}
 
-def get_stock_review_tool(symbol: str) -> Dict[str, Any]:
-    """Retrieves the pre-generated detailed AI analysis and scorecard for a stock."""
-    from db_utils import get_db_connection
-    conn = get_db_connection()
+def get_stock_review_tool(symbol: str, db_conn=None) -> Dict[str, Any]:
+    """Retrieves the pre-generated detailed AI analysis and scorecard for a stock.
+
+    Reads through ``get_cached_screener_results`` so that — when the user's
+    portfolio DB has no row for ``symbol`` — the lookup falls back to the
+    global screener DB. The previous raw SELECT against the default DB
+    returned by ``get_db_connection()`` (no args) silently missed reviews
+    that lived only in the shared global store.
+    """
+    from db_utils import get_cached_screener_results, get_db_connection, get_global_screener_db_path
+
+    own_conn = False
+    conn = db_conn
+    if conn is None:
+        conn = get_db_connection(get_global_screener_db_path(), use_cache=False)
+        own_conn = True
     if not conn:
         return {"error": "Database connection failed."}
-    
+
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT ai_summary, ai_moat, ai_financial_strength, ai_predictability, ai_growth 
-            FROM screener_cache 
-            WHERE symbol = ? 
-            LIMIT 1
-        """, (symbol.upper(),))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
+        rows = get_cached_screener_results(conn, [symbol.upper()])
+        row = rows.get(symbol.upper())
+
+        if row and row.get("ai_summary"):
             return {
                 "symbol": symbol.upper(),
-                "summary": row[0],
+                "summary": row.get("ai_summary"),
                 "scorecard": {
-                    "moat": row[1],
-                    "financial_strength": row[2],
-                    "predictability": row[3],
-                    "growth": row[4]
-                }
+                    "moat": row.get("ai_moat"),
+                    "financial_strength": row.get("ai_financial_strength"),
+                    "predictability": row.get("ai_predictability"),
+                    "growth": row.get("ai_growth"),
+                },
             }
         return {"message": f"No pre-generated AI review found for {symbol}."}
     except Exception as e:
-        if conn: conn.close()
         return {"error": f"Failed to query reviews: {str(e)}"}
+    finally:
+        if own_conn and conn is not None:
+            conn.close()
 
 def run_screener_tool(prompt: str) -> Dict[str, Any]:
     """Runs a natural language stock screening query across the entire market database."""
@@ -204,10 +211,14 @@ BEHAVIORAL GUIDELINES:
 5. Format — Markdown for tables and highlights. Concise but substantive. No filler.
 """
 
-def process_chat_message(user_message: str, current_user, history: List[Dict] = None) -> str:
+def process_chat_message(user_message: str, current_user, history: List[Dict] = None, db_conn=None) -> str:
     """
     Orchestrates the chat logic using Gemini's function calling.
     Currently uses static tools and synchronous calls for MVP.
+
+    ``db_conn`` is the user's portfolio DB; when supplied the stock-review
+    tool reads through it (with global-screener-DB fallback) instead of
+    opening its own connection to the global store on every call.
     """
     api_key = config.GEMINI_API_KEY
     if not api_key:
@@ -430,7 +441,7 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
             elif fn_name == "get_market_data":
                 tool_result = get_market_data_tool(args.get('symbols', []))
             elif fn_name == "get_stock_review":
-                tool_result = get_stock_review_tool(args.get('symbol', ''))
+                tool_result = get_stock_review_tool(args.get('symbol', ''), db_conn=db_conn)
             elif fn_name == "run_screener":
                 tool_result = run_screener_tool(args.get('prompt', ''))
             else:

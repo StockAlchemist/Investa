@@ -1280,7 +1280,8 @@ async def get_portfolio_ai_review(
     accounts: Optional[List[str]] = Query(None),
     refresh: bool = False,
     data: tuple = Depends(get_transaction_data),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """
     Generates or retrieves a cached AI review for the portfolio.
@@ -1419,11 +1420,14 @@ async def get_portfolio_ai_review(
         # Inject holdings list into portfolio data for analyzer
         summary_data['holdings'] = holdings_list
 
-        # Generate review
+        # Generate review — pass the user DB so screener_cache lookups read the
+        # same rows the rest of the app sees, and so the cache hash fingerprint
+        # invalidates when those rows refresh mid-day.
         review = generate_portfolio_review(
             portfolio_data=summary_data,
             risk_metrics=risk_metrics,
-            force_refresh=refresh
+            force_refresh=refresh,
+            db_conn=db_conn,
         )
         
         return review
@@ -1966,49 +1970,61 @@ async def add_transactions_batch(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Adds a batch of transactions to the database.
-    Used for Review & Confirm step after document parsing.
+    Adds a batch of transactions to the database. Used for the Review &
+    Confirm step after document parsing.
+
+    Auto-add-cash behaviour is decided **per account** rather than globally:
+    the explicit $CASH legs only need to be generated for accounts that are
+    in *Manual* cash mode. Accounts already in *Auto* cash mode have the
+    engine generate cash deltas on the fly during valuation, so adding
+    explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
+    therefore acts as a user opt-in that still gets gated by the account's
+    cash mode.
     """
     try:
-        _, _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, account_cash_mode_map, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
-            
+
         imported_count = 0
         errors = []
-        
+        cash_mode_map = account_cash_mode_map or {}
+
         for tx_input in payload.transactions:
             # Convert back to dict for the lower-level add_transaction_to_db
             # This handles JSON key aliases correctly
             tx_data = tx_input.model_dump(by_alias=True)
-            
+
             # Set the user_id for isolation
             tx_data["user_id"] = current_user.id
-            
-            # We add each transaction to the DB
+
             success, error = add_transaction_to_db(conn, tx_data)
             if success:
                 imported_count += 1
                 if payload.auto_add_cash:
-                    # _handle_auto_cash_generation requires raw dict
-                    from server.api import _handle_auto_cash_generation
-                    _handle_auto_cash_generation(conn, tx_data)
+                    acc = tx_data.get("Account") or ""
+                    # Default Manual if the account isn't in the user's config
+                    # yet — opt-in stays the safer choice for new accounts.
+                    acc_mode = cash_mode_map.get(acc, "Manual")
+                    if acc_mode != "Auto":
+                        from server.api import _handle_auto_cash_generation
+                        _handle_auto_cash_generation(conn, tx_data)
             else:
                 errors.append({"symbol": tx_input.Symbol, "error": error})
-                
+
         conn.close()
-        
+
         if imported_count > 0:
             reload_data_and_clear_cache(current_user)
-            
+
         return {
-            "status": "success", 
-            "message": f"Successfully imported {imported_count} transactions.", 
+            "status": "success",
+            "message": f"Successfully imported {imported_count} transactions.",
             "count": imported_count,
             "errors": errors
         }
-            
+
     except Exception as e:
         logging.error(f"Error in batch import: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -3507,8 +3523,9 @@ async def get_stock_analysis(
             except Exception as e_ratio:
                 logging.warning(f"Ratio calculation failed for analysis: {e_ratio}")
 
-        # 3. Generate AI Review
-        analysis = generate_stock_review(symbol, fund_data, ratios, force_refresh=force)
+        # 3. Generate AI Review — pass user DB so reads and writes flow through
+        # the user's screener_cache and mirror to the global screener DB.
+        analysis = generate_stock_review(symbol, fund_data, ratios, force_refresh=force, db_conn=db_conn)
         
         # 4. Interactive Calculation of Intrinsic Value & Cache Update
         try:
@@ -4739,9 +4756,10 @@ async def narrative_screener(
 
 @router.post("/screener/review/{symbol}")
 async def trigger_ai_review(
-    symbol: str, 
+    symbol: str,
     force: bool = Query(False),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """
     Triggers (or retrieves cached) AI review for a specific stock.
@@ -4774,7 +4792,7 @@ async def trigger_ai_review(
             "Current Ratio": fund_data.get("currentRatio"),
         }
         
-        review = generate_stock_review(symbol, fund_data, ratios_data, force_refresh=force)
+        review = generate_stock_review(symbol, fund_data, ratios_data, force_refresh=force, db_conn=db_conn)
         return clean_nans(review)
         
     except Exception as e:
@@ -4794,21 +4812,24 @@ class ChatRequest(BaseModel):
 @router.post("/chat/message")
 async def chat_message_endpoint(
     request: ChatRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """
     Conversational AI interface for portfolio and market insights.
     """
     try:
         from server.ai_chat_service import process_chat_message
-        
+
         # Convert history objects to simple dicts
         history_dicts = []
         if request.history:
             history_dicts = [{"role": m.role, "text": m.text} for m in request.history]
-            
+
         # Run in threadpool as many AI calls are synchronous requests
-        response_text = await run_in_threadpool(process_chat_message, request.message, current_user, history_dicts)
+        response_text = await run_in_threadpool(
+            process_chat_message, request.message, current_user, history_dicts, db_conn
+        )
         return {"response": response_text}
         
     except Exception as e:

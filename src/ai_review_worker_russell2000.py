@@ -33,10 +33,20 @@ try:
     from server.screener_service import get_russell2000_tickers
     from server.ai_analyzer import generate_stock_review
     from financial_ratios import calculate_key_ratios_timeseries, get_comprehensive_intrinsic_value
-    from db_utils import get_db_connection, update_intrinsic_value_in_cache, update_ai_review_in_cache
+    from db_utils import (
+        get_db_connection,
+        get_global_screener_db_path,
+        update_intrinsic_value_in_cache,
+        update_ai_review_in_cache,
+    )
 except ImportError as e:
     print(f"CRITICAL: Failed to import modules. Make sure you are running with 'src' in PYTHONPATH. Error: {e}")
     sys.exit(1)
+
+
+def _open_screener_conn():
+    """Background worker writes go to the shared global screener DB."""
+    return get_db_connection(get_global_screener_db_path(), use_cache=False)
 
 BATCH_DELAY_SECONDS = 15 # Increased to 15s to respect Gemini 3 Flash 5 RPM limit (60s / 5 = 12s + buffer)
 USE_GROUNDING = True # Toggle Google Search (True uses search, False disables it)
@@ -68,7 +78,7 @@ def check_if_review_exists(symbol: str, fund_data: dict = None, universe: str = 
     Checks if a valid AI review already exists for the symbol in the cache for the specified universe.
     Performs smart invalidation based on fiscal year/quarter data.
     """
-    conn = get_db_connection()
+    conn = _open_screener_conn()
     if not conn:
         return False
         
@@ -119,7 +129,7 @@ def save_review_to_screener(symbol: str, review: dict, fund_data: dict, universe
     """
     Saves the generated AI review to the screener cache with the specified universe.
     """
-    conn = get_db_connection()
+    conn = _open_screener_conn()
     if not conn:
         return
 
@@ -190,7 +200,7 @@ def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'russell200
             )
             
             # 6. Update Cache with Intrinsic Value
-            conn = get_db_connection()
+            conn = _open_screener_conn()
             if conn:
                 update_intrinsic_value_in_cache(
                     conn,

@@ -850,9 +850,14 @@ def run_narrative_search(prompt: str) -> List[Dict[str, Any]]:
              return []
              
         logging.info(f"Screener: Executing Code: {sql}")
-        
-        conn = get_db_connection()
-        if not conn: 
+
+        # Narrative search runs market-wide, so point at the shared screener
+        # DB instead of the per-user portfolio DB returned by the default
+        # get_db_connection() — that file is missing AI/IV rows for most
+        # symbols.
+        from db_utils import get_global_screener_db_path
+        conn = get_db_connection(get_global_screener_db_path(), use_cache=False)
+        if not conn:
              logging.error("Screener: DB Conn failed.")
              return []
         
