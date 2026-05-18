@@ -120,23 +120,62 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
     # Group by sector if available, otherwise just list top holdings
     
     holdings_summary = ""
+    sorted_holdings: list = []
     if holdings:
-        # Sort by value desc (using 'market_value' or 'current_value')
-        # Check potential keys: 'market_value', 'value', 'total_value'
-        # Also 'allocation_percent' might be 'percent_portfolio' or similar
-        sorted_holdings = sorted(holdings, key=lambda x: x.get('market_value', x.get('value', 0)), reverse=True)
-        top_5 = sorted_holdings[:5]
-        holdings_summary = "Top 5 Holdings:\n"
-        for h in top_5:
-            symbol = h.get('symbol', 'Unknown')
-            # Calculate percent if missing: value / total_portfolio_value
-            val = h.get('market_value', h.get('value', 0))
-            pct = h.get('allocation_percent', h.get('percent', 0))
+        sorted_holdings = sorted(
+            holdings,
+            key=lambda x: x.get('market_value', x.get('value', 0)) or 0,
+            reverse=True,
+        )
+
+        # Enrich with intrinsic-value + moat signals from the screener cache
+        # so the prompt can ground "value discipline" judgements in concrete data
+        # rather than guessing from price alone.
+        iv_lookup: dict = {}
+        try:
+            from db_utils import get_db_connection, get_cached_screener_results
+            top_symbols = [h.get('symbol') for h in sorted_holdings[:10] if h.get('symbol')]
+            if top_symbols:
+                conn = get_db_connection()
+                if conn:
+                    iv_lookup = get_cached_screener_results(conn, top_symbols) or {}
+                    conn.close()
+        except Exception as e_iv:
+            logging.warning(f"Portfolio AI: could not enrich with screener-cache signals: {e_iv}")
+
+        holdings_summary = "Top 10 Holdings (weight, sector, intrinsic-value signals where available):\n"
+        for h in sorted_holdings[:10]:
+            symbol = h.get('symbol', '?')
+            val = h.get('market_value', h.get('value', 0)) or 0
+            pct = h.get('allocation_percent', h.get('percent', 0)) or 0
             if pct == 0 and total_value > 0:
                 pct = (val / total_value) * 100
-            
-            sector = h.get('sector', 'Unknown Sector')
-            holdings_summary += f"- {symbol}: {pct:.2f}% ({sector})\n"
+            sector = h.get('sector', 'Unknown')
+
+            iv_data = iv_lookup.get(str(symbol).upper(), {}) if symbol else {}
+            iv = iv_data.get('intrinsic_value')
+            mos = iv_data.get('margin_of_safety')
+            moat = iv_data.get('ai_moat')
+
+            iv_bits = []
+            if iv is not None:
+                try:
+                    iv_bits.append(f"IV {float(iv):,.2f}")
+                except (TypeError, ValueError):
+                    pass
+            if mos is not None:
+                try:
+                    iv_bits.append(f"MoS {float(mos) * 100:+.0f}%")
+                except (TypeError, ValueError):
+                    pass
+            if moat is not None:
+                try:
+                    iv_bits.append(f"Moat {float(moat):.1f}/10")
+                except (TypeError, ValueError):
+                    pass
+            iv_str = f" — {', '.join(iv_bits)}" if iv_bits else ""
+
+            holdings_summary += f"- {symbol}: {pct:.2f}% ({sector}){iv_str}\n"
     else:
         holdings_summary = "Holdings data not explicit."
 
@@ -149,77 +188,113 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
 
     # 4. Construct Prompt
     prompt = f"""
-    You are an expert financial advisor and tax strategist. Review the following investment portfolio and provide a comprehensive analysis with specific optimizations for rebalancing and tax efficiency.
-    
-    PORTFOLIO METRICS:
-    - Total Value: {total_value:,.2f}
-    - Total Change: {total_change:,.2f} ({total_change_percent:.2f}%)
-    
-    RISK METRICS:
-    - Sharpe Ratio: {sharpe} | Sortino Ratio: {sortino}
-    - Annualized Volatility: {volatility} | Max Drawdown: {max_drawdown}
-    - Beta: {beta} | Alpha: {alpha}
-    
-    ASSET ALLOCATION:
-    {holdings_summary}
-    
-    SECTOR ALLOCATION:
-    {sector_summary}
-    
-    TAX-LOSS HARVESTING CANDIDATES (Unrealized Losses):
-    {tlh_summary}
-    
-    INSTRUCTIONS:
-    1. Score the portfolio (1-10) on Diversification, Risk Profile, and Performance.
-    2. Provide an Executive Summary.
-    3. Analyze Diversification, Risk, and Performance separately.
-    4. Provide specific "Optimizations":
-       - Identify the best Tax-Loss Harvesting (TLH) opportunity if any. Suggest a "Replacement" ticker (e.g., VOO for IVV) to stay invested while harvesting the loss.
-       - Identify sector over-concentration (e.g., >25% in one sector) and suggest rebalancing moves.
-       - Suggest a "Risk Hedge" if the portfolio beta is too high or diversification is poor.
-    
-    OUTPUT FORMAT (JSON):
-    {{
-        "scorecard": {{
-            "diversification": <score>,
-            "risk_profile": <score>,
-            "performance": <score>
-        }},
-        "summary": "<executive_summary>",
-        "analysis": {{
-            "diversification": "<text>",
-            "risk_profile": "<text>",
-            "performance": "<text>",
-            "actionable_recommendations": "<text>"
-        }},
-        "recommendations": ["<rec1>", "<rec2>", "..."],
-        "optimizations": [
-            {{
-                "type": "tax_loss_harvesting" | "rebalancing" | "diversification",
-                "title": "<short_title>",
-                "description": "<detailed_suggestion>",
-                "symbol": "<related_ticker_or_sector>",
-                "action": "Sell" | "Buy" | "Swap" | "Hold",
-                "priority": "High" | "Medium" | "Low"
-            }}
-        ]
-    }}
-    """
+You are an investment advisor working in the quality-and-value tradition of Buffett, Munger, Phil Fisher, Terry Smith, and Nick Sleep.
+The investor you serve runs a deliberately concentrated portfolio of high-conviction businesses. Treat this as the "punch card" approach to investing — fewer, bigger, longer-held positions in businesses the investor genuinely understands.
+
+PHILOSOPHICAL GROUND RULES (these are non-negotiable):
+
+  1. Concentration is conviction, not error. A 20–40% position in a great business is correct. Diversification is, in Buffett's words, "protection against ignorance" — do NOT recommend it for its own sake, and never score the portfolio down for being concentrated.
+  2. Volatility is not risk. Real risk is the permanent impairment of capital, not price fluctuation. Beta, annualised volatility, and max-drawdown do NOT inform business quality. They are reference numbers only.
+  3. Sector weight reflects circle of competence. Heavy exposure to a few sectors is by design. Do not flag it.
+  4. The only valid reasons to sell are: (a) the business has fundamentally deteriorated, (b) price has run materially above any reasonable estimate of intrinsic value, or (c) a clearly superior opportunity exists and capital must be redeployed. "Rebalancing", "hedging", and "tax-loss harvesting" are NOT, on their own, valid reasons to sell a great business.
+  5. Inactivity is a virtue. The default recommendation, in the absence of a strong reason, is HOLD.
+  6. Where Margin of Safety (MoS) data exists in the data below, treat NEGATIVE MoS (price ABOVE intrinsic value) as the primary signal that a position may warrant trimming, and treat DEEPLY POSITIVE MoS as the primary signal a high-quality holding may warrant adding to.
+
+Anti-patterns to avoid in your output:
+  • "You should diversify into bonds / other sectors / international equity to reduce risk."
+  • "Position X is too large at Y% — trim to reduce concentration."
+  • "Portfolio beta is high — consider a hedge."
+  • "Add an S&P 500 ETF for broad market exposure."
+  • Generic advisor boilerplate about "balanced portfolios" or "age-appropriate allocation".
+If you find yourself writing any of the above, delete it and rewrite.
+
+—————————————————————————————————————————————————
+PORTFOLIO SNAPSHOT
+—————————————————————————————————————————————————
+Total Value: {total_value:,.2f}
+Cumulative Return: {total_change:,.2f} ({total_change_percent:.2f}%)
+Alpha (vs market): {alpha}
+Sharpe / Sortino (reference only): {sharpe} / {sortino}
+Annualised Vol / Max DD (reference only, not a quality signal): {volatility} / {max_drawdown}
+
+{holdings_summary}
+Sector weights (informational — concentration is fine):
+{sector_summary}
+
+POSITIONS CARRYING UNREALISED LOSSES:
+{tlh_summary}
+(For each: ask whether the business has actually deteriorated, or whether Mr. Market is offering a discount on a name still worth owning. A losing price is not, by itself, a reason to sell.)
+
+—————————————————————————————————————————————————
+WHAT TO PRODUCE
+—————————————————————————————————————————————————
+
+SCORECARD (integers 1–10):
+
+  • business_quality — Are these businesses with durable moats, high returns on incremental invested capital, and predictable owner-earnings? Cite specific tickers that drive the score up or down.
+  • value_discipline — Are positions trading at or below reasonable intrinsic value? Weight Margin-of-Safety data heavily where present. A holding trading 40% above IV pulls this score down regardless of how great the business is.
+  • thesis_integrity — Do the holdings hang together as a coherent set of identifiable theses (e.g. "compounders with pricing power", "regional banks at tangible book", "Asian consumer franchise"), or is the portfolio a diffuse, theme-less collection?
+
+EXECUTIVE SUMMARY (3–5 sentences):
+Speak about businesses owned, not statistical aggregates. The reader is the investor who chose every name; address them as a peer.
+
+PER-DIMENSION ANALYSIS:
+For each scorecard dimension, write 3–6 sentences. Be specific. Cite tickers. Distinguish what is strengthening the score from what is dragging on it, on FUNDAMENTAL grounds.
+
+OPPORTUNITIES (a list of concrete actions):
+Allowed action types:
+  • "add"           — a high-quality holding trading meaningfully below IV. Compounding opportunity.
+  • "trim"          — a holding now well above IV; risk/reward has flipped. NOT because the position is "too big".
+  • "exit"          — the business has fundamentally deteriorated, OR the original thesis was wrong.
+  • "monitor"       — early-warning signs (margin pressure, slowing reinvestment, governance, competitive shifts).
+  • "tax_efficiency" — ONLY when a position with an unrealised loss is also a candidate for exit on fundamentals. Never harvest losses on a business you still believe in.
+
+For each item: 2–3 sentences of rationale, anchored in the business — not the chart.
+
+—————————————————————————————————————————————————
+OUTPUT — strict JSON, no markdown, no commentary outside the JSON:
+—————————————————————————————————————————————————
+{{
+    "scorecard": {{
+        "business_quality": <int 1-10>,
+        "value_discipline": <int 1-10>,
+        "thesis_integrity": <int 1-10>
+    }},
+    "summary": "<3-5 sentence executive summary>",
+    "analysis": {{
+        "business_quality": "<3-6 sentences, cite tickers>",
+        "value_discipline": "<3-6 sentences, cite tickers, reference MoS where present>",
+        "thesis_integrity": "<3-6 sentences>",
+        "actionable_recommendations": "<summary of the most important next moves, in plain prose>"
+    }},
+    "recommendations": ["<short rec 1>", "<short rec 2>", "..."],
+    "optimizations": [
+        {{
+            "type": "add" | "trim" | "exit" | "monitor" | "tax_efficiency",
+            "title": "<short_title>",
+            "description": "<2-3 sentence rationale rooted in business fundamentals>",
+            "symbol": "<ticker>",
+            "action": "Add" | "Trim" | "Sell" | "Hold" | "Monitor",
+            "priority": "High" | "Medium" | "Low"
+        }}
+    ]
+}}
+"""
     
     # 3. Call LLM (using Fallback Chain from ai_analyzer)
     api_key = config.GEMINI_API_KEY
     if not api_key:
         return {
             "scorecard": {
-                "diversification": 0,
-                "risk_profile": 0,
-                "performance": 0
+                "business_quality": 0,
+                "value_discipline": 0,
+                "thesis_integrity": 0
             },
             "summary": "Unable to generate analysis. Error: API Key is missing.",
             "analysis": {
-                "diversification": "Analysis unavailable.",
-                "risk_profile": "Analysis unavailable.",
-                "performance": "Analysis unavailable.",
+                "business_quality": "Analysis unavailable.",
+                "value_discipline": "Analysis unavailable.",
+                "thesis_integrity": "Analysis unavailable.",
                 "actionable_recommendations": "No recommendations available."
             },
             "recommendations": [],
@@ -249,11 +324,11 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
                     
                 result = json.loads(text)
                 
-                default_scorecard = {"diversification": 0, "risk_profile": 0, "performance": 0}
+                default_scorecard = {"business_quality": 0, "value_discipline": 0, "thesis_integrity": 0}
                 default_analysis = {
-                    "diversification": "Analysis unavailable.",
-                    "risk_profile": "Analysis unavailable.",
-                    "performance": "Analysis unavailable.",
+                    "business_quality": "Analysis unavailable.",
+                    "value_discipline": "Analysis unavailable.",
+                    "thesis_integrity": "Analysis unavailable.",
                     "actionable_recommendations": "No recommendations available."
                 }
                 

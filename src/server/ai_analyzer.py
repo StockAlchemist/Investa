@@ -174,24 +174,33 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force
     current_date_str = datetime.now().strftime("%B %d, %Y")
 
     prompt = f"""
-Analyze the stock {symbol} using the provided financial data AND by looking up recent news, earnings reports, and analyst sentiments on the web.
+You are evaluating {symbol} for a quality-and-value investor in the tradition of Buffett, Munger, and Phil Fisher. The investor wants a small number of great businesses bought below intrinsic value and held for a very long time. Analyse this business accordingly — do NOT frame your answer around short-term trading, technicals, momentum, or analyst price-target consensus.
 
-IMPORTANT: Today's date is {current_date_str}. All analysis should be relative to this date.
+Today is {current_date_str}.
+
+Use the financial data below AND your web access to recent news, earnings, and disclosures.
 
 Financial Data:
 {json.dumps(metrics, indent=2)}
 
-Provide a professional investment review covering these specific topics:
-1. Moat: Competitive advantages, pricing power, and market position.
-2. Financial Strength: Balance sheet quality, debt levels, and solvency.
-3. Predictability: Reliability of earnings, historical consistency, and business cyclicality.
-4. Growth Perspective: Future growth drivers, market opportunities, and potential risks.
-5. Market Sentiment: Analyze current news, analyst upgrades/downgrades, and market buzz.
-6. Upcoming Catalysts: Identify 2-3 specific upcoming events (earnings dates, product launches, clinical trials, regulatory decisions, macro impacts) that occur AFTER {current_date_str}, with estimated dates.
+Score the following dimensions 1–10, where 10 is "this is the kind of business Buffett would own forever":
 
-For each topic, provide a score from 1 to 10 based on both the data and your web research.
+1. Moat — Durability of competitive advantage. Look for: structural cost advantages, network effects, switching costs, intangible assets (brand, regulation, IP), efficient scale. Penalise commodity-like businesses, narrow or fading advantages.
+2. Financial Strength — Balance-sheet quality, debt levels relative to owner earnings, interest coverage, cash conversion. A strong moat means little if the balance sheet is fragile.
+3. Predictability — Stability and predictability of revenue and free cash flow over the cycle. Cyclical, project-based, or commodity-exposed businesses score lower regardless of recent results.
+4. Growth — Sustainable, capital-efficient growth in owner earnings. High-growth businesses that destroy capital (low ROIC, dilution) score lower than slow-growing businesses that compound capital at high rates of return.
 
-Return the response STRICTLY as a JSON object with the following structure:
+In addition:
+- Market Sentiment (0–100) — Read of current news and disclosures. Important for context, not a primary signal.
+- Upcoming Catalysts — 2–3 concrete fundamental events (earnings, product/regulatory milestones, capital allocation events) occurring AFTER {current_date_str}.
+
+In the analysis text:
+- Cite specific business mechanics, not stock-price commentary.
+- If you see signs of fundamental deterioration (margin compression, capital misallocation, governance issues), say so plainly.
+- Do not recommend the position based on "technical breakout" or "analyst upgrades".
+- The summary should be a one-or-two-sentence verdict on the BUSINESS — not the stock chart.
+
+Return STRICT JSON only:
 {{
   "scorecard": {{
     "moat": 0.0,
@@ -200,18 +209,18 @@ Return the response STRICTLY as a JSON object with the following structure:
     "growth": 0.0
   }},
   "analysis": {{
-    "moat": "Analysis text here...",
-    "financial_strength": "Analysis text here...",
-    "predictability": "Analysis text here...",
-    "growth_perspective": "Analysis text here..."
+    "moat": "...",
+    "financial_strength": "...",
+    "predictability": "...",
+    "growth_perspective": "..."
   }},
-  "summary": "Overall conclusion in one or two sentences.",
+  "summary": "One-or-two-sentence verdict on the business.",
   "sentiment": 50.0,
   "catalysts": [
     {{"event": "Event name", "date": "Estimated date", "impact": "High/Medium/Low"}}
   ]
 }}
-Do not include any other markdown formatting or explanations outside the JSON block.
+No markdown, no commentary outside the JSON.
 """
 
     # Base payload without tools

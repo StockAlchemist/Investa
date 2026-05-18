@@ -1,26 +1,40 @@
 'use client';
 
 import React from 'react';
-import { 
-    Zap, 
-    ArrowRightLeft, 
-    ShieldAlert, 
-    TrendingDown, 
-    CheckCircle2, 
+import {
+    Zap,
+    PlusCircle,
+    MinusCircle,
+    LogOut,
+    Eye,
+    Receipt,
+    CheckCircle2,
     ArrowUpRight,
-    Info
+    Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useStockModal } from '@/context/StockModalContext';
 
+type OptimizationType =
+    | 'add'
+    | 'trim'
+    | 'exit'
+    | 'monitor'
+    | 'tax_efficiency'
+    // Legacy types kept for backward-compat with cached reviews; new reviews
+    // use the five types above.
+    | 'tax_loss_harvesting'
+    | 'rebalancing'
+    | 'diversification';
+
 interface Optimization {
-    type: 'tax_loss_harvesting' | 'rebalancing' | 'diversification';
+    type: OptimizationType;
     title: string;
     description: string;
     symbol: string;
-    action: 'Sell' | 'Buy' | 'Swap' | 'Hold';
+    action: 'Add' | 'Trim' | 'Sell' | 'Buy' | 'Hold' | 'Monitor' | 'Swap';
     priority: 'High' | 'Medium' | 'Low';
 }
 
@@ -36,7 +50,7 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
                 <CheckCircle2 className="w-8 h-8 text-emerald-500/50 mb-3" />
                 <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Portfolio Optimized</h3>
                 <p className="text-xs text-muted-foreground/60 max-w-[200px] mt-2">
-                    No urgent rebalancing or tax saving opportunities detected.
+                    No actions warranted. Inactivity is a virtue.
                 </p>
             </div>
         );
@@ -44,9 +58,13 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
 
     const getTypeIcon = (type: string) => {
         switch (type) {
-            case 'tax_loss_harvesting': return <TrendingDown className="w-5 h-5 text-rose-500" />;
-            case 'rebalancing': return <ArrowRightLeft className="w-5 h-5 text-indigo-500" />;
-            case 'diversification': return <ShieldAlert className="w-5 h-5 text-amber-500" />;
+            case 'add': return <PlusCircle className="w-5 h-5 text-emerald-500" />;
+            case 'trim': return <MinusCircle className="w-5 h-5 text-amber-500" />;
+            case 'exit': return <LogOut className="w-5 h-5 text-rose-500" />;
+            case 'monitor': return <Eye className="w-5 h-5 text-indigo-500" />;
+            case 'tax_efficiency': return <Receipt className="w-5 h-5 text-purple-500" />;
+            // legacy
+            case 'tax_loss_harvesting': return <Receipt className="w-5 h-5 text-purple-500" />;
             default: return <Zap className="w-5 h-5 text-purple-500" />;
         }
     };
@@ -127,8 +145,8 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
             </div>
             
             <p className="text-[9px] text-center text-muted-foreground/40 mt-4 uppercase tracking-[0.1em] px-10">
-                Optimizations based on modern portfolio theory and current tax legislation. 
-                Always verify with your individual tax bracket and investment horizon.
+                Suggestions are anchored in business fundamentals and intrinsic value, not market timing.
+                Verify every action against your own thesis before acting.
             </p>
         </div>
     );

@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolioAIReview } from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw, ShieldCheck, TrendingUp, AlertTriangle, Lightbulb, PieChart } from 'lucide-react';
+import { RefreshCw, Gem, Scale, Target, AlertTriangle, Lightbulb } from 'lucide-react';
 import { MetricCard } from '@/components/MetricCard';
 import PortfolioOptimization from '@/components/PortfolioOptimization';
 import ReactMarkdown from 'react-markdown';
@@ -187,42 +187,42 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             {warningBanner}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <MetricCard
-                    title="Diversification"
-                    value={scorecard?.diversification || '-'}
+                    title="Business Quality"
+                    value={scorecard?.business_quality || '-'}
                     subValue={null}
                     isCurrency={false}
-                    icon={PieChart}
-                    colorClass={getScoreColor(scorecard?.diversification)}
+                    icon={Gem}
+                    colorClass={getScoreColor(scorecard?.business_quality)}
                     onClick={() => setSelectedMetric({
-                        title: "Diversification Analysis",
-                        score: scorecard?.diversification || 0,
-                        content: analysis?.diversification || "No analysis available."
+                        title: "Business Quality",
+                        score: scorecard?.business_quality || 0,
+                        content: analysis?.business_quality || "No analysis available."
                     })}
                 />
                 <MetricCard
-                    title="Risk Profile"
-                    value={scorecard?.risk_profile || '-'}
+                    title="Value Discipline"
+                    value={scorecard?.value_discipline || '-'}
                     subValue={null}
                     isCurrency={false}
-                    icon={ShieldCheck}
-                    colorClass={getScoreColor(scorecard?.risk_profile)}
+                    icon={Scale}
+                    colorClass={getScoreColor(scorecard?.value_discipline)}
                     onClick={() => setSelectedMetric({
-                        title: "Risk Assessment",
-                        score: scorecard?.risk_profile || 0,
-                        content: analysis?.risk_profile || "No analysis available."
+                        title: "Value Discipline",
+                        score: scorecard?.value_discipline || 0,
+                        content: analysis?.value_discipline || "No analysis available."
                     })}
                 />
                 <MetricCard
-                    title="Performance"
-                    value={scorecard?.performance || '-'}
+                    title="Thesis Integrity"
+                    value={scorecard?.thesis_integrity || '-'}
                     subValue={null}
                     isCurrency={false}
-                    icon={TrendingUp}
-                    colorClass={getScoreColor(scorecard?.performance)}
+                    icon={Target}
+                    colorClass={getScoreColor(scorecard?.thesis_integrity)}
                     onClick={() => setSelectedMetric({
-                        title: "Performance Review",
-                        score: scorecard?.performance || 0,
-                        content: analysis?.performance || "No analysis available."
+                        title: "Thesis Integrity",
+                        score: scorecard?.thesis_integrity || 0,
+                        content: analysis?.thesis_integrity || "No analysis available."
                     })}
                 />
                 <MetricCard
@@ -255,35 +255,35 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
             {/* Detailed Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {analysis?.diversification && (
-                    <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                {analysis?.business_quality && (
+                    <div className="metric-card p-6 relative overflow-hidden group">
                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
-                        <h3 className="section-label mb-4 relative z-10">Diversification Analysis</h3>
+                        <h3 className="section-label mb-4 relative z-10">Business Quality</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <div className="markdown-content">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.diversification || ""}</ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.business_quality || ""}</ReactMarkdown>
                             </div>
                         </div>
                     </div>
                 )}
-                {analysis?.risk_profile && (
-                    <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                {analysis?.value_discipline && (
+                    <div className="metric-card p-6 relative overflow-hidden group">
                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
-                        <h3 className="section-label mb-4 relative z-10">Risk Assessment</h3>
+                        <h3 className="section-label mb-4 relative z-10">Value Discipline</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <div className="markdown-content">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.risk_profile || ""}</ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.value_discipline || ""}</ReactMarkdown>
                             </div>
                         </div>
                     </div>
                 )}
-                {analysis?.performance && (
-                    <div className="metric-card card-shine p-6 relative overflow-hidden group">
+                {analysis?.thesis_integrity && (
+                    <div className="metric-card p-6 relative overflow-hidden group">
                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
-                        <h3 className="section-label mb-4 relative z-10">Performance Review</h3>
+                        <h3 className="section-label mb-4 relative z-10">Thesis Integrity</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <div className="markdown-content">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.performance || ""}</ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.thesis_integrity || ""}</ReactMarkdown>
                             </div>
                         </div>
                     </div>
