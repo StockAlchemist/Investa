@@ -112,7 +112,7 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
             </div>
 
             {/* Tax-loss harvesting candidates */}
-            <div className="metric-card card-shine p-5">
+            <div className="metric-card p-5">
                 <div className="flex items-center justify-between mb-3">
                     <div>
                         <h3 className="section-label">Tax-loss harvesting candidates</h3>
@@ -204,7 +204,7 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
 
             {/* Ripening lots: short-term graduating to long-term within 30 days */}
             {ripening.length > 0 && (
-                <div className="metric-card card-shine p-5">
+                <div className="metric-card p-5">
                     <h3 className="section-label mb-3">Ripening to long-term within 30 days</h3>
                     <div className="space-y-1.5">
                         {ripening.slice(0, 8).map((c, i) => {
@@ -256,7 +256,7 @@ function SummaryTile({
     }[accent];
 
     return (
-        <div className="metric-card card-shine p-4 relative overflow-hidden">
+        <div className="metric-card p-4 relative overflow-hidden">
             <div className={cn('absolute top-0 left-0 right-0 h-[2px] opacity-80', accentBar)} />
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1">{label}</p>
             <div className="flex items-baseline gap-1.5">

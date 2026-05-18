@@ -1005,11 +1005,14 @@ export interface StockAnalysisResponse {
     catalysts?: { event: string, date: string, impact: string }[];
     ai_review: string;
     optimizations?: {
-        type: 'tax_loss_harvesting' | 'rebalancing' | 'diversification';
+        // New types (quality/value framing): add, trim, exit, monitor, tax_efficiency
+        // Legacy types kept for backward-compat with old cached reviews.
+        type: 'add' | 'trim' | 'exit' | 'monitor' | 'tax_efficiency'
+            | 'tax_loss_harvesting' | 'rebalancing' | 'diversification';
         title: string;
         description: string;
         symbol: string;
-        action: 'Sell' | 'Buy' | 'Swap' | 'Hold';
+        action: 'Add' | 'Trim' | 'Sell' | 'Buy' | 'Hold' | 'Monitor' | 'Swap';
         priority: 'High' | 'Medium' | 'Low';
     }[];
     error?: string;

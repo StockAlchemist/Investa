@@ -43,6 +43,10 @@ interface DashboardProps {
     accounts?: string[];
     themeColor?: string;
     showClosed?: boolean;
+    /** Complex widget IDs to exclude from the Analytics grid — useful when the
+     *  parent wants to render them in a specific position (e.g. risk metrics
+     *  rendered after the performance graph on the dashboard tab). */
+    excludeFromAnalytics?: string[];
 }
 
 // ── Animated number hook ─────────────────────────────────────────────────────
@@ -221,6 +225,7 @@ function DashboardInner({
     accounts,
     themeColor = 'indigo-500',
     showClosed = false,
+    excludeFromAnalytics = [],
 }: DashboardProps) {
     const m  = summary?.metrics;
 
@@ -360,7 +365,9 @@ function DashboardInner({
     );
 
     const visibleComplexItems = DEFAULT_ITEMS.filter(
-        item => visibleItems.includes(item.id) && COMPLEX_METRIC_IDS.includes(item.id)
+        item => visibleItems.includes(item.id)
+            && COMPLEX_METRIC_IDS.includes(item.id)
+            && !excludeFromAnalytics.includes(item.id)
     );
 
     return (

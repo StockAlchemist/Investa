@@ -56,6 +56,9 @@ const ScreenerView         = dynamic(() => import('@/components/ScreenerView'));
 const PortfolioAIReview    = dynamic(() => import('@/components/PortfolioAIReview'));
 const IndexGraphModal      = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
 const MarketsTab           = dynamic(() => import('@/components/MarketsTab'), { ssr: false });
+const RiskMetrics          = dynamic(() => import('@/components/RiskMetrics'), { ssr: false });
+const SectorAttribution    = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.SectorAttribution })), { ssr: false });
+const TopContributors      = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.TopContributors })), { ssr: false });
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
@@ -117,7 +120,20 @@ export default function Home() {
       if (savedTab)          setActiveTab(savedTab);
       if (savedShowClosed)   setShowClosed(savedShowClosed === 'true');
       if (savedBenchmarks)   setBenchmarks(JSON.parse(savedBenchmarks));
-      if (savedVisibleItems) { const p = JSON.parse(savedVisibleItems); if (p.length > 0) setVisibleItems(p); }
+      if (savedVisibleItems) {
+        const p = JSON.parse(savedVisibleItems);
+        if (Array.isArray(p) && p.length > 0) {
+          // Migration: existing users have saved layouts predating the
+          // performanceGraph toggle. Default it ON for them so the graph
+          // doesn't silently disappear after the upgrade.
+          if (!p.includes('performanceGraph')) {
+            const idx = p.indexOf('portfolioDonut');
+            if (idx >= 0) p.splice(idx + 1, 0, 'performanceGraph');
+            else p.push('performanceGraph');
+          }
+          setVisibleItems(p);
+        }
+      }
       if (savedGraphPeriod)  setGraphPeriod(savedGraphPeriod);
       if (savedGraphView && ['return', 'value', 'drawdown'].includes(savedGraphView)) {
         setGraphView(savedGraphView as 'return' | 'value' | 'drawdown');
@@ -364,23 +380,60 @@ export default function Home() {
               accounts={selectedAccounts}
               themeColor={currentTheme.color}
               showClosed={showClosed}
+              // Full-width section widgets are rendered explicitly here so
+              // the dashboard reads top-to-bottom in a deliberate order:
+              // composition → performance → risk → attribution.
+              // Dashboard skips these in its Analytics grid.
+              excludeFromAnalytics={['riskMetrics', 'sectorContribution', 'topContributors', 'performanceGraph']}
             />
-            <PerformanceGraph
-              currency={currency}
-              accounts={selectedAccounts}
-              benchmarks={benchmarks}
-              onBenchmarksChange={setBenchmarks}
-              period={graphPeriod}
-              onPeriodChange={setGraphPeriod}
-              view={graphView}
-              onViewChange={setGraphView}
-              data={graphData}
-              loading={graphLoading}
-              customFromDate={graphCustomFromDate}
-              onCustomFromDateChange={setGraphCustomFromDate}
-              customToDate={graphCustomToDate}
-              onCustomToDateChange={setGraphCustomToDate}
-            />
+            {visibleItems.includes('performanceGraph') && (
+              <PerformanceGraph
+                currency={currency}
+                accounts={selectedAccounts}
+                benchmarks={benchmarks}
+                onBenchmarksChange={setBenchmarks}
+                period={graphPeriod}
+                onPeriodChange={setGraphPeriod}
+                view={graphView}
+                onViewChange={setGraphView}
+                data={graphData}
+                loading={graphLoading}
+                customFromDate={graphCustomFromDate}
+                onCustomFromDateChange={setGraphCustomFromDate}
+                customToDate={graphCustomToDate}
+                onCustomToDateChange={setGraphCustomToDate}
+              />
+            )}
+            {visibleItems.includes('riskMetrics') && (
+              <RiskMetrics
+                metrics={riskMetricsQuery.data || {}}
+                portfolioHealth={portfolioHealthQuery.data || null}
+                isLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
+                isRefreshing={riskMetricsQuery.isFetching}
+              />
+            )}
+            {(visibleItems.includes('sectorContribution') || visibleItems.includes('topContributors')) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5 mt-4 md:mt-5">
+                {visibleItems.includes('sectorContribution') && (
+                  <SectorAttribution
+                    data={attributionQuery.data}
+                    isLoading={attributionQuery.isLoading && !attributionQuery.data}
+                    isRefreshing={attributionQuery.isFetching}
+                    currency={currency}
+                  />
+                )}
+                {visibleItems.includes('topContributors') && (
+                  <TopContributors
+                    data={attributionQuery.data}
+                    isLoading={attributionQuery.isLoading && !attributionQuery.data}
+                    isRefreshing={attributionQuery.isFetching}
+                    currency={currency}
+                    accounts={selectedAccounts}
+                    showClosed={showClosed}
+                  />
+                )}
+              </div>
+            )}
           </>
         );
 
