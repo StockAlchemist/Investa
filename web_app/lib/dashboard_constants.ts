@@ -1,9 +1,23 @@
+// Items rendered as their own full-width section by the dashboard tab in
+// page.tsx (donut, performance graph, risk analytics, attribution widgets).
+// Dashboard's compact metric grid skips these; page.tsx renders them one by
+// one in the order they appear in DEFAULT_ITEMS below.
+export const COMPLEX_METRIC_IDS = [
+    'portfolioDonut',
+    'performanceGraph',
+    'riskMetrics',
+    'sectorContribution',
+    'topContributors',
+];
 
-export const COMPLEX_METRIC_IDS = ['riskMetrics', 'sectorContribution', 'topContributors', 'portfolioDonut'];
-
+// Order here drives BOTH the Layout dropdown menu and the dashboard's visual
+// reading order. Keep them in sync with what the dashboard tab actually
+// renders top-to-bottom.
 export const DEFAULT_ITEMS = [
+    // Hero
     { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
     { id: 'dayGL', title: "Day's Gain/Loss", colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    // Compact metrics grid
     { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-2 md:col-span-1' },
@@ -16,8 +30,10 @@ export const DEFAULT_ITEMS = [
     { id: 'fxGL', title: 'FX Gain/Loss', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'fees', title: 'Fees', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'taxes', title: 'Taxes', colSpan: 'col-span-2 md:col-span-1' },
-    { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    // Full-width sections (rendered in this order by page.tsx)
     { id: 'portfolioDonut', title: 'Portfolio Composition', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    { id: 'performanceGraph', title: 'Performance Graph', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
     { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
     { id: 'topContributors', title: 'Top Contributors', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
 ];
@@ -34,7 +50,8 @@ export const INITIAL_VISIBLE_ITEMS = [
     'dividendYield',
     'cashBalance',
     'taxes',
-    'portfolioDonut'
+    'portfolioDonut',
+    'performanceGraph',
 ];
 
 export const TAB_THEMES: Record<string, { color: string; glow: string; bgGlow: string; bgSolid: string; textSolid: string; shadowSolid: string }> = {
