@@ -982,11 +982,24 @@ def calculate_portfolio_summary(
                 processed_lots = []
                 
                 # We need current price/FX to calc Lot Market Value & Unrealized Gain
-                # Try to get them from pre-fetched stock data
+                # Manual price overrides win — without this, lots for symbols yfinance
+                # can't quote (e.g. SET tickers) get Market Value = 0 even though the
+                # rest of the engine uses the override correctly.
                 current_price = 0.0
-                if sym in current_stock_data_internal:
-                    current_price = current_stock_data_internal[sym].get("price", 0.0)
-                    if pd.isna(current_price): current_price = 0.0
+                manual_override_for_sym = manual_overrides_effective.get(sym) if manual_overrides_effective else None
+                if isinstance(manual_override_for_sym, dict):
+                    manual_price_val = manual_override_for_sym.get("price")
+                    if manual_price_val is not None and pd.notna(manual_price_val):
+                        try:
+                            mp_float = float(manual_price_val)
+                            if mp_float > 1e-9:
+                                current_price = mp_float
+                        except (ValueError, TypeError):
+                            pass
+                if current_price <= 1e-9 and sym in current_stock_data_internal:
+                    fetched_price = current_stock_data_internal[sym].get("price", 0.0)
+                    if pd.notna(fetched_price):
+                        current_price = fetched_price
                 
                 # We also need conversion rate from Local -> Display
                 # holding_data has 'local_currency'

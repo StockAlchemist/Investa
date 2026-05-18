@@ -145,7 +145,7 @@ export default function AllocationDrift({
     const draftSum = Object.values(draft).reduce((s, v) => s + (parseFloat(v) || 0), 0);
 
     return (
-        <div className="metric-card card-shine p-5">
+        <div className="metric-card p-5">
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h3 className="section-label">{title}</h3>

@@ -47,7 +47,7 @@ function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) 
     const active = activeIndex !== null ? data[activeIndex] : null;
 
     return (
-        <div className="metric-card card-shine p-5 flex flex-col gap-4">
+        <div className="metric-card p-5 flex flex-col gap-4">
             <h3 className="section-label text-center shrink-0">{title}</h3>
 
             {/* Full-width square container — ring fills ~80% of card width */}
