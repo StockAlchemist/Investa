@@ -56,6 +56,7 @@ const ScreenerView         = dynamic(() => import('@/components/ScreenerView'));
 const PortfolioAIReview    = dynamic(() => import('@/components/PortfolioAIReview'));
 const IndexGraphModal      = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
 const MarketsTab           = dynamic(() => import('@/components/MarketsTab'), { ssr: false });
+const RiskMetrics          = dynamic(() => import('@/components/RiskMetrics'), { ssr: false });
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
@@ -364,6 +365,8 @@ export default function Home() {
               accounts={selectedAccounts}
               themeColor={currentTheme.color}
               showClosed={showClosed}
+              // Risk metrics rendered separately below the performance graph.
+              excludeFromAnalytics={['riskMetrics']}
             />
             <PerformanceGraph
               currency={currency}
@@ -381,6 +384,14 @@ export default function Home() {
               customToDate={graphCustomToDate}
               onCustomToDateChange={setGraphCustomToDate}
             />
+            {visibleItems.includes('riskMetrics') && (
+              <RiskMetrics
+                metrics={riskMetricsQuery.data || {}}
+                portfolioHealth={portfolioHealthQuery.data || null}
+                isLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
+                isRefreshing={riskMetricsQuery.isFetching}
+              />
+            )}
           </>
         );
 
