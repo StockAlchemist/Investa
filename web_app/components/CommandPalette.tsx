@@ -133,8 +133,6 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
         return () => window.removeEventListener('keydown', handler);
     }, [isOpen, filteredNav, stockResults, selectedIndex, totalCount, query, onNavigate, onClose, openStock]);
 
-    if (!isOpen) return null;
-
     // Group nav by section for display
     const sections: Record<string, typeof filteredNav> = {};
     for (const cmd of filteredNav) {
@@ -143,8 +141,14 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
 
     let globalIndex = 0;
 
+    // NOTE: We deliberately DO NOT early-return on `!isOpen` here. Clicking a
+    // stock result triggers both setSelectedSymbol(...) and onClose() in the
+    // same React batch — flipping `isOpen` to false. If we early-returned, the
+    // <StockDetailModal/> below would be discarded along with the palette and
+    // never render. Render the modal independently of the palette's open state.
     return (
         <>
+            {isOpen && (
             <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]">
                 {/* Backdrop */}
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -262,8 +266,10 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
                     </div>
                 </div>
             </div>
+            )}
 
-            {/* Stock detail modal */}
+            {/* Stock detail modal — kept outside the `isOpen` guard so it
+                survives the palette closing on stock selection. */}
             {selectedSymbol && (
                 <StockDetailModal
                     symbol={selectedSymbol}
