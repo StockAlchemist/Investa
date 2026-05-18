@@ -57,6 +57,8 @@ const PortfolioAIReview    = dynamic(() => import('@/components/PortfolioAIRevie
 const IndexGraphModal      = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
 const MarketsTab           = dynamic(() => import('@/components/MarketsTab'), { ssr: false });
 const RiskMetrics          = dynamic(() => import('@/components/RiskMetrics'), { ssr: false });
+const SectorAttribution    = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.SectorAttribution })), { ssr: false });
+const TopContributors      = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.TopContributors })), { ssr: false });
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
@@ -365,8 +367,10 @@ export default function Home() {
               accounts={selectedAccounts}
               themeColor={currentTheme.color}
               showClosed={showClosed}
-              // Risk metrics rendered separately below the performance graph.
-              excludeFromAnalytics={['riskMetrics']}
+              // These widgets are rendered explicitly below the performance
+              // graph to give the dashboard a clear top-to-bottom narrative:
+              // composition → performance → risk → attribution.
+              excludeFromAnalytics={['riskMetrics', 'sectorContribution', 'topContributors']}
             />
             <PerformanceGraph
               currency={currency}
@@ -391,6 +395,28 @@ export default function Home() {
                 isLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
                 isRefreshing={riskMetricsQuery.isFetching}
               />
+            )}
+            {(visibleItems.includes('sectorContribution') || visibleItems.includes('topContributors')) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5 mt-4 md:mt-5">
+                {visibleItems.includes('sectorContribution') && (
+                  <SectorAttribution
+                    data={attributionQuery.data}
+                    isLoading={attributionQuery.isLoading && !attributionQuery.data}
+                    isRefreshing={attributionQuery.isFetching}
+                    currency={currency}
+                  />
+                )}
+                {visibleItems.includes('topContributors') && (
+                  <TopContributors
+                    data={attributionQuery.data}
+                    isLoading={attributionQuery.isLoading && !attributionQuery.data}
+                    isRefreshing={attributionQuery.isFetching}
+                    currency={currency}
+                    accounts={selectedAccounts}
+                    showClosed={showClosed}
+                  />
+                )}
+              </div>
             )}
           </>
         );

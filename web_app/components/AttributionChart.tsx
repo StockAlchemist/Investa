@@ -28,7 +28,7 @@ export interface AttributionData {
 }
 
 interface CommonProps {
-    data: AttributionData;
+    data: AttributionData | null | undefined;
     isLoading: boolean;
     isRefreshing?: boolean;
     currency: string;
