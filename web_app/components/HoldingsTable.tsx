@@ -5,7 +5,7 @@ import { exportToCSV } from '../lib/export';
 import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
-import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
+import { Search, X, Filter, LayoutGrid, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter, Check } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { Card } from "@/components/ui/card";
@@ -21,8 +21,6 @@ interface HoldingsTableProps {
     holdings: Holding[];
     currency: string;
     isLoading?: boolean;
-    showClosed?: boolean;
-    onToggleShowClosed?: (val: boolean) => void;
 }
 
 // Mapping from UI Header to Data Key Prefix (or exact key)
@@ -109,7 +107,7 @@ const normalizeMarketName = (market: string): string => {
     return market; // Return original if no match
 };
 
-export default function HoldingsTable({ holdings, currency, isLoading = false, showClosed = false, onToggleShowClosed }: HoldingsTableProps) {
+export default function HoldingsTable({ holdings, currency, isLoading = false }: HoldingsTableProps) {
     const queryClient = useQueryClient();
 
     // Watchlist state now handled by WatchlistStar context
@@ -915,7 +913,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 </span>
                             </button>
                             {isColumnMenuOpen && (
-                                <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-72 origin-top-left sm:origin-top-right bg-card border border-border rounded-xl shadow-xl overflow-hidden">
+                                <div
+                                    style={{ backgroundColor: 'var(--menu-solid)' }}
+                                    className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-72 origin-top-left sm:origin-top-right border border-border rounded-xl shadow-xl overflow-hidden"
+                                >
                                     {/* Header */}
                                     <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
                                         <span className="text-xs font-bold text-foreground">Visible Columns</span>
@@ -938,51 +939,44 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                         <div key={group.label} className="px-2 py-1.5">
                                             <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5 mb-1">{group.label}</p>
                                             <div className="grid grid-cols-2 gap-0.5">
-                                                {group.cols.map(header => (
-                                                    <label
-                                                        key={header}
-                                                        className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-muted/60 cursor-pointer group"
-                                                    >
-                                                        <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                                                            visibleColumns.includes(header)
-                                                                ? 'bg-primary border-primary'
-                                                                : 'border-border group-hover:border-primary/50'
-                                                        }`}>
-                                                            {visibleColumns.includes(header) && (
-                                                                <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 10" fill="none">
-                                                                    <path d="M2 5.5L4 7.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                                                </svg>
-                                                            )}
-                                                        </span>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={visibleColumns.includes(header)}
-                                                            onChange={() => toggleColumn(header)}
-                                                            className="sr-only"
-                                                        />
-                                                        <span className="text-xs text-foreground truncate">{header}</span>
-                                                    </label>
-                                                ))}
+                                                {group.cols.map(header => {
+                                                    const isSelected = visibleColumns.includes(header);
+                                                    return (
+                                                        <label
+                                                            key={header}
+                                                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md cursor-pointer group transition-colors ${
+                                                                isSelected
+                                                                    ? 'bg-primary/10 hover:bg-primary/15'
+                                                                    : 'hover:bg-muted/60'
+                                                            }`}
+                                                        >
+                                                            <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                                                isSelected
+                                                                    ? 'bg-primary border-primary text-primary-foreground'
+                                                                    : 'border-border group-hover:border-primary/50'
+                                                            }`}>
+                                                                {isSelected && (
+                                                                    <Check className="w-3 h-3" strokeWidth={3} />
+                                                                )}
+                                                            </span>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleColumn(header)}
+                                                                className="sr-only"
+                                                            />
+                                                            <span className={`text-xs truncate ${
+                                                                isSelected ? 'text-primary font-semibold' : 'text-foreground'
+                                                            }`}>{header}</span>
+                                                        </label>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
-
-                        {/* Show/Hide Closed Toggle */}
-                        <button
-                            onClick={() => onToggleShowClosed?.(!showClosed)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
-                            ${showClosed
-                                    ? 'bg-[#0097b2] text-white'
-                                    : 'text-foreground bg-secondary hover:bg-accent/10'
-                                }`}
-                            title={showClosed ? 'Hide Closed Positions' : 'Show Closed Positions'}
-                        >
-                            {showClosed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                            <span className="hidden sm:inline">Closed</span>
-                        </button>
 
                         {/* Toggle All Lots Helper */}
                         <button

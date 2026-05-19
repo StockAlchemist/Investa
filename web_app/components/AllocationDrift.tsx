@@ -87,13 +87,22 @@ export default function AllocationDrift({
 
     // Current allocation: aggregate holdings by the chosen bucket key.
     const { rows, total } = useMemo(() => {
+        const isUnknown = (v: unknown) => {
+            if (v == null) return true;
+            const s = String(v).trim().toUpperCase();
+            return s === ''
+                || s === '-'
+                || s === 'NONE'
+                || s === 'NULL'
+                || s === 'UNKNOWN'
+                || s.startsWith('N/A')
+                || s.startsWith('UNKNOWN');
+        };
         const agg: Record<string, number> = {};
         for (const h of holdings) {
             const v = (h[mvKey] as number) || 0;
             const raw = h[bucketKey] as unknown;
-            const cat = !raw || (raw as string).startsWith('N/A') || (raw as string).startsWith('Unknown')
-                ? 'Unknown'
-                : (raw as string);
+            const cat = isUnknown(raw) ? 'Unknown' : (raw as string);
             agg[cat] = (agg[cat] || 0) + v;
         }
         const tot = Object.values(agg).reduce((s, v) => s + v, 0);

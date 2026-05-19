@@ -155,8 +155,17 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     const aggregateData = (key: keyof Holding | 'Sector' | 'Industry' | 'Country' | 'quoteType'): AggregatedData[] => {
         const aggregation: Record<string, number> = {};
 
-        const isUnknown = (v: unknown) =>
-            !v || (v as string).startsWith('N/A') || (v as string).startsWith('Unknown') || (v as string) === 'UNKNOWN';
+        const isUnknown = (v: unknown) => {
+            if (v == null) return true;
+            const s = String(v).trim().toUpperCase();
+            return s === ''
+                || s === '-'
+                || s === 'NONE'
+                || s === 'NULL'
+                || s === 'UNKNOWN'
+                || s.startsWith('N/A')
+                || s.startsWith('UNKNOWN');
+        };
 
         holdings.forEach(h => {
             const value = (h[marketValueKey] as number) || 0;

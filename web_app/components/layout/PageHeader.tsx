@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { cn, formatCompactNumber } from '@/lib/utils';
-import { Menu, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Menu, ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
 import { StockSearchBar } from '@/components/StockSearchBar';
@@ -46,6 +46,8 @@ interface PageHeaderProps {
   lastUpdated?: Date | null;
   marketValue?: number | null;
   dayChangePct?: number | null;
+  showClosed?: boolean;
+  onShowClosedChange?: (v: boolean) => void;
 }
 
 export function PageHeader({
@@ -69,6 +71,8 @@ export function PageHeader({
   lastUpdated,
   marketValue,
   dayChangePct,
+  showClosed,
+  onShowClosedChange,
 }: PageHeaderProps) {
   const hasKpi = marketValue != null;
   const dayPositive = (dayChangePct ?? 0) >= 0;
@@ -190,6 +194,27 @@ export function PageHeader({
           availableCurrencies={availableCurrencies}
           align="right"
         />
+
+        {/* Global Show/Hide Closed Positions toggle */}
+        {onShowClosedChange && (
+          <button
+            onClick={() => onShowClosedChange(!showClosed)}
+            title={showClosed ? 'Hide closed positions' : 'Show closed positions'}
+            aria-pressed={!!showClosed}
+            className={cn(
+              'flex flex-row items-center gap-1.5 p-3 py-2 px-2 h-[44px] rounded-2xl transition-all duration-300 group bg-transparent',
+              'font-semibold tracking-tight',
+              showClosed ? 'ring-2 ring-cyan-500/20' : 'text-cyan-500',
+            )}
+          >
+            {showClosed
+              ? <EyeOff className="w-3.5 h-3.5 text-cyan-500" />
+              : <Eye className="w-3.5 h-3.5 text-cyan-500" />}
+            <span className="hidden md:inline bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent font-bold uppercase text-[14px]">
+              Closed
+            </span>
+          </button>
+        )}
 
         <AccountSelector
           availableAccounts={availableAccounts}

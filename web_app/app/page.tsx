@@ -472,8 +472,6 @@ export default function Home() {
               holdings={holdings}
               currency={currency}
               isLoading={holdingsQuery.isLoading && !holdingsQuery.data}
-              showClosed={showClosed}
-              onToggleShowClosed={setShowClosed}
             />
             <Allocation holdings={holdings} currency={currency} />
           </div>
@@ -610,6 +608,8 @@ export default function Home() {
           onMobileMenuOpen={() => setIsMobileNavOpen(true)}
           marketValue={summary?.metrics?.market_value ?? null}
           dayChangePct={summary?.metrics?.day_change_percent ?? null}
+          showClosed={showClosed}
+          onShowClosedChange={setShowClosed}
         />
 
         {/* Scrollable content area */}
