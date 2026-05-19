@@ -153,7 +153,7 @@ function PortfolioHeroCard({
                         </div>
                     ) : (
                         <div className="flex items-baseline gap-4 flex-wrap">
-                            <span className="text-4xl sm:text-5xl font-black tabular-nums text-foreground leading-none tracking-tight">
+                            <span className="text-3xl sm:text-4xl md:text-5xl font-black tabular-nums text-foreground leading-none tracking-tight whitespace-nowrap">
                                 {formatCurrency(animatedValue, currency)}
                             </span>
 

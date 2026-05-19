@@ -274,7 +274,7 @@ export function MetricCard({
                         <Skeleton className="h-9 w-32 mb-1 opacity-50 rounded-lg" />
                     ) : (
                         <span className={cn(
-                            'font-bold tracking-tight leading-none tabular-nums text-foreground',
+                            'font-bold tracking-tight leading-none tabular-nums text-foreground whitespace-nowrap',
                             colorClass,
                             valueClassName
                         )}>

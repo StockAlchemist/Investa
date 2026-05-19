@@ -15,14 +15,24 @@ export const CURRENCY_SYMBOLS: Record<string, string> = {
     SGD: '$',
 };
 
+// ISO 4217 currencies that conventionally render without decimal places.
+// Forcing 2 decimals on JPY adds 3 unnecessary characters per number, which
+// is what pushes hero/metric card values past their container width.
+const ZERO_DECIMAL_CURRENCIES = new Set([
+    'JPY', 'KRW', 'VND', 'IDR', 'CLP', 'PYG', 'ISK', 'HUF',
+    'BIF', 'DJF', 'GNF', 'KMF', 'RWF', 'UGX', 'VUV',
+    'XAF', 'XOF', 'XPF',
+]);
+
 export function formatCurrency(value: number, currency: string = 'USD'): string {
+    const decimals = ZERO_DECIMAL_CURRENCIES.has(currency.toUpperCase()) ? 0 : 2;
     const formatted = new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: currency,
         currencyDisplay: 'narrowSymbol',
         notation: 'standard',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
     }).format(value);
 
     // Manual override for THB symbol if Intl doesn't handle it well
