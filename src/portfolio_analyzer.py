@@ -1545,6 +1545,7 @@ def _build_summary_rows(
                 "IRR (%)": irr_value_to_store,
                 "Local Currency": local_currency,
                 "Price Source": price_source,
+                "Div. Yield (Cost) %": div_yield_on_cost_pct_display,
                 "Div. Yield (Current) %": div_yield_on_current_pct_display,
                 f"Est. Ann. Income ({display_currency})": est_annual_income_display,
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
