@@ -122,6 +122,16 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
         });
     }, [localResults, searchQuery, minMOS, maxPE, onlyAI, marketCapCategory]);
 
+    // Summary stats over the currently-filtered set.
+    const summary = useMemo(() => {
+        const withMOS = filteredResults.filter(r => typeof r.margin_of_safety === 'number');
+        const mosVals = withMOS.map(r => r.margin_of_safety as number);
+        const undervalued = mosVals.filter(v => v > 0).length;
+        const avgMOS = mosVals.length > 0 ? mosVals.reduce((s, v) => s + v, 0) / mosVals.length : null;
+        const aiReviewed = filteredResults.filter(r => r.has_ai_review).length;
+        return { count: filteredResults.length, undervalued, avgMOS, aiReviewed };
+    }, [filteredResults]);
+
     const sortedResults = useMemo(() => {
         const sorted = [...filteredResults];
         sorted.sort((a, b) => {
@@ -234,6 +244,38 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                             <SlidersHorizontal className="w-4 h-4" />
                             <span className="inline">Filters</span>
                         </Button>
+                    </div>
+                </div>
+
+                {/* Results summary */}
+                <div className="mt-4 flex flex-wrap divide-x divide-border/60 rounded-xl bg-muted/20 dark:bg-white/[0.02] border border-border/30 dark:border-white/[0.04]">
+                    <div className="flex-1 min-w-[110px] px-4 py-2.5">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">Results</div>
+                        <div className="text-lg font-bold tabular-nums text-foreground">{summary.count.toLocaleString()}</div>
+                    </div>
+                    <div className="flex-1 min-w-[110px] px-4 py-2.5">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">Undervalued</div>
+                        <div className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                            {summary.undervalued.toLocaleString()}
+                            <span className="text-[11px] text-muted-foreground/60 font-medium ml-1">MoS &gt; 0</span>
+                        </div>
+                    </div>
+                    <div className="flex-1 min-w-[110px] px-4 py-2.5">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">Avg Margin</div>
+                        <div className={cn(
+                            'text-lg font-bold tabular-nums',
+                            summary.avgMOS == null ? 'text-muted-foreground'
+                            : summary.avgMOS >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                        )}>
+                            {summary.avgMOS != null ? `${summary.avgMOS >= 0 ? '+' : ''}${summary.avgMOS.toFixed(1)}%` : '–'}
+                        </div>
+                    </div>
+                    <div className="flex-1 min-w-[110px] px-4 py-2.5">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">AI Reviewed</div>
+                        <div className="text-lg font-bold tabular-nums text-foreground">
+                            {summary.aiReviewed.toLocaleString()}
+                            <span className="text-[11px] text-muted-foreground/60 font-medium ml-1">of {summary.count}</span>
+                        </div>
                     </div>
                 </div>
 

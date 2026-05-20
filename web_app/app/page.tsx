@@ -275,7 +275,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
+    enabled: !!user && (activeTab === 'performance' || activeTab === 'asset_change' || backgroundFetchLevel >= 1),
   });
 
   const attributionQuery = useQuery({
@@ -447,7 +447,7 @@ export default function Home() {
         return <PortfolioAIReview currency={currency} accounts={selectedAccounts} />;
 
       case 'transactions':
-        return <TransactionsTable transactions={transactions} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;
+        return <TransactionsTable transactions={transactions} currency={currency} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;
 
       case 'markets':
         return !summary?.metrics?.indices ? (
@@ -457,6 +457,8 @@ export default function Home() {
           <MarketsTab
             indices={summary.metrics.indices as any}
             onIndexClick={() => setIsIndexGraphModalOpen(true)}
+            holdings={holdings}
+            currency={currency}
             portfolioSymbols={holdings.map(h => h.Symbol).filter(Boolean)}
             watchlistSymbols={(watchlistQuery.data || []).map((w: any) => w.Symbol).filter(Boolean)}
           />
@@ -478,7 +480,7 @@ export default function Home() {
         );
 
       case 'asset_change':
-        return <AssetChange data={assetChangeData} currency={currency} isLoading={assetChangeQuery.isPending && !assetChangeQuery.data} />;
+        return <AssetChange data={assetChangeData} currency={currency} summary={summary} benchmarks={benchmarks} riskMetrics={riskMetricsQuery.data ?? null} isLoading={assetChangeQuery.isPending && !assetChangeQuery.data} />;
 
       case 'capital_gains':
         return (

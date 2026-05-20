@@ -5,15 +5,74 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolioAIReview } from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw, Gem, Scale, Target, AlertTriangle, Lightbulb } from 'lucide-react';
+import { RefreshCw, Gem, Scale, Target, AlertTriangle, Lightbulb, Clock } from 'lucide-react';
 import { MetricCard } from '@/components/MetricCard';
 import PortfolioOptimization from '@/components/PortfolioOptimization';
+import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 interface PortfolioAIReviewProps {
     currency: string;
     accounts: string[];
+}
+
+// 1-10 score → tailwind color token used for text + bar fill.
+function scoreTone(score: number): { text: string; bar: string } {
+    if (!score) return { text: 'text-muted-foreground', bar: 'bg-muted-foreground/40' };
+    if (score >= 8) return { text: 'text-emerald-500', bar: 'bg-emerald-500' };
+    if (score >= 5) return { text: 'text-yellow-500', bar: 'bg-yellow-500' };
+    return { text: 'text-rose-500', bar: 'bg-rose-500' };
+}
+
+function letterGrade(avg: number): string {
+    if (avg >= 8.5) return 'A';
+    if (avg >= 7) return 'B';
+    if (avg >= 5.5) return 'C';
+    if (avg >= 4) return 'D';
+    return 'F';
+}
+
+function timeAgo(iso?: string): string | null {
+    if (!iso) return null;
+    const t = new Date(iso).getTime();
+    if (isNaN(t)) return null;
+    const diffMin = Math.floor((Date.now() - t) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const h = Math.floor(diffMin / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ScoreCard({ title, score, icon: Icon, onClick }: { title: string; score: number; icon: any; onClick: () => void }) {
+    const tone = scoreTone(score);
+    const filled = Math.round(score);
+    return (
+        <button
+            onClick={onClick}
+            className="metric-card p-4 text-left hover:bg-accent/5 transition-colors"
+        >
+            <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+                    <Icon className="w-3 h-3" />
+                    <span>{title}</span>
+                </div>
+                <span className={cn('text-lg font-bold tabular-nums', tone.text)}>
+                    {score || '-'}<span className="text-[10px] text-muted-foreground font-medium">/10</span>
+                </span>
+            </div>
+            <div className="flex gap-0.5">
+                {Array.from({ length: 10 }).map((_, i) => (
+                    <div
+                        key={i}
+                        className={cn('h-1.5 flex-1 rounded-full transition-colors', i < filled ? tone.bar : 'bg-muted')}
+                    />
+                ))}
+            </div>
+        </button>
+    );
 }
 
 export default function PortfolioAIReview({ currency, accounts }: PortfolioAIReviewProps) {
@@ -137,6 +196,14 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
     const { scorecard, analysis, summary, recommendations } = data;
 
+    // Composite grade: average the three scored dimensions (ignore zeros/missing).
+    const scoreDims = [scorecard?.business_quality, scorecard?.value_discipline, scorecard?.thesis_integrity]
+        .filter((v): v is number => typeof v === 'number' && v > 0);
+    const overallAvg = scoreDims.length > 0 ? scoreDims.reduce((a, b) => a + b, 0) / scoreDims.length : null;
+    const overallGrade = overallAvg != null ? letterGrade(overallAvg) : null;
+    const overallTone = overallAvg != null ? scoreTone(overallAvg) : null;
+    const generatedAgo = timeAgo(data?.generated_at);
+
     // Helper to determine color based on score (1-10)
     const getScoreColor = (score: number) => {
         if (!score) return "text-muted-foreground";
@@ -162,7 +229,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
                 <header className="space-y-2">
                     <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent w-fit">
                         Portfolio AI Review
@@ -170,55 +237,67 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                     <p className="text-muted-foreground text-sm font-medium max-w-2xl leading-relaxed">
                         AI-driven insights and recommendations for your portfolio.
                     </p>
+                    {generatedAgo && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+                            <Clock className="w-3 h-3" />
+                            <span>Generated {generatedAgo}</span>
+                        </div>
+                    )}
                 </header>
-                <Button
-                    onClick={handleRefresh}
-                    variant="outline"
-                    size="sm"
-                    disabled={refreshMutation.isPending}
-                    className="gap-2 bg-card hover:bg-accent"
-                >
-                    <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
-                    {refreshMutation.isPending ? 'Analyzing...' : 'Refresh Analysis'}
-                </Button>
+                <div className="flex items-center gap-4">
+                    {overallAvg != null && overallTone && (
+                        <div className="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card border border-border/60">
+                            <div className={cn('text-3xl font-black leading-none', overallTone.text)}>
+                                {overallGrade}
+                            </div>
+                            <div className="leading-tight">
+                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Overall</div>
+                                <div className={cn('text-sm font-bold tabular-nums', overallTone.text)}>
+                                    {overallAvg.toFixed(1)}<span className="text-[10px] text-muted-foreground font-medium">/10</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <Button
+                        onClick={handleRefresh}
+                        variant="outline"
+                        size="sm"
+                        disabled={refreshMutation.isPending}
+                        className="gap-2 bg-card hover:bg-accent"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+                        {refreshMutation.isPending ? 'Analyzing...' : 'Refresh Analysis'}
+                    </Button>
+                </div>
             </div>
 
             {/* Scorecard */}
             {warningBanner}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <MetricCard
+                <ScoreCard
                     title="Business Quality"
-                    value={scorecard?.business_quality || '-'}
-                    subValue={null}
-                    isCurrency={false}
+                    score={scorecard?.business_quality || 0}
                     icon={Gem}
-                    colorClass={getScoreColor(scorecard?.business_quality)}
                     onClick={() => setSelectedMetric({
                         title: "Business Quality",
                         score: scorecard?.business_quality || 0,
                         content: analysis?.business_quality || "No analysis available."
                     })}
                 />
-                <MetricCard
+                <ScoreCard
                     title="Value Discipline"
-                    value={scorecard?.value_discipline || '-'}
-                    subValue={null}
-                    isCurrency={false}
+                    score={scorecard?.value_discipline || 0}
                     icon={Scale}
-                    colorClass={getScoreColor(scorecard?.value_discipline)}
                     onClick={() => setSelectedMetric({
                         title: "Value Discipline",
                         score: scorecard?.value_discipline || 0,
                         content: analysis?.value_discipline || "No analysis available."
                     })}
                 />
-                <MetricCard
+                <ScoreCard
                     title="Thesis Integrity"
-                    value={scorecard?.thesis_integrity || '-'}
-                    subValue={null}
-                    isCurrency={false}
+                    score={scorecard?.thesis_integrity || 0}
                     icon={Target}
-                    colorClass={getScoreColor(scorecard?.thesis_integrity)}
                     onClick={() => setSelectedMetric({
                         title: "Thesis Integrity",
                         score: scorecard?.thesis_integrity || 0,

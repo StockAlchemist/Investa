@@ -4689,7 +4689,7 @@ async def clear_cache():
         
         # 3. Reload Data
         logging.info("Reloading data after cache clear...")
-        reload_data_and_clear_cache(current_user)
+        reload_data_and_clear_cache(None)
         
         return {"status": "success", "message": f"Cache cleared. {deleted_count} items removed."}
     except Exception as e:

@@ -2,14 +2,15 @@ import React, { useState, useMemo } from 'react';
 
 import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
+import { exportToCSV } from '../lib/export';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 
 import dynamic from 'next/dynamic';
 const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
-import { CircleDollarSign, ArrowUpRight, Scale } from 'lucide-react';
-import { MetricCard } from './MetricCard';
+import { Scale, Search, X, Download, Calendar } from 'lucide-react';
+import CapitalGainsKpiStrip from './capital-gains/CapitalGainsKpiStrip';
 
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
@@ -23,6 +24,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
     const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     // Group by Year for Chart (Always use full data for context)
     const gainsByYear = useMemo(() => {
@@ -37,12 +39,18 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             .sort((a, b) => a.year.localeCompare(b.year));
     }, [data]);
 
-    // Filter data based on selection
+    // Filter data based on year selection + search query.
     const filteredData = useMemo(() => {
         if (!data) return [];
-        if (!selectedYear) return data;
-        return data.filter(item => item.Date.startsWith(selectedYear));
-    }, [data, selectedYear]);
+        const q = searchQuery.trim().toLowerCase();
+        return data.filter(item => {
+            const yearMatch = !selectedYear || item.Date.startsWith(selectedYear);
+            const searchMatch = !q
+                || item.Symbol?.toLowerCase().includes(q)
+                || item.Account?.toLowerCase().includes(q);
+            return yearMatch && searchMatch;
+        });
+    }, [data, selectedYear, searchQuery]);
 
     // Sorting (on filtered data)
     const sortedData = useMemo(() => {
@@ -79,16 +87,17 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
         return <TabContentSkeleton type="full" />;
     }
 
-    if (!data) {
-        return <div className="p-4 text-center text-muted-foreground">Loading capital gains data...</div>;
+    if (!data || data.length === 0) {
+        return (
+            <div className="metric-card p-12 text-center">
+                <Scale className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
+                <p className="text-sm font-medium text-foreground">No realized capital gains yet</p>
+                <p className="text-xs mt-1 text-muted-foreground/70">
+                    Sales that close a position will appear here with their realized gain or loss.
+                </p>
+            </div>
+        );
     }
-
-
-
-    // --- Calculations (on filtered data) ---
-    const totalRealizedGain = filteredData.reduce((sum, item) => sum + (item['Realized Gain (Display)'] || 0), 0);
-    const totalProceeds = filteredData.reduce((sum, item) => sum + (item['Total Proceeds (Display)'] || 0), 0);
-    const totalCostBasis = filteredData.reduce((sum, item) => sum + (item['Total Cost Basis (Display)'] || 0), 0);
 
     const requestSort = (key: keyof CapitalGain, isGainPct: boolean = false) => {
         let direction: 'ascending' | 'descending' = 'ascending';
@@ -108,6 +117,11 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
         setVisibleRows(sortedData.length);
     };
 
+    const handleExport = () => {
+        const scope = selectedYear ? `_${selectedYear}` : '';
+        exportToCSV(sortedData as unknown as Record<string, unknown>[], `capital_gains${scope}.csv`);
+    };
+
     const handleBarClick = (entry: any) => {
         // When clicking Bar directly, 'entry' is the data item itself (e.g. { year: '2023', gain: 100 })
         if (entry && entry.year) {
@@ -124,31 +138,8 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
     return (
         <div className="space-y-8 md:space-y-12">
 
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <MetricCard
-                    title="Total Realized Gain"
-                    value={totalRealizedGain}
-                    currency={currency}
-                    colorClass={totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
-                    icon={CircleDollarSign}
-                    accentColor="amber-500"
-                />
-                <MetricCard
-                    title="Total Proceeds"
-                    value={totalProceeds}
-                    currency={currency}
-                    icon={ArrowUpRight}
-                    accentColor="amber-500"
-                />
-                <MetricCard
-                    title="Total Cost Basis"
-                    value={totalCostBasis}
-                    currency={currency}
-                    icon={Scale}
-                    accentColor="amber-500"
-                />
-            </div>
+            {/* Consolidated KPIs (reflect the active year/search filter) */}
+            <CapitalGainsKpiStrip data={filteredData} currency={currency} />
 
             {/* Annual Gains Chart */}
             <div className="metric-card p-6 relative overflow-hidden group">
@@ -186,12 +177,16 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                 onClick={handleBarClick}
                                 cursor="pointer"
                             >
-                                {gainsByYear.map((entry, index) => (
-                                    <Cell
-                                        key={`cell-${index}`}
-                                        fill={selectedYear === entry.year ? '#059669' : (selectedYear ? 'var(--glass-hover)' : '#10B981')}
-                                    />
-                                ))}
+                                {gainsByYear.map((entry, index) => {
+                                    const positive = entry.gain >= 0;
+                                    const isSelected = selectedYear === entry.year;
+                                    const isFaded = selectedYear != null && !isSelected;
+                                    let fill: string;
+                                    if (isFaded) fill = 'var(--glass-hover)';
+                                    else if (positive) fill = isSelected ? '#059669' : '#10B981';
+                                    else fill = isSelected ? '#dc2626' : '#ef4444';
+                                    return <Cell key={`cell-${index}`} fill={fill} />;
+                                })}
                             </Bar>
                             <Tooltip
                                 wrapperStyle={{ opacity: 1, zIndex: 1000 }}
@@ -224,10 +219,53 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
             {/* Transactions Table */}
             <div className="metric-card overflow-hidden relative group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
-                <div className="p-4 flex justify-between items-center relative z-10">
-                    <h3 className="section-label">Realized Gain Transactions</h3>
-                    <div className="text-xs font-medium text-muted-foreground/60">
-                        {visibleData.length} / {sortedData.length} transactions
+                <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 relative z-10">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="section-label">Realized Gain Transactions</h3>
+                        <span className="text-[10px] font-medium text-muted-foreground/60 px-2 py-0.5 rounded bg-secondary/50">
+                            {visibleData.length} / {sortedData.length}
+                        </span>
+                        {selectedYear && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-medium">
+                                <Calendar className="w-3 h-3" />
+                                <span className="font-bold">{selectedYear}</span>
+                                <button
+                                    onClick={() => setSelectedYear(null)}
+                                    className="ml-0.5 hover:text-foreground"
+                                    title="Clear year filter"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="relative max-w-xs w-full sm:w-auto">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Search symbol or account..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="bg-card border-none text-foreground rounded-md pl-9 pr-8 py-2 text-sm w-full focus:ring-amber-500 focus:border-amber-500"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    title="Clear search"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+                        <button
+                            onClick={handleExport}
+                            className="p-2 text-foreground bg-secondary rounded-lg hover:bg-accent/10 transition-all shrink-0"
+                            title="Export filtered set to CSV"
+                        >
+                            <Download className="h-4 w-4" />
+                        </button>
                     </div>
                 </div>
                 {/* Mobile Card View */}
@@ -322,8 +360,10 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                         <tbody className="divide-y-none">
                             {visibleData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
-                                        No realized capital gains found for the selected criteria.
+                                    <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
+                                        {searchQuery
+                                            ? `No realized gains match "${searchQuery}"${selectedYear ? ` in ${selectedYear}` : ''}.`
+                                            : 'No realized capital gains found for the selected criteria.'}
                                     </td>
                                 </tr>
                             ) : (

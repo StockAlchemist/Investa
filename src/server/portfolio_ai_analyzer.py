@@ -434,6 +434,9 @@ OUTPUT — strict JSON, no markdown, no commentary outside the JSON:
                 if "optimizations" not in result:
                     result["optimizations"] = []
 
+                # Stamp generation time so the UI can show freshness/staleness.
+                result["generated_at"] = datetime.now().isoformat()
+
                 # Cache it
                 with open(cache_path, "w") as f:
                     json.dump(result, f)

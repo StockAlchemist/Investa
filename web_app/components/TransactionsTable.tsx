@@ -1,18 +1,33 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch } from '../lib/api';
-import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText } from 'lucide-react';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings } from '../lib/api';
+import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 import TableSkeleton from './skeletons/TableSkeleton';
+import TxKpiStrip from './transactions/TxKpiStrip';
 
 interface TransactionsTableProps {
     transactions: Transaction[];
+    currency?: string;
     isLoading?: boolean;
 }
 
-export default function TransactionsTable({ transactions, isLoading }: TransactionsTableProps) {
+type SortableKey =
+    | 'Date' | 'Type' | 'Symbol' | 'Quantity' | 'Price/Share'
+    | 'Total Amount' | 'Commission' | 'Account' | 'Local Currency';
+
+function SortIndicator({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
+    if (!active) {
+        return <ChevronDown className="w-3 h-3 opacity-30 group-hover:opacity-60 transition-opacity" />;
+    }
+    return direction === 'asc'
+        ? <ChevronUp className="w-3 h-3 text-foreground" />
+        : <ChevronDown className="w-3 h-3 text-foreground" />;
+}
+
+export default function TransactionsTable({ transactions, currency = 'USD', isLoading }: TransactionsTableProps) {
     const [symbolFilter, setSymbolFilter] = useState('');
     const [accountFilter, setAccountFilter] = useState('');
     const [filterType, setFilterType] = useState('');
@@ -24,12 +39,53 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('table');
+    const [sortConfig, setSortConfig] = useState<{ key: SortableKey; direction: 'asc' | 'desc' }>({ key: 'Date', direction: 'desc' });
+
+    const requestSort = (key: SortableKey) => {
+        setSortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc',
+        }));
+    };
+
+    // Returns clickable header content; placed inside each sortable <th> to keep
+    // the existing sticky-column classes intact on the surrounding cell.
+    const sortableHeader = (label: string, fieldKey: SortableKey) => (
+        <button
+            type="button"
+            onClick={() => requestSort(fieldKey)}
+            className="group inline-flex items-center gap-1 hover:text-foreground transition-colors"
+        >
+            <span>{label}</span>
+            <SortIndicator active={sortConfig.key === fieldKey} direction={sortConfig.direction} />
+        </button>
+    );
 
     // React Query for pending items
     const { data: pendingTransactions = [], isLoading: isPendingLoading } = useQuery<Transaction[]>({
         queryKey: ['pendingIbkr'],
         queryFn: fetchPendingIbkr,
     });
+
+    const settingsQuery = useQuery({
+        queryKey: ['settings'],
+        queryFn: fetchSettings,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    // The Internal Cash toggle only makes sense when at least one account in the
+    // current transaction view is in Manual cash mode — Auto-mode accounts generate
+    // bookkeeping mirror rows users never need to see. Default is 'Manual' to match
+    // the Settings UI, so accounts without an explicit setting keep the toggle.
+    const hasManualCashAccount = useMemo(() => {
+        const cashModeMap = settingsQuery.data?.account_cash_mode_map ?? {};
+        const accountsInView = new Set((transactions || []).map(t => t.Account).filter(Boolean));
+        if (accountsInView.size === 0) return false;
+        for (const acc of accountsInView) {
+            if ((cashModeMap[acc] || 'Manual') === 'Manual') return true;
+        }
+        return false;
+    }, [transactions, settingsQuery.data]);
     const [selectedPendingIds, setSelectedPendingIds] = useState<Set<number>>(new Set());
     const [isApproving, setIsApproving] = useState(false);
 
@@ -198,10 +254,6 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         setFilterType('');
     };
 
-    if (isLoading) {
-        return <TableSkeleton />;
-    }
-
     const formatTransactionType = (type: string) => {
         return type.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
     };
@@ -224,7 +276,32 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         return symbolMatch && accountMatch && typeMatch && internalCashMatch;
     });
 
-    const visibleTransactions = filteredTransactions.slice(0, visibleRows);
+    const sortedTransactions = useMemo(() => {
+        const arr = [...filteredTransactions];
+        const dir = sortConfig.direction === 'asc' ? 1 : -1;
+        const numericKeys: SortableKey[] = ['Quantity', 'Price/Share', 'Total Amount', 'Commission'];
+        arr.sort((a, b) => {
+            if (sortConfig.key === 'Date') {
+                const av = a.Date ? new Date(a.Date).getTime() : 0;
+                const bv = b.Date ? new Date(b.Date).getTime() : 0;
+                return (av - bv) * dir;
+            }
+            if (numericKeys.includes(sortConfig.key)) {
+                const av = Number(a[sortConfig.key] ?? 0);
+                const bv = Number(b[sortConfig.key] ?? 0);
+                if (Number.isNaN(av) || Number.isNaN(bv)) return 0;
+                return (av - bv) * dir;
+            }
+            return String(a[sortConfig.key] ?? '').localeCompare(String(b[sortConfig.key] ?? '')) * dir;
+        });
+        return arr;
+    }, [filteredTransactions, sortConfig]);
+
+    if (isLoading) {
+        return <TableSkeleton />;
+    }
+
+    const visibleTransactions = sortedTransactions.slice(0, visibleRows);
 
     const handleShowMore = () => {
         setVisibleRows(prev => prev + 20);
@@ -591,6 +668,9 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                 existingSymbols={existingSymbols}
             />
 
+            {/* Aggregate KPIs for the currently-filtered view */}
+            <TxKpiStrip transactions={sortedTransactions} preferredCurrency={currency} />
+
             <div className="flex flex-col gap-4">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     {/* Primary Actions Group (Left) */}
@@ -682,19 +762,22 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                 <span>Filters</span>
                             </button>
 
-                            <button
-                                onClick={() => setShowInternalCash(!showInternalCash)}
-                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${showInternalCash
-                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                    : 'text-foreground hover:bg-accent/10'}`}
-                            >
-                                {showInternalCash ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                                <span>Internal Cash</span>
-                            </button>
+                            {hasManualCashAccount && (
+                                <button
+                                    onClick={() => setShowInternalCash(!showInternalCash)}
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-2 ${showInternalCash
+                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                        : 'text-foreground hover:bg-accent/10'}`}
+                                    title="Show transactions auto-generated to balance cash for buy/sell entries"
+                                >
+                                    {showInternalCash ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                    <span>Internal Cash</span>
+                                </button>
+                            )}
                         </div>
 
                         <button
-                            onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
+                            onClick={() => exportToCSV(sortedTransactions, 'transactions.csv')}
                             className="p-2 text-foreground bg-secondary rounded-lg hover:bg-accent/10 transition-all"
                             title="Export CSV"
                         >
@@ -711,25 +794,61 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                     </div>
                 </div>
 
-                {showFilters && (
-                    <div className="flex flex-col md:flex-row gap-2">
-                        <div className="relative flex-1">
-                            <input
-                                type="text"
-                                placeholder="Filter Symbol..."
-                                value={symbolFilter}
-                                onChange={(e) => setSymbolFilter(e.target.value)}
-                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-indigo-500 focus:border-indigo-500"
-                            />
-                            {symbolFilter && (
-                                <button
-                                    onClick={() => setSymbolFilter('')}
-                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                >
-                                    ✕
-                                </button>
+                {/* Always-on search + active filter chips */}
+                <div className="flex flex-col md:flex-row md:items-center gap-2">
+                    <div className="relative flex-1 max-w-md">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                        <input
+                            type="text"
+                            placeholder="Search symbol..."
+                            value={symbolFilter}
+                            onChange={(e) => setSymbolFilter(e.target.value)}
+                            className="bg-card border-none text-foreground rounded-md pl-9 pr-8 py-2 text-sm w-full focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                        {symbolFilter && (
+                            <button
+                                onClick={() => setSymbolFilter('')}
+                                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                title="Clear search"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
+                    {(accountFilter || filterType) && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {accountFilter && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium">
+                                    <span className="text-muted-foreground/70 text-[10px] uppercase tracking-wider mr-0.5">Account</span>
+                                    <span className="font-bold truncate max-w-[140px]">{accountFilter}</span>
+                                    <button
+                                        onClick={() => setAccountFilter('')}
+                                        className="ml-0.5 hover:text-foreground"
+                                        title="Clear account filter"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </span>
+                            )}
+                            {filterType && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium">
+                                    <span className="text-muted-foreground/70 text-[10px] uppercase tracking-wider mr-0.5">Type</span>
+                                    <span className="font-bold">{formatTransactionType(filterType)}</span>
+                                    <button
+                                        onClick={() => setFilterType('')}
+                                        className="ml-0.5 hover:text-foreground"
+                                        title="Clear type filter"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </span>
                             )}
                         </div>
+                    )}
+                </div>
+
+                {showFilters && (
+                    <div className="flex flex-col md:flex-row gap-2">
                         <div className="relative flex-1">
                             <input
                                 type="text"
@@ -787,17 +906,17 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                         className="rounded text-cyan-500"
                                     />
                                 </th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[100px] sticky left-12 z-20 bg-secondary/95 backdrop-blur-md border-none">Date</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[80px] sticky left-[148px] z-20 bg-secondary/95 backdrop-blur-md border-none">Type</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[100px] sticky left-[228px] z-20 bg-secondary/95 backdrop-blur-md border-none shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">Symbol</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Qty</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Price/Share</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Total Amount</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Commission</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Account</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[100px] sticky left-12 z-20 bg-secondary/95 backdrop-blur-md border-none">{sortableHeader('Date', 'Date')}</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[80px] sticky left-[148px] z-20 bg-secondary/95 backdrop-blur-md border-none">{sortableHeader('Type', 'Type')}</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-[100px] sticky left-[228px] z-20 bg-secondary/95 backdrop-blur-md border-none shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">{sortableHeader('Symbol', 'Symbol')}</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">{sortableHeader('Qty', 'Quantity')}</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">{sortableHeader('Price/Share', 'Price/Share')}</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">{sortableHeader('Total Amount', 'Total Amount')}</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">{sortableHeader('Commission', 'Commission')}</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">{sortableHeader('Account', 'Account')}</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Split Ratio</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Note</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Currency</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">{sortableHeader('Currency', 'Local Currency')}</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                             </tr>
                         </thead>

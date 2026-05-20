@@ -1,239 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { formatCurrency } from '../lib/utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-
-import { AssetChangeData } from '../lib/api';
+'use client';
+import React, { useEffect, useState } from 'react';
+import { AssetChangeData, PortfolioSummary, RiskMetrics } from '../lib/api';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
+import KpiStrip from './performance/KpiStrip';
+import ReturnsChart from './performance/ReturnsChart';
+import MonthlyHeatmap from './performance/MonthlyHeatmap';
 
 interface AssetChangeProps {
     data: AssetChangeData | null;
     currency: string;
+    summary?: PortfolioSummary | null;
+    benchmarks?: string[];
+    riskMetrics?: RiskMetrics | null;
     isLoading?: boolean;
 }
 
-const PERIOD_CONFIGS = [
-    { key: 'Y', title: 'Annual Returns', dataKey: 'Y-Return', defaultPeriods: 10 },
-    { key: 'M', title: 'Monthly Returns', dataKey: 'M-Return', defaultPeriods: 12 },
-    { key: 'W', title: 'Weekly Returns', dataKey: 'W-Return', defaultPeriods: 12 },
-    { key: 'D', title: 'Daily Returns', dataKey: 'D-Return', defaultPeriods: 30 },
-];
-
-const COLORS = [
-    "#ef4444", // Portfolio (Red)
-    "#0097b2", // Investa Cyan (S&P 500)
-    "#f59e0b", // Amber (Dow Jones)
-    "#8b5cf6", // Violet (NASDAQ)
-    "#e11d48", // Rose (Russell 2000)
-    "#10b981", // Emerald (Fallback)
-];
-
-const getBarColor = (name: string, index: number) => {
-    const normalized = name.toLowerCase();
-    if (normalized.includes('portfolio')) return "#ef4444";
-    if (normalized.includes('s&p 500') || normalized.includes('500')) return "#0097b2";
-    if (normalized.includes('dow jones') || normalized.includes('dow')) return "#f59e0b";
-    if (normalized.includes('nasdaq')) return "#8b5cf6";
-    if (normalized.includes('russell 2000') || normalized.includes('2000')) return "#e11d48";
-    return COLORS[index % COLORS.length];
-};
-
-interface AssetSectionProps {
-    config: { key: string; title: string; dataKey: string; defaultPeriods: number };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: any;
-    currency: string;
-    viewMode: 'percent' | 'value';
-    formatValue: (val: number) => string;
-}
-
-const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSectionProps) => {
-    const periodData = (data && data[config.key]) || [];
-    const [numPeriods, setNumPeriods] = useState(config.defaultPeriods);
-
-    // Filter data based on numPeriods
-    const displayData = periodData.slice(-numPeriods);
-
-    // Determine target suffix based on viewMode
-    const targetSuffix = viewMode === 'percent' ? config.dataKey : config.dataKey.replace('Return', 'Value');
-
-    // Identify keys to plot
-    let keysToPlot: string[] = [];
-    if (displayData.length > 0) {
-        const sampleRecord = displayData[displayData.length - 1];
-        if (sampleRecord) {
-            Object.keys(sampleRecord).forEach(k => {
-                if (k.endsWith(targetSuffix)) {
-                    keysToPlot.push(k);
-                }
-            });
-        }
-    }
-
-    // In 'value' mode, only show Portfolio
-    if (viewMode === 'value') {
-        keysToPlot = keysToPlot.filter(key => key.startsWith('Portfolio'));
-    }
-
-    // Sort keys to put Portfolio first
-    keysToPlot.sort((a, b) => {
-        if (a.startsWith('Portfolio')) return -1;
-        if (b.startsWith('Portfolio')) return 1;
-        return a.localeCompare(b);
-    });
-
-    return (
-        <div className="metric-card card-shine p-5 relative overflow-hidden group">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-violet-500 opacity-80" />
-            <div className="flex justify-between items-center mb-4 relative z-10">
-                <h3 className="section-label">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
-                <div className="flex items-center space-x-2">
-                    <label className="text-sm text-muted-foreground">Periods:</label>
-                    <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={numPeriods}
-                        onChange={(e) => setNumPeriods(parseInt(e.target.value) || 1)}
-                        className="w-16 px-2 py-1 text-sm bg-secondary rounded text-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
-                    />
-                </div>
-            </div>
-
-            {/* Chart */}
-            <div className="h-64 mb-6">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart key={`${viewMode}-${config.key}`} data={displayData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                        <XAxis
-                            dataKey="Date"
-                            tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                            tickFormatter={(val) => {
-                                if (!val || typeof val !== 'string') return '';
-                                const datePart = val.split(' ')[0];
-                                if (config.key === 'Y') {
-                                    return datePart.split('-')[0];
-                                }
-                                return datePart;
-                            }}
-                            axisLine={{ stroke: 'hsl(var(--border))' }}
-                        />
-                        <YAxis
-                            tickFormatter={(val) => viewMode === 'percent' ? `${val.toFixed(0)}%` : new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
-                            domain={['auto', 'auto']}
-                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-                            axisLine={{ stroke: 'hsl(var(--border))' }}
-                            width={35}
-                        />
-                        {keysToPlot.map((key, index) => {
-                            const name = key.replace(` ${targetSuffix}`, '');
-                            return (
-                                <Bar
-                                    key={key}
-                                    dataKey={key}
-                                    name={name}
-                                    fill={viewMode === 'percent' ? getBarColor(name, index) : undefined}
-                                    radius={[4, 4, 0, 0]}
-                                >
-                                    {viewMode === 'value' && displayData.map((entry: any, i: number) => (
-                                        <Cell
-                                            key={`cell-${i}`}
-                                            fill={(entry[key] || 0) >= 0 ? '#10b981' : '#ef4444'}
-                                        />
-                                    ))}
-                                </Bar>
-                            );
-                        })}
-                        <Tooltip
-                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                            contentStyle={{
-                                backgroundColor: 'transparent',
-                                borderRadius: '12px',
-                                border: 'none',
-                                boxShadow: 'none'
-                            }}
-                            content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                    return (
-                                        <div className="bg-background/98 backdrop-blur-2xl p-3 rounded-xl !opacity-100 border border-border/60 shadow-2xl">
-                                            <p className="font-medium text-foreground mb-1 text-sm">
-                                                {typeof label === 'string' && !isNaN(Date.parse(label))
-                                                    ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-                                                    : label}
-                                            </p>
-                                            <div className="space-y-1">
-                                                {payload.map((entry, index) => (
-                                                    <div key={index} className="flex items-center gap-2 text-xs">
-                                                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
-                                                        <span className="text-muted-foreground">{entry.name}:</span>
-                                                        <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-                                                            {formatValue(Number(entry.value))}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                                {/* Show Net Flow and Total Change if available in Value mode */}
-                                                {viewMode === 'value' && payload[0]?.payload && (() => {
-                                                    const record = payload[0].payload;
-                                                    const netFlowKey = `Portfolio ${config.key}-NetFlow`;
-                                                    const netFlow = record[netFlowKey];
-
-                                                    // Only show if netFlow is defined and non-zero
-                                                    if (netFlow !== undefined && Math.abs(netFlow) > 0.01) {
-                                                        const portfolioEntry = payload.find(p => p.name === 'Portfolio');
-                                                        const portfolioValue = portfolioEntry ? Number(portfolioEntry.value) : 0;
-                                                        const totalChange = portfolioValue + netFlow;
-                                                        return (
-                                                            <>
-                                                                <div className="flex items-center gap-2 text-xs mt-1 pt-2">
-                                                                    <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                                                                    <span className="text-muted-foreground">Net Flow:</span>
-                                                                    <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-                                                                        {formatValue(netFlow)}
-                                                                    </span>
-                                                                </div>
-                                                                {!isNaN(totalChange) && (
-                                                                    <div className="flex items-center gap-2 text-xs">
-                                                                        <span className="w-2 h-2 rounded-full bg-transparent" />
-                                                                        <span className="text-muted-foreground">Total Change:</span>
-                                                                        <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-                                                                            {formatValue(totalChange)}
-                                                                        </span>
-                                                                    </div>
-                                                                )}
-                                                            </>
-                                                        );
-                                                    }
-                                                    return null;
-                                                })()}
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            }}
-                            cursor={{ fill: 'var(--glass-hover)' }}
-                        />
-                        {viewMode === 'percent' && (
-                            <Legend
-                                verticalAlign="top"
-                                wrapperStyle={{ fontSize: 10, paddingBottom: 10 }}
-                                iconSize={8}
-                                iconType="circle"
-                            />
-                        )}
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-    );
-};
-
-export default function AssetChange({ data, currency, isLoading }: AssetChangeProps) {
-    const [viewMode, setViewMode] = useState<'percent' | 'value'>('percent');
+export default function AssetChange({ data, currency, summary = null, benchmarks = [], riskMetrics = null, isLoading }: AssetChangeProps) {
     const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
+    useEffect(() => setMounted(true), []);
 
     if (isLoading) {
         return <TabContentSkeleton type="chart-only" />;
@@ -252,48 +36,11 @@ export default function AssetChange({ data, currency, isLoading }: AssetChangePr
         return <TabContentSkeleton type="chart-only" />;
     }
 
-    const formatValue = (val: number) => {
-        if (viewMode === 'percent') {
-            return `${val.toFixed(2)}%`;
-        }
-        return formatCurrency(val, currency);
-    };
-
     return (
-        <div className="space-y-8 md:space-y-12">
-            <div className="flex justify-end space-x-2 mb-4">
-                <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
-                <div className="inline-flex rounded-lg bg-secondary p-1">
-                    <button
-                        onClick={() => setViewMode('percent')}
-                        className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'percent'
-                            ? 'bg-[#0097b2] text-white'
-                            : 'text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                            }`}
-                    >
-                        Percentage (%)
-                    </button>
-                    <button
-                        onClick={() => setViewMode('value')}
-                        className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'value'
-                            ? 'bg-[#0097b2] text-white'
-                            : 'text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                            }`}
-                    >
-                        Value ({currency})
-                    </button>
-                </div>
-            </div>
-            {PERIOD_CONFIGS.map(config => (
-                <AssetSection
-                    key={config.key}
-                    config={config}
-                    data={data}
-                    currency={currency}
-                    viewMode={viewMode}
-                    formatValue={formatValue}
-                />
-            ))}
+        <div className="p-4 space-y-6">
+            <KpiStrip data={data} summary={summary} riskMetrics={riskMetrics} benchmarks={benchmarks} />
+            <ReturnsChart data={data} currency={currency} />
+            <MonthlyHeatmap data={data} />
         </div>
     );
 }

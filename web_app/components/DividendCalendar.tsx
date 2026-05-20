@@ -4,6 +4,7 @@ import StockIcon from './StockIcon';
 import { useState, useMemo } from 'react';
 import { CheckCircle2, Clock } from 'lucide-react';
 import TableSkeleton from './skeletons/TableSkeleton';
+import { formatCurrency } from '../lib/utils';
 
 interface DividendEvent {
     symbol: string;
@@ -129,7 +130,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                                     )}
                                 </td>
                                 <td className="px-6 py-3 text-right font-medium text-emerald-500 dark:text-emerald-400 tabular-nums">
-                                    ${event.amount.toFixed(2)}
+                                    {formatCurrency(event.amount, currency)}
                                 </td>
                             </tr>
                         ))}

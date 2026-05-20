@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
-import { ExternalLink, Newspaper, TrendingUp, TrendingDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { fetchMarketNews, fetchStockNews, type MarketNewsItem } from '@/lib/api';
+import { ExternalLink, Newspaper, TrendingUp, TrendingDown, Search, X, BarChart3 } from 'lucide-react';
+import { cn, formatCurrency } from '@/lib/utils';
+import { fetchMarketNews, fetchStockNews, type MarketNewsItem, type Holding } from '@/lib/api';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface MarketIndex {
     name: string;
@@ -18,6 +19,8 @@ interface MarketIndex {
 interface MarketsTabProps {
     indices: Record<string, MarketIndex>;
     onIndexClick: () => void;
+    holdings?: Holding[];
+    currency?: string;
     portfolioSymbols?: string[];
     watchlistSymbols?: string[];
 }
@@ -207,7 +210,138 @@ function NewsSection({ title, news, isLoading }: { title: string; news: MarketNe
     );
 }
 
-export default function MarketsTab({ indices, onIndexClick, portfolioSymbols = [], watchlistSymbols = [] }: MarketsTabProps) {
+function SummaryTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'pos' | 'neg' | 'neutral' }) {
+    return (
+        <div className="flex-1 min-w-[120px] px-4 py-2.5 first:pl-0 last:pr-0">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1.5">{label}</div>
+            <div className={cn(
+                'text-lg sm:text-xl font-bold tabular-nums leading-none truncate',
+                tone === 'pos' ? 'text-emerald-600 dark:text-emerald-400'
+                : tone === 'neg' ? 'text-red-600 dark:text-red-400'
+                : 'text-foreground',
+            )}>
+                {value}
+            </div>
+            {sub && <div className="text-[10px] text-muted-foreground/70 mt-1 leading-none truncate">{sub}</div>}
+        </div>
+    );
+}
+
+function MarketsSummaryBar({ indices }: { indices: Record<string, MarketIndex> }) {
+    const list = Object.values(indices);
+    if (list.length === 0) return null;
+
+    const up = list.filter(i => i.changesPercentage >= 0).length;
+    const down = list.length - up;
+    const best = list.reduce((a, b) => (b.changesPercentage > a.changesPercentage ? b : a));
+    const worst = list.reduce((a, b) => (b.changesPercentage < a.changesPercentage ? b : a));
+
+    return (
+        <div className="metric-card p-3 sm:p-4">
+            <div className="flex flex-wrap divide-x divide-border/60">
+                <SummaryTile label="Breadth" value={`${up} ▲ / ${down} ▼`} sub={`${list.length} indices`} tone={up >= down ? 'pos' : 'neg'} />
+                <SummaryTile label="Best" value={`${best.changesPercentage >= 0 ? '+' : ''}${best.changesPercentage.toFixed(2)}%`} sub={best.name} tone="pos" />
+                <SummaryTile label="Worst" value={`${worst.changesPercentage >= 0 ? '+' : ''}${worst.changesPercentage.toFixed(2)}%`} sub={worst.name} tone="neg" />
+            </div>
+        </div>
+    );
+}
+
+interface MoverRow {
+    symbol: string;
+    pct: number;
+    price: number | null;
+}
+
+function MoversColumn({ title, rows, currency, positive, onPick }: {
+    title: string;
+    rows: MoverRow[];
+    currency: string;
+    positive: boolean;
+    onPick: (symbol: string) => void;
+}) {
+    const Icon = positive ? TrendingUp : TrendingDown;
+    const tone = positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+    return (
+        <div>
+            <div className="flex items-center gap-1.5 mb-2">
+                <Icon className={cn('w-3.5 h-3.5', tone)} />
+                <h4 className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{title}</h4>
+            </div>
+            {rows.length === 0 ? (
+                <p className="text-xs text-muted-foreground/60 py-2">No movers.</p>
+            ) : (
+                <div className="space-y-1">
+                    {rows.map(r => (
+                        <button
+                            key={r.symbol}
+                            type="button"
+                            onClick={() => onPick(r.symbol)}
+                            className="w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-md hover:bg-muted/50 transition-colors text-left"
+                        >
+                            <span className="text-xs font-bold text-foreground truncate">{r.symbol}</span>
+                            <span className="flex items-center gap-3 shrink-0 tabular-nums">
+                                {r.price != null && (
+                                    <span className="text-[11px] text-muted-foreground/70">{formatCurrency(r.price, currency)}</span>
+                                )}
+                                <span className={cn('text-xs font-bold', tone)}>
+                                    {r.pct >= 0 ? '+' : ''}{r.pct.toFixed(2)}%
+                                </span>
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function YourMovers({ holdings, currency, onPick }: { holdings: Holding[]; currency: string; onPick: (symbol: string) => void }) {
+    const { gainers, losers } = useMemo(() => {
+        const isCash = (s: string) => {
+            const u = (s || '').toUpperCase();
+            return u === '$CASH' || u === 'CASH' || u.startsWith('CASH (');
+        };
+        const priceKey = `Price (${currency})`;
+        // Deduplicate by symbol (holdings across multiple accounts share the same ticker)
+        const bySymbol = new Map<string, MoverRow>();
+        holdings
+            .filter(h => !isCash(h.Symbol) && typeof h['Day Change %'] === 'number')
+            .forEach(h => {
+                if (!bySymbol.has(h.Symbol)) {
+                    bySymbol.set(h.Symbol, {
+                        symbol: h.Symbol,
+                        pct: h['Day Change %'] as number,
+                        price: typeof h[priceKey] === 'number' ? (h[priceKey] as number) : null,
+                    });
+                }
+            });
+        const sorted = [...bySymbol.values()].sort((a, b) => b.pct - a.pct);
+        return {
+            gainers: sorted.filter(r => r.pct > 0).slice(0, 5),
+            losers: sorted.filter(r => r.pct < 0).slice(-5).reverse(),
+        };
+    }, [holdings, currency]);
+
+    if (gainers.length === 0 && losers.length === 0) return null;
+
+    return (
+        <div>
+            <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-5 h-5 text-muted-foreground" />
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">Your Movers Today</h2>
+            </div>
+            <div className="metric-card p-5 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+                <MoversColumn title="Top Gainers" rows={gainers} currency={currency} positive onPick={onPick} />
+                <MoversColumn title="Top Losers" rows={losers} currency={currency} positive={false} onPick={onPick} />
+            </div>
+        </div>
+    );
+}
+
+export default function MarketsTab({ indices, onIndexClick, holdings = [], currency = 'USD', portfolioSymbols = [], watchlistSymbols = [] }: MarketsTabProps) {
+    const { openStockDetail } = useStockModal();
+    const [newsQuery, setNewsQuery] = useState('');
     const { data: news = [], isLoading: newsLoading } = useQuery({
         queryKey: ['market-news'],
         queryFn: () => fetchMarketNews(20),
@@ -223,8 +357,23 @@ export default function MarketsTab({ indices, onIndexClick, portfolioSymbols = [
         enabled: allStockSymbols.length > 0,
     });
 
+    const filterNews = (items: MarketNewsItem[]) => {
+        const q = newsQuery.trim().toLowerCase();
+        if (!q) return items;
+        return items.filter(n =>
+            n.title?.toLowerCase().includes(q)
+            || n.provider?.toLowerCase().includes(q)
+            || (n.symbol || '').toLowerCase().includes(q),
+        );
+    };
+    const filteredStockNews = filterNews(stockNews);
+    const filteredMarketNews = filterNews(news);
+
     return (
         <div className="space-y-8">
+            {/* Market breadth summary */}
+            <MarketsSummaryBar indices={indices} />
+
             {/* Indices */}
             <div>
                 <h2 className="text-2xl font-bold tracking-tight text-foreground mb-4">Market Indices</h2>
@@ -235,17 +384,41 @@ export default function MarketsTab({ indices, onIndexClick, portfolioSymbols = [
                 </div>
             </div>
 
+            {/* Your Movers Today */}
+            <YourMovers holdings={holdings} currency={currency} onPick={(s) => openStockDetail(s, currency)} />
+
+            {/* News search */}
+            <div className="relative max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                <input
+                    type="text"
+                    placeholder="Search news by headline, ticker, or source..."
+                    value={newsQuery}
+                    onChange={(e) => setNewsQuery(e.target.value)}
+                    className="bg-card border border-border/60 text-foreground rounded-lg pl-9 pr-8 py-2 text-sm w-full focus:ring-primary focus:border-primary"
+                />
+                {newsQuery && (
+                    <button
+                        onClick={() => setNewsQuery('')}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        title="Clear search"
+                    >
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                )}
+            </div>
+
             {/* Your Holdings & Watchlist News */}
             {allStockSymbols.length > 0 && (
                 <NewsSection
                     title="Your Holdings & Watchlist"
-                    news={stockNews}
+                    news={filteredStockNews}
                     isLoading={stockNewsLoading}
                 />
             )}
 
             {/* General Market News */}
-            <NewsSection title="Market News" news={news} isLoading={newsLoading} />
+            <NewsSection title="Market News" news={filteredMarketNews} isLoading={newsLoading} />
         </div>
     );
 }

@@ -9,10 +9,11 @@ interface AllocationDriftProps {
     holdings: Holding[];
     currency: string;
     /**
-     * Which holding field to bucket by. Currently used by Asset Type ("quoteType")
-     * and Sector. Country uses a separate path because of the geography override.
+     * Which holding field to bucket by. Asset Type ("quoteType") and Sector use
+     * the raw key on the holding; Country reads `geography` first, then falls back
+     * to `Country`, matching the donut-chart aggregation in Allocation.tsx.
      */
-    bucketKey: keyof Holding | 'Sector' | 'quoteType';
+    bucketKey: keyof Holding | 'Sector' | 'quoteType' | 'Country';
     title: string;
     /**
      * Local-storage key — used as a cold-start cache before the server settings
@@ -24,6 +25,11 @@ interface AllocationDriftProps {
      * (e.g. "quoteType", "sector"). Falls back to bucketKey if omitted.
      */
     settingsBucket?: string;
+    /**
+     * When true the rows list is capped in height and scrolls — useful for
+     * buckets that produce many rows (per-symbol drift).
+     */
+    scrollable?: boolean;
 }
 
 const DRIFT_WARN_PCT = 5;
@@ -51,6 +57,7 @@ export default function AllocationDrift({
     title,
     storageKey,
     settingsBucket,
+    scrollable = false,
 }: AllocationDriftProps) {
     const bucket = settingsBucket ?? (bucketKey as string);
     const queryClient = useQueryClient();
@@ -101,7 +108,9 @@ export default function AllocationDrift({
         const agg: Record<string, number> = {};
         for (const h of holdings) {
             const v = (h[mvKey] as number) || 0;
-            const raw = h[bucketKey] as unknown;
+            const raw = bucketKey === 'Country'
+                ? ((h['geography'] as string) || (h['Country'] as string))
+                : (h[bucketKey] as unknown);
             const cat = isUnknown(raw) ? 'Unknown' : (raw as string);
             agg[cat] = (agg[cat] || 0) + v;
         }
@@ -208,7 +217,7 @@ export default function AllocationDrift({
                     Set target % per bucket to see drift from your plan.
                 </p>
             ) : (
-                <div className="space-y-2">
+                <div className={cn('space-y-2', scrollable && 'max-h-[420px] overflow-y-auto pr-1')}>
                     {rows.map(r => {
                         const drift = r.drift;
                         const absDrift = Math.abs(drift);

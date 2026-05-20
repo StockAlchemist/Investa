@@ -16,12 +16,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
+import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Search } from "lucide-react";
 import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, formatCompactNumber, cn, getHeatmapClass } from "@/lib/utils";
 import StockTicker from './StockTicker';
 import { TrendSparkline } from './ui/TrendSparkline';
+import WatchlistKpiStrip from './watchlist/WatchlistKpiStrip';
 
 interface WatchlistProps {
     currency: string;
@@ -50,6 +51,9 @@ export default function Watchlist({ currency }: WatchlistProps) {
 
     // Sorting State
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Symbol', direction: 'asc' });
+
+    // Search within the active list
+    const [searchQuery, setSearchQuery] = useState('');
 
     const handleSort = (key: string) => {
         setSortConfig(current => ({
@@ -286,6 +290,17 @@ export default function Watchlist({ currency }: WatchlistProps) {
         });
     }, [watchlist, sortConfig]);
 
+    // Apply the in-list search on top of the sort.
+    const filteredWatchlist = React.useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return sortedWatchlist;
+        return sortedWatchlist.filter(item =>
+            item.Symbol?.toLowerCase().includes(q)
+            || (item.Name || '').toLowerCase().includes(q)
+            || (item.Note || '').toLowerCase().includes(q),
+        );
+    }, [sortedWatchlist, searchQuery]);
+
     if (isLoading && !watchlists.length) {
         return (
             <div className="space-y-4">
@@ -350,6 +365,11 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 )}
             </div>
 
+            {/* Summary KPIs for the active list */}
+            {(watchlist?.length ?? 0) > 0 && (
+                <WatchlistKpiStrip items={watchlist ?? []} />
+            )}
+
             <div className="metric-card card-shine relative overflow-hidden">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-sky-500 opacity-80" />
 
@@ -409,17 +429,42 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             )}
                         </div>
                         <p className="text-xs text-muted-foreground/60 mt-0.5">
-                            {watchlist?.length || 0} items tracked
+                            {searchQuery
+                                ? `${filteredWatchlist.length} of ${watchlist?.length || 0} shown`
+                                : `${watchlist?.length || 0} items tracked`}
                         </p>
                     </div>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => refetch()}
-                        className="text-muted-foreground hover:text-foreground"
-                    >
-                        <RefreshCw className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {(watchlist?.length ?? 0) > 0 && (
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    placeholder="Search this list..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="bg-card border-none text-foreground rounded-md pl-9 pr-8 py-2 text-sm w-44 focus:w-56 transition-all focus:ring-sky-500 focus:border-sky-500"
+                                />
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                        title="Clear search"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => refetch()}
+                            className="text-muted-foreground hover:text-foreground"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="px-5 pb-5">
@@ -497,12 +542,21 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             <tbody className="bg-transparent divide-y-none">
                                 {watchlist?.length === 0 ? (
                                     <tr>
-                                        <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">
-                                            No symbols in your watchlist yet.
+                                        <td colSpan={13} className="text-center py-12 text-muted-foreground text-sm">
+                                            <p className="font-medium text-foreground">No symbols in this list yet</p>
+                                            <p className="text-xs mt-1 text-muted-foreground/70">
+                                                Add a symbol above to start tracking it.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                ) : filteredWatchlist.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={13} className="text-center py-12 text-muted-foreground text-sm">
+                                            No symbols match &ldquo;{searchQuery}&rdquo;.
                                         </td>
                                     </tr>
                                 ) : (
-                                    sortedWatchlist?.map((item, idx) => (
+                                    filteredWatchlist?.map((item, idx) => (
                                         <tr key={item.Symbol} className="hover:bg-accent/5 transition-colors">
                                             <td className="px-4 py-3 whitespace-nowrap text-sm sticky left-0 z-10 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                                 <StockTicker symbol={item.Symbol} currency={currency} />
