@@ -243,7 +243,7 @@ def trigger_background_precalculation(current_user: User):
                     user_excluded_symbols=excluded,
                     original_csv_file_path=path,
                     account_cash_mode_map=cash_mode,  # account_cash_mode_map
-                    calc_method="STANDARD"
+                    calc_method=None  # Use configured HISTORICAL_CALC_METHOD
                 )
                 if "|||TWR_FACTOR:" in hist_status:
                     try:
@@ -1035,66 +1035,16 @@ async def _calculate_portfolio_summary_internal(
             raise HTTPException(status_code=500, detail=f"Calculation Error: {str(e_calc)}")
     
     # --- Calculate Annualized TWR and include in metrics ---
+    # FIX: Always use live computation via _get_historical_performance_cached.
+    # Previously, this used pre-calculated snapshots from portfolio_snapshots table
+    # for "ALL" and single-account views. However, those snapshots were computed with
+    # calc_method="STANDARD" (old worker path), while the performance graph uses
+    # "numba_chrono" (from config). This caused a TWR mismatch between the dashboard
+    # card and the performance graph. The live computation uses the same engine as the
+    # graph and is already cached in-memory, so it's fast after first load.
     annualized_twr = None
     cumulative_twr = None
-    try:
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        precalculated_twr_used = False
-        if not include_accounts or len(include_accounts) == 1:
-            target_account = "ALL" if not include_accounts else include_accounts[0]
-            cursor.execute('''
-                SELECT twr FROM portfolio_snapshots 
-                WHERE account = ? 
-                ORDER BY snapshot_date DESC LIMIT 1
-            ''', (target_account,))
-            
-            row = cursor.fetchone()
-            
-            if row and row[0] is not None and row[0] > 0:
-                final_twr_factor = row[0]
-                df_for_twr = df
-                if include_accounts:
-                    df_for_twr = df[df["Account"].isin(include_accounts)]
-                
-                if not df_for_twr.empty:
-                    # --- FIX: Apply live adjustment to snapshots ---
-                    day_pct = overall_summary_metrics.get("day_change_percent", 0.0) / 100.0
-                    final_twr_factor = final_twr_factor * (1.0 + day_pct)
-                    
-                    actual_min_date = df_for_twr["Date"].min().date()
-                    days = (date.today() - actual_min_date).days
-                    cumulative_twr = (final_twr_factor - 1) * 100.0
-                    if days > 0:
-                        annualized_factor = final_twr_factor ** (365.25 / days)
-                        annualized_twr = (annualized_factor - 1) * 100.0
-                precalculated_twr_used = True
-                
-        conn.close()
-    except Exception as e_db:
-        logging.warning(f"Could not fetch pre-calculated TWR from portfolio_snapshots: {e_db}")
-        precalculated_twr_used = False
-
-    logging.info(f"Summary Metrics: Precalculated TWR used? {precalculated_twr_used}")
-
-    # PERF FIX (BN-02): Removed inline _get_historical_performance_cached call.
-    # Previously, this block ran the FULL historical simulation (10-30s) to compute
-    # TWR, risk metrics (Sharpe, Beta, Volatility, Max Drawdown), and YTD return.
-    # This is now handled as follows:
-    #   - TWR: Sourced from portfolio_snapshots table above (lightweight DB query).
-    #   - Risk Metrics: Fetched by the frontend via the separate /risk_metrics endpoint.
-    #   - YTD Return: Also computed by the /risk_metrics endpoint.
-    # This change reduces /summary response time by 10-30 seconds on cold loads.
-
-    # FALLBACK: portfolio_snapshots only stores per-single-account rows ("ALL" or
-    # a specific account name). When the user has selected a *subset* of accounts
-    # (e.g. 6 of 12), the snapshot lookup above misses and the TWR card would
-    # otherwise come back empty. Compute it on the fly using the same in-memory
-    # cache the chart uses — fast if the chart was already rendered for the same
-    # selection, otherwise a one-time live calc.
-    if not precalculated_twr_used and not df.empty:
+    if not df.empty:
         try:
             df_for_twr = df
             if include_accounts:
@@ -1133,10 +1083,10 @@ async def _calculate_portfolio_summary_internal(
                         annualized_factor = final_twr_factor ** (365.25 / days)
                         annualized_twr = (annualized_factor - 1) * 100.0
                     logging.info(
-                        f"Summary Metrics: Live TWR fallback computed for {len(include_accounts) if include_accounts else 'ALL'} accounts: factor={final_twr_factor:.4f}"
+                        f"Summary Metrics: Live TWR computed for {len(include_accounts) if include_accounts else 'ALL'} accounts: factor={final_twr_factor:.4f}"
                     )
         except Exception as e_live_twr:
-            logging.warning(f"Live-TWR fallback failed: {e_live_twr}")
+            logging.warning(f"Live-TWR computation failed: {e_live_twr}")
 
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
