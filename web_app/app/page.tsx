@@ -186,17 +186,21 @@ export default function Home() {
 
   // Persist + sync settings to server
   useEffect(() => {
-    localStorage.setItem('investa_currency',                       currency);
-    localStorage.setItem('investa_active_tab',                     activeTab);
-    localStorage.setItem('investa_show_closed',                    showClosed.toString());
-    localStorage.setItem('investa_selected_accounts',              JSON.stringify(selectedAccounts));
-    localStorage.setItem('investa_graph_period',                   graphPeriod);
-    localStorage.setItem('investa_graph_view',                     graphView);
-    if (visibleItems.length > 0) localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
-    if (benchmarks.length > 0)   localStorage.setItem('investa_graph_benchmarks',        JSON.stringify(benchmarks));
-    // Persist per-tab layouts
-    for (const [tabId, items] of Object.entries(tabLayouts)) {
-      if (items.length > 0) localStorage.setItem(`investa_tab_layout_${tabId}`, JSON.stringify(items));
+    try {
+      localStorage.setItem('investa_currency',                       currency);
+      localStorage.setItem('investa_active_tab',                     activeTab);
+      localStorage.setItem('investa_show_closed',                    showClosed.toString());
+      localStorage.setItem('investa_selected_accounts',              JSON.stringify(selectedAccounts));
+      localStorage.setItem('investa_graph_period',                   graphPeriod);
+      localStorage.setItem('investa_graph_view',                     graphView);
+      if (visibleItems.length > 0) localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
+      if (benchmarks.length > 0)   localStorage.setItem('investa_graph_benchmarks',        JSON.stringify(benchmarks));
+      // Persist per-tab layouts
+      for (const [tabId, items] of Object.entries(tabLayouts)) {
+        if (items.length > 0) localStorage.setItem(`investa_tab_layout_${tabId}`, JSON.stringify(items));
+      }
+    } catch (e) {
+      console.warn('localStorage quota exceeded, skipping persistence', e);
     }
 
     if (!settingsQuery.data) return;
