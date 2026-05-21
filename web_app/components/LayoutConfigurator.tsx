@@ -1,11 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { DEFAULT_ITEMS } from '@/lib/dashboard_constants';
+
+interface LayoutItem {
+    id: string;
+    title: string;
+}
 
 interface LayoutConfiguratorProps {
     visibleItems: string[];
     onVisibleItemsChange: (items: string[]) => void;
+    /** The ordered list of toggleable items for the current context. */
+    items: LayoutItem[];
+    /** Header label shown above the item list (e.g. "Dashboard Elements"). */
+    sectionTitle?: string;
     className?: string;
     variant?: 'default' | 'ghost';
     align?: 'left' | 'right';
@@ -14,6 +22,8 @@ interface LayoutConfiguratorProps {
 export default function LayoutConfigurator({
     visibleItems,
     onVisibleItemsChange,
+    items,
+    sectionTitle = 'Elements',
     className,
     variant = 'default',
     align = 'right'
@@ -41,8 +51,8 @@ export default function LayoutConfigurator({
                 onVisibleItemsChange(visibleItems.filter(i => i !== id));
             }
         } else {
-            // Add back and resort
-            const newVisible = DEFAULT_ITEMS
+            // Add back and resort to match the canonical order in `items`
+            const newVisible = items
                 .filter(item => item.id === id || visibleItems.includes(item.id))
                 .map(item => item.id);
 
@@ -60,8 +70,8 @@ export default function LayoutConfigurator({
                     isOpen ? "" : "text-cyan-500",
                     "h-[44px] px-3"
                 )}
-                title="Configure Dashboard"
-                aria-label="Configure Dashboard Layout"
+                title="Configure Layout"
+                aria-label="Configure Layout"
                 aria-expanded={isOpen}
             >
                 <SlidersHorizontal className="w-4 h-4 text-cyan-500" />
@@ -80,9 +90,9 @@ export default function LayoutConfigurator({
                 >
                     <div className="py-1 max-h-[80vh] overflow-y-auto">
                         <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
-                            Dashboard Elements
+                            {sectionTitle}
                         </div>
-                        {DEFAULT_ITEMS.map((item) => {
+                        {items.map((item) => {
                             const isVisible = visibleItems.includes(item.id);
                             return (
                                 <button

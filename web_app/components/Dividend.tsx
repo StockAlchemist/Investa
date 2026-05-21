@@ -20,6 +20,7 @@ interface DividendProps {
     dividendYield?: number;
     children?: React.ReactNode;
     isLoading?: boolean;
+    visibleSections?: string[];
 }
 
 type SortableKey = 'Date' | 'Symbol' | 'Account' | 'DividendAmountDisplayCurrency' | 'TaxAmountDisplayCurrency' | 'Net';
@@ -34,12 +35,14 @@ function SortIndicator({ active, direction }: { active: boolean; direction: 'asc
 }
 
 export default function Dividend({
-    data, currency, expectedDividends, dividendYield, children, isLoading,
+    data, currency, expectedDividends, dividendYield, children, isLoading, visibleSections,
 }: DividendProps) {
     const [sortConfig, setSortConfig] = useState<{ key: SortableKey; direction: 'asc' | 'desc' }>({ key: 'Date', direction: 'desc' });
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+
+    const show = (id: string) => !visibleSections || visibleSections.includes(id);
 
     // Group by Year for chart, with YoY growth %.
     const dividendsByYear = useMemo(() => {
@@ -154,6 +157,7 @@ export default function Dividend({
             </div>
 
             {/* Annual dividends chart with YoY growth labels */}
+            {show('annualDividends') && (
             <div className="metric-card card-shine p-6 relative overflow-hidden group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
                 <h3 className="section-label mb-4 relative z-10">Annual Dividends</h3>
@@ -218,8 +222,10 @@ export default function Dividend({
                     </ResponsiveContainer>
                 </div>
             </div>
+            )}
 
             {/* Dividend transactions table — sortable + searchable */}
+            {show('dividendTransactions') && (
             <div className="metric-card card-shine overflow-hidden relative group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
                 <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
@@ -355,6 +361,7 @@ export default function Dividend({
                     </div>
                 )}
             </div>
+            )}
 
             {/* Stock Detail Modal */}
             {selectedSymbol && (

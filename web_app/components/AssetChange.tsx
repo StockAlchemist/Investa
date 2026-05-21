@@ -21,6 +21,7 @@ interface AssetChangeProps {
     attributionLoading?: boolean;
     attributionRefreshing?: boolean;
     isLoading?: boolean;
+    visibleSections?: string[];
 }
 
 export default function AssetChange({
@@ -35,9 +36,12 @@ export default function AssetChange({
     attributionLoading = false,
     attributionRefreshing = false,
     isLoading,
+    visibleSections,
 }: AssetChangeProps) {
     const [mounted, setMounted] = useState(false);
     useEffect(() => setMounted(true), []);
+
+    const show = (id: string) => !visibleSections || visibleSections.includes(id);
 
     if (isLoading) {
         return <TabContentSkeleton type="chart-only" />;
@@ -58,31 +62,39 @@ export default function AssetChange({
 
     return (
         <div className="p-4 space-y-6">
-            <KpiStrip data={data} summary={summary} riskMetrics={riskMetrics} benchmarks={benchmarks} />
-            <ReturnsChart data={data} currency={currency} />
-            <MonthlyHeatmap data={data} />
+            {show('kpiStrip') && <KpiStrip data={data} summary={summary} riskMetrics={riskMetrics} benchmarks={benchmarks} />}
+            {show('returnsChart') && <ReturnsChart data={data} currency={currency} />}
+            {show('monthlyHeatmap') && <MonthlyHeatmap data={data} />}
 
             {/* Risk view: drawdown + risk-adjusted benchmark stats */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <DrawdownTimeline history={history} isLoading={historyLoading} />
-                <BenchmarkScoreboard history={history} isLoading={historyLoading} />
-            </div>
+            {(show('drawdownTimeline') || show('benchmarkScoreboard')) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {show('drawdownTimeline') && <DrawdownTimeline history={history} isLoading={historyLoading} />}
+                    {show('benchmarkScoreboard') && <BenchmarkScoreboard history={history} isLoading={historyLoading} />}
+                </div>
+            )}
 
             {/* Attribution: what drove returns */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <SectorAttribution
-                    data={attribution}
-                    isLoading={attributionLoading}
-                    isRefreshing={attributionRefreshing}
-                    currency={currency}
-                />
-                <TopContributors
-                    data={attribution}
-                    isLoading={attributionLoading}
-                    isRefreshing={attributionRefreshing}
-                    currency={currency}
-                />
-            </div>
+            {(show('sectorAttribution') || show('topContributors')) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {show('sectorAttribution') && (
+                        <SectorAttribution
+                            data={attribution}
+                            isLoading={attributionLoading}
+                            isRefreshing={attributionRefreshing}
+                            currency={currency}
+                        />
+                    )}
+                    {show('topContributors') && (
+                        <TopContributors
+                            data={attribution}
+                            isLoading={attributionLoading}
+                            isRefreshing={attributionRefreshing}
+                            currency={currency}
+                        />
+                    )}
+                </div>
+            )}
         </div>
     );
 }

@@ -36,6 +36,8 @@ interface PageHeaderProps {
   indices?: Record<string, any>;
   visibleItems: string[];
   onVisibleItemsChange: (items: string[]) => void;
+  layoutItems?: { id: string; title: string }[];
+  layoutSectionTitle?: string;
   onCommandPaletteOpen?: () => void;
   fxRate?: number;
   availableCurrencies?: string[];
@@ -61,6 +63,8 @@ export function PageHeader({
   indices,
   visibleItems,
   onVisibleItemsChange,
+  layoutItems,
+  layoutSectionTitle,
   onCommandPaletteOpen,
   fxRate,
   availableCurrencies,
@@ -178,11 +182,13 @@ export function PageHeader({
 
         <span className="hidden sm:block w-px h-4 bg-border/70" />
 
-        {/* Dashboard widget configurator */}
-        {activeTab === 'performance' && (
+        {/* Tab layout configurator */}
+        {layoutItems && layoutItems.length > 0 && (
           <LayoutConfigurator
             visibleItems={visibleItems}
             onVisibleItemsChange={onVisibleItemsChange}
+            items={layoutItems}
+            sectionTitle={layoutSectionTitle}
             variant="ghost"
           />
         )}

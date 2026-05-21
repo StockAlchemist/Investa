@@ -26,6 +26,7 @@ import {
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
+import { TAB_LAYOUT_ITEMS, TAB_INITIAL_VISIBLE, TAB_SECTION_LABELS } from '@/lib/layout_registry';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
 import { EmptyState } from '@/components/EmptyState';
@@ -95,6 +96,7 @@ export default function Home() {
   const [graphCustomToDate, setGraphCustomToDate]   = useState(() => new Date().toISOString().split('T')[0]);
   const [capitalGainsDates, setCapitalGainsDates]   = useState<{ from?: string; to?: string }>({});
   const [visibleItems, setVisibleItems]             = useState<string[]>(INITIAL_VISIBLE_ITEMS);
+  const [tabLayouts, setTabLayouts]                 = useState<Record<string, string[]>>({});
 
   const handleUserIconClick = () => { setSettingsInitialTab('account'); setActiveTab('settings'); };
   const handleTabChange = (tab: string) => {
@@ -134,6 +136,16 @@ export default function Home() {
           setVisibleItems(p);
         }
       }
+      // Hydrate per-tab layouts
+      const loadedLayouts: Record<string, string[]> = {};
+      for (const tabId of Object.keys(TAB_LAYOUT_ITEMS)) {
+        if (tabId === 'performance') continue; // handled by visibleItems above
+        const saved = localStorage.getItem(`investa_tab_layout_${tabId}`);
+        if (saved) {
+          try { const arr = JSON.parse(saved); if (Array.isArray(arr) && arr.length > 0) loadedLayouts[tabId] = arr; } catch {}
+        }
+      }
+      setTabLayouts(loadedLayouts);
       if (savedGraphPeriod)  setGraphPeriod(savedGraphPeriod);
       if (savedGraphView && ['return', 'value', 'drawdown'].includes(savedGraphView)) {
         setGraphView(savedGraphView as 'return' | 'value' | 'drawdown');
@@ -182,6 +194,10 @@ export default function Home() {
     localStorage.setItem('investa_graph_view',                     graphView);
     if (visibleItems.length > 0) localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
     if (benchmarks.length > 0)   localStorage.setItem('investa_graph_benchmarks',        JSON.stringify(benchmarks));
+    // Persist per-tab layouts
+    for (const [tabId, items] of Object.entries(tabLayouts)) {
+      if (items.length > 0) localStorage.setItem(`investa_tab_layout_${tabId}`, JSON.stringify(items));
+    }
 
     if (!settingsQuery.data) return;
     const id = setTimeout(() => {
@@ -198,7 +214,7 @@ export default function Home() {
       if (Object.keys(updates).length > 0) settingsMutation.mutate(updates);
     }, 1000);
     return () => clearTimeout(id);
-  }, [currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, settingsQuery.data]);
+  }, [currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, settingsQuery.data]);
 
   // Command palette keyboard shortcut
   useEffect(() => {
@@ -366,6 +382,17 @@ export default function Home() {
   const graphLoading     = historyQuery.isFetching;
 
   // ── Tab content ───────────────────────────────────────────────────────────
+  // Helper: get visible items for the active tab
+  const getTabVisible = (tabId: string): string[] => {
+    if (tabId === 'performance') return visibleItems;
+    return tabLayouts[tabId] ?? TAB_INITIAL_VISIBLE[tabId] ?? [];
+  };
+  const setTabVisible = (tabId: string, items: string[]) => {
+    if (tabId === 'performance') { setVisibleItems(items); return; }
+    setTabLayouts(prev => ({ ...prev, [tabId]: items }));
+  };
+  const activeVisible = getTabVisible(activeTab);
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'performance':
@@ -480,12 +507,16 @@ export default function Home() {
         }
         return (
           <div className="space-y-6">
-            <HoldingsTable
-              holdings={holdings}
-              currency={currency}
-              isLoading={holdingsQuery.isLoading && !holdingsQuery.data}
-            />
-            <Allocation holdings={holdings} currency={currency} />
+            {activeVisible.includes('holdingsTable') && (
+              <HoldingsTable
+                holdings={holdings}
+                currency={currency}
+                isLoading={holdingsQuery.isLoading && !holdingsQuery.data}
+              />
+            )}
+            {activeVisible.includes('allocationCharts') && (
+              <Allocation holdings={holdings} currency={currency} />
+            )}
           </div>
         );
 
@@ -502,18 +533,23 @@ export default function Home() {
           attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
           attributionRefreshing={attributionQuery.isFetching}
           isLoading={assetChangeQuery.isPending && !assetChangeQuery.data}
+          visibleSections={activeVisible}
         />;
 
       case 'capital_gains':
         return (
           <div className="space-y-6 p-4">
-            <UnrealizedTaxView holdings={holdings} currency={currency} />
-            <CapitalGains
-              data={capitalGainsData}
-              currency={currency}
-              onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
-              isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
-            />
+            {activeVisible.includes('unrealizedTax') && (
+              <UnrealizedTaxView holdings={holdings} currency={currency} />
+            )}
+            {activeVisible.includes('capitalGainsTable') && (
+              <CapitalGains
+                data={capitalGainsData}
+                currency={currency}
+                onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
+                isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
+              />
+            )}
           </div>
         );
 
@@ -526,17 +562,22 @@ export default function Home() {
               expectedDividends={summary?.metrics?.est_annual_income_display as number}
               dividendYield={summary?.metrics?.dividend_yield_pct as number}
               isLoading={dividendsQuery.isPending && !dividendsQuery.data}
+              visibleSections={activeVisible}
             >
-              <IncomeProjector
-                data={incomeProjectionQuery.data || null}
-                isLoading={incomeProjectionQuery.isLoading && !incomeProjectionQuery.data}
-                currency={currency}
-              />
-              <DividendCalendar
-                events={dividendCalendarQuery.data || []}
-                isLoading={dividendCalendarQuery.isLoading && !dividendCalendarQuery.data}
-                currency={currency}
-              />
+              {activeVisible.includes('incomeProjector') && (
+                <IncomeProjector
+                  data={incomeProjectionQuery.data || null}
+                  isLoading={incomeProjectionQuery.isLoading && !incomeProjectionQuery.data}
+                  currency={currency}
+                />
+              )}
+              {activeVisible.includes('dividendCalendar') && (
+                <DividendCalendar
+                  events={dividendCalendarQuery.data || []}
+                  isLoading={dividendCalendarQuery.isLoading && !dividendCalendarQuery.data}
+                  currency={currency}
+                />
+              )}
             </DividendComponent>
           </div>
         );
@@ -620,8 +661,10 @@ export default function Home() {
           onAccountsChange={setSelectedAccounts}
           accountGroups={settingsQuery.data?.account_groups}
           indices={summary?.metrics?.indices as Record<string, unknown> | undefined}
-          visibleItems={visibleItems}
-          onVisibleItemsChange={setVisibleItems}
+          visibleItems={activeVisible}
+          onVisibleItemsChange={(items) => setTabVisible(activeTab, items)}
+          layoutItems={TAB_LAYOUT_ITEMS[activeTab]}
+          layoutSectionTitle={TAB_SECTION_LABELS[activeTab]}
           onCommandPaletteOpen={() => setIsCommandPaletteOpen(true)}
           fxRate={summary?.metrics?.exchange_rate_to_display as number | undefined}
           availableCurrencies={settingsQuery.data?.available_currencies}
