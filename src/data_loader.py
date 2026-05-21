@@ -644,10 +644,11 @@ def load_and_clean_transactions(
         # 1. explicit "Cash" or "USD" -> $CASH
         df.loc[df["Symbol"].str.upper().isin(["CASH", "USD"]), "Symbol"] = CASH_SYMBOL_CSV
         
-        # 2. Deposit/Withdrawal with empty symbol -> $CASH
+        # 2. Deposit/Withdrawal with empty/null/nan symbol -> $CASH
         if "Type" in df.columns:
             df.loc[
-                (df["Type"].str.lower().isin(["deposit", "withdrawal"])) & (df["Symbol"] == ""), 
+                (df["Type"].str.lower().isin(["deposit", "withdrawal"])) & 
+                (df["Symbol"].str.lower().isin(["", "nan", "none", "<na>"])), 
                 "Symbol"
             ] = CASH_SYMBOL_CSV
 

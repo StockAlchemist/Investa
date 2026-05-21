@@ -283,7 +283,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, false, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
+    enabled: !!user && (activeTab === 'performance' || activeTab === 'asset_change' || backgroundFetchLevel >= 1),
   });
 
   const dividendCalendarQuery = useQuery({
@@ -319,6 +319,16 @@ export default function Home() {
     staleTime: 5 * 60 * 1000,
     refetchInterval: isMarketOpen && (graphPeriod === '1d' || graphPeriod === '5d') ? 60000 : false,
     enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
+  });
+
+  // Dedicated 1y daily history for the Performance tab's drawdown + benchmark
+  // scoreboard — fixed period so it doesn't track the dashboard graph selector.
+  const perfHistoryQuery = useQuery({
+    queryKey: ['perf-history', user?.username, currency, selectedAccounts, benchmarks],
+    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1y', benchmarks, '1d', undefined, undefined, signal),
+    placeholderData: keepPreviousData,
+    staleTime: 5 * 60 * 1000,
+    enabled: !!user && activeTab === 'asset_change',
   });
 
   const watchlistQuery = useQuery({
@@ -480,7 +490,19 @@ export default function Home() {
         );
 
       case 'asset_change':
-        return <AssetChange data={assetChangeData} currency={currency} summary={summary} benchmarks={benchmarks} riskMetrics={riskMetricsQuery.data ?? null} isLoading={assetChangeQuery.isPending && !assetChangeQuery.data} />;
+        return <AssetChange
+          data={assetChangeData}
+          currency={currency}
+          summary={summary}
+          benchmarks={benchmarks}
+          riskMetrics={riskMetricsQuery.data ?? null}
+          history={perfHistoryQuery.data ?? null}
+          historyLoading={perfHistoryQuery.isPending && !perfHistoryQuery.data}
+          attribution={attributionQuery.data ?? null}
+          attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
+          attributionRefreshing={attributionQuery.isFetching}
+          isLoading={assetChangeQuery.isPending && !assetChangeQuery.data}
+        />;
 
       case 'capital_gains':
         return (

@@ -634,24 +634,38 @@ def get_cash_flows_for_symbol_account(
         cash_flow_local = 0.0
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
 
-        if tx_type == "buy" or tx_type == "deposit":
-            if pd.notna(qty) and qty > 0 and pd.notna(price_local):
-                cash_flow_local = -((qty_abs * price_local) + commission_local)
-        elif tx_type == "sell" or tx_type == "withdrawal":
-            if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
-                cash_flow_local = (qty_abs * price_local) - commission_local
-        elif tx_type == "transfer" and is_transfer_a_flow:
+        total_amount_abs = abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
+        qty_val_abs = abs(qty) if pd.notna(qty) else 0.0
+        cash_amt = total_amount_abs if total_amount_abs > 1e-9 else qty_val_abs
+
+        if symbol == CASH_SYMBOL_CSV:
+            if tx_type == "buy" or tx_type == "deposit":
+                cash_flow_local = -(cash_amt + commission_local)
+            elif tx_type == "sell" or tx_type == "withdrawal":
+                cash_flow_local = (cash_amt - commission_local)
+        else:
+            if tx_type == "buy" or tx_type == "deposit":
+                if pd.notna(qty) and qty > 0 and pd.notna(price_local):
+                    cash_flow_local = -((qty_abs * price_local) + commission_local)
+            elif tx_type == "sell" or tx_type == "withdrawal":
+                if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
+                    cash_flow_local = (qty_abs * price_local) - commission_local
+
+        if tx_type == "transfer" and is_transfer_a_flow:
             # If transfers are treated as flows, an incoming transfer is like a "buy" (outflow of cash to acquire asset)
             # and an outgoing transfer is like a "sell" (inflow of cash as asset is disposed).
             # We determine if it's incoming or outgoing based on the 'To Account' column.
             to_account = str(row.get("To Account", "")).strip()
             
-            # Fallback for missing price in transfers
-            price_to_use = price_local
-            if (pd.isna(price_to_use) or price_to_use <= 1e-9) and last_seen_price is not None:
-                price_to_use = last_seen_price
-            
-            flow = qty * price_to_use if pd.notna(price_to_use) else 0.0
+            if symbol == CASH_SYMBOL_CSV:
+                flow = cash_amt
+            else:
+                # Fallback for missing price in transfers
+                price_to_use = price_local
+                if (pd.isna(price_to_use) or price_to_use <= 1e-9) and last_seen_price is not None:
+                    price_to_use = last_seen_price
+                
+                flow = qty * price_to_use if pd.notna(price_to_use) else 0.0
             
             # Determine direction if Account matches but To Account doesn't, or vice-versa, or Note matches
             acct_col = str(row.get("Account", "")).strip()
@@ -900,6 +914,10 @@ def get_cash_flows_for_mwr(
                         cash_flow_local = -(abs(qty) * price_local)
 
         elif symbol == CASH_SYMBOL_CSV:
+            total_amount_abs = abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
+            qty_val_abs = abs(qty) if pd.notna(qty) else 0.0
+            cash_amt = total_amount_abs if total_amount_abs > 1e-9 else qty_val_abs
+
             if portfolio_basis:
                 # Portfolio-level MWR: use the centralized external-flow
                 # classifier (see is_external_flow_row above). This means:
@@ -912,20 +930,16 @@ def get_cash_flows_for_mwr(
                 # _calculate_daily_net_cash_flow_vectorized in portfolio_logic.py.
                 if is_external_flow_row(symbol, tx_type, row.get("Note", "")):
                     if tx_type == "deposit":
-                        if pd.notna(qty):
-                            cash_flow_local = -(abs(qty) + commission_local)
+                        cash_flow_local = -(cash_amt + commission_local)
                     elif tx_type == "withdrawal":
-                        if pd.notna(qty):
-                            cash_flow_local = (abs(qty) - commission_local)
+                        cash_flow_local = (cash_amt - commission_local)
                 # else: 0 (internal trade rotation, synthetic, or income on cash)
             elif tx_type in ["deposit", "buy"]:
                 # External cash deposit (legacy per_trade)
-                if pd.notna(qty):
-                    cash_flow_local = -(abs(qty) + commission_local) # OUT from pocket (-)
+                cash_flow_local = -(cash_amt + commission_local) # OUT from pocket (-)
             elif tx_type in ["withdrawal", "sell"]:
                 # External cash withdrawal (legacy per_trade)
-                if pd.notna(qty):
-                    cash_flow_local = (abs(qty) - commission_local) # IN to pocket (+)
+                cash_flow_local = (cash_amt - commission_local) # IN to pocket (+)
             elif tx_type in ["dividend", "interest"]:
                 # Internal interest/dividends on cash are NOT external flows
                 cash_flow_local = 0.0
@@ -941,12 +955,10 @@ def get_cash_flows_for_mwr(
                 
                 if is_outbound and not is_inbound:
                     # Money leaving the scope -> Withdrawal -> Positive MWR Flow
-                    if pd.notna(qty):
-                        cash_flow_local = (abs(qty) - commission_local)
+                    cash_flow_local = (cash_amt - commission_local)
                 elif not is_outbound and is_inbound:
                     # Money entering the scope -> Deposit -> Negative MWR Flow
-                    if pd.notna(qty):
-                        cash_flow_local = -(abs(qty) + commission_local)
+                    cash_flow_local = -(cash_amt + commission_local)
 
         cash_flow_target = cash_flow_local
         if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:

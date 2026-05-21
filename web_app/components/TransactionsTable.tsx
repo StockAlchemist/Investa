@@ -7,6 +7,7 @@ import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 import TableSkeleton from './skeletons/TableSkeleton';
 import TxKpiStrip from './transactions/TxKpiStrip';
+import { cn } from '../lib/utils';
 
 interface TransactionsTableProps {
     transactions: Transaction[];
@@ -17,6 +18,39 @@ interface TransactionsTableProps {
 type SortableKey =
     | 'Date' | 'Type' | 'Symbol' | 'Quantity' | 'Price/Share'
     | 'Total Amount' | 'Commission' | 'Account' | 'Local Currency';
+
+type DatePreset = 'all' | 'mtd' | 'ytd' | '30d' | '90d' | '1y' | 'custom';
+
+const DATE_PRESETS: { key: DatePreset; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'mtd', label: 'This month' },
+    { key: 'ytd', label: 'YTD' },
+    { key: '30d', label: '30D' },
+    { key: '90d', label: '90D' },
+    { key: '1y', label: '1Y' },
+    { key: 'custom', label: 'Custom' },
+];
+
+// Identity key for duplicate detection: same symbol + date + type + |qty| + amount + account + note.
+function dupKey(tx: Transaction): string {
+    return `${tx.Symbol}|${(tx.Date || '').split('T')[0].split(' ')[0]}|${tx.Type}|${Math.abs(tx.Quantity || 0)}|${tx['Total Amount'] ?? ''}|${tx.Account}|${tx.Note ?? ''}`;
+}
+
+// Returns inclusive [from, to] as YYYY-MM-DD strings (or null bounds for open ends).
+function computeDateRange(preset: DatePreset, customFrom: string, customTo: string): { from: string | null; to: string | null } {
+    if (preset === 'all') return { from: null, to: null };
+    if (preset === 'custom') return { from: customFrom || null, to: customTo || null };
+    const now = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const to = iso(now);
+    let from: Date;
+    if (preset === 'mtd') from = new Date(now.getFullYear(), now.getMonth(), 1);
+    else if (preset === 'ytd') from = new Date(now.getFullYear(), 0, 1);
+    else if (preset === '30d') from = new Date(now.getTime() - 30 * 86400000);
+    else if (preset === '90d') from = new Date(now.getTime() - 90 * 86400000);
+    else from = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); // 1y
+    return { from: iso(from), to };
+}
 
 function SortIndicator({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
     if (!active) {
@@ -30,8 +64,18 @@ function SortIndicator({ active, direction }: { active: boolean; direction: 'asc
 export default function TransactionsTable({ transactions, currency = 'USD', isLoading }: TransactionsTableProps) {
     const [symbolFilter, setSymbolFilter] = useState('');
     const [accountFilter, setAccountFilter] = useState('');
-    const [filterType, setFilterType] = useState('');
+    const [filterTypes, setFilterTypes] = useState<string[]>([]);
+    const [datePreset, setDatePreset] = useState<DatePreset>('all');
+    const [customFrom, setCustomFrom] = useState('');
+    const [customTo, setCustomTo] = useState('');
     const [showFilters, setShowFilters] = useState(false);
+    const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false);
+
+    const toggleFilterType = (type: string) => {
+        setFilterTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+    };
+
+    const dateRange = useMemo(() => computeDateRange(datePreset, customFrom, customTo), [datePreset, customFrom, customTo]);
     const [visibleRows, setVisibleRows] = useState(10);
     const [showInternalCash, setShowInternalCash] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -251,7 +295,10 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
     const resetFilters = () => {
         setSymbolFilter('');
         setAccountFilter('');
-        setFilterType('');
+        setFilterTypes([]);
+        setDatePreset('all');
+        setCustomFrom('');
+        setCustomTo('');
     };
 
     const formatTransactionType = (type: string) => {
@@ -266,14 +313,36 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
     });
     const existingTypes = Array.from(uniqueTypes).sort();
 
+    // Potential duplicates: same symbol + date + type + |quantity| + amount appearing
+    // more than once (common after re-importing or IBKR re-sync). Expose both the
+    // count and the set of duplicated keys so the table can be filtered to them.
+    const { duplicateCount, dupeKeys } = useMemo(() => {
+        const seen = new Map<string, number>();
+        for (const tx of transactions || []) {
+            seen.set(dupKey(tx), (seen.get(dupKey(tx)) || 0) + 1);
+        }
+        const keys = new Set<string>();
+        let dupes = 0;
+        for (const [k, n] of seen.entries()) {
+            if (n > 1) { dupes += n - 1; keys.add(k); }
+        }
+        return { duplicateCount: dupes, dupeKeys: keys };
+    }, [transactions]);
+
+    const filterTypesLower = filterTypes.map(t => t.toLowerCase());
     const filteredTransactions = (transactions || []).filter(tx => {
         const symbolMatch = tx.Symbol.toLowerCase().includes(symbolFilter.toLowerCase());
         const accountMatch = tx.Account.toLowerCase().includes(accountFilter.toLowerCase());
-        const typeMatch = filterType ? tx.Type.toLowerCase() === filterType.toLowerCase() : true;
-        const internalCashMatch = showInternalCash
+        const typeMatch = filterTypesLower.length === 0 || filterTypesLower.includes(tx.Type.toLowerCase());
+        const txDate = tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '';
+        const dateMatch =
+            (!dateRange.from || txDate >= dateRange.from) &&
+            (!dateRange.to || txDate <= dateRange.to);
+        const dupMatch = !showDuplicatesOnly || dupeKeys.has(dupKey(tx));
+        const internalCashMatch = (showInternalCash || showDuplicatesOnly)
             ? true
             : (tx.Symbol !== '$CASH' || ['deposit', 'withdrawal', 'interest', 'dividend', 'transfer', 'fees', 'tax'].includes(tx.Type.toLowerCase()));
-        return symbolMatch && accountMatch && typeMatch && internalCashMatch;
+        return symbolMatch && accountMatch && typeMatch && dateMatch && dupMatch && internalCashMatch;
     });
 
     const sortedTransactions = useMemo(() => {
@@ -296,6 +365,20 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         });
         return arr;
     }, [filteredTransactions, sortConfig]);
+
+    const groupIndexMap = useMemo(() => {
+        const map = new Map<string, number>();
+        let currentIdx = 0;
+        if (showDuplicatesOnly) {
+            sortedTransactions.forEach(tx => {
+                const key = dupKey(tx);
+                if (!map.has(key)) {
+                    map.set(key, currentIdx++);
+                }
+            });
+        }
+        return map;
+    }, [sortedTransactions, showDuplicatesOnly]);
 
     if (isLoading) {
         return <TableSkeleton />;
@@ -671,6 +754,33 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
             {/* Aggregate KPIs for the currently-filtered view */}
             <TxKpiStrip transactions={sortedTransactions} preferredCurrency={currency} />
 
+            {/* Duplicate detector — click to filter the table to the duplicates */}
+            {duplicateCount > 0 && (
+                <button
+                    onClick={() => setShowDuplicatesOnly(v => !v)}
+                    className={cn(
+                        'w-full flex items-center gap-2.5 px-4 py-2.5 rounded-lg border text-left transition-colors',
+                        showDuplicatesOnly
+                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-300'
+                            : 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15',
+                    )}
+                    title={showDuplicatesOnly ? 'Show all transactions' : 'Show only the duplicated entries'}
+                >
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="text-sm font-medium flex-1">
+                        {duplicateCount} potential duplicate {duplicateCount === 1 ? 'transaction' : 'transactions'} detected
+                        <span className="text-amber-600/70 dark:text-amber-400/70 font-normal"> — same symbol, date, type, quantity, amount, account & note.</span>
+                    </span>
+                    <span className="text-xs font-bold uppercase tracking-wider shrink-0 flex items-center gap-1">
+                        {showDuplicatesOnly ? (
+                            <>Showing <X className="w-3.5 h-3.5" /></>
+                        ) : (
+                            'Review'
+                        )}
+                    </span>
+                </button>
+            )}
+
             <div className="flex flex-col gap-4">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     {/* Primary Actions Group (Left) */}
@@ -815,8 +925,21 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                             </button>
                         )}
                     </div>
-                    {(accountFilter || filterType) && (
+                    {(accountFilter || filterTypes.length > 0 || datePreset !== 'all') && (
                         <div className="flex flex-wrap items-center gap-1.5">
+                            {datePreset !== 'all' && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium">
+                                    <span className="text-muted-foreground/70 text-[10px] uppercase tracking-wider mr-0.5">Dates</span>
+                                    <span className="font-bold">
+                                        {datePreset === 'custom'
+                                            ? `${dateRange.from || '…'} → ${dateRange.to || '…'}`
+                                            : DATE_PRESETS.find(p => p.key === datePreset)?.label}
+                                    </span>
+                                    <button onClick={() => setDatePreset('all')} className="ml-0.5 hover:text-foreground" title="Clear date filter">
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </span>
+                            )}
                             {accountFilter && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium">
                                     <span className="text-muted-foreground/70 text-[10px] uppercase tracking-wider mr-0.5">Account</span>
@@ -830,63 +953,109 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                     </button>
                                 </span>
                             )}
-                            {filterType && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium">
+                            {filterTypes.map(type => (
+                                <span key={type} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium">
                                     <span className="text-muted-foreground/70 text-[10px] uppercase tracking-wider mr-0.5">Type</span>
-                                    <span className="font-bold">{formatTransactionType(filterType)}</span>
+                                    <span className="font-bold">{formatTransactionType(type)}</span>
                                     <button
-                                        onClick={() => setFilterType('')}
+                                        onClick={() => toggleFilterType(type)}
                                         className="ml-0.5 hover:text-foreground"
-                                        title="Clear type filter"
+                                        title="Remove type filter"
                                     >
                                         <X className="w-3 h-3" />
                                     </button>
                                 </span>
-                            )}
+                            ))}
                         </div>
                     )}
                 </div>
 
                 {showFilters && (
-                    <div className="flex flex-col md:flex-row gap-2">
-                        <div className="relative flex-1">
-                            <input
-                                type="text"
-                                placeholder="Filter Account..."
-                                value={accountFilter}
-                                onChange={(e) => setAccountFilter(e.target.value)}
-                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-indigo-500 focus:border-indigo-500"
-                            />
-                            {accountFilter && (
-                                <button
-                                    onClick={() => setAccountFilter('')}
-                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                >
-                                    ✕
-                                </button>
-                            )}
-                        </div>
-                        <div className="relative flex-1">
-                            <select
-                                value={filterType}
-                                onChange={(e) => setFilterType(e.target.value)}
-                                className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500 appearance-none pr-8"
-                            >
-                                <option value="">All Types</option>
-                                {existingTypes.map(type => (
-                                    <option key={type} value={type}>{formatTransactionType(type)}</option>
+                    <div className="flex flex-col gap-4 p-4 rounded-xl bg-muted/20 dark:bg-white/[0.02] border border-border/30">
+                        {/* Date range */}
+                        <div className="flex flex-col gap-2">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Date range</label>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                {DATE_PRESETS.map(p => (
+                                    <button
+                                        key={p.key}
+                                        onClick={() => setDatePreset(p.key)}
+                                        className={cn(
+                                            'px-3 py-1.5 rounded-md text-xs font-semibold transition-all',
+                                            datePreset === p.key ? 'bg-[#0097b2] text-white' : 'bg-card text-muted-foreground hover:text-foreground',
+                                        )}
+                                    >
+                                        {p.label}
+                                    </button>
                                 ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-muted-foreground">
-                                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                                {datePreset === 'custom' && (
+                                    <div className="flex items-center gap-2 ml-2">
+                                        <input
+                                            type="date"
+                                            value={customFrom}
+                                            onChange={(e) => setCustomFrom(e.target.value)}
+                                            className="bg-card border-none text-foreground rounded-md px-2 py-1.5 text-xs focus:ring-cyan-500"
+                                        />
+                                        <span className="text-muted-foreground text-xs">→</span>
+                                        <input
+                                            type="date"
+                                            value={customTo}
+                                            onChange={(e) => setCustomTo(e.target.value)}
+                                            className="bg-card border-none text-foreground rounded-md px-2 py-1.5 text-xs focus:ring-cyan-500"
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        <button
-                            onClick={resetFilters}
-                            className="flex-1 md:flex-none px-4 py-2 bg-secondary text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
-                        >
-                            Reset Filters
-                        </button>
+
+                        {/* Type multi-select */}
+                        <div className="flex flex-col gap-2">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Type</label>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                {existingTypes.map(type => {
+                                    const active = filterTypes.includes(type);
+                                    return (
+                                        <button
+                                            key={type}
+                                            onClick={() => toggleFilterType(type)}
+                                            className={cn(
+                                                'px-3 py-1.5 rounded-md text-xs font-semibold transition-all',
+                                                active ? 'bg-indigo-600 text-white' : 'bg-card text-muted-foreground hover:text-foreground',
+                                            )}
+                                        >
+                                            {formatTransactionType(type)}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Account + reset */}
+                        <div className="flex flex-col md:flex-row gap-2">
+                            <div className="relative flex-1">
+                                <input
+                                    type="text"
+                                    placeholder="Filter Account..."
+                                    value={accountFilter}
+                                    onChange={(e) => setAccountFilter(e.target.value)}
+                                    className="bg-card border-none text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                                {accountFilter && (
+                                    <button
+                                        onClick={() => setAccountFilter('')}
+                                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+                            <button
+                                onClick={resetFilters}
+                                className="flex-1 md:flex-none px-4 py-2 bg-secondary text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
+                            >
+                                Reset Filters
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -930,59 +1099,80 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                     </td>
                                 </tr>
                             ) : (
-                                visibleTransactions.map((tx, index) => (
-                                    <tr key={index} className={`hover:bg-accent/5 transition-colors group border-none ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-indigo-500/5' : ''}`}>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm w-12 sticky left-0 z-10 bg-background/95 backdrop-blur-md">
-                                            <input
-                                                type="checkbox"
-                                                checked={tx.id !== undefined && selectedIds.has(tx.id)}
-                                                onChange={() => tx.id !== undefined && handleToggleSelect(tx.id)}
-                                                className="rounded text-cyan-500"
-                                            />
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap min-w-[100px] sticky left-12 z-10 bg-background/95 backdrop-blur-md border-none">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground min-w-[80px] sticky left-[148px] z-10 bg-background/95 backdrop-blur-md border-none">
-                                            <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getTransactionTypeStyle(tx.Type)}`}>
-                                                {formatTransactionType(tx.Type)}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap min-w-[100px] sticky left-[228px] z-10 bg-background/95 backdrop-blur-md border-none shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">
-                                            <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                            {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? <span className="text-muted-foreground/30">-</span> : tx.Quantity}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                            {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? <span className="text-muted-foreground/30">-</span> : tx["Price/Share"]?.toFixed(2)}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
-                                            {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-muted-foreground/30">-</span>}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                            {tx.Commission ? tx.Commission.toFixed(2) : <span className="text-muted-foreground/30">-</span>}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{tx.Account}</td>
-                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Split Ratio"] ? tx["Split Ratio"] : <span className="text-muted-foreground/30">-</span>}</td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground truncate max-w-xs" title={tx.Note}>{tx.Note || <span className="text-muted-foreground/30">-</span>}</td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground">{tx["Local Currency"]}</td>
-                                        <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">
-                                            <button
-                                                onClick={() => handleEdit(tx)}
-                                                className="text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 p-2 rounded transition-colors mr-1"
-                                                title="Edit"
-                                            >
-                                                <Pencil className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(tx)}
-                                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
-                                                title="Delete"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
+                                visibleTransactions.map((tx, index) => {
+                                    const key = dupKey(tx);
+                                    const groupIdx = showDuplicatesOnly ? groupIndexMap.get(key) : undefined;
+                                    const isNewGroup = showDuplicatesOnly && index > 0 && dupKey(visibleTransactions[index]) !== dupKey(visibleTransactions[index - 1]);
+                                    const isEvenGroup = groupIdx !== undefined && groupIdx % 2 === 0;
+                                    
+                                    const groupClass = showDuplicatesOnly
+                                        ? (isEvenGroup 
+                                            ? 'bg-amber-500/[0.04] dark:bg-amber-500/[0.08] hover:bg-amber-500/[0.08] dark:hover:bg-amber-500/[0.12]' 
+                                            : 'bg-indigo-500/[0.04] dark:bg-indigo-500/[0.08] hover:bg-indigo-500/[0.08] dark:hover:bg-indigo-500/[0.12]')
+                                        : '';
+                                    
+                                    return (
+                                        <tr 
+                                            key={index} 
+                                            className={cn(
+                                                'hover:bg-accent/5 transition-colors group border-none',
+                                                tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-indigo-500/5' : '',
+                                                groupClass,
+                                                isNewGroup ? 'border-t-2 border-dashed border-muted-foreground/30' : ''
+                                            )}
+                                        >
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm w-12 sticky left-0 z-10 bg-background/95 backdrop-blur-md">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={tx.id !== undefined && selectedIds.has(tx.id)}
+                                                    onChange={() => tx.id !== undefined && handleToggleSelect(tx.id)}
+                                                    className="rounded text-cyan-500"
+                                                />
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap min-w-[100px] sticky left-12 z-10 bg-background/95 backdrop-blur-md border-none">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
+                                            <td className="px-4 py-3 text-sm text-muted-foreground min-w-[80px] sticky left-[148px] z-10 bg-background/95 backdrop-blur-md border-none">
+                                                <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getTransactionTypeStyle(tx.Type)}`}>
+                                                    {formatTransactionType(tx.Type)}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap min-w-[100px] sticky left-[228px] z-10 bg-background/95 backdrop-blur-md border-none shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">
+                                                <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
+                                                {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? <span className="text-muted-foreground/30">-</span> : tx.Quantity}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
+                                                {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? <span className="text-muted-foreground/30">-</span> : tx["Price/Share"]?.toFixed(2)}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
+                                                {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-muted-foreground/30">-</span>}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
+                                                {tx.Commission ? tx.Commission.toFixed(2) : <span className="text-muted-foreground/30">-</span>}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{tx.Account}</td>
+                                            <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Split Ratio"] ? tx["Split Ratio"] : <span className="text-muted-foreground/30">-</span>}</td>
+                                            <td className="px-4 py-3 text-sm text-muted-foreground truncate max-w-xs" title={tx.Note}>{tx.Note || <span className="text-muted-foreground/30">-</span>}</td>
+                                            <td className="px-4 py-3 text-sm text-muted-foreground">{tx["Local Currency"]}</td>
+                                            <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">
+                                                <button
+                                                    onClick={() => handleEdit(tx)}
+                                                    className="text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 p-2 rounded transition-colors mr-1"
+                                                    title="Edit"
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(tx)}
+                                                    className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
@@ -991,73 +1181,94 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
 
             {/* Mobile Card View */}
             <div className={`md:hidden space-y-4 p-4 ${mobileViewMode === 'card' ? 'block' : 'hidden'}`}>
-                {visibleTransactions.map((tx, index) => (
-                    <div key={`mobile-tx-${index}`} className="bg-card rounded-lg p-4 border-none shadow-none">
-                        <div className="flex justify-between items-start mb-2">
-                            <div>
-                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${getTransactionTypeStyle(tx.Type)}`}>
-                                    {formatTransactionType(tx.Type)}
-                                </span>
-                                <h3 className="text-lg font-bold text-foreground mt-1">
-                                    <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
-                                </h3>
-                            </div>
-                            <div className="text-right">
-                                <div className="text-sm font-medium text-foreground">
-                                    {tx.Date ? tx.Date.split('T')[0] : '-'}
-                                </div>
-                                <div className="text-xs text-muted-foreground">{tx.Account}</div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-y-2 text-sm mt-3 pt-3">
-                            <div className="text-muted-foreground">Quantity</div>
-                            <div className="text-right font-medium text-foreground">
-                                {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? '' : tx.Quantity}
-                            </div>
-
-                            <div className="text-muted-foreground">Price</div>
-                            <div className="text-right font-medium text-foreground">
-                                {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? '' : tx["Price/Share"]?.toFixed(2)}
-                            </div>
-
-                            <div className="text-muted-foreground">Amount</div>
-                            <div className="text-right font-bold text-foreground">
-                                {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'} {tx["Local Currency"]}
-                            </div>
-
-                            {tx.Commission > 0 && (
-                                <>
-                                    <div className="text-muted-foreground">Commission</div>
-                                    <div className="text-right text-muted-foreground">{tx.Commission.toFixed(2)}</div>
-                                </>
+                {visibleTransactions.map((tx, index) => {
+                    const key = dupKey(tx);
+                    const groupIdx = showDuplicatesOnly ? groupIndexMap.get(key) : undefined;
+                    const isNewGroup = showDuplicatesOnly && index > 0 && dupKey(visibleTransactions[index]) !== dupKey(visibleTransactions[index - 1]);
+                    const isEvenGroup = groupIdx !== undefined && groupIdx % 2 === 0;
+                    
+                    const groupClass = showDuplicatesOnly
+                        ? (isEvenGroup 
+                            ? 'bg-amber-500/[0.04] dark:bg-amber-500/[0.08] border-amber-500/20' 
+                            : 'bg-indigo-500/[0.04] dark:bg-indigo-500/[0.08] border-indigo-500/20')
+                        : 'bg-card border-none shadow-none';
+                    
+                    return (
+                        <div 
+                            key={`mobile-tx-${index}`} 
+                            className={cn(
+                                "rounded-lg p-4 transition-all",
+                                groupClass,
+                                showDuplicatesOnly ? 'border-2' : '',
+                                isNewGroup ? 'mt-6 relative before:content-[\'\'] before:absolute before:-top-3 before:left-0 before:right-0 before:h-[2px] before:bg-muted-foreground/30 before:border-t-2 before:border-dashed' : ''
                             )}
-                        </div>
-                        {
-                            tx.Note && (
-                                <div className="mt-2 pt-2 text-xs text-muted-foreground italic">
-                                    {tx.Note}
+                        >
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${getTransactionTypeStyle(tx.Type)}`}>
+                                        {formatTransactionType(tx.Type)}
+                                    </span>
+                                    <h3 className="text-lg font-bold text-foreground mt-1">
+                                        <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
+                                    </h3>
                                 </div>
-                            )
-                        }
-                        <div className="mt-3 pt-2 flex justify-end gap-3">
-                            <button
-                                onClick={() => handleEdit(tx)}
-                                className="text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 p-2 rounded transition-colors"
-                                title="Edit"
-                            >
-                                <Pencil className="w-5 h-5" />
-                            </button>
-                            <button
-                                onClick={() => handleDelete(tx)}
-                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
-                                title="Delete"
-                            >
-                                <Trash2 className="w-5 h-5" />
-                            </button>
+                                <div className="text-right">
+                                    <div className="text-sm font-medium text-foreground">
+                                        {tx.Date ? tx.Date.split('T')[0] : '-'}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">{tx.Account}</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-y-2 text-sm mt-3 pt-3">
+                                <div className="text-muted-foreground">Quantity</div>
+                                <div className="text-right font-medium text-foreground">
+                                    {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? '' : tx.Quantity}
+                                </div>
+
+                                <div className="text-muted-foreground">Price</div>
+                                <div className="text-right font-medium text-foreground">
+                                    {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? '' : tx["Price/Share"]?.toFixed(2)}
+                                </div>
+
+                                <div className="text-muted-foreground">Amount</div>
+                                <div className="text-right font-bold text-foreground">
+                                    {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'} {tx["Local Currency"]}
+                                </div>
+
+                                {tx.Commission > 0 && (
+                                    <>
+                                        <div className="text-muted-foreground">Commission</div>
+                                        <div className="text-right text-muted-foreground">{tx.Commission.toFixed(2)}</div>
+                                    </>
+                                )}
+                            </div>
+                            {
+                                tx.Note && (
+                                    <div className="mt-2 pt-2 text-xs text-muted-foreground italic">
+                                        {tx.Note}
+                                    </div>
+                                )
+                            }
+                            <div className="mt-3 pt-2 flex justify-end gap-3">
+                                <button
+                                    onClick={() => handleEdit(tx)}
+                                    className="text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 p-2 rounded transition-colors"
+                                    title="Edit"
+                                >
+                                    <Pencil className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(tx)}
+                                    className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
+                                    title="Delete"
+                                >
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {visibleRows < filteredTransactions.length && (

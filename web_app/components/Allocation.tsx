@@ -3,6 +3,8 @@ import { Holding } from '../lib/api';
 import AllocationDrift from './AllocationDrift';
 import AllocationPieChart, { AggregatedSlice, PieBucketKey } from './portfolio/AllocationPieChart';
 import ConcentrationKpiStrip from './portfolio/ConcentrationKpiStrip';
+import PortfolioTreemap from './portfolio/PortfolioTreemap';
+import RebalanceHelper from './portfolio/RebalanceHelper';
 
 interface AllocationProps {
     holdings: Holding[];
@@ -110,6 +112,12 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                 storageKey="allocation-target-symbol"
                 scrollable
             />
+
+            {/* Rebalance helper — suggested trades to close drift */}
+            <RebalanceHelper holdings={holdings} currency={currency} />
+
+            {/* Treemap — spatial view of concentration */}
+            <PortfolioTreemap holdings={holdings} currency={currency} />
 
             {/* Donut charts with click drill-down */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

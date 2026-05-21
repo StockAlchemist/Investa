@@ -1,10 +1,13 @@
 'use client';
 import React, { useEffect, useState } from 'react';
-import { AssetChangeData, PortfolioSummary, RiskMetrics } from '../lib/api';
+import { AssetChangeData, PortfolioSummary, RiskMetrics, PerformanceData, AttributionData } from '../lib/api';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 import KpiStrip from './performance/KpiStrip';
 import ReturnsChart from './performance/ReturnsChart';
 import MonthlyHeatmap from './performance/MonthlyHeatmap';
+import DrawdownTimeline from './performance/DrawdownTimeline';
+import BenchmarkScoreboard from './performance/BenchmarkScoreboard';
+import { SectorAttribution, TopContributors } from './AttributionChart';
 
 interface AssetChangeProps {
     data: AssetChangeData | null;
@@ -12,10 +15,27 @@ interface AssetChangeProps {
     summary?: PortfolioSummary | null;
     benchmarks?: string[];
     riskMetrics?: RiskMetrics | null;
+    history?: PerformanceData[] | null;
+    historyLoading?: boolean;
+    attribution?: AttributionData | null;
+    attributionLoading?: boolean;
+    attributionRefreshing?: boolean;
     isLoading?: boolean;
 }
 
-export default function AssetChange({ data, currency, summary = null, benchmarks = [], riskMetrics = null, isLoading }: AssetChangeProps) {
+export default function AssetChange({
+    data,
+    currency,
+    summary = null,
+    benchmarks = [],
+    riskMetrics = null,
+    history = null,
+    historyLoading = false,
+    attribution = null,
+    attributionLoading = false,
+    attributionRefreshing = false,
+    isLoading,
+}: AssetChangeProps) {
     const [mounted, setMounted] = useState(false);
     useEffect(() => setMounted(true), []);
 
@@ -41,6 +61,28 @@ export default function AssetChange({ data, currency, summary = null, benchmarks
             <KpiStrip data={data} summary={summary} riskMetrics={riskMetrics} benchmarks={benchmarks} />
             <ReturnsChart data={data} currency={currency} />
             <MonthlyHeatmap data={data} />
+
+            {/* Risk view: drawdown + risk-adjusted benchmark stats */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <DrawdownTimeline history={history} isLoading={historyLoading} />
+                <BenchmarkScoreboard history={history} isLoading={historyLoading} />
+            </div>
+
+            {/* Attribution: what drove returns */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <SectorAttribution
+                    data={attribution}
+                    isLoading={attributionLoading}
+                    isRefreshing={attributionRefreshing}
+                    currency={currency}
+                />
+                <TopContributors
+                    data={attribution}
+                    isLoading={attributionLoading}
+                    isRefreshing={attributionRefreshing}
+                    currency={currency}
+                />
+            </div>
         </div>
     );
 }

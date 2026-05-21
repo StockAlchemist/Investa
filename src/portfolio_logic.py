@@ -63,10 +63,18 @@ def _normalize_series(series):
 
 # --- AUTO-CACHE INVALIDATION ---
 def _get_self_hash():
+    """Hash this file AND finutils.py so the cache invalidates when either changes."""
     try:
-        # Use the absolute path of this file to generate a hash
+        h = hashlib.md5()
+        # Hash portfolio_logic.py (this file)
         with open(os.path.abspath(__file__), "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()[:8]
+            h.update(f.read())
+        # Also hash finutils.py — it contains cash-flow and TWR helper logic
+        finutils_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "finutils.py")
+        if os.path.exists(finutils_path):
+            with open(finutils_path, "rb") as f:
+                h.update(f.read())
+        return h.hexdigest()[:8]
     except Exception:
         return "UNKNOWN"
 
@@ -2022,9 +2030,12 @@ def _calculate_daily_net_cash_flow_vectorized(
 
     if not df_cash.empty:
         # Vectorized calculation of local flow
-        # We need to handle Commission/Qty safely
-        qty = pd.to_numeric(df_cash["Quantity"], errors="coerce").fillna(0.0)
+        total_amount = pd.to_numeric(df_cash.get("Total Amount"), errors="coerce").fillna(0.0).abs()
+        qty = pd.to_numeric(df_cash["Quantity"], errors="coerce").fillna(0.0).abs()
         comm = pd.to_numeric(df_cash["Commission"], errors="coerce").fillna(0.0)
+        
+        # Prefer Total Amount if non-zero, otherwise fall back to Quantity
+        cash_amt = np.where(total_amount > 1e-9, total_amount, qty)
         
         # 1. Deposit
         is_dep = df_cash["Type"].str.lower() == "deposit"
@@ -2032,8 +2043,8 @@ def _calculate_daily_net_cash_flow_vectorized(
         is_wd = df_cash["Type"].str.lower() == "withdrawal"
         
         local_flow = pd.Series(0.0, index=df_cash.index)
-        local_flow[is_dep] = qty[is_dep].abs() - comm[is_dep]
-        local_flow[is_wd] = -qty[is_wd].abs() - comm[is_wd]
+        local_flow[is_dep] = cash_amt[is_dep] - comm[is_dep]
+        local_flow[is_wd] = -cash_amt[is_wd] - comm[is_wd]
         
         df_cash["_flow_local"] = local_flow
         flows_list.append(df_cash[["Date", "_flow_local", "Local Currency"]])
