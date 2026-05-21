@@ -295,7 +295,9 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
         # logging.debug("NPV Calculation Error: Invalid rate provided.")
         return np.nan
     if len(dates) != len(cash_flows):
-        return np.nan
+        raise ValueError("The lengths of dates and cash_flows do not match.")
+    if len(dates) == 0:
+        return 0.0
     base = 1.0 + rate
     if base <= 1e-18:
         # logging.debug(

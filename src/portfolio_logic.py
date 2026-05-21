@@ -2030,7 +2030,8 @@ def _calculate_daily_net_cash_flow_vectorized(
 
     if not df_cash.empty:
         # Vectorized calculation of local flow
-        total_amount = pd.to_numeric(df_cash.get("Total Amount"), errors="coerce").fillna(0.0).abs()
+        total_amount_col = df_cash["Total Amount"] if "Total Amount" in df_cash.columns else pd.Series(0.0, index=df_cash.index)
+        total_amount = pd.to_numeric(total_amount_col, errors="coerce").fillna(0.0).abs()
         qty = pd.to_numeric(df_cash["Quantity"], errors="coerce").fillna(0.0).abs()
         comm = pd.to_numeric(df_cash["Commission"], errors="coerce").fillna(0.0)
         
@@ -2770,6 +2771,13 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             qty = pd.to_numeric(row.get("Quantity"), errors="coerce")
             commission_raw = pd.to_numeric(row.get("Commission"), errors="coerce")
             commission = 0.0 if pd.isna(commission_raw) else float(commission_raw)
+            total_amount_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+            total_amount = 0.0 if pd.isna(total_amount_raw) else float(total_amount_raw)
+
+            # If it's a fee or tax transaction
+            if type_lower in ["fees", "tax"]:
+                fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if pd.notna(qty) and abs(qty) > 1e-9 else abs(commission))
+                return -fee_val
 
             return (
                 0.0
