@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Trash2, Info, HelpCircle, Loader2, Edit2 } from 'lucide-react';
+import { Trash2, Info, HelpCircle, Loader2, Edit2, Save } from 'lucide-react';
 import { updateSettings, Settings as SettingsType, fetchIntrinsicValue, IntrinsicValueResponse } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
@@ -96,7 +96,6 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         defaults.dcf_growth_rate = dcf.growth_rate;
                         defaults.dcf_terminal_growth = dcf.terminal_growth_rate;
                         defaults.dcf_projection_years = dcf.projection_years;
-                        defaults.dcf_projection_years = dcf.projection_years;
                         defaults.dcf_fcf = dcf.base_fcf;
                         defaults.target_fcf_margin = dcf.fcf_margin;
                     }
@@ -165,8 +164,6 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
             if (val === '') return;
             const numVal = parseFloat(val);
             if (!isNaN(numVal)) {
-                // If it's a percentage in UI, store as decimal in backend (except for graham_growth which is usually a whole number in formula)
-                // Actually, let's keep it simple: DCF parameters are decimals, Graham growth is literal % number.
                 const isPercentField = PARAM_INFO[key as keyof typeof PARAM_INFO]?.isPercent;
                 newEntry[key] = isPercentField ? numVal / 100 : numVal;
             }
@@ -198,15 +195,21 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
         }
     };
 
-    const inputClassName = "w-full rounded-xl border border-border/40 dark:border-white/10 bg-background/50 dark:bg-black/20 backdrop-blur-sm text-foreground focus:ring-cyan-500/50 px-3 py-2 text-sm outline-none focus:ring-1 transition-all";
-    const labelClassName = "flex items-center gap-1 text-[10px] font-bold text-muted-foreground mb-1 uppercase tracking-wider";
+    const inputClassName = "w-full rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-sm text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500/50 px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all hover:border-black/20 dark:hover:border-white/20";
+    const labelClassName = "flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground mb-1.5 uppercase tracking-wider";
+    const cardClassName = "bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl p-8 rounded-3xl border border-white/40 dark:border-white/10 shadow-lg relative overflow-hidden";
+    const primaryButtonClassName = "px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white rounded-xl font-medium shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2";
 
     return (
-        <div className="space-y-6">
-            <div className="bg-muted/30 dark:bg-white/[0.04] backdrop-blur-md p-6 rounded-2xl border border-border/40 dark:border-white/[0.06] shadow-sm">
-                <h3 className="text-sm font-semibold mb-4">Add Custom Valuation Parameters</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="md:col-span-4 max-w-xs">
+        <div className="space-y-8 max-w-6xl">
+            <div className={cardClassName}>
+                <h3 className="text-xl font-bold mb-6 text-foreground flex items-center gap-2">
+                    <Edit2 className="w-5 h-5 text-purple-500" />
+                    Customize Valuation Parameters
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="md:col-span-4 lg:col-span-1">
                         <label className={labelClassName}>Symbol</label>
                         <div className="relative">
                             <input
@@ -218,51 +221,51 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                             />
                             {isLoadingDefaults && (
                                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                    <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
+                                    <Loader2 className="w-5 h-5 animate-spin text-cyan-500" />
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    <div className="md:col-span-4 flex items-center justify-between bg-cyan-500/10 dark:bg-cyan-500/5 backdrop-blur-sm p-3 rounded-xl border border-cyan-500/20">
-                        <div className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium flex items-center gap-2">
-                            <Info className="w-4 h-4" />
+                    <div className="md:col-span-4 lg:col-span-3 flex items-center justify-between bg-cyan-500/10 dark:bg-cyan-500/5 backdrop-blur-sm p-4 rounded-xl border border-cyan-500/20 self-end h-[46px]">
+                        <div className="text-sm text-cyan-700 dark:text-cyan-400 font-medium flex items-center gap-2">
+                            <Info className="w-5 h-5 flex-shrink-0" />
                             <span>
                                 {valuationOverrides[symbol]
                                     ? `Editing existing overrides for ${symbol}`
                                     : Object.keys(liveDefaults).length > 0
-                                        ? `Fetched live parameters for ${symbol}. You can edit individual fields or load all defaults.`
+                                        ? `Fetched live parameters for ${symbol}. Edit fields or load defaults.`
                                         : "Enter a symbol to fetch current live parameters."}
                             </span>
                         </div>
                         {Object.keys(liveDefaults).length > 0 && (
                             <button
                                 onClick={handleFillDefaults}
-                                className="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-bold px-3 py-1.5 rounded uppercase tracking-wider transition-colors"
+                                className="text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 font-bold px-4 py-2 rounded-lg uppercase tracking-wider transition-colors ml-4 flex-shrink-0"
                             >
-                                Pre-fill from Defaults
+                                Pre-fill Defaults
                             </button>
                         )}
                     </div>
 
-                    <div className="md:col-span-4 space-y-8">
+                    <div className="md:col-span-4 space-y-10 mt-4">
                         {/* DCF Section */}
-                        <div>
-                            <h4 className="text-xs font-bold text-cyan-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <div className="h-px flex-1 bg-cyan-500/20"></div>
-                                DCF Model Parameters
-                                <div className="h-px flex-1 bg-cyan-500/20"></div>
+                        <div className="bg-white/40 dark:bg-black/20 p-6 rounded-2xl border border-black/5 dark:border-white/5">
+                            <h4 className="text-sm font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-6 flex items-center gap-3">
+                                <div className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                                Discounted Cash Flow (DCF)
+                                <div className="h-px flex-1 bg-gradient-to-r from-cyan-500/20 to-transparent"></div>
                             </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                {Object.entries(PARAM_INFO).filter(([key]) => key.startsWith('dcf')).map(([key, info]) => (
-                                    <div key={key} className="space-y-1">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {Object.entries(PARAM_INFO).filter(([key]) => key.startsWith('dcf') || key === 'target_fcf_margin').map(([key, info]) => (
+                                    <div key={key} className="space-y-1.5">
                                         <label className={labelClassName}>
                                             {info.label}
                                             <div className="group relative">
-                                                <HelpCircle className="w-3.5 h-3.5 cursor-help text-muted-foreground/50 hover:text-cyan-500 transition-colors" />
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[11px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed">
+                                                <HelpCircle className="w-4 h-4 cursor-help text-muted-foreground/50 hover:text-cyan-500 transition-colors" />
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-4 bg-white dark:bg-zinc-800 text-foreground text-xs rounded-xl shadow-xl border border-black/5 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed">
                                                     {info.description}
-                                                    <div className="mt-2 pt-2 border-t border-slate-100 dark:border-white/10 font-bold text-cyan-600 dark:text-cyan-400">Default: {info.default}</div>
+                                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/10 font-bold text-cyan-600 dark:text-cyan-400">Default: {info.default}</div>
                                                 </div>
                                             </div>
                                         </label>
@@ -274,18 +277,17 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                                 onChange={(e) => handleInputChange(key, e.target.value)}
                                                 placeholder={
                                                     liveDefaults[key] !== undefined
-                                                        ? (info.isPercent ? `${(liveDefaults[key] * 100).toFixed(2)}%` : liveDefaults[key].toLocaleString())
+                                                        ? (info.isPercent ? `${(liveDefaults[key] * 100).toFixed(2)}` : liveDefaults[key].toLocaleString())
                                                         : info.default
                                                 }
                                                 className={cn(
                                                     inputClassName,
-                                                    "h-10",
                                                     info.isPercent && "pr-8",
-                                                    liveDefaults[key] !== undefined && "placeholder:text-cyan-500/50"
+                                                    liveDefaults[key] !== undefined && "placeholder:text-cyan-500/40"
                                                 )}
                                             />
                                             {info.isPercent && (
-                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-bold pointer-events-none">%</span>
                                             )}
                                         </div>
                                     </div>
@@ -294,22 +296,22 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         </div>
 
                         {/* Graham Section */}
-                        <div>
-                            <h4 className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <div className="h-px flex-1 bg-amber-500/20"></div>
-                                Graham's Formula Parameters
-                                <div className="h-px flex-1 bg-amber-500/20"></div>
+                        <div className="bg-white/40 dark:bg-black/20 p-6 rounded-2xl border border-black/5 dark:border-white/5">
+                            <h4 className="text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-6 flex items-center gap-3">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]" />
+                                Graham's Formula
+                                <div className="h-px flex-1 bg-gradient-to-r from-amber-500/20 to-transparent"></div>
                             </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {Object.entries(PARAM_INFO).filter(([key]) => key.startsWith('graham')).map(([key, info]) => (
-                                    <div key={key} className="space-y-1">
+                                    <div key={key} className="space-y-1.5">
                                         <label className={labelClassName}>
                                             {info.label}
                                             <div className="group relative">
-                                                <HelpCircle className="w-3.5 h-3.5 cursor-help text-muted-foreground/50 hover:text-cyan-500 transition-colors" />
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[11px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed">
+                                                <HelpCircle className="w-4 h-4 cursor-help text-muted-foreground/50 hover:text-amber-500 transition-colors" />
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-4 bg-white dark:bg-zinc-800 text-foreground text-xs rounded-xl shadow-xl border border-black/5 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed">
                                                     {info.description}
-                                                    <div className="mt-2 pt-2 border-t border-slate-100 dark:border-white/10 font-bold text-cyan-600 dark:text-cyan-400">Default: {info.default}</div>
+                                                    <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/10 font-bold text-amber-600 dark:text-amber-400">Default: {info.default}</div>
                                                 </div>
                                             </div>
                                         </label>
@@ -321,18 +323,17 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                                 onChange={(e) => handleInputChange(key, e.target.value)}
                                                 placeholder={
                                                     liveDefaults[key] !== undefined
-                                                        ? (info.isPercent ? `${(liveDefaults[key] * 100).toFixed(2)}%` : liveDefaults[key].toLocaleString())
+                                                        ? (info.isPercent ? `${(liveDefaults[key] * 100).toFixed(2)}` : liveDefaults[key].toLocaleString())
                                                         : info.default
                                                 }
                                                 className={cn(
                                                     inputClassName,
-                                                    "h-10",
                                                     info.isPercent && "pr-8",
-                                                    liveDefaults[key] !== undefined && "placeholder:text-cyan-500/50"
+                                                    liveDefaults[key] !== undefined && "placeholder:text-amber-500/40"
                                                 )}
                                             />
                                             {info.isPercent && (
-                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-bold pointer-events-none">%</span>
                                             )}
                                         </div>
                                     </div>
@@ -341,53 +342,58 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         </div>
                     </div>
                 </div>
-                <div className="flex justify-end mt-6">
+                <div className="flex justify-end mt-8 pt-6 border-t border-black/5 dark:border-white/5">
                     <button
                         onClick={handleAddOverride}
                         disabled={!symbol || Object.keys(formData).length === 0}
-                        className="px-6 py-2 bg-cyan-500 text-white rounded-md text-sm font-medium hover:bg-cyan-600 disabled:opacity-50 transition-colors"
+                        className={primaryButtonClassName}
                     >
-                        Save Valuation Parameters
+                        <Save className="w-5 h-5" />
+                        Save Parameters
                     </button>
                 </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 overflow-hidden shadow-lg">
                 <table className="w-full text-sm">
-                    <thead className="bg-muted/30 dark:bg-white/[0.03] backdrop-blur-md">
+                    <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
                         <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[15%]">Symbol</th>
-                            <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[65%]">Parameters</th>
-                            <th className="text-right py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[20%]">Actions</th>
+                            <th className="text-left py-4 px-6 font-bold text-muted-foreground text-xs uppercase tracking-wider w-[15%]">Symbol</th>
+                            <th className="text-left py-4 px-6 font-bold text-muted-foreground text-xs uppercase tracking-wider w-[65%]">Custom Parameters</th>
+                            <th className="text-right py-4 px-6 font-bold text-muted-foreground text-xs uppercase tracking-wider w-[20%]">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y-none">
+                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
                         {Object.entries(valuationOverrides).length === 0 ? (
                             <tr>
-                                <td colSpan={3} className="py-8 text-center text-muted-foreground italic">No manual valuation parameters set.</td>
+                                <td colSpan={3} className="py-16 text-center text-muted-foreground">
+                                    <div className="flex flex-col items-center justify-center gap-3">
+                                        <Edit2 className="w-8 h-8 opacity-30" />
+                                        <p>No manual valuation parameters set.</p>
+                                    </div>
+                                </td>
                             </tr>
                         ) : (
                             Object.entries(valuationOverrides).map(([sym, data]: [string, any]) => (
-                                <tr key={sym} className="group hover:bg-muted/20 dark:hover:bg-white/[0.04] transition-colors border-b border-border/20 dark:border-white/[0.05]">
-                                    <td className="py-4 px-4 font-bold text-cyan-500 align-top pt-6">{sym}</td>
-                                    <td className="py-4 px-4">
-                                        <div className="flex flex-col md:flex-row gap-4">
+                                <tr key={sym} className="group hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                    <td className="py-6 px-6 font-black text-lg text-purple-600 dark:text-purple-400 align-top">{sym}</td>
+                                    <td className="py-6 px-6">
+                                        <div className="flex flex-col lg:flex-row gap-6">
                                             {/* DCF Group */}
-                                            {Object.entries(data).some(([k]) => k.startsWith('dcf')) && (
-                                                <div className="flex-1 bg-cyan-500/10 dark:bg-cyan-500/5 backdrop-blur-sm rounded-xl p-3 min-w-[200px] border border-cyan-500/20">
-                                                    <div className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                                            {Object.entries(data).some(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin') && (
+                                                <div className="flex-1 bg-white/60 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-5 border border-cyan-500/20 shadow-sm relative overflow-hidden">
+                                                    <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-50" />
+                                                    <div className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                                                         DCF Model
                                                     </div>
-                                                    <div className="flex flex-col gap-1.5">
-                                                        {Object.entries(data).filter(([k]) => k.startsWith('dcf')).map(([key, val]: [string, any]) => {
+                                                    <div className="grid grid-cols-1 gap-x-6 gap-y-3">
+                                                        {Object.entries(data).filter(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin').map(([key, val]: [string, any]) => {
                                                             const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
                                                             if (!info) return null;
 
                                                             let label = info.label.replace(' (DCF)', '');
                                                             let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
 
-                                                            // Short names overrides
                                                             if (key === 'dcf_fcf') {
                                                                 label = 'Base FCF';
                                                                 displayVal = `${(val / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
@@ -398,9 +404,9 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                                             }
 
                                                             return (
-                                                                <div key={key} className="flex justify-between items-center text-xs">
+                                                                <div key={key} className="flex justify-between items-center text-sm border-b border-black/5 dark:border-white/5 pb-2">
                                                                     <span className="text-muted-foreground font-medium">{label}</span>
-                                                                    <span className="font-mono font-bold text-foreground">{displayVal}</span>
+                                                                    <span className="font-mono font-bold text-foreground bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded">{displayVal}</span>
                                                                 </div>
                                                             );
                                                         })}
@@ -410,12 +416,12 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
 
                                             {/* Graham Group */}
                                             {Object.entries(data).some(([k]) => k.startsWith('graham')) && (
-                                                <div className="flex-1 bg-amber-500/5 rounded-lg p-3 min-w-[200px]">
-                                                    <div className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                <div className="flex-1 bg-white/60 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-5 border border-amber-500/20 shadow-sm relative overflow-hidden">
+                                                    <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-400 to-orange-500 opacity-50" />
+                                                    <div className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                                                         Graham's Formula
                                                     </div>
-                                                    <div className="flex flex-col gap-1.5">
+                                                    <div className="grid grid-cols-1 gap-x-6 gap-y-3">
                                                         {Object.entries(data).filter(([k]) => k.startsWith('graham')).map(([key, val]: [string, any]) => {
                                                             const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
                                                             if (!info) return null;
@@ -423,7 +429,6 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                                             let label = info.label.replace('Graham ', '').replace(' (Y)', '');
                                                             let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
 
-                                                            // Short names overrides and formatting
                                                             if (key === 'graham_bond_yield') {
                                                                 label = 'Bond Yield';
                                                                 displayVal = `${val}%`;
@@ -432,9 +437,9 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                                             }
 
                                                             return (
-                                                                <div key={key} className="flex justify-between items-center text-xs">
+                                                                <div key={key} className="flex justify-between items-center text-sm border-b border-black/5 dark:border-white/5 pb-2">
                                                                     <span className="text-muted-foreground font-medium">{label}</span>
-                                                                    <span className="font-mono font-bold text-foreground">{displayVal}</span>
+                                                                    <span className="font-mono font-bold text-foreground bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded">{displayVal}</span>
                                                                 </div>
                                                             );
                                                         })}
@@ -443,24 +448,24 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                             )}
                                         </div>
                                     </td>
-                                    <td className="py-4 px-4 text-right">
-                                        <div className="flex justify-end gap-1">
+                                    <td className="py-6 px-6 text-right align-top">
+                                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button
                                                 onClick={() => {
                                                     setSymbol(sym);
                                                     window.scrollTo({ top: 0, behavior: 'smooth' });
                                                 }}
-                                                className="p-2 text-muted-foreground hover:text-cyan-500 hover:bg-cyan-500/10 rounded transition-colors"
+                                                className="p-3 bg-white dark:bg-white/5 shadow-sm border border-black/5 dark:border-white/5 text-muted-foreground hover:text-purple-500 hover:border-purple-500/30 rounded-xl transition-all"
                                                 title="Edit parameters"
                                             >
-                                                <Edit2 className="w-4 h-4" />
+                                                <Edit2 className="w-5 h-5" />
                                             </button>
                                             <button
                                                 onClick={() => handleRemoveOverride(sym)}
-                                                className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                                                className="p-3 bg-white dark:bg-white/5 shadow-sm border border-black/5 dark:border-white/5 text-muted-foreground hover:text-red-500 hover:border-red-500/30 rounded-xl transition-all"
                                                 title="Delete override"
                                             >
-                                                <Trash2 className="w-4 h-4" />
+                                                <Trash2 className="w-5 h-5" />
                                             </button>
                                         </div>
                                     </td>

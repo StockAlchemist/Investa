@@ -17,14 +17,17 @@ interface CapitalGainsProps {
     currency: string;
     onDateRangeChange?: (fromDate?: string, toDate?: string) => void;
     isLoading?: boolean;
+    visibleSections?: string[];
 }
 
-export default function CapitalGains({ data, currency, isLoading }: CapitalGainsProps) {
+export default function CapitalGains({ data, currency, isLoading, visibleSections }: CapitalGainsProps) {
     const [selectedYear, setSelectedYear] = useState<string | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+
+    const show = (id: string) => !visibleSections || visibleSections.includes(id);
 
     // Group by Year for Chart (Always use full data for context)
     const gainsByYear = useMemo(() => {
@@ -139,9 +142,12 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
         <div className="space-y-8 md:space-y-12">
 
             {/* Consolidated KPIs (reflect the active year/search filter) */}
-            <CapitalGainsKpiStrip data={filteredData} currency={currency} />
+            {show('capitalGainsKpis') && (
+                <CapitalGainsKpiStrip data={filteredData} currency={currency} />
+            )}
 
             {/* Annual Gains Chart */}
+            {show('annualCapitalGains') && (
             <div className="metric-card p-6 relative overflow-hidden group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
                 <h3 className="section-label mb-4 relative z-10">Annual Realized Gains</h3>
@@ -215,8 +221,10 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                     </ResponsiveContainer>
                 </div>
             </div>
+            )}
 
             {/* Transactions Table */}
+            {show('capitalGainsTransactions') && (
             <div className="metric-card overflow-hidden relative group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
                 <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 relative z-10">
@@ -427,6 +435,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                     </div>
                 )}
             </div>
+            )}
 
             {/* Stock Detail Modal */}
             {selectedSymbol && (

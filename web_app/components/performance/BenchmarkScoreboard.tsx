@@ -9,7 +9,7 @@ interface BenchmarkScoreboardProps {
     isLoading?: boolean;
 }
 
-const RESERVED_KEYS = new Set(['date', 'value', 'twr', 'drawdown', 'fx_rate', 'abs_gain', 'abs_roi', 'cum_flow']);
+const RESERVED_KEYS = new Set(['date', 'timestamp', 'value', 'twr', 'drawdown', 'fx_rate', 'abs_gain', 'abs_roi', 'cum_flow', 'is_baseline']);
 const PERIODS_PER_YEAR = 252; // daily series
 
 interface BenchStats {

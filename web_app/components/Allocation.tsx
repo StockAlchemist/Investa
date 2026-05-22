@@ -9,6 +9,7 @@ import RebalanceHelper from './portfolio/RebalanceHelper';
 interface AllocationProps {
     holdings: Holding[];
     currency: string;
+    visibleSections?: string[];
 }
 
 function isUnknown(v: unknown): boolean {
@@ -58,7 +59,7 @@ function aggregate(holdings: Holding[], key: PieBucketKey, marketValueKey: strin
     return top;
 }
 
-export default function Allocation({ holdings, currency }: AllocationProps) {
+export default function Allocation({ holdings, currency, visibleSections = [] }: AllocationProps) {
     if (!holdings || holdings.length === 0) {
         return <div className="p-4 text-center text-muted-foreground">No holdings data available.</div>;
     }
@@ -72,60 +73,72 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     return (
         <div className="p-4 space-y-6">
             {/* Concentration KPIs */}
-            <ConcentrationKpiStrip holdings={holdings} currency={currency} />
+            {visibleSections.includes('concentrationKpis') && (
+                <ConcentrationKpiStrip holdings={holdings} currency={currency} />
+            )}
 
             {/* Drift vs target — Asset Type / Sector / Country */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                <AllocationDrift
-                    holdings={holdings}
-                    currency={currency}
-                    bucketKey="quoteType"
-                    settingsBucket="quoteType"
-                    title="Asset Type — drift vs target"
-                    storageKey="allocation-target-quoteType"
-                />
-                <AllocationDrift
-                    holdings={holdings}
-                    currency={currency}
-                    bucketKey="Sector"
-                    settingsBucket="sector"
-                    title="Sector — drift vs target"
-                    storageKey="allocation-target-sector"
-                />
-                <AllocationDrift
-                    holdings={holdings}
-                    currency={currency}
-                    bucketKey="Country"
-                    settingsBucket="country"
-                    title="Country — drift vs target"
-                    storageKey="allocation-target-country"
-                />
-            </div>
+            {visibleSections.includes('categoryDrift') && (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <AllocationDrift
+                        holdings={holdings}
+                        currency={currency}
+                        bucketKey="quoteType"
+                        settingsBucket="quoteType"
+                        title="Asset Type — drift vs target"
+                        storageKey="allocation-target-quoteType"
+                    />
+                    <AllocationDrift
+                        holdings={holdings}
+                        currency={currency}
+                        bucketKey="Sector"
+                        settingsBucket="sector"
+                        title="Sector — drift vs target"
+                        storageKey="allocation-target-sector"
+                    />
+                    <AllocationDrift
+                        holdings={holdings}
+                        currency={currency}
+                        bucketKey="Country"
+                        settingsBucket="country"
+                        title="Country — drift vs target"
+                        storageKey="allocation-target-country"
+                    />
+                </div>
+            )}
 
             {/* Per-stock drift — scrollable since this list can get long */}
-            <AllocationDrift
-                holdings={holdings}
-                currency={currency}
-                bucketKey="Symbol"
-                settingsBucket="symbol"
-                title="Stocks — drift vs target"
-                storageKey="allocation-target-symbol"
-                scrollable
-            />
+            {visibleSections.includes('stockDrift') && (
+                <AllocationDrift
+                    holdings={holdings}
+                    currency={currency}
+                    bucketKey="Symbol"
+                    settingsBucket="symbol"
+                    title="Stocks — drift vs target"
+                    storageKey="allocation-target-symbol"
+                    scrollable
+                />
+            )}
 
             {/* Rebalance helper — suggested trades to close drift */}
-            <RebalanceHelper holdings={holdings} currency={currency} />
+            {visibleSections.includes('rebalanceHelper') && (
+                <RebalanceHelper holdings={holdings} currency={currency} />
+            )}
 
             {/* Treemap — spatial view of concentration */}
-            <PortfolioTreemap holdings={holdings} currency={currency} />
+            {visibleSections.includes('treemap') && (
+                <PortfolioTreemap holdings={holdings} currency={currency} />
+            )}
 
             {/* Donut charts with click drill-down */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <AllocationPieChart title="By Asset Type" data={assetTypeData} currency={currency} holdings={holdings} bucketKey="quoteType" />
-                <AllocationPieChart title="By Sector"     data={sectorData}    currency={currency} holdings={holdings} bucketKey="Sector"    />
-                <AllocationPieChart title="By Industry"   data={industryData}  currency={currency} holdings={holdings} bucketKey="Industry"  />
-                <AllocationPieChart title="By Country"    data={countryData}   currency={currency} holdings={holdings} bucketKey="Country"   />
-            </div>
+            {visibleSections.includes('donutCharts') && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <AllocationPieChart title="By Asset Type" data={assetTypeData} currency={currency} holdings={holdings} bucketKey="quoteType" />
+                    <AllocationPieChart title="By Sector"     data={sectorData}    currency={currency} holdings={holdings} bucketKey="Sector"    />
+                    <AllocationPieChart title="By Industry"   data={industryData}  currency={currency} holdings={holdings} bucketKey="Industry"  />
+                    <AllocationPieChart title="By Country"    data={countryData}   currency={currency} holdings={holdings} bucketKey="Country"   />
+                </div>
+            )}
         </div>
     );
 }

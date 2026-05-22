@@ -14,9 +14,6 @@ export const COMPLEX_METRIC_IDS = [
 // reading order. Keep them in sync with what the dashboard tab actually
 // renders top-to-bottom.
 export const DEFAULT_ITEMS = [
-    // Hero
-    { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
-    { id: 'dayGL', title: "Day's Gain/Loss", colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
     // Compact metrics grid
     { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-2 md:col-span-1' },
@@ -39,16 +36,17 @@ export const DEFAULT_ITEMS = [
 ];
 
 export const INITIAL_VISIBLE_ITEMS = [
-    'portfolioValue',
-    'dayGL',
     'totalReturn',
     'unrealizedGL',
     'realizedGain',
     'annualTWR',
     'mwr',
-    'ytdReturn',
+    'ytdDividends',
     'dividendYield',
+    'ytdReturn',
     'cashBalance',
+    'fxGL',
+    'fees',
     'taxes',
     'portfolioDonut',
     'performanceGraph',

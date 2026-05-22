@@ -109,12 +109,12 @@ export function MobileNav({
               className={cn(
                 'relative flex items-center w-full h-10 px-3 gap-3 rounded-lg text-sm font-medium transition-all duration-150',
                 activeTab === id
-                  ? 'bg-primary/10 text-primary'
+                  ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
             >
               {activeTab === id && (
-                <span className="absolute left-0 inset-y-[8px] w-[2px] bg-primary rounded-r-full" />
+                <span className="absolute left-0 inset-y-[8px] w-[3px] bg-blue-500 rounded-r-full" />
               )}
               <Icon className="w-4 h-4 shrink-0" />
               {label}
@@ -130,12 +130,12 @@ export function MobileNav({
               className={cn(
                 'relative flex items-center w-full h-10 px-3 gap-3 rounded-lg text-sm font-medium transition-all duration-150',
                 activeTab === id
-                  ? 'bg-primary/10 text-primary'
+                  ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
             >
               {activeTab === id && (
-                <span className="absolute left-0 inset-y-[8px] w-[2px] bg-primary rounded-r-full" />
+                <span className="absolute left-0 inset-y-[8px] w-[3px] bg-blue-500 rounded-r-full" />
               )}
               <Icon className="w-4 h-4 shrink-0" />
               {label}

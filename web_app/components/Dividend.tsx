@@ -140,21 +140,25 @@ export default function Dividend({
     return (
         <div className="space-y-8 md:space-y-10">
             {/* Enriched KPI strip */}
-            <IncomeKpiStrip
-                dividends={data}
-                currency={currency}
-                expectedDividends={expectedDividends}
-                dividendYield={dividendYield}
-            />
+            {show('incomeKpis') && (
+                <IncomeKpiStrip
+                    dividends={data}
+                    currency={currency}
+                    expectedDividends={expectedDividends}
+                    dividendYield={dividendYield}
+                />
+            )}
 
             {/* Injected: IncomeProjector + DividendCalendar */}
             {children}
 
             {/* Top payers + By account */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <TopPayers dividends={data} currency={currency} />
-                <ByAccount dividends={data} currency={currency} />
-            </div>
+            {(show('topPayers') || show('byAccount')) && (
+                <div className={cn("grid grid-cols-1 gap-6", show('topPayers') && show('byAccount') ? "lg:grid-cols-2" : "")}>
+                    {show('topPayers') && <TopPayers dividends={data} currency={currency} />}
+                    {show('byAccount') && <ByAccount dividends={data} currency={currency} />}
+                </div>
+            )}
 
             {/* Annual dividends chart with YoY growth labels */}
             {show('annualDividends') && (
@@ -175,12 +179,23 @@ export default function Dividend({
                             <Bar dataKey="amount" fill="#10b981" name="Dividend Amount" radius={[4, 4, 0, 0]}>
                                 <LabelList
                                     dataKey="yoyPct"
-                                    position="top"
-                                    formatter={(v: unknown) => {
-                                        if (typeof v !== 'number' || !isFinite(v)) return '';
-                                        return `${v > 0 ? '+' : ''}${v.toFixed(0)}%`;
+                                    content={(props: any) => {
+                                        const { x, y, width, value } = props;
+                                        if (typeof value !== 'number' || !isFinite(value)) return null;
+                                        const isGain = value >= 0;
+                                        return (
+                                            <text
+                                                x={x + width / 2}
+                                                y={y - 8}
+                                                fill={isGain ? '#10b981' : '#ef4444'}
+                                                textAnchor="middle"
+                                                fontSize={10}
+                                                fontWeight={700}
+                                            >
+                                                {value > 0 ? '+' : ''}{value.toFixed(0)}%
+                                            </text>
+                                        );
                                     }}
-                                    style={{ fontSize: 10, fontWeight: 700, fill: '#10b981' }}
                                 />
                             </Bar>
                             <Tooltip

@@ -53,25 +53,19 @@ USE_GROUNDING = True # Toggle Google Search (True uses search, False disables it
 MAX_CONSECUTIVE_FAILURES = 5
 QUOTA_RESET_HOUR = 15 # 3 PM local time
 
-def sleep_until_next_quota_reset(target_hour=QUOTA_RESET_HOUR):
+def exit_due_to_quota(target_hour=QUOTA_RESET_HOUR):
     """
-    Calculates the time until the next target_hour (e.g., 3 PM) and sleeps until then.
-    Used when rate limits are hit to wait for the quota reset.
+    Exits the worker when the AI quota is full.
     """
     now = datetime.datetime.now()
     target_time = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
     
-    # If it's already past target_hour today, target the same hour tomorrow
     if now >= target_time:
         target_time += datetime.timedelta(days=1)
         
-    wait_seconds = (target_time - now).total_seconds()
-    
-    logging.info(f"Quota limit reached or excessive failures. Next reset at: {target_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    logging.info(f"Sleeping for {wait_seconds/3600:.2f} hours...")
-    
-    time.sleep(wait_seconds)
-    logging.info("Wake up! Resuming work after quota reset.")
+    logging.error(f"Quota limit reached or excessive failures. Next reset at: {target_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logging.error("Exiting worker due to quota exhaustion.")
+    sys.exit(1)
 
 def check_if_review_exists(symbol: str, fund_data: dict = None, universe: str = 'russell2000') -> bool:
     """
@@ -188,6 +182,8 @@ def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'russell200
             
         if "error" in review:
             logging.error(f"Failed to generate review for {symbol}: {review['error']}")
+            if review["error"] == "QUOTA_EXHAUSTED":
+                return "QUOTA_EXHAUSTED"
             return False
             
         logging.info(f"Successfully generated/retrieved review for {symbol}.")
@@ -254,7 +250,10 @@ def process_ticker_list(mdp, tickers: List[str], universe: str) -> int:
             logging.info(f"Review needed for {symbol} in {universe}. Starting generation.")
             success = process_stock(symbol, mdp, fund_data, universe=universe)
             
-            if success:
+            if success == "QUOTA_EXHAUSTED":
+                logging.error("Hard quota exhausted. Exiting immediately.")
+                exit_due_to_quota()
+            elif success:
                 consecutive_failures = 0
                 processed_count += 1
                 # Sleep to be polite
@@ -265,11 +264,7 @@ def process_ticker_list(mdp, tickers: List[str], universe: str) -> int:
                 
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     logging.error(f"Hit max consecutive failures ({MAX_CONSECUTIVE_FAILURES}). Likely Rate Limit or Network Issue.")
-                    # Wait until 3 PM local time for the next quota reset
-                    sleep_until_next_quota_reset()
-                    consecutive_failures = 0 # Reset after long sleep
-                    # We break to refresh the list and start fresh from the beginning
-                    return processed_count
+                    exit_due_to_quota()
                     
         except KeyboardInterrupt:
             logging.info("Worker stopped by user.")

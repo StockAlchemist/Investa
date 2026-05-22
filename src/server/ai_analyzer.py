@@ -33,9 +33,7 @@ FALLBACK_MODELS = [
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro"
+    "gemini-2.0-flash"
 ]
 
 def generate_stock_review(
@@ -277,6 +275,8 @@ No markdown, no commentary outside the JSON.
     initial_jitter = random.random() * 5 
     time.sleep(initial_jitter)
 
+    quota_exhausted = False
+
     for model in FALLBACK_MODELS:
         base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         
@@ -313,6 +313,9 @@ No markdown, no commentary outside the JSON.
                 # Check for rate limits or server errors
                 if response.status_code == 429 or 500 <= response.status_code < 600:
                     logging.warning(f"AI Analysis: Model '{model}' (Search: {current_search_setting}) failed (status {response.status_code}). Response: {response.text[:200]}...")
+                    if "exceeded your current quota" in response.text:
+                        logging.warning(f"Hard quota limit reached for {model}.")
+                        quota_exhausted = True
                     # If this was with search, the inner loop will try without search.
                     # If this was already without search, we break to the next model.
                     continue 
@@ -382,5 +385,8 @@ No markdown, no commentary outside the JSON.
     if stale_result:
         logging.info(f"AI Analysis: RETURNING STALE CACHE FOR {symbol} as last resort.")
         return stale_result
+        
+    if quota_exhausted:
+        return {"error": "QUOTA_EXHAUSTED"}
         
     return {"error": "AI Generation failed across all fallback models."}

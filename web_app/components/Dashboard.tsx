@@ -165,18 +165,18 @@ function PortfolioHeroCard({
                                     {positive
                                         ? <ArrowUpRight className="w-4 h-4 shrink-0" />
                                         : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-                                    <span className="text-sm font-semibold tabular-nums">
+                                    <span className="text-lg font-semibold tabular-nums">
                                         {animatedDayGL >= 0 ? '+' : ''}{formatCurrency(animatedDayGL, currency)}
                                     </span>
                                     {dayGLPct !== null && (
                                         <span className={cn(
-                                            'text-xs font-bold px-2 py-0.5 rounded-full',
+                                            'text-sm font-bold px-2.5 py-0.5 rounded-full',
                                             positive ? 'bg-emerald-500/10' : 'bg-red-500/10',
                                         )}>
                                             {animatedDayPct >= 0 ? '+' : ''}{animatedDayPct.toFixed(2)}%
                                         </span>
                                     )}
-                                    <span className="text-xs text-muted-foreground font-normal">today</span>
+                                    <span className="text-sm text-muted-foreground font-normal">today</span>
                                 </div>
                             )}
                         </div>
@@ -356,12 +356,11 @@ function DashboardInner({
         }
     };
 
-    const showHero = visibleItems.includes('portfolioValue') || visibleItems.includes('dayGL');
+    const showHero = true;
 
     // Scalar items that are NOT the hero (portfolio value / day G/L)
     const compactItems = DEFAULT_ITEMS.filter(
         item => visibleItems.includes(item.id) && !COMPLEX_METRIC_IDS.includes(item.id)
-                && item.id !== 'portfolioValue' && item.id !== 'dayGL'
     );
 
     const visibleComplexItems = DEFAULT_ITEMS.filter(

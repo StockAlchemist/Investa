@@ -14,7 +14,12 @@ export interface LayoutItem {
 
 const ALLOCATION_ITEMS: LayoutItem[] = [
     { id: 'holdingsTable',    title: 'Holdings Table' },
-    { id: 'allocationCharts', title: 'Allocation Charts' },
+    { id: 'concentrationKpis',title: 'Concentration KPIs' },
+    { id: 'categoryDrift',    title: 'Category Drift (Asset, Sector, Country)' },
+    { id: 'stockDrift',       title: 'Stock Drift' },
+    { id: 'rebalanceHelper',  title: 'Rebalance Helper' },
+    { id: 'treemap',          title: 'Treemap' },
+    { id: 'donutCharts',      title: 'Donut Charts' },
 ];
 
 const ASSET_CHANGE_ITEMS: LayoutItem[] = [
@@ -28,13 +33,18 @@ const ASSET_CHANGE_ITEMS: LayoutItem[] = [
 ];
 
 const CAPITAL_GAINS_ITEMS: LayoutItem[] = [
-    { id: 'unrealizedTax',      title: 'Unrealized Tax Lots' },
-    { id: 'capitalGainsTable',  title: 'Capital Gains Table' },
+    { id: 'unrealizedTax',            title: 'Unrealized Tax Lots' },
+    { id: 'capitalGainsKpis',         title: 'Realized Gains KPIs' },
+    { id: 'annualCapitalGains',       title: 'Annual Realized Gains' },
+    { id: 'capitalGainsTransactions', title: 'Realized Gains Transactions' },
 ];
 
 const DIVIDEND_ITEMS: LayoutItem[] = [
+    { id: 'incomeKpis',           title: 'Income KPIs' },
     { id: 'incomeProjector',      title: 'Income Projector' },
     { id: 'dividendCalendar',     title: 'Dividend Calendar' },
+    { id: 'topPayers',            title: 'Top Payers' },
+    { id: 'byAccount',            title: 'By Account' },
     { id: 'annualDividends',      title: 'Annual Dividends' },
     { id: 'dividendTransactions', title: 'Dividend Transactions' },
 ];

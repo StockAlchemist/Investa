@@ -50,14 +50,16 @@ export function Sidebar({
           'group/item relative flex items-center w-full rounded-lg text-sm font-medium transition-all duration-150',
           collapsed ? 'h-9 justify-center' : 'h-9 px-3 gap-2.5',
           active
-            ? 'bg-primary/10 text-primary'
+            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
             : 'text-muted-foreground hover:bg-muted hover:text-foreground',
         )}
       >
         {active && (
-          <span className="absolute left-0 inset-y-[6px] w-[2px] bg-primary rounded-r-full" />
+          <span className="absolute left-0 inset-y-[6px] w-[3px] bg-blue-500 rounded-r-full" />
         )}
-        <Icon className="shrink-0 w-4 h-4" />
+        <div className="w-6 flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4" />
+        </div>
         {!collapsed && <span className="truncate">{label}</span>}
         {collapsed && (
           <span className="pointer-events-none absolute left-full ml-2 z-50 px-2 py-1 rounded-md bg-popover border border-border text-xs font-medium shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-150 delay-200">
@@ -121,9 +123,11 @@ export function Sidebar({
             collapsed ? 'justify-center' : 'px-3 gap-2.5',
           )}
         >
-          {resolvedTheme === 'dark'
-            ? <Sun className="w-4 h-4 shrink-0" />
-            : <Moon className="w-4 h-4 shrink-0" />}
+          <div className="w-6 flex items-center justify-center shrink-0">
+            {resolvedTheme === 'dark'
+              ? <Sun className="w-4 h-4" />
+              : <Moon className="w-4 h-4" />}
+          </div>
           {!collapsed && (
             <span>{resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
           )}

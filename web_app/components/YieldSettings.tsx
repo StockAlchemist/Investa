@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Save, AlertCircle } from 'lucide-react';
+import { Save, AlertCircle, CheckCircle, Activity } from 'lucide-react';
 import { Settings as SettingsType, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { updateSettings } from '../lib/api';
@@ -117,27 +117,28 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
         });
     }, [availableAccounts, accountCashBalances, settings]);
 
-    const inputClassName = "w-full rounded-md border border-border bg-background text-foreground shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2 text-sm outline-none focus:ring-1";
+    const inputClassName = "w-full rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-sm text-foreground shadow-sm focus:border-green-500 focus:ring-green-500/50 px-4 py-2 text-sm outline-none focus:ring-2 transition-all hover:border-black/20 dark:hover:border-white/20";
+    const primaryButtonClassName = "px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white rounded-xl font-medium shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2";
 
     return (
-        <div className="max-w-4xl space-y-6">
-            <div className="flex justify-between items-center mb-4">
+        <div className="max-w-5xl space-y-8">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                 <div>
-                    <h3 className="text-lg font-medium">Cash Yield Settings</h3>
+                    <h3 className="text-xl font-bold text-foreground">Cash Yield Management</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Configure annual interest rates and interest-free thresholds for your cash balances.
+                        Configure annual interest rates and interest-free thresholds for your cash balances to estimate future yield.
                     </p>
                 </div>
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shadow-sm"
+                    className={primaryButtonClassName}
                 >
                     {isSaving ? (
                         <>Saving...</>
                     ) : (
                         <>
-                            <Save size={16} />
+                            <Save className="w-5 h-5" />
                             Save Changes
                         </>
                     )}
@@ -145,32 +146,35 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
             </div>
 
             {saveStatus && (
-                <div className={`p-4 rounded-md border text-sm flex items-center gap-2 ${saveStatus === 'success'
+                <div className={`p-4 rounded-xl text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2 border ${saveStatus === 'success'
                     ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
                     : 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
                     }`}>
-                    {saveStatus === 'success' ? <Save size={16} /> : <AlertCircle size={16} />}
-                    {statusMessage}
+                    {saveStatus === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                    <span className="font-medium">{statusMessage}</span>
                 </div>
             )}
 
-            <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
+            <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-border">
-                        <thead className="bg-secondary/50">
+                    <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
+                        <thead className="bg-black/5 dark:bg-white/5">
                             <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account</th>
-                                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cash Balance</th>
-                                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Est. Annual Interest</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Annual Rate (%)</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Exempt Threshold</th>
+                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account</th>
+                                <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cash Balance</th>
+                                <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Est. Annual Interest</th>
+                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Annual Rate (%)</th>
+                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Exempt Threshold</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border bg-card">
+                        <tbody className="divide-y divide-black/5 dark:divide-white/5">
                             {activeAccounts.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground text-sm">
-                                        No accounts with cash balances found.
+                                    <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
+                                        <div className="flex flex-col items-center justify-center gap-3">
+                                            <Activity className="w-8 h-8 opacity-50" />
+                                            <p>No accounts with cash balances found.</p>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
@@ -178,12 +182,12 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                     const accountCash = accountCashBalances[account] || 0;
 
                                     return (
-                                        <tr key={account} className="hover:bg-accent/5 transition-colors">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{account}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-muted-foreground">
+                                        <tr key={account} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-foreground">{account}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-muted-foreground font-medium">
                                                 {accountCash.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-green-600 dark:text-green-400 font-bold">
                                                 {(() => {
                                                     const rate = (localRates[account] || 0) / 100;
                                                     const threshold = localThresholds[account] || 0;
@@ -196,12 +200,12 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                                     <input
                                                         type="number"
                                                         step="0.01"
-                                                        value={localRates[account] || ''} // Use empty string for 0 display if preferred, or maintain 0. But controlled usually needs value.
+                                                        value={localRates[account] || ''} 
                                                         onChange={(e) => handleRateChange(account, e.target.value)}
                                                         placeholder="0.00"
-                                                        className={`${inputClassName} pr-8`}
+                                                        className={`${inputClassName} pr-8 font-mono`}
                                                     />
-                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs pointer-events-none">%</span>
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs pointer-events-none font-bold">%</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -211,7 +215,7 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                                         value={localThresholds[account] ? localThresholds[account].toLocaleString('en-US') : ''}
                                                         onChange={(e) => handleThresholdChange(account, e.target.value)}
                                                         placeholder="0"
-                                                        className={inputClassName}
+                                                        className={`${inputClassName} font-mono`}
                                                     />
                                                 </div>
                                             </td>

@@ -142,7 +142,23 @@ export default function Home() {
         if (tabId === 'performance') continue; // handled by visibleItems above
         const saved = localStorage.getItem(`investa_tab_layout_${tabId}`);
         if (saved) {
-          try { const arr = JSON.parse(saved); if (Array.isArray(arr) && arr.length > 0) loadedLayouts[tabId] = arr; } catch {}
+          try { 
+            const arr = JSON.parse(saved); 
+            if (Array.isArray(arr) && arr.length > 0) {
+              if (tabId === 'allocation' && arr.includes('allocationCharts')) {
+                const idx = arr.indexOf('allocationCharts');
+                arr.splice(idx, 1, 'concentrationKpis', 'categoryDrift', 'stockDrift', 'rebalanceHelper', 'treemap', 'donutCharts');
+              }
+              if (tabId === 'dividend' && arr.includes('annualDividends') && !arr.includes('incomeKpis')) {
+                arr.unshift('incomeKpis', 'topPayers', 'byAccount');
+              }
+              if (tabId === 'capital_gains' && arr.includes('capitalGainsTable')) {
+                const idx = arr.indexOf('capitalGainsTable');
+                arr.splice(idx, 1, 'capitalGainsKpis', 'annualCapitalGains', 'capitalGainsTransactions');
+              }
+              loadedLayouts[tabId] = arr; 
+            } 
+          } catch {}
         }
       }
       setTabLayouts(loadedLayouts);
@@ -518,9 +534,7 @@ export default function Home() {
                 isLoading={holdingsQuery.isLoading && !holdingsQuery.data}
               />
             )}
-            {activeVisible.includes('allocationCharts') && (
-              <Allocation holdings={holdings} currency={currency} />
-            )}
+            <Allocation holdings={holdings} currency={currency} visibleSections={activeVisible} />
           </div>
         );
 
@@ -546,14 +560,13 @@ export default function Home() {
             {activeVisible.includes('unrealizedTax') && (
               <UnrealizedTaxView holdings={holdings} currency={currency} />
             )}
-            {activeVisible.includes('capitalGainsTable') && (
-              <CapitalGains
-                data={capitalGainsData}
-                currency={currency}
-                onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
-                isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
-              />
-            )}
+            <CapitalGains
+              data={capitalGainsData}
+              currency={currency}
+              onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
+              isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
+              visibleSections={activeVisible}
+            />
           </div>
         );
 
