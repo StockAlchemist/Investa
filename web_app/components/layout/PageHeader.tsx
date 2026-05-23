@@ -110,7 +110,7 @@ export function PageHeader({
           <span className="hidden lg:block w-px h-5 bg-border/70" />
           <div className="hidden lg:flex items-baseline gap-2 shrink-0 select-none">
             <span className="text-sm font-bold tabular-nums text-foreground leading-none">
-              {formatCompactNumber(marketValue!, currency)}
+              {formatCompactNumber(marketValue!, currency, true)}
             </span>
             {dayChangePct != null && (
               <span

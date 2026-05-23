@@ -55,10 +55,11 @@ export function formatPercent(value: number): string {
     }).format(value);
 }
 
-export function formatCompactNumber(number: number, currency?: string): string {
+export function formatCompactNumber(number: number, currency?: string, forceDecimals: boolean = false): string {
     if (number === 0) return '0';
     const formatter = new Intl.NumberFormat('en-US', {
         notation: 'compact',
+        minimumFractionDigits: forceDecimals ? 2 : 0,
         maximumFractionDigits: 2,
         style: currency ? 'currency' : 'decimal',
         currency: currency,

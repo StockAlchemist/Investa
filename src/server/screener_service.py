@@ -72,6 +72,10 @@ def get_etf_holdings(product_id: str, ticker: str, filename: str) -> List[str]:
         # Safe way: read string, find "Ticker", start there.
         
         content = response.text
+        
+        if "<html" in content.lower():
+            raise ValueError(f"Received HTML instead of CSV (likely bot protection) for {ticker}")
+            
         lines = content.split('\n')
         start_row = 0
         for i, line in enumerate(lines[:30]):
@@ -137,6 +141,15 @@ def get_etf_holdings(product_id: str, ticker: str, filename: str) -> List[str]:
             
     except Exception as e:
         logging.error(f"Failed to fetch {ticker} list: {e}")
+        # Fallback to stale cache
+        if os.path.exists(cache_path):
+            logging.info(f"Falling back to stale cache for {ticker}")
+            try:
+                with open(cache_path, "r") as f:
+                    data = json.load(f)
+                    return data.get("tickers", [])
+            except Exception as cache_err:
+                logging.error(f"Failed to read stale cache for {ticker}: {cache_err}")
         return []
 
 def get_sp500_tickers() -> List[str]:
@@ -191,12 +204,121 @@ def get_sp500_tickers() -> List[str]:
         return []
 
 def get_russell2000_tickers() -> List[str]:
-    """Fetches Russell 2000 tickers from iShares IWM ETF."""
-    return get_etf_holdings("239710", "IWM", "russell2000_tickers_cache.json")
+    """
+    Fetches Russell 2000 tickers from a stable GitHub repository.
+    Uses caching to avoid repeated web requests.
+    """
+    cache_path = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "russell2000_tickers_cache.json")
+    
+    # Check cache
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+                timestamp = data.get("timestamp", 0)
+                if time.time() - timestamp < SP500_CACHE_TTL:
+                    logging.info("Using cached Russell 2000 list")
+                    return data.get("tickers", [])
+        except Exception as e:
+            logging.warning(f"Error reading Russell 2000 cache: {e}")
+
+    logging.info("Fetching Russell 2000 list from GitHub...")
+    try:
+        url = "https://raw.githubusercontent.com/ikoniaris/Russell2000/master/russell_2000_components.csv"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        df = pd.read_csv(io.StringIO(response.text))
+        
+        if "Ticker" not in df.columns:
+            logging.error(f"Russell 2000 GitHub CSV missing ticker column. Found: {df.columns}")
+            return []
+            
+        tickers = df["Ticker"].dropna().astype(str).tolist()
+        # Clean tickers
+        tickers = [t.strip().replace('.', '-') for t in tickers if t.strip()]
+        
+        try:
+            with open(cache_path, "w") as f:
+                json.dump({
+                    "timestamp": time.time(),
+                    "tickers": tickers
+                }, f)
+        except Exception as e:
+            logging.warning(f"Error saving Russell 2000 cache: {e}")
+            
+        return tickers
+    except Exception as e:
+        logging.error(f"Failed to fetch Russell 2000 list: {e}")
+        # Fallback to stale cache
+        if os.path.exists(cache_path):
+            logging.info("Falling back to stale Russell 2000 cache")
+            try:
+                with open(cache_path, "r") as f:
+                    return json.load(f).get("tickers", [])
+            except: pass
+        return []
 
 def get_sp400_tickers() -> List[str]:
-    """Fetches S&P MidCap 400 tickers from iShares IJH ETF."""
-    return get_etf_holdings("239763", "IJH", "sp400_tickers_cache.json")
+    """
+    Fetches the list of S&P MidCap 400 companies from Wikipedia.
+    Uses caching to avoid repeated web requests.
+    """
+    cache_path = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "sp400_tickers_cache.json")
+    
+    # Check cache
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+                timestamp = data.get("timestamp", 0)
+                if time.time() - timestamp < SP500_CACHE_TTL:
+                    logging.info("Using cached S&P 400 list")
+                    return data.get("tickers", [])
+        except Exception as e:
+            logging.warning(f"Error reading S&P 400 cache: {e}")
+
+    logging.info("Fetching S&P 400 list from Wikipedia...")
+    try:
+        url = "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        tables = pd.read_html(io.StringIO(response.text))
+        df = tables[0]
+        
+        col = "Symbol" if "Symbol" in df.columns else "Ticker symbol"
+        if col not in df.columns:
+            logging.error(f"S&P 400 Wikipedia table missing ticker column. Found: {df.columns}")
+            return []
+            
+        tickers = df[col].tolist()
+        tickers = [str(s).replace('.', '-') for s in tickers]
+        
+        try:
+            with open(cache_path, "w") as f:
+                json.dump({
+                    "timestamp": time.time(),
+                    "tickers": tickers
+                }, f)
+        except Exception as e:
+            logging.warning(f"Error saving S&P 400 cache: {e}")
+            
+        return tickers
+    except Exception as e:
+        logging.error(f"Failed to fetch S&P 400 list: {e}")
+        # Fallback to stale cache
+        if os.path.exists(cache_path):
+            logging.info("Falling back to stale S&P 400 cache")
+            try:
+                with open(cache_path, "r") as f:
+                    return json.load(f).get("tickers", [])
+            except: pass
+        return []
 
 def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_symbols: Optional[List[str]] = None, db_conn: Optional[Any] = None, fast_mode: bool = False) -> List[Dict[str, Any]]:
     """

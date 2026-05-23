@@ -1,5 +1,5 @@
-import { memo, lazy, Suspense, useState, useEffect, useRef } from 'react';
-import { PortfolioSummary, PerformanceData } from '../lib/api';
+import { memo, lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
+import { PortfolioSummary, PerformanceData, DividendEvent } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard';
 import { COMPLEX_METRIC_IDS, DEFAULT_ITEMS } from '../lib/dashboard_constants';
@@ -8,8 +8,12 @@ import {
     Activity, PiggyBank, Receipt, PieChart, Loader2, Zap,
     ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
+import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
 import { Holding } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
+import TodayStrip from './dashboard/TodayStrip';
+import DashboardEvents from './dashboard/DashboardEvents';
+import DashboardInsights from './dashboard/DashboardInsights';
 
 const RiskMetrics       = lazy(() => import('./RiskMetrics'));
 const PortfolioDonut    = lazy(() => import('./PortfolioDonut'));
@@ -47,6 +51,10 @@ interface DashboardProps {
      *  parent wants to render them in a specific position (e.g. risk metrics
      *  rendered after the performance graph on the dashboard tab). */
     excludeFromAnalytics?: string[];
+    /** Upcoming dividend events surfaced in the Events panel. */
+    dividendEvents?: DividendEvent[];
+    /** Longer (1y/daily) history used by the hero period selector. */
+    longHistory?: PerformanceData[];
 }
 
 // ── Animated number hook ─────────────────────────────────────────────────────
@@ -90,6 +98,76 @@ interface HeroCardProps {
     isLoading: boolean;
     isRefreshing: boolean;
     themeColor: string;
+    history?: PerformanceData[];      // intraday (1d / 5m)
+    longHistory?: PerformanceData[];  // 1y / daily
+}
+
+type HeroPeriod = 'day' | 'wtd' | 'mtd' | 'ytd' | '1y';
+
+const HERO_PERIODS: { key: HeroPeriod; label: string }[] = [
+    { key: 'day', label: '1D' },
+    { key: 'wtd', label: 'WTD' },
+    { key: 'mtd', label: 'MTD' },
+    { key: 'ytd', label: 'YTD' },
+    { key: '1y', label: '1Y' },
+];
+
+// Cutoff date (UTC midnight) for a given period — anything on/after this counts.
+function periodCutoff(period: HeroPeriod, now: Date): Date {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    if (period === 'wtd') {
+        // Monday-anchored week.
+        const dow = (d.getDay() + 6) % 7; // 0..6, Monday = 0
+        d.setDate(d.getDate() - dow);
+    } else if (period === 'mtd') {
+        d.setDate(1);
+    } else if (period === 'ytd') {
+        d.setMonth(0, 1);
+    } else if (period === '1y') {
+        d.setFullYear(d.getFullYear() - 1);
+    } // 'day' handled by caller (uses intraday history)
+    return d;
+}
+
+// Tiny intraday sparkline showing today's portfolio value path. Returns null if
+// there isn't enough variation to draw a meaningful line.
+function HeroSparkline({ history, positive }: { history: PerformanceData[]; positive: boolean }) {
+    const series = history
+        .filter(d => typeof d.value === 'number')
+        .map(d => ({ value: d.value as number }));
+    if (series.length < 2) return null;
+    const values = series.map(s => s.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (max - min < Math.max(0.01, max * 0.0005)) return null; // ~flat — skip
+
+    const stroke = positive ? '#10b981' : '#ef4444';
+    const gradId = `hero-spark-${positive ? 'up' : 'dn'}`;
+    return (
+        <div className="h-12 w-full mt-3">
+            <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={series} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+                    <defs>
+                        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={stroke} stopOpacity={0.35} />
+                            <stop offset="95%" stopColor={stroke} stopOpacity={0} />
+                        </linearGradient>
+                    </defs>
+                    <YAxis hide domain={[(d: number) => d * 0.999, (d: number) => d * 1.001]} />
+                    <Area
+                        type="monotone"
+                        dataKey="value"
+                        stroke={stroke}
+                        strokeWidth={2}
+                        fill={`url(#${gradId})`}
+                        dot={false}
+                        isAnimationActive={false}
+                    />
+                </AreaChart>
+            </ResponsiveContainer>
+        </div>
+    );
 }
 
 function StatPill({
@@ -124,13 +202,47 @@ function StatPill({
 
 function PortfolioHeroCard({
     marketValue, dayGL, dayGLPct, cumTWR, annTWR, irr,
-    currency, isLoading, isRefreshing, themeColor,
+    currency, isLoading, isRefreshing, themeColor, history, longHistory,
 }: HeroCardProps) {
     const animatedValue  = useAnimatedNumber(marketValue ?? 0);
     const animatedDayGL  = useAnimatedNumber(dayGL ?? 0);
     const animatedDayPct = useAnimatedNumber(dayGLPct ?? 0);
     const positive = (dayGL ?? 0) >= 0;
     const hasPerf = cumTWR != null || irr != null;
+    void themeColor;
+
+    const [heroPeriod, setHeroPeriod] = useState<HeroPeriod>('day');
+    // Freeze "now" at mount so re-renders don't shift period boundaries mid-session.
+    const [now] = useState<number>(() => Date.now());
+
+    // Derive the series + period return for the currently-selected window.
+    const periodView = useMemo(() => {
+        if (heroPeriod === 'day') {
+            const series = (history ?? []).filter(d => typeof d.value === 'number').map(d => ({ value: d.value as number }));
+            return { series, pct: dayGLPct ?? null, abs: dayGL ?? null };
+        }
+        const longRows = (longHistory ?? []).filter(d => typeof d.value === 'number' && d.date);
+        if (longRows.length === 0) return { series: [], pct: null, abs: null };
+        const cutoff = periodCutoff(heroPeriod, new Date(now));
+        const cutoffMs = cutoff.getTime();
+        const sliced = longRows.filter(d => new Date(d.date).getTime() >= cutoffMs);
+        // Anchor the period to the last point before the cutoff so the first
+        // delta represents the move INTO the period (avoids a misleading flat
+        // baseline if the cutoff falls between data points).
+        const beforeIdx = longRows.findIndex(d => new Date(d.date).getTime() >= cutoffMs);
+        const anchor = beforeIdx > 0 ? longRows[beforeIdx - 1] : (sliced[0] ?? longRows[0]);
+        const tail = sliced.length > 0 ? sliced : longRows.slice(-1);
+        const series = [anchor, ...tail].map(d => ({ value: d.value as number }));
+        const startVal = anchor?.value as number;
+        const endVal = tail[tail.length - 1]?.value as number;
+        if (!startVal || !endVal) return { series, pct: null, abs: null };
+        const abs = endVal - startVal;
+        const pct = (abs / startVal) * 100;
+        return { series, pct, abs };
+    }, [heroPeriod, history, longHistory, dayGL, dayGLPct, now]);
+
+    const periodPositive = (periodView.pct ?? 0) >= 0;
+    const sparklinePositive = heroPeriod === 'day' ? positive : periodPositive;
 
     return (
         <div className="metric-card card-shine relative overflow-hidden p-5 sm:p-6">
@@ -202,6 +314,53 @@ function PortfolioHeroCard({
                     </div>
                 )}
             </div>
+            {/* Period selector + sparkline + period return */}
+            {!isLoading && (
+                <div className="mt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
+                        <div className="inline-flex rounded-lg bg-secondary p-0.5">
+                            {HERO_PERIODS.map(p => (
+                                <button
+                                    key={p.key}
+                                    type="button"
+                                    onClick={() => setHeroPeriod(p.key)}
+                                    className={cn(
+                                        'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
+                                        heroPeriod === p.key
+                                            ? 'bg-[#0097b2] text-white'
+                                            : 'text-muted-foreground hover:text-foreground',
+                                    )}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
+                        </div>
+                        {periodView.pct != null && periodView.abs != null && heroPeriod !== 'day' && (
+                            <div className={cn(
+                                'inline-flex items-baseline gap-2 tabular-nums',
+                                periodPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                            )}>
+                                <span className="text-sm font-bold">
+                                    {periodPositive ? '+' : ''}{periodView.pct.toFixed(2)}%
+                                </span>
+                                <span className="text-xs text-muted-foreground/80 font-medium">
+                                    ({periodPositive ? '+' : ''}{formatCurrency(periodView.abs, currency)})
+                                </span>
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">
+                                    {HERO_PERIODS.find(p => p.key === heroPeriod)?.label}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                    {periodView.series.length > 1 ? (
+                        <HeroSparkline history={periodView.series as PerformanceData[]} positive={sparklinePositive} />
+                    ) : (
+                        <p className="text-[11px] text-muted-foreground/60 mt-2">
+                            Not enough history yet to chart this period.
+                        </p>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -226,6 +385,8 @@ function DashboardInner({
     themeColor = 'indigo-500',
     showClosed = false,
     excludeFromAnalytics = [],
+    dividendEvents = [],
+    longHistory = [],
 }: DashboardProps) {
     const m  = summary?.metrics;
 
@@ -385,7 +546,27 @@ function DashboardInner({
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     themeColor={themeColor}
+                    history={history}
+                    longHistory={longHistory}
                 />
+            )}
+
+            {/* ── Today panel: market context + movers ── */}
+            {!isLoading && holdings.length > 0 && (
+                <TodayStrip
+                    holdings={holdings}
+                    currency={currency}
+                    portfolioDayChangePct={dayGLPct}
+                    indices={m?.indices}
+                />
+            )}
+
+            {/* ── Upcoming events + actionable insights ── */}
+            {!isLoading && holdings.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
+                    <DashboardEvents events={dividendEvents} currency={currency} />
+                    <DashboardInsights holdings={holdings} currency={currency} />
+                </div>
             )}
 
             {/* ── Compact metric grid ── */}

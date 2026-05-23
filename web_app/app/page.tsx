@@ -327,7 +327,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
+    enabled: !!user && (activeTab === 'dividend' || activeTab === 'performance' || backgroundFetchLevel >= 2),
   });
 
   const historySparklineQuery = useQuery({
@@ -364,7 +364,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1y', benchmarks, '1d', undefined, undefined, signal),
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-    enabled: !!user && activeTab === 'asset_change',
+    enabled: !!user && (activeTab === 'asset_change' || activeTab === 'performance'),
   });
 
   const watchlistQuery = useQuery({
@@ -432,6 +432,8 @@ export default function Home() {
               portfolioHealth={portfolioHealthQuery.data || null}
               attributionData={attributionQuery.data}
               attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
+              dividendEvents={dividendCalendarQuery.data || []}
+              longHistory={perfHistoryQuery.data || []}
               holdings={holdings}
               visibleItems={visibleItems}
               accounts={selectedAccounts}
