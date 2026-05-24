@@ -117,6 +117,12 @@ export interface PortfolioSummary {
         sharpe_ratio?: number;
         beta?: number;
         ytd_return?: number;
+        // True when every account in the current selection has a closure date <= today.
+        // The backend sets rate-of-return metrics to null in that case to avoid the
+        // residual-dividend TWR inflation bug; the frontend renders "Closed" instead.
+        all_selected_closed?: boolean;
+        // Subset of the selected accounts that are closed (closure date <= today).
+        closed_accounts?: string[];
         indices?: Record<string, {
             price: number;
             change: number;
@@ -485,6 +491,7 @@ export interface Settings {
     user_excluded_symbols: string[];
     account_currency_map: Record<string, string>;
     account_cash_mode_map: Record<string, string>;
+    account_closure_dates?: Record<string, string>;
     account_groups: Record<string, string[]>;
     account_group_order?: string[];
     available_currencies: string[];
@@ -516,6 +523,7 @@ export interface SettingsUpdate {
     account_group_order?: string[];
     account_currency_map?: Record<string, string>;
     account_cash_mode_map?: Record<string, string>;
+    account_closure_dates?: Record<string, string>;
     available_currencies?: string[];
     account_interest_rates?: Record<string, number>;
     interest_free_thresholds?: Record<string, number>;

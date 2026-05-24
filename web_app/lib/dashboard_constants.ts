@@ -10,32 +10,55 @@ export const COMPLEX_METRIC_IDS = [
     'topContributors',
 ];
 
-// Order here drives BOTH the Layout dropdown menu and the dashboard's visual
-// reading order. Keep them in sync with what the dashboard tab actually
-// renders top-to-bottom.
+// IDs that render outside the compact metric grid AND outside the full-width
+// analytics grid (hero, today strip, events, insights). Dashboard.tsx renders
+// these explicitly at the top of the page.
+export const TOP_SECTION_IDS = [
+    'portfolioHero',
+    'todayStrip',
+    'dashboardEvents',
+    'dashboardInsights',
+];
+
+// Order here drives the dashboard's compact-grid visual order (and the array
+// order LayoutConfigurator uses within each group). The `group` field drives
+// the dropdown's grouping headers — it does NOT change rendering order.
 export const DEFAULT_ITEMS = [
-    // Compact metrics grid
-    { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-2 md:col-span-1' },
-    { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-2 md:col-span-1' },
-    { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-2 md:col-span-1' },
-    { id: 'annualTWR', title: 'Annual TWR', colSpan: 'col-span-2 lg:col-span-1' },
-    { id: 'mwr', title: 'IRR (MWR)', colSpan: 'col-span-1' },
-    { id: 'ytdDividends', title: 'Total Dividends', colSpan: 'col-span-1' },
-    { id: 'dividendYield', title: 'Dividend Yield %', colSpan: 'col-span-1' },
-    { id: 'ytdReturn', title: 'YTD Return', colSpan: 'col-span-1' },
-    { id: 'cashBalance', title: 'Cash Balance', colSpan: 'col-span-1' },
-    { id: 'fxGL', title: 'FX Gain/Loss', colSpan: 'col-span-2 md:col-span-1' },
-    { id: 'fees', title: 'Fees', colSpan: 'col-span-2 md:col-span-1' },
-    { id: 'taxes', title: 'Taxes', colSpan: 'col-span-2 md:col-span-1' },
-    // Full-width sections (rendered in this order by page.tsx)
-    { id: 'portfolioDonut', title: 'Portfolio Composition', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
-    { id: 'performanceGraph', title: 'Performance Graph', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
-    { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
-    { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
-    { id: 'topContributors', title: 'Top Contributors', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    // Overview (top of page)
+    { id: 'portfolioHero', title: 'Portfolio Hero', group: 'Overview' },
+    { id: 'todayStrip', title: 'Market Today', group: 'Overview' },
+    // Insights & Events
+    { id: 'dashboardEvents', title: 'Upcoming Events', group: 'Insights & Events' },
+    { id: 'dashboardInsights', title: 'Actionable Insights', group: 'Insights & Events' },
+    // Returns
+    { id: 'totalReturn', title: 'Total Return', group: 'Returns', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'unrealizedGL', title: 'Unrealized G/L', group: 'Returns', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'realizedGain', title: 'Realized Gain', group: 'Returns', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'annualTWR', title: 'Annual TWR', group: 'Returns', colSpan: 'col-span-2 lg:col-span-1' },
+    { id: 'mwr', title: 'IRR (MWR)', group: 'Returns', colSpan: 'col-span-1' },
+    // Income & Cash
+    { id: 'ytdDividends', title: 'Total Dividends', group: 'Income & Cash', colSpan: 'col-span-1' },
+    { id: 'dividendYield', title: 'Dividend Yield %', group: 'Income & Cash', colSpan: 'col-span-1' },
+    { id: 'ytdReturn', title: 'YTD Return', group: 'Income & Cash', colSpan: 'col-span-1' },
+    { id: 'cashBalance', title: 'Cash Balance', group: 'Income & Cash', colSpan: 'col-span-1' },
+    // Costs & FX
+    { id: 'fxGL', title: 'FX Gain/Loss', group: 'Costs & FX', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'fees', title: 'Fees', group: 'Costs & FX', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'taxes', title: 'Taxes', group: 'Costs & FX', colSpan: 'col-span-2 md:col-span-1' },
+    // Charts (full-width sections rendered in this order by page.tsx)
+    { id: 'portfolioDonut', title: 'Portfolio Composition', group: 'Charts', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    { id: 'performanceGraph', title: 'Performance Graph', group: 'Charts', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    // Risk & Attribution
+    { id: 'riskMetrics', title: 'Risk Analytics', group: 'Risk & Attribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    { id: 'sectorContribution', title: 'Sector Contribution', group: 'Risk & Attribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'topContributors', title: 'Top Contributors', group: 'Risk & Attribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
 ];
 
 export const INITIAL_VISIBLE_ITEMS = [
+    'portfolioHero',
+    'todayStrip',
+    'dashboardEvents',
+    'dashboardInsights',
     'totalReturn',
     'unrealizedGL',
     'realizedGain',

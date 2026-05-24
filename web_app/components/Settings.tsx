@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, syncIbkr, updateUserProfile, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { cn } from '../lib/utils';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
 import ManualValuationSettings from './ManualValuationSettings';
@@ -55,16 +56,16 @@ interface SettingsProps {
     initialTab?: Tab;
 }
 
-const TABS: { id: Tab, label: string, icon: React.ElementType, color: string }[] = [
-    { id: 'groups', label: 'Account Groups', icon: Users, color: 'text-indigo-500 dark:text-indigo-400' },
-    { id: 'overrides', label: 'Manual Overrides', icon: Sliders, color: 'text-emerald-500 dark:text-emerald-400' },
-    { id: 'mapping', label: 'Symbol Mapping', icon: MapIcon, color: 'text-blue-500 dark:text-blue-400' },
-    { id: 'excluded', label: 'Excluded Symbols', icon: XCircle, color: 'text-rose-500 dark:text-rose-400' },
-    { id: 'currencies', label: 'Account Currencies', icon: DollarSign, color: 'text-amber-500 dark:text-amber-400' },
-    { id: 'yield', label: 'Cash Yield', icon: Activity, color: 'text-green-500 dark:text-green-400' },
-    { id: 'valuation', label: 'Valuation Overrides', icon: Calculator, color: 'text-purple-500 dark:text-purple-400' },
-    { id: 'advanced', label: 'Advanced Settings', icon: SettingsIcon, color: 'text-zinc-500 dark:text-zinc-400' },
-    { id: 'account', label: 'Account & Security', icon: UserCircle, color: 'text-cyan-500 dark:text-cyan-400' },
+const TABS: { id: Tab, label: string, description: string, icon: React.ElementType, color: string }[] = [
+    { id: 'groups', label: 'Account Groups', description: 'Organize accounts into named groups for filtering and analysis.', icon: Users, color: 'text-indigo-500 dark:text-indigo-400' },
+    { id: 'overrides', label: 'Manual Overrides', description: 'Manually set price and metadata for any symbol when automatic data is wrong.', icon: Sliders, color: 'text-emerald-500 dark:text-emerald-400' },
+    { id: 'mapping', label: 'Symbol Mapping', description: 'Map custom portfolio symbols to their Yahoo Finance ticker equivalent.', icon: MapIcon, color: 'text-blue-500 dark:text-blue-400' },
+    { id: 'excluded', label: 'Excluded Symbols', description: 'Symbols that are skipped during portfolio calculations and data fetches.', icon: XCircle, color: 'text-rose-500 dark:text-rose-400' },
+    { id: 'currencies', label: 'Account Currencies', description: 'Manage available currencies and per-account currency / cash settings.', icon: DollarSign, color: 'text-amber-500 dark:text-amber-400' },
+    { id: 'yield', label: 'Cash Yield', description: 'Configure interest-yield assumptions for idle cash per account.', icon: Activity, color: 'text-green-500 dark:text-green-400' },
+    { id: 'valuation', label: 'Valuation Overrides', description: 'Override DCF and valuation model inputs for specific stocks.', icon: Calculator, color: 'text-purple-500 dark:text-purple-400' },
+    { id: 'advanced', label: 'Advanced Settings', description: 'Webhook integration, Interactive Brokers sync, and system cache.', icon: SettingsIcon, color: 'text-zinc-500 dark:text-zinc-400' },
+    { id: 'account', label: 'Account & Security', description: 'Manage your profile, password, and account.', icon: UserCircle, color: 'text-cyan-500 dark:text-cyan-400' },
 ];
 
 export default function Settings({ settings, holdings, availableAccounts, initialTab }: SettingsProps) {
@@ -110,8 +111,10 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
     // Common styling variables for new design
     const inputClassName = "w-full rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-sm text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500/50 px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all hover:border-black/20 dark:hover:border-white/20";
+    const compactInputClassName = "w-full rounded-lg border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/30 text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500/40 px-3 py-2 text-sm outline-none focus:ring-2 transition-all hover:border-black/20 dark:hover:border-white/20";
     const labelClassName = "block text-[11px] font-bold text-muted-foreground mb-1.5 uppercase tracking-wider";
     const cardClassName = "bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl p-6 rounded-2xl border border-white/40 dark:border-white/10 shadow-lg relative overflow-hidden";
+    const sectionTitleClassName = "text-lg font-bold text-foreground flex items-center gap-2";
     const primaryButtonClassName = "px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white rounded-xl font-medium shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2";
 
     // Derive portfolioCountries from holdings prop
@@ -355,6 +358,20 @@ export default function Settings({ settings, holdings, availableAccounts, initia
         }
     }
 
+    const updateAccountClosureDate = async (account: string, isoDate: string | null) => {
+        if (!settings) return;
+        const currentMap = { ...(settings.account_closure_dates || {}) };
+        if (isoDate) currentMap[account] = isoDate;
+        else delete currentMap[account];
+
+        try {
+            await updateSettings({ account_closure_dates: currentMap });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
+        } catch {
+            alert('Failed to update account closure date');
+        }
+    }
+
     const handleRefresh = async () => {
         try {
             const res = await triggerRefresh(refreshSecret);
@@ -508,14 +525,15 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                     <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent opacity-50" />
                     
                     {/* Header for active tab */}
-                    <div className="px-8 py-6 border-b border-black/5 dark:border-white/5 flex items-center gap-4 bg-white/20 dark:bg-black/20">
+                    <div className="px-8 py-6 border-b border-black/5 dark:border-white/5 flex items-start gap-4 bg-white/20 dark:bg-black/20">
                         {activeTabObj && (
                             <>
-                                <div className={`p-2.5 rounded-xl bg-white dark:bg-zinc-900 shadow-sm border border-black/5 dark:border-white/5 ${activeTabObj.color}`}>
+                                <div className={`p-2.5 rounded-xl bg-white dark:bg-zinc-900 shadow-sm border border-black/5 dark:border-white/5 ${activeTabObj.color} shrink-0`}>
                                     <activeTabObj.icon className="w-6 h-6" />
                                 </div>
-                                <div>
-                                    <h3 className="text-xl font-bold text-foreground">{activeTabObj.label}</h3>
+                                <div className="min-w-0">
+                                    <h3 className="text-xl font-bold text-foreground leading-tight">{activeTabObj.label}</h3>
+                                    <p className="text-sm text-muted-foreground mt-1">{activeTabObj.description}</p>
                                 </div>
                             </>
                         )}
@@ -560,12 +578,15 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
                             {/* Account Tab */}
                             {activeTab === 'account' && (
-                                <div className="space-y-6 max-w-3xl">
+                                <div className="space-y-8 max-w-3xl">
                                     <div className={cardClassName}>
-                                        <div className="flex items-center gap-3 mb-6">
-                                            <UserCircle className="w-6 h-6 text-cyan-500" />
-                                            <h3 className="text-lg font-bold text-foreground">Profile Information</h3>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <UserCircle className="w-5 h-5 text-cyan-500" />
+                                                Profile Information
+                                            </h3>
                                         </div>
+                                        <p className="text-sm text-muted-foreground mb-6">Identifiers and display name shown across the app.</p>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div className="space-y-1">
                                                 <label className={labelClassName}>Username</label>
@@ -603,10 +624,13 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                     </div>
 
                                     <div className={cardClassName}>
-                                        <div className="flex items-center gap-3 mb-6">
-                                            <ShieldAlert className="w-6 h-6 text-amber-500" />
-                                            <h3 className="text-lg font-bold text-foreground">Security</h3>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <ShieldAlert className="w-5 h-5 text-amber-500" />
+                                                Security
+                                            </h3>
                                         </div>
+                                        <p className="text-sm text-muted-foreground mb-6">Change your account password.</p>
                                         <form onSubmit={handleChangePassword} className="space-y-5">
                                             <div className="space-y-1">
                                                 <label className={labelClassName}>Current Password</label>
@@ -703,11 +727,14 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             {activeTab === 'overrides' && (
                                 <div className="space-y-8">
                                     <div className={cardClassName}>
-                                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                                            <Sliders className="w-4 h-4 text-emerald-500" />
-                                            Add / Edit Override
-                                        </h3>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <Sliders className="w-5 h-5 text-emerald-500" />
+                                                Add / Edit Override
+                                            </h3>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground mb-5">Set a manual price, asset type, or any metadata field for a symbol.</p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                                             <div className="space-y-1.5">
                                                 <label className={labelClassName}>Symbol</label>
                                                 <input
@@ -802,19 +829,26 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                         </div>
                                     </div>
 
-                                    <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
+                                    <div className={`${cardClassName} !p-0`}>
+                                        <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
+                                            <h3 className={sectionTitleClassName}>
+                                                <Sliders className="w-5 h-5 text-emerald-500" />
+                                                Active Overrides
+                                                <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">{Object.entries(overrides).length}</span>
+                                            </h3>
+                                        </div>
                                         <div className="overflow-x-auto">
                                             <table className="min-w-full text-sm">
                                                 <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
                                                     <tr>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Symbol</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Price</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Asset Type</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Sector</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Country</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Industry</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Market</th>
-                                                        <th className="px-6 py-4 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
+                                                        <th className="sticky left-0 z-20 px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs bg-zinc-100 dark:bg-zinc-800 shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">Symbol</th>
+                                                        <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Price</th>
+                                                        <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Asset Type</th>
+                                                        <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Sector</th>
+                                                        <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Country</th>
+                                                        <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Industry</th>
+                                                        <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Market</th>
+                                                        <th className="px-6 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-black/5 dark:divide-white/5">
@@ -839,7 +873,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
                                                                 return (
                                                                     <tr key={symbol} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
-                                                                        <td className="px-6 py-4 whitespace-nowrap font-bold text-foreground">{symbol}</td>
+                                                                        <td className="sticky left-0 z-10 px-6 py-4 whitespace-nowrap font-bold text-foreground bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800 transition-colors shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">{symbol}</td>
                                                                         <td className="px-6 py-4 whitespace-nowrap text-muted-foreground font-mono">
                                                                             {price === 0
                                                                                 ? <span className="opacity-50">-</span>
@@ -894,10 +928,13 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             {activeTab === 'mapping' && (
                                 <div className="space-y-8 max-w-4xl">
                                     <div className={cardClassName}>
-                                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                                            <MapIcon className="w-4 h-4 text-blue-500" />
-                                            Add Symbol Mapping
-                                        </h3>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <MapIcon className="w-5 h-5 text-blue-500" />
+                                                Add Symbol Mapping
+                                            </h3>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground mb-5">Resolve custom or broker-specific tickers to a real Yahoo Finance symbol.</p>
                                         <div className="flex flex-col md:flex-row gap-4 items-end">
                                             <div className="flex-1 w-full space-y-1">
                                                 <label className={labelClassName}>Portfolio Symbol</label>
@@ -933,14 +970,21 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                         </div>
                                     </div>
 
-                                    <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
+                                    <div className={`${cardClassName} !p-0`}>
+                                        <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
+                                            <h3 className={sectionTitleClassName}>
+                                                <MapIcon className="w-5 h-5 text-blue-500" />
+                                                Active Mappings
+                                                <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">{Object.entries(symbolMap).length}</span>
+                                            </h3>
+                                        </div>
                                         <table className="min-w-full text-sm">
                                             <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
                                                 <tr>
-                                                    <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Portfolio Symbol</th>
-                                                    <th className="px-6 py-4 text-center font-semibold text-muted-foreground uppercase tracking-wider text-xs w-16"></th>
-                                                    <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Mapped Ticker</th>
-                                                    <th className="px-6 py-4 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
+                                                    <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Portfolio Symbol</th>
+                                                    <th className="px-6 py-3 text-center font-semibold text-muted-foreground uppercase tracking-wider text-xs w-16"></th>
+                                                    <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Mapped Ticker</th>
+                                                    <th className="px-6 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-black/5 dark:divide-white/5">
@@ -980,12 +1024,15 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             {activeTab === 'excluded' && (
                                 <div className="space-y-8 max-w-4xl">
                                     <div className={cardClassName}>
-                                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                                            <XCircle className="w-4 h-4 text-rose-500" />
-                                            Exclude a Symbol
-                                        </h3>
-                                        <div className="flex gap-4 items-end">
-                                            <div className="flex-1 space-y-1">
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <XCircle className="w-5 h-5 text-rose-500" />
+                                                Exclude a Symbol
+                                            </h3>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground mb-5">Excluded symbols are skipped during portfolio calculations and data fetches.</p>
+                                        <div className="flex gap-3 items-end">
+                                            <div className="flex-1 space-y-1.5">
                                                 <label className={labelClassName}>Symbol to Exclude</label>
                                                 <input
                                                     type="text"
@@ -1006,26 +1053,35 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                         </div>
                                     </div>
 
-                                    <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
+                                    <div className={cardClassName}>
+                                        <h3 className={`${sectionTitleClassName} mb-5`}>
+                                            <XCircle className="w-5 h-5 text-rose-500" />
+                                            Excluded Symbols
+                                            <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">{excluded.length}</span>
+                                        </h3>
                                         {excluded.length === 0 ? (
-                                            <div className="p-12 text-center text-muted-foreground">
+                                            <div className="py-10 text-center text-muted-foreground border border-dashed border-black/10 dark:border-white/10 rounded-xl">
                                                 No excluded symbols.
                                             </div>
                                         ) : (
-                                            <ul className="divide-y divide-black/5 dark:divide-white/5">
+                                            <div className="flex flex-wrap gap-2">
                                                 {excluded.map((sym, idx) => (
-                                                    <li key={sym + idx} className="px-6 py-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
-                                                        <span className="font-bold text-foreground">{sym}</span>
+                                                    <div
+                                                        key={sym + idx}
+                                                        className="group inline-flex items-center gap-2 bg-rose-500/10 border border-rose-500/30 hover:border-rose-500/50 px-3 py-1.5 rounded-lg transition-colors"
+                                                    >
+                                                        <span className="font-bold font-mono text-rose-700 dark:text-rose-300 text-sm">{sym}</span>
                                                         <button
                                                             type="button"
                                                             onClick={() => removeExcluded(sym)}
-                                                            className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                            className="opacity-40 group-hover:opacity-100 text-red-500 hover:text-red-600 transition-opacity"
+                                                            aria-label={`Remove ${sym}`}
                                                         >
-                                                            <Trash2 className="w-4 h-4" />
+                                                            <Trash2 className="w-3.5 h-3.5" />
                                                         </button>
-                                                    </li>
+                                                    </div>
                                                 ))}
-                                            </ul>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -1033,91 +1089,152 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
                             {/* Currencies Tab */}
                             {activeTab === 'currencies' && (
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    <div className="space-y-6">
-                                        <h3 className="text-lg font-bold flex items-center gap-2">
-                                            <DollarSign className="w-5 h-5 text-amber-500" />
-                                            Available Currencies
-                                        </h3>
-                                        <div className="flex gap-3">
-                                            <input
-                                                type="text"
-                                                value={newCurrency}
-                                                onChange={(e) => setNewCurrency(e.target.value.toUpperCase())}
-                                                placeholder="e.g. SGD"
-                                                className={inputClassName}
-                                                maxLength={3}
-                                            />
+                                <div className="space-y-8">
+                                    {/* Available Currencies Section */}
+                                    <div className={cardClassName}>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <DollarSign className="w-5 h-5 text-amber-500" />
+                                                Available Currencies
+                                                <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">{availableCurrencies.length}</span>
+                                            </h3>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground mb-5">Currencies you can assign to accounts below.</p>
+
+                                        {availableCurrencies.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mb-5">
+                                                {availableCurrencies.map(curr => (
+                                                    <div
+                                                        key={curr}
+                                                        className="group inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/50 px-3 py-1.5 rounded-lg transition-colors"
+                                                    >
+                                                        <span className="font-bold font-mono text-amber-700 dark:text-amber-300 text-sm">{curr}</span>
+                                                        <button
+                                                            onClick={() => removeCurrency(curr)}
+                                                            className="opacity-40 group-hover:opacity-100 text-red-500 hover:text-red-600 transition-opacity"
+                                                            aria-label={`Remove ${curr}`}
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div className="flex gap-3 items-end max-w-md pt-5 border-t border-black/5 dark:border-white/5">
+                                            <div className="flex-1 space-y-1.5">
+                                                <label className={labelClassName}>Add a Currency</label>
+                                                <input
+                                                    type="text"
+                                                    value={newCurrency}
+                                                    onChange={(e) => setNewCurrency(e.target.value.toUpperCase())}
+                                                    placeholder="e.g. SGD"
+                                                    className={inputClassName}
+                                                    maxLength={3}
+                                                />
+                                            </div>
                                             <button
                                                 type="button"
                                                 onClick={addCurrency}
                                                 disabled={!newCurrency}
-                                                className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50"
+                                                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50"
                                             >
                                                 Add
                                             </button>
                                         </div>
-                                        <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
-                                            <ul className="divide-y divide-black/5 dark:divide-white/5">
-                                                {availableCurrencies.map(curr => (
-                                                    <li key={curr} className="px-6 py-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 group transition-colors">
-                                                        <span className="font-bold font-mono text-foreground">{curr}</span>
-                                                        <button
-                                                            onClick={() => removeCurrency(curr)}
-                                                            className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
                                     </div>
 
-                                    <div className="space-y-6">
-                                        <h3 className="text-lg font-bold flex items-center gap-2">
-                                            <SettingsIcon className="w-5 h-5 text-zinc-500" />
-                                            Account Preferences
-                                        </h3>
-                                        <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
-                                            <table className="min-w-full text-sm">
-                                                <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
-                                                    <tr>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Account</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Default Currency</th>
-                                                        <th className="px-6 py-4 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Cash Mgmt</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                                                    {availableAccounts.map(account => (
-                                                        <tr key={account} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                                            <td className="px-6 py-4 font-medium text-foreground">{account}</td>
-                                                            <td className="px-4 py-2">
-                                                                <select
-                                                                    value={accountCurrencyMap[account] || 'USD'}
-                                                                    onChange={(e) => updateAccountCurrency(account, e.target.value)}
-                                                                    className={inputClassName}
-                                                                >
-                                                                    {availableCurrencies.map(curr => (
-                                                                        <option key={curr} value={curr} className="bg-background text-foreground">{curr}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </td>
-                                                            <td className="px-4 py-2">
-                                                                <select
-                                                                    value={settings?.account_cash_mode_map?.[account] || 'Manual'}
-                                                                    onChange={(e) => updateAccountCashMode(account, e.target.value)}
-                                                                    className={inputClassName}
-                                                                >
-                                                                    <option value="Manual" className="bg-background text-foreground">Manual</option>
-                                                                    <option value="Auto" className="bg-background text-foreground">Auto</option>
-                                                                </select>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                    {/* Account Preferences Section */}
+                                    <div className={cardClassName}>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <SettingsIcon className="w-5 h-5 text-zinc-500" />
+                                                Account Preferences
+                                                <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">{availableAccounts.length}</span>
+                                            </h3>
                                         </div>
+                                        <p className="text-sm text-muted-foreground mb-5">Configure currency, cash management mode, and closure date for each account.</p>
+
+                                        {availableAccounts.length === 0 ? (
+                                            <div className="text-center text-muted-foreground py-12 border border-dashed border-black/10 dark:border-white/10 rounded-xl">
+                                                No accounts found.
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {availableAccounts.map(account => {
+                                                    const closureDate = settings?.account_closure_dates?.[account] || '';
+                                                    const isEffectivelyClosed = closureDate && closureDate <= new Date().toISOString().slice(0, 10);
+                                                    return (
+                                                        <div
+                                                            key={account}
+                                                            className={cn(
+                                                                "bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/10 rounded-xl p-4 transition-all hover:border-black/15 dark:hover:border-white/20",
+                                                                isEffectivelyClosed && "opacity-70"
+                                                            )}
+                                                        >
+                                                            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-black/5 dark:border-white/5">
+                                                                <span className={cn(
+                                                                    "font-bold text-foreground",
+                                                                    isEffectivelyClosed && "line-through"
+                                                                )}>{account}</span>
+                                                                {isEffectivelyClosed && (
+                                                                    <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 rounded-full">
+                                                                        Closed
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                                <div className="space-y-1.5">
+                                                                    <label className={labelClassName}>Default Currency</label>
+                                                                    <select
+                                                                        value={accountCurrencyMap[account] || 'USD'}
+                                                                        onChange={(e) => updateAccountCurrency(account, e.target.value)}
+                                                                        className={compactInputClassName}
+                                                                    >
+                                                                        {availableCurrencies.map(curr => (
+                                                                            <option key={curr} value={curr} className="bg-background text-foreground">{curr}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1.5">
+                                                                    <label className={labelClassName}>Cash Management</label>
+                                                                    <select
+                                                                        value={settings?.account_cash_mode_map?.[account] || 'Manual'}
+                                                                        onChange={(e) => updateAccountCashMode(account, e.target.value)}
+                                                                        className={compactInputClassName}
+                                                                    >
+                                                                        <option value="Manual" className="bg-background text-foreground">Manual</option>
+                                                                        <option value="Auto" className="bg-background text-foreground">Auto</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1.5">
+                                                                    <label className={labelClassName}>Closure Date</label>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input
+                                                                            type="date"
+                                                                            value={closureDate}
+                                                                            onChange={(e) => updateAccountClosureDate(account, e.target.value || null)}
+                                                                            className={compactInputClassName}
+                                                                        />
+                                                                        {closureDate && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => updateAccountClosureDate(account, null)}
+                                                                                className="shrink-0 p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                                                title="Clear closure date"
+                                                                                aria-label="Clear closure date"
+                                                                            >
+                                                                                <Trash2 className="w-4 h-4" />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -1127,15 +1244,17 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                 <div className="space-y-8 max-w-4xl">
                                     {/* Webhook Connection */}
                                     <div className={`${cardClassName} border-l-4 border-l-cyan-500`}>
-                                        <h3 className="text-lg font-bold mb-4 text-foreground flex items-center gap-2">
-                                            <Activity className="w-5 h-5 text-cyan-500" />
-                                            Webhook Integration
-                                        </h3>
-                                        <div className="space-y-4">
-                                            <p className="text-sm text-muted-foreground leading-relaxed">
-                                                Trigger a background data refresh externally by sending a POST request to: <br/>
-                                                <code className="inline-block mt-2 bg-black/5 dark:bg-white/10 px-3 py-1.5 rounded-lg text-xs text-cyan-600 dark:text-cyan-400 font-mono border border-black/10 dark:border-white/10">POST /api/webhook/refresh</code>
-                                            </p>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <Activity className="w-5 h-5 text-cyan-500" />
+                                                Webhook Integration
+                                            </h3>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+                                            Trigger a background data refresh externally by sending a POST request to{' '}
+                                            <code className="inline-block bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-md text-xs text-cyan-600 dark:text-cyan-400 font-mono border border-black/10 dark:border-white/10 align-middle">POST /api/webhook/refresh</code>
+                                        </p>
+                                        <div className="space-y-3">
                                             <div className="flex gap-3 max-w-md">
                                                 <input
                                                     type="text"
@@ -1162,19 +1281,17 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
                                     {/* IBKR Integration */}
                                     <div className={`${cardClassName} border-l-4 border-l-blue-500`}>
-                                        <div className="flex justify-between items-start mb-6">
-                                            <div>
-                                                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                                                    <Sliders className="w-5 h-5 text-blue-500" />
-                                                    Interactive Brokers Sync
-                                                </h3>
-                                                <p className="text-sm text-muted-foreground mt-2">
-                                                    Sync transactions using IBKR Flex Web Service. Requires an active Activity Flex Query.
-                                                </p>
-                                            </div>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <Sliders className="w-5 h-5 text-blue-500" />
+                                                Interactive Brokers Sync
+                                            </h3>
                                         </div>
+                                        <p className="text-sm text-muted-foreground mb-5">
+                                            Sync transactions using IBKR Flex Web Service. Requires an active Activity Flex Query.
+                                        </p>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
                                             <div className="space-y-1.5">
                                                 <label className={labelClassName}>Flex Token</label>
                                                 <input
@@ -1229,15 +1346,17 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
                                     {/* Cache Management Section */}
                                     <div className={`${cardClassName} border-l-4 border-l-red-500`}>
-                                        <h3 className="text-lg font-bold mb-4 text-foreground flex items-center gap-2">
-                                            <ShieldAlert className="w-5 h-5 text-red-500" />
-                                            System Cache
-                                        </h3>
+                                        <div className="mb-2">
+                                            <h3 className={sectionTitleClassName}>
+                                                <ShieldAlert className="w-5 h-5 text-red-500" />
+                                                System Cache
+                                            </h3>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+                                            Clear local caches to resolve data discrepancies. This drops historical performance data, market quotes, and metadata, forcing a fresh download on the next load.
+                                        </p>
                                         <div className="space-y-6">
-                                            <p className="text-sm text-muted-foreground leading-relaxed">
-                                                Clear local caches to resolve data discrepancies. This drops historical performance data, market quotes, and metadata, forcing a fresh download on the next load.
-                                            </p>
-                                            <div className="flex items-center gap-4">
+                                            <div className="flex items-center gap-4 flex-wrap">
                                                 <button
                                                     type="button"
                                                     onClick={handleClearCache}

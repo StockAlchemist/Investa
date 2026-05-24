@@ -912,6 +912,37 @@ def _filter_closed_positions(result: Dict[str, Any], show_closed_positions: bool
     
     return result
 
+def compute_account_closure_state(
+    include_accounts: Optional[List[str]],
+    closure_dates: Dict[str, str],
+    today_date: date,
+) -> Tuple[List[str], bool]:
+    """Given a slice of accounts + the user's account_closure_dates map, return
+    (closed_in_slice, all_selected_closed). `all_selected_closed` is True only
+    when every account in `include_accounts` has a closure date <= today_date.
+
+    Unparseable date strings are ignored (treated as open). An empty / None
+    `include_accounts` (the all-accounts view) is never considered closed.
+    """
+    closed_in_slice: List[str] = []
+    if not include_accounts:
+        return closed_in_slice, False
+    for acc in include_accounts:
+        d_str = closure_dates.get(acc)
+        if not d_str:
+            continue
+        try:
+            closure_date = datetime.strptime(str(d_str), "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if closure_date <= today_date:
+            closed_in_slice.append(acc)
+    all_selected_closed = (
+        bool(closed_in_slice) and len(closed_in_slice) == len(include_accounts)
+    )
+    return closed_in_slice, all_selected_closed
+
+
 async def _calculate_portfolio_summary_internal(
     currency: str = "USD",
     include_accounts: Optional[List[str]] = None,
@@ -1034,6 +1065,18 @@ async def _calculate_portfolio_summary_internal(
             # Re-raise to return 500 but now it's logged
             raise HTTPException(status_code=500, detail=f"Calculation Error: {str(e_calc)}")
     
+    # --- Closed-account gating ---
+    # If every account in `include_accounts` has a closure date on or before today,
+    # rate-of-return metrics (TWR / IRR / yields) are unreliable due to residual
+    # dividends arriving on a near-zero capital base. Skip TWR computation and gate
+    # the affected response fields to None. Absolute-dollar metrics stay populated.
+    closure_dates_map: Dict[str, str] = {}
+    if config_manager:
+        closure_dates_map = config_manager.gui_config.get("account_closure_dates", {}) or {}
+    closed_accounts_in_slice, all_selected_closed = compute_account_closure_state(
+        include_accounts, closure_dates_map, date.today()
+    )
+
     # --- Calculate Annualized TWR and include in metrics ---
     # FIX: Always use live computation via _get_historical_performance_cached.
     # Previously, this used pre-calculated snapshots from portfolio_snapshots table
@@ -1044,7 +1087,7 @@ async def _calculate_portfolio_summary_internal(
     # graph and is already cached in-memory, so it's fast after first load.
     annualized_twr = None
     cumulative_twr = None
-    if not df.empty:
+    if not df.empty and not all_selected_closed:
         try:
             df_for_twr = df
             if include_accounts:
@@ -1091,38 +1134,57 @@ async def _calculate_portfolio_summary_internal(
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
         overall_summary_metrics["cumulative_twr"] = cumulative_twr
-        
-        # --- NEW: Calculate Historical Dividend Metrics ---
-        # Similar to TWR, these are based on total history (since inception)
-        total_dividends = overall_summary_metrics.get("dividends", 0.0)
-        total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
-        
-        # We need 'days' since inception for the annualized calculation.
-        # Recalculate 'days' if not already in scope from one of the TWR branches.
-        days_since_inception = 0
-        try:
-            df_for_days = df
-            if include_accounts:
-                df_for_days = df[df["Account"].isin(include_accounts)]
-            if not df_for_days.empty:
-                min_date_val = df_for_days["Date"].min().date()
-                days_since_inception = (date.today() - min_date_val).days
-        except Exception:
-            pass
 
-        if abs(total_buy_cost) > 1e-9:
-            # 1. Cumulative Historical Dividend Return % (Yield on Cost)
-            div_cum = (total_dividends / total_buy_cost) * 100.0
-            overall_summary_metrics["dividend_return_cumulative"] = div_cum
-            
-            # 2. Annualized Historical Dividend Return %
-            if days_since_inception > 0:
-                # Geometric annualization: (1 + total_div/total_cost)^(365.25/days) - 1
-                div_factor = 1.0 + (total_dividends / total_buy_cost)
-                if div_factor > 0:
-                    annual_div_factor = div_factor ** (365.25 / days_since_inception)
-                    overall_summary_metrics["dividend_return_annualized"] = (annual_div_factor - 1) * 100.0
-        # --- END NEW ---
+        if not all_selected_closed:
+            # --- NEW: Calculate Historical Dividend Metrics ---
+            # Similar to TWR, these are based on total history (since inception)
+            total_dividends = overall_summary_metrics.get("dividends", 0.0)
+            total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
+
+            # We need 'days' since inception for the annualized calculation.
+            # Recalculate 'days' if not already in scope from one of the TWR branches.
+            days_since_inception = 0
+            try:
+                df_for_days = df
+                if include_accounts:
+                    df_for_days = df[df["Account"].isin(include_accounts)]
+                if not df_for_days.empty:
+                    min_date_val = df_for_days["Date"].min().date()
+                    days_since_inception = (date.today() - min_date_val).days
+            except Exception:
+                pass
+
+            if abs(total_buy_cost) > 1e-9:
+                # 1. Cumulative Historical Dividend Return % (Yield on Cost)
+                div_cum = (total_dividends / total_buy_cost) * 100.0
+                overall_summary_metrics["dividend_return_cumulative"] = div_cum
+
+                # 2. Annualized Historical Dividend Return %
+                if days_since_inception > 0:
+                    # Geometric annualization: (1 + total_div/total_cost)^(365.25/days) - 1
+                    div_factor = 1.0 + (total_dividends / total_buy_cost)
+                    if div_factor > 0:
+                        annual_div_factor = div_factor ** (365.25 / days_since_inception)
+                        overall_summary_metrics["dividend_return_annualized"] = (annual_div_factor - 1) * 100.0
+            # --- END NEW ---
+
+        # Gate all rate-of-return metrics for closed-account slices. Absolute-dollar
+        # metrics (cash balance, realized gain, dividends, fees, taxes, ...) keep
+        # their historical values.
+        if all_selected_closed:
+            for key in (
+                "annualized_twr",
+                "cumulative_twr",
+                "portfolio_mwr",
+                "ytd_return",
+                "dividend_return_cumulative",
+                "dividend_return_annualized",
+                "total_return_pct",
+            ):
+                overall_summary_metrics[key] = None
+
+        overall_summary_metrics["all_selected_closed"] = all_selected_closed
+        overall_summary_metrics["closed_accounts"] = closed_accounts_in_slice
 
         # Base calculator now correctly includes cash interest (due to fresh config load).
         # We verified 'est_annual_income_display' matches user expectations (~$5237).
@@ -3631,6 +3693,7 @@ async def get_settings(
             "selected_accounts": config_manager.gui_config.get("selected_accounts", []),
             "active_tab": config_manager.gui_config.get("active_tab", "performance"),
             "account_cash_mode_map": config_manager.gui_config.get("account_cash_mode_map", {}),
+            "account_closure_dates": config_manager.gui_config.get("account_closure_dates", {}),
             "ibkr_token": config_manager.manual_overrides.get("ibkr_token") or getattr(config, "IBKR_TOKEN", None),
             "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or getattr(config, "IBKR_QUERY_ID", None),
             "target_allocation": config_manager.gui_config.get("target_allocation", {}),
@@ -3647,6 +3710,10 @@ class SettingsUpdate(BaseModel):
     account_group_order: Optional[List[str]] = None
     account_currency_map: Optional[Dict[str, str]] = None
     account_cash_mode_map: Optional[Dict[str, str]] = None
+    # Per-account closure dates (ISO YYYY-MM-DD). When a slice consists entirely
+    # of closed accounts (date <= today), rate-of-return metrics are gated to
+    # avoid the residual-dividend TWR inflation bug.
+    account_closure_dates: Optional[Dict[str, str]] = None
     available_currencies: Optional[List[str]] = None
     account_interest_rates: Optional[Dict[str, float]] = None
     interest_free_thresholds: Optional[Dict[str, float]] = None
@@ -3735,6 +3802,10 @@ async def update_settings(
              
         if settings.account_cash_mode_map is not None:
              config_manager.gui_config["account_cash_mode_map"] = settings.account_cash_mode_map
+             gui_config_changed = True
+
+        if settings.account_closure_dates is not None:
+             config_manager.gui_config["account_closure_dates"] = settings.account_closure_dates
              gui_config_changed = True
 
         if settings.available_currencies is not None:

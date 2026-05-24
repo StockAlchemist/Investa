@@ -80,6 +80,7 @@ class ConfigManager:
             "theme": "light",
             "account_groups": {},
             "account_cash_mode_map": {},
+            "account_closure_dates": {},
             "available_currencies": ["USD", "THB", "EUR", "GBP", "JPY", "CNY"],
             "visible_items": [],
             "benchmarks": ['S&P 500', 'Dow Jones', 'NASDAQ'],

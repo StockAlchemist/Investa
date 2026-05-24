@@ -6,6 +6,8 @@ export interface LayoutItem {
     title: string;
     /** Optional CSS col-span (only used by the Dashboard grid) */
     colSpan?: string;
+    /** Optional group label used to render section headers in the Layout dropdown. */
+    group?: string;
 }
 
 // ── Per-tab layout definitions ────────────────────────────────────────────────

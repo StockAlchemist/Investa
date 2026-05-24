@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 interface LayoutItem {
     id: string;
     title: string;
+    group?: string;
 }
 
 interface LayoutConfiguratorProps {
@@ -17,6 +18,63 @@ interface LayoutConfiguratorProps {
     className?: string;
     variant?: 'default' | 'ghost';
     align?: 'left' | 'right';
+}
+
+// Collects items by group in first-seen order while preserving array order
+// within each group. If no item has a group, returns a single anonymous group
+// so consumers like allocation/asset_change tabs keep the old flat look.
+function groupItems(items: LayoutItem[]): { label: string | null; items: LayoutItem[] }[] {
+    const groups: { label: string | null; items: LayoutItem[] }[] = [];
+    const indexByLabel = new Map<string | null, number>();
+    for (const item of items) {
+        const label = item.group ?? null;
+        let idx = indexByLabel.get(label);
+        if (idx === undefined) {
+            idx = groups.length;
+            indexByLabel.set(label, idx);
+            groups.push({ label, items: [] });
+        }
+        groups[idx].items.push(item);
+    }
+    return groups;
+}
+
+function renderItemList(
+    items: LayoutItem[],
+    visibleItems: string[],
+    toggleItem: (id: string) => void
+) {
+    const groups = groupItems(items);
+    const hasAnyLabel = groups.some(g => g.label !== null);
+    return groups.map((group, gi) => (
+        <div key={group.label ?? `__nogroup_${gi}`}>
+            {hasAnyLabel && group.label && (
+                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+                    {group.label}
+                </div>
+            )}
+            {group.items.map((item) => {
+                const isVisible = visibleItems.includes(item.id);
+                return (
+                    <button
+                        key={item.id}
+                        onClick={() => toggleItem(item.id)}
+                        className={cn(
+                            "group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors last:border-0",
+                            isVisible
+                                ? 'bg-[#0097b2] text-white'
+                                : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                        )}
+                    >
+                        <span>{item.title}</span>
+                        {isVisible && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                    </button>
+                );
+            })}
+        </div>
+    ));
 }
 
 export default function LayoutConfigurator({
@@ -92,26 +150,7 @@ export default function LayoutConfigurator({
                         <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
                             {sectionTitle}
                         </div>
-                        {items.map((item) => {
-                            const isVisible = visibleItems.includes(item.id);
-                            return (
-                                <button
-                                    key={item.id}
-                                    onClick={() => toggleItem(item.id)}
-                                    className={cn(
-                                        "group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors last:border-0",
-                                        isVisible
-                                            ? 'bg-[#0097b2] text-white'
-                                            : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                    )}
-                                >
-                                    <span>{item.title}</span>
-                                    {isVisible && (
-                                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                    )}
-                                </button>
-                            );
-                        })}
+                        {renderItemList(items, visibleItems, toggleItem)}
                     </div>
                 </div>
             )}

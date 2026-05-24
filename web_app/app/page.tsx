@@ -133,6 +133,12 @@ export default function Home() {
             if (idx >= 0) p.splice(idx + 1, 0, 'performanceGraph');
             else p.push('performanceGraph');
           }
+          // Migration: the hero, today strip, events, and insights cards used
+          // to render unconditionally. Default them ON for existing users so
+          // they don't silently disappear after the upgrade.
+          const topSections = ['portfolioHero', 'todayStrip', 'dashboardEvents', 'dashboardInsights'];
+          const missingTop = topSections.filter(id => !p.includes(id));
+          if (missingTop.length > 0) p.unshift(...missingTop);
           setVisibleItems(p);
         }
       }

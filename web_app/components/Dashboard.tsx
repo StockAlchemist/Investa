@@ -2,7 +2,7 @@ import { memo, lazy, Suspense, useState, useEffect, useRef, useMemo } from 'reac
 import { PortfolioSummary, PerformanceData, DividendEvent } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard';
-import { COMPLEX_METRIC_IDS, DEFAULT_ITEMS } from '../lib/dashboard_constants';
+import { COMPLEX_METRIC_IDS, DEFAULT_ITEMS, TOP_SECTION_IDS } from '../lib/dashboard_constants';
 import {
     Wallet, TrendingUp, TrendingDown, DollarSign, Percent,
     Activity, PiggyBank, Receipt, PieChart, Loader2, Zap,
@@ -426,6 +426,14 @@ function DashboardInner({
     const totalGain      = m?.total_gain ?? null;
     const realizedGain   = m?.realized_gain ?? null;
 
+    // When every account in the current selection has a closure date <= today,
+    // the backend gates rate-of-return metrics to null. The cards listed in
+    // GATED_WHEN_CLOSED render "Closed" instead of "-" so the user understands
+    // why the number is missing (vs. a transient calculation error).
+    const allSelectedClosed = m?.all_selected_closed === true;
+    const closedAccounts    = m?.closed_accounts ?? [];
+    const GATED_WHEN_CLOSED = new Set(['totalReturn', 'annualTWR', 'mwr', 'ytdReturn', 'dividendYield']);
+
     let unrealizedGLPct: number | null = null;
     const costBasisHeld = m?.['cost_basis_held'] as number | undefined;
     if (m && m.unrealized_gain != null && costBasisHeld && costBasisHeld !== 0)
@@ -440,6 +448,27 @@ function DashboardInner({
             : 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20';
 
     const renderContent = (id: string, variant: 'card' | 'seamless' = 'card') => {
+        if (allSelectedClosed && GATED_WHEN_CLOSED.has(id)) {
+            const titleMap: Record<string, string> = {
+                totalReturn: 'Total Return',
+                annualTWR: 'Total TWR',
+                mwr: 'IRR (MWR)',
+                ytdReturn: 'YTD Return',
+                dividendYield: 'Dividend Yield',
+            };
+            return (
+                <MetricCard
+                    title={titleMap[id]}
+                    value="Closed"
+                    isCurrency={false}
+                    colorClass="text-muted-foreground"
+                    isLoading={isLoading}
+                    isRefreshing={isRefreshing}
+                    accentColor={themeColor}
+                    variant={variant}
+                />
+            );
+        }
         switch (id) {
             case 'portfolioValue':
             case 'dayGL':
@@ -517,11 +546,12 @@ function DashboardInner({
         }
     };
 
-    const showHero = true;
-
-    // Scalar items that are NOT the hero (portfolio value / day G/L)
+    // Scalar items that are NOT the hero (portfolio value / day G/L) and NOT the
+    // top-page sections (hero, today strip, events, insights).
     const compactItems = DEFAULT_ITEMS.filter(
-        item => visibleItems.includes(item.id) && !COMPLEX_METRIC_IDS.includes(item.id)
+        item => visibleItems.includes(item.id)
+            && !COMPLEX_METRIC_IDS.includes(item.id)
+            && !TOP_SECTION_IDS.includes(item.id)
     );
 
     const visibleComplexItems = DEFAULT_ITEMS.filter(
@@ -530,18 +560,38 @@ function DashboardInner({
             && !excludeFromAnalytics.includes(item.id)
     );
 
+    const showEvents = visibleItems.includes('dashboardEvents');
+    const showInsights = visibleItems.includes('dashboardInsights');
+
     return (
         <div className="mb-4 md:mb-10 space-y-4 md:space-y-5">
 
+            {/* ── Closed-account banner ── */}
+            {allSelectedClosed && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 dark:bg-amber-500/15 px-4 py-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-3">
+                    <Activity className="w-4 h-4 mt-0.5 shrink-0" />
+                    <div>
+                        <div className="font-semibold">
+                            {closedAccounts.length === 1
+                                ? `${closedAccounts[0]} is marked closed.`
+                                : `${closedAccounts.length} closed accounts selected: ${closedAccounts.join(', ')}.`}
+                        </div>
+                        <div className="text-xs opacity-80 mt-0.5">
+                            Rate-of-return metrics (TWR, IRR, YTD return, dividend yield) are hidden for closed accounts to avoid misleading values from residual dividends.
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ── Hero card ── */}
-            {showHero && (
+            {visibleItems.includes('portfolioHero') && (
                 <PortfolioHeroCard
                     marketValue={m?.market_value}
                     dayGL={dayGL}
                     dayGLPct={dayGLPct}
-                    cumTWR={m?.cumulative_twr}
-                    annTWR={m?.annualized_twr}
-                    irr={m?.portfolio_mwr}
+                    cumTWR={allSelectedClosed ? null : m?.cumulative_twr}
+                    annTWR={allSelectedClosed ? null : m?.annualized_twr}
+                    irr={allSelectedClosed ? null : m?.portfolio_mwr}
                     currency={currency}
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
@@ -552,7 +602,7 @@ function DashboardInner({
             )}
 
             {/* ── Today panel: market context + movers ── */}
-            {!isLoading && holdings.length > 0 && (
+            {visibleItems.includes('todayStrip') && !isLoading && holdings.length > 0 && (
                 <TodayStrip
                     holdings={holdings}
                     currency={currency}
@@ -562,10 +612,10 @@ function DashboardInner({
             )}
 
             {/* ── Upcoming events + actionable insights ── */}
-            {!isLoading && holdings.length > 0 && (
+            {!isLoading && holdings.length > 0 && (showEvents || showInsights) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
-                    <DashboardEvents events={dividendEvents} currency={currency} />
-                    <DashboardInsights holdings={holdings} currency={currency} />
+                    {showEvents && <DashboardEvents events={dividendEvents} currency={currency} />}
+                    {showInsights && <DashboardInsights holdings={holdings} currency={currency} />}
                 </div>
             )}
 
