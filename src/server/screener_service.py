@@ -13,12 +13,13 @@ from concurrent.futures import ThreadPoolExecutor
 from market_data import get_shared_mdp
 from financial_ratios import get_intrinsic_value_for_symbol
 from db_utils import (
-    get_watchlist, 
-    get_db_connection, 
-    upsert_screener_results, 
+    get_watchlist,
+    get_db_connection,
+    upsert_screener_results,
+    refresh_screener_rows_by_symbol,
     get_cached_screener_results,
     get_screener_results_by_universe,
-    get_all_distinct_screener_results
+    get_all_distinct_screener_results,
 )
 import config
 
@@ -338,24 +339,21 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     
     # If fast_mode is explicitly requested, we return whatever is in DB immediately (stale or not)
     if fast_mode:
-         conn = db_conn or get_db_connection()
-         if conn:
-            try:
-                cached_results = get_screener_results_by_universe(conn, universe_tag)
-                if cached_results:
-                     logging.info(f"Screener: FAST MODE requested. Returning {len(cached_results)} cached items immediately.")
-                     # Sort just in case
-                     cached_results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
-                     return cached_results
-            except Exception as e:
-                logging.error(f"Error in fast_mode retrieval: {e}")
-            finally:
-                if not db_conn and conn: conn.close()
-         # If fast mode returns nothing, we return empty list immediately so UI can show loading state for FRESH load
-         # Or should we fallback to slow load? 
-         # The UI explicitly calls fast_mode=True then fast_mode=False. 
-         # So we return [] here.
-         return []
+        try:
+            if universe_type == "all":
+                # 'all' has no dedicated row tag anymore — dedupe by-symbol across universes.
+                cached_results = get_all_distinct_screener_results()
+            else:
+                cached_results = get_screener_results_by_universe(universe_tag)
+            if cached_results:
+                logging.info(f"Screener: FAST MODE requested. Returning {len(cached_results)} cached items immediately.")
+                cached_results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
+                return cached_results
+        except Exception as e:
+            logging.error(f"Error in fast_mode retrieval: {e}")
+        # If fast mode returns nothing, we return empty list immediately so UI can show loading state for FRESH load
+        # The UI explicitly calls fast_mode=True then fast_mode=False.
+        return []
 
     # --- SLOW PATH: Resolve Symbols ---
     # Only done if we are NOT in fast_mode (or fast_mode failed early, but here we are in the fresh loading phase)
@@ -384,21 +382,14 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     elif universe_type == "sp400":
         symbols = get_sp400_tickers()
     elif universe_type == "all":
-        # For 'all', we fetch everything from the DB
-        conn = db_conn or get_db_connection()
+        # For 'all', we fetch the distinct-by-symbol view of the global DB.
+        # fast_mode is handled by the early-return block above.
         try:
-            from db_utils import get_all_distinct_screener_results
-            cached_all = get_all_distinct_screener_results(conn)
+            cached_all = get_all_distinct_screener_results()
             symbols = [r['symbol'] for r in cached_all]
-            
-            if fast_mode:
-                logging.info(f"Screener: 'all' universe FAST MODE. Returning {len(cached_all)} items.")
-                return cached_all
         except Exception as e:
             logging.error(f"Error fetching 'all' universe symbols: {e}")
             return []
-        finally:
-            if not db_conn and conn: conn.close()
     
     if not symbols:
         return []
@@ -407,38 +398,33 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     # universe_tag already set above.
 
     if universe_type in ["sp500", "russell2000", "sp400", "watchlist", "holdings"]:
-        conn = db_conn or get_db_connection()
-        if conn:
-            try:
-                raw_cached = get_screener_results_by_universe(conn, universe_tag)
-                if raw_cached:
-                    # Find the MOST RECENT update in this entire batch
-                    all_timestamps = []
-                    for r in raw_cached:
-                        ts_str = r.get("updated_at")
-                        if ts_str:
-                            try:
-                                all_timestamps.append(datetime.fromisoformat(ts_str))
-                            except ValueError:
-                                pass
-                    
-                    if all_timestamps:
-                        latest_update_ts = max(all_timestamps)
-                        now_ts = datetime.now()
-                        
-                        if latest_update_ts.date() == now_ts.date():
-                            cached_results = raw_cached
-                            # Increase TTL to 1 hour (3600s) for better "reload" experience
-                            age_seconds = (now_ts - latest_update_ts).total_seconds()
-                            if age_seconds < 3600: # Increased from 30s to 1 hour
-                                logging.info(f"Screener: Pure Fast-path load for '{universe_tag}' ({len(cached_results)} items, {age_seconds:.0f}s old)")
-                                use_pure_fast_path = True
-                            else:
-                                logging.info(f"Screener: Stale Fast-path found {len(cached_results)} items. Age: {age_seconds:.0f}s. Refreshing.")
-            except Exception as e:
-                logging.error(f"Error in hybrid fast-path: {e}")
-            finally:
-                if not db_conn and conn: conn.close()
+        try:
+            raw_cached = get_screener_results_by_universe(universe_tag)
+            if raw_cached:
+                # Find the MOST RECENT update in this entire batch
+                all_timestamps = []
+                for r in raw_cached:
+                    ts_str = r.get("updated_at")
+                    if ts_str:
+                        try:
+                            all_timestamps.append(datetime.fromisoformat(ts_str))
+                        except ValueError:
+                            pass
+
+                if all_timestamps:
+                    latest_update_ts = max(all_timestamps)
+                    now_ts = datetime.now()
+
+                    if latest_update_ts.date() == now_ts.date():
+                        cached_results = raw_cached
+                        age_seconds = (now_ts - latest_update_ts).total_seconds()
+                        if age_seconds < 3600:
+                            logging.info(f"Screener: Pure Fast-path load for '{universe_tag}' ({len(cached_results)} items, {age_seconds:.0f}s old)")
+                            use_pure_fast_path = True
+                        else:
+                            logging.info(f"Screener: Stale Fast-path found {len(cached_results)} items. Age: {age_seconds:.0f}s. Refreshing.")
+        except Exception as e:
+            logging.error(f"Error in hybrid fast-path: {e}")
 
     if use_pure_fast_path and fast_mode:
         # Sort just in case (though DB should be sorted)
@@ -475,15 +461,11 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     details_map = mdp.get_ticker_details_batch(set(symbols))
     
     # Check DB for individual caches (Smart Invalidation lookup)
-    conn = db_conn if db_conn else get_db_connection()
     cached_map = {}
-    if conn:
-        try:
-            cached_map = get_cached_screener_results(conn, symbols)
-        except Exception as e:
-            logging.error(f"Error loading screener cache map: {e}")
-        finally:
-            if not db_conn and conn: conn.close()
+    try:
+        cached_map = get_cached_screener_results(symbols)
+    except Exception as e:
+        logging.error(f"Error loading screener cache map: {e}")
             
     # Batch Fetch Financial Statements for Missing Symbols
     batch_statements = {}
@@ -816,14 +798,14 @@ def process_screener_results(
         
     # Batch Update DB Cache
     if results:
-        conn = db_conn or get_db_connection()
-        if conn:
-            try:
-                upsert_screener_results(conn, results, universe_tag)
-            except Exception as e:
-                logging.error(f"Error upserting screener cache: {e}")
-            finally:
-                if not db_conn and conn: conn.close()
+        try:
+            if universe_tag == "all":
+                # 'all' is a read view — refresh canonical rows by symbol, never insert an 'all' duplicate.
+                refresh_screener_rows_by_symbol(results)
+            else:
+                upsert_screener_results(results, universe_tag)
+        except Exception as e:
+            logging.error(f"Error upserting screener cache: {e}")
 
     # Sort by Margin of Safety desc
     results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)

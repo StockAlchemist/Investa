@@ -1,3 +1,4 @@
+# ruff: noqa: E402  # sys.path is mutated below; project imports must follow that block
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any, Optional, Tuple, Set
@@ -34,19 +35,12 @@ from db_utils import (
     add_transaction_to_db,
     delete_transaction_from_db,
     get_db_connection,
-    add_to_watchlist,
-    remove_from_watchlist,
-    get_watchlist,
     update_transaction_in_db,
-    get_all_watchlists,
-    create_watchlist,
-    rename_watchlist,
-    delete_watchlist,
     update_intrinsic_value_in_cache,
     get_cached_screener_results
 )
 
-from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
+from risk_metrics import calculate_all_risk_metrics
 import config
 from ibkr_connector import IBKRConnector
 from config import YFINANCE_INDEX_TICKER_MAP, BENCHMARK_MAPPING
@@ -76,8 +70,6 @@ from server.auth import (
     Token, User, create_access_token, get_password_hash, verify_password
 )
 # from server.auth import get_current_user (Removed - moved to dependencies)
-from datetime import timedelta
-from server import ai_chat_service  # Fixed package import
 
 import logging
 from collections import OrderedDict
@@ -192,12 +184,10 @@ def trigger_background_precalculation(current_user: User):
                 logging.info("Skip precalc: dataframe is empty")
                 return
 
-            from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance, CURRENT_HIST_VERSION
+            from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
             from config import DEFAULT_CURRENCY
             import config
-            import sqlite3
             from datetime import date, datetime
-            import pandas as pd
 
             today = date.today()
             
@@ -266,7 +256,8 @@ def trigger_background_precalculation(current_user: User):
                 return
 
             def sf(val):
-                if val is None: return 0.0
+                if val is None:
+                    return 0.0
                 try:
                     import math
                     return 0.0 if math.isnan(float(val)) else float(val)
@@ -903,7 +894,7 @@ def _filter_closed_positions(result: Dict[str, Any], show_closed_positions: bool
     if hasattr(sdf, 'columns') and "Quantity" in sdf.columns:
         mask = (
             (sdf["Quantity"].abs() >= STOCK_QUANTITY_CLOSE_TOLERANCE) |
-            (sdf.get("is_total", False) == True) |
+            (sdf.get("is_total", False)) |
             (sdf["Symbol"] == "Total")
         )
         filtered_result = result.copy()
@@ -1403,13 +1394,16 @@ async def get_portfolio_ai_review(
                 
                 # Handle dynamic currency columns
                 mv_col = [c for c in sdf.columns if c.startswith("Market Value (")]
-                if mv_col: rename_map[mv_col[0]] = "market_value"
-                
+                if mv_col:
+                    rename_map[mv_col[0]] = "market_value"
+
                 gain_col = [c for c in sdf.columns if c.startswith("Unrealized Gain (")]
-                if gain_col: rename_map[gain_col[0]] = "unrealized_gain"
-                
+                if gain_col:
+                    rename_map[gain_col[0]] = "unrealized_gain"
+
                 alloc_col = [c for c in sdf.columns if "% Portfolio" in c]
-                if alloc_col: rename_map[alloc_col[0]] = "allocation_percent"
+                if alloc_col:
+                    rename_map[alloc_col[0]] = "allocation_percent"
                 
                 # Convert
                 records = sdf.to_dict(orient='records')
@@ -1676,8 +1670,7 @@ async def get_holdings(
             symbols = list(set(r.get("Symbol") for r in records if r.get("Symbol")))
             logging.info(f"[DEBUG_HOLDINGS] Fetching screener data for {len(symbols)} symbols: {symbols[:10]}...")
             if symbols:
-                # Fetch screener data (this handles both local and global DB fallback)
-                screener_data = get_cached_screener_results(db_conn, symbols)
+                screener_data = get_cached_screener_results(symbols)
                 logging.info(f"[DEBUG_HOLDINGS] Found screener data for {len(screener_data)} / {len(symbols)} symbols.")
                 
                 # Merge into holdings records
@@ -2226,10 +2219,12 @@ async def sync_ibkr(
             if ext_id:
                 # Check main table
                 cursor.execute("SELECT id FROM transactions WHERE ExternalID = ?", (ext_id,))
-                if cursor.fetchone(): return False, "duplicate_main"
+                if cursor.fetchone():
+                    return False, "duplicate_main"
                 # Check pending table
                 cursor.execute("SELECT id FROM pending_transactions WHERE ExternalID = ?", (ext_id,))
-                if cursor.fetchone(): return False, "duplicate_pending"
+                if cursor.fetchone():
+                    return False, "duplicate_pending"
             
             db_cols = ["Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount", "Commission", "Account", "Split Ratio", "Note", "Local Currency", "To Account", "Tags", "ExternalID", "user_id"]
             placeholders = ", ".join([f":{c.replace('/', '_').replace(' ', '_')}" for c in db_cols])
@@ -2251,8 +2246,10 @@ async def sync_ibkr(
                         if q and p:
                             val = (q * p) + (c if t == "BUY" else -c)
 
-                if col == "Type" and isinstance(val, str): val = val.strip().title()
-                if col == "Date" and isinstance(val, (datetime, date)): val = val.strftime("%Y-%m-%d")
+                if col == "Type" and isinstance(val, str):
+                    val = val.strip().title()
+                if col == "Date" and isinstance(val, (datetime, date)):
+                    val = val.strftime("%Y-%m-%d")
                 sql_data[col.replace('/', '_').replace(' ', '_')] = None if pd.isna(val) else val
             
             cursor.execute(sql, sql_data)
@@ -2360,7 +2357,8 @@ async def _calculate_historical_performance_internal(
     interval: str = "1d",
     from_date_str: Optional[str] = None,
     to_date_str: Optional[str] = None,
-    force: bool = False
+    force: bool = False,
+    end_date_cap: Optional[date] = None,
 ):
     (
         df,
@@ -2404,6 +2402,15 @@ async def _calculate_historical_performance_internal(
         end_date = to_date_custom
     else:
         end_date = get_est_today() + timedelta(days=1)
+
+    # When every selected account is closed, the caller passes end_date_cap so the
+    # graph ends at the closure date instead of trailing flat to today.
+    if end_date_cap is not None:
+        cap_exclusive = end_date_cap + timedelta(days=1)
+        if end_date > cap_exclusive:
+            end_date = cap_exclusive
+        if to_date_custom and to_date_custom > cap_exclusive:
+            to_date_custom = cap_exclusive
     
     # Calculate start_date based on period (legacy logic still valid, relative to end_date)
     if period == "custom" and from_date_custom:
@@ -2632,10 +2639,12 @@ async def _calculate_historical_performance_internal(
         try:
              # Standardized Baseline Search
              def get_robust_divisor(series):
-                 if series.empty: return 1.0
+                 if series.empty:
+                     return 1.0
                  # Try first point
                  v0 = series.iloc[0]
-                 if pd.notna(v0) and v0 != 0: return v0
+                 if pd.notna(v0) and v0 != 0:
+                     return v0
                  # Search forward for first non-zero/non-nan
                  valid_points = series[series.notna() & (series != 0)]
                  if not valid_points.empty:
@@ -2676,9 +2685,7 @@ async def _calculate_historical_performance_internal(
 
     # Format Result for Recharts
     # We need "date" (str), "value" (float), "twr" (float), and benchmarks
-    
-    drawdown_series = calculate_drawdown_series(daily_df["Portfolio Value"])
-    
+
     result = []
     # daily_df index is Date
 
@@ -2748,14 +2755,16 @@ async def _calculate_historical_performance_internal(
              # dt in daily_df.index is already UTC-aware Timestamp
              dt_ny = dt.tz_convert("America/New_York")
              if not (dt_time(9, 30) <= dt_ny.time() <= dt_time(16, 0)):
-                 if dt_ny.time() < dt_time(9, 30): 
-                     if pre_market_count == 0: logging.info(f"First Pre-Market Reject: {dt_ny} (from {dt})")
+                 if dt_ny.time() < dt_time(9, 30):
+                     if pre_market_count == 0:
+                         logging.info(f"First Pre-Market Reject: {dt_ny} (from {dt})")
                      pre_market_count += 1
-                 else: 
+                 else:
                      post_market_count += 1
                  continue
              else:
-                 if filtered_count == 0: logging.info(f"First Accepted: {dt_ny} (from {dt})")
+                 if filtered_count == 0:
+                     logging.info(f"First Accepted: {dt_ny} (from {dt})")
 
         # Handle NaN values
         val = row.get("Portfolio Value", 0.0)
@@ -2812,7 +2821,8 @@ async def get_history(
     from_date: Optional[str] = Query(None, alias="from"),
     to_date: Optional[str] = Query(None, alias="to"),
     force: bool = False,
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Returns historical portfolio performance (Value and TWR) and benchmarks.
@@ -2827,6 +2837,31 @@ async def get_history(
                 else:
                     mapped_benchmarks.append(b)
 
+        # If every selected account is closed (closure date <= today), cap the
+        # graph end_date at the latest closure date so the line doesn't run
+        # flat to "today" on accounts that have already been wound down.
+        end_date_cap: Optional[date] = None
+        try:
+            config_manager = get_config_manager(current_user)
+            closure_dates_map = config_manager.gui_config.get("account_closure_dates", {}) or {}
+        except Exception:
+            closure_dates_map = {}
+        _, all_selected_closed = compute_account_closure_state(
+            accounts, closure_dates_map, date.today()
+        )
+        if all_selected_closed and accounts:
+            parsed_dates: List[date] = []
+            for acc in accounts:
+                d_str = closure_dates_map.get(acc)
+                if not d_str:
+                    continue
+                try:
+                    parsed_dates.append(datetime.strptime(str(d_str), "%Y-%m-%d").date())
+                except (ValueError, TypeError):
+                    continue
+            if parsed_dates:
+                end_date_cap = max(parsed_dates)
+
         return await _calculate_historical_performance_internal(
             currency=currency,
             period=period,
@@ -2837,7 +2872,8 @@ async def get_history(
             interval=interval,
             from_date_str=from_date,
             to_date_str=to_date,
-            force=force
+            force=force,
+            end_date_cap=end_date_cap,
         )
     except Exception as e:
         logging.error(f"Error getting history: {e}", exc_info=True)
@@ -3222,7 +3258,8 @@ async def _generate_dividend_events(
     def fetch_symbol_data(sym):
         """Helper to fetch data for a single symbol independently."""
         yf_sym = yf_map.get(sym)
-        if not yf_sym: return []
+        if not yf_sym:
+            return []
         
         local_events = []
         qty = holdings.get(sym, 0)
@@ -3233,7 +3270,8 @@ async def _generate_dividend_events(
             
             div_rate = info.get("trailingAnnualDividendRate", 0.0)
             last_div_val = info.get("lastDividendValue")
-            if not div_rate: div_rate = info.get("dividendRate", 0.0)
+            if not div_rate:
+                div_rate = info.get("dividendRate", 0.0)
             
             # 1. Confirmed Events (Need live ticker for calendar, but wrap carefully)
             # Only check calendar if we have indication of dividends
@@ -3255,7 +3293,8 @@ async def _generate_dividend_events(
                                 pass
                     else:
                         c_date = div_date_raw
-                        if isinstance(c_date, datetime): c_date = c_date.date()
+                        if isinstance(c_date, datetime):
+                            c_date = c_date.date()
                     
                     if c_date and c_date >= today:
                         amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
@@ -3535,17 +3574,16 @@ async def get_stock_analysis(
             except Exception as e_ratio:
                 logging.warning(f"Ratio calculation failed for analysis: {e_ratio}")
 
-        # 3. Generate AI Review — pass user DB so reads and writes flow through
-        # the user's screener_cache and mirror to the global screener DB.
-        analysis = generate_stock_review(symbol, fund_data, ratios, force_refresh=force, db_conn=db_conn)
-        
+        # 3. Generate AI Review — reads/writes go through the global screener DB.
+        analysis = generate_stock_review(symbol, fund_data, ratios, force_refresh=force)
+
         # 4. Interactive Calculation of Intrinsic Value & Cache Update
         try:
             # Check cache first if not forced
             iv_results = None
-            if not force and db_conn:
+            if not force:
                 try:
-                    cached_results = get_cached_screener_results(db_conn, [symbol])
+                    cached_results = get_cached_screener_results([symbol])
                     if symbol in cached_results:
                         cached_entry = cached_results[symbol]
                         
@@ -3594,17 +3632,14 @@ async def get_stock_analysis(
                 info_for_update["valuation_details"] = iv_json
 
                 # Update cache so screener table reads it next time (or live update listens to it)
-                # db_conn is injected
-                if db_conn:
-                    update_intrinsic_value_in_cache(
-                        db_conn,
-                        symbol,
-                        iv_results.get("average_intrinsic_value"),
-                        iv_results.get("margin_of_safety_pct"),
-                        fund_data.get("lastFiscalYearEnd"),
-                        fund_data.get("mostRecentQuarter"),
-                        info=info_for_update
-                    )
+                update_intrinsic_value_in_cache(
+                    symbol,
+                    iv_results.get("average_intrinsic_value"),
+                    iv_results.get("margin_of_safety_pct"),
+                    fund_data.get("lastFiscalYearEnd"),
+                    fund_data.get("mostRecentQuarter"),
+                    info=info_for_update
+                )
             
             # Inject into response so frontend event can carry it
             analysis["intrinsic_value_data"] = iv_results
@@ -4234,7 +4269,8 @@ async def get_financials_endpoint(
         
         # Convert DataFrames to dicts for JSON serialization
         def df_to_dict(df):
-            if df is None or df.empty: return {}
+            if df is None or df.empty:
+                return {}
             return json.loads(df.to_json(orient="split", date_format="iso"))
 
         # Extract Shareholders' Equity from Balance Sheet if possible
@@ -4297,7 +4333,8 @@ async def get_ratios_endpoint(
         
         # Format historical ratios
         def df_to_dict(df):
-            if df is None or df.empty: return {}
+            if df is None or df.empty:
+                return {}
             # Reset index to include 'Period'
             df_reset = df.reset_index()
             if 'Period' in df_reset.columns:
@@ -4348,21 +4385,18 @@ async def get_intrinsic_value_endpoint(
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
         info = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         
-        # Sync to screener cache
+        # Sync to global screener cache
         try:
-            # db_conn injected
-            if db_conn:
-                if info:
-                    info["valuation_details"] = results
-                update_intrinsic_value_in_cache(
-                    db_conn,
-                    symbol,
-                    results.get("average_intrinsic_value"),
-                    results.get("margin_of_safety_pct"),
-                    info.get("lastFiscalYearEnd"),
-                    info.get("mostRecentQuarter"),
-                    info=info
-                )
+            if info:
+                info["valuation_details"] = results
+            update_intrinsic_value_in_cache(
+                symbol,
+                results.get("average_intrinsic_value"),
+                results.get("margin_of_safety_pct"),
+                info.get("lastFiscalYearEnd") if info else None,
+                info.get("mostRecentQuarter") if info else None,
+                info=info
+            )
         except Exception as e_sync:
             logging.warning(f"Failed to sync intrinsic value to cache for {symbol}: {e_sync}")
 
@@ -4813,7 +4847,7 @@ async def trigger_ai_review(
             "Current Ratio": fund_data.get("currentRatio"),
         }
         
-        review = generate_stock_review(symbol, fund_data, ratios_data, force_refresh=force, db_conn=db_conn)
+        review = generate_stock_review(symbol, fund_data, ratios_data, force_refresh=force)
         return clean_nans(review)
         
     except Exception as e:

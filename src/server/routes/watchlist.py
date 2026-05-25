@@ -166,7 +166,7 @@ async def get_watchlist_endpoint(
 
     # AI ratings
     try:
-        ai_results = get_cached_screener_results(conn, symbols)
+        ai_results = get_cached_screener_results(symbols)
     except Exception as e_ai:
         logging.error(f"Failed to fetch AI results for watchlist: {e_ai}")
         ai_results = {}

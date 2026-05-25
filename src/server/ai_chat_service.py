@@ -118,26 +118,16 @@ def get_market_data_tool(symbols: List[str]) -> Dict[str, Any]:
         return {"error": f"Failed to fetch market data: {str(e)}"}
 
 def get_stock_review_tool(symbol: str, db_conn=None) -> Dict[str, Any]:
-    """Retrieves the pre-generated detailed AI analysis and scorecard for a stock.
+    """Retrieves the pre-generated detailed AI analysis and scorecard for a stock
+    from the global screener cache.
 
-    Reads through ``get_cached_screener_results`` so that — when the user's
-    portfolio DB has no row for ``symbol`` — the lookup falls back to the
-    global screener DB. The previous raw SELECT against the default DB
-    returned by ``get_db_connection()`` (no args) silently missed reviews
-    that lived only in the shared global store.
+    The ``db_conn`` kwarg is retained for caller signature compatibility but
+    is ignored — all reads go through the global screener DB.
     """
-    from db_utils import get_cached_screener_results, get_db_connection, get_global_screener_db_path
-
-    own_conn = False
-    conn = db_conn
-    if conn is None:
-        conn = get_db_connection(get_global_screener_db_path(), use_cache=False)
-        own_conn = True
-    if not conn:
-        return {"error": "Database connection failed."}
+    from db_utils import get_cached_screener_results
 
     try:
-        rows = get_cached_screener_results(conn, [symbol.upper()])
+        rows = get_cached_screener_results([symbol.upper()])
         row = rows.get(symbol.upper())
 
         if row and row.get("ai_summary"):
@@ -154,9 +144,6 @@ def get_stock_review_tool(symbol: str, db_conn=None) -> Dict[str, Any]:
         return {"message": f"No pre-generated AI review found for {symbol}."}
     except Exception as e:
         return {"error": f"Failed to query reviews: {str(e)}"}
-    finally:
-        if own_conn and conn is not None:
-            conn.close()
 
 def run_screener_tool(prompt: str) -> Dict[str, Any]:
     """Runs a natural language stock screening query across the entire market database."""

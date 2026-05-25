@@ -12,19 +12,30 @@ from ai_review_worker import process_ticker_list, _open_screener_conn
 from market_data import get_shared_mdp
 
 def get_missing_reviews():
-    """Fetches symbols from all universes that do not have an AI summary."""
+    """Fetches symbols from all universes that do not have a usable AI summary.
+
+    Matches the UI's `has_ai_review` definition (ai_summary present AND
+    length > 20) plus the worker's own failure-detection (length < 20 or
+    contains "error"), so we re-process any short / failed stub that the
+    screener treats as 'not reviewed'.
+    """
     conn = _open_screener_conn()
     if not conn:
         return {}
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT symbol, universe FROM screener_cache WHERE ai_summary IS NULL OR trim(ai_summary) = ''")
+        cursor.execute(
+            """
+            SELECT symbol, universe FROM screener_cache
+            WHERE ai_summary IS NULL
+               OR length(trim(ai_summary)) <= 20
+               OR lower(ai_summary) LIKE '%error%'
+            """
+        )
         rows = cursor.fetchall()
         missing = {}
         for symbol, universe in rows:
-            if universe not in missing:
-                missing[universe] = []
-            missing[universe].append(symbol)
+            missing.setdefault(universe or 'manual', []).append(symbol)
         return missing
     finally:
         conn.close()

@@ -5,24 +5,7 @@ import os
 import time
 from datetime import datetime
 import config
-from db_utils import (
-    get_db_connection,
-    get_cached_screener_results,
-    get_global_screener_db_path,
-)
-
-
-def _open_shared_screener_conn():
-    """Opens a connection to the global screener cache DB.
-
-    Used as a fallback when no user-scoped ``db_conn`` is supplied (e.g. the
-    chat tool, screener trigger endpoint, or background worker). Reading and
-    writing against this DB — rather than the accidental default
-    ``data/db/portfolio.db`` returned by ``get_db_connection()`` with no
-    args — keeps AI reviews and IV/MoS rows on the one store that every user
-    actually shares.
-    """
-    return get_db_connection(get_global_screener_db_path(), use_cache=False)
+from db_utils import get_cached_screener_results
 
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)
@@ -42,19 +25,12 @@ def generate_stock_review(
     ratios_data: dict,
     force_refresh: bool = False,
     use_search: bool = True,
-    db_conn=None,
 ) -> dict:
     """
     Generates a comprehensive stock review using Gemini/Gemma models.
     Includes file-based caching and a fallback chain to handle rate limits.
 
-    When ``db_conn`` is passed (the user's portfolio DB), screener-cache
-    reads and writes go through it — and ``update_ai_review_in_cache``
-    automatically mirrors writes to the global screener DB so every user
-    sees the same review. When omitted (background workers, chat tool),
-    we fall back to the global screener DB directly rather than the
-    accidental ``data/db/portfolio.db`` that ``get_db_connection()`` with
-    no args resolves to.
+    All screener-cache reads/writes go through the global screener DB.
     """
     logging.info(f"AI Analysis: Generating review for {symbol} (force_refresh={force_refresh})")
     
@@ -124,20 +100,12 @@ def generate_stock_review(
                 if is_cache_valid and not force_refresh:
                     logging.info(f"Using cached AI analysis for {symbol}")
 
-                    # Sync to DB if valid
                     if stale_result and "error" not in stale_result:
-                        sync_conn = db_conn or _open_shared_screener_conn()
                         try:
-                            if sync_conn:
-                                from db_utils import update_ai_review_in_cache
-                                update_ai_review_in_cache(sync_conn, symbol, stale_result, info=fund_data)
+                            from db_utils import update_ai_review_in_cache
+                            update_ai_review_in_cache(symbol, stale_result, info=fund_data)
                         except Exception as e_sync:
                             logging.warning(f"AI Analysis: Failed to sync disk-cache to DB for {symbol}: {e_sync}")
-                        finally:
-                            # Only close conns we opened ourselves — user-supplied
-                            # conns are owned by the FastAPI dependency layer.
-                            if sync_conn is not None and sync_conn is not db_conn:
-                                sync_conn.close()
 
                     return stale_result
         except Exception as e_cache:
@@ -145,11 +113,9 @@ def generate_stock_review(
 
     # --- DB CACHE CHECK (Fallback/Primary for sync with screener) ---
     if not force_refresh:
-        read_conn = db_conn or _open_shared_screener_conn()
         try:
-            if read_conn:
-                db_results = get_cached_screener_results(read_conn, [symbol])
-                if symbol in db_results:
+            db_results = get_cached_screener_results([symbol])
+            if symbol in db_results:
                     row = db_results[symbol]
                     if row.get("ai_summary") and len(row["ai_summary"]) > 20:
                         # Construct expected JSON structure
@@ -182,10 +148,6 @@ def generate_stock_review(
                         return db_result
         except Exception as e_db_cache:
             logging.warning(f"AI Cache: Failed to read from DB for {symbol}: {e_db_cache}")
-        finally:
-            # Only close conns we opened ourselves
-            if read_conn is not None and read_conn is not db_conn:
-                read_conn.close()
 
     # --- API Logic ---
     api_key = config.GEMINI_API_KEY
@@ -356,19 +318,12 @@ No markdown, no commentary outside the JSON.
                             "metadata": metadata
                         }, f)
                     
-                    # Sync to screener_cache table — uses the caller's user DB
-                    # when supplied so update_ai_review_in_cache mirrors to the
-                    # global screener DB; otherwise writes directly to global.
-                    write_conn = db_conn or _open_shared_screener_conn()
-                    if write_conn:
-                        try:
-                            from db_utils import update_ai_review_in_cache
-                            update_ai_review_in_cache(write_conn, symbol, result, info=fund_data)
-                        except Exception as e_db:
-                            logging.warning(f"Failed to sync AI review to DB cache for {symbol}: {e_db}")
-                        finally:
-                            if write_conn is not db_conn:
-                                write_conn.close()
+                    # Sync to global screener cache
+                    try:
+                        from db_utils import update_ai_review_in_cache
+                        update_ai_review_in_cache(symbol, result, info=fund_data)
+                    except Exception as e_db:
+                        logging.warning(f"Failed to sync AI review to DB cache for {symbol}: {e_db}")
                 except Exception as e_save:
                     logging.warning(f"Failed to save cache for {symbol}: {e_save}")
                     

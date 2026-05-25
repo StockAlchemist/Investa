@@ -125,27 +125,13 @@ def check_if_review_exists(symbol: str, fund_data: dict = None, universe: str = 
 
 def save_review_to_screener(symbol: str, review: dict, fund_data: dict, universe: str = 'sp500'):
     """
-    Saves the generated AI review to the screener cache with the specified universe.
+    Saves the generated AI review to the (global) screener cache with the specified universe.
     """
-    conn = _open_screener_conn()
-    if not conn:
-        return
-
     try:
-        # update_ai_review_in_cache handles the logic of updating or creating new entry
-        update_ai_review_in_cache(
-            conn, 
-            symbol, 
-            review, 
-            info=fund_data, 
-            universe=universe
-        )
-        conn.close()
+        update_ai_review_in_cache(symbol, review, info=fund_data, universe=universe)
         logging.info(f"Saved review to screener cache for {symbol} (universe='{universe}').")
     except Exception as e:
         logging.error(f"Error saving review to screener for {symbol}: {e}")
-        if conn:
-            conn.close()
 
 def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') -> bool:
     """
@@ -200,22 +186,16 @@ def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') ->
             )
             
             # 6. Update Cache with Intrinsic Value
-            conn = _open_screener_conn()
-            if conn:
-                try:
-                    update_intrinsic_value_in_cache(
-                        conn,
-                        symbol,
-                        iv_results.get("average_intrinsic_value"),
-                        iv_results.get("margin_of_safety_pct"),
-                        fund_data.get("lastFiscalYearEnd"),
-                        fund_data.get("mostRecentQuarter"),
-                        info=fund_data,
-                        universe=universe # Ensure we update the correct universe row
-                    )
-                    logging.info(f"Updated intrinsic value cache for {symbol}.")
-                finally:
-                    conn.close()
+            update_intrinsic_value_in_cache(
+                symbol,
+                iv_results.get("average_intrinsic_value"),
+                iv_results.get("margin_of_safety_pct"),
+                fund_data.get("lastFiscalYearEnd"),
+                fund_data.get("mostRecentQuarter"),
+                info=fund_data,
+                universe=universe,
+            )
+            logging.info(f"Updated intrinsic value cache for {symbol}.")
         except Exception as iv_e:
             logging.error(f"Failed to calculate/update intrinsic value for {symbol}: {iv_e}")
 

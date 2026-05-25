@@ -38,11 +38,11 @@ def _compute_portfolio_hash(portfolio_data: dict, db_conn=None) -> str:
     # Fingerprint the screener-cache rows for held symbols so a mid-day IV/MoS
     # refresh busts this AI-review cache. Without this, a cached review that
     # used stale screener data keeps being served until the date rolls over.
-    if symbols and db_conn is not None:
+    if symbols:
         try:
             from db_utils import get_cached_screener_results
 
-            rows = get_cached_screener_results(db_conn, list(symbols)) or {}
+            rows = get_cached_screener_results(list(symbols)) or {}
             stamps = [
                 str(row.get("updated_at"))
                 for row in rows.values()
@@ -193,27 +193,20 @@ def generate_portfolio_review(
 
         # Enrich with intrinsic-value + moat signals from the screener cache
         # so the prompt can ground "value discipline" judgements in concrete data
-        # rather than guessing from price alone. Reads from the caller-supplied
-        # user DB; do NOT fall back to the default get_db_connection() — that
-        # returns the shared data/db/portfolio.db which is not kept in sync
-        # with the user's actual screener_cache rows.
+        # rather than guessing from price alone. Reads go through the global
+        # screener DB so every user sees the same canonical IV/MoS row.
         iv_lookup: dict = {}
-        if db_conn is not None:
-            try:
-                from db_utils import get_cached_screener_results
+        try:
+            from db_utils import get_cached_screener_results
 
-                top_symbols = [
-                    h.get("symbol") for h in sorted_holdings[:10] if h.get("symbol")
-                ]
-                if top_symbols:
-                    iv_lookup = get_cached_screener_results(db_conn, top_symbols) or {}
-            except Exception as e_iv:
-                logging.warning(
-                    f"Portfolio AI: could not enrich with screener-cache signals: {e_iv}"
-                )
-        else:
+            top_symbols = [
+                h.get("symbol") for h in sorted_holdings[:10] if h.get("symbol")
+            ]
+            if top_symbols:
+                iv_lookup = get_cached_screener_results(top_symbols) or {}
+        except Exception as e_iv:
             logging.warning(
-                "Portfolio AI: no db_conn supplied; skipping screener-cache enrichment"
+                f"Portfolio AI: could not enrich with screener-cache signals: {e_iv}"
             )
 
         holdings_summary = "Top 10 Holdings (weight, sector, intrinsic-value signals where available):\n"
