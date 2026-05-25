@@ -153,7 +153,7 @@ PERSISTENT_FX_DURATION_HOURS = 24
 RELIABLE_SYMBOLS = {
     "AAPL", "MSFT", "GOOG", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "BRK-B",
     "VZ", "BHP", "BBW", "TSM", "ASML", "UNH", "BAC", "NOW", "KO", "CVX", "JPM", "XLE", "VTI", "SPY", "QQQ", "DIA",
-    "AXP", "BLV", "BND", "C", "DAL", "DPZ", "EFA", "EPP", "GLD", "GS", "IBM", "JNJ", "MA", "NFLX", "NKE", "NLY", "PLTR", "QSR", "SCHG", "SPGI", "VDE", "VGK", "VHT", "VWO",
+    "AXP", "BLV", "BND", "C", "DAL", "DPZ", "EFA", "EPP", "GLD", "GS", "IBM", "JNJ", "LQD", "MA", "NFLX", "NKE", "NLY", "PLTR", "QSR", "SCHG", "SPGI", "VDE", "VGK", "VHT", "VWO",
     "DIS", "MCD", "V", "PYPL", "CRM", "COST", "PEP", "ABT", "CSCO", "ACN", "AVGO", "ADBE", "LIN", "TMO", "PFE", "ABBV", "DHR", "NEE", "TM", "SAP",
     "THB=X", "USDTHB=X", "HKD=X", "SGD=X", "EUR=X", "GBP=X", "JPY=X", "CNY=X", "CAD=X", "AUD=X", "INR=X",
     "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX", "^FTSE", "^N225", "^HSI", "^GDAXI", "^FCHI",
@@ -795,12 +795,13 @@ class MarketDataProvider:
                 
                 info_batch = _run_isolated_fetch(chunk, task="info")
                 
+                market_closed_now = not is_market_open()
                 for sym in chunk:
                     info = info_batch.get(sym)
                     if info:
                         div_rate = info.get("dividendRate", 0.0)
                         div_yield = info.get("dividendYield", 0.0)
-                        
+
                         entry = {
                             "dividendRate": div_rate if div_rate else 0.0,
                             "trailingAnnualDividendRate": info.get("trailingAnnualDividendRate") or div_rate or 0.0,
@@ -815,7 +816,13 @@ class MarketDataProvider:
                         # Save fragmented
                         self._save_fundamentals_cache({sym: entry})
                     else:
-                        logging.warning(f"Failed to fetch fundamentals for {sym} (isolated).")
+                        # Reliable symbols after-hours: yfinance often returns no
+                        # info during the data-refresh window. Cached entries (if
+                        # any) are still used; demote the noise to INFO.
+                        if market_closed_now and (sym in RELIABLE_SYMBOLS or sym.startswith("^")):
+                            logging.info(f"Failed to fetch fundamentals for {sym} (isolated, after-hours — using cache).")
+                        else:
+                            logging.warning(f"Failed to fetch fundamentals for {sym} (isolated).")
         except Exception as e_batch:
             logging.error(f"Error in fundamentals batch fetch: {e_batch}")
             
@@ -1046,16 +1053,32 @@ class MarketDataProvider:
                     if not df_chunk.empty:
                         all_dfs.append(df_chunk)
                 
+                # During after-hours, sparkline empties for reliable symbols are
+                # expected (yfinance often has gaps between session close and the
+                # daily refresh) — log at INFO instead of WARN to keep logs clean.
+                all_reliable_sparkline = all(
+                    s in RELIABLE_SYMBOLS or s.startswith("^") for s in yf_symbols_list
+                )
+                quiet_empty = all_reliable_sparkline and not is_market_open()
+
                 if not all_dfs:
-                     logging.warning("Batch price fetch returned empty DataFrames for all chunks.")
-                     df = pd.DataFrame()
+                    msg = "Batch price fetch returned empty DataFrames for all chunks."
+                    if quiet_empty:
+                        logging.info(f"{msg} (after-hours, reliable symbols — expected)")
+                    else:
+                        logging.warning(msg)
+                    df = pd.DataFrame()
                 else:
                     # Concatenate all chunks
                     # Note: axis=1 for columns (different symbols)
                     df = pd.concat(all_dfs, axis=1)
-                
+
                 if df.empty:
-                    logging.warning("Combined batch price fetch resulted in empty DataFrame.")
+                    msg = "Combined batch price fetch resulted in empty DataFrame."
+                    if quiet_empty:
+                        logging.info(f"{msg} (after-hours, reliable symbols — expected)")
+                    else:
+                        logging.warning(msg)
                 else:
                     # Current UTC date for filtering
                     now_utc = datetime.now(timezone.utc).date()
@@ -2429,20 +2452,24 @@ class MarketDataProvider:
             # --- IDENTIFY STILL MISSING SYMBOLS & MARK INVALID ---
             final_missing = [s for s in all_missing_symbols if s not in historical_data]
             if final_missing:
-                logging.warning(f"  Hist Fetch Helper: {len(final_missing)} symbols failed recovery: {final_missing[:10]}...")
-                
+                all_reliable_missing = all(s in RELIABLE_SYMBOLS or s.startswith("^") for s in final_missing)
+                market_closed_now = not is_market_open()
+
+                # Quiet expected after-hours empties for reliable symbols; otherwise warn.
+                if all_reliable_missing and market_closed_now:
+                    logging.info(f"  Hist Fetch Helper: {len(final_missing)} reliable symbols returned no data (after-hours, expected): {final_missing[:10]}...")
+                else:
+                    logging.warning(f"  Hist Fetch Helper: {len(final_missing)} symbols failed recovery: {final_missing[:10]}...")
+
                 # --- SAFETY: High failure rate protection ---
                 # If a large percentage of symbols fail at once, it's likely a systematic issue (rate limit, API down, network, or market closed)
                 # rather than all of them actually being invalid symbols.
                 if len(final_missing) > len(symbols_yf) * 0.5 and len(symbols_yf) > 5:
-                    is_all_reliable = all(s in RELIABLE_SYMBOLS or s.startswith("^") for s in final_missing)
-                    market_closed = not is_market_open()
-                    
-                    if is_all_reliable and market_closed:
+                    if all_reliable_missing and market_closed_now:
                         logging.info(f"  Hist Fetch Helper: Systematic absence of data for {len(final_missing)} reliable symbols during after-hours. This is expected.")
                     else:
                         logging.warning(f"  Hist Fetch Helper: High failure rate detected ({len(final_missing)}/{len(symbols_yf)}). Skipping cache invalidation to avoid false positives.")
-                    
+
                     final_missing = [] # Emptying this prevents the loop below from marking them as invalid
                 
                 # Check for rate limit indicators in logs of current execution
