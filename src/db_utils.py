@@ -1568,6 +1568,15 @@ def get_all_distinct_screener_results() -> List[Dict[str, Any]]:
     # Sort by Margin of Safety desc
     final_list.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
     return final_list
+_SYNTHETIC_SYMBOLS = frozenset({
+    "PORTFOLIO-WIDE", "CASH-AGGREGATE", "TOTAL", "PORTFOLIO",
+})
+
+def _is_synthetic_symbol(symbol: str) -> bool:
+    """Returns True for internal/synthetic symbols that are not real tickers."""
+    s = symbol.upper().strip()
+    return s in _SYNTHETIC_SYMBOLS or s.startswith("PORTFOLIO-") or s.startswith("CASH-")
+
 def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Optional[Dict[str, Any]] = None, universe: str = 'manual'):
     """
     Updates the AI review portions of the global screener cache.
@@ -1575,6 +1584,9 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
     If no entries exist, creates a new entry with the specified universe.
     Also syncs metadata from 'info' if provided.
     """
+    if _is_synthetic_symbol(symbol):
+        logging.debug(f"update_ai_review_in_cache: skipping synthetic symbol '{symbol}'")
+        return
     def do_update(conn, sym, data, inf, univ):
         now_str = datetime.now().isoformat()
         scorecard = data.get("scorecard", {})
@@ -1702,6 +1714,9 @@ def update_intrinsic_value_in_cache(
     If no entries exist, creates a new entry with the specified universe.
     Also syncs metadata from 'info' if provided.
     """
+    if _is_synthetic_symbol(symbol):
+        logging.debug(f"update_intrinsic_value_in_cache: skipping synthetic symbol '{symbol}'")
+        return
     def do_iv_update(conn, sym, iv, mos, fy_end, qtr, inf, univ):
         now_str = datetime.now().isoformat()
         
