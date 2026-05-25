@@ -61,7 +61,7 @@ const TABS: { id: Tab, label: string, description: string, icon: React.ElementTy
     { id: 'overrides', label: 'Manual Overrides', description: 'Manually set price and metadata for any symbol when automatic data is wrong.', icon: Sliders, color: 'text-emerald-500 dark:text-emerald-400' },
     { id: 'mapping', label: 'Symbol Mapping', description: 'Map custom portfolio symbols to their Yahoo Finance ticker equivalent.', icon: MapIcon, color: 'text-blue-500 dark:text-blue-400' },
     { id: 'excluded', label: 'Excluded Symbols', description: 'Symbols that are skipped during portfolio calculations and data fetches.', icon: XCircle, color: 'text-rose-500 dark:text-rose-400' },
-    { id: 'currencies', label: 'Account Currencies', description: 'Manage available currencies and per-account currency / cash settings.', icon: DollarSign, color: 'text-amber-500 dark:text-amber-400' },
+    { id: 'currencies', label: 'Account Settings', description: 'Manage available currencies and per-account currency, cash, and closure preferences.', icon: DollarSign, color: 'text-amber-500 dark:text-amber-400' },
     { id: 'yield', label: 'Cash Yield', description: 'Configure interest-yield assumptions for idle cash per account.', icon: Activity, color: 'text-green-500 dark:text-green-400' },
     { id: 'valuation', label: 'Valuation Overrides', description: 'Override DCF and valuation model inputs for specific stocks.', icon: Calculator, color: 'text-purple-500 dark:text-purple-400' },
     { id: 'advanced', label: 'Advanced Settings', description: 'Webhook integration, Interactive Brokers sync, and system cache.', icon: SettingsIcon, color: 'text-zinc-500 dark:text-zinc-400' },
@@ -1145,23 +1145,28 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                     </div>
 
                                     {/* Account Preferences Section */}
+                                    {(() => {
+                                        // "All Accounts" is a synthetic value attached to split transactions
+                                        // (see TransactionModal), not a real configurable account.
+                                        const configurableAccounts = availableAccounts.filter(a => a !== 'All Accounts');
+                                        return (
                                     <div className={cardClassName}>
                                         <div className="mb-2">
                                             <h3 className={sectionTitleClassName}>
                                                 <SettingsIcon className="w-5 h-5 text-zinc-500" />
                                                 Account Preferences
-                                                <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">{availableAccounts.length}</span>
+                                                <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">{configurableAccounts.length}</span>
                                             </h3>
                                         </div>
                                         <p className="text-sm text-muted-foreground mb-5">Configure currency, cash management mode, and closure date for each account.</p>
 
-                                        {availableAccounts.length === 0 ? (
+                                        {configurableAccounts.length === 0 ? (
                                             <div className="text-center text-muted-foreground py-12 border border-dashed border-black/10 dark:border-white/10 rounded-xl">
                                                 No accounts found.
                                             </div>
                                         ) : (
                                             <div className="space-y-3">
-                                                {availableAccounts.map(account => {
+                                                {configurableAccounts.map(account => {
                                                     const closureDate = settings?.account_closure_dates?.[account] || '';
                                                     const isEffectivelyClosed = closureDate && closureDate <= new Date().toISOString().slice(0, 10);
                                                     return (
@@ -1236,6 +1241,8 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                             </div>
                                         )}
                                     </div>
+                                        );
+                                    })()}
                                 </div>
                             )}
 

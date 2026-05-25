@@ -136,11 +136,14 @@ export function MetricCard({
     const accent = ACCENT_MAP[accentColor] || ACCENT_MAP['indigo-500'];
 
     if (variant === 'seamless') {
-        // Seamless variant: flat, no card chrome, used in the scalar metrics grid
+        // Seamless variant: flat, no card chrome, used in the scalar metrics grid.
+        // Layout is a 3-row vertical stack (label → value → delta) so every card
+        // shares the same rhythm regardless of currency width or whether a
+        // sub-value is present — keeps the 2-col mobile grid visually aligned.
         return (
             <div
                 className={cn(
-                    'metric-card card-shine relative overflow-hidden h-full min-h-[90px] p-4 cursor-default group',
+                    'metric-card card-shine relative overflow-hidden h-full min-h-[112px] p-4 cursor-default group flex flex-col',
                     onClick ? 'cursor-pointer' : '',
                     containerClassName
                 )}
@@ -150,13 +153,13 @@ export function MetricCard({
                 <div className="absolute -top-12 -right-12 w-32 h-32 blur-[40px] opacity-10 transition-opacity duration-500 group-hover:opacity-20 pointer-events-none"
                     style={{ backgroundColor: accent.sparkColor }} />
 
-                {/* Header row */}
-                <div className="flex items-start justify-between mb-3 relative z-10">
-                    <p className="section-label pr-2 leading-tight">{title}</p>
+                {/* Row 1 — label + icon */}
+                <div className="flex items-start justify-between gap-2 mb-2 relative z-10">
+                    <p className="section-label pr-1 leading-tight min-w-0 truncate">{title}</p>
                     <div className="flex items-center gap-1.5 shrink-0">
                         {isRefreshing && (
                             <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
-                                <Loader2 className="w-4 h-4 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
                             </div>
                         )}
                         {Icon && (
@@ -171,27 +174,32 @@ export function MetricCard({
                     </div>
                 </div>
 
-                {/* Value row */}
-                <div className="flex items-end gap-2 flex-wrap relative z-10">
-                    <div className="flex flex-col min-w-0">
-                        {isLoading ? (
-                            <Skeleton className="h-8 w-28 mb-1 opacity-50 rounded-lg" />
-                        ) : (
-                            <span className={cn(
-                                'font-bold tracking-tight leading-none tabular-nums text-foreground',
+                {/* Row 2 — primary value (single line, truncates if overflowing) */}
+                <div className="relative z-10 min-w-0">
+                    {isLoading ? (
+                        <Skeleton className="h-7 w-28 opacity-50 rounded-lg" />
+                    ) : (
+                        <span
+                            title={value !== null && value !== undefined ? String(value) : undefined}
+                            className={cn(
+                                'block font-bold tracking-tight leading-none tabular-nums text-foreground truncate',
                                 colorClass,
                                 valueClassName
-                            )}>
-                                {value !== null && value !== undefined
-                                    ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value)
-                                    : '—'}
-                            </span>
-                        )}
-                    </div>
+                            )}
+                        >
+                            {value !== null && value !== undefined
+                                ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value)
+                                : '—'}
+                        </span>
+                    )}
+                </div>
 
+                {/* Row 3 — delta badge on its own line, reserves height even when
+                    empty so card footers line up across the grid. */}
+                <div className="relative z-10 mt-auto pt-2 min-h-[24px] flex items-center">
                     {isLoading ? (
-                        <Skeleton className="h-5 w-12 rounded-full opacity-50" />
-                    ) : subValue !== undefined && subValue !== null && (
+                        <Skeleton className="h-4 w-14 rounded-full opacity-50" />
+                    ) : subValue !== undefined && subValue !== null ? (
                         <Badge
                             variant="outline"
                             className={cn(
@@ -208,7 +216,7 @@ export function MetricCard({
                                 ? (subValue === Infinity ? '∞' : `${subValue >= 0 ? '+' : ''}${subValue.toFixed(2)}%`)
                                 : subValue}
                         </Badge>
-                    )}
+                    ) : null}
                 </div>
 
                 {/* Sparkline */}

@@ -256,13 +256,17 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                         </PieChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="flex items-center justify-center w-full h-full text-muted-foreground text-sm pb-24">
-                        Loading...
+                    <div className="flex flex-col items-center justify-center w-full h-full text-muted-foreground text-sm pb-24 px-6 text-center gap-1">
+                        <span className="font-medium">No active holdings</span>
+                        <span className="text-xs opacity-80">Selected accounts have no positions with market value.</span>
                     </div>
                 )}
 
-                {/* Center Content Overlay */}
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                {/* Center Content Overlay — hidden when there is no data, to avoid overlapping the empty state */}
+                <div className={cn(
+                    "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none",
+                    (!data || data.length === 0) && "hidden"
+                )}>
                     <div className="flex flex-col items-center justify-center pointer-events-auto">
                         {activeItem ? (
                             <>

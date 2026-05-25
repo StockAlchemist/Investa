@@ -26,13 +26,15 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
 
+    // Mobile: fills its grid cell. sm+: behaves as a flex strip item with
+    // vertical dividers (handled on the parent).
     return (
-        <div className="flex-1 min-w-[150px] px-4 py-3 first:pl-0 last:pr-0">
+        <div className="min-w-0 px-1 py-1.5 sm:flex-1 sm:min-w-[150px] sm:px-4 sm:py-3 sm:first:pl-0 sm:last:pr-0">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1.5">
-                {Icon && <Icon className="w-3 h-3" />}
-                <span>{label}</span>
+                {Icon && <Icon className="w-3 h-3 shrink-0" />}
+                <span className="truncate">{label}</span>
             </div>
-            <div className={cn('text-xl sm:text-2xl font-bold tabular-nums leading-none truncate', toneClass)}>
+            <div className={cn('text-lg sm:text-2xl font-bold tabular-nums leading-none truncate', toneClass)}>
                 {value}
             </div>
             {sub && (
@@ -109,7 +111,7 @@ export default function IncomeKpiStrip({
 
     return (
         <div className="metric-card p-4">
-            <div className="flex flex-wrap divide-x divide-border/60">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:flex sm:flex-wrap sm:gap-0 sm:divide-x sm:divide-border/60">
                 <KpiTile
                     label="YTD Received"
                     value={fmt(metrics.ytd)}
