@@ -10,6 +10,7 @@ interface TransactionModalProps {
     accountCurrencyMap: { [account: string]: string };
     existingAccounts?: string[];
     existingSymbols?: string[];
+    accountCashModeMap?: Record<string, string>;
 }
 
 const TRANSACTION_TYPES = [
@@ -24,7 +25,7 @@ const isCashSymbol = (symbol: string) => {
     return s.startsWith(CASH_SYMBOL_CSV.toLowerCase()) || s.startsWith('cash (');
 };
 
-export default function TransactionModal({ isOpen, onClose, onSubmit, initialData, mode, accountCurrencyMap, existingAccounts = [], existingSymbols = [] }: TransactionModalProps) {
+export default function TransactionModal({ isOpen, onClose, onSubmit, initialData, mode, accountCurrencyMap, existingAccounts = [], existingSymbols = [], accountCashModeMap = {} }: TransactionModalProps) {
     const [formData, setFormData] = useState<any>({
         Date: new Date().toISOString().split('T')[0],
         Type: 'Buy',
@@ -152,8 +153,9 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 }
             }
 
-            // 3. Clear Auto-add Cash if not applicable
-            if (!canAutoAddCash && newData["Auto-add Cash"]) {
+            // 3. Clear Auto-add Cash if not applicable or if account uses Auto cash mode
+            const accountMode = (accountCashModeMap[prev.Account || ''] || 'Manual');
+            if ((!canAutoAddCash || accountMode === 'Auto') && newData["Auto-add Cash"]) {
                 newData["Auto-add Cash"] = false;
             }
 
@@ -164,7 +166,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             return prev;
         });
 
-    }, [formData.Type, formData.Symbol, formData.Quantity, formData['Price/Share'], formData['From Account'], totalLockedByUser, isOpen]);
+    }, [formData.Type, formData.Symbol, formData.Quantity, formData['Price/Share'], formData['From Account'], formData.Account, totalLockedByUser, isOpen]);
 
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -358,6 +360,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const isSplit = txType === 'split' || txType === 'stock split';
     const canAutoAddCash = (['buy', 'sell', 'short sell', 'buy to cover'].includes(txType)) && !isCash;
     const isDividend = txType === 'dividend';
+    const selectedAccount = isTransfer ? formData['From Account'] : formData.Account;
+    const isAccountAutoCash = (accountCashModeMap[selectedAccount || ''] || 'Manual') === 'Auto';
 
     const isQtyDisabled = isSplit;
     const isPriceDisabled = isTransfer || isSplit || (isCash && ['deposit', 'withdrawal', 'buy', 'sell'].includes(txType));
@@ -568,10 +572,16 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                     name="Auto-add Cash"
                                     checked={!!formData["Auto-add Cash"]}
                                     onChange={(e) => setFormData((prev: any) => ({ ...prev, "Auto-add Cash": e.target.checked }))}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    disabled={isAccountAutoCash}
+                                    className={`h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 ${isAccountAutoCash ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 />
-                                <label htmlFor="auto-add-cash" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                <label
+                                    htmlFor="auto-add-cash"
+                                    className={`text-sm font-medium ${isAccountAutoCash ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}
+                                    title={isAccountAutoCash ? 'Not available: this account uses Auto cash mode' : undefined}
+                                >
                                     Auto-add internal cash & commission withdrawal
+                                    {isAccountAutoCash && <span className="ml-1 text-xs">(Auto cash mode)</span>}
                                 </label>
                             </div>
                         )}

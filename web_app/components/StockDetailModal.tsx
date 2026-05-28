@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useId, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
 import { createPortal } from 'react-dom';
 import {
@@ -141,14 +141,9 @@ const RANKING_CONFIG: Record<string, string[]> = {
 export default function StockDetailModal({ symbol, isOpen, onClose, currency }: StockDetailModalProps) {
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [finType, setFinType] = useState<'income' | 'balance' | 'cash' | 'equity'>('income');
-    const [fundamentals, setFundamentals] = useState<Fundamentals | null>(null);
-    const [financials, setFinancials] = useState<FinancialsResponse | null>(null);
-    const [ratios, setRatios] = useState<RatiosResponse | null>(null);
-    const [intrinsicValue, setIntrinsicValue] = useState<IntrinsicValueResponse | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [viewingDistribution, setViewingDistribution] = useState<'dcf' | 'graham' | null>(null);
     const [mounted, setMounted] = useState(false);
+    const queryClient = useQueryClient();
 
     useEffect(() => {
         setMounted(true);
@@ -158,6 +153,48 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [analysisError, setAnalysisError] = useState<string | null>(null);
     const { resolvedTheme } = useTheme();
     const isDarkMode = resolvedTheme === 'dark';
+
+    const fundamentalsQuery = useQuery({
+        queryKey: ['stock-fundamentals', symbol],
+        queryFn: () => fetchFundamentals(symbol),
+        enabled: isOpen && !!symbol,
+        staleTime: 5 * 60 * 1000,
+    });
+    const fundamentals = fundamentalsQuery.data ?? null;
+    const loading = fundamentalsQuery.isLoading;
+    const error = fundamentalsQuery.error ? (fundamentalsQuery.error as Error).message : null;
+
+    const financialsQuery = useQuery({
+        queryKey: ['stock-financials', symbol],
+        queryFn: () => fetchFinancials(symbol, 'annual'),
+        enabled: isOpen && !!symbol,
+        staleTime: 30 * 60 * 1000,
+    });
+    const financials = financialsQuery.data ?? null;
+
+    const ratiosQuery = useQuery({
+        queryKey: ['stock-ratios', symbol],
+        queryFn: () => fetchRatios(symbol),
+        enabled: isOpen && !!symbol,
+        staleTime: 30 * 60 * 1000,
+    });
+    const ratios = ratiosQuery.data ?? null;
+
+    const intrinsicValueQuery = useQuery({
+        queryKey: ['stock-intrinsic-value', symbol],
+        queryFn: async () => {
+            const data = await fetchIntrinsicValue(symbol);
+            if (data) {
+                window.dispatchEvent(new CustomEvent('stock-intrinsic-value-updated', {
+                    detail: { symbol, data }
+                }));
+            }
+            return data;
+        },
+        enabled: isOpen && !!symbol,
+        staleTime: 30 * 60 * 1000,
+    });
+    const intrinsicValue = intrinsicValueQuery.data ?? null;
 
     // Get filters for holdings query (matching dashboard)
     const filters = useMemo(() => {
@@ -298,44 +335,45 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         }
     }, [activeTab, symbol, analysis, analysisLoading, analysisError]);
 
-    useEffect(() => {
-        if (isOpen && symbol) {
-            loadData();
-        }
-    }, [isOpen, symbol]);
-
     const loadData = async (force: boolean = false) => {
-        setLoading(true);
-        setError(null);
-
-        try {
-            // Priority 1: Fetch Fundamentals (Required for initial render)
-            const fundRes = await fetchFundamentals(symbol, force);
-            setFundamentals(fundRes);
-            setLoading(false); // Unblock UI immediately after fundamentals
-
-            // Priority 2: Fetch everything else in parallel
-            // We don't await these for the main loading state
-            Promise.allSettled([
-                fetchFinancials(symbol, 'annual', force).then(setFinancials),
-                fetchRatios(symbol, force).then(setRatios),
-                fetchIntrinsicValue(symbol, force).then((data) => {
-                    setIntrinsicValue(data);
-                    // Dispatch event for live updates in ScreenerResults
-                    if (data) {
-                        window.dispatchEvent(new CustomEvent('stock-intrinsic-value-updated', {
-                            detail: { symbol, data }
-                        }));
-                    }
-                })
-            ]).catch(err => {
-                console.error("Background data fetch error:", err);
-            });
-
-        } catch (err: any) {
-            console.error(err);
-            setError(err.message || "Failed to load stock details");
-            setLoading(false);
+        if (force) {
+            await Promise.allSettled([
+                queryClient.fetchQuery({
+                    queryKey: ['stock-fundamentals', symbol],
+                    queryFn: () => fetchFundamentals(symbol, true),
+                    staleTime: 5 * 60 * 1000,
+                }),
+                queryClient.fetchQuery({
+                    queryKey: ['stock-financials', symbol],
+                    queryFn: () => fetchFinancials(symbol, 'annual', true),
+                    staleTime: 30 * 60 * 1000,
+                }),
+                queryClient.fetchQuery({
+                    queryKey: ['stock-ratios', symbol],
+                    queryFn: () => fetchRatios(symbol, true),
+                    staleTime: 30 * 60 * 1000,
+                }),
+                queryClient.fetchQuery({
+                    queryKey: ['stock-intrinsic-value', symbol],
+                    queryFn: async () => {
+                        const data = await fetchIntrinsicValue(symbol, true);
+                        if (data) {
+                            window.dispatchEvent(new CustomEvent('stock-intrinsic-value-updated', {
+                                detail: { symbol, data }
+                            }));
+                        }
+                        return data;
+                    },
+                    staleTime: 30 * 60 * 1000,
+                }),
+            ]);
+        } else {
+            await Promise.allSettled([
+                fundamentalsQuery.refetch(),
+                financialsQuery.refetch(),
+                ratiosQuery.refetch(),
+                intrinsicValueQuery.refetch(),
+            ]);
         }
     };
 
@@ -857,7 +895,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 </div>
                                 <h4 className="font-bold text-lg">Market Sentiment</h4>
                             </div>
-                            {analysis.sentiment !== undefined && (
+                            {typeof analysis.sentiment === 'number' && (
                                 <Badge className={cn(
                                     "border-none px-3 py-1",
                                     analysis.sentiment >= 70 ? "bg-emerald-500/20 text-emerald-500" :
@@ -868,8 +906,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 </Badge>
                             )}
                         </div>
-                        
-                        {analysis.sentiment !== undefined ? (
+
+                        {typeof analysis.sentiment === 'number' ? (
                             <div className="flex flex-col items-center py-4">
                                 <div className="relative w-full h-4 bg-muted rounded-full overflow-hidden mb-4">
                                     <div 

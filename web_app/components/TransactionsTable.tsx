@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
 import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings } from '../lib/api';
@@ -117,19 +117,22 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         staleTime: 5 * 60 * 1000,
     });
 
+    const cashModeMap: Record<string, string> = settingsQuery.data?.account_cash_mode_map ?? {};
+
     // The Internal Cash toggle only makes sense when at least one account in the
     // current transaction view is in Manual cash mode — Auto-mode accounts generate
     // bookkeeping mirror rows users never need to see. Default is 'Manual' to match
     // the Settings UI, so accounts without an explicit setting keep the toggle.
     const hasManualCashAccount = useMemo(() => {
-        const cashModeMap = settingsQuery.data?.account_cash_mode_map ?? {};
+        const map = settingsQuery.data?.account_cash_mode_map ?? {};
         const accountsInView = new Set((transactions || []).map(t => t.Account).filter(Boolean));
         if (accountsInView.size === 0) return false;
         for (const acc of accountsInView) {
-            if ((cashModeMap[acc] || 'Manual') === 'Manual') return true;
+            if ((map[acc] || 'Manual') === 'Manual') return true;
         }
         return false;
     }, [transactions, settingsQuery.data]);
+
     const [selectedPendingIds, setSelectedPendingIds] = useState<Set<number>>(new Set());
     const [isApproving, setIsApproving] = useState(false);
 
@@ -140,6 +143,14 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
     const [importAccount, setImportAccount] = useState('');
     const [reviewTransactions, setReviewTransactions] = useState<Transaction[]>([]);
     const [isReviewing, setIsReviewing] = useState(false);
+
+    const isImportAccountAutoCash = importAccount
+        ? (cashModeMap[importAccount] || 'Manual') === 'Auto'
+        : false;
+
+    useEffect(() => {
+        if (isImportAccountAutoCash) setAutoAddCashOnImport(false);
+    }, [isImportAccountAutoCash]);
 
     const handleAdd = () => {
         setModalMode('add');
@@ -749,6 +760,7 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                 accountCurrencyMap={accountCurrencyMap}
                 existingAccounts={existingAccounts}
                 existingSymbols={existingSymbols}
+                accountCashModeMap={cashModeMap}
             />
 
             {/* Aggregate KPIs for the currently-filtered view */}
@@ -822,15 +834,17 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                             </select>
                             <div className="w-[1px] h-4 bg-white/20" />
                             <label
-                                className="flex items-center gap-1 px-2 h-full hover:bg-purple-700 transition-colors cursor-pointer select-none"
+                                className={`flex items-center gap-1 px-2 h-full transition-colors select-none ${isImportAccountAutoCash ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-700 cursor-pointer'}`}
                                 htmlFor="auto-add-cash-import"
+                                title={isImportAccountAutoCash ? 'Not available: this account uses Auto cash mode' : undefined}
                             >
                                 <input
                                     type="checkbox"
                                     id="auto-add-cash-import"
                                     checked={autoAddCashOnImport}
                                     onChange={(e) => setAutoAddCashOnImport(e.target.checked)}
-                                    className="h-3 w-3 rounded border-none bg-white/10 text-white focus:ring-offset-0 focus:ring-0 cursor-pointer"
+                                    disabled={isImportAccountAutoCash}
+                                    className="h-3 w-3 rounded border-none bg-white/10 text-white focus:ring-offset-0 focus:ring-0 cursor-pointer disabled:cursor-not-allowed"
                                 />
                                 <span className="text-[9px] font-bold text-white/90 uppercase tracking-tighter">Auto</span>
                             </label>
@@ -840,7 +854,7 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                             type="file"
                             accept=".pdf,image/*"
                             ref={fileInputRef}
-                            style={{ display: 'none' }}
+                            className="sr-only"
                             onChange={handleFileUpload}
                         />
 

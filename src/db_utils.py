@@ -98,6 +98,10 @@ def _ensure_screener_schema(conn: "sqlite3.Connection") -> None:
             ai_financial_strength REAL,
             ai_predictability REAL,
             ai_growth REAL,
+            ai_moat_analysis TEXT,
+            ai_financial_strength_analysis TEXT,
+            ai_predictability_analysis TEXT,
+            ai_growth_perspective_analysis TEXT,
             ai_summary TEXT,
             ai_sentiment REAL,
             ai_catalysts TEXT,
@@ -118,6 +122,23 @@ def _ensure_screener_schema(conn: "sqlite3.Connection") -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_screener_cache_universe ON screener_cache(universe);"
     )
+
+    # Idempotent column adds for DBs that pre-date the per-dimension
+    # analysis-text columns. Without these, AI-review reads fall back to
+    # literal "N/A" because only the scorecard scores were persisted.
+    for col_def in (
+        "ai_moat_analysis TEXT",
+        "ai_financial_strength_analysis TEXT",
+        "ai_predictability_analysis TEXT",
+        "ai_growth_perspective_analysis TEXT",
+    ):
+        col_name = col_def.split()[0]
+        try:
+            conn.execute(f"ALTER TABLE screener_cache ADD COLUMN {col_def};")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                logging.warning(f"Could not add {col_name} to screener_cache: {e}")
+
     conn.commit()
 
 
@@ -679,6 +700,26 @@ def create_transactions_table(conn: sqlite3.Connection):
             except sqlite3.Error as e:
                 logging.error(f"Error during migration v14: {e}")
                 raise
+
+        if current_db_version < 15:
+            logging.info("Schema version is less than 15. Adding AI per-dimension analysis text columns to screener_cache.")
+            for col_def in (
+                "ai_moat_analysis TEXT",
+                "ai_financial_strength_analysis TEXT",
+                "ai_predictability_analysis TEXT",
+                "ai_growth_perspective_analysis TEXT",
+            ):
+                try:
+                    cursor.execute(f"ALTER TABLE screener_cache ADD COLUMN {col_def};")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e).lower():
+                        logging.error(f"Error during migration v15 ({col_def}): {e}")
+                        raise
+            cursor.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                (15, datetime.now().isoformat()),
+            )
+            logging.info("Updated schema_version to 15.")
 
         conn.commit()
         logging.info(
@@ -1590,7 +1631,8 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
     def do_update(conn, sym, data, inf, univ):
         now_str = datetime.now().isoformat()
         scorecard = data.get("scorecard", {})
-        
+        analysis = data.get("analysis", {}) or {}
+
         # 1. Update all existing entries
         update_sql = """
         UPDATE screener_cache SET
@@ -1598,6 +1640,10 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
             ai_financial_strength = ?,
             ai_predictability = ?,
             ai_growth = ?,
+            ai_moat_analysis = ?,
+            ai_financial_strength_analysis = ?,
+            ai_predictability_analysis = ?,
+            ai_growth_perspective_analysis = ?,
             ai_summary = ?,
             ai_sentiment = ?,
             ai_catalysts = ?,
@@ -1614,7 +1660,7 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
             updated_at = ?
         WHERE symbol = ?
         """
-        
+
         short_name = inf.get("shortName") if inf else None
         price_val = inf.get("currentPrice") if inf else None
         pe_val = inf.get("trailingPE") if inf else None
@@ -1630,16 +1676,24 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
         mos = data.get("margin_of_safety")
         val_details = json.dumps(data.get("valuation_details", {})) if data.get("valuation_details") else None
 
+        moat_text = analysis.get("moat") if isinstance(analysis.get("moat"), str) else None
+        fin_text = analysis.get("financial_strength") if isinstance(analysis.get("financial_strength"), str) else None
+        pred_text = analysis.get("predictability") if isinstance(analysis.get("predictability"), str) else None
+        growth_text = analysis.get("growth_perspective") if isinstance(analysis.get("growth_perspective"), str) else None
+
         try:
             cursor = conn.cursor()
-            # Bindings for UPDATE (18 placeholders + 1 WHERE)
             cursor.execute(update_sql, (
                 scorecard.get("moat"),
                 scorecard.get("financial_strength"),
                 scorecard.get("predictability"),
                 scorecard.get("growth"),
+                moat_text,
+                fin_text,
+                pred_text,
+                growth_text,
                 data.get("summary"),
-                sentiment, 
+                sentiment,
                 catalysts,
                 iv,
                 mos,
@@ -1649,19 +1703,21 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
                 now_str,
                 sym.upper()
             ))
-            
+
             # 2. If no rows affected, create new entry using the provided universe
             if cursor.rowcount == 0:
                 insert_sql = """
                 INSERT INTO screener_cache (
-                    symbol, universe, ai_moat, ai_financial_strength, 
-                    ai_predictability, ai_growth, ai_summary, 
+                    symbol, universe, ai_moat, ai_financial_strength,
+                    ai_predictability, ai_growth,
+                    ai_moat_analysis, ai_financial_strength_analysis,
+                    ai_predictability_analysis, ai_growth_perspective_analysis,
+                    ai_summary,
                     ai_sentiment, ai_catalysts, intrinsic_value, margin_of_safety, valuation_details,
-                    name, price, pe_ratio, market_cap, sector, 
+                    name, price, pe_ratio, market_cap, sector,
                     last_fiscal_year_end, most_recent_quarter, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
-                # Bindings for INSERT (20 placeholders)
                 cursor.execute(insert_sql, (
                     sym.upper(),
                     univ,
@@ -1669,8 +1725,12 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
                     scorecard.get("financial_strength"),
                     scorecard.get("predictability"),
                     scorecard.get("growth"),
+                    moat_text,
+                    fin_text,
+                    pred_text,
+                    growth_text,
                     data.get("summary"),
-                    sentiment, 
+                    sentiment,
                     catalysts,
                     iv,
                     mos,

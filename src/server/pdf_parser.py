@@ -26,6 +26,18 @@ _INLINE_SECTION_HEADERS = {
     "disclosure": "SKIP",
 }
 
+# IBKR account identifiers look like "U13340051". Match that exact shape
+# rather than a bare "starts with U" — otherwise tickers such as UNH, UPS or
+# UBER are mistaken for an account column and the row is misparsed.
+_ACCOUNT_ID_RE = re.compile(r"^U\d{6,}$")
+
+
+def _to_float(value: str) -> float:
+    """Parse an IBKR numeric cell, tolerating thousands separators and the
+    embedded space pdfplumber inserts when a long decimal wraps across two
+    lines (e.g. a trade price rendered as '271.02159793 8')."""
+    return float(value.replace(",", "").replace(" ", ""))
+
 
 def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
     transactions = []
@@ -59,52 +71,67 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                         if not row or len(row) < 3: continue
                         row = [str(x).replace("\n", " ").strip() if x is not None else "" for x in row]
 
-                        first_val = row[0]
-
-                        # Mid-table section switch: when first cell exactly
-                        # matches a known section heading, swap and skip.
-                        fv_key = first_val.lower()
-                        if fv_key in _INLINE_SECTION_HEADERS:
-                            current_section = _INLINE_SECTION_HEADERS[fv_key]
+                        # Mid-table section switch: a known section heading can
+                        # appear in ANY column, not just the first. When
+                        # pdfplumber merges the right-hand page tables (e.g.
+                        # Dividends + Deposits & Withdrawals) it prepends several
+                        # empty cells, so the heading lands in a middle column.
+                        switched = False
+                        for cell in row:
+                            key = cell.lower()
+                            if key in _INLINE_SECTION_HEADERS:
+                                current_section = _INLINE_SECTION_HEADERS[key]
+                                switched = True
+                                break
+                        if switched:
                             continue
                         if current_section == "SKIP":
                             continue
                         # Rebind for the rest of the loop body below.
                         section = current_section
 
-                        if any(x in first_val for x in [section, "Symbol", "Date", "Total", "Stocks", "USD", "Description"]): continue
-                        if not first_val or first_val == "None": continue
+                        first_val = row[0]
+                        # Header / label / subtotal rows. The fixed-column
+                        # Trades / Transfers branches index by position, so a
+                        # stray label row must be filtered here. The generic
+                        # branch below instead locates data by content and
+                        # filters non-data rows itself (no date / no amount),
+                        # so skipping it here would wrongly drop right-aligned
+                        # tables whose first cell is empty.
+                        if section in ("Trades", "Transfers"):
+                            if any(x in first_val for x in [section, "Symbol", "Date", "Total", "Stocks", "USD", "Description"]): continue
+                            if not first_val or first_val == "None": continue
 
                         try:
                             if section == "Trades":
-                                if row[0].startswith("U"):
+                                if _ACCOUNT_ID_RE.match(row[0]):
                                     account = row[0]
                                     sym, date_str, qty_str, price_str, proceeds_str, comm_str = row[1], row[2].split(",")[0].strip(), row[6], row[7], row[9], row[10]
                                 else:
                                     account = account_name
                                     sym, date_str, _, qty_str, price_str, _, proceeds_str, comm_str = row[0], row[1].split(",")[0].strip(), row[2], row[3], row[4], row[5], row[6], row[7]
-                                
-                                q_val = float(qty_str.replace(",", ""))
+
+                                q_val = _to_float(qty_str)
                                 transactions.append({
                                     "Date": date_str, "Type": "Buy" if q_val > 0 else "Sell", "Symbol": sym,
-                                    "Quantity": abs(q_val), "Price/Share": float(price_str.replace(",", "")),
-                                    "Total Amount": abs(float(proceeds_str.replace(",", ""))),
-                                    "Commission": abs(float(comm_str.replace(",", ""))),
+                                    "Quantity": abs(q_val), "Price/Share": _to_float(price_str),
+                                    "Total Amount": abs(_to_float(proceeds_str)),
+                                    "Commission": abs(_to_float(comm_str)),
                                     "Account": account, "Note": f"IBKR Trade", "Local Currency": "USD", "user_id": user_id
                                 })
 
                             elif section == "Transfers":
-                                if row[0].startswith("U"):
+                                if _ACCOUNT_ID_RE.match(row[0]):
                                     account = row[0]
                                     sym, date_str, t_type, qty_str, mval_str = row[1], row[2], row[3], row[7], row[9]
                                 else:
                                     account = account_name
                                     sym, date_str, t_type, qty_str, mval_str = row[0], row[1], row[2], row[6], row[8]
-                                q_val = float(qty_str.replace(",", ""))
+                                q_val = _to_float(qty_str)
                                 transactions.append({
                                     "Date": date_str, "Type": "Transfer", "Symbol": sym,
-                                    "Quantity": abs(q_val), "Price/Share": float(mval_str.replace(",", "")) / abs(q_val) if q_val != 0 else 0,
-                                    "Total Amount": abs(float(mval_str.replace(",", ""))),
+                                    "Quantity": abs(q_val), "Price/Share": _to_float(mval_str) / abs(q_val) if q_val != 0 else 0,
+                                    "Total Amount": abs(_to_float(mval_str)),
                                     "Commission": 0.0, "Account": account, "Note": f"IBKR Transfer ({t_type})", "Local Currency": "USD", "user_id": user_id
                                 })
                                 
@@ -116,7 +143,7 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 # index 6 (not 2). Locate date / description /
                                 # amount by content rather than fixed index so
                                 # both layouts work.
-                                if row[0].startswith("U"):
+                                if _ACCOUNT_ID_RE.match(row[0]):
                                     account = row[0]
                                     scan_start = 1
                                 else:
@@ -169,7 +196,7 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
 
                                 if "Total" in desc or "Starting" in desc: continue
 
-                                amt = float(amt_str.replace(",", ""))
+                                amt = _to_float(amt_str)
                                 sym = "$CASH"
                                 # Only treat the parenthesised payload as a
                                 # ticker identifier (CUSIP/ISIN) when the
@@ -196,9 +223,10 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 elif section == "Interest": t_type = "Interest"
                                 elif section == "Fees": t_type = "Fees"
                                 elif "electronic fund" in l_desc or "deposit" in l_desc: t_type = "Deposit"
-                                elif "withdrawal" in l_desc: t_type = "Withdrawal"
+                                elif "withdrawal" in l_desc or "disbursement" in l_desc: t_type = "Withdrawal"
                                 elif "acats transfer" in l_desc or "transfer" in l_desc: t_type = "Transfer"
                                 elif "commission adj" in l_desc: t_type = "Deposit" if amt > 0 else "Fees"
+                                elif section == "Cash": t_type = "Deposit" if amt >= 0 else "Withdrawal"
 
                                 # Always drop internal sweeps — they aren't
                                 # real external cash movements and they double-
@@ -235,7 +263,9 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                     "Account": account, "Note": desc[:100],
                                     "Local Currency": "USD", "user_id": user_id
                                 })
-                        except (ValueError, IndexError): continue
+                        except (ValueError, IndexError) as e:
+                            logging.debug(f"IBKR parser skipped {section} row {row!r}: {e}")
+                            continue
     except Exception as e:
         logging.error(f"Error parsing IBKR Comprehensive PDF: {e}")
         

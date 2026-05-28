@@ -1074,9 +1074,17 @@ def _build_summary_rows(
                     " - No Manual" if "Manual Fallback" not in price_source else ""
                 )
                 try:
+                    # Match either side of a transfer: shares may have arrived
+                    # via a Transfer row where the priced leg is on the source
+                    # account (Account=src, "To Account"=account).
+                    account_mask = transactions_df["Account"] == account
+                    if "To Account" in transactions_df.columns:
+                        account_mask = account_mask | (
+                            transactions_df["To Account"] == account
+                        )
                     fallback_tx = transactions_df[
                         (transactions_df["Symbol"] == symbol)
-                        & (transactions_df["Account"] == account)
+                        & account_mask
                         & (transactions_df["Price/Share"].notna())
                         & (
                             pd.to_numeric(transactions_df["Price/Share"], errors="coerce")

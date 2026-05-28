@@ -36,28 +36,37 @@ def generate_stock_review(
     
     # helper for reconstruction
     def reconstruct_from_db(row: dict) -> dict:
+        catalysts_raw = row.get("ai_catalysts")
+        if catalysts_raw and isinstance(catalysts_raw, str):
+            try:
+                catalysts = json.loads(catalysts_raw)
+            except json.JSONDecodeError:
+                catalysts = []
+        else:
+            catalysts = catalysts_raw or []
+
+        def _score(v):
+            return v if isinstance(v, (int, float)) else 0.0
+
+        def _text(v):
+            return v if isinstance(v, str) and v.strip() else "N/A"
+
         return {
             "scorecard": {
-                "moat": row.get("ai_moat"),
-                "financial_strength": row.get("ai_financial_strength"),
-                "predictability": row.get("ai_predictability"),
-                "growth": row.get("ai_growth")
+                "moat": _score(row.get("ai_moat")),
+                "financial_strength": _score(row.get("ai_financial_strength")),
+                "predictability": _score(row.get("ai_predictability")),
+                "growth": _score(row.get("ai_growth")),
             },
             "analysis": {
-                "moat": row.get("ai_moat_analysis") or row.get("ai_moat"), # Some legacy rows might store text in ai_moat if schema was different, but usually separate now
-                "financial_strength": row.get("ai_financial_strength_analysis") or row.get("ai_financial_strength"),
-                "predictability": row.get("ai_predictability_analysis") or row.get("ai_predictability"),
-                "growth_perspective": row.get("ai_growth_analysis") or row.get("ai_growth")
+                "moat": _text(row.get("ai_moat_analysis")),
+                "financial_strength": _text(row.get("ai_financial_strength_analysis")),
+                "predictability": _text(row.get("ai_predictability_analysis")),
+                "growth_perspective": _text(row.get("ai_growth_perspective_analysis")),
             },
-            # If the DB stores the text directly in the scorecard fields (which it seems it does based on update_ai_review_in_cache), we handle that.
-            # wait, update_ai_review_in_cache uses:
-            # ai_moat = scorecard.get("moat")
-            # ai_summary = ai_data.get("summary")
-            # So the DB table has ai_moat, ai_financial_strength, etc. as the text/scores?
-            # Let's check update_ai_review_in_cache again.
             "summary": row.get("ai_summary"),
             "sentiment": row.get("ai_sentiment"),
-            "catalysts": json.loads(row.get("ai_catalysts")) if row.get("ai_catalysts") and isinstance(row.get("ai_catalysts"), str) else (row.get("ai_catalysts") or [])
+            "catalysts": catalysts,
         }
     
     # --- Caching Logic ---
@@ -116,36 +125,19 @@ def generate_stock_review(
         try:
             db_results = get_cached_screener_results([symbol])
             if symbol in db_results:
-                    row = db_results[symbol]
-                    if row.get("ai_summary") and len(row["ai_summary"]) > 20:
-                        # Construct expected JSON structure
-                        db_result = {
-                            "scorecard": {
-                                "moat": row.get("ai_moat") if isinstance(row.get("ai_moat"), (int, float)) else 0.0,
-                                "financial_strength": row.get("ai_financial_strength") if isinstance(row.get("ai_financial_strength"), (int, float)) else 0.0,
-                                "predictability": row.get("ai_predictability") if isinstance(row.get("ai_predictability"), (int, float)) else 0.0,
-                                "growth": row.get("ai_growth") if isinstance(row.get("ai_growth"), (int, float)) else 0.0
-                            },
-                            "analysis": {
-                                "moat": row.get("ai_moat") if isinstance(row.get("ai_moat"), str) else "N/A", 
-                                "financial_strength": row.get("ai_financial_strength") if isinstance(row.get("ai_financial_strength"), str) else "N/A",
-                                "predictability": row.get("ai_predictability") if isinstance(row.get("ai_predictability"), str) else "N/A",
-                                "growth_perspective": row.get("ai_growth") if isinstance(row.get("ai_growth"), str) else "N/A"
-                            },
-                            "summary": row.get("ai_summary")
-                        }
-                        
-                        # Use the smart helper if we trust the row structure more
-                        # But based on the schema I saw, ai_moat/etc store the scores as REAL?
-                        # Wait, PRAGMA said REAL. So they are scores.
-                        # Then where is the text? screener_service.py says:
-                        # results.append({ ... "ai_moat": ai_moat, ... "ai_summary": ai_summary ... })
-                        # where ai_moat was scorecard.get("moat") which is a number?
-                        # No, the screenshot shows detailed text!
-                        # Let's check update_ai_review_in_cache again.
-                        
+                row = db_results[symbol]
+                if row.get("ai_summary") and len(row["ai_summary"]) > 20:
+                    db_result = reconstruct_from_db(row)
+                    # If the row pre-dates the per-dimension text columns, all
+                    # four narratives will be "N/A". Treat that as a cache miss
+                    # so we regenerate and backfill the DB with real text.
+                    analysis = db_result.get("analysis", {})
+                    if any(v and v != "N/A" for v in analysis.values()):
                         logging.info(f"AI Cache: Found valid review in DB for {symbol}. Returning.")
                         return db_result
+                    logging.info(
+                        f"AI Cache: DB row for {symbol} lacks per-dimension narratives; regenerating to backfill."
+                    )
         except Exception as e_db_cache:
             logging.warning(f"AI Cache: Failed to read from DB for {symbol}: {e_db_cache}")
 

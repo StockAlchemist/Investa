@@ -731,22 +731,32 @@ class MarketDataProvider:
         for sym, entry in cache.items():
             path = self._get_symbol_fundamentals_path(sym)
             try:
+                ticker_info = entry.get("ticker_info") if isinstance(entry, dict) else None
+
+                # Skip persisting sparse yfinance responses — the detail reader
+                # treats <=8-key "data" as poisoned and would purge this file on
+                # the next read, creating perpetual warning/refetch churn.
+                if not isinstance(ticker_info, dict) or len(ticker_info) <= 8:
+                    continue
+
                 # Merge with existing data if any (legacy compatibility)
                 existing = _safe_json_load(path) or {}
-                
+
                 # If existing is a legacy format (raw data directly), wrap it
                 if "data" not in existing:
                     existing = {"data": existing, "timestamp": datetime.now(timezone.utc).isoformat()}
-                
-                # Update data
-                if "ticker_info" in entry:
-                    existing["ticker_info"] = entry["ticker_info"]
-                
+
+                # Mirror the full ticker info into "data" so the per-symbol detail
+                # reader (which only looks at "data") sees substantive content
+                # instead of the empty dict left from the legacy wrap step above.
+                existing["data"] = ticker_info
+                existing["ticker_info"] = ticker_info
+
                 # Copy other fields
                 for k, v in entry.items():
                     if k != "ticker_info":
                         existing[k] = v
-                
+
                 with open(path, "w") as f:
                     json.dump(existing, f, indent=2, cls=NpEncoder)
             except Exception as e:
@@ -994,7 +1004,6 @@ class MarketDataProvider:
                     cache_timestamp_str = cache_data.get("timestamp")
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                        from utils_time import is_market_open
                         cache_ttl_minutes = 1 if is_market_open() else 60
                         if datetime.now(timezone.utc) - cache_timestamp < timedelta(
                             minutes=cache_ttl_minutes # BN-06: Adaptive 1min/60min cache
@@ -1392,15 +1401,23 @@ class MarketDataProvider:
                                         fx_prev_close_vs_usd[base_curr_from_symbol] = prev
                             else:
                                 if base_curr_from_symbol not in fx_rates_vs_usd:
-                                    logging.warning(f"FX Fetch: Invalid/Empty history for {yf_symbol}")
-                                    has_warnings = True
+                                    # yfinance FX history often has gaps during after-hours;
+                                    # persistent FX cache supplies the fallback rate below.
+                                    if not is_market_open():
+                                        logging.info(f"FX Fetch: Empty history for {yf_symbol} (after-hours — expected, using cache fallback)")
+                                    else:
+                                        logging.warning(f"FX Fetch: Invalid/Empty history for {yf_symbol}")
+                                        has_warnings = True
 
                         except Exception as e_fx_sym:
                             logging.warning(f"Error extracting FX for {yf_symbol}: {e_fx_sym}")
                             
                 else:
-                    logging.warning("FX Fetch: History returned empty DataFrame.")
-                    has_warnings = True
+                    if not is_market_open():
+                        logging.info("FX Fetch: History returned empty DataFrame (after-hours — expected, using cache fallback).")
+                    else:
+                        logging.warning("FX Fetch: History returned empty DataFrame.")
+                        has_warnings = True
 
             except Exception as e_fx:
                 logging.error(f"FX fetch error: {e_fx}")
@@ -2260,15 +2277,13 @@ class MarketDataProvider:
 
             # --- Process Batch Results & Identify Missing ---
             missing_symbols_in_batch = []
-            
-            # --- Process Batch Results & Identify Missing ---
-            missing_symbols_in_batch = []
-            
+
+            market_closed = not is_market_open()
+
             # Check if we broke out due to valid empty result
             is_valid_empty_batch = False
             if data.empty and len(batch_symbols) > 0:
                  is_all_reliable = all(s in RELIABLE_SYMBOLS for s in batch_symbols)
-                 market_closed = not is_market_open()
                  if is_all_reliable and market_closed:
                       is_valid_empty_batch = True
                       logging.info(f"  Hist Fetch Helper: Batch {batch_symbols[:3]} identified as validly empty (Closed Market + Reliable). Skipping recovery.")
@@ -2375,7 +2390,12 @@ class MarketDataProvider:
                             historical_data[symbol] = df_filtered.sort_index()
                             logging.info(f"  Hist Fetch Helper: Successfully extracted & cleaned {symbol} ({len(df_filtered)} rows).")
                         else:
-                            logging.warning(f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup.")
+                            # After-hours empties for reliable symbols are expected
+                            # (yfinance often returns sparse intraday between sessions).
+                            if symbol in RELIABLE_SYMBOLS and market_closed:
+                                logging.info(f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup (after-hours, reliable — expected).")
+                            else:
+                                logging.warning(f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup.")
                             missing_symbols_in_batch.append(symbol)
 
                     except Exception as e_sym:
@@ -3252,7 +3272,7 @@ class MarketDataProvider:
                                 cache_valid = True
                                 logging.debug(f"Using valid fundamentals cache for {yf_symbol} from file")
                             else:
-                                logging.warning(f"Rejecting poisoned/empty/incomplete fundamentals cache for {yf_symbol} (Keys: {len(cached_data) if cached_data else 0}). PURGING FILE.")
+                                logging.info(f"Rejecting poisoned/empty/incomplete fundamentals cache for {yf_symbol} (Keys: {len(cached_data) if cached_data else 0}). PURGING FILE.")
                                 cache_valid = False
                                 try:
                                     os.remove(symbol_cache_file)

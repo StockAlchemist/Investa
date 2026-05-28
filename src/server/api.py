@@ -9,7 +9,7 @@ import os
 import json
 import time
 import sqlite3
-from datetime import datetime, date, timedelta, time as dt_time
+from datetime import datetime, date, timedelta, time as dt_time, timezone
 import asyncio
 import shutil
 import sys
@@ -4221,22 +4221,39 @@ async def get_fundamentals_endpoint(
         fundamental_data = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         if fundamental_data is None:
              raise HTTPException(status_code=404, detail=f"No fundamental data found for {yf_symbol}")
-        
-        # Patch with live price for accuracy (fundamentals cache can be up to 24h)
+
+        # Best-effort live price piggyback: read the existing current-quotes cache file
+        # (populated by the dashboard's batch fetch) without triggering a new subprocess.
+        # This keeps the modal open path subprocess-free on cache hits.
         try:
-            live_quotes, _, _, _, _ = mdp.get_current_quotes([symbol], {config.DEFAULT_CURRENCY}, user_symbol_map, user_excluded_symbols)
-            if symbol in live_quotes:
-                live_price = live_quotes[symbol].get("price")
-                if live_price:
-                    fundamental_data["regularMarketPrice"] = live_price
-                    fundamental_data["currentPrice"] = live_price
-                    # Also update change stats if possible
-                    if "day_change" in live_quotes[symbol]:
-                        fundamental_data["regularMarketChange"] = live_quotes[symbol]["day_change"]
-                    if "day_change_percent" in live_quotes[symbol]:
-                        fundamental_data["regularMarketChangePercent"] = live_quotes[symbol]["day_change_percent"]
+            cache_file = getattr(mdp, "current_cache_file", None)
+            if cache_file and os.path.exists(cache_file):
+                with open(cache_file, "r") as _f:
+                    _cache = json.load(_f)
+                _quotes = _cache.get("quotes") or {}
+                _ts_str = _cache.get("timestamp")
+                _fresh = False
+                if _ts_str:
+                    try:
+                        _ts = datetime.fromisoformat(_ts_str)
+                        from utils_time import is_market_open
+                        _ttl_min = 5 if is_market_open() else 240
+                        if datetime.now(timezone.utc) - _ts < timedelta(minutes=_ttl_min):
+                            _fresh = True
+                    except Exception:
+                        pass
+                if _fresh and symbol in _quotes:
+                    _live = _quotes[symbol]
+                    _price = _live.get("price")
+                    if _price:
+                        fundamental_data["regularMarketPrice"] = _price
+                        fundamental_data["currentPrice"] = _price
+                        if "day_change" in _live:
+                            fundamental_data["regularMarketChange"] = _live["day_change"]
+                        if "day_change_percent" in _live:
+                            fundamental_data["regularMarketChangePercent"] = _live["day_change_percent"]
         except Exception as e_live:
-            logging.warning(f"Live price patch failed for {symbol} in fundamentals endpoint: {e_live}")
+            logging.debug(f"Live price piggyback skipped for {symbol}: {e_live}")
 
         return clean_nans(fundamental_data)
     except Exception as e:
