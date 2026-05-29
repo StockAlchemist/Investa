@@ -190,7 +190,7 @@ function StatPill({
                     'text-lg sm:text-xl font-bold tabular-nums leading-none',
                     positive ? 'text-emerald-500' : 'text-red-500',
                 )}>
-                    {positive ? '+' : ''}{value.toFixed(2)}%
+                    {positive ? '+' : ''}{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                 </p>
             )}
             {sub && !isLoading && (
@@ -476,7 +476,7 @@ function DashboardInner({
             case 'totalReturn':
                 return <MetricCard title="Total Return" value={totalGain} subValue={m?.total_return_pct} colorClass={pos(totalGain)} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
             case 'annualTWR':
-                return <MetricCard title="Total TWR" value={m?.cumulative_twr != null ? `${Math.abs(m.cumulative_twr).toFixed(2)}%` : '-'} subValue={m?.annualized_twr != null ? `${Math.abs(m.annualized_twr).toFixed(2)}% p.a.` : undefined} subValueClassName={subBadge(m?.annualized_twr)} isCurrency={false} colorClass={pos(m?.cumulative_twr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Total TWR" value={m?.cumulative_twr != null ? `${Math.abs(m.cumulative_twr).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'} subValue={m?.annualized_twr != null ? `${Math.abs(m.annualized_twr).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined} subValueClassName={subBadge(m?.annualized_twr)} isCurrency={false} colorClass={pos(m?.cumulative_twr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
             case 'mwr':
                 return <MetricCard title="IRR (MWR)" value={m?.portfolio_mwr != null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'} subValue="p.a." subValueClassName={subBadge(m?.portfolio_mwr)} isCurrency={false} colorClass={pos(m?.portfolio_mwr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
             case 'unrealizedGL':

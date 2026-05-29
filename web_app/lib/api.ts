@@ -603,10 +603,10 @@ export interface DividendEvent {
     status: 'confirmed' | 'estimated'; // Added status
 }
 
-export async function fetchDividendCalendar(accounts?: string[], signal?: AbortSignal): Promise<DividendEvent[]> {
+export async function fetchDividendCalendar(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<DividendEvent[]> {
     const { data, error } = await apiClient.GET("/api/dividend_calendar", {
         params: {
-            query: { accounts: accounts || undefined, _t: Date.now().toString() as any }
+            query: { currency, accounts: accounts || undefined, _t: Date.now().toString() as any }
         },
         signal
     });

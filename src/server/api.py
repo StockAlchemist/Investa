@@ -4134,19 +4134,23 @@ def calculate_mtd_average_daily_balance(
 
 @router.get("/dividend_calendar")
 async def get_dividend_calendar(
+    currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
     data: tuple = Depends(get_transaction_data),
     config_manager = Depends(get_config_manager),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Returns confirmed AND estimated dividend events for the next 12 months.
+    Returns confirmed AND estimated dividend events for the next 12 months,
+    with amounts converted to the requested display currency.
     """
     try:
-        # 1. Get Current Holdings
+        # 1. Get Current Holdings (in the display currency so the summary's FX
+        # rates and cash-interest events are expressed in that currency).
         summary_data = await _calculate_portfolio_summary_internal(
-            include_accounts=accounts, 
-            show_closed_positions=False, 
+            currency=currency,
+            include_accounts=accounts,
+            show_closed_positions=False,
             data=data,
             current_user=current_user
         )
@@ -4154,7 +4158,7 @@ async def get_dividend_calendar(
         if summary_df is None or summary_df.empty:
                 return []
         rows = summary_df.to_dict(orient="records")
-        
+
         # 2. Extract Holdings
         holdings = defaultdict(float)
         for r in rows:
@@ -4163,13 +4167,13 @@ async def get_dividend_calendar(
                     qty = r.get("Quantity", 0)
                     if qty > 0:
                         holdings[sym] += qty
-        
+
         if not holdings:
             return []
 
         # 3. Use unified event generation logic
         df, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
-        
+
         events = await _generate_dividend_events(
             holdings=holdings,
             user_symbol_map=user_symbol_map,
@@ -4177,7 +4181,28 @@ async def get_dividend_calendar(
             current_user=current_user,
             portfolio_summary_rows=rows
         )
-        
+
+        # 4. Convert per-symbol LOCAL dividend amounts to the display currency
+        # using the FX rates fetched during the summary calculation. Cash
+        # interest events (symbol $CASH) are already generated in the display
+        # currency, so they are intentionally absent from the rate map and left
+        # unconverted.
+        from finutils import get_conversion_rate
+        fx_rates_vs_usd = summary_data["metrics"].get("_fx_rates_vs_usd", {})
+        symbol_to_fx_rate = {}
+        for row in rows:
+            row_sym = row.get("Symbol")
+            local_curr = row.get("Local Currency")
+            if row_sym and local_curr:
+                rate = get_conversion_rate(local_curr, currency, fx_rates_vs_usd)
+                if pd.notna(rate):
+                    symbol_to_fx_rate[row_sym] = rate
+
+        for event in events:
+            rate = symbol_to_fx_rate.get(event.get("symbol"))
+            if rate is not None:
+                event["amount"] *= rate
+
         return clean_nans(events)
 
     except Exception as e:

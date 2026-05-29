@@ -161,18 +161,31 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
         }
 
         // 3) Significantly undervalued holdings (margin of safety > 10%).
+        // Margin of safety is a per-symbol valuation, but `holdings` carries one
+        // entry per account — collapse to a single row per symbol, summing the
+        // position value across accounts so a stock held in two accounts isn't
+        // listed twice.
+        const undervaluedBySymbol = new Map<string, UndervaluedHolding>();
         for (const h of holdings) {
             const mos = h.margin_of_safety;
             if (typeof mos === 'number' && mos > MOS_SIGNIFICANT) {
-                det.undervalued.push({
-                    symbol: h.Symbol,
-                    account: h.Account,
-                    mos,
-                    intrinsic: h.intrinsic_value,
-                    marketValue: (h[mvKey] as number) || undefined,
-                });
+                const mv = (h[mvKey] as number) || 0;
+                const existing = undervaluedBySymbol.get(h.Symbol);
+                if (existing) {
+                    existing.marketValue = (existing.marketValue || 0) + mv;
+                    existing.account = undefined; // spans multiple accounts
+                } else {
+                    undervaluedBySymbol.set(h.Symbol, {
+                        symbol: h.Symbol,
+                        account: h.Account,
+                        mos,
+                        intrinsic: h.intrinsic_value,
+                        marketValue: mv || undefined,
+                    });
+                }
             }
         }
+        det.undervalued = Array.from(undervaluedBySymbol.values());
         det.undervalued.sort((a, b) => b.mos - a.mos);
         if (det.undervalued.length > 0) {
             const n = det.undervalued.length;

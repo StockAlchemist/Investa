@@ -329,8 +329,8 @@ export default function Home() {
   });
 
   const dividendCalendarQuery = useQuery({
-    queryKey: ['dividendCalendar', user?.username, selectedAccounts],
-    queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
+    queryKey: ['dividendCalendar', user?.username, currency, selectedAccounts],
+    queryFn: ({ signal }) => fetchDividendCalendar(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled: !!user && (activeTab === 'dividend' || activeTab === 'performance' || backgroundFetchLevel >= 2),

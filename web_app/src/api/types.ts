@@ -332,8 +332,16 @@ export interface paths {
         put?: never;
         /**
          * Add Transactions Batch
-         * @description Adds a batch of transactions to the database.
-         *     Used for Review & Confirm step after document parsing.
+         * @description Adds a batch of transactions to the database. Used for the Review &
+         *     Confirm step after document parsing.
+         *
+         *     Auto-add-cash behaviour is decided **per account** rather than globally:
+         *     the explicit $CASH legs only need to be generated for accounts that are
+         *     in *Manual* cash mode. Accounts already in *Auto* cash mode have the
+         *     engine generate cash deltas on the fly during valuation, so adding
+         *     explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
+         *     therefore acts as a user opt-in that still gets gated by the account's
+         *     cash mode.
          */
         post: operations["add_transactions_batch_api_transactions_batch_post"];
         delete?: never;
@@ -707,7 +715,8 @@ export interface paths {
         };
         /**
          * Get Dividend Calendar
-         * @description Returns confirmed AND estimated dividend events for the next 12 months.
+         * @description Returns confirmed AND estimated dividend events for the next 12 months,
+         *     with amounts converted to the requested display currency.
          */
         get: operations["get_dividend_calendar_api_dividend_calendar_get"];
         put?: never;
@@ -1380,8 +1389,16 @@ export interface paths {
         put?: never;
         /**
          * Add Transactions Batch
-         * @description Adds a batch of transactions to the database.
-         *     Used for Review & Confirm step after document parsing.
+         * @description Adds a batch of transactions to the database. Used for the Review &
+         *     Confirm step after document parsing.
+         *
+         *     Auto-add-cash behaviour is decided **per account** rather than globally:
+         *     the explicit $CASH legs only need to be generated for accounts that are
+         *     in *Manual* cash mode. Accounts already in *Auto* cash mode have the
+         *     engine generate cash deltas on the fly during valuation, so adding
+         *     explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
+         *     therefore acts as a user opt-in that still gets gated by the account's
+         *     cash mode.
          */
         post: operations["add_transactions_batch_transactions_batch_post"];
         delete?: never;
@@ -1755,7 +1772,8 @@ export interface paths {
         };
         /**
          * Get Dividend Calendar
-         * @description Returns confirmed AND estimated dividend events for the next 12 months.
+         * @description Returns confirmed AND estimated dividend events for the next 12 months,
+         *     with amounts converted to the requested display currency.
          */
         get: operations["get_dividend_calendar_dividend_calendar_get"];
         put?: never;
@@ -2267,6 +2285,10 @@ export interface components {
             } | null;
             /** Account Cash Mode Map */
             account_cash_mode_map?: {
+                [key: string]: string;
+            } | null;
+            /** Account Closure Dates */
+            account_closure_dates?: {
                 [key: string]: string;
             } | null;
             /** Available Currencies */
@@ -3526,6 +3548,7 @@ export interface operations {
     get_dividend_calendar_api_dividend_calendar_get: {
         parameters: {
             query?: {
+                currency?: string;
                 accounts?: string[] | null;
             };
             header?: never;
@@ -5239,6 +5262,7 @@ export interface operations {
     get_dividend_calendar_dividend_calendar_get: {
         parameters: {
             query?: {
+                currency?: string;
                 accounts?: string[] | null;
             };
             header?: never;
