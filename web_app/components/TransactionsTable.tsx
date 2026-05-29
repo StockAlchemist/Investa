@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings } from '../lib/api';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings, fetchTransactions } from '../lib/api';
 import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
@@ -34,6 +34,33 @@ const DATE_PRESETS: { key: DatePreset; label: string }[] = [
 // Identity key for duplicate detection: same symbol + date + type + |qty| + amount + account + note.
 function dupKey(tx: Transaction): string {
     return `${tx.Symbol}|${(tx.Date || '').split('T')[0].split(' ')[0]}|${tx.Type}|${Math.abs(tx.Quantity || 0)}|${tx['Total Amount'] ?? ''}|${tx.Account}|${tx.Note ?? ''}`;
+}
+
+// Looser key used to flag import-review rows that already exist in the table.
+// Deliberately matches only on Symbol + date + Type + |qty|. The fields it
+// omits all drift between import paths and would cause genuine duplicates to be
+// missed: Account is a free-text label chosen at import time (the same IBKR
+// account appears as "IBKR Acct. 1", "IBKR Atcha", etc.); Total Amount differs
+// because the canonical fee-sign convention stores qty*price +/- commission
+// while the parser emits raw proceeds; and Note is source-dependent. |qty|
+// disambiguates same-day trades of the same symbol; cash rows carry their
+// amount in Quantity, so deposits/withdrawals of different sizes stay distinct.
+function importMatchKey(tx: Transaction): string {
+    const date = (tx.Date || '').split('T')[0].split(' ')[0];
+    const sym = (tx.Symbol || '').toUpperCase();
+    // Type must be lower-cased: the API normalizes stored types to lowercase
+    // ("buy"/"sell"/"dividend"), while the parser emits "Buy"/"Sell"/"Dividend".
+    const type = String(tx.Type || '').toLowerCase();
+    // Dividend / Tax are a single event per symbol per date, and their stored
+    // Quantity is unreliable (0 from the current parser, but a share count from
+    // older import paths), so omit |qty| for those types. Everything else keeps
+    // it: trades need it to disambiguate same-day fills, and cash rows ($CASH
+    // deposit/withdrawal/interest) encode their amount there.
+    if (type === 'dividend' || type === 'tax') {
+        return `${sym}|${date}|${type}`;
+    }
+    const qty = Math.abs(Number(tx.Quantity) || 0);
+    return `${sym}|${date}|${type}|${qty}`;
 }
 
 // Returns inclusive [from, to] as YYYY-MM-DD strings (or null bounds for open ends).
@@ -143,6 +170,32 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
     const [importAccount, setImportAccount] = useState('');
     const [reviewTransactions, setReviewTransactions] = useState<Transaction[]>([]);
     const [isReviewing, setIsReviewing] = useState(false);
+
+    // Duplicate detection must compare against ALL of the user's transactions,
+    // not the account-filtered `transactions` prop the table renders — an
+    // imported row often belongs to an account that isn't in the current
+    // filter, so it would be invisible otherwise. Fetch the unfiltered set
+    // while a review is open.
+    const { data: allTransactions = [] } = useQuery<Transaction[]>({
+        queryKey: ['transactions', 'all-for-dup-check'],
+        queryFn: () => fetchTransactions(),
+        enabled: isReviewing,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    // Keys of transactions already in the table, used to flag review rows that
+    // duplicate an existing entry. Seed from the (already-loaded) filtered prop
+    // for instant feedback, then augment with the full set once it arrives.
+    const existingTxKeys = useMemo(() => {
+        const keys = new Set<string>();
+        for (const tx of transactions) keys.add(importMatchKey(tx));
+        for (const tx of allTransactions) keys.add(importMatchKey(tx));
+        return keys;
+    }, [transactions, allTransactions]);
+    const reviewDuplicateCount = useMemo(
+        () => reviewTransactions.reduce((n, tx) => existingTxKeys.has(importMatchKey(tx)) ? n + 1 : n, 0),
+        [reviewTransactions, existingTxKeys],
+    );
 
     const isImportAccountAutoCash = importAccount
         ? (cashModeMap[importAccount] || 'Manual') === 'Auto'
@@ -493,6 +546,12 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                     Review Extracted Transactions ({reviewTransactions.length})
                                 </h3>
                                 <p className="text-[10px] text-muted-foreground uppercase font-semibold">AI identified these from your document. Please verify before saving.</p>
+                                {reviewDuplicateCount > 0 && (
+                                    <p className="text-[10px] text-amber-600 dark:text-amber-400 uppercase font-bold flex items-center gap-1 mt-0.5">
+                                        <AlertCircle className="h-3 w-3" />
+                                        {reviewDuplicateCount} already in your table (highlighted)
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div className="flex gap-2">
@@ -527,8 +586,19 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                 </tr>
                             </thead>
                             <tbody className="text-sm divide-y divide-indigo-500/5">
-                                {reviewTransactions.map((tx, idx) => (
-                                    <tr key={`review-${idx}`} className="hover:bg-indigo-500/5 transition-colors group">
+                                {reviewTransactions.map((tx, idx) => {
+                                    const isDuplicate = existingTxKeys.has(importMatchKey(tx));
+                                    return (
+                                    <tr
+                                        key={`review-${idx}`}
+                                        className={cn(
+                                            'transition-colors group',
+                                            isDuplicate
+                                                ? 'bg-amber-500/10 hover:bg-amber-500/20'
+                                                : 'hover:bg-indigo-500/5',
+                                        )}
+                                        title={isDuplicate ? 'This transaction already exists in your table' : undefined}
+                                    >
                                         <td className="px-4 py-3">
                                             <input
                                                 type="text"
@@ -562,12 +632,20 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                             </select>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <input
-                                                type="text"
-                                                value={tx.Symbol}
-                                                onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Symbol: e.target.value.toUpperCase() })}
-                                                className="bg-transparent border-none text-sm p-0 w-full font-bold focus:ring-0"
-                                            />
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={tx.Symbol}
+                                                    onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Symbol: e.target.value.toUpperCase() })}
+                                                    className="bg-transparent border-none text-sm p-0 w-full font-bold focus:ring-0"
+                                                />
+                                                {isDuplicate && (
+                                                    <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider whitespace-nowrap">
+                                                        <AlertCircle className="h-2.5 w-2.5" />
+                                                        Duplicate
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3">
                                             <input
@@ -611,7 +689,8 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                             </button>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
