@@ -303,8 +303,10 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             if (isNaN(qty) || qty <= 0) {
                 setError("Quantity must be positive."); setLoading(false); return;
             }
-            if (isNaN(price) || price <= 0) {
-                setError("Price/Unit must be positive."); setLoading(false); return;
+            // Allow a zero price for free-stock acquisitions (rewards, gifts,
+            // spinoffs) — the cost basis is genuinely 0. Only reject negatives.
+            if (isNaN(price) || price < 0) {
+                setError("Price/Unit cannot be negative."); setLoading(false); return;
             }
         } else if (txType === 'dividend') {
             const total = parseFloat(formData['Total Amount']);

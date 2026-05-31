@@ -87,7 +87,9 @@ export default function LayoutConfigurator({
     align = 'right'
 }: LayoutConfiguratorProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [offsetX, setOffsetX] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -101,6 +103,36 @@ export default function LayoutConfigurator({
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, []);
+
+    // Keep the menu within the viewport: the trigger sits in the middle of the
+    // header's right cluster, so anchoring to its edge can push the menu off the
+    // left/right screen edge on narrow (mobile) viewports.
+    useEffect(() => {
+        if (!isOpen) {
+            setOffsetX(0);
+            return;
+        }
+        function adjust() {
+            const el = menuRef.current;
+            if (!el) return;
+            // Measure with the previous offset removed so the correction is absolute.
+            const rect = el.getBoundingClientRect();
+            const margin = 8;
+            let shift = 0;
+            const left = rect.left - offsetX;
+            const right = rect.right - offsetX;
+            if (left < margin) {
+                shift = margin - left;
+            } else if (right > window.innerWidth - margin) {
+                shift = Math.max(window.innerWidth - margin - right, margin - left);
+            }
+            setOffsetX(shift);
+        }
+        adjust();
+        window.addEventListener("resize", adjust);
+        return () => window.removeEventListener("resize", adjust);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     const toggleItem = (id: string) => {
         if (visibleItems.includes(id)) {
@@ -140,9 +172,10 @@ export default function LayoutConfigurator({
 
             {isOpen && (
                 <div
-                    style={{ backgroundColor: 'var(--menu-solid)' }}
+                    ref={menuRef}
+                    style={{ backgroundColor: 'var(--menu-solid)', transform: offsetX ? `translateX(${offsetX}px)` : undefined }}
                     className={cn(
-                        "absolute top-full mt-2 min-w-[240px] w-max origin-top rounded-xl outline-none z-50 overflow-hidden",
+                        "absolute top-full mt-2 min-w-[240px] w-max max-w-[calc(100vw-1.5rem)] origin-top rounded-xl outline-none z-50 overflow-hidden",
                         align === 'left' ? "left-0 origin-top-left" : "right-0 origin-top-right"
                     )}
                 >

@@ -752,7 +752,7 @@ export default function Home() {
             activeTab === 'markets' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400',
           )}
         >
-          <Activity className="w-5 h-5" /><span className="mt-1">Indices</span>
+          <Activity className="w-5 h-5" /><span className="mt-1">Markets</span>
         </div>
         <div
           onClick={() => { setActiveTab('settings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}

@@ -3,6 +3,7 @@ import pdfplumber
 import logging
 import os
 import mimetypes
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 # When pdfplumber merges several logical sections into one wide table (common
@@ -271,6 +272,527 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
         
     return transactions
 
+# --- Webull monthly statement parsing ----------------------------------------
+#
+# Webull (Thailand) "Monthly Account Statement" PDFs are *summary* statements:
+# most pages are end-of-month snapshots (Net Account Value, Cash Report Summary,
+# Portfolio Summary / holdings) rather than a trade blotter. The transaction-
+# level data lives in a handful of dated detail tables — INTEREST, DIVIDENDS,
+# DEPOSITS & WITHDRAWALS, CORPORATE ACTION, and (in active months) TRADES.
+#
+# Webull statements don't repeat the section title inside the table pdfplumber
+# extracts, and several cash-detail tables share the identical
+# "Date | Description | Currency | Amount" header — so we classify each table by
+# its header signature and then classify each *row* by its description text
+# (mirroring the IBKR generic branch) instead of relying on the section title.
+
+# Currency codes Webull uses as standalone column values. Kept explicit so a
+# 3-letter *ticker* (GLD, MMM, ...) is never mistaken for a currency cell.
+_WEBULL_CURRENCIES = {
+    "USD", "THB", "HKD", "CNH", "CNY", "SGD", "EUR", "GBP",
+    "JPY", "AUD", "CAD", "NZD", "CHF",
+}
+
+# Webull's TRADES table has no currency column — the trade currency is implied
+# by the listing exchange. Maps the exchanges Webull (Thailand) routes to.
+_WEBULL_EXCHANGE_CURRENCY = {
+    "NASDAQ": "USD", "NYSE": "USD", "NYSEARCA": "USD", "ARCA": "USD",
+    "AMEX": "USD", "BATS": "USD", "OTC": "USD",
+    "SEHK": "HKD", "HKEX": "HKD", "HKG": "HKD",
+    "SET": "THB", "SGX": "SGD",
+}
+
+# Webull renders dates as DD/MM/YYYY (e.g. 01/04/2026 = 1 April 2026). Note the
+# *description* text can embed US-format source dates ("03/01/2026 to 03/31/2026")
+# — those are left untouched; only the dedicated Date column is normalised.
+_WEBULL_DATE_RE = re.compile(r"^\s*(\d{2})/(\d{2})/(\d{4})")
+
+
+def _webull_date(value: str) -> Optional[str]:
+    """Normalise a Webull DD/MM/YYYY date cell to ISO YYYY-MM-DD, or None."""
+    if not value:
+        return None
+    m = _WEBULL_DATE_RE.match(value)
+    if not m:
+        return None
+    day, month, year = m.groups()
+    return f"{year}-{month}-{day}"
+
+
+def _webull_float(value: str) -> float:
+    """Parse a Webull numeric cell, tolerating thousands separators and the
+    parenthesised / trailing-minus conventions some negative amounts use."""
+    s = value.replace(",", "").replace(" ", "").strip()
+    if not s:
+        raise ValueError("empty")
+    negative = False
+    if s.startswith("(") and s.endswith(")"):
+        negative, s = True, s[1:-1]
+    elif s.endswith("-"):
+        negative, s = True, s[:-1]
+    elif s.startswith("-"):
+        negative, s = True, s[1:]
+    result = float(s)
+    return -result if negative else result
+
+
+def _webull_num(value: str) -> Optional[float]:
+    """Like _webull_float but returns None instead of raising on a bad cell."""
+    try:
+        return _webull_float(value)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _webull_col_index(header: List[str], *keywords: str) -> Optional[int]:
+    """Index of the first header cell containing all keywords (case-insensitive).
+
+    Webull's detail tables have stable, labelled columns, so mapping by header
+    name is far more reliable than guessing positions — a trade row's
+    Comm/Fee/Tax and Net Amount columns can't then be transposed."""
+    for i, cell in enumerate(header):
+        text = (cell or "").lower()
+        if all(k in text for k in keywords):
+            return i
+    return None
+
+
+def _webull_is_holdings(rows: List[List[str]]) -> bool:
+    """True for the Portfolio Summary holdings table (Symbol & Name + valuation
+    columns). Used to harvest a name→ticker map, not to import positions."""
+    blob = " ".join(str(c).lower() for c in rows[0] if c) if rows else ""
+    return "symbol" in blob and ("average price" in blob or "cost basis" in blob)
+
+
+def _webull_match_symbol(desc: str, name_to_symbol: Dict[str, str]) -> Optional[str]:
+    """Resolve a dividend description ("MASTERCARD INCORPORATED - Cash Div ...")
+    to a ticker using the holdings name→symbol map, longest name first."""
+    low = desc.lower()
+    for name in sorted(name_to_symbol, key=len, reverse=True):
+        if name and low.startswith(name):
+            return name_to_symbol[name]
+    return None
+
+
+def _webull_classify_table(rows: List[List[str]]) -> str:
+    """Map a table to 'cashflow', 'trades', or 'skip' from its header cells.
+
+    Header-signature classification is robust to pdfplumber splicing the section
+    title onto the table or shifting columns, and cleanly separates the dated
+    detail tables we import from the snapshot/accrual tables we never do."""
+    blob = " ".join(
+        str(c).replace("\n", " ").lower()
+        for header_row in rows[:2]
+        for c in header_row
+        if c
+    )
+    if not blob:
+        return "skip"
+    # Accrued dividends are declared-but-unpaid: importing them double-counts
+    # once the cash actually lands in a later statement's Dividends table.
+    if "ex-date" in blob or "pay date" in blob:
+        return "skip"
+    # Portfolio Summary (holdings snapshot) — positions, not transactions.
+    if any(k in blob for k in ("average price", "cost basis", "unrealized", "market value")):
+        return "skip"
+    # Net Account Value / Cash Report Summary — period aggregates by currency.
+    if "total(thb)" in blob or "total cash" in blob:
+        return "skip"
+    # Currency Exchange (Initial/Converted Currency, Converted Rate) — an
+    # internal THB↔USD conversion, not external cash flow. Importing it would
+    # double-count against the deposit and the USD trades it funds.
+    if "converted" in blob:
+        return "skip"
+    # Dividend detail table (Gross Amount / Withholding Tax / Net Amount). Split
+    # into a gross Dividend + a Dividend Tax leg so a reinvested dividend nets to
+    # zero against its reinvestment buy (gross − WHT − reinvest = 0).
+    if "withholding" in blob and ("gross" in blob or "net amount" in blob):
+        return "dividends"
+    # Trades blotter: dated, per-symbol rows (holdings lack a Date column, so the
+    # Date + Symbol pairing excludes the snapshot table).
+    if "date" in blob and ("symbol" in blob or "name" in blob) and (
+        "price" in blob or "side" in blob or "quantity" in blob
+    ):
+        return "trades"
+    # Generic dated cash-flow detail (Interest / Dividends / Deposits &
+    # Withdrawals / Corporate Action / Fees).
+    if "date" in blob and ("amount" in blob or "description" in blob):
+        return "cashflow"
+    return "skip"
+
+
+def _webull_cashflow_row(
+    row: List[str],
+    account: str,
+    user_id: int,
+    default_currency: str,
+    name_to_symbol: Optional[Dict[str, str]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Convert one Webull cash-detail row to a transaction dict, classifying the
+    type from the description text. Returns None for header/total/blank rows."""
+    date_str = next((_webull_date(c) for c in row if _webull_date(c)), None)
+    if not date_str:
+        return None
+
+    currency = default_currency
+    for c in row:
+        if c and c.strip().upper() in _WEBULL_CURRENCIES:
+            currency = c.strip().upper()
+            break
+
+    # Amount: rightmost cell that parses as a number (skips the trailing empty
+    # columns and the currency/date cells naturally).
+    amount = None
+    for c in reversed(row):
+        if not c or _webull_date(c) or c.strip().upper() in _WEBULL_CURRENCIES:
+            continue
+        try:
+            amount = _webull_float(c)
+            break
+        except ValueError:
+            continue
+    if amount is None:
+        return None
+
+    # Description: the remaining non-numeric, non-date, non-currency text.
+    desc_pieces = []
+    for c in row:
+        if not c or _webull_date(c) or c.strip().upper() in _WEBULL_CURRENCIES:
+            continue
+        try:
+            _webull_float(c)
+            continue
+        except ValueError:
+            pass
+        desc_pieces.append(c.strip())
+    desc = " ".join(p for p in desc_pieces if p).strip()
+    low = desc.lower()
+    if not desc or any(k in low for k in ("total", "opening", "closing", "starting", "subtotal")):
+        return None
+
+    # Classify by description keywords; sign the amount by direction so the
+    # engine's cash math is consistent regardless of the statement's own sign.
+    if "withholding" in low or " wht" in f" {low}":
+        t_type, inflow = "Tax", False
+    elif "interest" in low:
+        t_type, inflow = "Interest", True
+    elif "dividend" in low or "cash div" in low or "div on" in low:
+        # Webull phrases dividends as "… - Cash Div on N shares - Rec … Pay …".
+        t_type, inflow = "Dividend", True
+    elif "deposit" in low:
+        t_type, inflow = "Deposit", True
+    elif "withdraw" in low or "disbursement" in low:
+        t_type, inflow = "Withdrawal", False
+    elif any(k in low for k in ("fee", "commission", "vat", "stamp", "tax")):
+        t_type, inflow = "Fees", False
+    elif "currency exchange" in low or "fx " in low:
+        # Internal currency conversions are not external cash flow.
+        return None
+    else:
+        t_type, inflow = ("Deposit", True) if amount >= 0 else ("Withdrawal", False)
+
+    # Tie dividends to the paying ticker when the holdings name→symbol map
+    # resolves it; otherwise book the cash leg against $CASH.
+    symbol = "$CASH"
+    if t_type == "Dividend" and name_to_symbol:
+        matched = _webull_match_symbol(desc, name_to_symbol)
+        if matched:
+            symbol = matched
+
+    magnitude = abs(amount)
+    signed = magnitude if inflow else -magnitude
+    # $CASH legs carry the amount in Quantity (the engine reads it for cash
+    # math); ticker-tied rows leave Quantity 0 and use Total Amount only.
+    if symbol == "$CASH":
+        tx_qty, tx_price = magnitude, 1.0
+    else:
+        tx_qty, tx_price = 0.0, 0.0
+    return {
+        "Date": date_str,
+        "Type": t_type,
+        "Symbol": symbol,
+        "Quantity": tx_qty,
+        "Price/Share": tx_price,
+        "Total Amount": signed,
+        "Commission": 0.0,
+        "Account": account,
+        "Note": desc[:100],
+        "Local Currency": currency,
+        "user_id": user_id,
+    }
+
+
+def _webull_trade_row(
+    row: List[str], header: List[str], account: str, user_id: int, default_currency: str
+) -> Optional[Dict[str, Any]]:
+    """Convert one Webull TRADES row using the header column map. The Webull
+    layout is:
+        Symbol & Name | Trade Date | Time | Settlement Date | Buy/Sell |
+        Quantity | Traded Price | Gross Amount | Net Amount | Comm/Fee/Tax |
+        VAT | Exchange | Remarks | Status
+    There is no currency column — currency is inferred from the exchange."""
+
+    def cell(idx: Optional[int]) -> str:
+        if idx is None or idx >= len(row) or not row[idx]:
+            return ""
+        return row[idx].strip()
+
+    i_date = _webull_col_index(header, "trade", "date")
+    if i_date is None:
+        i_date = _webull_col_index(header, "date")
+    date_str = _webull_date(cell(i_date))
+    if not date_str:
+        return None
+
+    sym_cell = cell(_webull_col_index(header, "symbol"))
+    symbol = sym_cell.split()[0] if sym_cell else ""
+    if not re.fullmatch(r"[A-Z0-9.]{1,6}", symbol):
+        return None
+
+    qty = _webull_num(cell(_webull_col_index(header, "quantity")))
+    price = _webull_num(cell(_webull_col_index(header, "price")))
+    if qty is None or price is None:
+        return None
+
+    gross = _webull_num(cell(_webull_col_index(header, "gross")))
+    commission = abs(_webull_num(cell(_webull_col_index(header, "comm"))) or 0.0) + abs(
+        _webull_num(cell(_webull_col_index(header, "vat"))) or 0.0
+    )
+
+    side_label = cell(_webull_col_index(header, "buy")).lower()
+    if side_label in ("buy", "bought", "b"):
+        side = "Buy"
+    elif side_label in ("sell", "sold", "s"):
+        side = "Sell"
+    else:
+        side = "Buy" if qty >= 0 else "Sell"
+
+    cur_idx = _webull_col_index(header, "currency")
+    currency = cell(cur_idx).upper()
+    if currency not in _WEBULL_CURRENCIES:
+        exchange = cell(_webull_col_index(header, "exchange")).upper()
+        currency = _WEBULL_EXCHANGE_CURRENCY.get(exchange, default_currency)
+
+    total = abs(gross) if gross else abs(qty * price)
+
+    return {
+        "Date": date_str,
+        "Type": side,
+        "Symbol": symbol,
+        "Quantity": abs(qty),
+        "Price/Share": abs(price),
+        "Total Amount": total,
+        "Commission": commission,
+        "Account": account,
+        "Note": "Webull Trade",
+        "Local Currency": currency,
+        "user_id": user_id,
+    }
+
+
+def _webull_dividend_rows(
+    row: List[str],
+    header: List[str],
+    account: str,
+    user_id: int,
+    default_currency: str,
+    name_to_symbol: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, Any]]:
+    """Convert one Webull DIVIDENDS row
+        Posting Date | Description | Currency | Gross Amount | Withholding Tax |
+        Net Amount | Status
+    into the gross Dividend (+ separate Dividend Tax) legs the ledger expects.
+    Splitting gross/WHT lets a reinvested dividend net to zero against its
+    reinvestment buy. Returns [] for header/blank rows."""
+
+    def cell(idx: Optional[int]) -> str:
+        if idx is None or idx >= len(row) or not row[idx]:
+            return ""
+        return row[idx].strip()
+
+    i_date = _webull_col_index(header, "posting", "date")
+    if i_date is None:
+        i_date = _webull_col_index(header, "date")
+    date_str = _webull_date(cell(i_date))
+    if not date_str:
+        return []
+
+    gross = _webull_num(cell(_webull_col_index(header, "gross")))
+    if gross is None:
+        gross = _webull_num(cell(_webull_col_index(header, "net")))
+    if gross is None:
+        return []
+    wht = _webull_num(cell(_webull_col_index(header, "withholding")))
+
+    cur_idx = _webull_col_index(header, "currency")
+    currency = cell(cur_idx).upper()
+    if currency not in _WEBULL_CURRENCIES:
+        currency = default_currency
+
+    desc = cell(_webull_col_index(header, "description"))
+    symbol = "$CASH"
+    if name_to_symbol:
+        matched = _webull_match_symbol(desc, name_to_symbol)
+        if matched:
+            symbol = matched
+
+    rows: List[Dict[str, Any]] = [
+        {
+            "Date": date_str,
+            "Type": "Dividend",
+            "Symbol": symbol,
+            "Quantity": 1.0,
+            "Price/Share": abs(gross),
+            "Total Amount": abs(gross),
+            "Commission": 0.0,
+            "Account": account,
+            "Note": "Gross Dividend",
+            "Local Currency": currency,
+            "user_id": user_id,
+        }
+    ]
+    if wht is not None and abs(wht) > 1e-9:
+        rows.append(
+            {
+                "Date": date_str,
+                "Type": "Tax",
+                "Symbol": symbol,
+                "Quantity": 0.0,
+                "Price/Share": 0.0,
+                "Total Amount": abs(wht),
+                "Commission": 0.0,
+                "Account": account,
+                "Note": "Dividend Tax",
+                "Local Currency": currency,
+                "user_id": user_id,
+            }
+        )
+    return rows
+
+
+def _webull_days_apart(d1: str, d2: str) -> int:
+    """Absolute day gap between two ISO dates, or a large sentinel on error."""
+    try:
+        a = datetime.strptime(d1[:10], "%Y-%m-%d")
+        b = datetime.strptime(d2[:10], "%Y-%m-%d")
+        return abs((a - b).days)
+    except (ValueError, TypeError):
+        return 9999
+
+
+def _webull_tag_reinvestments(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Mark each buy that reinvests a dividend with the "Dividend Reinvestment"
+    note. Webull settles the dividend to cash and immediately buys shares for the
+    net amount the next day; matching on symbol + date proximity + net amount
+    distinguishes a DRIP buy from an ordinary purchase. Both legs are kept so
+    cash nets to zero (gross dividend − WHT − reinvestment buy)."""
+    dividends = [t for t in transactions if t["Type"] == "Dividend" and t["Symbol"] != "$CASH"]
+    taxes = [t for t in transactions if t["Type"] == "Tax"]
+    buys = [t for t in transactions if t["Type"] == "Buy"]
+    used: set = set()
+    for div in dividends:
+        symbol, div_date = div["Symbol"], div["Date"]
+        gross = abs(div["Total Amount"])
+        wht = sum(
+            abs(t["Total Amount"])
+            for t in taxes
+            if t["Symbol"] == symbol and t["Date"] == div_date
+        )
+        net = gross - wht
+        for buy in buys:
+            if id(buy) in used or buy["Symbol"] != symbol:
+                continue
+            if _webull_days_apart(div_date, buy["Date"]) > 7:
+                continue
+            if abs(abs(buy["Total Amount"]) - net) <= max(0.05, 0.03 * net):
+                buy["Note"] = "Dividend Reinvestment"
+                used.add(id(buy))
+                break
+    return transactions
+
+
+def parse_webull_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
+    transactions: List[Dict[str, Any]] = []
+    account_name = account_override or "Webull"
+    default_currency = "THB"
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            # Pull defaults (account number, base currency) from the header text.
+            header_text = ""
+            for page in pdf.pages[:1]:
+                header_text += page.extract_text() or ""
+            if not account_override:
+                m = re.search(r"Account\s*No\.?\s*:?\s*([A-Z]{2,}\d{3,})", header_text)
+                if m:
+                    account_name = m.group(1)
+            m = re.search(r"Base\s*Currency\s*:?\s*([A-Z]{3})", header_text)
+            if m and m.group(1) in _WEBULL_CURRENCIES:
+                default_currency = m.group(1)
+
+            # First pass: collect detail tables and harvest a holdings
+            # name→ticker map so dividend rows can be tied to their security.
+            detail_tables: List[tuple] = []
+            name_to_symbol: Dict[str, str] = {}
+            for page in pdf.pages:
+                for table in page.extract_tables():
+                    if not table:
+                        continue
+                    rows = [
+                        [str(c).replace("\n", " ").strip() if c is not None else "" for c in r]
+                        for r in table
+                        if r
+                    ]
+                    if not rows:
+                        continue
+
+                    if _webull_is_holdings(rows):
+                        for r in rows[1:]:
+                            parts = r[0].split() if r and r[0] else []
+                            if len(parts) >= 2 and re.fullmatch(r"[A-Z0-9.]{1,6}", parts[0]):
+                                name_to_symbol[" ".join(parts[1:]).lower()] = parts[0]
+
+                    kind = _webull_classify_table(rows)
+                    if kind in ("cashflow", "trades", "dividends"):
+                        # rows[0] is the column header; data rows follow.
+                        detail_tables.append((kind, rows[0], rows[1:]))
+
+            # Second pass: parse rows now that the name→symbol map is complete.
+            for kind, header, data_rows in detail_tables:
+                for row in data_rows:
+                    if len(row) < 2:
+                        continue
+                    try:
+                        if kind == "cashflow":
+                            tx = _webull_cashflow_row(
+                                row, account_name, user_id, default_currency, name_to_symbol
+                            )
+                            if tx:
+                                transactions.append(tx)
+                        elif kind == "dividends":
+                            transactions.extend(
+                                _webull_dividend_rows(
+                                    row, header, account_name, user_id, default_currency, name_to_symbol
+                                )
+                            )
+                        else:  # trades
+                            tx = _webull_trade_row(
+                                row, header, account_name, user_id, default_currency
+                            )
+                            if tx:
+                                transactions.append(tx)
+                    except (ValueError, IndexError) as e:
+                        logging.debug(f"Webull parser skipped {kind} row {row!r}: {e}")
+                        continue
+
+            # Link DRIP buys to their dividend so the reinvestment is labelled
+            # and the gross/WHT/buy legs net to zero in cash.
+            transactions = _webull_tag_reinvestments(transactions)
+    except Exception as e:
+        logging.error(f"Error parsing Webull statement PDF: {e}")
+
+    return transactions
+
+
 def parse_tdameritrade_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
     # Fallback to AI for now, or implement a basic text scanner
     return []
@@ -298,6 +820,9 @@ def extract_transactions_from_file(file_path: str, user_id: int, cash_mode: Opti
             
             if "INTERACTIVE BROKERS" in text.upper() or "IBKR" in text.upper():
                 res = parse_ibkr_pdf(file_path, user_id, cash_mode, account_override)
+                if res: return res
+            elif "WEBULL" in text.upper():
+                res = parse_webull_pdf(file_path, user_id, cash_mode, account_override)
                 if res: return res
             elif "TD AMERITRADE" in text.upper():
                 res = parse_tdameritrade_pdf(file_path, user_id, cash_mode, account_override)

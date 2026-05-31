@@ -23,5 +23,6 @@ desktop_debug.txt
 market_data.db
 .env
 sp500_recalc.log
+.coverage
 # Claude Code agent worktrees — local checkouts, never commit
 .claude/worktrees/
