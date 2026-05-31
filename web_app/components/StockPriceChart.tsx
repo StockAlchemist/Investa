@@ -18,7 +18,15 @@ import {
 } from 'recharts';
 import PeriodSelector from './PeriodSelector';
 
-import { fetchStockHistory } from '../lib/api';
+import {
+    fetchStockHistory,
+    fetchTransactions,
+    fetchDividends,
+    fetchEarningsDates,
+    Transaction,
+    Dividend,
+    EarningsDate
+} from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 
 // --- Types ---
@@ -29,7 +37,33 @@ interface StockPriceChartProps {
     avgCost?: number;
     hidePrice?: boolean;
     fxRate?: number;
+    accounts?: string[]; // Account filter for transaction/dividend overlays
 }
+
+// Overlay event marker shapes
+type EventKind = 'buy' | 'sell' | 'dividend' | 'earnings';
+
+interface ChartEvent {
+    kind: EventKind;
+    timestamp: number; // snapped to a chart x value
+    y: number;         // y-coordinate (price-axis) where the marker sits
+    label: string;     // tooltip / title text
+}
+
+const EVENT_STYLES: Record<EventKind, { color: string; letter: string }> = {
+    buy: { color: '#16a34a', letter: 'B' },       // green
+    sell: { color: '#dc2626', letter: 'S' },      // red
+    dividend: { color: '#d97706', letter: 'D' },  // amber
+    earnings: { color: '#9333ea', letter: 'E' },  // purple
+};
+
+// Benchmarks selectable as return-% overlays. `name` matches the backend's
+// BENCHMARK_MAPPING keys; `key` is the mapped Yahoo ticker the API returns as a column.
+const BENCHMARKS = [
+    { name: 'S&P 500', key: '^GSPC', color: '#f59e0b' },   // amber
+    { name: 'NASDAQ', key: '^IXIC', color: '#8b5cf6' },    // purple
+    { name: 'Dow Jones', key: '^DJI', color: '#0ea5e9' },  // sky
+] as const;
 
 interface CustomTooltipProps {
     active?: boolean;
@@ -75,11 +109,49 @@ const calculateSMA = (data: any[], period: number) => {
     return smaData;
 };
 
-export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, fxRate = 1 }: StockPriceChartProps) {
+// Custom dot drawn for an overlay event. Rendered via a transparent <Line>'s `dot`
+// callback so it inherits the same (reliable) axis positioning the price/SMA lines use.
+// Recharts passes cx/cy (pixel coords) and the full data point as `payload`.
+const EventDot = ({ cx, cy, payload, kind }: {
+    cx?: number;
+    cy?: number;
+    payload?: Record<string, unknown>;
+    kind: EventKind;
+}) => {
+    if (cx == null || cy == null || !payload) return null;
+    // Only draw where this point actually carries an event of this kind.
+    if (payload[`_evt_${kind}`] == null) return null;
+    const style = EVENT_STYLES[kind];
+    const r = 7;
+    // Full event details are shown in the chart's hover tooltip (CustomTooltip).
+    return (
+        <g style={{ cursor: 'pointer' }}>
+            <circle cx={cx} cy={cy} r={r} fill={style.color} stroke="#fff" strokeWidth={1.5} />
+            <text x={cx} y={cy} dy={3.2} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff">
+                {style.letter}
+            </text>
+        </g>
+    );
+};
+
+export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, fxRate = 1, accounts }: StockPriceChartProps) {
     const [view, setView] = useState<'price' | 'return'>('price');
     const [period, setPeriod] = useState('1y');
     const [showSMA50, setShowSMA50] = useState(false);
     const [showSMA200, setShowSMA200] = useState(false);
+
+    // Event overlay toggles
+    const [showBuys, setShowBuys] = useState(false);
+    const [showSells, setShowSells] = useState(false);
+    const [showDividends, setShowDividends] = useState(false);
+    const [showEarnings, setShowEarnings] = useState(false);
+
+    // Benchmark overlays (Return % view); stores BENCHMARK_MAPPING names.
+    const [selectedBenchmarks, setSelectedBenchmarks] = useState<string[]>([]);
+    const toggleBenchmark = (name: string) =>
+        setSelectedBenchmarks((prev) =>
+            prev.includes(name) ? prev.filter((b) => b !== name) : [...prev, name]
+        );
 
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -117,10 +189,13 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
         return { period: fetchPeriod, interval: fetchInterval };
     }, [period, interval]);
 
+    // Stable, sorted benchmark list for query identity.
+    const benchmarkParam = useMemo(() => [...selectedBenchmarks].sort(), [selectedBenchmarks]);
+
     // Data Fetching
     const { data: rawData, isLoading } = useQuery({
-        queryKey: ['stock_history', symbol, fetchParams.period, fetchParams.interval],
-        queryFn: ({ signal }) => fetchStockHistory(symbol, fetchParams.period, fetchParams.interval, [], signal),
+        queryKey: ['stock_history', symbol, fetchParams.period, fetchParams.interval, benchmarkParam],
+        queryFn: ({ signal }) => fetchStockHistory(symbol, fetchParams.period, fetchParams.interval, benchmarkParam, signal),
         placeholderData: keepPreviousData,
         staleTime: period === '1d' ? 60 * 1000 : 5 * 60 * 1000,
         refetchInterval: period === '1d' ? 60 * 1000 : false,
@@ -128,6 +203,28 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
 
     const data = rawData || [];
     const isContinuous = period === '1d';
+
+    // --- Overlay event data (only fetched when a toggle is enabled) ---
+    const { data: transactions } = useQuery({
+        queryKey: ['transactions', accounts],
+        queryFn: ({ signal }) => fetchTransactions(accounts, signal),
+        enabled: showBuys || showSells,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const { data: dividendsData } = useQuery({
+        queryKey: ['dividends', currency, accounts],
+        queryFn: ({ signal }) => fetchDividends(currency, accounts, signal),
+        enabled: showDividends,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const { data: earningsData } = useQuery({
+        queryKey: ['earnings_dates', symbol],
+        queryFn: ({ signal }) => fetchEarningsDates(symbol, signal),
+        enabled: showEarnings,
+        staleTime: 30 * 60 * 1000,
+    });
 
     // Processing Data for Chart
     const chartedData = useMemo(() => {
@@ -194,8 +291,192 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
             processed = processed.filter(d => d.timestamp >= cutoffTime);
         }
 
+        // Re-normalize Return % to the first VISIBLE point. The backend normalizes
+        // both the stock and the benchmarks to the longer fetch window (used as an SMA
+        // buffer), so without this the Return % view wouldn't start at 0% and benchmarks
+        // wouldn't be comparable over the selected period.
+        if (processed.length > 0) {
+            const baseValue = processed[0].value;
+            const benchBase: Record<string, number> = {};
+            const first = processed[0] as unknown as Record<string, unknown>;
+            for (const b of BENCHMARKS) {
+                const b0 = first[b.key];
+                if (typeof b0 === 'number') benchBase[b.key] = b0;
+            }
+            processed = processed.map((p) => {
+                const next = { ...p };
+                if (baseValue && baseValue > 0) {
+                    next.return_pct = (p.value / baseValue - 1) * 100;
+                }
+                const pRec = p as unknown as Record<string, unknown>;
+                const nextRec = next as unknown as Record<string, number>;
+                for (const b of BENCHMARKS) {
+                    const bt = pRec[b.key];
+                    const b0 = benchBase[b.key];
+                    // Convert "% since fetch start" back to a price ratio, then re-base
+                    // it to the first visible point: (1+bt)/(1+b0) - 1.
+                    if (typeof bt === 'number' && typeof b0 === 'number') {
+                        nextRec[b.key] = ((1 + bt / 100) / (1 + b0 / 100) - 1) * 100;
+                    }
+                }
+                return next;
+            });
+        }
+
         return processed;
     }, [data, period]);
+
+    // --- Build overlay event markers (snapped to visible chart points) ---
+    // We attach event values directly onto the chart data points and render them via
+    // transparent <Line>s, so markers inherit the same axis positioning as the price line
+    // (ReferenceDot with an x on a category axis is unreliable in recharts).
+    const { chartDataWithEvents, presentKinds } = useMemo(() => {
+        const emptyKinds = { buy: false, sell: false, dividend: false, earnings: false };
+        if (view !== 'price' || chartedData.length === 0) {
+            return { chartDataWithEvents: chartedData, presentKinds: emptyKinds };
+        }
+
+        const points = chartedData; // ascending by timestamp
+        const firstTs = points[0].timestamp;
+        const lastTs = points[points.length - 1].timestamp;
+        const dayMs = 24 * 60 * 60 * 1000;
+        // Allow events landing on a non-trading day (weekend/holiday) to snap in,
+        // but ignore events outside the visible window.
+        const lowerBound = firstTs - 4 * dayMs;
+        const upperBound = lastTs + 4 * dayMs;
+
+        const snap = (eventMs: number) => {
+            if (Number.isNaN(eventMs) || eventMs < lowerBound || eventMs > upperBound) return null;
+            let best = points[0];
+            let bestDiff = Math.abs(points[0].timestamp - eventMs);
+            for (let i = 1; i < points.length; i++) {
+                const diff = Math.abs(points[i].timestamp - eventMs);
+                if (diff < bestDiff) {
+                    bestDiff = diff;
+                    best = points[i];
+                }
+            }
+            return best;
+        };
+
+        // Aggregate multiple same-kind events that snap to the same point.
+        const agg = new Map<string, ChartEvent>();
+
+        // The price line is split-adjusted (Yahoo back-adjusts splits regardless of
+        // dividend auto-adjust), but a transaction's stored Price/Share is the nominal
+        // price at trade time. Divide by the cumulative ratio of any splits that
+        // occurred AFTER the trade so the marker lands on the adjusted line.
+        const splitEvents = (showBuys || showSells) && transactions
+            ? (transactions as Transaction[])
+                .filter((t) => {
+                    if (t.Symbol !== symbol) return false;
+                    const ty = String(t.Type || '').toLowerCase();
+                    return (ty === 'split' || ty === 'stock split') && Number(t['Split Ratio']) > 0;
+                })
+                .map((t) => ({ ts: new Date(t.Date).getTime(), ratio: Number(t['Split Ratio']) }))
+            : [];
+        const splitFactorAfter = (tradeTs: number) =>
+            splitEvents.reduce((f, s) => (s.ts > tradeTs ? f * s.ratio : f), 1);
+        const formatQty = (q: number) => (Number.isInteger(q) ? String(q) : String(Number(q.toFixed(4))));
+
+        if ((showBuys || showSells) && transactions) {
+            for (const t of transactions as Transaction[]) {
+                if (t.Symbol !== symbol) continue;
+                const type = String(t.Type || '').toLowerCase();
+                const isBuy = type === 'buy' || type === 'buy to cover';
+                const isSell = type === 'sell' || type === 'short sell';
+                if (!((isBuy && showBuys) || (isSell && showSells))) continue;
+
+                const tradeTs = new Date(t.Date).getTime();
+                const pt = snap(tradeTs);
+                if (!pt) continue;
+
+                const kind: EventKind = isBuy ? 'buy' : 'sell';
+                const factor = splitFactorAfter(tradeTs);
+                const qty = (Number(t.Quantity) || 0) * factor;
+                const priceLocal = (Number(t['Price/Share']) || 0) / factor;
+                const price = priceLocal > 0 ? priceLocal * fxRate : pt.value;
+                const key = `${kind}:${pt.timestamp}`;
+                const existing = agg.get(key);
+                if (existing) {
+                    existing.label = `${existing.label}, ${formatQty(qty)} @ ${formatCurrency(price, currency)}`;
+                } else {
+                    agg.set(key, {
+                        kind,
+                        timestamp: pt.timestamp,
+                        y: price,
+                        label: `${isBuy ? 'Buy' : 'Sell'} ${formatQty(qty)} @ ${formatCurrency(price, currency)}`,
+                    });
+                }
+            }
+        }
+
+        if (showDividends && dividendsData) {
+            for (const d of dividendsData as Dividend[]) {
+                if (d.Symbol !== symbol) continue;
+                const pt = snap(new Date(d.Date).getTime());
+                if (!pt) continue;
+                const amt = Number(d.DividendAmountDisplayCurrency) || 0;
+                const key = `dividend:${pt.timestamp}`;
+                const existing = agg.get(key);
+                if (existing) {
+                    existing.label = `Dividend ${formatCurrency(amt, currency)} (+more)`;
+                } else {
+                    agg.set(key, {
+                        kind: 'dividend',
+                        timestamp: pt.timestamp,
+                        y: pt.value,
+                        label: `Dividend ${formatCurrency(amt, currency)}`,
+                    });
+                }
+            }
+        }
+
+        if (showEarnings && earningsData) {
+            for (const e of earningsData as EarningsDate[]) {
+                const pt = snap(new Date(e.date).getTime());
+                if (!pt) continue;
+                const parts: string[] = ['Earnings'];
+                if (e.eps_actual != null) parts.push(`EPS ${Number(e.eps_actual).toFixed(2)}`);
+                else if (e.eps_estimate != null) parts.push(`Est. EPS ${Number(e.eps_estimate).toFixed(2)}`);
+                if (e.surprise_pct != null) parts.push(`(${Number(e.surprise_pct) >= 0 ? '+' : ''}${Number(e.surprise_pct).toFixed(1)}%)`);
+                agg.set(`earnings:${pt.timestamp}`, {
+                    kind: 'earnings',
+                    timestamp: pt.timestamp,
+                    y: pt.value,
+                    label: parts.join(' '),
+                });
+            }
+        }
+
+        // Index events by snapped timestamp so we can stamp them onto chart points.
+        const byTs = new Map<number, Partial<Record<EventKind, ChartEvent>>>();
+        const present = { ...emptyKinds };
+        for (const ev of agg.values()) {
+            present[ev.kind] = true;
+            const slot = byTs.get(ev.timestamp) ?? {};
+            slot[ev.kind] = ev;
+            byTs.set(ev.timestamp, slot);
+        }
+
+        if (byTs.size === 0) {
+            return { chartDataWithEvents: chartedData, presentKinds: present };
+        }
+
+        const merged = points.map((p) => {
+            const slot = byTs.get(p.timestamp);
+            if (!slot) return p;
+            const extra: Record<string, number | string> = {};
+            (Object.keys(slot) as EventKind[]).forEach((k) => {
+                const ev = slot[k]!;
+                extra[`_evt_${k}`] = ev.y;
+                extra[`_evt_${k}_label`] = ev.label;
+            });
+            return { ...p, ...extra };
+        });
+
+        return { chartDataWithEvents: merged, presentKinds: present };
+    }, [view, chartedData, showBuys, showSells, showDividends, showEarnings, transactions, dividendsData, earningsData, symbol, currency, fxRate]);
 
     // Calculate Stats for Header (Based on Displayed Data)
     const stats = useMemo(() => {
@@ -318,6 +599,36 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                             </div>
                         )}
 
+                        {/* Event indicators (price view): show details for any buy/sell/
+                            dividend/earnings marker sitting on the hovered point. */}
+                        {view === 'price' && (['buy', 'sell', 'dividend', 'earnings'] as EventKind[])
+                            .filter((kind) => typeof dataPoint[`_evt_${kind}_label`] === 'string')
+                            .map((kind) => {
+                                const style = EVENT_STYLES[kind];
+                                return (
+                                    <div key={kind} className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-border/40">
+                                        <span
+                                            className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold text-white shrink-0"
+                                            style={{ backgroundColor: style.color }}
+                                        >
+                                            {style.letter}
+                                        </span>
+                                        <span className="text-xs font-medium text-foreground">{dataPoint[`_evt_${kind}_label`]}</span>
+                                    </div>
+                                );
+                            })}
+
+                        {/* Benchmarks (return view) */}
+                        {view === 'return' && BENCHMARKS
+                            .filter((b) => selectedBenchmarks.includes(b.name) && typeof dataPoint[b.key] === 'number')
+                            .map((b) => (
+                                <div key={b.key} className="flex items-center justify-between gap-4">
+                                    <span className="text-xs font-bold uppercase" style={{ color: b.color }}>{b.name}</span>
+                                    <span className={`text-sm font-medium ${dataPoint[b.key] >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                                        {dataPoint[b.key].toFixed(2)}%
+                                    </span>
+                                </div>
+                            ))}
 
                     </div>
                 </div>
@@ -401,6 +712,59 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                 <div className="w-full overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
                     <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
                 </div>
+
+                {/* Third Row: Event Overlays (price view only) */}
+                {view === 'price' && (
+                    <div className="flex items-center gap-2 mt-3 flex-wrap">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-0.5">Overlays</span>
+                        {([
+                            { key: 'buy', label: 'Buys', active: showBuys, toggle: () => setShowBuys(v => !v) },
+                            { key: 'sell', label: 'Sells', active: showSells, toggle: () => setShowSells(v => !v) },
+                            { key: 'dividend', label: 'Dividends', active: showDividends, toggle: () => setShowDividends(v => !v) },
+                            { key: 'earnings', label: 'Earnings', active: showEarnings, toggle: () => setShowEarnings(v => !v) },
+                        ] as const).map(({ key, label, active, toggle }) => {
+                            const color = EVENT_STYLES[key as EventKind].color;
+                            return (
+                                <button
+                                    key={key}
+                                    onClick={toggle}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all ${active
+                                        ? 'text-white shadow-sm border-transparent'
+                                        : 'text-muted-foreground border-border bg-secondary hover:text-foreground hover:bg-accent/10'
+                                        }`}
+                                    style={active ? { backgroundColor: color } : undefined}
+                                >
+                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active ? '#fff' : color }} />
+                                    {label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Third Row: Benchmark comparison (return view only) */}
+                {view === 'return' && (
+                    <div className="flex items-center gap-2 mt-3 flex-wrap">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-0.5">Benchmarks</span>
+                        {BENCHMARKS.map((b) => {
+                            const active = selectedBenchmarks.includes(b.name);
+                            return (
+                                <button
+                                    key={b.key}
+                                    onClick={() => toggleBenchmark(b.name)}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all ${active
+                                        ? 'text-white shadow-sm border-transparent'
+                                        : 'text-muted-foreground border-border bg-secondary hover:text-foreground hover:bg-accent/10'
+                                        }`}
+                                    style={active ? { backgroundColor: b.color } : undefined}
+                                >
+                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active ? '#fff' : b.color }} />
+                                    {b.name}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
             {/* Chart Container */}
@@ -413,7 +777,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
 
                 {chartedData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                        <ComposedChart data={chartDataWithEvents} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
@@ -521,17 +885,58 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                             }}
                                         />
                                     )}
+                                    {(['buy', 'sell', 'dividend', 'earnings'] as EventKind[]).map((kind) => {
+                                        const enabled =
+                                            (kind === 'buy' && showBuys) ||
+                                            (kind === 'sell' && showSells) ||
+                                            (kind === 'dividend' && showDividends) ||
+                                            (kind === 'earnings' && showEarnings);
+                                        if (!enabled || !presentKinds[kind]) return null;
+                                        return (
+                                            <Line
+                                                key={`evt-${kind}`}
+                                                yAxisId="main"
+                                                type="monotone"
+                                                dataKey={`_evt_${kind}`}
+                                                stroke="transparent"
+                                                strokeWidth={0}
+                                                isAnimationActive={false}
+                                                legendType="none"
+                                                connectNulls={false}
+                                                activeDot={false}
+                                                dot={(dotProps: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => (
+                                                    <EventDot cx={dotProps.cx} cy={dotProps.cy} payload={dotProps.payload} kind={kind} />
+                                                )}
+                                            />
+                                        );
+                                    })}
                                 </>
                             ) : (
-                                <Area
-                                    yAxisId="main"
-                                    type="monotone"
-                                    dataKey="return_pct"
-                                    stroke="url(#splitColorStroke)"
-                                    fill="url(#splitColorFill)"
-                                    strokeWidth={2}
-                                    activeDot={{ r: 4, strokeWidth: 0 }}
-                                />
+                                <>
+                                    <Area
+                                        yAxisId="main"
+                                        type="monotone"
+                                        dataKey="return_pct"
+                                        stroke="url(#splitColorStroke)"
+                                        fill="url(#splitColorFill)"
+                                        strokeWidth={2}
+                                        activeDot={{ r: 4, strokeWidth: 0 }}
+                                    />
+                                    {BENCHMARKS.filter((b) => selectedBenchmarks.includes(b.name)).map((b) => (
+                                        <Line
+                                            key={b.key}
+                                            yAxisId="main"
+                                            type="monotone"
+                                            dataKey={b.key}
+                                            stroke={b.color}
+                                            strokeWidth={1.5}
+                                            dot={false}
+                                            activeDot={{ r: 4 }}
+                                            connectNulls
+                                            isAnimationActive={false}
+                                        />
+                                    ))}
+                                </>
                             )}
 
 

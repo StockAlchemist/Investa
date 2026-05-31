@@ -298,6 +298,32 @@ def fetch_calendar(symbol, output_file):
         return {"status": "error", "message": str(e)}
 
 
+def fetch_earnings_dates(symbol, output_file, limit=24):
+    try:
+        import yfinance as yf # Lazy import
+        log(f"Starting earnings_dates fetch for {symbol} (limit={limit})")
+        ticker = yf.Ticker(symbol)
+        try:
+            df = ticker.get_earnings_dates(limit=limit)
+        except Exception:
+            # Fallback to the property accessor on older/newer yfinance versions
+            df = getattr(ticker, "earnings_dates", None)
+
+        if df is not None and not df.empty:
+            # Index is the (tz-aware) earnings datetime. Normalize column names so
+            # the serialized payload is stable regardless of yfinance version.
+            df = df.copy()
+            df.index = df.index.tz_localize(None) if df.index.tz is not None else df.index
+            df.index.name = "date"
+            json_str = df.to_json(orient='split', date_format='iso')
+            with open(output_file, "w") as f: f.write(json_str)
+            return {"status": "success", "file": output_file}
+        else:
+            return {"status": "success", "data": None}
+    except Exception as e:
+        log(f"Error in fetch_earnings_dates: {e}\n{traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
 
 def fetch_data(symbols, start_date, end_date, interval, output_file, period=None):
     try:
@@ -507,6 +533,8 @@ if __name__ == "__main__":
             result = fetch_dividends(symbols[0], output_file)
         elif task == "calendar":
             result = fetch_calendar(symbols[0], output_file)
+        elif task == "earnings_dates":
+            result = fetch_earnings_dates(symbols[0], output_file, limit=request.get("limit", 24))
         else:
             result = fetch_data(symbols, start, end, interval, output_file, period=period)
 

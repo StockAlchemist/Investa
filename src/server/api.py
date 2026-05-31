@@ -3054,6 +3054,56 @@ async def get_stock_history(
         logging.error(f"Error serving stock history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/earnings_dates/{symbol}")
+async def get_earnings_dates(
+    symbol: str,
+    limit: int = 24,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns historical (and upcoming) earnings report dates for a single stock,
+    used to overlay earnings markers on the price chart.
+    """
+    from market_data import _run_isolated_fetch
+
+    try:
+        _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
+        yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
+
+        df = _run_isolated_fetch([yf_symbol], task="earnings_dates", limit=limit)
+        if df is None or getattr(df, "empty", True):
+            return []
+
+        df = df.reset_index()
+        # The earnings datetime column is named 'date' by the worker; fall back defensively.
+        date_col = "date" if "date" in df.columns else df.columns[0]
+
+        # Map yfinance's verbose column names to a stable shape.
+        col_map = {
+            "EPS Estimate": "eps_estimate",
+            "Reported EPS": "eps_actual",
+            "Surprise(%)": "surprise_pct",
+        }
+
+        records = []
+        for _, row in df.iterrows():
+            raw_date = row[date_col]
+            try:
+                date_str = pd.to_datetime(raw_date).date().isoformat()
+            except Exception:
+                continue
+            entry = {"date": date_str}
+            for src, dst in col_map.items():
+                if src in df.columns:
+                    entry[dst] = row[src]
+            records.append(entry)
+
+        return clean_nans(records)
+
+    except Exception as e:
+        logging.error(f"Error serving earnings dates for {symbol}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/capital_gains")
 async def get_capital_gains(
     currency: str = "USD",

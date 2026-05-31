@@ -473,6 +473,22 @@ export async function fetchDividends(
     if (error) throw new Error('Failed to fetch dividends');
     return data as unknown as Dividend[];
 }
+
+export interface EarningsDate {
+    date: string;
+    eps_estimate?: number | null;
+    eps_actual?: number | null;
+    surprise_pct?: number | null;
+}
+
+export async function fetchEarningsDates(
+    symbol: string,
+    signal?: AbortSignal
+): Promise<EarningsDate[]> {
+    const res = await authFetch(`${API_BASE_URL}/earnings_dates/${encodeURIComponent(symbol)}`, { signal });
+    if (!res.ok) throw new Error('Failed to fetch earnings dates');
+    return res.json();
+}
 export interface ManualOverrideData {
     price: number;
     currency?: string;
