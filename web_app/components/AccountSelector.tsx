@@ -6,11 +6,13 @@ interface AccountSelectorProps {
     selectedAccounts: string[];
     onChange: (accounts: string[]) => void;
     accountGroups?: Record<string, string[]>;
+    closedAccounts?: string[];
     variant?: 'default' | 'ghost';
     align?: 'left' | 'right';
 }
 
-export default function AccountSelector({ availableAccounts, selectedAccounts, onChange, accountGroups = {}, variant = 'default', align = 'right' }: AccountSelectorProps) {
+export default function AccountSelector({ availableAccounts, selectedAccounts, onChange, accountGroups = {}, closedAccounts = [], variant = 'default', align = 'right' }: AccountSelectorProps) {
+    const closedSet = new Set(closedAccounts);
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -156,19 +158,35 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                             .filter(account => account !== 'All Accounts')
                             .map((account) => {
                                 const isSelected = selectedAccounts.includes(account);
+                                const isClosed = closedSet.has(account);
                                 return (
                                     <button
                                         key={account}
                                         onClick={() => toggleAccount(account)}
-                                        className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
+                                        className={`group flex items-center justify-between gap-2 w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
                                             ? 'bg-[#0097b2] text-white shadow-sm'
                                             : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                             } last:border-0`}
                                     >
-                                        <span className="whitespace-nowrap">{account}</span>
-                                        {isSelected && (
-                                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                        )}
+                                        <span className={cn("whitespace-nowrap", !isSelected && isClosed && "text-muted-foreground")}>{account}</span>
+                                        <span className="flex items-center gap-2">
+                                            {isClosed && (
+                                                <span
+                                                    title="This account is closed"
+                                                    className={cn(
+                                                        "text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full",
+                                                        isSelected
+                                                            ? "bg-white/20 text-white"
+                                                            : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                                    )}
+                                                >
+                                                    Closed
+                                                </span>
+                                            )}
+                                            {isSelected && (
+                                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                            )}
+                                        </span>
                                     </button>
                                 );
                             })}

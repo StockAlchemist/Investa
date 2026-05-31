@@ -404,6 +404,14 @@ export default function Home() {
   const capitalGainsData = capitalGainsQuery.data || null;
   const dividendData     = dividendsQuery.data || null;
   const availableAccounts = (summary?.metrics?._available_accounts as string[]) || [];
+  const closedAccounts = (() => {
+    const dates = settingsQuery.data?.account_closure_dates;
+    if (!dates) return [];
+    const today = new Date().toISOString().slice(0, 10);
+    return Object.entries(dates)
+      .filter(([, d]) => d && d <= today)
+      .map(([acc]) => acc);
+  })();
   const graphData        = historyQuery.data || [];
   const graphLoading     = historyQuery.isFetching;
 
@@ -685,6 +693,7 @@ export default function Home() {
           selectedAccounts={selectedAccounts}
           onAccountsChange={setSelectedAccounts}
           accountGroups={settingsQuery.data?.account_groups}
+          closedAccounts={closedAccounts}
           indices={summary?.metrics?.indices as Record<string, unknown> | undefined}
           visibleItems={activeVisible}
           onVisibleItemsChange={(items) => setTabVisible(activeTab, items)}

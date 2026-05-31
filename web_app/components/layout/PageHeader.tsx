@@ -32,6 +32,7 @@ interface PageHeaderProps {
   selectedAccounts: string[];
   onAccountsChange: (a: string[]) => void;
   accountGroups?: Record<string, string[]>;
+  closedAccounts?: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   indices?: Record<string, any>;
   visibleItems: string[];
@@ -60,6 +61,7 @@ export function PageHeader({
   selectedAccounts,
   onAccountsChange,
   accountGroups,
+  closedAccounts,
   indices,
   visibleItems,
   onVisibleItemsChange,
@@ -227,6 +229,7 @@ export function PageHeader({
           selectedAccounts={selectedAccounts}
           onChange={onAccountsChange}
           accountGroups={accountGroups}
+          closedAccounts={closedAccounts}
           align="right"
         />
 
