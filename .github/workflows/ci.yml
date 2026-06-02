@@ -125,15 +125,22 @@ jobs:
         run: npx eslint ${{ steps.changed.outputs.files }}
 
       # Build validates compilation and types for the whole app.
-      # ESLint is gated separately above (eslint.ignoreDuringBuilds in next.config).
+      # (Next 16 no longer runs ESLint during build; lint is gated separately above.)
       - name: Build
         run: npm run build
 
   api-types-drift:
     name: API type drift (OpenAPI vs lib/api types)
     runs-on: ubuntu-latest
+    env:
+      # export_openapi.py imports the app, which pulls in PySide6 (via utils.py).
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
+
+      # PySide6 needs these system libraries to load on a headless runner.
+      - name: Install Qt system libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
 
       - uses: actions/setup-python@v5
         with:
