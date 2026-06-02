@@ -2130,49 +2130,6 @@ The CSV file should contain the following columns (header names must match exact
                 # logging.info("Symbol settings unchanged.")
                 pass
 
-    # Duplicate method removed
-
-        # logging.info(f"Saving symbol settings to: {overrides_file_path}")
-
-        data_to_save = {
-            "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
-            "user_symbol_map": dict(sorted(self.user_symbol_map_config.items())),
-            "user_excluded_symbols": sorted(
-                list(self.user_excluded_symbols_config)
-            ),  # Save set as sorted list
-        }
-
-        try:
-            overrides_dir = os.path.dirname(overrides_file_path)
-            if overrides_dir:
-                os.makedirs(overrides_dir, exist_ok=True)
-
-            with open(overrides_file_path, "w", encoding="utf-8") as f:
-                json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-            # logging.info("Symbol settings saved successfully.")
-            return True
-        except TypeError as e:
-            logging.error(f"TypeError writing symbol settings JSON: {e}")
-            QMessageBox.critical(
-                self, "Save Error", f"Data error saving symbol settings:\n{e}"
-            )
-        except IOError as e:
-            logging.error(f"IOError writing symbol settings JSON: {e}")
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"Could not write to file:\n{overrides_file_path}\n{e}",
-            )
-            return False
-        except Exception as e:
-            logging.exception("Unexpected error writing symbol settings JSON")
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"An unexpected error occurred saving symbol settings:\n{e}",
-            )
-            return False
-
     def _format_tooltip_annotation(self, selection):
         """Callback function to format mplcursors annotations."""
         try:
@@ -7155,7 +7112,6 @@ The CSV file should contain the following columns (header names must match exact
                     "Asset Class": "Cash",
                     "Current Value": current_value,
                     "Current %": current_pct,
-                    "Target %": current_pct,  # Initial target is current
                     "Target %": saved_targets.get(symbol, current_pct),
                     "Target Value": current_value,
                     "Drift %": 0.0,
@@ -7169,7 +7125,6 @@ The CSV file should contain the following columns (header names must match exact
                         ),
                         "Current Value": current_value,
                         "Current %": current_pct,
-                        "Target %": current_pct,  # Initial target is current
                         "Target %": saved_targets.get(symbol, current_pct),
                         "Target Value": current_value,
                         "Drift %": 0.0,

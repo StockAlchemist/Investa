@@ -95,7 +95,7 @@ def _fetch_factor_data(
         factor_df["Mkt-RF"] = returns_df["SPY"]
     else:
         # Fallback if SPY failed but others worked? Unlikely but handle it
-        loading.error("SPY data missing for Mkt-RF.")
+        logging.error("SPY data missing for Mkt-RF.")
         return pd.DataFrame()
 
     # SMB (Small Minus Big): IWM - SPY

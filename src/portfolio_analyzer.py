@@ -1923,7 +1923,6 @@ def _calculate_aggregate_metrics(
             "total_buy_cost_display": 0.0,
             "total_day_change_display": 0.0,
             "total_day_change_percent": np.nan,
-            "total_taxes_display": 0.0,
         }
     )
     overall_summary_metrics = {}
@@ -1944,7 +1943,7 @@ def _calculate_aggregate_metrics(
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
             "total_buy_cost": 0.0,
-            "portfolio_mwr": overall_mwr,
+            "portfolio_mwr": np.nan,
             "day_change_display": 0.0,
             "day_change_percent": np.nan,
             "report_date": report_date.strftime("%Y-%m-%d"),
