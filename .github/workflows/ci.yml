@@ -1,0 +1,202 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+    env:
+      # Parts of the test suite import PySide6 (Qt); run it headless.
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      # PySide6 needs these system libraries to load on a headless runner.
+      - name: Install Qt system libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        # pytest.ini already enables --cov=src --cov-report=term-missing
+        run: pytest tests/
+
+  backend-lint:
+    name: Backend lint (ruff, changed files)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need history so we can diff against the base commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff==0.12.2
+
+      # The repo carries pre-existing ruff debt in legacy modules, so we lint
+      # only the Python files touched by this push/PR. New and modified code
+      # stays clean without blocking on the legacy backlog.
+      - name: Determine changed Python files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+          fi
+          FILES="$(git diff --name-only --diff-filter=ACM "$BASE" "${{ github.sha }}" -- '*.py' | tr '\n' ' ')"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Changed Python files: ${FILES:-(none)}"
+
+      - name: Ruff check (changed files)
+        if: steps.changed.outputs.files != ''
+        run: ruff check ${{ steps.changed.outputs.files }}
+
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web_app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need history so we can diff against the base commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web_app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The repo carries pre-existing eslint debt, so we lint only the
+      # frontend files touched by this push/PR (paths made relative to web_app).
+      - name: Determine changed frontend files
+        id: changed
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+          fi
+          FILES="$(git diff --name-only --diff-filter=ACM "$BASE" "${{ github.sha }}" -- 'web_app/**/*.ts' 'web_app/**/*.tsx' 'web_app/**/*.js' 'web_app/**/*.jsx' \
+            | sed 's#^web_app/##' | tr '\n' ' ')"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Changed frontend files: ${FILES:-(none)}"
+
+      - name: Lint (changed files)
+        if: steps.changed.outputs.files != ''
+        run: npx eslint ${{ steps.changed.outputs.files }}
+
+      # Build validates compilation and types for the whole app.
+      # (Next 16 no longer runs ESLint during build; lint is gated separately above.)
+      - name: Build
+        run: npm run build
+
+  api-types-drift:
+    name: API type drift (OpenAPI vs lib/api types)
+    runs-on: ubuntu-latest
+    env:
+      # export_openapi.py imports the app, which pulls in PySide6 (via utils.py).
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      # PySide6 needs these system libraries to load on a headless runner.
+      - name: Install Qt system libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web_app/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web_app
+        run: npm ci
+
+      # Regenerates types from the live OpenAPI schema and fails if the
+      # checked-in src/api/types.ts has drifted. Run `npm run generate:api:offline` to fix.
+      - name: Check generated API types are up to date
+        working-directory: web_app
+        run: npm run check:api-drift
+
+  e2e:
+    name: Frontend E2E (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web_app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        # The Playwright config starts `npm run dev` as its webServer.
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web_app/playwright-report/
+          retention-days: 7

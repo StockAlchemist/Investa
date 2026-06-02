@@ -747,7 +747,7 @@ class PandasModel(QAbstractTableModel):
             summary_df = pd.DataFrame()
             main_data = self._data
             if "is_summary_row" in self._data.columns:
-                summary_mask = self._data["is_summary_row"] == True
+                summary_mask = self._data["is_summary_row"] == True  # noqa: E712
                 if summary_mask.any():
                     summary_df = self._data[summary_mask].copy()
                     main_data = self._data[
@@ -841,7 +841,9 @@ class PandasModel(QAbstractTableModel):
             elif is_potentially_numeric and not is_string_col:
                 key_func = numeric_key_func
             else:  # Default to string sort key
-                key_func = lambda x: x.astype(str).fillna("")
+
+                def key_func(x):
+                    return x.astype(str).fillna("")
             # --- End key_func determination ---
 
             # --- NEW: Group-aware sorting logic ---
@@ -853,7 +855,7 @@ class PandasModel(QAbstractTableModel):
                 logging.info(f"Performing group-aware sort on column '{col_name}'.")
 
                 # Create a boolean mask for header rows for robustness
-                header_mask = main_data["is_group_header"] == True
+                header_mask = main_data["is_group_header"] == True  # noqa: E712
 
                 # Separate headers and data rows from the main data (which excludes summary)
                 headers = main_data[header_mask].copy()

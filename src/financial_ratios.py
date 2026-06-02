@@ -380,7 +380,7 @@ def estimate_growth_rate(
     years: int = 5
 ) -> float:
     """Attempts to estimate a historical growth rate for a financial item."""
-    values = []
+    _values = []
     
     # 1. Try to get ANALYST EXPECTED GROWTH (Priority)
     if ticker_info:

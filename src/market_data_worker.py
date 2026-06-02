@@ -44,7 +44,7 @@ def log(msg):
         # sys.stderr.flush()
         with open(LOG_FILE, "a") as f:
             f.write(f"{datetime.now()} - {msg}\n")
-    except:
+    except Exception:
         pass
 
 try:
@@ -233,17 +233,24 @@ def fetch_statement(symbol, statement_type, period_type, output_file):
         ticker = yf.Ticker(symbol)
         df = pd.DataFrame()
         if period_type == "quarterly":
-            if statement_type == "financials": df = ticker.quarterly_financials
-            elif statement_type == "balance_sheet": df = ticker.quarterly_balance_sheet
-            elif statement_type == "cashflow": df = ticker.quarterly_cashflow
+            if statement_type == "financials":
+                df = ticker.quarterly_financials
+            elif statement_type == "balance_sheet":
+                df = ticker.quarterly_balance_sheet
+            elif statement_type == "cashflow":
+                df = ticker.quarterly_cashflow
         else:
-            if statement_type == "financials": df = ticker.financials
-            elif statement_type == "balance_sheet": df = ticker.balance_sheet
-            elif statement_type == "cashflow": df = ticker.cashflow
+            if statement_type == "financials":
+                df = ticker.financials
+            elif statement_type == "balance_sheet":
+                df = ticker.balance_sheet
+            elif statement_type == "cashflow":
+                df = ticker.cashflow
         
         if df is not None and not df.empty:
             json_str = df.to_json(orient='split', date_format='iso')
-            with open(output_file, "w") as f: f.write(json_str)
+            with open(output_file, "w") as f:
+                f.write(json_str)
             return {"status": "success", "file": output_file}
         else:
             return {"status": "success", "data": None}
@@ -261,7 +268,8 @@ def fetch_dividends(symbol, output_file):
             # Convert Series to DataFrame to ensure consistent 'split' format
             df = divs.to_frame(name="Dividends")
             json_str = df.to_json(orient='split', date_format='iso')
-            with open(output_file, "w") as f: f.write(json_str)
+            with open(output_file, "w") as f:
+                f.write(json_str)
             return {"status": "success", "file": output_file}
 
         else:
@@ -316,7 +324,8 @@ def fetch_earnings_dates(symbol, output_file, limit=24):
             df.index = df.index.tz_localize(None) if df.index.tz is not None else df.index
             df.index.name = "date"
             json_str = df.to_json(orient='split', date_format='iso')
-            with open(output_file, "w") as f: f.write(json_str)
+            with open(output_file, "w") as f:
+                f.write(json_str)
             return {"status": "success", "file": output_file}
         else:
             return {"status": "success", "data": None}
@@ -331,7 +340,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
         import pandas as pd  # Lazy import
         @retry_with_backoff(retries=3, backoff_in_seconds=10)
         def _execute_download(**kwargs):
-            log(f"Executing yf.download attempt...")
+            log("Executing yf.download attempt...")
             return yf.download(**kwargs)
 
         if period:

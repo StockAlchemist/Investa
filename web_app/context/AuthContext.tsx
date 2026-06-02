@@ -24,11 +24,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
 
-    // Load token from storage on mount
+    // Load token from storage on mount. If we also have a cached user, restore
+    // it optimistically and drop the loading gate immediately so the dashboard
+    // (and its persisted React Query cache) render without waiting on /auth/me —
+    // the token is still validated in the background below.
     useEffect(() => {
         const storedToken = localStorage.getItem("access_token");
         if (storedToken) {
             setToken(storedToken);
+            const cachedUser = localStorage.getItem("investa_user");
+            if (cachedUser) {
+                try {
+                    setUser(JSON.parse(cachedUser));
+                    setIsLoading(false);
+                } catch {
+                    // Corrupt cache — fall back to the blocking fetch below.
+                }
+            }
             fetchUser(storedToken);
         } else {
             setIsLoading(false);
@@ -48,6 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
             const userData = await fetchCurrentUser(authToken);
             setUser(userData);
+            // Cache for optimistic restore on the next load.
+            try { localStorage.setItem("investa_user", JSON.stringify(userData)); } catch {}
         } catch (error) {
             console.error("Failed to fetch user:", error);
             logout();
@@ -72,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const logout = () => {
         localStorage.removeItem("access_token");
+        localStorage.removeItem("investa_user");
         setToken(null);
         setUser(null);
 

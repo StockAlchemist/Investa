@@ -25,7 +25,9 @@ import threading
 import config
 
 DB_FILENAME = "portfolio.db"
-DB_SCHEMA_VERSION = 14
+# Must match the highest migration applied in create_tables() below (currently the
+# v15 migration adding the AI per-dimension analysis columns to screener_cache).
+DB_SCHEMA_VERSION = 15
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -255,7 +257,6 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
                 
                 break
             except sqlite3.OperationalError as e:
-                err_msg = str(e).lower()
                 if i < retries - 1:
                     logging.warning(f"Database access issue ({e}) for {db_path}. Retrying in {0.2 * (i + 1)}s... (attempt {i+1}/{retries})")
                     time.sleep(0.2 * (i + 1))
@@ -580,22 +581,22 @@ def create_transactions_table(conn: sqlite3.Connection):
             try:
                 cursor.execute('ALTER TABLE transactions ADD COLUMN user_id INTEGER;')
             except sqlite3.OperationalError as e:
-                if "duplicate column name" in str(e): pass
-                else: raise
+                if "duplicate column name" not in str(e):
+                    raise
 
             # 3. Add user_id to watchlists
             try:
                 cursor.execute('ALTER TABLE watchlists ADD COLUMN user_id INTEGER;')
             except sqlite3.OperationalError as e:
-                if "duplicate column name" in str(e): pass
-                else: raise
+                if "duplicate column name" not in str(e):
+                    raise
 
             # 4. Add user_id to screener_cache
             try:
                 cursor.execute('ALTER TABLE screener_cache ADD COLUMN user_id INTEGER;')
             except sqlite3.OperationalError as e:
-                if "duplicate column name" in str(e): pass
-                else: raise
+                if "duplicate column name" not in str(e):
+                    raise
 
             cursor.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
@@ -857,7 +858,7 @@ def migrate_csv_to_db(
         )
         try:
             db_conn.rollback()
-        except:
+        except Exception:
             pass
         return migrated_count, error_count + 1
     return migrated_count, error_count
@@ -1010,7 +1011,7 @@ def add_transaction_to_db(
         )
         try:
             db_conn.rollback()
-        except:
+        except Exception:
             pass
         return False, None
 
@@ -1139,7 +1140,7 @@ def update_transaction_in_db(
         )
         try:
             db_conn.rollback()
-        except:
+        except Exception:
             pass
         return False
 
@@ -1165,7 +1166,7 @@ def delete_transaction_from_db(
         )
         try:
             db_conn.rollback()
-        except:
+        except Exception:
             pass
         return False
 
@@ -1588,7 +1589,7 @@ def get_all_distinct_screener_results() -> List[Dict[str, Any]]:
         if row_dict.get("ai_catalysts") and isinstance(row_dict["ai_catalysts"], str):
             try:
                 row_dict["ai_catalysts"] = json.loads(row_dict["ai_catalysts"])
-            except:
+            except (ValueError, TypeError):
                 pass
         
         # Calculate average AI score if available

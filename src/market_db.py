@@ -1,4 +1,3 @@
-import sqlite3
 import pandas as pd
 import logging
 import os
@@ -108,7 +107,8 @@ class MarketDatabase:
                 
                 # Helper to clean NaNs
                 def clean(val):
-                    if pd.isna(val): return None
+                    if pd.isna(val):
+                        return None
                     return float(val)
 
                 # Normalize columns
@@ -249,7 +249,8 @@ class MarketDatabase:
                 
                 # Helper to clean NaNs
                 def clean(val):
-                    if pd.isna(val): return None
+                    if pd.isna(val):
+                        return None
                     return float(val)
 
                 # Normalize columns

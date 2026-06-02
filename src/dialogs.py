@@ -75,7 +75,7 @@ FALLBACK_QCOLOR_BORDER_DARK = QColor("#555")
 FALLBACK_QCOLOR_LOSS = QColor("#e74c3c")
 FALLBACK_QCOLOR_GAIN = QColor("#2ecc71")
 
-from config import CSV_DATE_FORMAT
+from config import CSV_DATE_FORMAT  # noqa: E402
 
 
 class FundamentalDataDialog(QDialog):
@@ -332,7 +332,7 @@ class FundamentalDataDialog(QDialog):
             elif key == "sharesShortPreviousMonthDate":  # Timestamp
                 try:
                     formatted_value = datetime.fromtimestamp(value).strftime("%Y-%m-%d")
-                except:
+                except Exception:
                     formatted_value = str(value)  # Fallback
             else:  # General fallback for other numeric values not explicitly categorized
                 logging.debug(
@@ -2550,13 +2550,13 @@ class AddTransactionDialog(QDialog):
         """
         data_for_processing: Dict[str, Any] = {}
         # Refresh current currency info if available (to check for USD)
-        is_usd_dividend = False
+        _is_usd_dividend = False
         if self.type_combo.currentText().lower() == "dividend":
             symbol_for_check = self.symbol_edit.text().strip().upper()
             if self.parent() and hasattr(self.parent(), "_get_currency_for_symbol"):
                 curr = self.parent()._get_currency_for_symbol(symbol_for_check)
                 if curr == "USD":
-                    is_usd_dividend = True
+                    _is_usd_dividend = True
 
         tx_type_display_case = (
             self.type_combo.currentText()
@@ -3400,7 +3400,7 @@ class AddTransactionDialog(QDialog):
                 curr = self.parent()._get_currency_for_symbol(symbol)
                 if curr == "USD":
                     is_usd = True
-            except:
+            except Exception:
                 pass
         
         if is_usd:
@@ -3441,7 +3441,7 @@ class LotsViewerDialog(QDialog):
         
         # Determine total lots qty to compare
         lots = holding_data.get('lots', [])
-        total_lot_qty = sum(l.get('qty', 0) for l in lots) # Note: 'lots' from backend uses 'qty' key, need to verify key names in portfolio_logic
+        _total_lot_qty = sum(lot.get('qty', 0) for lot in lots) # Note: 'lots' from backend uses 'qty' key, need to verify key names in portfolio_logic
         
         summary_layout.addWidget(QLabel(f"<b>Total Qty:</b> {format_float_with_commas(qty)}"))
         summary_layout.addWidget(QLabel(f"<b>Avg Cost:</b> {format_currency_value(avg_cost, currency_symbol)}"))

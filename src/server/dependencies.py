@@ -11,7 +11,6 @@ from fastapi.security import OAuth2PasswordBearer
 from server.auth import User, decode_access_token
 from db_utils import get_db_connection
 from data_loader import load_and_clean_transactions
-import sys
 
 # Ensure src is in path for imports
 current_file_path = os.path.abspath(__file__)
@@ -19,8 +18,7 @@ src_path = os.path.dirname(os.path.dirname(current_file_path))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-import config
-from config import GLOBAL_DB_FILENAME
+import config  # noqa: E402
 
 # Ensure src is in path (redundant if imported from main, but good for standalone testing)
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -347,7 +345,7 @@ def clear_settings_cache(username: Optional[str] = None):
         _OVERRIDES_MTIMES.clear()
     logging.info(f"Settings cache cleared for {'user ' + str(username) if username else 'all users'}.")
 
-from config_manager import ConfigManager
+from config_manager import ConfigManager  # noqa: E402
 
 def get_config_manager(current_user: User = Depends(get_current_user)) -> ConfigManager:
     """Dependency that provides a User-specific ConfigManager."""

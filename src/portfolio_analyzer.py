@@ -106,18 +106,30 @@ TYPE_UNKNOWN = -1
 # --- Helper to map string types to ints ---
 def get_type_id(t):
     t = str(t).lower().strip()
-    if t == 'buy': return TYPE_BUY
-    if t == 'sell': return TYPE_SELL
-    if t == 'deposit': return TYPE_DEPOSIT
-    if t == 'withdrawal': return TYPE_WITHDRAWAL
-    if t == 'dividend': return TYPE_DIVIDEND
-    if t in ['fee', 'fees']: return TYPE_FEES
-    if t in ['split', 'stock split']: return TYPE_SPLIT
-    if t == 'transfer': return TYPE_TRANSFER
-    if t == 'short sell': return TYPE_SHORT_SELL
-    if t == 'buy to cover': return TYPE_BUY_TO_COVER
-    if t in ['tax', 'withholding tax']: return TYPE_TAX
-    if t == 'interest': return TYPE_INTEREST
+    if t == 'buy':
+        return TYPE_BUY
+    if t == 'sell':
+        return TYPE_SELL
+    if t == 'deposit':
+        return TYPE_DEPOSIT
+    if t == 'withdrawal':
+        return TYPE_WITHDRAWAL
+    if t == 'dividend':
+        return TYPE_DIVIDEND
+    if t in ['fee', 'fees']:
+        return TYPE_FEES
+    if t in ['split', 'stock split']:
+        return TYPE_SPLIT
+    if t == 'transfer':
+        return TYPE_TRANSFER
+    if t == 'short sell':
+        return TYPE_SHORT_SELL
+    if t == 'buy to cover':
+        return TYPE_BUY_TO_COVER
+    if t in ['tax', 'withholding tax']:
+        return TYPE_TAX
+    if t == 'interest':
+        return TYPE_INTEREST
     return TYPE_UNKNOWN
 
 @jit(nopython=True, cache=True)
@@ -938,8 +950,10 @@ def _build_summary_rows(
     if include_accounts:
         include_accounts_norm = {str(a).strip().upper() for a in include_accounts}
     
-    if account_interest_rates is None: account_interest_rates = {}
-    if interest_free_thresholds is None: interest_free_thresholds = {}
+    if account_interest_rates is None:
+        account_interest_rates = {}
+    if interest_free_thresholds is None:
+        interest_free_thresholds = {}
 
     logging.info(f"Calculating final portfolio summary rows in {display_currency}...")
 
@@ -1923,7 +1937,6 @@ def _calculate_aggregate_metrics(
             "total_buy_cost_display": 0.0,
             "total_day_change_display": 0.0,
             "total_day_change_percent": np.nan,
-            "total_taxes_display": 0.0,
         }
     )
     overall_summary_metrics = {}
@@ -1944,7 +1957,7 @@ def _calculate_aggregate_metrics(
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
             "total_buy_cost": 0.0,
-            "portfolio_mwr": overall_mwr,
+            "portfolio_mwr": np.nan,
             "day_change_display": 0.0,
             "day_change_percent": np.nan,
             "report_date": report_date.strftime("%Y-%m-%d"),
@@ -2788,7 +2801,7 @@ def extract_dividend_history(
                 amt = abs(pd.to_numeric(tx.get("Price/Share"), errors="coerce"))
             if pd.notna(amt):
                 tax_lookup[(d, s, a)] += amt
-        except:
+        except Exception:
             continue
 
     results = []
@@ -3417,7 +3430,7 @@ def calculate_health_score(
     2. Efficiency (Sharpe Ratio).
     3. Volatility Check (Penalty if too high).
     """
-    score_breakdown = {}
+    _score_breakdown = {}
     
     # 1. Diversification Score (0-100)
     # HHI Approach: Lower is better. 
@@ -3505,11 +3518,16 @@ def calculate_health_score(
     overall = (div_score * 0.4) + (eff_score * 0.4) + (vol_score * 0.2)
     
     # Rating
-    if overall >= 80: rating = "Excellent"
-    elif overall >= 60: rating = "Good"
-    elif overall >= 40: rating = "Fair"
-    elif overall >= 20: rating = "Poor"
-    else: rating = "Critical"
+    if overall >= 80:
+        rating = "Excellent"
+    elif overall >= 60:
+        rating = "Good"
+    elif overall >= 40:
+        rating = "Fair"
+    elif overall >= 20:
+        rating = "Poor"
+    else:
+        rating = "Critical"
     
     return {
         "overall_score": round(overall, 1),

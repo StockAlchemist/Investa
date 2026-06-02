@@ -19,7 +19,7 @@ import logging
 import os
 import sys
 import datetime
-from typing import List
+from typing import List, Optional, Union
 
 # Ensure 'src' is in the python path if running from within src
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -28,7 +28,6 @@ if current_dir not in sys.path:
 
 # Import necessary modules
 try:
-    import config
     from market_data import get_shared_mdp
     from server.screener_service import get_sp500_tickers, get_sp400_tickers
     from server.ai_analyzer import generate_stock_review
@@ -71,7 +70,7 @@ def exit_due_to_quota(target_hour=QUOTA_RESET_HOUR):
     logging.error("Exiting worker due to quota exhaustion.")
     sys.exit(1)
 
-def check_if_review_exists(symbol: str, fund_data: dict = None, universe: str = 'sp500') -> bool:
+def check_if_review_exists(symbol: str, fund_data: Optional[dict] = None, universe: str = 'sp500') -> bool:
     """
     Checks if a valid AI review already exists for the symbol in the cache for the specified universe.
     Performs smart invalidation based on fiscal year/quarter data.
@@ -133,10 +132,11 @@ def save_review_to_screener(symbol: str, review: dict, fund_data: dict, universe
     except Exception as e:
         logging.error(f"Error saving review to screener for {symbol}: {e}")
 
-def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') -> bool:
+def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') -> Union[bool, str]:
     """
     Fetches data and generates review for a single stock.
-    Returns True if successful (or skipped), False if failed.
+    Returns True if successful (or skipped), False if failed, or the string
+    "QUOTA_EXHAUSTED" when the AI quota is hit (handled by the caller).
     """
     try:
         logging.info(f"Processing {symbol} ({universe})...")

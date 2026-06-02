@@ -94,6 +94,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/indices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Indices
+         * @description Current quotes for the header indices (Dow / Nasdaq / S&P).
+         *
+         *     Served off the /summary critical path so portfolio totals render immediately.
+         *     The underlying yfinance fetch is cached and run in a worker thread so a slow
+         *     upstream call never blocks the event loop (and thus other requests).
+         */
+        get: operations["get_indices_api_indices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;
@@ -186,6 +210,32 @@ export interface paths {
          *         Dict[str, Any]: A dictionary containing 'metrics' (totals) and 'account_metrics' (per-account breakdowns).
          */
         get: operations["get_portfolio_summary_api_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/summary/headline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portfolio Summary Headline
+         * @description Fast path for the top card: total value, day change, and the other headline
+         *     metrics — and nothing else.
+         *
+         *     Shares the heavy calculation cache with /summary but SKIPS the expensive
+         *     historical TWR/dividend step, the index fetch, and the holdings/summary_df
+         *     serialization. This lets the dashboard's headline card render and update as
+         *     soon as the core math finishes, well before the full dashboard is ready.
+         */
+        get: operations["get_portfolio_summary_headline_api_summary_headline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -521,6 +571,27 @@ export interface paths {
          * @description Returns historical price data for a single stock, with optional benchmarks.
          */
         get: operations["get_stock_history_api_stock_history__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/earnings_dates/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Earnings Dates
+         * @description Returns historical (and upcoming) earnings report dates for a single stock,
+         *     used to overlay earnings markers on the price chart.
+         */
+        get: operations["get_earnings_dates_api_earnings_dates__symbol__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1151,6 +1222,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/indices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Indices
+         * @description Current quotes for the header indices (Dow / Nasdaq / S&P).
+         *
+         *     Served off the /summary critical path so portfolio totals render immediately.
+         *     The underlying yfinance fetch is cached and run in a worker thread so a slow
+         *     upstream call never blocks the event loop (and thus other requests).
+         */
+        get: operations["get_indices_indices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search": {
         parameters: {
             query?: never;
@@ -1243,6 +1338,32 @@ export interface paths {
          *         Dict[str, Any]: A dictionary containing 'metrics' (totals) and 'account_metrics' (per-account breakdowns).
          */
         get: operations["get_portfolio_summary_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/summary/headline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portfolio Summary Headline
+         * @description Fast path for the top card: total value, day change, and the other headline
+         *     metrics — and nothing else.
+         *
+         *     Shares the heavy calculation cache with /summary but SKIPS the expensive
+         *     historical TWR/dividend step, the index fetch, and the holdings/summary_df
+         *     serialization. This lets the dashboard's headline card render and update as
+         *     soon as the core math finishes, well before the full dashboard is ready.
+         */
+        get: operations["get_portfolio_summary_headline_summary_headline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1578,6 +1699,27 @@ export interface paths {
          * @description Returns historical price data for a single stock, with optional benchmarks.
          */
         get: operations["get_stock_history_stock_history__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earnings_dates/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Earnings Dates
+         * @description Returns historical (and upcoming) earnings report dates for a single stock,
+         *     used to overlay earnings markers on the price chart.
+         */
+        get: operations["get_earnings_dates_earnings_dates__symbol__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2658,6 +2800,26 @@ export interface operations {
             };
         };
     };
+    get_indices_api_indices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     search_symbols_api_search_get: {
         parameters: {
             query?: {
@@ -2760,6 +2922,38 @@ export interface operations {
                 currency?: string;
                 accounts?: string[] | null;
                 show_closed?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_summary_headline_api_summary_headline_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -3266,6 +3460,39 @@ export interface operations {
                 period?: string;
                 interval?: string;
                 benchmarks?: string[] | null;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_earnings_dates_api_earnings_dates__symbol__get: {
+        parameters: {
+            query?: {
+                limit?: number;
             };
             header?: never;
             path: {
@@ -4372,6 +4599,26 @@ export interface operations {
             };
         };
     };
+    get_indices_indices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     search_symbols_search_get: {
         parameters: {
             query?: {
@@ -4474,6 +4721,38 @@ export interface operations {
                 currency?: string;
                 accounts?: string[] | null;
                 show_closed?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_summary_headline_summary_headline_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -4980,6 +5259,39 @@ export interface operations {
                 period?: string;
                 interval?: string;
                 benchmarks?: string[] | null;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_earnings_dates_earnings_dates__symbol__get: {
+        parameters: {
+            query?: {
+                limit?: number;
             };
             header?: never;
             path: {

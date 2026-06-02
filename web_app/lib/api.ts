@@ -206,6 +206,25 @@ export async function fetchMarketStatus(): Promise<{ is_open: boolean }> {
     return res.json();
 }
 
+// Header index quotes (Dow / Nasdaq / S&P), served off the /summary critical
+// path. May be slow on a cold cache, so it's fetched as its own query.
+export async function fetchIndices(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const res = await authFetch(`${API_BASE_URL}/indices`, { signal });
+    if (!res.ok) throw new Error('Failed to fetch indices');
+    return res.json();
+}
+
+// Fast headline metrics (total value, day change, …) for the top card. Skips the
+// expensive historical/TWR work in /summary so the card renders/updates first.
+export async function fetchHeadline(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<{ metrics: Record<string, unknown> | null }> {
+    const params = new URLSearchParams();
+    params.set('currency', currency);
+    (accounts || []).forEach((a) => params.append('accounts', a));
+    const res = await authFetch(`${API_BASE_URL}/summary/headline?${params.toString()}`, { signal });
+    if (!res.ok) throw new Error('Failed to fetch headline summary');
+    return res.json();
+}
+
 export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false, signal?: AbortSignal): Promise<Holding[]> {
     const { data, error } = await apiClient.GET("/api/holdings", {
         params: {

@@ -15,12 +15,13 @@ SPDX-License-Identifier: MIT
 
 import pandas as pd
 import numpy as np
-# import statsmodels.api as sm # Lazy loaded
-sm = None
 import logging
 from typing import Optional, Any
 
 from market_data import MarketDataProvider
+
+# import statsmodels.api as sm # Lazy loaded
+sm = None
 
 
 def _fetch_factor_data(
@@ -54,7 +55,7 @@ def _fetch_factor_data(
         tickers.append("MTUM")
     
     # We might already have SPY in benchmark_data
-    spy_returns = None
+    _spy_returns = None
     if benchmark_data is not None and not benchmark_data.empty:
         # Check if we can identify SPY column
         # existing logic...
@@ -95,7 +96,7 @@ def _fetch_factor_data(
         factor_df["Mkt-RF"] = returns_df["SPY"]
     else:
         # Fallback if SPY failed but others worked? Unlikely but handle it
-        loading.error("SPY data missing for Mkt-RF.")
+        logging.error("SPY data missing for Mkt-RF.")
         return pd.DataFrame()
 
     # SMB (Small Minus Big): IWM - SPY

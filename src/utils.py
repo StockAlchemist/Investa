@@ -145,8 +145,8 @@ def get_column_definitions(display_currency="USD"):
 
 # --- Helper Classes for Background Processing ---
 
-from PySide6.QtWidgets import QStyledItemDelegate
-from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QStyledItemDelegate  # noqa: E402
+from PySide6.QtGui import QColor  # noqa: E402
 
 
 class GroupHeaderDelegate(QStyledItemDelegate):

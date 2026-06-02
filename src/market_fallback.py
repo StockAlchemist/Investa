@@ -2,7 +2,6 @@ import os
 import requests
 import logging
 import pandas as pd
-from datetime import datetime
 from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)

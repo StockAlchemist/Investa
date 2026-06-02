@@ -89,17 +89,11 @@ try:
         DEFAULT_CURRENT_CACHE_FILE_PATH,  # Still used by MarketDataProvider default
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         DAILY_RESULTS_CACHE_PATH_PREFIX,
-        YFINANCE_CACHE_DURATION_HOURS,
-        YFINANCE_INDEX_TICKER_MAP,
         YFINANCE_EXCLUDED_SYMBOLS,
         SHORTABLE_SYMBOLS,
         DEFAULT_CURRENCY,
-        HISTORICAL_DEBUG_USD_CONVERSION,
-        HISTORICAL_DEBUG_SET_VALUE,
         STOCK_QUANTITY_CLOSE_TOLERANCE,
-        DEBUG_DATE_VALUE,
         HISTORICAL_DEBUG_DATE_VALUE,
-        HISTORICAL_DEBUG_SYMBOL,
         HISTORICAL_CALC_METHOD,
         HISTORICAL_COMPARE_METHODS,
     )
@@ -110,16 +104,11 @@ except ImportError:
 try:
     from finutils import (
         _get_file_hash,
-        calculate_npv,
-        calculate_irr,
-        get_cash_flows_for_symbol_account,
-        get_cash_flows_for_mwr,
         get_conversion_rate,
         get_historical_price,
         get_historical_rate_via_usd_bridge,
         map_to_yf_symbol,
         is_cash_symbol,  # ADDED
-        safe_sum,
     )
 except ImportError:
     logging.critical("CRITICAL ERROR: Could not import from finutils.py. Exiting.")
@@ -160,9 +149,6 @@ try:
         _process_transactions_to_holdings,
         _build_summary_rows,
         _calculate_aggregate_metrics,
-        calculate_periodic_returns,
-        calculate_correlation_matrix,
-        extract_realized_capital_gains_history,
         calculate_fifo_lots_and_gains,  # NEW IMPORT
         extract_dividend_history, # NEW IMPORT
     )
@@ -320,7 +306,7 @@ def calculate_portfolio_summary(
     effective_user_excluded_symbols = (
         user_excluded_symbols if user_excluded_symbols is not None else set()
     )
-    effective_account_currency_map = (
+    _effective_account_currency_map = (
         account_currency_map if account_currency_map is not None else {}
     )
 
@@ -1015,7 +1001,8 @@ def calculate_portfolio_summary(
                 fx_rate_curr = get_conversion_rate(
                     local_curr, display_currency, current_fx_rates_vs_usd
                 )
-                if pd.isna(fx_rate_curr): fx_rate_curr = 0.0 # Safety
+                if pd.isna(fx_rate_curr):
+                    fx_rate_curr = 0.0 # Safety
 
                 for lot in lots:
                     # Lot fields needed: Date, Quantity, Cost Basis (Display), Mkt Val (Display), Unreal Gain (Display)
@@ -1026,7 +1013,8 @@ def calculate_portfolio_summary(
                     l_cost_local = lot["cost_per_share_local_net"]
                     l_purch_fx = lot["purchase_fx_to_display"]
                     
-                    if pd.isna(l_purch_fx): l_purch_fx = 0.0 # Should not happen if data good
+                    if pd.isna(l_purch_fx):
+                        l_purch_fx = 0.0 # Should not happen if data good
                     
                     # Cost Basis Display = Qty * Cost_Local * Purchase_FX
                     l_cost_basis_display = l_qty * l_cost_local * l_purch_fx
@@ -1586,7 +1574,7 @@ def calculate_portfolio_summary(
 
                 metrics = account_level_metrics[acct]
                 
-                old_acct_realized = metrics.get("total_realized_gain_display", 0.0)
+                _old_acct_realized = metrics.get("total_realized_gain_display", 0.0)
                 metrics["total_realized_gain_display"] = acct_fifo_gain
                 
                 # Update Total Gain for account
@@ -1799,9 +1787,12 @@ def _unadjust_prices(
         # function may also be passed an already-renamed DataFrame).
         col_to_use = None
         if not adj_price_df.empty:
-            if "price" in adj_price_df.columns: col_to_use = "price"
-            elif "Close" in adj_price_df.columns: col_to_use = "Close"
-            elif "Adj Close" in adj_price_df.columns: col_to_use = "Adj Close"
+            if "price" in adj_price_df.columns:
+                col_to_use = "price"
+            elif "Close" in adj_price_df.columns:
+                col_to_use = "Close"
+            elif "Adj Close" in adj_price_df.columns:
+                col_to_use = "Adj Close"
         
         if not col_to_use:
             if IS_DEBUG_SYMBOL:
@@ -2859,7 +2850,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             break
 
         current_price_local = np.nan
-        manual_price_override_applied = False
+        _manual_price_override_applied = False
 
         # --- ADDED: Check for manual price override ---
         if manual_overrides_dict and internal_symbol in manual_overrides_dict:
@@ -2870,7 +2861,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     manual_price_float = float(manual_price)
                     if manual_price_float > 1e-9:  # Ensure positive price
                         current_price_local = manual_price_float
-                        manual_price_override_applied = True
+                        _manual_price_override_applied = True
                         if DO_DETAILED_LOG:
                             logging.debug(
                                 f"      Using MANUAL OVERRIDE Price for {internal_symbol}: {current_price_local}"
@@ -3575,7 +3566,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
 
     try:
         target_date_ts = pd.Timestamp(target_date)
-        if target_date_ts.tz is None: target_date_ts = target_date_ts.tz_localize('UTC')
+        if target_date_ts.tz is None:
+            target_date_ts = target_date_ts.tz_localize('UTC')
         target_date_ordinal = target_date_ts.value
         
         # --- FIX: Define tx_types_np earlier for use in debug block ---
@@ -4758,10 +4750,14 @@ def _value_daily_holdings_vectorized(
             t_df = historical_fx_yf[target_pair]
             if not t_df.empty:
                 col_to_use = None
-                if "price" in t_df.columns: col_to_use = "price"
-                elif "Close" in t_df.columns: col_to_use = "Close"
-                elif "Adj Close" in t_df.columns: col_to_use = "Adj Close"
-                elif "rate" in t_df.columns: col_to_use = "rate"
+                if "price" in t_df.columns:
+                    col_to_use = "price"
+                elif "Close" in t_df.columns:
+                    col_to_use = "Close"
+                elif "Adj Close" in t_df.columns:
+                    col_to_use = "Adj Close"
+                elif "rate" in t_df.columns:
+                    col_to_use = "rate"
 
                 if col_to_use:
                     # Reindex to date_range with ffill
@@ -4823,10 +4819,14 @@ def _value_daily_holdings_vectorized(
                  l_df = historical_fx_yf[local_pair]
                  if not l_df.empty:
                     col_to_use = None
-                    if "price" in l_df.columns: col_to_use = "price"
-                    elif "Close" in l_df.columns: col_to_use = "Close"
-                    elif "Adj Close" in l_df.columns: col_to_use = "Adj Close"
-                    elif "rate" in l_df.columns: col_to_use = "rate"
+                    if "price" in l_df.columns:
+                        col_to_use = "price"
+                    elif "Close" in l_df.columns:
+                        col_to_use = "Close"
+                    elif "Adj Close" in l_df.columns:
+                        col_to_use = "Adj Close"
+                    elif "rate" in l_df.columns:
+                        col_to_use = "rate"
                     
                     if col_to_use:
                         l_series = l_df[col_to_use].copy()
@@ -5033,17 +5033,17 @@ def _load_or_calculate_daily_results(
     # ... (Function body remains unchanged) ...
     import pandas as pd  # Explicit import locally to fix UnboundLocalError
     daily_df = pd.DataFrame()
-    t0 = time.time()
+    _t0 = time.time()
     cache_valid_daily_results = False
     status_update = ""
-    dummy_warnings_set = set()
+    _dummy_warnings_set = set()
 
 
     # --- Chronological Calculation (numba_chrono) ---
     logging.debug(
         f"[_load_or_calculate_daily_results] Received date range: {start_date} to {end_date}"
     )
-    t1_setup = time.time()
+    _t1_setup = time.time()
     # --- END ADDED ---
 
     # --- ADDED: Define metadata filename ---
@@ -5268,7 +5268,7 @@ def _load_or_calculate_daily_results(
                 else:
                     active_end_bound = ts_end_of_period
                 
-                heading_into_future = False # logic no longer needed, we fill what we have
+                _heading_into_future = False # logic no longer needed, we fill what we have
                 
                 range_active = pd.date_range(
                     start=pd.Timestamp(start_date, tz='UTC'), 
@@ -5334,7 +5334,8 @@ def _load_or_calculate_daily_results(
                     else transactions_df_effective["Date"].min().date()
                 )
                 l1_offset = (calc_start_date - l1_cache_start_date).days
-                if l1_offset < 0: l1_offset = 0
+                if l1_offset < 0:
+                    l1_offset = 0
             
                 # Slice L1 cache
                 # Ensure we don't go out of bounds
@@ -5805,7 +5806,7 @@ def _load_or_calculate_daily_results(
                 # FIX: Do NOT drop rows. This causes history truncation and incorrect TWR annualization.
                 # instead, let 'value' be NaN/0 and handle in gain calculations.
                 # daily_df.dropna(subset=["value"], inplace=True)
-                rows_dropped = 0
+                _rows_dropped = 0
                 if daily_df.empty:
                     return (
                         pd.DataFrame(),
@@ -6619,7 +6620,7 @@ def calculate_historical_performance(
     has_warnings = False
     status_parts = []
 
-    processed_warnings = set()
+    _processed_warnings = set()
 
     # --- NEW: Generate Mappings for ALL transactions at the start ---
     (
@@ -6796,7 +6797,7 @@ def calculate_historical_performance(
     
     # fetch_end_date must be at least clamped_end_date + 1 day (because YF is exclusive)
     # AND cover any transactions
-    min_fetch_end = max(clamped_end_date + timedelta(days=1), full_end_date_tx + timedelta(days=1))
+    _min_fetch_end = max(clamped_end_date + timedelta(days=1), full_end_date_tx + timedelta(days=1))
     # We also respect the original end_date if it was larger (e.g. for some reason needed?)
     # But usually we just need to cover the clamped range + buffer.
     # Let's just ensure we capture up to 'today' if needed for checking.
@@ -7132,9 +7133,12 @@ def calculate_historical_performance(
                     
                     if bm_df is not None and not bm_df.empty:
                         col_to_use = None
-                        if "price" in bm_df.columns: col_to_use = "price"
-                        elif "Adj Close" in bm_df.columns: col_to_use = "Adj Close"
-                        elif "Close" in bm_df.columns: col_to_use = "Close"
+                        if "price" in bm_df.columns:
+                            col_to_use = "price"
+                        elif "Adj Close" in bm_df.columns:
+                            col_to_use = "Adj Close"
+                        elif "Close" in bm_df.columns:
+                            col_to_use = "Close"
                         
                         if col_to_use:
                             logging.info(f"Benchmark {bm}: Using col '{col_to_use}', count={len(bm_df)}, first={bm_df.index[0]}")

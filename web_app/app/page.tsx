@@ -22,7 +22,10 @@ import {
   fetchPortfolioHealth,
   fetchProjectedIncome,
   fetchMarketStatus,
-  PerformanceData
+  fetchIndices,
+  fetchHeadline,
+  PerformanceData,
+  PortfolioSummary
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
@@ -263,6 +266,28 @@ export default function Home() {
   });
   const isMarketOpen = marketStatusQuery.data?.is_open ?? false;
 
+  // Header indices are fetched separately from /summary so a slow upstream
+  // quote fetch can't delay the portfolio totals. Refreshes on its own cadence.
+  const indicesQuery = useQuery({
+    queryKey: ['indices'],
+    queryFn: ({ signal }) => fetchIndices(signal),
+    staleTime: 60 * 1000,
+    refetchInterval: isMarketOpen ? 2 * 60 * 1000 : false,
+    enabled: !!user,
+  });
+
+  // Headline metrics (total value, day change) — fetched on its own fast path so
+  // the top card renders/updates before the full summary (with its heavy
+  // historical work) completes. The card prefers full-summary data once present.
+  const headlineQuery = useQuery({
+    queryKey: ['headline', user?.username, currency, selectedAccounts],
+    queryFn: ({ signal }) => fetchHeadline(currency, selectedAccounts, signal),
+    staleTime: 60 * 1000,
+    refetchInterval: isMarketOpen ? 60 * 1000 : false,
+    placeholderData: keepPreviousData,
+    enabled: !!user,
+  });
+
   const summaryQuery = useQuery({
     queryKey: ['summary', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, showClosed, signal),
@@ -398,6 +423,23 @@ export default function Home() {
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const summary          = summaryQuery.data;
+
+  // Headline metrics power the top card. Prefer the full summary, but overlay the
+  // headline numbers whenever they're the fresher of the two — so the card shows
+  // up first on a cold load and updates first on every refresh, ahead of the
+  // heavier full-summary response. Headline is a strict subset, so overlaying it
+  // never drops any of the summary's extra fields (TWR, etc.).
+  const headlineMetrics = headlineQuery.data?.metrics ?? null;
+  const headlineFresher = headlineQuery.dataUpdatedAt > (summaryQuery.dataUpdatedAt || 0);
+  let cardMetrics: PortfolioSummary['metrics'] = summary?.metrics ?? null;
+  if (headlineMetrics && (headlineFresher || !cardMetrics)) {
+    cardMetrics = { ...(cardMetrics || {}), ...headlineMetrics } as PortfolioSummary['metrics'];
+  }
+  const effectiveSummary: PortfolioSummary | undefined = summary
+    ? { ...summary, metrics: cardMetrics }
+    : (cardMetrics ? { metrics: cardMetrics, account_metrics: null } : undefined);
+  const cardLoading = (summaryQuery.isLoading && !summary) && (headlineQuery.isLoading && !headlineMetrics);
+  const cardRefreshing = summaryQuery.isFetching || headlineQuery.isFetching;
   const holdings         = holdingsQuery.data || [];
   const transactions     = transactionsQuery.data || [];
   const assetChangeData  = assetChangeQuery.data || null;
@@ -414,6 +456,11 @@ export default function Home() {
   })();
   const graphData        = historyQuery.data || [];
   const graphLoading     = historyQuery.isFetching;
+  // Prefer the dedicated /indices query; fall back to whatever the summary's
+  // cache-only path returned (instant on a warm cache).
+  const indices = (indicesQuery.data && Object.keys(indicesQuery.data).length > 0)
+    ? indicesQuery.data
+    : (summary?.metrics?.indices as Record<string, unknown> | undefined);
 
   // ── Tab content ───────────────────────────────────────────────────────────
   // Helper: get visible items for the active tab
@@ -436,11 +483,11 @@ export default function Home() {
         return (
           <>
             <Dashboard
-              summary={summary || { metrics: null, account_metrics: null }}
+              summary={effectiveSummary || { metrics: null, account_metrics: null }}
               currency={currency}
               history={historySparklineQuery.data || []}
-              isLoading={summaryQuery.isLoading && !summaryQuery.data}
-              isRefreshing={summaryQuery.isFetching || historySparklineQuery.isFetching}
+              isLoading={cardLoading}
+              isRefreshing={cardRefreshing || historySparklineQuery.isFetching}
               riskMetrics={riskMetricsQuery.data || {}}
               riskMetricsLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
               portfolioHealth={portfolioHealthQuery.data || null}
@@ -449,6 +496,7 @@ export default function Home() {
               dividendEvents={dividendCalendarQuery.data || []}
               longHistory={perfHistoryQuery.data || []}
               holdings={holdings}
+              indices={indices}
               visibleItems={visibleItems}
               accounts={selectedAccounts}
               themeColor={currentTheme.color}
@@ -523,12 +571,12 @@ export default function Home() {
         return <TransactionsTable transactions={transactions} currency={currency} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;
 
       case 'markets':
-        return !summary?.metrics?.indices ? (
+        return !indices ? (
           <p className="text-muted-foreground text-sm">Market data unavailable.</p>
         ) : (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           <MarketsTab
-            indices={summary.metrics.indices as any}
+            indices={indices as any}
             onIndexClick={() => setIsIndexGraphModalOpen(true)}
             holdings={holdings}
             currency={currency}
@@ -667,7 +715,7 @@ export default function Home() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(c => !c)}
         onUserClick={handleUserIconClick}
-        dayChangePct={summary?.metrics?.day_change_pct as number | undefined}
+        dayChangePct={cardMetrics?.day_change_pct as number | undefined}
       />
 
       {/* ── Mobile navigation drawer ── */}
@@ -694,21 +742,21 @@ export default function Home() {
           onAccountsChange={setSelectedAccounts}
           accountGroups={settingsQuery.data?.account_groups}
           closedAccounts={closedAccounts}
-          indices={summary?.metrics?.indices as Record<string, unknown> | undefined}
+          indices={indices}
           visibleItems={activeVisible}
           onVisibleItemsChange={(items) => setTabVisible(activeTab, items)}
           layoutItems={TAB_LAYOUT_ITEMS[activeTab]}
           layoutSectionTitle={TAB_SECTION_LABELS[activeTab]}
           onCommandPaletteOpen={() => setIsCommandPaletteOpen(true)}
-          fxRate={summary?.metrics?.exchange_rate_to_display as number | undefined}
+          fxRate={cardMetrics?.exchange_rate_to_display as number | undefined}
           availableCurrencies={settingsQuery.data?.available_currencies}
-          isFetching={summaryQuery.isFetching}
+          isFetching={cardRefreshing}
           onIndexClick={() => setIsIndexGraphModalOpen(true)}
           isMarketOpen={isMarketOpen}
-          lastUpdated={summaryQuery.dataUpdatedAt ? new Date(summaryQuery.dataUpdatedAt) : null}
+          lastUpdated={Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0) ? new Date(Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0)) : null}
           onMobileMenuOpen={() => setIsMobileNavOpen(true)}
-          marketValue={summary?.metrics?.market_value ?? null}
-          dayChangePct={summary?.metrics?.day_change_percent ?? null}
+          marketValue={(cardMetrics?.market_value as number | undefined) ?? null}
+          dayChangePct={(cardMetrics?.day_change_percent as number | undefined) ?? null}
           showClosed={showClosed}
           onShowClosedChange={setShowClosed}
         />
@@ -735,7 +783,7 @@ export default function Home() {
         isOpen={isIndexGraphModalOpen}
         onClose={() => setIsIndexGraphModalOpen(false)}
         benchmarks={benchmarks}
-        currentIndices={summary?.metrics?.indices}
+        currentIndices={indices}
       />
 
       {/* ── Mobile bottom nav ── */}

@@ -19,7 +19,6 @@ import time
 import logging
 import os
 import sys
-import sqlite3
 
 # Ensure 'src' is in the python path if running from within src
 current_dir = os.path.dirname(os.path.abspath(__file__))
