@@ -14,10 +14,19 @@ import json
 import logging
 import shutil
 from typing import Dict, Any, Optional
-from PySide6.QtCore import QStandardPaths
+
+try:
+    from PySide6.QtCore import QStandardPaths
+except ImportError:
+    # Server/headless environments may not have Qt; fall back gracefully.
+    QStandardPaths = None
 
 import config
-from utils import get_column_definitions, DEFAULT_GRAPH_START_DATE, DEFAULT_GRAPH_END_DATE
+from display_config import (
+    get_column_definitions,
+    DEFAULT_GRAPH_START_DATE,
+    DEFAULT_GRAPH_END_DATE,
+)
 
 class ConfigManager:
     def __init__(self, app_data_path: str):
@@ -85,7 +94,12 @@ class ConfigManager:
             "bar_periods_weekly": 12,
             "dividend_agg_period": "Annual",
             "dividend_periods_to_show": 10,
-            "last_csv_import_path": QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation) or os.getcwd(),
+            "last_csv_import_path": (
+                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+                if QStandardPaths
+                else None
+            )
+            or os.getcwd(),
             "theme": "light",
             "account_groups": {},
             "account_cash_mode_map": {},
