@@ -23,9 +23,11 @@ import {
     fetchTransactions,
     fetchDividends,
     fetchEarningsDates,
+    fetchCapitalGains,
     Transaction,
     Dividend,
-    EarningsDate
+    EarningsDate,
+    CapitalGain
 } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 
@@ -48,6 +50,8 @@ interface ChartEvent {
     timestamp: number; // snapped to a chart x value
     y: number;         // y-coordinate (price-axis) where the marker sits
     label: string;     // tooltip / title text
+    gain?: number;     // sell only: realized gain/loss (display currency)
+    gainPct?: number;  // sell only: realized gain/loss as % of cost basis
 }
 
 const EVENT_STYLES: Record<EventKind, { color: string; letter: string }> = {
@@ -208,7 +212,17 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
     const { data: transactions } = useQuery({
         queryKey: ['transactions', accounts],
         queryFn: ({ signal }) => fetchTransactions(accounts, signal),
-        enabled: showBuys || showSells,
+        // Also needed by the dividend overlay to derive shares held (for yield).
+        enabled: showBuys || showSells || showDividends,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    // Realized gains keyed by the originating sell transaction; powers the
+    // proceeds / % gain shown in the sell marker's tooltip.
+    const { data: capitalGainsData } = useQuery({
+        queryKey: ['capital_gains', currency, accounts],
+        queryFn: ({ signal }) => fetchCapitalGains(currency, accounts, undefined, undefined, signal),
+        enabled: showSells,
         staleTime: 5 * 60 * 1000,
     });
 
@@ -366,7 +380,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
         // dividend auto-adjust), but a transaction's stored Price/Share is the nominal
         // price at trade time. Divide by the cumulative ratio of any splits that
         // occurred AFTER the trade so the marker lands on the adjusted line.
-        const splitEvents = (showBuys || showSells) && transactions
+        const splitEvents = transactions
             ? (transactions as Transaction[])
                 .filter((t) => {
                     if (t.Symbol !== symbol) return false;
@@ -378,6 +392,38 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
         const splitFactorAfter = (tradeTs: number) =>
             splitEvents.reduce((f, s) => (s.ts > tradeTs ? f * s.ratio : f), 1);
         const formatQty = (q: number) => (Number.isInteger(q) ? String(q) : String(Number(q.toFixed(4))));
+
+        // Realized gain (proceeds / % gain) per originating sell transaction id.
+        const cgByTxId = new Map<number, CapitalGain>();
+        if (showSells && capitalGainsData) {
+            for (const cg of capitalGainsData as CapitalGain[]) {
+                if (cg.original_tx_id != null) cgByTxId.set(Number(cg.original_tx_id), cg);
+            }
+        }
+
+        // Signed, split-adjusted share movements for this symbol, used to derive
+        // shares held at a dividend date (so we can express a per-payment yield).
+        // Quantities are adjusted to the price line's present-day basis, matching
+        // pt.value, so `sharesHeld * pt.value` is the position's market value.
+        const shareMoves: { ts: number; q: number }[] = [];
+        if (transactions) {
+            for (const t of transactions as Transaction[]) {
+                if (t.Symbol !== symbol) continue;
+                const type = String(t.Type || '').toLowerCase();
+                const isBuy = type === 'buy' || type === 'buy to cover';
+                const isSell = type === 'sell' || type === 'short sell';
+                if (!isBuy && !isSell) continue;
+                const tradeTs = new Date(t.Date).getTime();
+                const qty = (Number(t.Quantity) || 0) * splitFactorAfter(tradeTs);
+                shareMoves.push({ ts: tradeTs, q: isBuy ? qty : -qty });
+            }
+        }
+        const sharesHeldAt = (ts: number) =>
+            shareMoves.reduce((s, m) => (m.ts <= ts ? s + m.q : s), 0);
+
+        // Running realized cost basis per sell point, so an aggregated gain % can
+        // be derived from the summed gain/cost when several sells snap together.
+        const sellCost = new Map<string, number>();
 
         if ((showBuys || showSells) && transactions) {
             for (const t of transactions as Transaction[]) {
@@ -397,36 +443,70 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                 const priceLocal = (Number(t['Price/Share']) || 0) / factor;
                 const price = priceLocal > 0 ? priceLocal * fxRate : pt.value;
                 const key = `${kind}:${pt.timestamp}`;
+
+                // For a closing sell, carry the realized gain/loss for color-coded
+                // display (proceeds are intentionally omitted from the label).
+                let gain: number | undefined;
+                let cost = 0;
+                if (isSell) {
+                    const cg = t.id != null ? cgByTxId.get(Number(t.id)) : undefined;
+                    cost = cg ? Number(cg['Total Cost Basis (Display)']) || 0 : 0;
+                    gain = cg ? Number(cg['Realized Gain (Display)']) || 0 : undefined;
+                }
+
+                const segment = `${formatQty(qty)} @ ${formatCurrency(price, currency)}`;
                 const existing = agg.get(key);
                 if (existing) {
-                    existing.label = `${existing.label}, ${formatQty(qty)} @ ${formatCurrency(price, currency)}`;
+                    existing.label = `${existing.label}, ${segment}`;
+                    if (gain != null) existing.gain = (existing.gain ?? 0) + gain;
                 } else {
                     agg.set(key, {
                         kind,
                         timestamp: pt.timestamp,
                         y: price,
-                        label: `${isBuy ? 'Buy' : 'Sell'} ${formatQty(qty)} @ ${formatCurrency(price, currency)}`,
+                        label: `${isBuy ? 'Buy' : 'Sell'} ${segment}`,
+                        gain,
                     });
+                }
+                if (isSell) {
+                    sellCost.set(key, (sellCost.get(key) ?? 0) + cost);
+                    const ev = agg.get(key)!;
+                    const totalCost = sellCost.get(key)!;
+                    ev.gainPct = totalCost > 0 && ev.gain != null
+                        ? (ev.gain / totalCost) * 100
+                        : undefined;
                 }
             }
         }
 
         if (showDividends && dividendsData) {
+            // Sum payments that snap to the same chart point, then express the
+            // total as a yield against the position's market value at that date.
+            const divTotals = new Map<string, number>();
             for (const d of dividendsData as Dividend[]) {
                 if (d.Symbol !== symbol) continue;
-                const pt = snap(new Date(d.Date).getTime());
+                const divTs = new Date(d.Date).getTime();
+                const pt = snap(divTs);
                 if (!pt) continue;
                 const amt = Number(d.DividendAmountDisplayCurrency) || 0;
                 const key = `dividend:${pt.timestamp}`;
+                const total = (divTotals.get(key) || 0) + amt;
+                divTotals.set(key, total);
+
+                const marketValue = sharesHeldAt(divTs) * pt.value;
+                const yieldPct = marketValue > 0 ? (total / marketValue) * 100 : null;
+                const label = `Dividend ${formatCurrency(total, currency)}`
+                    + (yieldPct != null ? ` · ${yieldPct.toFixed(2)}% yield` : '');
+
                 const existing = agg.get(key);
                 if (existing) {
-                    existing.label = `Dividend ${formatCurrency(amt, currency)} (+more)`;
+                    existing.label = label;
                 } else {
                     agg.set(key, {
                         kind: 'dividend',
                         timestamp: pt.timestamp,
                         y: pt.value,
-                        label: `Dividend ${formatCurrency(amt, currency)}`,
+                        label,
                     });
                 }
             }
@@ -471,12 +551,16 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                 const ev = slot[k]!;
                 extra[`_evt_${k}`] = ev.y;
                 extra[`_evt_${k}_label`] = ev.label;
+                if (k === 'sell' && ev.gain != null) {
+                    extra['_evt_sell_gain'] = ev.gain;
+                    if (ev.gainPct != null) extra['_evt_sell_gain_pct'] = ev.gainPct;
+                }
             });
             return { ...p, ...extra };
         });
 
         return { chartDataWithEvents: merged, presentKinds: present };
-    }, [view, chartedData, showBuys, showSells, showDividends, showEarnings, transactions, dividendsData, earningsData, symbol, currency, fxRate]);
+    }, [view, chartedData, showBuys, showSells, showDividends, showEarnings, transactions, dividendsData, capitalGainsData, earningsData, symbol, currency, fxRate]);
 
     // Calculate Stats for Header (Based on Displayed Data)
     const stats = useMemo(() => {
@@ -605,6 +689,12 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                             .filter((kind) => typeof dataPoint[`_evt_${kind}_label`] === 'string')
                             .map((kind) => {
                                 const style = EVENT_STYLES[kind];
+                                const gain = kind === 'sell' && typeof dataPoint['_evt_sell_gain'] === 'number'
+                                    ? (dataPoint['_evt_sell_gain'] as number)
+                                    : null;
+                                const gainPct = kind === 'sell' && typeof dataPoint['_evt_sell_gain_pct'] === 'number'
+                                    ? (dataPoint['_evt_sell_gain_pct'] as number)
+                                    : null;
                                 return (
                                     <div key={kind} className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-border/40">
                                         <span
@@ -614,6 +704,12 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                             {style.letter}
                                         </span>
                                         <span className="text-xs font-medium text-foreground">{dataPoint[`_evt_${kind}_label`]}</span>
+                                        {gain != null && (
+                                            <span className={`text-xs font-semibold ml-auto shrink-0 ${gain >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                                                {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain), currency)}
+                                                {gainPct != null && ` (${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(2)}%)`}
+                                            </span>
+                                        )}
                                     </div>
                                 );
                             })}

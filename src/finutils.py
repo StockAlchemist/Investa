@@ -150,15 +150,34 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
     if last_div_val <= 0 and div_rate <= 0:
         return {"frequency_months": 3, "indicated_annual_rate": 0.0}
         
-    freq = 4 
+    freq = 4
+    consistent = False
     if last_div_val > 0 and div_rate > 0:
         ratio = div_rate / last_div_val
-        if 10.0 <= ratio <= 14.5: freq = 12
-        elif 3.4 <= ratio <= 5.8: freq = 4
-        elif 1.4 <= ratio <= 2.6: freq = 2
-        elif 0.7 <= ratio <= 1.3: freq = 1
-        
-    indicated_rate = float(last_div_val * freq) if last_div_val > 0 else float(div_rate)
+        # Map the annual-rate / last-paid ratio to a payment cadence. A match
+        # also means the two fields agree; no match means they disagree (e.g. a
+        # recent dividend change) and we keep the default quarterly cadence.
+        for lo, hi, f in ((10.0, 14.5, 12), (3.4, 5.8, 4), (1.4, 2.6, 2), (0.7, 1.3, 1)):
+            if lo <= ratio <= hi:
+                freq = f
+                consistent = True
+                break
+
+    # Indicated (forward-looking) annual rate.
+    #   - When `dividendRate` (Yahoo's forward annual figure) and the last paid
+    #     dividend agree, either basis works; use lastDividendValue × freq so a
+    #     just-announced raise still shows once `dividendRate` lags.
+    #   - When they DISAGREE, trust `dividendRate`: it updates as soon as a new
+    #     dividend is declared, whereas `lastDividendValue` reflects only the
+    #     last *paid* dividend and lags an increase/cut. e.g. NVDA raised its
+    #     quarterly from $0.01 to $0.25 (dividendRate=1.0 captures the $1.00/yr
+    #     run-rate; lastDividendValue=0.01 is stale).
+    if div_rate > 0 and (not consistent or last_div_val <= 0):
+        indicated_rate = float(div_rate)
+    elif last_div_val > 0:
+        indicated_rate = float(last_div_val * freq)
+    else:
+        indicated_rate = float(div_rate)
     freq_months = 12 // freq
     
     return {
@@ -170,6 +189,69 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
 def calculate_indicated_dividend(info: Dict[str, Any]) -> float:
     """Convenience wrapper for backward compatibility."""
     return get_dividend_details(info)["indicated_annual_rate"]
+
+
+def robust_dividend_yield(info: Dict[str, Any]) -> Optional[float]:
+    """Dividend yield as a FRACTION (0.005 == 0.5%), derived consistently with
+    the forward-looking indicated dividend rate.
+
+    We deliberately avoid trusting Yahoo's raw ``dividendYield`` as the primary
+    source: it is delivered inconsistently (sometimes a fraction like 0.005,
+    sometimes a percentage number like 0.47), and the magnitude heuristics used
+    to disambiguate it are unreliable for very small yields. Instead we prefer:
+
+      1. the indicated annual rate from ``get_dividend_details`` (which prefers
+         the forward ``dividendRate`` so a just-announced increase/cut is
+         reflected immediately) divided by the current price — this keeps the
+         yield in lock-step with the projected-income figures. e.g. after NVDA
+         raised its quarterly dividend to $0.25 ($1.00/yr), this yields
+         1.00 / price rather than the stale trailing $0.04 figure.
+      2. ``trailingAnnualDividendYield`` (already a fraction),
+      3. last resort: Yahoo's raw ``dividendYield`` with a magnitude guess.
+
+    Returns ``None`` when there is no dividend or nothing usable, so callers
+    can leave any existing value untouched.
+    """
+    if not info:
+        return None
+
+    # Funds/ETFs sometimes carry an explicit 'yield' fraction.
+    explicit = info.get("yield")
+    if explicit is not None:
+        try:
+            v = float(explicit)
+            if v > 0:
+                return v if v < 1.0 else v / 100.0
+        except (TypeError, ValueError):
+            pass
+
+    # 1. Indicated annual rate / current price (most reliable).
+    indicated = get_dividend_details(info).get("indicated_annual_rate") or 0.0
+    price = info.get("currentPrice") or info.get("regularMarketPrice")
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        price = 0.0
+    if indicated > 0 and price > 0:
+        return indicated / price
+
+    # 2. Trailing annual dividend yield (already a fraction).
+    try:
+        ty = float(info.get("trailingAnnualDividendYield"))
+        if ty > 0:
+            return ty
+    except (TypeError, ValueError):
+        pass
+
+    # 3. Last resort: raw Yahoo dividendYield, guessing fraction vs percent.
+    try:
+        rv = float(info.get("dividendYield"))
+        if rv > 0:
+            return rv / 100.0 if rv > 0.30 else rv
+    except (TypeError, ValueError):
+        pass
+
+    return None
 
 
 # --- Cash Symbol Helpers ---

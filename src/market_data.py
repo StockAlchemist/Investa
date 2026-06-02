@@ -166,6 +166,7 @@ try:
     from finutils import (
         map_to_yf_symbol,
         is_cash_symbol,
+        robust_dividend_yield,
     )
 except ImportError:
     logging.error(
@@ -177,6 +178,9 @@ except ImportError:
 
     def is_cash_symbol(s):
         return False
+
+    def robust_dividend_yield(info):
+        return None
 
 
 # Add a basic module docstring
@@ -1538,51 +1542,15 @@ class MarketDataProvider:
  
                          try:
                              # info is already the dict from _run_isolated_fetch
-                             
-                             div_yield = info.get("yield")
-                             if div_yield is None:
+
+                             # Derive dividend yield (a fraction) from trustworthy
+                             # fields rather than Yahoo's unreliable raw value.
+                             try:
+                                 div_yield = robust_dividend_yield(info)
+                             except Exception as e_norm:
+                                 logging.warning(f"Error normalizing yield for {yf_sym}: {e_norm}")
                                  div_yield = info.get("dividendYield")
-                                 
-                                 # Normalize dividendYield if it looks like percentage (e.g. 0.41 for 0.41%)
-                                 try:
-                                     div_val = float(div_yield)
-                                     rate = info.get("dividendRate")
-                                     price = info.get("currentPrice") or info.get("regularMarketPrice")
-                                     trailing = info.get("trailingAnnualDividendYield")
-                                     
-                                     normalized = False
-                                     
-                                     # Check 1: Rate / Price ratio
-                                     if rate is not None and price is not None:
-                                         try:
-                                              rate_val = float(rate)
-                                              price_val = float(price)
-                                              if price_val > 0:
-                                                  ratio = rate_val / price_val
-                                                  # If yield is closer to ratio*100 than to ratio, it's percentage
-                                                  if abs(div_val - ratio * 100) < abs(div_val - ratio):
-                                                      div_yield = div_val / 100.0
-                                                      normalized = True
-                                         except (ValueError, TypeError):
-                                             pass
-                                             
-                                     # Check 2: Comparison with trailing yield (if not already normalized)
-                                     if not normalized and trailing is not None:
-                                         try:
-                                             trailing_val = float(trailing)
-                                             if trailing_val > 0 and div_val > trailing_val * 50:
-                                                 div_yield = div_val / 100.0
-                                                 normalized = True
-                                         except (ValueError, TypeError):
-                                             pass
- 
-                                     # Check 3: Raw Magnitude Heuristic
-                                     if not normalized and div_val > 0.30: 
-                                          div_yield = div_val / 100.0
-                                 
-                                 except Exception as e_norm:
-                                     logging.warning(f"Error normalizing yield for {yf_sym}: {e_norm}")
-                                     
+
                              # Update info with normalized yield
                              if div_yield is not None:
                                  info["dividendYield"] = div_yield
@@ -3300,6 +3268,16 @@ class MarketDataProvider:
                             )
 
         if cache_valid and cached_data is not None:
+            # Recompute dividendYield on read too — cached entries may hold
+            # Yahoo's raw value (inconsistent fraction/percent, and stale after
+            # a dividend change). robust_dividend_yield derives it from the
+            # forward indicated rate / price for consistency with projections.
+            try:
+                _ry = robust_dividend_yield(cached_data)
+                if _ry is not None:
+                    cached_data["dividendYield"] = _ry
+            except Exception as _e_ry:
+                logging.debug(f"robust_dividend_yield (cache hit) failed for {yf_symbol}: {_e_ry}")
             return cached_data
 
         # --- Isolated Fetching Logic ---
@@ -3330,48 +3308,7 @@ class MarketDataProvider:
             # Define CACHE_VERSION here too if needed, or import. Using 2.
             CACHE_VERSION = 2
             try:
-                div_yield = data.get("yield")
-                if div_yield is None:
-                    div_yield = data.get("dividendYield")
-                    
-                    try:
-                        div_val = float(div_yield)
-                        rate = data.get("dividendRate")
-                        price = data.get("currentPrice") or data.get("regularMarketPrice")
-                        trailing = data.get("trailingAnnualDividendYield")
-                        
-                        normalized = False
-                        
-                        # Check 1: Rate / Price ratio
-                        if rate is not None and price is not None:
-                             try:
-                                  rate_val = float(rate)
-                                  price_val = float(price)
-                                  if price_val > 0:
-                                      ratio = rate_val / price_val
-                                      if abs(div_val - ratio * 100) < abs(div_val - ratio):
-                                          div_yield = div_val / 100.0
-                                          normalized = True
-                             except (ValueError, TypeError):
-                                 pass
-                                 
-                        # Check 2: Comparison with trailing yield
-                        if not normalized and trailing is not None:
-                             try:
-                                 trailing_val = float(trailing)
-                                 if trailing_val > 0 and div_val > trailing_val * 50:
-                                     div_yield = div_val / 100.0
-                                     normalized = True
-                             except (ValueError, TypeError):
-                                 pass
-
-                        # Check 3: Raw Magnitude Heuristic
-                        if not normalized and div_val > 0.30: 
-                             div_yield = div_val / 100.0
-                    
-                    except Exception:
-                        pass
-                
+                div_yield = robust_dividend_yield(data)
                 if div_yield is not None:
                     data["dividendYield"] = div_yield
             except Exception as e_norm_detail:

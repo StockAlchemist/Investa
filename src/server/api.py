@@ -3317,15 +3317,20 @@ async def _generate_dividend_events(
         try:
             # Use MarketDataProvider cache for fundamentals (lighter and cached)
             info = provider.get_fundamental_data(yf_sym) or {}
-            
-            div_rate = info.get("trailingAnnualDividendRate", 0.0)
-            last_div_val = info.get("lastDividendValue")
-            if not div_rate:
-                div_rate = info.get("dividendRate", 0.0)
-            
+
+            # Forward-looking dividend rate & cadence (prefers Yahoo's
+            # `dividendRate`, so a just-announced increase/cut is reflected even
+            # before `lastDividendValue` catches up — see get_dividend_details).
+            details = get_dividend_details(info)
+            indicated_rate = details["indicated_annual_rate"]
+            freq_months = details["frequency_months"]
+            per_period_amt = (
+                indicated_rate / (12 // freq_months) if freq_months else indicated_rate
+            )
+
             # 1. Confirmed Events (Need live ticker for calendar, but wrap carefully)
             # Only check calendar if we have indication of dividends
-            if div_rate > 0 or last_div_val:
+            if indicated_rate > 0:
                 # Use isolated fetch for calendar data
                 cal = _run_isolated_fetch([yf_sym], task="calendar")
                 if cal and 'Dividend Date' in cal:
@@ -3347,20 +3352,15 @@ async def _generate_dividend_events(
                             c_date = c_date.date()
                     
                     if c_date and c_date >= today:
-                        amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
                         local_events.append({
                             "symbol": sym,
                             "dividend_date": str(c_date),
                             "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
-                            "amount": amt * qty,
+                            "amount": per_period_amt * qty,
                             "status": "confirmed"
                         })
-            
+
             # 2. Estimated Events
-            details = get_dividend_details(info)
-            indicated_rate = details["indicated_annual_rate"]
-            freq_months = details["frequency_months"]
-            
             if indicated_rate > 0:
 
                 

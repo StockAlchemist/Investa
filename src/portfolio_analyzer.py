@@ -1185,19 +1185,26 @@ def _build_summary_rows(
                     ) * 100.0
 
             # Dividend Yield on Current Value (Local)
-            if (
+            # Prefer computing from the indicated annual dividend rate and the
+            # current price (both in local currency). This matches the
+            # yield-on-cost methodology above and avoids Yahoo's ambiguous
+            # `dividendYield` field, which inconsistently returns a fraction
+            # (0.005) or a percentage number (0.5). The magnitude heuristic
+            # used to disambiguate that field breaks for very low yields like
+            # NVDA's ~0.03% (Yahoo returns 0.03, mistaken for a 3% fraction).
+            if pd.notna(current_price_local) and current_price_local > 1e-9:
+                div_yield_on_current_pct_local = (
+                    indicated_annual_dividend_rate_local / current_price_local
+                ) * 100.0
+            elif (
                 pd.notna(dividend_yield_on_current_direct)
                 and dividend_yield_on_current_direct > 0
             ):
                 div_yield_on_current_pct_local = (
-                    dividend_yield_on_current_direct * 100.0 
+                    dividend_yield_on_current_direct * 100.0
                     if dividend_yield_on_current_direct < 1.0 # Yahoo usually returns fraction
                     else dividend_yield_on_current_direct
                 )
-            elif pd.notna(current_price_local) and current_price_local > 1e-9:
-                div_yield_on_current_pct_local = (
-                    indicated_annual_dividend_rate_local / current_price_local
-                ) * 100.0
         # --- END Unified Dividend Calculations ---
 
 
