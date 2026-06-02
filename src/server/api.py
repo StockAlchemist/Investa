@@ -616,6 +616,26 @@ async def get_market_status():
     return {"is_open": is_market_open()}
 
 
+@router.get("/indices")
+async def get_indices():
+    """
+    Current quotes for the header indices (Dow / Nasdaq / S&P).
+
+    Served off the /summary critical path so portfolio totals render immediately.
+    The underlying yfinance fetch is cached and run in a worker thread so a slow
+    upstream call never blocks the event loop (and thus other requests).
+    """
+    try:
+        mdp = get_mdp()
+        data = await asyncio.to_thread(
+            mdp.get_index_quotes, config.INDICES_FOR_HEADER
+        )
+        return data or {}
+    except Exception as e:
+        logging.warning(f"Failed to fetch index quotes: {e}")
+        return {}
+
+
 @router.get("/search")
 async def search_symbols(q: str = Query("", min_length=1)):
     """Symbol / name autocomplete using yfinance Search."""
@@ -1246,8 +1266,13 @@ async def get_portfolio_summary(
         # --- Fetch Market Indices ---
         if overall_summary_metrics:
             try:
+                # cache_only: never block the summary response on a live index
+                # fetch (~7-8s). The dedicated /indices endpoint keeps this warm
+                # and the frontend renders the header from its own query.
                 mdp = get_mdp()
-                indices_data = mdp.get_index_quotes(config.INDICES_FOR_HEADER)
+                indices_data = mdp.get_index_quotes(
+                    config.INDICES_FOR_HEADER, cache_only=True
+                )
                 overall_summary_metrics["indices"] = indices_data
             except Exception as e_indices:
                 logging.warning(f"Failed to fetch market indices: {e_indices}")

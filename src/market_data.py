@@ -1582,7 +1582,9 @@ class MarketDataProvider:
 
     @profile
     def get_index_quotes(
-        self, index_symbols: List[str] = DEFAULT_INDEX_QUERY_SYMBOLS
+        self,
+        index_symbols: List[str] = DEFAULT_INDEX_QUERY_SYMBOLS,
+        cache_only: bool = False,
     ) -> Dict[str, Dict]:
         """
         Fetches current market quotes for specified index symbols using yfinance.
@@ -1591,6 +1593,10 @@ class MarketDataProvider:
         Args:
             index_symbols (List[str], optional): List of index symbols (e.g., '.DJI', 'IXIC').
                                                  Defaults to DEFAULT_INDEX_QUERY_SYMBOLS.
+            cache_only (bool): When True, never hit the network — return the last
+                               cached quotes (even if slightly stale) or {} if none
+                               exist. Used by latency-sensitive callers like
+                               /summary so a slow upstream fetch can't block them.
 
         Returns:
             Dict[str, Dict]: Dictionary mapping index symbols to their quote data
@@ -1612,8 +1618,12 @@ class MarketDataProvider:
         cached_results = None
 
         # --- Caching Logic for Index Quotes ---
-        cache_key = f"INDEX_QUOTES_v3_NO_CACHE::{'_'.join(sorted(index_symbols))}"
-        cache_duration_minutes = 0 # Force fresh fetch
+        # Index quotes (Dow/Nasdaq/S&P) are not user-specific and sit on the
+        # /summary critical path. A live yfinance fetch here costs ~7-8s and
+        # blocks the dashboard's first paint, so cache them briefly. The frontend
+        # already polls summary on its own cadence for freshness.
+        cache_key = f"INDEX_QUOTES_v3::{'_'.join(sorted(index_symbols))}"
+        cache_duration_minutes = 2
 
         if os.path.exists(self.current_cache_file):
             try:
@@ -1623,21 +1633,19 @@ class MarketDataProvider:
                 index_cache_entry = cache_data.get(cache_key)
                 if index_cache_entry and isinstance(index_cache_entry, dict):
                     cache_timestamp_str = index_cache_entry.get("timestamp")
-                    if cache_timestamp_str:
+                    # Keep the cached payload regardless of age so the cache_only
+                    # path can serve last-known values without a network fetch.
+                    cached_results = index_cache_entry.get("data")
+                    if cache_timestamp_str and cached_results is not None:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
                         if datetime.now(timezone.utc) - cache_timestamp < timedelta(
                             minutes=cache_duration_minutes
                         ):
-                            cached_results = index_cache_entry.get("data")
-                            if cached_results is not None:
-                                cache_valid = True
-                                logging.info(
-                                    f"Using valid cache for index quotes (Key: {cache_key[:30]}...)."
-                                )
-                        else:
-                            # logging.info("Index quotes cache expired.")
-                            pass
-                    else:
+                            cache_valid = True
+                            logging.info(
+                                f"Using valid cache for index quotes (Key: {cache_key[:30]}...)."
+                            )
+                    elif not cache_timestamp_str:
                         logging.warning("Index quotes cache entry missing timestamp.")
                 else:
                     # logging.info("Index quotes cache key not found in file.")
@@ -1652,6 +1660,12 @@ class MarketDataProvider:
             # logging.info("Fetching fresh index quotes...")
             # Fetching logic will run if cache was invalid/missing
             pass  # Let the fetching logic below execute
+
+        # cache_only callers (e.g. /summary) must never block on the network:
+        # serve last-known quotes if we have any, otherwise return empty and let
+        # a dedicated, threadpooled endpoint populate the header asynchronously.
+        if cache_only and not cached_data_used:
+            return cached_results or {}
 
         # --- Fetching Logic (Only runs if cache was invalid/missing) ---
         if not cached_data_used:

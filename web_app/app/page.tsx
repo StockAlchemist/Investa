@@ -22,6 +22,7 @@ import {
   fetchPortfolioHealth,
   fetchProjectedIncome,
   fetchMarketStatus,
+  fetchIndices,
   PerformanceData
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -263,6 +264,16 @@ export default function Home() {
   });
   const isMarketOpen = marketStatusQuery.data?.is_open ?? false;
 
+  // Header indices are fetched separately from /summary so a slow upstream
+  // quote fetch can't delay the portfolio totals. Refreshes on its own cadence.
+  const indicesQuery = useQuery({
+    queryKey: ['indices'],
+    queryFn: ({ signal }) => fetchIndices(signal),
+    staleTime: 60 * 1000,
+    refetchInterval: isMarketOpen ? 2 * 60 * 1000 : false,
+    enabled: !!user,
+  });
+
   const summaryQuery = useQuery({
     queryKey: ['summary', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, showClosed, signal),
@@ -414,6 +425,11 @@ export default function Home() {
   })();
   const graphData        = historyQuery.data || [];
   const graphLoading     = historyQuery.isFetching;
+  // Prefer the dedicated /indices query; fall back to whatever the summary's
+  // cache-only path returned (instant on a warm cache).
+  const indices = (indicesQuery.data && Object.keys(indicesQuery.data).length > 0)
+    ? indicesQuery.data
+    : (summary?.metrics?.indices as Record<string, unknown> | undefined);
 
   // ── Tab content ───────────────────────────────────────────────────────────
   // Helper: get visible items for the active tab
@@ -449,6 +465,7 @@ export default function Home() {
               dividendEvents={dividendCalendarQuery.data || []}
               longHistory={perfHistoryQuery.data || []}
               holdings={holdings}
+              indices={indices}
               visibleItems={visibleItems}
               accounts={selectedAccounts}
               themeColor={currentTheme.color}
@@ -523,12 +540,12 @@ export default function Home() {
         return <TransactionsTable transactions={transactions} currency={currency} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;
 
       case 'markets':
-        return !summary?.metrics?.indices ? (
+        return !indices ? (
           <p className="text-muted-foreground text-sm">Market data unavailable.</p>
         ) : (
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           <MarketsTab
-            indices={summary.metrics.indices as any}
+            indices={indices as any}
             onIndexClick={() => setIsIndexGraphModalOpen(true)}
             holdings={holdings}
             currency={currency}
@@ -694,7 +711,7 @@ export default function Home() {
           onAccountsChange={setSelectedAccounts}
           accountGroups={settingsQuery.data?.account_groups}
           closedAccounts={closedAccounts}
-          indices={summary?.metrics?.indices as Record<string, unknown> | undefined}
+          indices={indices}
           visibleItems={activeVisible}
           onVisibleItemsChange={(items) => setTabVisible(activeTab, items)}
           layoutItems={TAB_LAYOUT_ITEMS[activeTab]}
@@ -735,7 +752,7 @@ export default function Home() {
         isOpen={isIndexGraphModalOpen}
         onClose={() => setIsIndexGraphModalOpen(false)}
         benchmarks={benchmarks}
-        currentIndices={summary?.metrics?.indices}
+        currentIndices={indices}
       />
 
       {/* ── Mobile bottom nav ── */}

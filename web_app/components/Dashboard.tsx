@@ -55,6 +55,10 @@ interface DashboardProps {
     dividendEvents?: DividendEvent[];
     /** Longer (1y/daily) history used by the hero period selector. */
     longHistory?: PerformanceData[];
+    /** Header index quotes, fetched separately from /summary. Falls back to
+     *  summary.metrics.indices when not provided. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    indices?: Record<string, any>;
 }
 
 // ── Animated number hook ─────────────────────────────────────────────────────
@@ -387,6 +391,7 @@ function DashboardInner({
     excludeFromAnalytics = [],
     dividendEvents = [],
     longHistory = [],
+    indices,
 }: DashboardProps) {
     const m  = summary?.metrics;
 
@@ -607,7 +612,7 @@ function DashboardInner({
                     holdings={holdings}
                     currency={currency}
                     portfolioDayChangePct={dayGLPct}
-                    indices={m?.indices}
+                    indices={indices ?? m?.indices}
                 />
             )}
 

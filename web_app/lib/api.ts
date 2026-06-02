@@ -206,6 +206,14 @@ export async function fetchMarketStatus(): Promise<{ is_open: boolean }> {
     return res.json();
 }
 
+// Header index quotes (Dow / Nasdaq / S&P), served off the /summary critical
+// path. May be slow on a cold cache, so it's fetched as its own query.
+export async function fetchIndices(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const res = await authFetch(`${API_BASE_URL}/indices`, { signal });
+    if (!res.ok) throw new Error('Failed to fetch indices');
+    return res.json();
+}
+
 export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false, signal?: AbortSignal): Promise<Holding[]> {
     const { data, error } = await apiClient.GET("/api/holdings", {
         params: {
