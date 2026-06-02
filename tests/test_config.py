@@ -111,4 +111,32 @@ def test_import_and_types():
     assert COLOR_GAIN == "#198754"
 
 
+def test_per_user_config_defaults_to_own_db(tmp_path):
+    """A per-user ConfigManager must default `transactions_file` to the DB in
+    its own directory — not the shared/global DB. Regression test for new web
+    users whose configs all pointed at data/db/portfolio.db and so read the
+    same empty database instead of their own transactions.
+    """
+    pytest.importorskip("PySide6")
+    from config_manager import ConfigManager
+    from db_utils import DB_FILENAME, get_database_path
+
+    # User dir that already contains its own portfolio.db (as created at
+    # registration) should resolve to that file.
+    user_dir = tmp_path / "users" / "alice"
+    user_dir.mkdir(parents=True)
+    own_db = user_dir / DB_FILENAME
+    own_db.write_bytes(b"")  # create the file so the existence check passes
+
+    cm = ConfigManager(str(user_dir))
+    assert cm._get_default_gui_config()["transactions_file"] == str(own_db)
+
+    # A directory without its own portfolio.db falls back to the centralized
+    # lookup (preserves legacy single-user GUI behaviour).
+    other_dir = tmp_path / "no_db_here"
+    other_dir.mkdir()
+    cm2 = ConfigManager(str(other_dir))
+    assert cm2._get_default_gui_config()["transactions_file"] == get_database_path(DB_FILENAME)
+
+
 # Add more specific checks if needed for complex constants

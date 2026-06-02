@@ -53,7 +53,16 @@ class ConfigManager:
 
     def _get_default_gui_config(self) -> Dict[str, Any]:
         from db_utils import get_database_path, DB_FILENAME
-        default_db_path = get_database_path(DB_FILENAME)
+        # Default the transactions DB to THIS ConfigManager's own scope. Web
+        # users get a per-user directory (data/users/<name>/) whose portfolio.db
+        # is created at registration, so the default must point there. Using the
+        # global get_database_path() here made every new user's config point at
+        # the shared data/db/portfolio.db, so they all read the same (empty) DB
+        # and saw none of their own transactions. Fall back to the centralized
+        # lookup for the legacy single-user GUI, whose DB lives in a 'db'
+        # subfolder rather than directly in app_data_path.
+        scoped_db_path = os.path.join(self.app_data_path, DB_FILENAME)
+        default_db_path = scoped_db_path if os.path.exists(scoped_db_path) else get_database_path(DB_FILENAME)
         default_display_currency = "USD"
         
         return {
