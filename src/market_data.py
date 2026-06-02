@@ -84,8 +84,6 @@ try:
         CASH_SYMBOL_CSV,  # DEFAULT_CURRENT_CACHE_FILE_PATH is used by main_gui now
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         INDEX_DISPLAY_NAMES,
-        ORG_NAME,  # <-- ADDED
-        APP_NAME,  # <-- ADDED
         METADATA_CACHE_FILE_NAME,  # <-- ADDED
         METADATA_CACHE_DURATION_DAYS,  # <-- ADDED
         METADATA_SCHEMA_VERSION,
@@ -279,9 +277,13 @@ def _maybe_enrich_with_fmp(meta_entry: dict, symbol: str) -> None:
         logging.info(f"FMP enriched {symbol}: filled {', '.join(filled)}")
 
 
-def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="history", period=None, **kwargs):
+def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="history", period=None, timeout=180, **kwargs):
     """
     Runs yfinance fetch in a separate process using file I/O to prevent crashing the main server.
+
+    `timeout` bounds the worker subprocess (seconds). Defaults to 180s for heavy
+    historical batches; latency-sensitive callers (e.g. header index quotes) can
+    pass a smaller value to fail fast rather than hang.
     """
     # Global semaphore to limit concurrent subprocesses and file usage
     # Mac limit is often 256. We limit strict to 2 to be safe and prevent "Too many open files".
@@ -290,10 +292,10 @@ def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="hist
     # _FETCH_SEMAPHORE is defined at module level to prevent race conditions.
 
     with _FETCH_SEMAPHORE:
-        return _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwargs)
+        return _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeout=timeout, **kwargs)
 
 
-def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwargs):
+def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeout=180, **kwargs):
     """
     Actual implementation of the isolated fetch.
     """
@@ -334,7 +336,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
             input=json.dumps(payload),
             capture_output=True, # Still capture metadata output
             text=True,
-            timeout=180 # 3 minute timeout
+            timeout=timeout
         )
 
         
@@ -346,7 +348,8 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
             if result.returncode == -9:
                 err_msg += " - Process KILLED (Likely Memory Exhaustion/OOM)"
             logging.error(f"{err_msg}: {result.stderr}")
-            if os.path.exists(temp_output): os.remove(temp_output)
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
             return pd.DataFrame() if task not in ["info", "calendar"] else {}
             
         # Parse metadata output
@@ -354,14 +357,16 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
             response = json.loads(result.stdout)
         except json.JSONDecodeError:
             logging.error(f"Isolated fetch returned invalid JSON metadata: {result.stdout[:200]}")
-            if os.path.exists(temp_output): os.remove(temp_output)
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
             return pd.DataFrame() if task not in ["info", "calendar"] else {}
             
         if response.get("status") == "success":
             # Check if empty
             if response.get("data") is None and "file" not in response:
                  # Empty result path
-                 if os.path.exists(temp_output): os.remove(temp_output)
+                 if os.path.exists(temp_output):
+                     os.remove(temp_output)
                  return pd.DataFrame() if task not in ["info", "calendar", "statements_batch"] else {}
 
             # Load results from file
@@ -403,7 +408,8 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
                         os.remove(file_path)
             else:
                  # "data": None case or file missing
-                 if os.path.exists(temp_output): os.remove(temp_output)
+                 if os.path.exists(temp_output):
+                     os.remove(temp_output)
                  return {} if task in ["info", "calendar"] else (pd.Series() if task == "dividends" else pd.DataFrame())
         else:
             msg = response.get('message', 'Unknown error')
@@ -414,7 +420,8 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
             else:
                 logging.error(f"Isolated fetch worker reported error: {msg}")
             
-            if os.path.exists(temp_output): os.remove(temp_output)
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
             return {} if task in ["info", "calendar", "statements_batch"] else (pd.Series() if task == "dividends" else pd.DataFrame())
 
     except Exception as e:
@@ -1131,7 +1138,8 @@ class MarketDataProvider:
                                     if len(vals) > 0:
                                         last_val = float(vals[-1])
                                         last_date = dates_idx[-1]
-                                        if hasattr(last_date, 'date'): last_date = last_date.date()
+                                        if hasattr(last_date, 'date'):
+                                            last_date = last_date.date()
                                         
                                         # Default assumptions
                                         price = last_val
@@ -1340,7 +1348,8 @@ class MarketDataProvider:
         fx_pairs = []
         for c_raw in required_currencies:
             c = c_raw.upper().replace("=X", "").strip()
-            if not c or c == "USD": continue
+            if not c or c == "USD":
+                continue
             if c == "THB":
                 fx_pairs.extend(["USDTHB=X", "THB=X"])
             else:
@@ -1690,15 +1699,19 @@ class MarketDataProvider:
             # --- END MODIFICATION ---
 
             try:
-                # Use isolated fetch for index info
-                index_info_batch = _run_isolated_fetch(yf_tickers_to_fetch, task="info")
-                
+                # Use isolated fetch for index info. Short timeout: this can run
+                # on a latency-sensitive path, so fail fast rather than hang.
+                index_info_batch = _run_isolated_fetch(
+                    yf_tickers_to_fetch, task="info", timeout=30
+                )
+
                 # Fetch 7 days of history for sparklines
                 index_hist_df = _run_isolated_fetch(
                     yf_tickers_to_fetch,
                     period="7d",
                     interval="1d",
-                    task="history"
+                    task="history",
+                    timeout=30
                 )
 
                 # Loop over ALL requested tickers, not just those that returned info
@@ -2202,7 +2215,7 @@ class MarketDataProvider:
                             # yf_end_date is exclusive, so we check up to yf_end_date - 1d
                             sch_check = cal.schedule(start_date=yf_start_date, end_date=yf_end_date - timedelta(days=1))
                             is_trading_range = not sch_check.empty
-                        except:
+                        except Exception:
                             is_trading_range = True # Assume it might be trading if calendar fails
                             
                         if not is_trading_range:
@@ -2233,7 +2246,7 @@ class MarketDataProvider:
                 except Exception as e_batch:
                     # Skip noise for 429 errors which are handled by global cooldown
                     if "429" in str(e_batch):
-                        logging.error(f"  Hist Fetch Helper: Rate limited (429). Stopping batch retries.")
+                        logging.error("  Hist Fetch Helper: Rate limited (429). Stopping batch retries.")
                         break
 
                     logging.warning(
@@ -3024,9 +3037,12 @@ class MarketDataProvider:
         integrity_check_symbols: Optional[Set[str]] = None,
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches ADJUSTED historical price data using persistent DB and YF."""
-        if isinstance(start_date, pd.Timestamp): start_date = start_date.date()
-        if isinstance(end_date, pd.Timestamp): end_date = end_date.date()
-        if interval == "D": interval = "1d"
+        if isinstance(start_date, pd.Timestamp):
+            start_date = start_date.date()
+        if isinstance(end_date, pd.Timestamp):
+            end_date = end_date.date()
+        if interval == "D":
+            interval = "1d"
 
         logging.info(f"Hist Prices (DB): Fetching {len(symbols_yf)} symbols ({start_date} to {end_date})...")
 
@@ -3136,9 +3152,12 @@ class MarketDataProvider:
         cache_file: Optional[str] = None,
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches historical FX rates (vs USD). Persists daily rates to DB."""
-        if isinstance(start_date, pd.Timestamp): start_date = start_date.date()
-        if isinstance(end_date, pd.Timestamp): end_date = end_date.date()
-        if interval == "D": interval = "1d"
+        if isinstance(start_date, pd.Timestamp):
+            start_date = start_date.date()
+        if isinstance(end_date, pd.Timestamp):
+            end_date = end_date.date()
+        if interval == "D":
+            interval = "1d"
 
         if interval != "1d":
             return self._fetch_yf_historical_data(fx_pairs_yf, start_date, end_date, interval=interval, use_cache=use_cache), False
