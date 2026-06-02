@@ -28,7 +28,6 @@ if current_dir not in sys.path:
 
 # Import necessary modules
 try:
-    import config
     from market_data import get_shared_mdp
     from server.screener_service import get_sp500_tickers, get_sp400_tickers
     from server.ai_analyzer import generate_stock_review

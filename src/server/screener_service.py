@@ -258,7 +258,8 @@ def get_russell2000_tickers() -> List[str]:
             try:
                 with open(cache_path, "r") as f:
                     return json.load(f).get("tickers", [])
-            except: pass
+            except Exception:
+                pass
         return []
 
 def get_sp400_tickers() -> List[str]:
@@ -318,7 +319,8 @@ def get_sp400_tickers() -> List[str]:
             try:
                 with open(cache_path, "r") as f:
                     return json.load(f).get("tickers", [])
-            except: pass
+            except Exception:
+                pass
         return []
 
 def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_symbols: Optional[List[str]] = None, db_conn: Optional[Any] = None, fast_mode: bool = False) -> List[Dict[str, Any]]:
@@ -374,7 +376,8 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
                  logging.error(f"Error fetching watchlist {universe_id}: {e}")
                  return []
              finally:
-                 if not db_conn and conn: conn.close()
+                 if not db_conn and conn:
+                     conn.close()
     elif universe_type == "sp500":
         symbols = get_sp500_tickers()
     elif universe_type == "russell2000":
@@ -592,10 +595,10 @@ def process_screener_results(
                 avg_iv = cached.get("intrinsic_value")
                 valuation_details_str = cached.get("valuation_details")
                 valuation_details_json = valuation_details_str
-                valuation_details = None
+                _valuation_details = None
                 if valuation_details_str and isinstance(valuation_details_str, str):
                     try:
-                        valuation_details = json.loads(valuation_details_str)
+                        _valuation_details = json.loads(valuation_details_str)
                     except Exception:
                         pass
                 
@@ -627,7 +630,7 @@ def process_screener_results(
                 if isinstance(ai_catalysts, str) and ai_catalysts:
                     try:
                         ai_catalysts = json.loads(ai_catalysts)
-                    except:
+                    except Exception:
                         pass
 
                 if os.path.exists(ai_cache_path):
@@ -704,7 +707,7 @@ def process_screener_results(
                 avg_iv = None
                 mos = None
                 valuation_details_json = None
-                valuation_details = {}
+                _valuation_details = {}
                 p_fin = None
                 p_bs = None
                 p_cf = None
@@ -982,7 +985,7 @@ def run_narrative_search(prompt: str) -> List[Dict[str, Any]]:
             if cats and isinstance(cats, str):
                 try:
                     item["ai_catalysts"] = json.loads(cats)
-                except:
+                except Exception:
                     pass
             
             results.append(item)

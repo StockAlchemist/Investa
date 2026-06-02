@@ -65,7 +65,8 @@ class IBKRConnector:
                 self.logger.error(f"IBKR Report request failed: {err_msg}")
                 raise Exception(f"IBKR API Error: {err_msg}")
         except Exception as e:
-            if "IBKR API Error" in str(e): raise e
+            if "IBKR API Error" in str(e):
+                raise e
             self.logger.error(f"Failed to parse IBKR SendRequest response: {e}")
             raise Exception(f"Failed to initiate IBKR sync: {str(e)}")
 
@@ -96,7 +97,7 @@ class IBKRConnector:
                          self.logger.warning("IBKR Report still preparing, waiting 10s...")
                          time.sleep(10)
                          continue
-                except:
+                except Exception:
                     pass
             
             self.logger.error(f"Failed to download IBKR report (Attempt {i+1})")
@@ -165,7 +166,7 @@ class IBKRConnector:
             # Parse date (IBKR format 20240130;201500)
             try:
                 dt = datetime.strptime(dt_str.split(";")[0], "%Y%m%d")
-            except:
+            except Exception:
                 dt = datetime.now()
 
             return {
@@ -213,7 +214,7 @@ class IBKRConnector:
 
             try:
                 dt = datetime.strptime(dt_str.split(";")[0], "%Y%m%d")
-            except:
+            except Exception:
                 dt = datetime.now()
 
             return {

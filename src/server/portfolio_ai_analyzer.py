@@ -145,7 +145,7 @@ def generate_portfolio_review(
     metrics = portfolio_data.get("metrics", {})
 
     # Top Holdings Calculation
-    holdings_raw = portfolio_data.get("holdings_dict", {})
+    _holdings_raw = portfolio_data.get("holdings_dict", {})
 
     # Removed unused holdings iteration that did not compute aggregated positions.
 
@@ -173,7 +173,7 @@ def generate_portfolio_review(
     max_drawdown = risk_metrics.get(
         "Max Drawdown", risk_metrics.get("max_drawdown", "N/A")
     )
-    beta = risk_metrics.get(
+    _beta = risk_metrics.get(
         "Beta", risk_metrics.get("beta", "N/A")
     )  # Beta might be missing in pure portfolio stats
     alpha = risk_metrics.get("Alpha", risk_metrics.get("alpha", "N/A"))

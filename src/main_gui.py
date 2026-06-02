@@ -34,20 +34,20 @@ Features include:
 - Saving and loading UI configuration.
 """
 
-import sys
-import os
-import pandas as pd
-import numpy as np
-import json
-import traceback
-import csv
-import re
-import warnings
-import sqlite3  # Added import for sqlite3
-import shutil
-from io import StringIO, BytesIO  # <-- ADDED: For in-memory log stream and image handling
-import logging
-import base64
+import sys  # noqa: E402
+import os  # noqa: E402
+import pandas as pd  # noqa: E402
+import numpy as np  # noqa: E402
+import json  # noqa: E402
+import traceback  # noqa: E402
+import csv  # noqa: E402
+import re  # noqa: E402
+import warnings  # noqa: E402
+import sqlite3  # Added import for sqlite3  # noqa: E402
+import shutil  # noqa: E402
+from io import StringIO, BytesIO  # <-- ADDED: For in-memory log stream and image handling  # noqa: E402
+import logging  # noqa: E402
+import base64  # noqa: E402
 
 # Ensure this is defined before any use
 HISTORICAL_FN_SUPPORTS_EXCLUDE = False
@@ -59,7 +59,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # --- End Path Addition ---
 
-from datetime import datetime, date, timedelta, time
+from datetime import datetime, date, timedelta, time  # noqa: E402
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
 try:
@@ -71,14 +71,14 @@ except ImportError:
 
 
 # --- END ADDED ---
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo  # noqa: E402
 
-from typing import Dict, Any, Optional, List, Set  # Added Set
+from typing import Dict, Any, Optional, List, Set  # Added Set  # noqa: E402
 
 # --- Configure Logging Globally (as early as possible) ---
 # The LOGGING_LEVEL is imported from config.py and used here.
 # Default in config.py is logging.INFO, but can be changed there.
-import config  # <-- MOVED IMPORT HERE
+import config  # <-- MOVED IMPORT HERE  # noqa: E402
 
 logging.basicConfig(
     level=config.LOGGING_LEVEL,  # Use LOGGING_LEVEL from config module
@@ -96,7 +96,7 @@ logging.getLogger("yfinance").setLevel(
     logging.WARNING
 )  # yfinance can be noisy on DEBUG
 
-from PySide6.QtWidgets import (
+from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QMainWindow,
     QWidget,
@@ -135,10 +135,10 @@ from PySide6.QtWidgets import (
     QSpacerItem,
     QProgressBar,
 )
-from functools import partial
-import contextlib
+from functools import partial  # noqa: E402
+import contextlib  # noqa: E402
 
-from PySide6.QtCore import (
+from PySide6.QtCore import (  # noqa: E402
     Qt,
     QModelIndex,
     QThreadPool,
@@ -154,7 +154,7 @@ from PySide6.QtCore import (
     QSize,
     QSizeF,
 )
-from PySide6.QtGui import (
+from PySide6.QtGui import (  # noqa: E402
     QDoubleValidator,
     QColor,
     QPalette,
@@ -166,7 +166,7 @@ from PySide6.QtGui import (
     QPageSize,
     QPageLayout,
 )
-from PySide6.QtPrintSupport import QPrinter
+from PySide6.QtPrintSupport import QPrinter  # noqa: E402
 
 # --- Matplotlib Lazy Loading Setup ---
 plt = None
@@ -246,7 +246,7 @@ def _ensure_matplotlib():
     _MATPLOTLIB_INITIALIZED = True
 
 
-from config import (
+from config import (  # noqa: E402
     DEBOUNCE_INTERVAL_MS,
     CHART_MAX_SLICES,
     PIE_CHART_FIG_SIZE,
@@ -255,7 +255,6 @@ from config import (
     INDICES_FOR_HEADER,
     CSV_DATE_FORMAT,
     COMMON_CURRENCIES,
-    DEFAULT_GRAPH_INTERVAL,
     DEFAULT_GRAPH_BENCHMARKS,
     BENCHMARK_MAPPING,
     BENCHMARK_OPTIONS_DISPLAY,
@@ -278,17 +277,16 @@ from config import (
     BAR_CHART_MAX_PERIODS_DAILY,
 )
 
-from utils import (
+from utils import (  # noqa: E402
     resource_path,
     get_column_definitions,
     DEFAULT_GRAPH_START_DATE,
-    DEFAULT_GRAPH_END_DATE,
     QCOLOR_GAIN,
     QCOLOR_LOSS,
     GroupHeaderDelegate,
 )
 
-from dialogs import (
+from dialogs import (  # noqa: E402
     FundamentalDataDialog,
     LogViewerDialog,
     AccountCurrencyDialog,
@@ -297,25 +295,25 @@ from dialogs import (
     AddTransactionDialog,
     LotsViewerDialog, # Added
 )
-from workers import (
+from workers import (  # noqa: E402
     WorkerSignals,
     PortfolioCalculatorWorker,
     FundamentalDataWorker,
 )
-from models import PandasModel
-from io_handlers import write_dataframe_to_csv, write_dataframe_to_excel
+from models import PandasModel  # noqa: E402
+from io_handlers import write_dataframe_to_csv, write_dataframe_to_excel  # noqa: E402
 
 # --- Core Logic Imports ---
-from portfolio_logic import (
+from portfolio_logic import (  # noqa: E402
     calculate_portfolio_summary,
     CASH_SYMBOL_CSV,
     calculate_historical_performance,
 )
-from utils_time import get_est_today, get_latest_trading_date  # ADDED
-from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
-from factor_analyzer import run_factor_regression
-from market_data import MarketDataProvider
-from finutils import (
+from utils_time import get_est_today, get_latest_trading_date  # ADDED  # noqa: E402
+from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series  # noqa: E402
+from factor_analyzer import run_factor_regression  # noqa: E402
+from market_data import MarketDataProvider  # noqa: E402
+from finutils import (  # noqa: E402
     map_to_yf_symbol,
     format_currency_value,
     format_percentage_value,
@@ -324,10 +322,10 @@ from finutils import (
     calculate_irr,
 )
 
-from data_loader import COLUMN_MAPPING_CSV_TO_INTERNAL
-from csv_utils import DESIRED_CLEANED_COLUMN_ORDER
+from data_loader import COLUMN_MAPPING_CSV_TO_INTERNAL  # noqa: E402
+from csv_utils import DESIRED_CLEANED_COLUMN_ORDER  # noqa: E402
 
-from portfolio_analyzer import (
+from portfolio_analyzer import (  # noqa: E402
     calculate_periodic_returns,
     _AGGREGATE_CASH_ACCOUNT_NAME_,
     calculate_rebalancing_trades,
@@ -337,7 +335,7 @@ LOGIC_AVAILABLE = True
 MARKET_PROVIDER_AVAILABLE = True
 
 # Check if the imported function signature actually supports 'exclude_accounts'
-import inspect
+import inspect  # noqa: E402
 
 sig = inspect.signature(calculate_historical_performance)
 HISTORICAL_FN_SUPPORTS_EXCLUDE = "exclude_accounts" in sig.parameters
@@ -347,7 +345,7 @@ if not HISTORICAL_FN_SUPPORTS_EXCLUDE:
     )
 
 # --- ADDED: db_utils import ---
-from db_utils import (
+from db_utils import (  # noqa: E402
     DB_FILENAME,
     initialize_database,
     add_transaction_to_db,
@@ -359,7 +357,7 @@ from db_utils import (
 )
 
 # --- ADDED: ConfigManager import ---
-from config_manager import ConfigManager
+from config_manager import ConfigManager  # noqa: E402
 
 # --- ADDED: Import financial_ratios and set availability flag ---
 try:
@@ -386,7 +384,7 @@ except ImportError:
 FROZEN_COLUMNS_UI = ["Account", "Symbol"]
 
 
-from ui_helpers import UiHelpersMixin
+from ui_helpers import UiHelpersMixin  # noqa: E402
 
 
 class PortfolioApp(QMainWindow, UiHelpersMixin):
@@ -561,437 +559,6 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
         self.account_currency_map = self.config.get("account_currency_map", {})
         self.default_currency = self.config.get("default_currency", "USD")
         return self.config
-
-    def _unused_old_load_config(self):
-        """Old implementation preserved for backup during refactor (Phase 1)."""
-        default_csv_fallback_path = DEFAULT_CSV  # For migration prompt if DB is empty
-
-        default_display_currency = "USD"
-        default_column_visibility = {
-            col: True for col in get_column_definitions(default_display_currency).keys()
-        }
-        default_account_currency_map = {"SET": "THB"}  # Example default
-
-        config_defaults = {
-            "transactions_file": default_db_path,  # Path to .db file
-            "transactions_file_csv_fallback": default_csv_fallback_path,  # For migration check
-            "display_currency": default_display_currency,
-            "show_closed": False,
-            "selected_accounts": [],
-            "load_on_startup": True,
-            "fmp_api_key": (
-                config.DEFAULT_API_KEY if hasattr(config, "DEFAULT_API_KEY") else ""
-            ),  # Use from config if available
-            "account_currency_map": default_account_currency_map,
-            "default_currency": (
-                config.DEFAULT_CURRENCY
-                if hasattr(config, "DEFAULT_CURRENCY")
-                else "USD"
-            ),
-            "graph_start_date": DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d"),
-            "graph_end_date": DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d"),
-            "graph_interval": DEFAULT_GRAPH_INTERVAL,
-            "graph_benchmarks": DEFAULT_GRAPH_BENCHMARKS,
-            "column_visibility": default_column_visibility,
-            "bar_periods_annual": 10,
-            "bar_periods_monthly": 12,
-            "bar_periods_weekly": 12,
-            "dividend_agg_period": "Annual",
-            "dividend_periods_to_show": 10,
-            "dividend_chart_default_periods_annual": (
-                config.DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL
-                if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL")
-                else 10
-            ),
-            "dividend_chart_default_periods_quarterly": (
-                config.DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY
-                if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY")
-                else 12
-            ),
-            "dividend_chart_default_periods_monthly": (
-                config.DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY
-                if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY")
-                else 24
-            ),
-            # Defaults for Asset Change spinboxes
-            "pvc_annual_periods": 10,
-            "pvc_monthly_periods": 12,
-            "pvc_weekly_periods": 12,
-            "pvc_daily_periods": 30,  # For new daily chart
-            "last_csv_import_path": QStandardPaths.writableLocation(
-                QStandardPaths.DocumentsLocation
-            )
-            or os.getcwd(),  # For import dialog
-            "last_csv_export_path": QStandardPaths.writableLocation(
-                QStandardPaths.DocumentsLocation
-            )
-            or os.getcwd(),  # For export dialog
-            "last_excel_export_path": QStandardPaths.writableLocation(
-                QStandardPaths.DocumentsLocation
-            )
-            or os.getcwd(),  # For export dialog
-            "last_image_export_path": QStandardPaths.writableLocation(
-                QStandardPaths.DocumentsLocation
-            )
-            or os.getcwd(),  # For export dialog
-            "user_currencies": COMMON_CURRENCIES.copy(),  # Default list of user-selectable currencies
-            "cg_agg_period": "Annual",  # Default for Capital Gains aggregation
-            "cg_periods_to_show": 10,  # Default periods for Capital Gains chart
-            "theme": "light",  # Added theme configuration
-            "transactions_management_columns": {},  # For column visibility in the main transactions table
-            "stock_tx_columns": {},  # For column visibility in the stock transactions table
-            "cash_tx_columns": {},  # For column visibility in the cash transactions table
-            "holdings_table_header_state": None,  # For column order and sizes
-            "account_groups": {},  # For grouping accounts in the menu
-        }
-        loaded_app_config = config_defaults.copy()  # Start with defaults
-
-        if self.CONFIG_FILE and os.path.exists(self.CONFIG_FILE):
-            try:
-                with open(self.CONFIG_FILE, "r") as f:
-                    loaded_config_from_file = json.load(f)
-                loaded_app_config.update(
-                    loaded_config_from_file
-                )  # Update defaults with loaded values
-                # logging.info(f"Config loaded from {self.CONFIG_FILE}")
-
-                # Specific validation for transactions_file (DB path)
-                # If the loaded 'transactions_file' is a CSV, it means it's an old config.
-                # We should use it as the CSV fallback and set the transactions_file to the default DB path.
-                if "transactions_file" in loaded_app_config:
-                    path_from_config = loaded_app_config["transactions_file"]
-                    if isinstance(
-                        path_from_config, str
-                    ) and path_from_config.lower().endswith(".csv"):
-                        logging.warning(
-                            f"Old config detected: 'transactions_file' points to a CSV ('{path_from_config}'). "
-                            f"This will be used as a potential migration source. Main data source is now a database."
-                        )
-                        loaded_app_config["transactions_file_csv_fallback"] = (
-                            path_from_config
-                        )
-                        loaded_app_config["transactions_file"] = (
-                            default_db_path  # Use default DB path
-                        )
-                    elif not isinstance(
-                        path_from_config, str
-                    ) or not path_from_config.lower().endswith(
-                        (".db", ".sqlite", ".sqlite3")
-                    ):
-                        logging.warning(
-                            f"Invalid 'transactions_file' (DB path) in config: '{path_from_config}'. Using default DB path."
-                        )
-                        loaded_app_config["transactions_file"] = default_db_path
-                else:  # Not in config, use default
-                    loaded_app_config["transactions_file"] = default_db_path
-
-                # --- Validate other config keys (largely as before) ---
-                if "graph_benchmarks" in loaded_app_config:
-                    if isinstance(loaded_app_config["graph_benchmarks"], list):
-                        valid_benchmarks = [
-                            b
-                            for b in loaded_app_config["graph_benchmarks"]
-                            if isinstance(b, str) and b in BENCHMARK_OPTIONS_DISPLAY
-                        ]
-                        loaded_app_config["graph_benchmarks"] = valid_benchmarks
-                    else:
-                        loaded_app_config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
-
-                if "selected_accounts" in loaded_app_config and not isinstance(
-                    loaded_app_config["selected_accounts"], list
-                ):
-                    loaded_app_config["selected_accounts"] = []
-
-                if "column_visibility" in loaded_app_config and isinstance(
-                    loaded_app_config["column_visibility"], dict
-                ):
-                    validated_visibility = {}
-                    all_cols = get_column_definitions(
-                        loaded_app_config.get(
-                            "display_currency", default_display_currency
-                        )
-                    ).keys()
-                    for col in all_cols:
-                        val = loaded_app_config["column_visibility"].get(col)
-                        validated_visibility[col] = (
-                            val if isinstance(val, bool) else True
-                        )
-                    loaded_app_config["column_visibility"] = validated_visibility
-                else:
-                    loaded_app_config["column_visibility"] = default_column_visibility
-
-                if "account_currency_map" in loaded_app_config:
-                    if not isinstance(
-                        loaded_app_config["account_currency_map"], dict
-                    ) or not all(
-                        isinstance(k, str) and isinstance(v, str)
-                        for k, v in loaded_app_config["account_currency_map"].items()
-                    ):
-                        loaded_app_config["account_currency_map"] = (
-                            default_account_currency_map
-                        )
-                else:  # Not in config, use default
-                    loaded_app_config["account_currency_map"] = (
-                        default_account_currency_map
-                    )
-
-                if "default_currency" in loaded_app_config:
-                    if (
-                        not isinstance(loaded_app_config["default_currency"], str)
-                        or len(loaded_app_config["default_currency"]) != 3
-                    ):
-                        loaded_app_config["default_currency"] = config_defaults[
-                            "default_currency"
-                        ]
-                else:  # Not in config, use default
-                    loaded_app_config["default_currency"] = config_defaults[
-                        "default_currency"
-                    ]
-
-                # Validate new column visibility settings
-                for key in [
-                    "transactions_management_columns",
-                    "stock_tx_columns",
-                    "cash_tx_columns",
-                ]:
-                    if key in loaded_app_config:
-                        if not isinstance(loaded_app_config[key], dict):
-                            logging.warning(
-                                f"Invalid '{key}' in config. Resetting to default empty dict."
-                            )
-                            loaded_app_config[key] = {}
-                    else:
-                        loaded_app_config[key] = (
-                            {}
-                        )  # Ensure key exists with default empty dict
-
-                # Validate account_groups
-                if "account_groups" in loaded_app_config:
-                    if not isinstance(loaded_app_config["account_groups"], dict):
-                        logging.warning(
-                            "Invalid 'account_groups' in config. Resetting to default empty dict."
-                        )
-                        loaded_app_config["account_groups"] = {}
-
-            except Exception as e:
-                logging.warning(
-                    f"Warn: Load config failed ({self.CONFIG_FILE}): {e}. Using defaults."
-                )
-                loaded_app_config = (
-                    config_defaults.copy()
-                )  # Revert to full defaults on error
-                loaded_app_config["transactions_file"] = (
-                    default_db_path  # Ensure DB path is default on error
-                )
-        else:
-            # logging.info(f"Config file {self.CONFIG_FILE} not found. Using defaults.")
-            loaded_app_config["transactions_file"] = (
-                default_db_path  # Ensure DB path is default if no config file
-            )
-
-        # Ensure all default keys exist in the final config, and type check
-        for key, default_value in config_defaults.items():
-            if key not in loaded_app_config:
-                loaded_app_config[key] = default_value
-            elif not isinstance(loaded_app_config[key], type(default_value)):
-                # Allow for specific keys that might have None or different types legitimately
-                allowed_flexible_types = [
-                    "fmp_api_key",
-                    "selected_accounts",
-                    "account_currency_map",
-                    "graph_benchmarks",
-                    "transactions_file_csv_fallback",
-                    "last_csv_import_path",
-                    "last_csv_export_path",
-                    "last_excel_export_path",
-                    "last_image_export_path",
-                    "holdings_table_header_state",  # Allow str even if default is None
-                ]
-                if key not in allowed_flexible_types or (
-                    loaded_app_config[key] is not None
-                    and not isinstance(
-                        loaded_app_config[key], (str, list, dict, bool, int, float)
-                    )
-                ):
-                    logging.warning(
-                        f"Warn: Config type mismatch for '{key}'. Loaded type: {type(loaded_app_config[key])}, Default type: {type(default_value)}. Using default."
-                    )
-                    loaded_app_config[key] = default_value
-
-        # Final date format validation
-        try:
-            QDate.fromString(loaded_app_config["graph_start_date"], "yyyy-MM-dd")
-        except:
-            loaded_app_config["graph_start_date"] = DEFAULT_GRAPH_START_DATE.strftime(
-                "%Y-%m-%d"
-            )
-        try:
-            QDate.fromString(loaded_app_config["graph_end_date"], "yyyy-MM-dd")
-        except:
-            loaded_app_config["graph_end_date"] = DEFAULT_GRAPH_END_DATE.strftime(
-                "%Y-%m-%d"
-            )
-
-        # Validate spinbox periods
-        numeric_spinbox_keys = [
-            "bar_periods_annual",
-            "bar_periods_monthly",
-            "bar_periods_weekly",
-            "dividend_periods_to_show",
-            "dividend_chart_default_periods_annual",
-            "dividend_chart_default_periods_quarterly",
-            "dividend_chart_default_periods_monthly",
-        ]
-        # Add PVC spinbox keys
-        numeric_spinbox_keys.extend(
-            [
-                "pvc_annual_periods",
-                "pvc_monthly_periods",
-                "pvc_weekly_periods",
-                "pvc_daily_periods",
-            ]
-        )
-        for key in numeric_spinbox_keys:
-            if key in loaded_app_config:
-                try:
-                    val = int(loaded_app_config[key])
-                    loaded_app_config[key] = max(1, min(val, 100))
-                except (ValueError, TypeError):
-                    loaded_app_config[key] = config_defaults[key]
-            else:
-                loaded_app_config[key] = config_defaults[key]  # Ensure key exists
-
-        # Validate Capital Gains periods
-        cg_numeric_spinbox_keys = ["cg_periods_to_show"]
-        for key in cg_numeric_spinbox_keys:
-            if key in loaded_app_config:
-                try:
-                    val = int(loaded_app_config[key])
-                    loaded_app_config[key] = max(1, min(val, 100))  # Max 100 periods
-                except (ValueError, TypeError):
-                    loaded_app_config[key] = config_defaults[key]
-            else:
-                loaded_app_config[key] = config_defaults[key]
-
-        if loaded_app_config.get("cg_agg_period") not in ["Annual", "Quarterly"]:
-            loaded_app_config["cg_agg_period"] = config_defaults["cg_agg_period"]
-
-        # Validate rebalancing targets
-        if "rebalancing_targets" in loaded_app_config:
-            if not isinstance(loaded_app_config["rebalancing_targets"], dict):
-                logging.warning("Invalid 'rebalancing_targets' in config. Resetting.")
-                loaded_app_config["rebalancing_targets"] = {}
-        else:
-            loaded_app_config["rebalancing_targets"] = {}
-
-        if loaded_app_config.get("dividend_agg_period") not in [
-            "Annual",
-            "Quarterly",
-            "Monthly",
-        ]:
-            loaded_app_config["dividend_agg_period"] = config_defaults[
-                "dividend_agg_period"
-            ]
-
-        # CRITICAL: Set the instance's DB_FILE_PATH based on the final loaded config
-        # Validate user_currencies
-        if not isinstance(loaded_app_config.get("user_currencies"), list) or not all(
-            isinstance(c, str) and len(c) == 3 and c.isupper()
-            for c in loaded_app_config.get("user_currencies", [])
-        ):
-            logging.warning(
-                "Invalid 'user_currencies' in config. Resetting to default."
-            )
-            loaded_app_config["user_currencies"] = config_defaults["user_currencies"]
-        elif not loaded_app_config.get("user_currencies"):  # Ensure not empty
-            loaded_app_config["user_currencies"] = config_defaults["user_currencies"]
-
-        self.DB_FILE_PATH = loaded_app_config.get("transactions_file", default_db_path)
-        # If somehow it's still not a DB path, force default (should be caught earlier)
-        if not isinstance(
-            self.DB_FILE_PATH, str
-        ) or not self.DB_FILE_PATH.lower().endswith((".db", ".sqlite", ".sqlite3")):
-            logging.error(
-                f"Post-config load, DB_FILE_PATH is invalid: '{self.DB_FILE_PATH}'. Resetting to default."
-            )
-            self.DB_FILE_PATH = default_db_path
-            loaded_app_config["transactions_file"] = self.DB_FILE_PATH
-
-        return loaded_app_config
-
-    # --- UI Update Methods (Define BEFORE __init__ calls them) ---
-
-    def update_header_info(
-        self, loading=False
-    ):  # Keep loading param for now, though logic relies on self.index_quote_data
-        """Updates the header label with index quotes or a loading message.
-
-        Formats and displays data for indices specified in `INDICES_FOR_HEADER`
-        using data stored in `self.index_quote_data`. Shows price, change, and
-        percentage change with appropriate coloring for gains/losses.
-
-        Args:
-            loading (bool, optional): If True, displays a "Loading..." message
-                                      instead of attempting to show quotes.
-                                      Defaults to False.
-        """
-        if not hasattr(self, "header_info_label") or not self.header_info_label:
-            return  # Label not ready
-
-        if loading or not self.index_quote_data:
-            self.header_info_label.setText("<i>Loading indices...</i>")
-            return
-
-        header_parts = []
-        # logging.debug(f"DEBUG update_header_info: Data = {self.index_quote_data}") # Optional debug print
-        for index_symbol in INDICES_FOR_HEADER:
-            data = self.index_quote_data.get(index_symbol)
-            if data and isinstance(data, dict):
-                price = data.get("price")
-                change = data.get("change")
-                # --- FIX: Use 'changesPercentage' which should be decimal/fraction ---
-                change_pct_decimal = data.get("changesPercentage")
-                name = data.get("name", index_symbol).split(" ")[
-                    0
-                ]  # Use short name part
-
-                price_str = f"{price:,.2f}" if pd.notna(price) else "N/A"
-                change_str = "N/A"
-                change_color = COLOR_TEXT_DARK  # Default color
-
-                if pd.notna(change) and pd.notna(change_pct_decimal):
-                    change_val = float(change)
-                    change_pct_val = float(
-                        change_pct_decimal
-                    )  # already in decimal form %
-                    sign = (
-                        "+" if change_val >= -1e-9 else ""
-                    )  # Add '+' for positive/zero change
-                    change_str = (
-                        f"{sign}{change_val:,.2f} ({sign}{change_pct_val:.2f}%)"
-                    )
-                    if change_val > 1e-9:
-                        change_color = COLOR_GAIN
-                    elif change_val < -1e-9:
-                        change_color = COLOR_LOSS
-                    # else: keep default color for zero change
-                # --- END FIX ---
-
-                # Use HTML for coloring
-                header_parts.append(
-                    f"<b>{name}:</b> {price_str} <font color='{change_color}'>{change_str}</font>"
-                )
-            else:
-                # Handle case where index data is missing
-                header_parts.append(
-                    f"<b>{index_symbol.split('.')[0] if '.' in index_symbol else index_symbol}:</b> N/A"
-                )
-
-        if header_parts:
-            self.header_info_label.setText(" | ".join(header_parts))
-            # logging.debug(f"DEBUG update_header_info: Set text to: {' | '.join(header_parts)}") # Optional debug print
-        else:
-            self.header_info_label.setText("<i>Index data unavailable.</i>")
 
     def _init_menu_bar(self):
         """Creates the main menu bar."""
@@ -1186,39 +753,6 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
-    # --- ADDED: Slot for CSV Format Help ---
-    @Slot()
-    def show_csv_format_help(self):
-        """Displays a message box with information about the expected CSV format."""
-        help_text = """
-<b>Required CSV File Format</b>
-
-The CSV file should contain the following columns (header names must match exactly):
-
-<ol>
-    <li><b>"Date (MMM DD, YYYY)"</b>: Transaction date (e.g., <i>Jan 01, 2023</i>, <i>Dec 31, 2024</i>)</li>
-    <li><b>Transaction Type</b>: Type of transaction (e.g., <i>Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees</i>)</li>
-    <li><b>Stock / ETF Symbol</b>: Ticker symbol (e.g., <i>AAPL, GOOG</i>). Use <i>$CASH</i> for cash deposits/withdrawals.</li>
-    <li><b>Quantity of Units</b>: Number of shares/units (positive). Required for most types.</li>
-    <li><b>Amount per unit</b>: Price per share/unit (positive). Required for Buy/Sell.</li>
-    <li><b>Total Amount</b>: Total value of the transaction (optional, can be calculated for Buy/Sell). Required for some Dividends.</li>
-    <li><b>Fees</b>: Transaction fees/commissions (positive).</li>
-    <li><b>Investment Account</b>: Name of the account (e.g., <i>Brokerage A, IRA</i>).</li>
-    <li><b>Split Ratio (new shares per old share)</b>: Required only for 'Split' type (e.g., <i>2</i> for 2-for-1).</li>
-    <li><b>Note</b>: Optional text note for the transaction.</li>
-</ol>
-
-<b>Example Rows:</b>
-<pre>
-"Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
-"Jan 15, 2023",Buy,AAPL,10,150.25,1502.50,5.95,Brokerage A,,Bought Apple shares
-"Feb 01, 2023",Dividend,MSFT,,,50.00,,Brokerage A,,Microsoft dividend received
-"Mar 10, 2023",Deposit,$CASH,1000,,1000.00,,IRA,,Initial IRA contribution
-</pre>
-"""
-        QMessageBox.information(self, "CSV Format Help", help_text)
-
-    # --- END ADDED ---
 
     @Slot(str)  # Ensure Slot decorator is imported
     def _chart_holding_history(self, symbol: str):
@@ -1419,50 +953,6 @@ The CSV file should contain the following columns (header names must match exact
 
     # Add this NEW slot method to PortfolioApp
     @Slot()
-    def show_account_currency_dialog(self):
-        """Shows the dialog to edit account currencies and cash management mode."""
-        current_map = self.config.get("account_currency_map", {})
-        current_default = self.config.get("default_currency", "USD")
-        current_cash_mode_map = self.config.get("account_cash_mode_map", {})
-        # Use all accounts detected during the last load/refresh
-        accounts_to_show = (
-            self.available_accounts
-            if self.available_accounts
-            else list(current_map.keys())
-        )
-        # Get the list of user-selectable currencies from the config
-        user_currencies = self.config.get("user_currencies", COMMON_CURRENCIES.copy())
-
-        updated_settings = AccountCurrencyDialog.get_settings(
-            parent=self,
-            current_map=current_map,
-            current_default=current_default,
-            all_accounts=accounts_to_show,
-            # Pass the list of currencies to the dialog
-            user_currencies=user_currencies,
-            current_cash_mode_map=current_cash_mode_map,
-        )
-
-        if updated_settings:  # If user clicked Save
-            new_map, new_default, new_cash_mode_map = updated_settings
-            # Check if settings actually changed
-            map_changed = new_map != self.config.get("account_currency_map", {})
-            default_changed = new_default != self.config.get("default_currency", "USD")
-            cash_mode_changed = new_cash_mode_map != self.config.get("account_cash_mode_map", {})
-
-            if map_changed or default_changed or cash_mode_changed:
-                logging.info(
-                    "Account currency/cash mode settings changed. Saving and refreshing..."
-                )
-                self.config["account_currency_map"] = new_map
-                self.config["default_currency"] = new_default
-                self.config["account_cash_mode_map"] = new_cash_mode_map
-                self.save_config()  # Save the updated config
-                self.refresh_data()  # Trigger a full refresh as currencies impact calculations
-            else:
-                # logging.info("Account currency settings unchanged.")
-                pass
-
     @contextlib.contextmanager
     def _programmatic_date_change(self):
         """Context manager to temporarily disable date change signals."""
@@ -1684,7 +1174,7 @@ The CSV file should contain the following columns (header names must match exact
                 # Create a reverse map from EXPECTED_CLEANED_COLUMNS to the keys of STANDARD_ORIGINAL_TO_CLEANED_MAP
                 # This is a bit complex; simpler is to define the target CSV headers directly.
                 # DESIRED_CLEANED_COLUMN_ORDER uses cleaned names. We need a map: Cleaned -> Verbose Original
-                cleaned_to_verbose_map = {
+                _cleaned_to_verbose_map = {
                     v: k
                     for k, v in COLUMN_MAPPING_CSV_TO_INTERNAL.items()
                     if v in DESIRED_CLEANED_COLUMN_ORDER
@@ -1747,7 +1237,7 @@ The CSV file should contain the following columns (header names must match exact
                         df_export_final["Date"] = pd.to_datetime(
                             df_export_final["Date"], errors="coerce"
                         ).dt.strftime(CSV_DATE_FORMAT)
-                    except:  # If parsing fails, leave as is
+                    except Exception:  # If parsing fails, leave as is
                         pass
 
                 # Write to CSV via helper
@@ -1898,7 +1388,8 @@ The CSV file should contain the following columns (header names must match exact
         try:
             # --- Helper to capture figure as base64 image ---
             def fig_to_base64(fig):
-                if not fig: return ""
+                if not fig:
+                    return ""
                 buf = BytesIO()
                 fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
                 buf.seek(0)
@@ -2072,18 +1563,6 @@ The CSV file should contain the following columns (header names must match exact
             logging.error(f"Error exporting report: {e}", exc_info=True)
             self.show_error(f"Failed to export report:\n{e}", popup=True)
             self.set_status("Export failed.")
-
-    def show_about_dialog(self):
-        # Placeholder - shows a simple message box with app info
-        QMessageBox.about(
-            self,
-            "About Investa",
-            "<b>Investa Portfolio Dashboard</b><br><br>"
-            "Version: 0.3.0 (Features: Tx Edit/Delete, Ignored Log, Table Filter, Settings Edit)<br>"
-            "Author: Google Gemini<br>"
-            "License: MIT<br><br>"
-            "Data provided by Yahoo Finance. Use at your own risk.",
-        )
 
     @Slot()
     def show_manual_overrides_dialog(self):  # Renamed method
@@ -4442,8 +3921,8 @@ The CSV file should contain the following columns (header names must match exact
         ):
             return  # Cannot apply if table/model not ready
 
-        header = self.table_view.horizontalHeader()
-        frozen_header = self.frozen_table_view.horizontalHeader()
+        _header = self.table_view.horizontalHeader()
+        _frozen_header = self.frozen_table_view.horizontalHeader()
         frozen_view_width = 0
 
         # Iterate through the columns currently in the model
@@ -4567,7 +4046,8 @@ The CSV file should contain the following columns (header names must match exact
                 if sym_item and pct_item:
                     try:
                         targets[sym_item.text()] = float(pct_item.text().replace("%", ""))
-                    except: pass
+                    except Exception:
+                        pass
             self.config["rebalancing_targets"] = targets
 
         # Preserve Web App Settings (Currencies & Groups) if not managed by Desktop UI
@@ -7725,7 +7205,7 @@ The CSV file should contain the following columns (header names must match exact
         try:
             # We need to pass benchmark data if available to avoid re-fetching SPY if possible
             # Check if we have 'SPY' in our historical data
-            benchmark_data = None
+            _benchmark_data = None
             # logic to extract benchmark data if it exists in self.historical_data_cache or similar
             # For now, let run_factor_regression handle fetching/using its internal logic.
             
@@ -9051,7 +8531,7 @@ The CSV file should contain the following columns (header names must match exact
         #    If the data for the table was grouped, filter out the group headers.
         df_for_pie = df_display_filtered
         if "is_group_header" in df_for_pie.columns:
-            df_for_pie = df_for_pie[df_for_pie["is_group_header"] != True].copy()
+            df_for_pie = df_for_pie[df_for_pie["is_group_header"] != True].copy()  # noqa: E712
 
         self.update_holdings_pie_chart(df_for_pie)
 
@@ -9402,7 +8882,8 @@ The CSV file should contain the following columns (header names must match exact
         try:
             # Convert event x (date) to numerical format used by matplotlib
             x_mouse = event.xdata
-            if x_mouse is None: return
+            if x_mouse is None:
+                return
             
             # Get line data
             x_data = self.drawdown_line.get_xdata()
@@ -9651,7 +9132,7 @@ The CSV file should contain the following columns (header names must match exact
         holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
         # Filter out the "TOTALS" summary row if it exists, as it's not a holding
         if "is_summary_row" in df_display.columns and not df_display.empty:
-            df_for_pie = df_display[df_display["is_summary_row"] != True].copy()
+            df_for_pie = df_display[df_display["is_summary_row"] != True].copy()  # noqa: E712
         else:
             df_for_pie = df_display.copy()
 
@@ -9871,15 +9352,15 @@ The CSV file should contain the following columns (header names must match exact
             ax.set_aspect("auto")  # Ensure aspect is auto after clearing
 
         # --- Dynamic Titles and Currency ---
-        benchmark_display_name = (
+        _benchmark_display_name = (
             ", ".join(self.selected_benchmarks)
             if self.selected_benchmarks
             else "None"  # self.selected_benchmarks are display names
         )
         display_currency = self._get_currency_symbol(get_name=True)
         currency_symbol = self._get_currency_symbol()
-        return_graph_title = f"{scope_label} - Accumulated Gain (TWR)"
-        value_graph_title = f"{scope_label} - Value ({display_currency})"
+        _return_graph_title = f"{scope_label} - Accumulated Gain (TWR)"
+        _value_graph_title = f"{scope_label} - Value ({display_currency})"
 
         # --- Get Selected Date Range for Limits ---
         plot_start_date = None
@@ -9955,7 +9436,7 @@ The CSV file should contain the following columns (header names must match exact
         if plot_start_date and plot_end_date:
             try:
                 pd_start = pd.Timestamp(plot_start_date)
-                pd_end = pd.Timestamp(plot_end_date)
+                _pd_end = pd.Timestamp(plot_end_date)
                 # Ensure index is timezone-naive before comparison if needed
                 if results_visible_df.index.tz is not None:
                     results_visible_df.index = results_visible_df.index.tz_localize(
@@ -9977,7 +9458,7 @@ The CSV file should contain the following columns (header names must match exact
             logging.warning(
                 "[Graph Update] No valid date range from UI for Y-limit filtering. Using full range."
             )
-            results_visible_field = results_df
+            _results_visible_field = results_df
 
         # --- Calculate Y Ranges from VISIBLE Data ---
         min_y_ret, max_y_ret = np.inf, -np.inf
@@ -10228,7 +9709,7 @@ The CSV file should contain the following columns (header names must match exact
             self.perf_return_ax.set_ylim(-10, 10)  # Default Y range if no data
 
         # --- Plot 2: Absolute Value ---
-        value_data_plotted_full = (
+        _value_data_plotted_full = (
             False  # Track if value line was plotted from full data
         )
         if val_col in results_df.columns:
@@ -10257,7 +9738,7 @@ The CSV file should contain the following columns (header names must match exact
                     linewidth=1.5,
                 )
                 value_lines_plotted.append(line)
-                value_data_plotted_full = True
+                _value_data_plotted_full = True
 
                 # --- ADDED: Add annotation for value change ---
                 if len(vv_full) >= 2:
@@ -10670,7 +10151,7 @@ The CSV file should contain the following columns (header names must match exact
         # --- Determine Scope ---
         num_available = len(self.available_accounts)
         num_selected = len(self.selected_accounts)
-        is_all_accounts_selected = (
+        _is_all_accounts_selected = (
             not self.available_accounts or num_selected == num_available
         )  # Treat no accounts available as "all"
 
@@ -10765,8 +10246,8 @@ The CSV file should contain the following columns (header names must match exact
 
             if pd.notna(day_change_val):
                 # Format the absolute currency change
-                day_change_abs_val_str = f"{currency_symbol}{abs(day_change_val):,.2f}"
-                day_change_pct_str = ""  # Initialize percentage string
+                _day_change_abs_val_str = f"{currency_symbol}{abs(day_change_val):,.2f}"
+                _day_change_pct_str = ""  # Initialize percentage string
 
                 # Format the percentage change (use directly, add sign)
                 if pd.notna(day_change_pct) and np.isfinite(day_change_pct):
@@ -10774,9 +10255,9 @@ The CSV file should contain the following columns (header names must match exact
                     sign = (
                         "+" if pct_val >= -1e-9 else ""
                     )  # Add '+' sign for positive/zero
-                    day_change_pct_str = f" ({sign}{pct_val:,.2f}%)"  # Format with sign
+                    _day_change_pct_str = f" ({sign}{pct_val:,.2f}%)"  # Format with sign
                 elif np.isinf(day_change_pct):
-                    day_change_pct_str = " (Inf%)"  # Handle infinity
+                    _day_change_pct_str = " (Inf%)"  # Handle infinity
 
                 # Combine the strings
 
@@ -12434,7 +11915,7 @@ The CSV file should contain the following columns (header names must match exact
 
         if not asset_type_values.empty:
             # Axis should be 'on' from the _clear_asset_allocation_charts call
-            labels = asset_type_values.index.tolist()
+            _labels = asset_type_values.index.tolist()
             values = asset_type_values.values
             total_value = np.sum(values)
 
@@ -12458,8 +11939,8 @@ The CSV file should contain the following columns (header names must match exact
 
             # Create legend from labels and values
             legend_labels = [
-                f"{l} ({self._get_currency_symbol()}{v:,.0f})"
-                for l, v in asset_type_values.items()
+                f"{label} ({self._get_currency_symbol()}{v:,.0f})"
+                for label, v in asset_type_values.items()
             ]
             self.asset_type_pie_ax.legend(
                 wedges,
@@ -12545,7 +12026,7 @@ The CSV file should contain the following columns (header names must match exact
                 else:
                     sector_values_to_plot = sector_values
 
-                labels = sector_values_to_plot.index.tolist()
+                _labels = sector_values_to_plot.index.tolist()
                 values = sector_values_to_plot.values
 
                 cmap_sector = plt.get_cmap("Spectral")  # CHANGED colormap
@@ -12566,8 +12047,8 @@ The CSV file should contain the following columns (header names must match exact
                 # plt.setp(autotexts_s, size=8, weight="bold", color="black") # No longer needed
 
                 legend_labels_s = [
-                    f"{l} ({self._get_currency_symbol()}{v:,.0f})"
-                    for l, v in sector_values_to_plot.items()
+                    f"{label} ({self._get_currency_symbol()}{v:,.0f})"
+                    for label, v in sector_values_to_plot.items()
                 ]
                 self.sector_pie_ax.legend(
                     wedges_s,
@@ -12660,7 +12141,7 @@ The CSV file should contain the following columns (header names must match exact
                 else:
                     country_values_to_plot = country_values
 
-                labels_g = country_values_to_plot.index.tolist()
+                _labels_g = country_values_to_plot.index.tolist()
                 values_g = country_values_to_plot.values
 
                 cmap_geo = plt.get_cmap(
@@ -12681,8 +12162,8 @@ The CSV file should contain the following columns (header names must match exact
                     },
                 )
                 legend_labels_g = [
-                    f"{l} ({self._get_currency_symbol()}{v:,.0f})"
-                    for l, v in country_values_to_plot.items()
+                    f"{label} ({self._get_currency_symbol()}{v:,.0f})"
+                    for label, v in country_values_to_plot.items()
                 ]
                 self.geo_pie_ax.legend(
                     wedges_g,
@@ -12770,7 +12251,7 @@ The CSV file should contain the following columns (header names must match exact
                 else:
                     industry_values_to_plot = industry_values
 
-                labels_i = industry_values_to_plot.index.tolist()
+                _labels_i = industry_values_to_plot.index.tolist()
                 values_i = industry_values_to_plot.values
 
                 cmap_ind = plt.get_cmap("Spectral")  # Or "tab20", "Set3"
@@ -12790,8 +12271,8 @@ The CSV file should contain the following columns (header names must match exact
                 )
 
                 legend_labels_i = [
-                    f"{l} ({self._get_currency_symbol()}{v:,.0f})"
-                    for l, v in industry_values_to_plot.items()
+                    f"{label} ({self._get_currency_symbol()}{v:,.0f})"
+                    for label, v in industry_values_to_plot.items()
                 ]
                 self.industry_pie_ax.legend(
                     wedges_i,
@@ -13033,7 +12514,7 @@ The CSV file should contain the following columns (header names must match exact
 
         # Exclude group headers from summation
         if "is_group_header" in df_with_summary.columns:
-            data_rows = df_with_summary[df_with_summary["is_group_header"] != True]
+            data_rows = df_with_summary[df_with_summary["is_group_header"] != True]  # noqa: E712
         else:
             data_rows = df_with_summary
 
@@ -13176,10 +12657,10 @@ The CSV file should contain the following columns (header names must match exact
             stock_rows_mask = pd.Series(True, index=df_display_filtered.index)
 
             if "is_group_header" in df_display_filtered.columns:
-                stock_rows_mask &= df_display_filtered["is_group_header"] != True
+                stock_rows_mask &= df_display_filtered["is_group_header"] != True  # noqa: E712
 
             if "is_summary_row" in df_display_filtered.columns:
-                stock_rows_mask &= df_display_filtered["is_summary_row"] != True
+                stock_rows_mask &= df_display_filtered["is_summary_row"] != True  # noqa: E712
 
             if "Symbol" in df_display_filtered.columns:
                 # is_cash_symbol is imported from finutils
@@ -13236,7 +12717,7 @@ The CSV file should contain the following columns (header names must match exact
         sum_unreal_gain = summed_values.get(unreal_gain_col, 0.0)
         sum_cost_basis = summed_values.get(cost_basis_col, 0.0)
         sum_total_gain = summed_values.get(total_gain_col, 0.0)
-        sum_total_buy_cost = summed_values.get(total_buy_cost_col, 0.0)
+        _sum_total_buy_cost = summed_values.get(total_buy_cost_col, 0.0)
         sum_est_income = summed_values.get(est_income_col, 0.0)
 
         def safe_division_pct(numerator, denominator):
@@ -13323,9 +12804,9 @@ The CSV file should contain the following columns (header names must match exact
             # Keep special rows (group headers, totals)
             special_rows_mask = pd.Series(False, index=df_filtered.index)
             if "is_group_header" in df_filtered.columns:
-                special_rows_mask |= df_filtered["is_group_header"] == True
+                special_rows_mask |= df_filtered["is_group_header"] == True  # noqa: E712
             if "is_summary_row" in df_filtered.columns:
-                special_rows_mask |= df_filtered["is_summary_row"] == True
+                special_rows_mask |= df_filtered["is_summary_row"] == True  # noqa: E712
 
             # Keep rows that match the account filter OR are special rows OR are the cash row
             df_filtered = df_filtered[
@@ -13711,7 +13192,7 @@ The CSV file should contain the following columns (header names must match exact
                 plot_start_date = self.graph_start_date_edit.date().toPython()
                 plot_end_date = self.graph_end_date_edit.date().toPython()
                 pd_start = pd.Timestamp(plot_start_date)
-                pd_end = pd.Timestamp(plot_end_date)
+                _pd_end = pd.Timestamp(plot_end_date)
                 temp_df = self.full_historical_data
                 if not isinstance(temp_df.index, pd.DatetimeIndex):
                     temp_df.index = pd.to_datetime(temp_df.index)
@@ -14168,10 +13649,10 @@ The CSV file should contain the following columns (header names must match exact
             if BENCHMARK_MAPPING.get(name)
         ]
 
-        for config in intervals_config.values():
-            ax = config["ax"]
-            canvas = config["canvas"]
-            interval_key = config["data_key"]
+        for interval_cfg in intervals_config.values():
+            ax = interval_cfg["ax"]
+            canvas = interval_cfg["canvas"]
+            interval_key = interval_cfg["data_key"]
             ax.clear()  # Clear previous plot
 
             # Explicitly set background colors based on current theme
@@ -14218,7 +13699,7 @@ The CSV file should contain the following columns (header names must match exact
                     transform=ax.transAxes,
                     color=COLOR_TEXT_SECONDARY,
                 )
-                ax.set_title(config["title"], fontsize=9, weight="bold")
+                ax.set_title(interval_cfg["title"], fontsize=9, weight="bold")
                 canvas.draw()
                 continue
 
@@ -14244,13 +13725,13 @@ The CSV file should contain the following columns (header names must match exact
                     transform=ax.transAxes,
                     color=COLOR_TEXT_SECONDARY,
                 )
-                ax.set_title(config["title"], fontsize=9, weight="bold")
+                ax.set_title(interval_cfg["title"], fontsize=9, weight="bold")
                 canvas.draw()
                 continue
 
             # --- Get number of periods from spinbox ---
             try:
-                num_periods = config["spinbox"].value()
+                num_periods = interval_cfg["spinbox"].value()
             except Exception:
                 num_periods = 10  # Fallback default
             logging.debug(f"  Using num_periods = {num_periods} from spinbox.")
@@ -14264,7 +13745,7 @@ The CSV file should contain the following columns (header names must match exact
             index = np.arange(len(plot_data))
 
             # --- Store x-axis labels before clearing ticks ---
-            x_tick_labels = plot_data.index.strftime(config["date_format"])
+            x_tick_labels = plot_data.index.strftime(interval_cfg["date_format"])
             # --- End Store x-axis labels ---
 
             # Define colors for bars
@@ -14285,10 +13766,10 @@ The CSV file should contain the following columns (header names must match exact
                 if bm_col in plot_data.columns:
                     # Map the YF ticker based column name to its display name for legend and color assignment
                     # Find which display_name corresponds to this bm_col (which uses yf_ticker)
-                    display_name_for_bm = ""
+                    _display_name_for_bm = ""
                     for dn, yft in BENCHMARK_MAPPING.items():
                         if f"{yft} {interval_key}-Return" == bm_col:
-                            display_name_for_bm = dn
+                            _display_name_for_bm = dn
                             break
 
                     color_map[bm_col] = all_colors[(i + 1) % len(all_colors)]
@@ -14298,7 +13779,7 @@ The CSV file should contain the following columns (header names must match exact
                 current_bar_data = plot_data[col].fillna(0.0)
                 # If the interval is Annual ('Y'), assume the data might be a factor (e.g., 0.15 for 15%)
                 # and multiply by 100 to convert to percentage points (e.g., 15.0).
-                bars = ax.bar(
+                _bars = ax.bar(
                     index + offset,
                     current_bar_data,  # Use potentially scaled data
                     bar_width,
@@ -14327,7 +13808,7 @@ The CSV file should contain the following columns (header names must match exact
 
             # Formatting
             # ax.set_ylabel("Return (%)", fontsize=8)
-            # ax.set_title(config["title"], fontsize=9, weight="bold") # <-- REMOVED Title from plot axes
+            # ax.set_title(interval_cfg["title"], fontsize=9, weight="bold") # <-- REMOVED Title from plot axes
             ax.set_xticks([])
             ax.set_yticks([])
             ax.yaxis.set_major_formatter(
@@ -14386,7 +13867,7 @@ The CSV file should contain the following columns (header names must match exact
 
                 except Exception as e_cursor_bar:
                     logging.error(
-                        f"Error activating mplcursors for {config['title']} bar chart: {e_cursor_bar}"
+                        f"Error activating mplcursors for {interval_cfg['title']} bar chart: {e_cursor_bar}"
                     )
             # --- End mplcursors ---
 
@@ -14398,7 +13879,7 @@ The CSV file should contain the following columns (header names must match exact
             # ax.tick_params(axis="x", colors=COLOR_TEXT_SECONDARY, labelsize=7)
             # ax.tick_params(axis="y", colors=COLOR_TEXT_SECONDARY, labelsize=7)
 
-            fig = config["ax"].get_figure()
+            fig = interval_cfg["ax"].get_figure()
             fig.tight_layout(pad=0.2)
             canvas.draw()
 
@@ -14619,7 +14100,7 @@ The CSV file should contain the following columns (header names must match exact
             fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
         ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
 
-        returns_df = self.periodic_returns_data.get(interval_key)
+        _returns_df = self.periodic_returns_data.get(interval_key)
         # --- ADDED: Clear previous mplcursors if they exist for this axis ---
         if (
             interval_key == "Y"
@@ -16785,23 +16266,23 @@ if __name__ == "__main__":
     # Check for essential libraries before starting the GUI
     missing_libs = []
     try:
-        import yfinance
+        import yfinance  # noqa: F401
     except ImportError:
         missing_libs.append("yfinance")
     try:
-        import matplotlib
+        import matplotlib  # noqa: F401
     except ImportError:
         missing_libs.append("matplotlib")
     try:
-        import scipy
+        import scipy  # noqa: F401
     except ImportError:
         missing_libs.append("scipy")
     try:
-        import pandas
+        import pandas  # noqa: F401
     except ImportError:
         missing_libs.append("pandas")
     try:
-        import numpy
+        import numpy  # noqa: F401
     except ImportError:
         missing_libs.append("numpy")
     try:

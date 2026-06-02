@@ -1,16 +1,11 @@
 import logging
-import json
 import requests
-import os
-from datetime import datetime, date
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 import config
-from server.dependencies import get_current_user, get_transaction_data, get_config_manager
-from server.ai_analyzer import FALLBACK_MODELS
+from server.dependencies import get_transaction_data, get_config_manager
 from market_data import get_shared_mdp
-from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
-from db_utils import get_db_connection
+from portfolio_logic import calculate_portfolio_summary
 from server.screener_service import run_narrative_search
 
 # --- Tool Implementations ---
@@ -355,7 +350,8 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                     models_to_try.append(m)
 
             for model in models_to_try:
-                if not model: continue
+                if not model:
+                    continue
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
                 
                 # Add jitter to avoid rate limits (especially if retrying)

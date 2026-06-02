@@ -47,29 +47,40 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
                 tables = page.extract_tables()
-                if not tables: continue
+                if not tables:
+                    continue
 
                 for table in tables:
-                    if not table or not table[0]: continue
+                    if not table or not table[0]:
+                        continue
                     header_text = " ".join([str(x) for x in table[0] if x is not None])
 
                     section = None
-                    if "Trades" in header_text: section = "Trades"
-                    elif "Transfers" in header_text: section = "Transfers"
-                    elif "Dividends" in header_text: section = "Dividends"
-                    elif "Withholding Tax" in header_text: section = "Tax"
-                    elif "Deposits & Withdrawals" in header_text: section = "Cash"
-                    elif "Other Fees" in header_text: section = "Fees"
-                    elif "Interest" in header_text: section = "Interest"
+                    if "Trades" in header_text:
+                        section = "Trades"
+                    elif "Transfers" in header_text:
+                        section = "Transfers"
+                    elif "Dividends" in header_text:
+                        section = "Dividends"
+                    elif "Withholding Tax" in header_text:
+                        section = "Tax"
+                    elif "Deposits & Withdrawals" in header_text:
+                        section = "Cash"
+                    elif "Other Fees" in header_text:
+                        section = "Fees"
+                    elif "Interest" in header_text:
+                        section = "Interest"
 
-                    if not section: continue
+                    if not section:
+                        continue
 
                     # Track section state across rows — a single pdfplumber
                     # table can splice several IBKR logical sections together.
                     current_section = section
 
                     for row in table:
-                        if not row or len(row) < 3: continue
+                        if not row or len(row) < 3:
+                            continue
                         row = [str(x).replace("\n", " ").strip() if x is not None else "" for x in row]
 
                         # Mid-table section switch: a known section heading can
@@ -100,8 +111,10 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                         # so skipping it here would wrongly drop right-aligned
                         # tables whose first cell is empty.
                         if section in ("Trades", "Transfers"):
-                            if any(x in first_val for x in [section, "Symbol", "Date", "Total", "Stocks", "USD", "Description"]): continue
-                            if not first_val or first_val == "None": continue
+                            if any(x in first_val for x in [section, "Symbol", "Date", "Total", "Stocks", "USD", "Description"]):
+                                continue
+                            if not first_val or first_val == "None":
+                                continue
 
                         try:
                             if section == "Trades":
@@ -118,7 +131,7 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                     "Quantity": abs(q_val), "Price/Share": _to_float(price_str),
                                     "Total Amount": abs(_to_float(proceeds_str)),
                                     "Commission": abs(_to_float(comm_str)),
-                                    "Account": account, "Note": f"IBKR Trade", "Local Currency": "USD", "user_id": user_id
+                                    "Account": account, "Note": "IBKR Trade", "Local Currency": "USD", "user_id": user_id
                                 })
 
                             elif section == "Transfers":
@@ -157,23 +170,27 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                     if c and re.match(r"^\d{4}-\d{2}-\d{2}$", c):
                                         date_str = c
                                         break
-                                if not date_str: continue
+                                if not date_str:
+                                    continue
 
                                 # Amount: rightmost cell that parses as a
                                 # signed decimal. Scanning right-to-left skips
                                 # the trailing empty "Code" column naturally.
                                 amt_str = None
                                 for c in reversed(row):
-                                    if not c: continue
+                                    if not c:
+                                        continue
                                     s = c.replace(",", "").strip()
-                                    if not s: continue
+                                    if not s:
+                                        continue
                                     try:
                                         float(s)
                                         amt_str = c
                                         break
                                     except ValueError:
                                         continue
-                                if amt_str is None: continue
+                                if amt_str is None:
+                                    continue
 
                                 # Description: longest concat of non-numeric,
                                 # non-date text cells. Single-char codes like
@@ -184,7 +201,8 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                     if not c or c == date_str or c == amt_str:
                                         continue
                                     s = c.strip()
-                                    if not s: continue
+                                    if not s:
+                                        continue
                                     try:
                                         float(s.replace(",", ""))
                                         continue
@@ -193,9 +211,11 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                     if len(s) > 2:
                                         desc_pieces.append(s)
                                 desc = " ".join(desc_pieces).strip()
-                                if not desc: continue
+                                if not desc:
+                                    continue
 
-                                if "Total" in desc or "Starting" in desc: continue
+                                if "Total" in desc or "Starting" in desc:
+                                    continue
 
                                 amt = _to_float(amt_str)
                                 sym = "$CASH"
@@ -219,15 +239,24 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
 
                                 l_desc = desc.lower()
                                 t_type = "Other"
-                                if section == "Dividends": t_type = "Dividend"
-                                elif section == "Tax": t_type = "Tax"
-                                elif section == "Interest": t_type = "Interest"
-                                elif section == "Fees": t_type = "Fees"
-                                elif "electronic fund" in l_desc or "deposit" in l_desc: t_type = "Deposit"
-                                elif "withdrawal" in l_desc or "disbursement" in l_desc: t_type = "Withdrawal"
-                                elif "acats transfer" in l_desc or "transfer" in l_desc: t_type = "Transfer"
-                                elif "commission adj" in l_desc: t_type = "Deposit" if amt > 0 else "Fees"
-                                elif section == "Cash": t_type = "Deposit" if amt >= 0 else "Withdrawal"
+                                if section == "Dividends":
+                                    t_type = "Dividend"
+                                elif section == "Tax":
+                                    t_type = "Tax"
+                                elif section == "Interest":
+                                    t_type = "Interest"
+                                elif section == "Fees":
+                                    t_type = "Fees"
+                                elif "electronic fund" in l_desc or "deposit" in l_desc:
+                                    t_type = "Deposit"
+                                elif "withdrawal" in l_desc or "disbursement" in l_desc:
+                                    t_type = "Withdrawal"
+                                elif "acats transfer" in l_desc or "transfer" in l_desc:
+                                    t_type = "Transfer"
+                                elif "commission adj" in l_desc:
+                                    t_type = "Deposit" if amt > 0 else "Fees"
+                                elif section == "Cash":
+                                    t_type = "Deposit" if amt >= 0 else "Withdrawal"
 
                                 # Always drop internal sweeps — they aren't
                                 # real external cash movements and they double-
@@ -806,9 +835,12 @@ def extract_transactions_from_file(file_path: str, user_id: int, cash_mode: Opti
     mime_type, _ = mimetypes.guess_type(file_path)
     
     if not mime_type:
-        if ext == '.pdf': mime_type = 'application/pdf'
-        elif ext in ['.png', '.jpg', '.jpeg']: mime_type = f'image/{ext[1:]}'
-        else: mime_type = 'application/octet-stream'
+        if ext == '.pdf':
+            mime_type = 'application/pdf'
+        elif ext in ['.png', '.jpg', '.jpeg']:
+            mime_type = f'image/{ext[1:]}'
+        else:
+            mime_type = 'application/octet-stream'
 
     if mime_type == 'application/pdf':
         try:
@@ -820,16 +852,20 @@ def extract_transactions_from_file(file_path: str, user_id: int, cash_mode: Opti
             
             if "INTERACTIVE BROKERS" in text.upper() or "IBKR" in text.upper():
                 res = parse_ibkr_pdf(file_path, user_id, cash_mode, account_override)
-                if res: return res
+                if res:
+                    return res
             elif "WEBULL" in text.upper():
                 res = parse_webull_pdf(file_path, user_id, cash_mode, account_override)
-                if res: return res
+                if res:
+                    return res
             elif "TD AMERITRADE" in text.upper():
                 res = parse_tdameritrade_pdf(file_path, user_id, cash_mode, account_override)
-                if res: return res
+                if res:
+                    return res
             elif "E*TRADE" in text.upper() or "ETRADE" in text.upper():
                 res = parse_etrade_pdf(file_path, user_id, cash_mode, account_override)
-                if res: return res
+                if res:
+                    return res
                 
         except Exception as e:
             logging.warning(f"Deterministic parse failed: {e}")

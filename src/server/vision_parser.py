@@ -3,8 +3,7 @@ import json
 import logging
 import requests
 import os
-import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import config
 
 # Models that support Vision/Multi-modal

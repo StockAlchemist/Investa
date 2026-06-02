@@ -145,7 +145,8 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
     except (ValueError, TypeError):
         trailing_rate = 0.0
     
-    if div_rate <= 0: div_rate = trailing_rate if trailing_rate else 0.0
+    if div_rate <= 0:
+        div_rate = trailing_rate if trailing_rate else 0.0
     
     if last_div_val <= 0 and div_rate <= 0:
         return {"frequency_months": 3, "indicated_annual_rate": 0.0}
@@ -495,7 +496,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     # 3. Cash Flow Pattern Validation
     # A valid investment for IRR requires an initial outflow (negative) and at least one inflow (positive).
     first_non_zero_flow = None
-    first_non_zero_idx = -1
+    _first_non_zero_idx = -1
     non_zero_cfs_list = []
     max_abs_flow = 0.0  # Tracks max magnitude for normalization
     
@@ -507,7 +508,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
                 max_abs_flow = abs_cf
             if first_non_zero_flow is None:
                 first_non_zero_flow = cf
-                first_non_zero_idx = idx
+                _first_non_zero_idx = idx
 
     # Case 1: All cash flows are zero.
     if first_non_zero_flow is None:
@@ -565,9 +566,9 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
                         if np.isclose(npv_check, 0.0, atol=1e-2):
                             irr_result = res
                             break
-                except:
+                except Exception:
                     continue
-        except:
+        except Exception:
             pass
 
         # 2. If Newton fails, fallback to Brentq with expanding brackets
@@ -591,7 +592,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
                         if np.isfinite(res) and res > -1.0:
                             irr_result = res
                             break
-                except:
+                except Exception:
                     continue
 
     # 4. Final Validation and Return
@@ -940,8 +941,10 @@ def get_cash_flows_for_mwr(
                     acct = str(row.get("Account", "")).strip().upper()
                     to_acct = str(row.get("To Account", "")).strip().upper()
 
-                    if acct in included_set: is_outbound = True
-                    if to_acct and to_acct in included_set: is_inbound = True
+                    if acct in included_set:
+                        is_outbound = True
+                    if to_acct and to_acct in included_set:
+                        is_inbound = True
 
                     if is_outbound and not is_inbound:
                         if pd.notna(qty) and pd.notna(price_local):
@@ -985,8 +988,10 @@ def get_cash_flows_for_mwr(
                 acct = str(row.get("Account", "")).strip().upper()
                 to_acct = str(row.get("To Account", "")).strip().upper()
 
-                if acct in included_set: is_outbound = True
-                if to_acct and to_acct in included_set: is_inbound = True
+                if acct in included_set:
+                    is_outbound = True
+                if to_acct and to_acct in included_set:
+                    is_inbound = True
 
                 if is_outbound and not is_inbound:
                     # Asset leaving scope -> Withdrawal -> Positive MWR Flow
@@ -1034,8 +1039,10 @@ def get_cash_flows_for_mwr(
                 acct = str(row.get("Account", "")).strip().upper()
                 to_acct = str(row.get("To Account", "")).strip().upper()
 
-                if acct in included_set: is_outbound = True
-                if to_acct and to_acct in included_set: is_inbound = True
+                if acct in included_set:
+                    is_outbound = True
+                if to_acct and to_acct in included_set:
+                    is_inbound = True
                 
                 if is_outbound and not is_inbound:
                     # Money leaving the scope -> Withdrawal -> Positive MWR Flow
@@ -1325,8 +1332,10 @@ def get_historical_price(
                  if target_ts_eval < first_ts:
                      col = 'price'
                      if 'price' not in df.columns:
-                         if 'Adj Close' in df.columns: col = 'Adj Close'
-                         elif 'Close' in df.columns: col = 'Close'
+                         if 'Adj Close' in df.columns:
+                             col = 'Adj Close'
+                         elif 'Close' in df.columns:
+                             col = 'Close'
                      
                      backfill_price = df[col].iloc[0]
                      if pd.notna(backfill_price):
