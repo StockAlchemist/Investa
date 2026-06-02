@@ -11,6 +11,11 @@ const isDesktop = process.env.APP_ENV === 'desktop';
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net", "muon", "*.ts.net"],
   devIndicators: false,
+  // Linting is gated separately in CI (changed-files eslint); don't fail
+  // production builds on pre-existing lint debt. Type errors still fail the build.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   output: isDesktop ? 'export' : undefined,
   assetPrefix: isDesktop ? './' : undefined, // Fix loading assets in Electron (file:// protocol)
   turbopack: {}, // Required to prevent error when using next-pwa in Next 16

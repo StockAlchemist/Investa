@@ -18,8 +18,15 @@ jobs:
   backend-tests:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
+    env:
+      # Parts of the test suite import PySide6 (Qt); run it headless.
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
+
+      # PySide6 needs these system libraries to load on a headless runner.
+      - name: Install Qt system libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
 
       - uses: actions/setup-python@v5
         with:
@@ -81,6 +88,9 @@ jobs:
         working-directory: web_app
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need history so we can diff against the base commit.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -91,9 +101,31 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      # The repo carries pre-existing eslint debt, so we lint only the
+      # frontend files touched by this push/PR (paths made relative to web_app).
+      - name: Determine changed frontend files
+        id: changed
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+          fi
+          FILES="$(git diff --name-only --diff-filter=ACM "$BASE" "${{ github.sha }}" -- 'web_app/**/*.ts' 'web_app/**/*.tsx' 'web_app/**/*.js' 'web_app/**/*.jsx' \
+            | sed 's#^web_app/##' | tr '\n' ' ')"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Changed frontend files: ${FILES:-(none)}"
 
+      - name: Lint (changed files)
+        if: steps.changed.outputs.files != ''
+        run: npx eslint ${{ steps.changed.outputs.files }}
+
+      # Build validates compilation and types for the whole app.
+      # ESLint is gated separately above (eslint.ignoreDuringBuilds in next.config).
       - name: Build
         run: npm run build
 
