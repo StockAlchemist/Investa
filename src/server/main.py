@@ -27,22 +27,26 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from db_utils import initialize_database, initialize_global_database
-    from server.refresh_worker import refresh_loop
+    from server.refresh_worker import refresh_loop, index_refresh_loop
     initialize_database()
     initialize_global_database()
 
-    # Kick off the periodic metadata refresh in the background.
+    # Kick off the periodic background workers.
     refresh_task = asyncio.create_task(refresh_loop(), name="metadata-refresh")
+    # Keep the header index-quote cache warm so /summary never blocks on it.
+    index_task = asyncio.create_task(index_refresh_loop(), name="index-refresh")
 
     try:
         yield
     finally:
-        # Graceful shutdown: cancel the refresh worker and drain the precalc pool.
-        refresh_task.cancel()
-        try:
-            await refresh_task
-        except (asyncio.CancelledError, Exception):
-            pass
+        # Graceful shutdown: cancel the background workers and drain the precalc pool.
+        for task in (refresh_task, index_task):
+            task.cancel()
+        for task in (refresh_task, index_task):
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         from server.api import _PRECALC_POOL
         _PRECALC_POOL.shutdown(wait=False)
 

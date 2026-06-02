@@ -32,6 +32,12 @@ REFRESH_INTERVAL_SECONDS = int(os.getenv("INVESTA_METADATA_REFRESH_INTERVAL", st
 BATCH_SIZE = int(os.getenv("INVESTA_METADATA_REFRESH_BATCH", "50"))
 ENABLED = os.getenv("INVESTA_METADATA_REFRESH_ENABLED", "1") != "0"
 
+# Index-quote refresh: keeps the header indices (Dow/Nasdaq/S&P) cache warm so
+# no user request ever pays the ~7-8s live fetch. Interval is kept under the
+# cache TTL (2 min) so the cache effectively never expires under load.
+INDEX_REFRESH_INTERVAL_SECONDS = int(os.getenv("INVESTA_INDEX_REFRESH_INTERVAL", "90"))
+INDEX_REFRESH_ENABLED = os.getenv("INVESTA_INDEX_REFRESH_ENABLED", "1") != "0"
+
 _V3_REQUIRED_KEYS = ("exchange", "country", "sector", "industry", "quoteType")
 
 
@@ -110,6 +116,54 @@ def _refresh_batch_sync(symbols: List[str]) -> int:
     except Exception as e:
         logger.warning(f"Batch metadata refresh failed: {e}")
         return 0
+
+
+def _refresh_indices_sync() -> int:
+    """Synchronously refresh the header index quotes into the shared cache.
+    Returns the number of indices fetched. Run via asyncio.to_thread."""
+    from market_data import get_shared_mdp  # local import — keeps cold-start fast
+
+    try:
+        mdp = get_shared_mdp()
+    except Exception as e:
+        logger.warning(f"Cannot acquire shared MarketDataProvider for index refresh: {e}")
+        return 0
+
+    try:
+        quotes = mdp.get_index_quotes(config.INDICES_FOR_HEADER)
+        return len(quotes or {})
+    except Exception as e:
+        logger.warning(f"Index quote refresh failed: {e}")
+        return 0
+
+
+async def index_refresh_loop() -> None:
+    """Periodically refresh header index quotes so the cache stays warm and the
+    dashboard never blocks on a live fetch. Cancellable."""
+    if not INDEX_REFRESH_ENABLED:
+        logger.info("Index refresh worker disabled by INVESTA_INDEX_REFRESH_ENABLED=0")
+        return
+
+    logger.info(
+        f"Index refresh worker started — interval={INDEX_REFRESH_INTERVAL_SECONDS}s, "
+        f"symbols={config.INDICES_FOR_HEADER}"
+    )
+
+    while True:
+        try:
+            count = await asyncio.to_thread(_refresh_indices_sync)
+            logger.debug(f"Index refresh: warmed cache with {count} indices")
+        except asyncio.CancelledError:
+            logger.info("Index refresh worker cancelled")
+            raise
+        except Exception as e:
+            logger.exception(f"Index refresh cycle errored (will retry next interval): {e}")
+
+        try:
+            await asyncio.sleep(INDEX_REFRESH_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("Index refresh worker cancelled during sleep")
+            raise
 
 
 async def refresh_loop() -> None:
