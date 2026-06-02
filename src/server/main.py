@@ -15,7 +15,7 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 
-from server.api import router as api_router
+from server.api import router as api_router  # noqa: E402  (import follows sys.path setup above)
 
 # Configure logging
 logging.basicConfig(

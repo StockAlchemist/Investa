@@ -1112,10 +1112,6 @@ class MarketDataProvider:
                                 
                                 valid_days = sym_df.dropna(subset=[col_name])
                                 if not valid_days.empty:
-                                    # Convert index to dates for comparison
-                                    # Ensure index is datetime
-                                    valid_dates = valid_days.index.date
-                                    
                                     # 1. Determine Stable Previous Close (Always Yesterday or earlier)
                                     # Filter for dates strictly less than today (UTC)
                                     # Note: Determining 'Today' is tricky with timezones. 
@@ -1363,9 +1359,6 @@ class MarketDataProvider:
                 )
                 
                 if not fx_history_df.empty:
-                    # Handle MultiIndex columns if multiple tickers
-                    has_multilevel_fx = getattr(fx_history_df.columns, 'nlevels', 1) > 1
-                    
                     for yf_symbol in fx_pairs:
                         try:
                             price = None
@@ -1673,8 +1666,6 @@ class MarketDataProvider:
             if not index_symbols:
                 logging.warning("No index symbols provided to get_index_quotes.")
                 return results
-
-            index_tickers_str = " ".join(index_symbols)
 
             # --- MODIFICATION: Use YFINANCE_INDEX_TICKER_MAP ---
             yf_tickers_to_fetch = []
@@ -2137,7 +2128,6 @@ class MarketDataProvider:
         # --- ADDED: Retry logic parameters for increased network robustness ---
         # --- ADDED: Retry logic parameters for increased network robustness ---
         retries = 4 # Increased to 4 to handle potential DNS flakiness
-        timeout_seconds = 10 # Reduced from 30 to fail fast
         # --- END ADDED ---
 
         all_missing_symbols = []
