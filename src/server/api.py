@@ -90,6 +90,10 @@ project_root = os.path.dirname(src_dir)
 # Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
 # All three use OrderedDict so eviction is by true LRU (oldest-accessed) not insertion order.
 _PORTFOLIO_SUMMARY_CACHE: OrderedDict = OrderedDict()
+# Raw output of calculate_portfolio_summary (before the expensive TWR/historical
+# step). Shared by /summary and /summary/headline so the heavy math runs at most
+# once per cache window even when both endpoints are hit on a cold load.
+_RAW_CALC_CACHE: OrderedDict = OrderedDict()
 _MARKET_HISTORY_CACHE: OrderedDict = OrderedDict()
 _PORTFOLIO_HISTORY_CACHE: OrderedDict = OrderedDict()
 _HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
@@ -954,6 +958,94 @@ def compute_account_closure_state(
     return closed_in_slice, all_selected_closed
 
 
+async def _compute_raw_summary(
+    currency: str,
+    include_accounts: Optional[List[str]],
+    data: tuple,
+    account_interest_rates: dict,
+    interest_free_thresholds: dict,
+):
+    """Run (and cache) the heavy calculate_portfolio_summary.
+
+    Returns ``(overall_summary_metrics, summary_df, holdings_dict,
+    account_level_metrics)``. The result is cached in ``_RAW_CALC_CACHE`` and
+    shared between ``/summary`` and ``/summary/headline`` so the expensive math
+    runs at most once per cache window. Always computes with
+    ``show_closed_positions=True`` so a single cache entry serves both views.
+    """
+    (
+        df,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        account_currency_map,
+        account_cash_mode_map,
+        db_path,
+        db_mtime,
+    ) = data
+
+    accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
+    cache_ttl_seconds = 60 if is_market_open() else 300
+    time_key = int(time.time() / cache_ttl_seconds)
+    raw_key = (currency, accounts_key, db_path, db_mtime, time_key)
+
+    cached = _lru_get(_RAW_CALC_CACHE, raw_key)
+    if cached is not None:
+        return cached
+
+    async with _SUMMARY_CALC_LOCK:
+        # Another request may have computed it while we waited for the lock.
+        cached = _lru_get(_RAW_CALC_CACHE, raw_key)
+        if cached is not None:
+            return cached
+
+        logging.info(f"Acquired lock. Calculating raw summary. Time key: {time_key}")
+        mdp = get_mdp()
+
+        # Offload heavy synchronous calculation to threadpool
+        from fastapi.concurrency import run_in_threadpool
+
+        def run_calc():
+            return calculate_portfolio_summary(
+                all_transactions_df_cleaned=df,
+                original_transactions_df_for_ignored=df,
+                ignored_indices_from_load=set(),
+                ignored_reasons_from_load={},
+                fmp_api_key=getattr(config, "FMP_API_KEY", None),
+                display_currency=currency,
+                show_closed_positions=True,  # ALWAYS compute all for cache sharing (BN-01)
+                manual_overrides_dict=manual_overrides,
+                user_symbol_map=user_symbol_map,
+                user_excluded_symbols=user_excluded_symbols,
+                include_accounts=include_accounts,
+                account_currency_map=account_currency_map,
+                default_currency=config.DEFAULT_CURRENCY,
+                market_provider=mdp,
+                account_interest_rates=account_interest_rates,
+                interest_free_thresholds=interest_free_thresholds,
+                account_cash_mode_map=account_cash_mode_map,
+                db_mtime=db_mtime,  # BN-08: pass db_mtime for FIFO cache
+            )
+
+        try:
+            (
+                overall_summary_metrics,
+                summary_df,
+                holdings_dict,
+                account_level_metrics,
+                _,
+                _,
+                _,
+            ) = await run_in_threadpool(run_calc)
+        except Exception as e_calc:
+            logging.error(f"Error in calculate_portfolio_summary: {e_calc}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Calculation Error: {str(e_calc)}")
+
+        raw = (overall_summary_metrics, summary_df, holdings_dict, account_level_metrics)
+        _lru_put(_RAW_CALC_CACHE, raw_key, raw)
+        return raw
+
+
 async def _calculate_portfolio_summary_internal(
     currency: str = "USD",
     include_accounts: Optional[List[str]] = None,
@@ -1023,59 +1115,27 @@ async def _calculate_portfolio_summary_internal(
         logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...")
         return _filter_closed_positions(cached, show_closed_positions)
 
-    logging.info(f"Summary Cache Miss. Waiting for lock. Time key: {time_key}")
+    logging.info(f"Summary Cache Miss. Time key: {time_key}")
 
-    async with _SUMMARY_CALC_LOCK:
-        # Double-check cache inside lock
-        cached = _lru_get(_PORTFOLIO_SUMMARY_CACHE, cache_key)
-        if cached is not None:
-            logging.info(f"Using cached portfolio summary (after acquiring lock) for key: {cache_key[:3]}...")
-            return _filter_closed_positions(cached, show_closed_positions)
-            
-        logging.info(f"Acquired lock. Calculating summary. Time key: {time_key}")
+    # Heavy portfolio math — shared with /summary/headline via _RAW_CALC_CACHE so
+    # it runs at most once per cache window.
+    (
+        overall_summary_metrics,
+        summary_df,
+        holdings_dict,
+        account_level_metrics,
+    ) = await _compute_raw_summary(
+        currency=currency,
+        include_accounts=include_accounts,
+        data=data,
+        account_interest_rates=account_interest_rates,
+        interest_free_thresholds=interest_free_thresholds,
+    )
+    # Copy before we enrich with TWR/dividend fields so the shared raw cache
+    # entry stays a clean calculate_portfolio_summary output.
+    if overall_summary_metrics is not None:
+        overall_summary_metrics = dict(overall_summary_metrics)
 
-        mdp = get_mdp()
-        
-        # Offload heavy synchronous calculation to threadpool
-        from fastapi.concurrency import run_in_threadpool
-        
-        def run_calc():
-            return calculate_portfolio_summary(
-                all_transactions_df_cleaned=df,
-                original_transactions_df_for_ignored=df,
-                ignored_indices_from_load=set(),
-                ignored_reasons_from_load={},
-                fmp_api_key=getattr(config, "FMP_API_KEY", None),
-                display_currency=currency,
-                show_closed_positions=True, # ALWAYS compute all for cache sharing (BN-01)
-                manual_overrides_dict=manual_overrides,
-                user_symbol_map=user_symbol_map,
-                user_excluded_symbols=user_excluded_symbols,
-                include_accounts=include_accounts,
-                account_currency_map=account_currency_map,
-                default_currency=config.DEFAULT_CURRENCY,
-                market_provider=mdp,
-                account_interest_rates=account_interest_rates,
-                interest_free_thresholds=interest_free_thresholds,
-                account_cash_mode_map=account_cash_mode_map, # PASSING IT HERE
-                db_mtime=db_mtime # BN-08: pass db_mtime for FIFO cache
-            )
-
-        try:
-            (
-                overall_summary_metrics,
-                summary_df,
-                holdings_dict,
-                account_level_metrics,
-                _,
-                _,
-                _
-            ) = await run_in_threadpool(run_calc)
-        except Exception as e_calc:
-            logging.error(f"Error in calculate_portfolio_summary: {e_calc}", exc_info=True)
-            # Re-raise to return 500 but now it's logged
-            raise HTTPException(status_code=500, detail=f"Calculation Error: {str(e_calc)}")
-    
     # --- Closed-account gating ---
     # If every account in `include_accounts` has a closure date on or before today,
     # rate-of-return metrics (TWR / IRR / yields) are unreliable due to residual
@@ -1301,6 +1361,97 @@ async def get_portfolio_summary(
     except Exception as e:
         logging.error(f"Error calculating summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/summary/headline")
+async def get_portfolio_summary_headline(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fast path for the top card: total value, day change, and the other headline
+    metrics — and nothing else.
+
+    Shares the heavy calculation cache with /summary but SKIPS the expensive
+    historical TWR/dividend step, the index fetch, and the holdings/summary_df
+    serialization. This lets the dashboard's headline card render and update as
+    soon as the core math finishes, well before the full dashboard is ready.
+    """
+    (
+        df,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        account_currency_map,
+        account_cash_mode_map,
+        db_path,
+        db_mtime,
+    ) = data
+
+    if df.empty:
+        return {"metrics": {}}
+
+    # If the full summary is already cached, it's a superset — reuse it.
+    accounts_key = tuple(sorted(accounts)) if accounts else "ALL"
+    cache_ttl_seconds = 60 if is_market_open() else 300
+    time_key = int(time.time() / cache_ttl_seconds)
+    full_key = (currency, accounts_key, db_path, db_mtime, time_key)
+    cached_full = _lru_get(_PORTFOLIO_SUMMARY_CACHE, full_key)
+    if cached_full is not None and cached_full.get("metrics"):
+        return clean_nans({"metrics": cached_full["metrics"]})
+
+    # Interest settings are inputs to the calculation.
+    account_interest_rates: dict = {}
+    interest_free_thresholds: dict = {}
+    config_manager = get_config_manager(current_user) if current_user else None
+    if config_manager:
+        config_manager.load_manual_overrides()
+        account_interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
+        interest_free_thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
+
+    try:
+        overall_summary_metrics, _, _, _ = await _compute_raw_summary(
+            currency=currency,
+            include_accounts=accounts,
+            data=data,
+            account_interest_rates=account_interest_rates,
+            interest_free_thresholds=interest_free_thresholds,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error calculating headline summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    metrics = dict(overall_summary_metrics) if overall_summary_metrics else {}
+
+    # Cheap closure-state gating (date math only, no network) so the card matches
+    # /summary for closed-account slices. Rate-of-return fields aren't computed on
+    # this path, so they're simply absent/None — the card doesn't need them.
+    closure_dates_map: Dict[str, str] = {}
+    if config_manager:
+        closure_dates_map = config_manager.gui_config.get("account_closure_dates", {}) or {}
+    closed_in_slice, all_selected_closed = compute_account_closure_state(
+        accounts, closure_dates_map, date.today()
+    )
+    metrics["all_selected_closed"] = all_selected_closed
+    metrics["closed_accounts"] = closed_in_slice
+    if all_selected_closed:
+        for key in (
+            "annualized_twr",
+            "cumulative_twr",
+            "portfolio_mwr",
+            "ytd_return",
+            "dividend_return_cumulative",
+            "dividend_return_annualized",
+            "total_return_pct",
+        ):
+            metrics[key] = None
+
+    return clean_nans({"metrics": metrics})
+
 
 @router.post("/portfolio/ai_review")
 async def get_portfolio_ai_review(
