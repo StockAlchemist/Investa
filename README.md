@@ -1,4 +1,4 @@
-# Investa Portfolio Dashboard v1.0
+# Investa Portfolio Dashboard v1.1
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -12,7 +12,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Transactions:** Direct database editing, CSV import/export, and full history log.
 * **Multi-Currency:** converting all assets to your preferred display currency (e.g. USD, EUR, JPY).
 * **Performance Charts:** Time-Weighted Return (TWR) vs. Benchmarks (SPY, QQQ) and Portfolio Value over time, including **gapless intraday views** (1D, 5D) with **intelligent caching** for instant after-hours loading.
-* **Interactive Price Charts:** Detailed stock price charts with **Moving Averages (SMA 50/200)**, configurable time ranges (1D to Max), and gain/loss shading.
+* **Interactive Price Charts:** Detailed stock price charts with **Moving Averages (SMA 50/200)**, configurable time ranges (1D to Max), and gain/loss shading, plus optional **overlays** for your buy/sell transactions (with realized gain/loss shown in sell tooltips), dividend payouts, earnings dates, and benchmark comparison lines.
 * **Dividend Tracking:** Charts and tables for annual/quarterly/monthly dividend income, including **forward-looking Annual Yield %** metrics.
 * **Advanced Analysis:** Asset allocation, Correlation Matrix, Factor Analysis, and Scenario Analysis.
 * **Rebalancing:** Calculator to help you rebalance portfolio to target allocations.
@@ -21,7 +21,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **AI Score:** Intelligent **scorecard-based rankings** in the Watchlist and Screener to help prioritize high-probability investments.
 * **Custom Groups (Tags):** Organize holdings with custom tags (e.g., "Core", "Speculative") for personalized grouping.
 * **Contribution Analysis:** See exactly how much each holding contributes to your total portfolio return.
-* **Customizable Dashboard:** Toggle visibility of widgets and view "Sector Contribution" and "Top Contributors" analysis directly on the main dashboard.
+* **Customizable Layouts:** A **Layout Configurator** on every tab lets you toggle and arrange widgets (including "Sector Contribution" and "Top Contributors") to build your own views; your layout persists across sessions.
 * **Fundamental Data:** Built-in viewer for company profiles, financials, and balance sheets.
 * **Intrinsic Value Analysis:** Automated **DCF (Income & Revenue-based)** and **Graham's Revised Formula** calculations **(with NAV support for ETFs)** with **Monte Carlo simulations**, **currency normalization**, and **stability logic (Growth Capping & Linear Fading)**.
 * **AI Portfolio Review:** Intelligent AI-powered analysis of your portfolio holdings, providing personalized insights, risk assessments, and diversification suggestions.
@@ -31,6 +31,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Valuation Overrides:** Fully customizable valuation parameters (growth rates, discount rates, etc.) for each stock via the Settings menu or individual detail views.
 * **Batch Recalculation:** Dedicated scripts for bulk updating valuations for large universes like the S&P 500.
 * **IBKR Integration:** Automated syncing of transactions from Interactive Brokers via Web Flex Service with a staging area for review and approval.
+* **Brokerage Statement Import:** Import transactions directly from **PDF / image statements** — deterministic parsers for **Interactive Brokers** and **Webull**, plus an AI fallback for other brokers — with an import-review step that flags already-imported rows to prevent duplicates.
 * **Annualized Performance:** Key metrics like **IRR (MWR)** are clearly labeled as **"Ann."** when displayed as annualized returns for better clarity.
 * **Interactive Donut Charts:** The Portfolio tab features large, fully interactive allocation donut charts (by Asset Type, Sector, Geography, Industry) with hover-to-highlight slices and an inline legend showing value and percentage.
 * **Allocation Drift Alerts:** Set a target allocation per group (e.g., 60% Sector/Technology) via the Portfolio tab. Live drift cards show how far each slice has moved from its target, colour-coded by severity, and persist across sessions.
@@ -94,24 +95,28 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
 
 Requires Python 3.8+.
 
-1.  **Clone the Repository**
+1. **Clone the Repository**
+
     ```bash
     git clone https://github.com/StockAlchemist/Investa.git
     cd Investa
     ```
 
-2.  **Create Virtual Environment**
+2. **Create Virtual Environment**
+
     ```bash
     python3 -m venv venv
     source venv/bin/activate  # Windows: .\venv\Scripts\activate
     ```
 
-3.  **Install Dependencies**
+3. **Install Dependencies**
+
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Install Web App (Optional)**
+4. **Install Web App (Optional)**
+
     ```bash
     cd web_app && npm install && cd ..
     ```
@@ -119,16 +124,19 @@ Requires Python 3.8+.
 ## Quick Usage
 
 **Run Everything (Desktop + Web):**
+
 ```bash
 ./start_investa.sh
 ```
 
 **Run Desktop App (Electron):**
+
 ```bash
 ./start_desktop.sh
 ```
 
 **Run Legacy Python GUI:**
+
 ```bash
 python src/main_gui.py
 ```
@@ -139,29 +147,31 @@ python src/main_gui.py
 
 Investa includes a built-in configuration tool to secure your app with HTTPS using Tailscale Serve. this is **required** for proper autofill functionality on mobile devices and secure remote access.
 
-1.  **Ensure Tailscale is installed and running.**
-2.  **Run the configuration script:**
+1. **Ensure Tailscale is installed and running.**
+2. **Run the configuration script:**
+
     ```bash
     ./enable_https.sh
     ```
-3.  **Use the provided HTTPS URL** (e.g., `https://your-node.ts.net`) to access the dashboard.
+
+3. **Use the provided HTTPS URL** (e.g., `https://your-node.ts.net`) to access the dashboard.
 
 ## Configuration & Data
 
 Investa stores your database (`investa_transactions.db`) and configuration files in your operating system's standard application data directory:
 
-*   **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
-*   **Windows:** `C:\Users\<User>\AppData\Local\StockAlchemist\Investa\`
-*   **Linux:** `~/.local/share/StockAlchemist/Investa/`
+* **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
+* **Windows:** `C:\Users\<User>\AppData\Local\StockAlchemist\Investa\`
+* **Linux:** `~/.local/share/StockAlchemist/Investa/`
 
 For details on `gui_config.json`, `manual_overrides.json`, and input formats, consult the **[Tutorial](TUTORIAL.md#configuration-persistence-gui_configjson--manual_overridesjson)**.
 
-## Input Data Format (CSV) 
+## Input Data Format (CSV)
 
-Investa supports importing transaction history from CSV. 
+Investa supports importing transaction history from CSV.
 
-*   **Key Fields:** `Date`, `Type`, `Symbol` (`$CASH` for cash), `Quantity`, `Price/Share`, `Account`.
-*   **Format:** See **[Tutorial: Input Data Format](TUTORIAL.md#part-1-getting-set-up)** for the detailed specification.
+* **Key Fields:** `Date`, `Type`, `Symbol` (`$CASH` for cash), `Quantity`, `Price/Share`, `Account`.
+* **Format:** See **[Tutorial: Input Data Format](TUTORIAL.md#part-1-getting-set-up)** for the detailed specification.
 
 ## Troubleshooting
 
@@ -177,4 +187,4 @@ MIT License. See [LICENSE](LICENSE).
 
 ## Author
 
-* **Google Gemini**
+* **Google Gemini and Claude**

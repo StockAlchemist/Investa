@@ -1,4 +1,4 @@
-# Welcome to Investa v1.0! A Quick Tutorial
+# Welcome to Investa v1.1! A Quick Tutorial
 
 Investa is your personal desktop assistant for keeping a close eye on your investment portfolio. It uses a local SQLite database to store your transaction history, fetches the latest market data, and then presents you with a clear, detailed picture of how your investments are doing.
 
@@ -738,7 +738,7 @@ The Web Dashboard uses a **collapsible sidebar** on desktop and a bottom navigat
 
 ### Features
 
-*   **Customizable Layout:** Use the "Layout" button on the Dashboard tab to toggle the visibility of any widget, including "Sector Contribution" and "Top Contributors".
+*   **Customizable Layout:** Every tab has a **Layout Configurator** — use the "Layout" button to toggle and reorder the widgets on that tab (e.g. "Sector Contribution" and "Top Contributors" on the Dashboard). Your arrangement is saved per tab and restored on your next visit.
 *   **Dashboard Summary:** Hero card with Net Value, Daily P&L, TWR, IRR, and sparkline. Key metrics are annotated — annualized IRR displays an "Ann." sub-label.
 *   **Performance Graph:** Interactive charts for TWR and Portfolio Value with date-range presets. Add **custom benchmark tickers** (any valid symbol, e.g. `VT`, `TQQQ`) alongside the built-in SPY/QQQ presets using the "+ Custom" input in the benchmark selector.
 *   **Portfolio Tab:** Combined view of the Holdings table and four interactive donut charts (Asset Type, Sector, Geography, Industry) with inline legends and Allocation Drift cards. See **Part 7** for details.
@@ -830,6 +830,12 @@ Investa's Web Dashboard now features a rich, interactive **Stock Price Chart** t
     *   **SMA 200:** Toggle the 200-day Simple Moving Average line (purple) to identify long-term trends and potential support/resistance levels.
     *   *Note: SMAs are calculated based on the available historical data for the selected period.*
 
+*   **Event Overlays:** Layer your own activity directly onto the price line. Each overlay can be toggled independently:
+    *   **Buy / Sell Markers:** See exactly where you transacted. Sell markers' tooltips also show the **realized gain/loss** (in your display currency) and the gain as a percentage of cost basis.
+    *   **Dividends:** Markers for dividend payouts on the dates they occurred.
+    *   **Earnings:** Markers for past and upcoming earnings dates.
+    *   **Benchmark Comparison:** Overlay a benchmark (e.g. SPY) rebased to the same start point to compare the stock's performance against the market over the selected range.
+
 *   **Responsive Design:** The chart controls are optimized for both desktop and mobile use, ensuring you have full analytical power whether you're at your desk or on the go.
  
 ## Part 16: IBKR Integration (Automated Sync)
@@ -861,6 +867,20 @@ Imported transactions are not added to your main database immediately. This "Sta
 *   **Pending Table:** View all newly fetched transactions.
 *   **Approve:** Select transactions and click **Approve** to move them into your main transaction history.
 *   **Reject:** If a transaction looks incorrect or redundant, select it and click **Reject** to remove it from the staging area without affecting your database.
+
+### Alternative: Import from a Brokerage Statement (PDF / Image)
+
+If your broker doesn't offer a Flex-style API, you can import transactions directly from a downloaded statement on the Web Dashboard:
+
+1.  Go to the **Transactions** tab and choose **Import from Statement** (the file/document import option).
+2.  Upload a **PDF or image** of your statement. Investa extracts the transactions using:
+    *   **Deterministic parsers** for **Interactive Brokers** activity statements / trade confirmations and **Webull** monthly statements (most accurate).
+    *   An **AI fallback** for other brokers, which reads the document and extracts the trades it can identify.
+3.  Optionally set the **account name** the imported rows should be assigned to, and whether matching **cash movements** are added automatically.
+4.  **Review before importing:** The extracted rows are shown in an import-review list. Any row that already exists in your database is **highlighted** so you can skip it and avoid duplicates. Confirm the remaining rows to add them in a single batch.
+
+> [!TIP]
+> Always skim the review list before confirming — the AI fallback in particular can occasionally miss or mis-read rows on unusual statement layouts.
 
 ## Part 17: AI Portfolio Review
 
