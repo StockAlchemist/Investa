@@ -93,7 +93,6 @@ class ConfigManager:
             "available_currencies": ["USD", "THB", "EUR", "GBP", "JPY", "CNY"],
             "visible_items": [],
             "benchmarks": ['S&P 500', 'Dow Jones', 'NASDAQ'],
-            "show_closed": False,
             "active_tab": "performance",
         }
 
@@ -175,7 +174,7 @@ class ConfigManager:
             if os.path.exists(tmp_file):
                 try:
                     os.remove(tmp_file)
-                except:
+                except OSError:
                     pass
 
     def load_manual_overrides(self):
@@ -259,6 +258,6 @@ class ConfigManager:
             if os.path.exists(tmp_file):
                 try:
                     os.remove(tmp_file)
-                except:
+                except OSError:
                     pass
             return False
