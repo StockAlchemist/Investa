@@ -25,7 +25,9 @@ import threading
 import config
 
 DB_FILENAME = "portfolio.db"
-DB_SCHEMA_VERSION = 14
+# Must match the highest migration applied in create_tables() below (currently the
+# v15 migration adding the AI per-dimension analysis columns to screener_cache).
+DB_SCHEMA_VERSION = 15
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
