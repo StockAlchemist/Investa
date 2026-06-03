@@ -61,7 +61,7 @@ const TABS: { id: Tab, label: string, description: string, icon: React.ElementTy
     { id: 'symbols', label: 'Symbols', description: 'Map portfolio symbols to their Yahoo Finance ticker and manage excluded symbols.', icon: MapIcon, color: 'text-blue-500 dark:text-blue-400' },
     { id: 'overrides', label: 'Overrides', description: 'Manually override price/metadata and DCF valuation inputs for specific symbols.', icon: Sliders, color: 'text-emerald-500 dark:text-emerald-400' },
     { id: 'advanced', label: 'Advanced Settings', description: 'Webhook integration, Interactive Brokers sync, and system cache.', icon: SettingsIcon, color: 'text-zinc-500 dark:text-zinc-400' },
-    { id: 'account', label: 'Account & Security', description: 'Manage your profile, password, and account.', icon: UserCircle, color: 'text-cyan-500 dark:text-cyan-400' },
+    { id: 'account', label: 'Profile & Security', description: 'Manage your user profile, password, and login.', icon: UserCircle, color: 'text-cyan-500 dark:text-cyan-400' },
 ];
 
 export default function Settings({ settings, holdings, availableAccounts, initialTab }: SettingsProps) {
@@ -608,7 +608,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                 Security
                                             </h3>
                                         </div>
-                                        <p className="text-sm text-muted-foreground mb-6">Change your account password.</p>
+                                        <p className="text-sm text-muted-foreground mb-6">Change your login password.</p>
                                         <form onSubmit={handleChangePassword} className="space-y-5">
                                             <div className="space-y-1">
                                                 <label className={labelClassName}>Current Password</label>

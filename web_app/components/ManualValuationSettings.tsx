@@ -197,7 +197,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
 
     const inputClassName = "w-full rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-sm text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500/50 px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all hover:border-black/20 dark:hover:border-white/20";
     const labelClassName = "flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground mb-1.5 uppercase tracking-wider";
-    const cardClassName = "bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl p-8 rounded-3xl border border-white/40 dark:border-white/10 shadow-lg relative overflow-hidden";
+    const cardClassName = "bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl p-5 sm:p-8 rounded-3xl border border-white/40 dark:border-white/10 shadow-lg relative overflow-hidden";
     const primaryButtonClassName = "px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white rounded-xl font-medium shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2";
 
     return (
@@ -227,9 +227,9 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         </div>
                     </div>
 
-                    <div className="md:col-span-4 lg:col-span-3 flex items-center justify-between bg-cyan-500/10 dark:bg-cyan-500/5 backdrop-blur-sm p-4 rounded-xl border border-cyan-500/20 self-end h-[46px]">
-                        <div className="text-sm text-cyan-700 dark:text-cyan-400 font-medium flex items-center gap-2">
-                            <Info className="w-5 h-5 flex-shrink-0" />
+                    <div className="md:col-span-4 lg:col-span-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-cyan-500/10 dark:bg-cyan-500/5 backdrop-blur-sm p-4 rounded-xl border border-cyan-500/20 lg:self-end lg:min-h-[46px]">
+                        <div className="text-sm text-cyan-700 dark:text-cyan-400 font-medium flex items-start sm:items-center gap-2 min-w-0">
+                            <Info className="w-5 h-5 flex-shrink-0 mt-0.5 sm:mt-0" />
                             <span>
                                 {valuationOverrides[symbol]
                                     ? `Editing existing overrides for ${symbol}`
@@ -241,16 +241,16 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         {Object.keys(liveDefaults).length > 0 && (
                             <button
                                 onClick={handleFillDefaults}
-                                className="text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 font-bold px-4 py-2 rounded-lg uppercase tracking-wider transition-colors ml-4 flex-shrink-0"
+                                className="text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 font-bold px-4 py-2 rounded-lg uppercase tracking-wider transition-colors w-full sm:w-auto sm:ml-4 flex-shrink-0"
                             >
                                 Pre-fill Defaults
                             </button>
                         )}
                     </div>
 
-                    <div className="md:col-span-4 space-y-10 mt-4">
+                    <div className="md:col-span-4 space-y-6 sm:space-y-10 mt-2 sm:mt-4">
                         {/* DCF Section */}
-                        <div className="bg-white/40 dark:bg-black/20 p-6 rounded-2xl border border-black/5 dark:border-white/5">
+                        <div className="bg-white/40 dark:bg-black/20 p-4 sm:p-6 rounded-2xl border border-black/5 dark:border-white/5">
                             <h4 className="text-sm font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-6 flex items-center gap-3">
                                 <div className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
                                 Discounted Cash Flow (DCF)
@@ -296,7 +296,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         </div>
 
                         {/* Graham Section */}
-                        <div className="bg-white/40 dark:bg-black/20 p-6 rounded-2xl border border-black/5 dark:border-white/5">
+                        <div className="bg-white/40 dark:bg-black/20 p-4 sm:p-6 rounded-2xl border border-black/5 dark:border-white/5">
                             <h4 className="text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-6 flex items-center gap-3">
                                 <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]" />
                                 Graham's Formula
@@ -354,127 +354,112 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                 </div>
             </div>
 
-            <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 overflow-hidden shadow-lg">
-                <table className="w-full text-sm">
-                    <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
-                        <tr>
-                            <th className="text-left py-4 px-6 font-bold text-muted-foreground text-xs uppercase tracking-wider w-[15%]">Symbol</th>
-                            <th className="text-left py-4 px-6 font-bold text-muted-foreground text-xs uppercase tracking-wider w-[65%]">Custom Parameters</th>
-                            <th className="text-right py-4 px-6 font-bold text-muted-foreground text-xs uppercase tracking-wider w-[20%]">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                        {Object.entries(valuationOverrides).length === 0 ? (
-                            <tr>
-                                <td colSpan={3} className="py-16 text-center text-muted-foreground">
-                                    <div className="flex flex-col items-center justify-center gap-3">
-                                        <Edit2 className="w-8 h-8 opacity-30" />
-                                        <p>No manual valuation parameters set.</p>
+            {Object.entries(valuationOverrides).length === 0 ? (
+                <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 shadow-lg py-16 px-6 text-center text-muted-foreground">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                        <Edit2 className="w-8 h-8 opacity-30" />
+                        <p>No manual valuation parameters set.</p>
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {Object.entries(valuationOverrides).map(([sym, data]: [string, any]) => (
+                        <div key={sym} className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 shadow-lg p-5 sm:p-6">
+                            <div className="flex items-center justify-between gap-3 mb-5">
+                                <span className="font-black text-xl sm:text-2xl text-purple-600 dark:text-purple-400">{sym}</span>
+                                <div className="flex gap-2 flex-shrink-0">
+                                    <button
+                                        onClick={() => {
+                                            setSymbol(sym);
+                                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                                        }}
+                                        className="p-2.5 bg-white dark:bg-white/5 shadow-sm border border-black/5 dark:border-white/5 text-muted-foreground hover:text-purple-500 hover:border-purple-500/30 rounded-xl transition-all"
+                                        title="Edit parameters"
+                                    >
+                                        <Edit2 className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleRemoveOverride(sym)}
+                                        className="p-2.5 bg-white dark:bg-white/5 shadow-sm border border-black/5 dark:border-white/5 text-muted-foreground hover:text-red-500 hover:border-red-500/30 rounded-xl transition-all"
+                                        title="Delete override"
+                                    >
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                                {/* DCF Group */}
+                                {Object.entries(data).some(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin') && (
+                                    <div className="bg-white/60 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-cyan-500/20 shadow-sm relative overflow-hidden">
+                                        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-50" />
+                                        <div className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            DCF Model
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-x-6 gap-y-3">
+                                            {Object.entries(data).filter(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin').map(([key, val]: [string, any]) => {
+                                                const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
+                                                if (!info) return null;
+
+                                                let label = info.label.replace(' (DCF)', '');
+                                                let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
+
+                                                if (key === 'dcf_fcf') {
+                                                    label = 'Base FCF';
+                                                    displayVal = `${(val / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
+                                                } else if (key === 'dcf_terminal_growth') {
+                                                    label = 'Term. Growth';
+                                                } else if (key === 'dcf_projection_years') {
+                                                    label = 'Proj. Years';
+                                                }
+
+                                                return (
+                                                    <div key={key} className="flex justify-between items-center gap-3 text-sm border-b border-black/5 dark:border-white/5 pb-2">
+                                                        <span className="text-muted-foreground font-medium">{label}</span>
+                                                        <span className="font-mono font-bold text-foreground bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded">{displayVal}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </td>
-                            </tr>
-                        ) : (
-                            Object.entries(valuationOverrides).map(([sym, data]: [string, any]) => (
-                                <tr key={sym} className="group hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                    <td className="py-6 px-6 font-black text-lg text-purple-600 dark:text-purple-400 align-top">{sym}</td>
-                                    <td className="py-6 px-6">
-                                        <div className="flex flex-col lg:flex-row gap-6">
-                                            {/* DCF Group */}
-                                            {Object.entries(data).some(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin') && (
-                                                <div className="flex-1 bg-white/60 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-5 border border-cyan-500/20 shadow-sm relative overflow-hidden">
-                                                    <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-50" />
-                                                    <div className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                                        DCF Model
-                                                    </div>
-                                                    <div className="grid grid-cols-1 gap-x-6 gap-y-3">
-                                                        {Object.entries(data).filter(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin').map(([key, val]: [string, any]) => {
-                                                            const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
-                                                            if (!info) return null;
+                                )}
 
-                                                            let label = info.label.replace(' (DCF)', '');
-                                                            let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
-
-                                                            if (key === 'dcf_fcf') {
-                                                                label = 'Base FCF';
-                                                                displayVal = `${(val / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
-                                                            } else if (key === 'dcf_terminal_growth') {
-                                                                label = 'Term. Growth';
-                                                            } else if (key === 'dcf_projection_years') {
-                                                                label = 'Proj. Years';
-                                                            }
-
-                                                            return (
-                                                                <div key={key} className="flex justify-between items-center text-sm border-b border-black/5 dark:border-white/5 pb-2">
-                                                                    <span className="text-muted-foreground font-medium">{label}</span>
-                                                                    <span className="font-mono font-bold text-foreground bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded">{displayVal}</span>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Graham Group */}
-                                            {Object.entries(data).some(([k]) => k.startsWith('graham')) && (
-                                                <div className="flex-1 bg-white/60 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-5 border border-amber-500/20 shadow-sm relative overflow-hidden">
-                                                    <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-400 to-orange-500 opacity-50" />
-                                                    <div className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                                        Graham's Formula
-                                                    </div>
-                                                    <div className="grid grid-cols-1 gap-x-6 gap-y-3">
-                                                        {Object.entries(data).filter(([k]) => k.startsWith('graham')).map(([key, val]: [string, any]) => {
-                                                            const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
-                                                            if (!info) return null;
-
-                                                            let label = info.label.replace('Graham ', '').replace(' (Y)', '');
-                                                            let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
-
-                                                            if (key === 'graham_bond_yield') {
-                                                                label = 'Bond Yield';
-                                                                displayVal = `${val}%`;
-                                                            } else if (key === 'graham_growth_rate') {
-                                                                displayVal = `${Number(val).toFixed(2)}%`;
-                                                            }
-
-                                                            return (
-                                                                <div key={key} className="flex justify-between items-center text-sm border-b border-black/5 dark:border-white/5 pb-2">
-                                                                    <span className="text-muted-foreground font-medium">{label}</span>
-                                                                    <span className="font-mono font-bold text-foreground bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded">{displayVal}</span>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
+                                {/* Graham Group */}
+                                {Object.entries(data).some(([k]) => k.startsWith('graham')) && (
+                                    <div className="bg-white/60 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-amber-500/20 shadow-sm relative overflow-hidden">
+                                        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-400 to-orange-500 opacity-50" />
+                                        <div className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            Graham's Formula
                                         </div>
-                                    </td>
-                                    <td className="py-6 px-6 text-right align-top">
-                                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={() => {
-                                                    setSymbol(sym);
-                                                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                                                }}
-                                                className="p-3 bg-white dark:bg-white/5 shadow-sm border border-black/5 dark:border-white/5 text-muted-foreground hover:text-purple-500 hover:border-purple-500/30 rounded-xl transition-all"
-                                                title="Edit parameters"
-                                            >
-                                                <Edit2 className="w-5 h-5" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleRemoveOverride(sym)}
-                                                className="p-3 bg-white dark:bg-white/5 shadow-sm border border-black/5 dark:border-white/5 text-muted-foreground hover:text-red-500 hover:border-red-500/30 rounded-xl transition-all"
-                                                title="Delete override"
-                                            >
-                                                <Trash2 className="w-5 h-5" />
-                                            </button>
+                                        <div className="grid grid-cols-1 gap-x-6 gap-y-3">
+                                            {Object.entries(data).filter(([k]) => k.startsWith('graham')).map(([key, val]: [string, any]) => {
+                                                const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
+                                                if (!info) return null;
+
+                                                let label = info.label.replace('Graham ', '').replace(' (Y)', '');
+                                                let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
+
+                                                if (key === 'graham_bond_yield') {
+                                                    label = 'Bond Yield';
+                                                    displayVal = `${val}%`;
+                                                } else if (key === 'graham_growth_rate') {
+                                                    displayVal = `${Number(val).toFixed(2)}%`;
+                                                }
+
+                                                return (
+                                                    <div key={key} className="flex justify-between items-center gap-3 text-sm border-b border-black/5 dark:border-white/5 pb-2">
+                                                        <span className="text-muted-foreground font-medium">{label}</span>
+                                                        <span className="font-mono font-bold text-foreground bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded">{displayVal}</span>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
