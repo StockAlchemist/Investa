@@ -23,10 +23,10 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
     return (
-        <div className="flex-1 min-w-[120px] px-4 py-2.5 first:pl-0 last:pr-0">
+        <div className="min-w-0 px-1 py-1.5 xl:flex-1 xl:min-w-[120px] xl:px-4 xl:py-2.5 xl:first:pl-0 xl:last:pr-0">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1.5">
-                {Icon && <Icon className="w-3 h-3" />}
-                <span>{label}</span>
+                {Icon && <Icon className="w-3 h-3 shrink-0" />}
+                <span className="truncate">{label}</span>
             </div>
             <div className={cn('text-lg sm:text-xl font-bold tabular-nums leading-none truncate', toneClass)}>
                 {value}
@@ -66,7 +66,7 @@ export default function WatchlistKpiStrip({ items }: WatchlistKpiStripProps) {
 
     return (
         <div className="metric-card p-3 sm:p-4">
-            <div className="flex flex-wrap divide-x divide-border/60">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 lg:grid-cols-5 xl:flex xl:gap-0 xl:divide-x xl:divide-border/60">
                 <KpiTile
                     label="Symbols"
                     value={m.count.toLocaleString()}
@@ -84,14 +84,14 @@ export default function WatchlistKpiStrip({ items }: WatchlistKpiStripProps) {
                     label="Best Today"
                     value={m.best ? fmtPct(m.best.pct) : '–'}
                     sub={m.best?.symbol}
-                    tone="pos"
+                    tone={(m.best?.pct ?? 0) >= 0 ? 'pos' : 'neg'}
                     icon={TrendingUp}
                 />
                 <KpiTile
                     label="Worst Today"
                     value={m.worst ? fmtPct(m.worst.pct) : '–'}
                     sub={m.worst?.symbol}
-                    tone="neg"
+                    tone={(m.worst?.pct ?? 0) <= 0 ? 'neg' : 'pos'}
                     icon={TrendingDown}
                 />
                 <KpiTile
