@@ -210,6 +210,27 @@ _FETCH_SEMAPHORE = threading.Semaphore(2)
 _LAST_RATE_LIMIT_TIME = 0.0 # Track when we last saw a 429
 _RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
 
+# Window after a 429 during which we keep using the heavy inter-batch throttle.
+_RATE_LIMIT_BACKOFF_WINDOW = 120.0
+
+
+def _adaptive_throttle_seconds(calm_min: float, calm_max: float,
+                               busy_min: float, busy_max: float) -> float:
+    """Inter-batch throttle that adapts to recent rate-limit pressure.
+
+    Yahoo flags rapid sequential batch requests as robotic, so we always pause
+    a little between batches. But the original fixed 3-10s pause was paid on
+    every request even when Yahoo was perfectly happy, dominating cold-load
+    latency. Instead: use a small "calm" delay normally, and fall back to the
+    original large "busy" delay only when a 429 was seen within the backoff
+    window (the global cool-down still applies separately on the 429 itself).
+    """
+    with _RATE_LIMIT_LOCK:
+        recently_limited = (time.time() - _LAST_RATE_LIMIT_TIME) < _RATE_LIMIT_BACKOFF_WINDOW
+    if recently_limited:
+        return random.uniform(busy_min, busy_max)
+    return random.uniform(calm_min, calm_max)
+
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -644,9 +665,10 @@ class MarketDataProvider:
             # REDUCED: Was 50. Smaller chunks prevent "poison" tickers from failing large groups.
             chunk_size = 20
             for i in range(0, len(missing_symbols), chunk_size):
-                # Randomized throttling between metadata batches
+                # Randomized throttling between metadata batches (adaptive:
+                # small when calm, full 2-5s only after a recent rate limit).
                 if i > 0:
-                    wait = random.uniform(2.0, 5.0)
+                    wait = _adaptive_throttle_seconds(0.3, 1.0, 2.0, 5.0)
                     logging.info(f"Metadata Throttling: Waiting {wait:.1f}s before next chunk...")
                     time.sleep(wait)
                     
@@ -2146,9 +2168,11 @@ class MarketDataProvider:
         all_missing_symbols = []
 
         for i in range(0, len(symbols_yf), fetch_batch_size):
-            # Randomized throttling between history batches
+            # Randomized throttling between history batches. Small delay when
+            # Yahoo is calm; full 3-10s delay only if we were recently rate
+            # limited (see _adaptive_throttle_seconds).
             if i > 0:
-                wait = random.uniform(3.0, 10.0)
+                wait = _adaptive_throttle_seconds(0.5, 1.5, 3.0, 10.0)
                 logging.info(f"Historical Throttling: Waiting {wait:.1f}s before next chunk...")
                 time.sleep(wait)
                 
