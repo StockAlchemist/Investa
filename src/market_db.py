@@ -99,45 +99,62 @@ class MarketDatabase:
         if df.empty:
             return
 
+        n = len(df)
+
+        # --- Vectorized column extraction (avoids slow per-row df.iterrows +
+        # Series.get, which dominated cold /history time). Column-level
+        # fallbacks and NaN->None semantics match the previous row loop. ---
+
+        # Dates: format the index once. DatetimeIndex.strftime is vectorized;
+        # fall back to the old per-element logic for non-datetime indexes.
+        idx = df.index
+        if isinstance(idx, pd.DatetimeIndex):
+            date_strs = idx.strftime('%Y-%m-%d').tolist()
+        else:
+            date_strs = [
+                ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts)[:10]
+                for ts in idx
+            ]
+
+        def clean_floats(col):
+            """Coerce a column to a list of native floats with NaN -> None.
+            `col` is a column name (str) or None when the column is absent."""
+            if col is None or col not in df.columns:
+                return [None] * n
+            vals = pd.to_numeric(df[col], errors='coerce').to_numpy(dtype='float64').tolist()
+            return [None if v != v else v for v in vals]  # v != v -> NaN
+
+        opens = clean_floats('Open')
+        highs = clean_floats('High')
+        lows = clean_floats('Low')
+        # close: prefer 'Close', else 'price' column (column-level fallback).
+        closes = clean_floats('Close' if 'Close' in df.columns else 'price')
+        # adj_close: prefer 'Adj Close', else fall back to the cleaned close.
+        adj = clean_floats('Adj Close') if 'Adj Close' in df.columns else list(closes)
+
+        if 'Volume' in df.columns:
+            vnum = pd.to_numeric(df['Volume'], errors='coerce').to_numpy(dtype='float64').tolist()
+            vols = [0 if v != v else int(v) for v in vnum]
+        else:
+            vols = [0] * n
+
+        params = [
+            (symbol, date_strs[i], opens[i], highs[i], lows[i],
+             closes[i], adj[i], vols[i], interval)
+            for i in range(n)
+        ]
+
         with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
-            for timestamp, row in df.iterrows():
-                # Ensure date is string YYYY-MM-DD
-                date_str = timestamp.strftime('%Y-%m-%d') if hasattr(timestamp, 'strftime') else str(timestamp)[:10]
-                
-                # Helper to clean NaNs
-                def clean(val):
-                    if pd.isna(val):
-                        return None
-                    return float(val)
+            try:
+                cursor.executemany("""
+                    INSERT OR REPLACE INTO daily_ohlcv
+                    (symbol, date, open, high, low, close, adj_close, volume, interval)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, params)
+            except Exception as e_ins:
+                logging.error(f"DB Upsert Error for {symbol} ({n} rows): {e_ins}")
 
-                # Normalize columns
-                open_val = clean(row.get('Open'))
-                high_val = clean(row.get('High'))
-                low_val = clean(row.get('Low'))
-                close_val = clean(row.get('Close', row.get('price')))
-                adj_close_val = clean(row.get('Adj Close', close_val))
-                volume_val = int(row.get('Volume', 0)) if pd.notna(row.get('Volume', 0)) else 0
-
-                try:
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO daily_ohlcv 
-                        (symbol, date, open, high, low, close, adj_close, volume, interval)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        symbol, 
-                        date_str, 
-                        open_val, 
-                        high_val, 
-                        low_val, 
-                        close_val, 
-                        adj_close_val, 
-                        volume_val,
-                        interval
-                    ))
-                except Exception as e_ins:
-                    logging.error(f"DB Upsert Error for {symbol} on {date_str}: {e_ins}")
-            
             conn.commit()
             
             # Update sync metadata
