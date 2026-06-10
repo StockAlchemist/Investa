@@ -25,26 +25,20 @@ export class SessionExpiredError extends Error {
 }
 
 export async function fetchCurrentUser(token: string): Promise<User> {
-    const res = await fetch(`${API_BASE_URL}/auth/me`, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
+    const { data, response } = await apiClient.GET("/api/auth/me", {
+        headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.status === 401) throw new SessionExpiredError();
-    if (!res.ok) throw new Error('Failed to fetch user');
-    return res.json();
+    if (response.status === 401) throw new SessionExpiredError();
+    if (!response.ok || !data) throw new Error('Failed to fetch user');
+    return data as unknown as User;
 }
 
 export async function updateUserProfile(data: { alias: string }): Promise<User> {
-    const res = await authFetch(`${API_BASE_URL}/auth/me`, {
-        method: 'PATCH',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
+    const { data: user, error } = await apiClient.PATCH("/api/auth/me", {
+        body: data,
     });
-    if (!res.ok) throw new Error('Failed to update user profile');
-    return res.json();
+    if (error) throw new Error('Failed to update user profile');
+    return user as unknown as User;
 }
 
 export interface User {
@@ -61,26 +55,17 @@ const getAuthHeaders = () => {
 };
 
 export async function deleteUser(): Promise<StatusResponse> {
-    const res = await authFetch(`${API_BASE_URL}/auth/me`, {
-        method: "DELETE",
-    });
-    if (!res.ok) throw new Error('Failed to delete user');
-    return res.json();
+    const { data, error } = await apiClient.DELETE("/api/auth/me");
+    if (error) throw new Error('Failed to delete user');
+    return data as unknown as StatusResponse;
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<StatusResponse> {
-    const res = await authFetch(`${API_BASE_URL}/auth/change-password`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    const { data, error } = await apiClient.POST("/api/auth/change-password", {
+        body: { current_password: currentPassword, new_password: newPassword },
     });
-    if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Failed to change password');
-    }
-    return res.json();
+    if (error) throw new Error((error as { detail?: string }).detail || 'Failed to change password');
+    return data as unknown as StatusResponse;
 }
 
 const authFetch = async (url: string, options: RequestInit = {}) => {
@@ -141,6 +126,7 @@ export interface PortfolioSummary {
         [key: string]: unknown;
     } | null;
     account_metrics: Record<string, unknown> | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
     holdings_dict?: Record<string, any>;
 }
 
@@ -209,28 +195,28 @@ export async function fetchSummary(currency: string = 'USD', accounts?: string[]
 }
 
 export async function fetchMarketStatus(): Promise<{ is_open: boolean }> {
-    const res = await authFetch(`${API_BASE_URL}/market_status`, {});
-    if (!res.ok) throw new Error('Failed to fetch market status');
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/market_status");
+    if (error) throw new Error('Failed to fetch market status');
+    return data as unknown as { is_open: boolean };
 }
 
 // Header index quotes (Dow / Nasdaq / S&P), served off the /summary critical
 // path. May be slow on a cold cache, so it's fetched as its own query.
 export async function fetchIndices(signal?: AbortSignal): Promise<Record<string, unknown>> {
-    const res = await authFetch(`${API_BASE_URL}/indices`, { signal });
-    if (!res.ok) throw new Error('Failed to fetch indices');
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/indices", { signal });
+    if (error) throw new Error('Failed to fetch indices');
+    return data as unknown as Record<string, unknown>;
 }
 
 // Fast headline metrics (total value, day change, …) for the top card. Skips the
 // expensive historical/TWR work in /summary so the card renders/updates first.
 export async function fetchHeadline(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<{ metrics: Record<string, unknown> | null }> {
-    const params = new URLSearchParams();
-    params.set('currency', currency);
-    (accounts || []).forEach((a) => params.append('accounts', a));
-    const res = await authFetch(`${API_BASE_URL}/summary/headline?${params.toString()}`, { signal });
-    if (!res.ok) throw new Error('Failed to fetch headline summary');
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/summary/headline", {
+        params: { query: { currency, accounts: accounts || undefined } },
+        signal,
+    });
+    if (error) throw new Error('Failed to fetch headline summary');
+    return data as unknown as { metrics: Record<string, unknown> | null };
 }
 
 export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false, signal?: AbortSignal): Promise<Holding[]> {
@@ -274,19 +260,15 @@ export interface StatusResponse {
 }
 
 export async function addTransaction(transaction: Transaction): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/transactions`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(transaction),
+    const { data, error, response } = await apiClient.POST("/api/transactions", {
+        body: transaction as never,
     });
-    if (!response.ok) {
-        throw new Error(`Failed to add transaction: ${response.statusText}`);
-    }
-    return response.json();
+    if (error) throw new Error(`Failed to add transaction: ${response.statusText}`);
+    return data as unknown as StatusResponse;
 }
 
+// Stays on authFetch: multipart upload — openapi-fetch would need a custom
+// bodySerializer for FormData, which buys nothing here.
 export async function parseDocument(file: File): Promise<{ status: string, transactions: Transaction[], count: number, message: string }> {
     const formData = new FormData();
     formData.append("file", file);
@@ -305,41 +287,28 @@ export async function parseDocument(file: File): Promise<{ status: string, trans
 }
 
 export async function addTransactionsBatch(transactions: Transaction[], autoAddCash: boolean = false): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/transactions/batch`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ transactions, auto_add_cash: autoAddCash }),
+    const { data, error, response } = await apiClient.POST("/api/transactions/batch", {
+        body: { transactions, auto_add_cash: autoAddCash } as never,
     });
-    if (!response.ok) {
-        throw new Error(`Failed to add transactions: ${response.statusText}`);
-    }
-    return response.json();
+    if (error) throw new Error(`Failed to add transactions: ${response.statusText}`);
+    return data as unknown as StatusResponse;
 }
 
 export async function updateTransaction(id: number, transaction: Transaction): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/transactions/${id}`, {
-        method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(transaction),
+    const { data, error, response } = await apiClient.PUT("/api/transactions/{transaction_id}", {
+        params: { path: { transaction_id: id } },
+        body: transaction as never,
     });
-    if (!response.ok) {
-        throw new Error(`Failed to update transaction: ${response.statusText}`);
-    }
-    return response.json();
+    if (error) throw new Error(`Failed to update transaction: ${response.statusText}`);
+    return data as unknown as StatusResponse;
 }
 
 export async function deleteTransaction(id: number): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/transactions/${id}`, {
-        method: "DELETE",
+    const { data, error, response } = await apiClient.DELETE("/api/transactions/{transaction_id}", {
+        params: { path: { transaction_id: id } },
     });
-    if (!response.ok) {
-        throw new Error(`Failed to delete transaction: ${response.statusText}`);
-    }
-    return response.json();
+    if (error) throw new Error(`Failed to delete transaction: ${response.statusText}`);
+    return data as unknown as StatusResponse;
 }
 
 export async function fetchHistory(
@@ -376,6 +345,7 @@ export async function fetchMarketHistory(
     interval: string = '1d',
     currency: string = 'USD',
     signal?: AbortSignal
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
 ): Promise<any[]> {
     const { data, error } = await apiClient.GET("/api/market_history", {
         params: {
@@ -384,6 +354,7 @@ export async function fetchMarketHistory(
         signal
     });
     if (error) throw new Error('Failed to fetch market history');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
     return data as any[];
 }
 
@@ -512,9 +483,12 @@ export async function fetchEarningsDates(
     symbol: string,
     signal?: AbortSignal
 ): Promise<EarningsDate[]> {
-    const res = await authFetch(`${API_BASE_URL}/earnings_dates/${encodeURIComponent(symbol)}`, { signal });
-    if (!res.ok) throw new Error('Failed to fetch earnings dates');
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/earnings_dates/{symbol}", {
+        params: { path: { symbol } },
+        signal,
+    });
+    if (error) throw new Error('Failed to fetch earnings dates');
+    return data as unknown as EarningsDate[];
 }
 export interface ManualOverrideData {
     price: number;
@@ -540,6 +514,7 @@ export interface Settings {
     available_currencies: string[];
     account_interest_rates: Record<string, number>;
     interest_free_thresholds: Record<string, number>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
     valuation_overrides: Record<string, any>;
     visible_items?: string[];
     benchmarks?: string[];
@@ -570,6 +545,7 @@ export interface SettingsUpdate {
     available_currencies?: string[];
     account_interest_rates?: Record<string, number>;
     interest_free_thresholds?: Record<string, number>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
     valuation_overrides?: Record<string, any>;
     visible_items?: string[];
     benchmarks?: string[];
@@ -584,7 +560,7 @@ export interface SettingsUpdate {
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {
     const { data, error } = await apiClient.POST("/api/settings/update", {
-        body: settings as any
+        body: settings as never
     });
     if (error) throw new Error(`Failed to update settings`);
     return data as unknown as StatusResponse;
@@ -649,7 +625,7 @@ export interface DividendEvent {
 export async function fetchDividendCalendar(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<DividendEvent[]> {
     const { data, error } = await apiClient.GET("/api/dividend_calendar", {
         params: {
-            query: { currency, accounts: accounts || undefined, _t: Date.now().toString() as any }
+            query: { currency, accounts: accounts || undefined, _t: Date.now().toString() as never }
         },
         signal
     });
@@ -658,68 +634,50 @@ export async function fetchDividendCalendar(currency: string = 'USD', accounts?:
 }
 
 export async function saveManualOverride(symbol: string, price: number | null): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/settings/manual_overrides`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ symbol, price }),
+    const { data, error, response } = await apiClient.POST("/api/settings/manual_overrides", {
+        body: { symbol, price } as never,
     });
-    if (!response.ok) {
-        throw new Error(`Failed to save manual override: ${response.statusText}`);
-    }
-    return response.json();
+    if (error) throw new Error(`Failed to save manual override: ${response.statusText}`);
+    return data as unknown as StatusResponse;
 }
 
 export async function triggerRefresh(secret: string): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/webhook/refresh`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ secret }),
+    const { data, error, response } = await apiClient.POST("/api/webhook/refresh", {
+        body: { secret } as never,
     });
-    if (!response.ok) {
-        throw new Error(`Failed to trigger refresh: ${response.statusText}`);
-    }
-    return response.json();
+    if (error) throw new Error(`Failed to trigger refresh: ${response.statusText}`);
+    return data as unknown as StatusResponse;
 }
 
 export async function syncIbkr(): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/sync/ibkr`, {
-        method: "POST"
-    });
-    if (!response.ok) {
-        const err = await response.json();
+    const { data, error } = await apiClient.POST("/api/sync/ibkr");
+    if (error) {
+        const err = error as { message?: string; detail?: string };
         throw new Error(err.message || err.detail || 'Failed to sync IBKR');
     }
-    return response.json();
+    return data as unknown as StatusResponse;
 }
 
 export async function fetchPendingIbkr(): Promise<Transaction[]> {
-    const res = await authFetch(`${API_BASE_URL}/sync/ibkr/pending`, {});
-    if (!res.ok) throw new Error('Failed to fetch pending transactions');
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/sync/ibkr/pending");
+    if (error) throw new Error('Failed to fetch pending transactions');
+    return data as unknown as Transaction[];
 }
 
 export async function approveIbkr(ids: number[]): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/sync/ibkr/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(ids),
+    const { data, error } = await apiClient.POST("/api/sync/ibkr/approve", {
+        body: ids as never,
     });
-    if (!response.ok) throw new Error('Failed to approve transactions');
-    return response.json();
+    if (error) throw new Error('Failed to approve transactions');
+    return data as unknown as StatusResponse;
 }
 
 export async function rejectIbkr(ids: number[]): Promise<StatusResponse> {
-    const response = await authFetch(`${API_BASE_URL}/sync/ibkr/reject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(ids),
+    const { data, error } = await apiClient.POST("/api/sync/ibkr/reject", {
+        body: ids as never,
     });
-    if (!response.ok) throw new Error('Failed to reject transactions');
-    return response.json();
+    if (error) throw new Error('Failed to reject transactions');
+    return data as unknown as StatusResponse;
 }
 
 export interface ProjectedIncome {
@@ -816,7 +774,7 @@ export async function getWatchlists(signal?: AbortSignal): Promise<WatchlistMeta
 
 export async function createWatchlist(name: string): Promise<WatchlistMeta> {
     const { data, error } = await apiClient.POST("/api/watchlists", {
-        body: { name } as any
+        body: { name } as never
     });
     if (error) throw new Error('Failed to create watchlist');
     return data as unknown as WatchlistMeta;
@@ -824,8 +782,9 @@ export async function createWatchlist(name: string): Promise<WatchlistMeta> {
 
 export async function renameWatchlist(id: number, name: string): Promise<StatusResponse> {
     const { data, error } = await apiClient.PUT("/api/watchlists/{watchlist_id}", {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
         params: { path: { watchlist_id: id as unknown as string } as any },
-        body: { name } as any
+        body: { name } as never
     });
     if (error) throw new Error('Failed to rename watchlist');
     return data as unknown as StatusResponse;
@@ -833,6 +792,7 @@ export async function renameWatchlist(id: number, name: string): Promise<StatusR
 
 export async function deleteWatchlist(id: number): Promise<StatusResponse> {
     const { data, error } = await apiClient.DELETE("/api/watchlists/{watchlist_id}", {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
         params: { path: { watchlist_id: id as unknown as string } as any }
     });
     if (error) throw new Error('Failed to delete watchlist');
@@ -842,7 +802,7 @@ export async function deleteWatchlist(id: number): Promise<StatusResponse> {
 export async function fetchWatchlist(currency: string = 'USD', watchlistId: number = 1, signal?: AbortSignal): Promise<WatchlistItem[]> {
     const { data, error } = await apiClient.GET("/api/watchlist", {
         params: {
-            query: { currency, id: watchlistId } as any
+            query: { currency, id: watchlistId } as never
         },
         signal
     });
@@ -852,7 +812,7 @@ export async function fetchWatchlist(currency: string = 'USD', watchlistId: numb
 
 export async function addToWatchlist(symbol: string, note: string = "", watchlistId: number = 1): Promise<StatusResponse> {
     const { data, error } = await apiClient.POST("/api/watchlist", {
-        body: { symbol, note, watchlist_id: watchlistId } as any
+        body: { symbol, note, watchlist_id: watchlistId } as never
     });
     if (error) {
         throw new Error(`Failed to add to watchlist`);
@@ -864,7 +824,7 @@ export async function removeFromWatchlist(symbol: string, watchlistId: number = 
     const { data, error } = await apiClient.DELETE("/api/watchlist/{symbol}", {
         params: {
             path: { symbol },
-            query: { id: watchlistId } as any
+            query: { id: watchlistId } as never
         }
     });
     if (error) {
@@ -910,6 +870,7 @@ export interface Fundamentals {
         sector_weightings: Record<string, number>;
         asset_classes: Record<string, number>;
     };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
     [key: string]: any;
 }
 
@@ -940,6 +901,7 @@ export interface IntrinsicValueModel {
     intrinsic_value?: number;
     error?: string;
     model: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
     parameters: Record<string, any>;
     mc?: {
         bear: number;
@@ -1007,35 +969,35 @@ export async function fetchStockNews(symbols: string[], limit = 30): Promise<Mar
 }
 
 export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {
-    const params = new URLSearchParams();
-    if (force) params.append('force', 'true');
-    const res = await authFetch(`${API_BASE_URL}/fundamentals/${symbol}?${params.toString()}`);
-    if (!res.ok) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/fundamentals/{symbol}", {
+        params: { path: { symbol }, query: { force: force || undefined } },
+    });
+    if (error) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
+    return data as unknown as Fundamentals;
 }
 
 export async function fetchFinancials(symbol: string, periodType: 'annual' | 'quarterly' = 'annual', force: boolean = false): Promise<FinancialsResponse> {
-    const params = new URLSearchParams({ period_type: periodType });
-    if (force) params.append('force', 'true');
-    const res = await authFetch(`${API_BASE_URL}/financials/${symbol}?${params.toString()}`);
-    if (!res.ok) throw new Error(`Failed to fetch financials for ${symbol}`);
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/financials/{symbol}", {
+        params: { path: { symbol }, query: { period_type: periodType, force: force || undefined } },
+    });
+    if (error) throw new Error(`Failed to fetch financials for ${symbol}`);
+    return data as unknown as FinancialsResponse;
 }
 
 export async function fetchRatios(symbol: string, force: boolean = false): Promise<RatiosResponse> {
-    const params = new URLSearchParams();
-    if (force) params.append('force', 'true');
-    const res = await authFetch(`${API_BASE_URL}/ratios/${symbol}?${params.toString()}`);
-    if (!res.ok) throw new Error(`Failed to fetch ratios for ${symbol}`);
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/ratios/{symbol}", {
+        params: { path: { symbol }, query: { force: force || undefined } },
+    });
+    if (error) throw new Error(`Failed to fetch ratios for ${symbol}`);
+    return data as unknown as RatiosResponse;
 }
 
 export async function fetchIntrinsicValue(symbol: string, force: boolean = false): Promise<IntrinsicValueResponse> {
-    const params = new URLSearchParams();
-    if (force) params.append('force', 'true');
-    const res = await authFetch(`${API_BASE_URL}/intrinsic_value/${symbol}?${params.toString()}`);
-    if (!res.ok) throw new Error(`Failed to fetch intrinsic value for ${symbol}`);
-    return res.json();
+    const { data, error } = await apiClient.GET("/api/intrinsic_value/{symbol}", {
+        params: { path: { symbol }, query: { force: force || undefined } },
+    });
+    if (error) throw new Error(`Failed to fetch intrinsic value for ${symbol}`);
+    return data as unknown as IntrinsicValueResponse;
 }
 
 export interface StockAnalysisResponse {
@@ -1075,21 +1037,16 @@ export interface ChatMessage {
 }
 
 export async function sendChatMessage(message: string, history: ChatMessage[] = []): Promise<string> {
-    const res = await authFetch(`${API_BASE_URL}/chat/message`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message, history }),
+    const { data, error } = await apiClient.POST("/api/chat/message", {
+        body: { message, history } as never,
     });
-    if (!res.ok) throw new Error('Failed to send message to AI');
-    const data = await res.json();
-    return data.response;
+    if (error) throw new Error('Failed to send message to AI');
+    return (data as unknown as { response: string }).response;
 }
 
 export async function fetchStockAnalysis(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
     const { data, error } = await apiClient.GET("/api/stock-analysis/{symbol}", {
-        params: { path: { symbol }, query: { force } as any }
+        params: { path: { symbol }, query: { force } as never }
     });
     if (error) throw new Error(`Failed to fetch AI analysis for ${symbol}`);
     return data as unknown as StockAnalysisResponse;
@@ -1126,30 +1083,29 @@ export interface ScreenerRequest {
 
 export async function runScreener(request: ScreenerRequest): Promise<ScreenerResult[]> {
     const { data, error } = await apiClient.POST("/api/screener/run", {
-        body: request as any
+        body: request as never
     });
     if (error) throw new Error('Failed to run stock screen');
     return data as unknown as ScreenerResult[];
 }
 
 export async function runNarrativeSearch(prompt: string): Promise<ScreenerResult[]> {
-    const res = await authFetch(`${API_BASE_URL}/screener/narrative`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+    const { data, error } = await apiClient.POST("/api/screener/narrative", {
+        body: { prompt } as never,
     });
-    if (!res.ok) throw new Error('Failed to run narrative search');
-    return res.json();
+    if (error) throw new Error('Failed to run narrative search');
+    return data as unknown as ScreenerResult[];
 }
 
 export async function fetchScreenerReview(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
     const { data, error } = await apiClient.POST("/api/screener/review/{symbol}", {
-        params: { path: { symbol }, query: { force } as any }
+        params: { path: { symbol }, query: { force } as never }
     });
     if (error) throw new Error(`Failed to fetch AI review for ${symbol}`);
     return data as unknown as StockAnalysisResponse;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
 export async function fetchPortfolioAIReview(currency: string = 'USD', accounts?: string[], refresh: boolean = false, signal?: AbortSignal): Promise<any> {
     const { data, error } = await apiClient.POST("/api/portfolio/ai_review", {
         params: { query: { currency, accounts: accounts || undefined, refresh: refresh } },
