@@ -163,6 +163,9 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                     name={name}
                                     fill={viewMode === 'percent' ? getBarColor(name, index) : undefined}
                                     radius={[4, 4, 0, 0]}
+                                    // Near-zero months (e.g. +0.1%) would otherwise render as
+                                    // invisible 1px bars and read as missing data.
+                                    minPointSize={3}
                                 >
                                     {viewMode === 'value' && displayData.map((entry: { [k: string]: unknown }, i: number) => (
                                         <Cell

@@ -50,7 +50,17 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     return (
         <PersistQueryClientProvider
             client={queryClient}
-            persistOptions={{ persister }}
+            persistOptions={{
+                persister,
+                // localStorage holds ~5MB; if the serialized cache tips over,
+                // the write fails silently and instant-restore dies for every
+                // tab. Skip bulky datasets that load fast anyway.
+                dehydrateOptions: {
+                    shouldDehydrateQuery: (query) =>
+                        query.state.status === 'success' &&
+                        query.queryKey[0] !== 'transactions',
+                },
+            }}
         >
             <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
                 <StockModalProvider>

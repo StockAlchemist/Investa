@@ -318,7 +318,9 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchLevel >= 2),
+    // Level 1 (not 2): this is the Performance tab's primary dataset and the
+    // server compute is slow — start it early so the tab opens populated.
+    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchLevel >= 1),
   });
 
   const capitalGainsQuery = useQuery({
@@ -395,7 +397,10 @@ export default function Home() {
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1y', benchmarks, '1d', undefined, undefined, signal),
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-    enabled: !!user && (activeTab === 'asset_change' || activeTab === 'performance'),
+    // backgroundFetchLevel: this was the only Performance-tab query with no
+    // background prefetch, so its drawdown/scoreboard panels always showed
+    // skeletons for the full (slow) history compute on first click.
+    enabled: !!user && (activeTab === 'asset_change' || activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
 
   const watchlistQuery = useQuery({
