@@ -153,24 +153,29 @@ def update_settings(
     Updates the application settings (manual overrides, symbol map, exclude list).
     """
     try:
+      # Hold the per-user settings lock across the whole load-mutate-save cycle:
+      # concurrent updates (e.g. several debounced POSTs from one device) used to
+      # overwrite each other's fields and race on the config file itself.
+      with config_manager.settings_lock():
         # RELOAD DATA FROM DISK to ensure we have the latest state before merging updates
+        config_manager.load_gui_config()
         config_manager.load_manual_overrides()
-        
+
         current_overrides = config_manager.manual_overrides
-        
+
         # Update Manual Price Overrides
         if settings.manual_price_overrides is not None:
              current_overrides["manual_price_overrides"] = settings.manual_price_overrides
 
         if settings.user_symbol_map is not None:
             current_overrides["user_symbol_map"] = settings.user_symbol_map
-            
+
         if settings.user_excluded_symbols is not None:
             current_overrides["user_excluded_symbols"] = sorted(list(set(settings.user_excluded_symbols)))
-            
+
         if settings.account_interest_rates is not None:
             current_overrides["account_interest_rates"] = settings.account_interest_rates
-            
+
         if settings.interest_free_thresholds is not None:
             current_overrides["interest_free_thresholds"] = settings.interest_free_thresholds
 
@@ -179,7 +184,7 @@ def update_settings(
 
         if settings.ibkr_token is not None:
             current_overrides["ibkr_token"] = settings.ibkr_token
-            
+
         if settings.ibkr_query_id is not None:
             current_overrides["ibkr_query_id"] = settings.ibkr_query_id
 
@@ -188,7 +193,7 @@ def update_settings(
         if settings.visible_items is not None:
             config_manager.gui_config["visible_items"] = settings.visible_items
             gui_config_changed = True
-        
+
         if settings.benchmarks is not None:
             config_manager.gui_config["benchmarks"] = settings.benchmarks
             gui_config_changed = True
@@ -196,7 +201,7 @@ def update_settings(
         if settings.target_allocation is not None:
             config_manager.gui_config["target_allocation"] = settings.target_allocation
             gui_config_changed = True
-            
+
         if settings.show_closed is not None:
             config_manager.gui_config["show_closed"] = settings.show_closed
             gui_config_changed = True
@@ -208,11 +213,11 @@ def update_settings(
         if settings.account_group_order is not None:
             config_manager.gui_config["account_group_order"] = settings.account_group_order
             gui_config_changed = True
-            
+
         if settings.account_currency_map is not None:
              config_manager.gui_config["account_currency_map"] = settings.account_currency_map
              gui_config_changed = True
-             
+
         if settings.account_cash_mode_map is not None:
              config_manager.gui_config["account_cash_mode_map"] = settings.account_cash_mode_map
              gui_config_changed = True
@@ -242,7 +247,7 @@ def update_settings(
 
         # Save to AppData
         if config_manager.save_manual_overrides(current_overrides):
-            
+
             # --- Added: Mirror save to Project Root if file exists ---
             # This ensures the user's "source of truth" in their workspace stays in sync
             project_overrides_file = os.path.join(project_root, "manual_overrides.json")
