@@ -242,14 +242,17 @@ def trigger_background_precalculation(current_user: User):
 
 
 async def warm_summary_caches(max_users: int = 2) -> None:
-    """Pre-compute portfolio summaries for the most recently active users.
+    """Pre-compute the heavy dashboard/performance queries for recent users.
 
-    Runs once from the server lifespan so the first dashboard load after a
-    restart doesn't pay the cold-cache cost (transaction load, price fetches,
-    full portfolio math). "Most recently active" is judged by portfolio.db
-    mtime. Even after the summary cache's TTL window expires, the underlying
-    transaction/FIFO/market-data caches stay warm, so later requests remain
-    far cheaper than a true cold start. Disable with INVESTA_WARM_CACHE=0.
+    Runs once from the server lifespan so the first page loads after a
+    restart don't pay the cold-cache cost (transaction load, price fetches,
+    full portfolio math). Covers the summary plus the Performance tab's
+    1y history (with the user's saved benchmarks) and periodic returns,
+    which otherwise leave its charts empty for ~30s. "Most recently active"
+    is judged by portfolio.db mtime. Even after the summary cache's TTL
+    window expires, the underlying transaction/FIFO/market-data caches stay
+    warm, so later requests remain far cheaper than a true cold start.
+    Disable with INVESTA_WARM_CACHE=0.
     """
     if os.getenv("INVESTA_WARM_CACHE", "1") == "0":
         return
@@ -290,7 +293,9 @@ async def warm_summary_caches(max_users: int = 2) -> None:
             data = await run_in_threadpool(get_transaction_data, user)
             if data[0].empty:
                 continue
-            currency = get_config_manager(user).gui_config.get("display_currency", "USD")
+            gui_config = get_config_manager(user).gui_config
+            currency = gui_config.get("display_currency", "USD")
+            benchmarks = gui_config.get("benchmarks", ["S&P 500", "Dow Jones", "NASDAQ"])
             t0 = time.perf_counter()
             await _calculate_portfolio_summary_internal(
                 currency=currency,
@@ -299,8 +304,18 @@ async def warm_summary_caches(max_users: int = 2) -> None:
                 data=data,
                 current_user=user,
             )
+            # Performance tab queries, called exactly as the frontend does so
+            # the warmed cache entries match the real request keys. Imported
+            # here: routes.portfolio imports this module at load time.
+            from server.routes.portfolio import get_asset_change, get_history
+            await get_history(
+                currency=currency, accounts=None, period="1y", benchmarks=benchmarks,
+                interval="1d", from_date=None, to_date=None, force=False,
+                data=data, current_user=user,
+            )
+            await get_asset_change(currency=currency, accounts=None, benchmarks=benchmarks, data=data)
             logging.info(
-                f"Warmed summary cache for {username} ({currency}) in {time.perf_counter() - t0:.1f}s"
+                f"Warmed summary/history/returns caches for {username} ({currency}) in {time.perf_counter() - t0:.1f}s"
             )
         except asyncio.CancelledError:
             raise
