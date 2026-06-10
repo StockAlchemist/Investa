@@ -19,9 +19,10 @@ if src_dir not in sys.path:
 
 from server.api import router as api_router  # noqa: E402  (import follows sys.path setup above)
 
-# Configure logging
+# Configure logging. Application logs stay quiet (warnings/errors only) in
+# normal operation; set INVESTA_LOG_LEVEL=INFO or DEBUG when debugging.
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.getenv("INVESTA_LOG_LEVEL", "WARNING").upper(),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 

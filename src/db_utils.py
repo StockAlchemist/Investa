@@ -267,7 +267,7 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
         if conn:
             if use_cache:
                 _DB_CONN_CACHE.connections[cache_key] = conn
-            logging.info(f"Successfully connected to database ({'cached' if use_cache else 'fresh'}): {db_path} (check_same_thread={check_same_thread})")
+            logging.debug(f"Successfully connected to database ({'cached' if use_cache else 'fresh'}): {db_path} (check_same_thread={check_same_thread})")
             return conn
         return None
     except sqlite3.Error as e:

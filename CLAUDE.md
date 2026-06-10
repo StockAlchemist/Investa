@@ -118,6 +118,7 @@ FMP_API_KEY=...       # Financial Modeling Prep (optional)
 IBKR_PORT=...         # Interactive Brokers (optional)
 AUTH_SECRET_KEY=...   # JWT signing key (optional; auto-generated to data/config/auth_secret.key if unset)
 CORS_ALLOW_ORIGINS=... # Extra CORS origins, comma-separated (local/LAN/Tailscale covered by default)
+INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG when debugging)
 ```
 
 ## Key Conventions

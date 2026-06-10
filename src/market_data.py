@@ -351,7 +351,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
         payload.update(kwargs)
         
         # Run subprocess
-        logging.info(f"WORKER START ATTEMPT: Task={task}, Tickers={tickers[:3]}...")
+        logging.debug(f"WORKER START ATTEMPT: Task={task}, Tickers={tickers[:3]}...")
         result = subprocess.run(
             [sys.executable, script_path],
             input=json.dumps(payload),
@@ -362,7 +362,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
 
         
         if result.stderr:
-             logging.info(f"Isolated fetch STDERR: {result.stderr}")
+             logging.debug(f"Isolated fetch STDERR: {result.stderr}")
 
         if result.returncode != 0:
             err_msg = f"Isolated fetch failed (Code {result.returncode})"
@@ -1627,7 +1627,7 @@ class MarketDataProvider:
                              (price, change, changesPercentage, name, source, timestamp).
                              Returns cached data or empty dict on failure/rate limit.
         """
-        logging.info(
+        logging.debug(
             f"Fetching current quotes for {len(index_symbols)} index symbols..."
         )
         
@@ -1666,7 +1666,7 @@ class MarketDataProvider:
                             minutes=cache_duration_minutes
                         ):
                             cache_valid = True
-                            logging.info(
+                            logging.debug(
                                 f"Using valid cache for index quotes (Key: {cache_key[:30]}...)."
                             )
                     elif not cache_timestamp_str:
@@ -1715,7 +1715,7 @@ class MarketDataProvider:
                 return results
 
             yf_tickers_str = " ".join(yf_tickers_to_fetch)
-            logging.info(
+            logging.debug(
                 f"Fetching fresh index quotes for YF tickers: {yf_tickers_str}"
             )
             # --- END MODIFICATION ---
@@ -1784,7 +1784,7 @@ class MarketDataProvider:
                                         change = 0.0
                                         change_pct = 0.0
                                         
-                                    logging.info(f"Using history fallback for {yf_symbol}: Price={price}, Change={change}")
+                                    logging.debug(f"Using history fallback for {yf_symbol}: Price={price}, Change={change}")
                         except Exception as e_fallback:
                             logging.warning(f"Error using history fallback for {yf_symbol}: {e_fallback}")
 
