@@ -8,7 +8,7 @@ Investa is a financial portfolio management system with three deployment targets
 
 - **Web app** — Next.js 16 / React 19 PWA (`web_app/`)
 - **Desktop app** — Electron wrapper around the built web app (`desktop-electron/`)
-- **Legacy GUI** — PySide6 (Qt) desktop app (`src/main_gui.py`), largely in maintenance mode
+- **Legacy GUI** — PySide6 (Qt) desktop app (`src/main_gui.py`), **frozen** as of June 2026: no new features or refactoring; excluded from lint scope and CI (its tests self-skip without PySide6)
 
 ## Running the App
 
@@ -36,7 +36,7 @@ cd web_app && npm run build:desktop
 ```bash
 pip install -r requirements.txt          # server/runtime deps
 pip install -r requirements-dev.txt      # + pytest, ruff
-pip install -r requirements-gui.txt      # + PySide6/matplotlib (legacy Qt GUI; also needed to run the full test suite)
+pip install -r requirements-gui.txt      # + PySide6/matplotlib (only for the frozen legacy Qt GUI)
 
 pytest tests/                              # all tests
 pytest tests/test_finutils.py -v          # single file

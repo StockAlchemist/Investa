@@ -6,3 +6,12 @@ pythonpath = ["src"]
 [tool.ruff]
 target-version = "py312"
 src = ["src", "tests"]
+# The legacy Qt GUI is frozen (no new investment); keep it out of lint scope.
+extend-exclude = [
+    "src/main_gui.py",
+    "src/dialogs.py",
+    "src/models.py",
+    "src/ui_helpers.py",
+    "src/display_config.py",
+    "src/workers.py",
+]
