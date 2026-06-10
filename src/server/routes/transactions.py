@@ -35,14 +35,14 @@ from server.pdf_parser import extract_transactions_from_file
 from server.route_utils import clean_nans
 
 # Project root (…/Investa) for temp upload storage
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 router = APIRouter()
 
 
 def reload_data_and_clear_cache(current_user: Optional[User] = None):
     """Proxy to api.reload_data_and_clear_cache (lazy import — api.py includes this router)."""
-    from server.api import reload_data_and_clear_cache as _impl
+    from server.portfolio_service import reload_data_and_clear_cache as _impl
     return _impl(current_user)
 
 
@@ -348,7 +348,6 @@ def add_transactions_batch(
                     # yet — opt-in stays the safer choice for new accounts.
                     acc_mode = cash_mode_map.get(acc, "Manual")
                     if acc_mode != "Auto":
-                        from server.api import _handle_auto_cash_generation
                         _handle_auto_cash_generation(conn, tx_data)
             else:
                 errors.append({"symbol": tx_input.Symbol, "error": error})

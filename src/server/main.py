@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
-        from server.api import _PRECALC_POOL
+        from server.portfolio_service import _PRECALC_POOL
         _PRECALC_POOL.shutdown(wait=False)
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)

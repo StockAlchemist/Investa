@@ -130,7 +130,7 @@ async def get_watchlist_endpoint(
 ):
     """Fetch a watchlist enriched with current market prices, AI ratings, and fundamentals."""
     # Lazy imports to avoid circular dependency with api.py
-    from server.api import get_mdp, clean_nans
+    from server.route_utils import get_mdp, clean_nans
 
     config_manager.load_manual_overrides()
     overrides = config_manager.manual_overrides
