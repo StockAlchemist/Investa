@@ -57,6 +57,8 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
             (user.username, hashed_pw, created_at)
         )
         new_user_id = cursor.lastrowid
+        if new_user_id is None:
+            raise HTTPException(status_code=500, detail="Failed to create user record")
         conn.commit()
 
         # --- Initialize User Isolation ---

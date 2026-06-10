@@ -36,6 +36,11 @@ jobs:
         # pyproject.toml enables --cov=src --cov-report=term-missing
         run: pytest tests/
 
+      - name: Mypy (scoped baseline)
+        # Checks only the allowlist in pyproject.toml [tool.mypy] files —
+        # those modules must stay clean; expand the list as modules get typed.
+        run: python -m mypy
+
   backend-lint:
     name: Backend lint (ruff, changed files)
     runs-on: ubuntu-latest

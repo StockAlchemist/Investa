@@ -6,7 +6,7 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, Set, Dict, Any
+from typing import Iterator, Optional, Tuple, Set, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from server.auth import User, decode_access_token
@@ -25,7 +25,7 @@ import config  # noqa: E402
 # --- Auth Dependency ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-def get_global_db_connection() -> sqlite3.Connection:
+def get_global_db_connection() -> Iterator[sqlite3.Connection]:
     """Dependency for Global DB Connection (Auth)."""
     global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
     conn = get_db_connection(global_db_path, check_same_thread=False, use_cache=False)
@@ -83,7 +83,7 @@ def get_current_user(
         logging.error(f"Database error during authentication: {e}")
         raise HTTPException(status_code=503, detail="Authentication database temporarily unavailable")
 
-def get_user_db_connection(current_user: User = Depends(get_current_user)) -> sqlite3.Connection:
+def get_user_db_connection(current_user: User = Depends(get_current_user)) -> Iterator[sqlite3.Connection]:
     """Dependency for User Portfolio DB Connection."""
     user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
     db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
@@ -315,6 +315,8 @@ class UserDataCache:
         # Each user has their own portfolio.db. Filtering by user_id causes NULL-row
         # drops and ID-drift bugs. See DB Organization Plan, Phase 4.
 
+        if df is None:
+            df = pd.DataFrame()
         logging.info(f"Loaded {len(df)} transactions for user '{username}'.")
         return _UserCacheEntry(
             transactions=df,
