@@ -358,11 +358,14 @@ function PortfolioHeroCard({
                     </div>
                     {periodView.series.length > 1 ? (
                         <HeroSparkline history={periodView.series as PerformanceData[]} positive={sparklinePositive} />
-                    ) : (
+                    ) : heroPeriod !== 'day' ? (
+                        // Only shown for explicitly selected longer periods — on 1D
+                        // an empty series usually just means intraday history is
+                        // still loading, where this message would mislead.
                         <p className="text-[11px] text-muted-foreground/60 mt-2">
                             Not enough history yet to chart this period.
                         </p>
-                    )}
+                    ) : null}
                 </div>
             )}
         </div>

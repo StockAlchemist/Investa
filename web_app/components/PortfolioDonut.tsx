@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Sector } from 'recharts';
 import { Holding } from '@/lib/api';
 import { formatCurrency, cn } from '@/lib/utils';
 import StockIcon from './StockIcon';
-import { ChevronDown, TrendingUp, DollarSign, Percent } from 'lucide-react';
+import { ChevronDown, TrendingUp, DollarSign } from 'lucide-react';
 
 interface PortfolioDonutProps {
     holdings: Holding[];
@@ -13,14 +13,18 @@ interface PortfolioDonutProps {
 }
 
 const COLORS = [
-    '#0ea5e9', // sky-500
-    '#10b981', // emerald-500
-    '#f59e0b', // amber-500
-    '#f43f5e', // rose-500
-    '#8b5cf6', // violet-500
-    '#6366f1', // indigo-500
-    '#ec4899', // pink-500
-    '#14b8a6', // teal-500
+    '#0097b2', // Brand Cyan
+    '#0ea5e9', // Sky
+    '#3b82f6', // Blue
+    '#6366f1', // Indigo
+    '#8b5cf6', // Violet
+    '#d946ef', // Fuchsia
+    '#ec4899', // Pink
+    '#f43f5e', // Rose
+    '#f59e0b', // Amber
+    '#10b981', // Emerald
+    '#14b8a6', // Teal
+    '#64748b', // Slate for others
 ];
 
 const METRICS = [
@@ -38,8 +42,17 @@ const SYMBOL_MAPPING: Record<string, string> = {
 };
 
 // Custom label component
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload, forceAllLabels }: any) => {
+interface DonutLabelProps {
+    cx: number;
+    cy: number;
+    midAngle: number;
+    outerRadius: number;
+    percent: number;
+    payload: { name: string };
+    forceAllLabels?: boolean;
+}
+
+const renderCustomizedLabel = ({ cx, cy, midAngle, outerRadius, percent, payload, forceAllLabels }: DonutLabelProps) => {
     // If forceAllLabels is true, we skip the 3% threshold check.
     // We strictly hide 'Other' if needed, though for Accounts it usually doesn't exist.
     if ((!forceAllLabels && percent < 0.03) || payload.name === 'Other') return null;
@@ -63,8 +76,18 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     );
 };
 
-const renderActiveShape = (props: any) => {
-    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+interface ActiveShapeProps {
+    cx?: number;
+    cy?: number;
+    innerRadius?: number;
+    outerRadius?: number;
+    startAngle?: number;
+    endAngle?: number;
+    fill?: string;
+}
+
+const renderActiveShape = (props: ActiveShapeProps) => {
+    const { cx, cy, innerRadius, outerRadius = 0, startAngle, endAngle, fill } = props;
     return (
         <g>
             <Sector
@@ -88,7 +111,7 @@ interface ChartData {
     costBasis: number; // For Total Gain % calc
     percent: number;
     color: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 interface SingleDonutProps {
@@ -123,8 +146,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     const totalDayChangePct = totalPrevValue !== 0 ? (totalDayChange / totalPrevValue) * 100 : 0;
     const totalGainPct = totalCostBasis !== 0 ? (totalUnrealizedGain / totalCostBasis) * 100 : 0;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const onPieEnter = (_: any, index: number) => setActiveIndex(index);
+    const onPieEnter = (_: unknown, index: number) => setActiveIndex(index);
     const onPieLeave = () => setActiveIndex(undefined);
 
     // Helper to get formatted value string for length calculation
@@ -155,7 +177,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             const isPositive = val >= 0;
             return (
                 <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
-                    {formatCurrency(Math.abs(val), currency)}
+                    {isPositive ? '+' : '-'}{formatCurrency(Math.abs(val), currency)}
                 </span>
             );
         }
@@ -165,7 +187,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             const isPositive = val >= 0;
             return (
                 <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
-                    {formatCurrency(Math.abs(val), currency)}
+                    {isPositive ? '+' : '-'}{formatCurrency(Math.abs(val), currency)}
                 </span>
             );
         }
@@ -188,7 +210,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             const val = totalDayChange;
             return (
                 <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
-                    {formatCurrency(Math.abs(val), currency)}
+                    {val >= 0 ? '+' : '-'}{formatCurrency(Math.abs(val), currency)}
                 </span>
             );
         }
@@ -197,7 +219,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             const val = isTotal ? totalDayChangePct : activeDayChangePct;
             return (
                 <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
-                    {Math.abs(val).toFixed(2)}%
+                    {val >= 0 ? '+' : '-'}{Math.abs(val).toFixed(2)}%
                 </span>
             );
         }
@@ -206,7 +228,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             const val = isTotal ? totalGainPct : activeTotalGainPct;
             return (
                 <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
-                    {Math.abs(val).toFixed(2)}%
+                    {val >= 0 ? '+' : '-'}{Math.abs(val).toFixed(2)}%
                 </span>
             );
         }
@@ -224,7 +246,6 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={100} minHeight={100}>
                         <PieChart margin={{ left: 20, right: 20, top: 25, bottom: 25 }}>
-                            {/* @ts-ignore */}
                             <Pie
                                 data={data}
                                 cx="50%"
@@ -235,11 +256,12 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                 dataKey="value"
                                 onMouseEnter={onPieEnter}
                                 onMouseLeave={onPieLeave}
-                                // @ts-ignore
+                                // @ts-expect-error -- activeIndex/activeShape were removed from recharts 3 Pie typings but are still honored at runtime
                                 activeIndex={activeIndex}
                                 activeShape={renderActiveShape}
-                                // Pass forceAllLabels through a closure or similar
-                                label={(props) => renderCustomizedLabel({ ...props, forceAllLabels })}
+                                // recharts types label props loosely (cx?: number | string, …);
+                                // at render time they are always the numbers DonutLabelProps expects.
+                                label={(props) => renderCustomizedLabel({ ...props, forceAllLabels } as unknown as DonutLabelProps)}
                                 labelLine={false}
                                 isAnimationActive={false}
                             >
@@ -327,67 +349,33 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     );
 }
 
+// Donut center metric choice, persisted per chart. Read lazily at first
+// render: this component never renders on the server (it sits behind auth and
+// client-side data loading), so there is no hydration-mismatch risk.
+const readSavedMetric = (key: string) =>
+    typeof window === 'undefined' ? 'value' : (localStorage.getItem(key) ?? 'value');
+
 export default function PortfolioDonut({ holdings, currency }: PortfolioDonutProps) {
-    // Hydration-safe state initialization
-    const [holdingsMetric, setHoldingsMetric] = useState('value');
-    const [accountsMetric, setAccountsMetric] = useState('value');
-    const [isLoaded, setIsLoaded] = useState(false);
-
-    // Initial load from local storage
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const savedHoldings = localStorage.getItem('investa_donut_holdings_metric');
-            const savedAccounts = localStorage.getItem('investa_donut_accounts_metric');
-
-            if (savedHoldings) setHoldingsMetric(savedHoldings);
-            if (savedAccounts) setAccountsMetric(savedAccounts);
-            setIsLoaded(true);
-        }
-    }, []);
+    const [holdingsMetric, setHoldingsMetric] = useState(() => readSavedMetric('investa_donut_holdings_metric'));
+    const [accountsMetric, setAccountsMetric] = useState(() => readSavedMetric('investa_donut_accounts_metric'));
 
     // Persist changes
     useEffect(() => {
-        if (isLoaded && typeof window !== 'undefined') {
-            localStorage.setItem('investa_donut_holdings_metric', holdingsMetric);
-        }
-    }, [holdingsMetric, isLoaded]);
+        localStorage.setItem('investa_donut_holdings_metric', holdingsMetric);
+    }, [holdingsMetric]);
 
     useEffect(() => {
-        if (isLoaded && typeof window !== 'undefined') {
-            localStorage.setItem('investa_donut_accounts_metric', accountsMetric);
-        }
-    }, [accountsMetric, isLoaded]);
+        localStorage.setItem('investa_donut_accounts_metric', accountsMetric);
+    }, [accountsMetric]);
 
-    // ... continue with getValue and data processing
-
-
-    // Helper to get value
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const getValue = (holding: any, key: string) => {
-        // First try exact key
-        if (holding[key] !== undefined) return holding[key];
-        // Try with currency suffix e.g. "Market Value (USD)"
-        const keyWithCurrency = `${key} (${currency})`;
-        if (holding[keyWithCurrency] !== undefined) return holding[keyWithCurrency];
-        // Special case for specific columns if needed or partial match? 
-        // For now, assume consistent naming from API.
-        return 0;
-    };
-
-    const COLORS = [
-        '#0097b2', // Brand Cyan
-        '#0ea5e9', // Sky
-        '#3b82f6', // Blue
-        '#6366f1', // Indigo
-        '#8b5cf6', // Violet
-        '#d946ef', // Fuchsia
-        '#ec4899', // Pink
-        '#f43f5e', // Rose
-        '#f59e0b', // Amber
-        '#10b981', // Emerald
-        '#14b8a6', // Teal
-        '#64748b', // Slate for others
-    ];
+    // Helper to get a numeric column, trying the exact key first and then the
+    // currency-suffixed form the API uses, e.g. "Market Value (USD)".
+    const getValue = useCallback((holding: Holding, key: string): number => {
+        const direct = holding[key];
+        if (direct !== undefined) return typeof direct === 'number' ? direct : 0;
+        const suffixed = holding[`${key} (${currency})`];
+        return typeof suffixed === 'number' ? suffixed : 0;
+    }, [currency]);
 
     // --- Process Holdings Data ---
     const holdingsData = useMemo(() => {
@@ -462,7 +450,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
             });
         }
         return processed;
-    }, [holdings, currency]);
+    }, [holdings, getValue]);
 
     // --- Process Accounts Data ---
     const accountsData = useMemo(() => {
@@ -528,26 +516,26 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
         }
         
         return processed;
-    }, [holdings, currency]);
+    }, [holdings, getValue]);
 
     // Totals need to be calculated across all holdings
-    const totalValue = useMemo(() => holdings.reduce((sum, h) => sum + ((getValue(h, 'Market Value') as number) || 0), 0), [holdings, currency]);
-    const totalDayChange = useMemo(() => holdings.reduce((sum, h) => sum + ((getValue(h, 'Day Change') as number) || 0), 0), [holdings, currency]);
+    const totalValue = useMemo(() => holdings.reduce((sum, h) => sum + (getValue(h, 'Market Value') || 0), 0), [holdings, getValue]);
+    const totalDayChange = useMemo(() => holdings.reduce((sum, h) => sum + (getValue(h, 'Day Change') || 0), 0), [holdings, getValue]);
 
     // Calculate total cost basis and unrealized gain for correct total %
     const totalUnrealizedGain = useMemo(() => holdings.reduce((sum, h) => {
-        let gain = getValue(h, 'Unreal. Gain') as number;
-        if (gain === 0 && !h['Unreal. Gain']) gain = (getValue(h, 'Unrealized Gain') as number) || 0;
+        let gain = getValue(h, 'Unreal. Gain');
+        if (gain === 0 && !h['Unreal. Gain']) gain = getValue(h, 'Unrealized Gain') || 0;
         return sum + gain;
-    }, 0), [holdings, currency]);
+    }, 0), [holdings, getValue]);
 
     const totalCostBasis = useMemo(() => {
         // Try direct sum first
-        const directSum = holdings.reduce((sum, h) => sum + ((getValue(h, 'Cost Basis') as number) || 0), 0);
+        const directSum = holdings.reduce((sum, h) => sum + (getValue(h, 'Cost Basis') || 0), 0);
         if (directSum > 0) return directSum;
         // Fallback: Market Value - Unrealized Gain
         return totalValue - totalUnrealizedGain;
-    }, [holdings, currency, totalValue, totalUnrealizedGain]);
+    }, [holdings, getValue, totalValue, totalUnrealizedGain]);
 
     return (
         <div className="h-full w-full grid grid-cols-1 lg:grid-cols-2 gap-0 lg:gap-4">
