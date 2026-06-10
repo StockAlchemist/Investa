@@ -118,6 +118,9 @@ jobs:
         if: steps.changed.outputs.files != ''
         run: npx eslint ${{ steps.changed.outputs.files }}
 
+      - name: Unit tests (Vitest)
+        run: npm test
+
       # Build validates compilation and types for the whole app.
       # (Next 16 no longer runs ESLint during build; lint is gated separately above.)
       - name: Build

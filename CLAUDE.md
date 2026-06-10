@@ -53,7 +53,8 @@ npm run dev          # dev server
 npm run build        # production build
 npm run build:desktop  # static export for Electron (outputs to out/)
 npm run lint         # ESLint
-npm run test:e2e     # Playwright E2E tests
+npm test             # Vitest unit tests (tests/unit/)
+npm run test:e2e     # Playwright E2E tests (hermetic — backend mocked via page.route)
 ```
 
 ### Electron (`desktop-electron/`)
