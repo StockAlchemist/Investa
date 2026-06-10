@@ -30,6 +30,7 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 # --- End Path Addition ---
 
+import portfolio_history
 import portfolio_logic as pl
 from data_loader import load_and_clean_transactions
 
@@ -128,8 +129,10 @@ def summary_result(loaded_tx):
 @pytest.fixture(scope="module")
 def hist_result(loaded_tx):
     tx, orig, ig_idx, ig_rsn = loaded_tx
-    original = pl.get_shared_mdp
-    pl.get_shared_mdp = lambda *a, **k: FakeMDP()
+    # calculate_historical_performance resolves get_shared_mdp in
+    # portfolio_history's namespace (it moved there in the engine split).
+    original = portfolio_history.get_shared_mdp
+    portfolio_history.get_shared_mdp = lambda *a, **k: FakeMDP()
     try:
         return pl.calculate_historical_performance(
             all_transactions_df_cleaned=tx,
@@ -150,7 +153,7 @@ def hist_result(loaded_tx):
             user_excluded_symbols=set(),
         )
     finally:
-        pl.get_shared_mdp = original
+        portfolio_history.get_shared_mdp = original
 
 
 def G(x):
