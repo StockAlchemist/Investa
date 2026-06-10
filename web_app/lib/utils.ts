@@ -43,6 +43,25 @@ export function formatCurrency(value: number, currency: string = 'USD'): string 
     return formatted;
 }
 
+/** Like formatCurrency, but drops the cents once |value| reaches 100k — at
+ *  that scale the cents stop being meaningful, and the shorter string helps
+ *  the full amount fit without truncation or abbreviation. */
+export function formatCurrencyWhole(value: number, currency: string = 'USD'): string {
+    if (Math.abs(value) < 100_000) return formatCurrency(value, currency);
+    const formatted = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency,
+        currencyDisplay: 'narrowSymbol',
+        notation: 'standard',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(value);
+    if (currency === 'THB') {
+        return formatted.replace('THB', '฿').replace(/\s/g, '');
+    }
+    return formatted;
+}
+
 export function formatPercent(value: number): string {
     if (value === Infinity) return '∞';
     if (value === -Infinity) return '-∞';

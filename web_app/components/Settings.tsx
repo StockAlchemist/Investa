@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
     Pencil, Trash2, Loader2, Users, Sliders, Map as MapIcon, XCircle, 
-    DollarSign, Activity, Calculator, Settings as SettingsIcon, 
+    DollarSign, Activity, Settings as SettingsIcon, 
     UserCircle, LogOut, Save, ArrowRight, ShieldAlert, Smartphone, CheckCircle, AlertCircle, Info
 } from 'lucide-react';
 import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, syncIbkr, updateUserProfile, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
@@ -16,7 +16,7 @@ import YieldSettings from './YieldSettings';
 
 import { useAuth } from '../context/AuthContext';
 
-type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield' | 'valuation' | 'account' | 'advanced';
+type Tab = 'accounts' | 'symbols' | 'overrides' | 'advanced' | 'account';
 
 // --- Constants (Mirrored from config.py) ---
 const ASSET_TYPES = [
@@ -57,15 +57,11 @@ interface SettingsProps {
 }
 
 const TABS: { id: Tab, label: string, description: string, icon: React.ElementType, color: string }[] = [
-    { id: 'groups', label: 'Account Groups', description: 'Organize accounts into named groups for filtering and analysis.', icon: Users, color: 'text-indigo-500 dark:text-indigo-400' },
-    { id: 'overrides', label: 'Manual Overrides', description: 'Manually set price and metadata for any symbol when automatic data is wrong.', icon: Sliders, color: 'text-emerald-500 dark:text-emerald-400' },
-    { id: 'mapping', label: 'Symbol Mapping', description: 'Map custom portfolio symbols to their Yahoo Finance ticker equivalent.', icon: MapIcon, color: 'text-blue-500 dark:text-blue-400' },
-    { id: 'excluded', label: 'Excluded Symbols', description: 'Symbols that are skipped during portfolio calculations and data fetches.', icon: XCircle, color: 'text-rose-500 dark:text-rose-400' },
-    { id: 'currencies', label: 'Account Settings', description: 'Manage available currencies and per-account currency, cash, and closure preferences.', icon: DollarSign, color: 'text-amber-500 dark:text-amber-400' },
-    { id: 'yield', label: 'Cash Yield', description: 'Configure interest-yield assumptions for idle cash per account.', icon: Activity, color: 'text-green-500 dark:text-green-400' },
-    { id: 'valuation', label: 'Valuation Overrides', description: 'Override DCF and valuation model inputs for specific stocks.', icon: Calculator, color: 'text-purple-500 dark:text-purple-400' },
+    { id: 'accounts', label: 'Accounts', description: 'Account groups, per-account currency/cash/closure settings, and cash-yield assumptions.', icon: Users, color: 'text-indigo-500 dark:text-indigo-400' },
+    { id: 'symbols', label: 'Symbols', description: 'Map portfolio symbols to their Yahoo Finance ticker and manage excluded symbols.', icon: MapIcon, color: 'text-blue-500 dark:text-blue-400' },
+    { id: 'overrides', label: 'Overrides', description: 'Manually override price/metadata and DCF valuation inputs for specific symbols.', icon: Sliders, color: 'text-emerald-500 dark:text-emerald-400' },
     { id: 'advanced', label: 'Advanced Settings', description: 'Webhook integration, Interactive Brokers sync, and system cache.', icon: SettingsIcon, color: 'text-zinc-500 dark:text-zinc-400' },
-    { id: 'account', label: 'Account & Security', description: 'Manage your profile, password, and account.', icon: UserCircle, color: 'text-cyan-500 dark:text-cyan-400' },
+    { id: 'account', label: 'Profile & Security', description: 'Manage your user profile, password, and login.', icon: UserCircle, color: 'text-cyan-500 dark:text-cyan-400' },
 ];
 
 export default function Settings({ settings, holdings, availableAccounts, initialTab }: SettingsProps) {
@@ -548,32 +544,14 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                         )}
 
                         {/* Content Switching with subtle animation */}
-                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-both">
-                            {/* Account Groups Tab */}
-                            {activeTab === 'groups' && settings && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-both space-y-10">
+                            {/* Accounts tab — Account Groups section */}
+                            {activeTab === 'accounts' && settings && (
                                 <AccountGroupManager
                                     availableAccounts={availableAccounts}
                                     settings={settings}
                                     onUpdate={() => queryClient.invalidateQueries({ queryKey: ['settings', user?.username] })}
                                 />
-                            )}
-
-                            {/* Cash Yield Tab */}
-                            {activeTab === 'yield' && settings && (
-                                <YieldSettings
-                                    settings={settings}
-                                    availableAccounts={availableAccounts}
-                                    holdings={holdings}
-                                    onSettingsUpdated={() => {
-                                        queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-                                        queryClient.invalidateQueries({ queryKey: ['portfolio'] });
-                                    }}
-                                />
-                            )}
-
-                            {/* Valuation Overrides Tab */}
-                            {activeTab === 'valuation' && settings && (
-                                <ManualValuationSettings settings={settings} />
                             )}
 
                             {/* Account Tab */}
@@ -630,7 +608,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                 Security
                                             </h3>
                                         </div>
-                                        <p className="text-sm text-muted-foreground mb-6">Change your account password.</p>
+                                        <p className="text-sm text-muted-foreground mb-6">Change your login password.</p>
                                         <form onSubmit={handleChangePassword} className="space-y-5">
                                             <div className="space-y-1">
                                                 <label className={labelClassName}>Current Password</label>
@@ -924,8 +902,13 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                 </div>
                             )}
 
-                            {/* Symbol Mapping Tab */}
-                            {activeTab === 'mapping' && (
+                            {/* Overrides tab — Valuation Overrides section */}
+                            {activeTab === 'overrides' && settings && (
+                                <ManualValuationSettings settings={settings} />
+                            )}
+
+                            {/* Symbols tab — Symbol Mapping section */}
+                            {activeTab === 'symbols' && (
                                 <div className="space-y-8 max-w-4xl">
                                     <div className={cardClassName}>
                                         <div className="mb-2">
@@ -1020,8 +1003,8 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                 </div>
                             )}
 
-                            {/* Excluded Symbols Tab */}
-                            {activeTab === 'excluded' && (
+                            {/* Symbols tab — Excluded Symbols section */}
+                            {activeTab === 'symbols' && (
                                 <div className="space-y-8 max-w-4xl">
                                     <div className={cardClassName}>
                                         <div className="mb-2">
@@ -1087,8 +1070,8 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                 </div>
                             )}
 
-                            {/* Currencies Tab */}
-                            {activeTab === 'currencies' && (
+                            {/* Accounts tab — Account Settings (currencies, per-account) section */}
+                            {activeTab === 'accounts' && (
                                 <div className="space-y-8">
                                     {/* Available Currencies Section */}
                                     <div className={cardClassName}>
@@ -1244,6 +1227,19 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                         );
                                     })()}
                                 </div>
+                            )}
+
+                            {/* Accounts tab — Cash Yield section */}
+                            {activeTab === 'accounts' && settings && (
+                                <YieldSettings
+                                    settings={settings}
+                                    availableAccounts={availableAccounts}
+                                    holdings={holdings}
+                                    onSettingsUpdated={() => {
+                                        queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
+                                        queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+                                    }}
+                                />
                             )}
 
                             {/* Advanced Settings Tab */}

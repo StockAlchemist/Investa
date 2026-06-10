@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchCurrentUser, User } from "../lib/api";
+import { fetchCurrentUser, SessionExpiredError, User } from "../lib/api";
 
 // Define shapes
 // interface User remove definition as imported
@@ -63,7 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Cache for optimistic restore on the next load.
             try { localStorage.setItem("investa_user", JSON.stringify(userData)); } catch {}
         } catch (error) {
-            console.error("Failed to fetch user:", error);
+            if (error instanceof SessionExpiredError) {
+                // Stale/expired token (e.g. normal expiry or a server signing-key
+                // rotation) — routine, just send the user back to login quietly.
+                console.info("Session expired — redirecting to login.");
+            } else {
+                console.error("Failed to fetch user:", error);
+            }
             logout();
         } finally {
             setIsLoading(false);

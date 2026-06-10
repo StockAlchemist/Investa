@@ -5,7 +5,8 @@ import logging
 import json
 import sqlite3
 import threading
-from typing import Optional, Tuple, Set, Dict, Any
+from dataclasses import dataclass, field
+from typing import Iterator, Optional, Tuple, Set, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from server.auth import User, decode_access_token
@@ -20,20 +21,11 @@ if src_path not in sys.path:
 
 import config  # noqa: E402
 
-# Ensure src is in path (redundant if imported from main, but good for standalone testing)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(src_dir)
-if src_dir not in sys.path:
-    sys.path.insert(0, src_dir)
-
-
-logging.info("DEPENDENCIES MODULE LOADED - VERSION 3 (Auth Enabled)")
 
 # --- Auth Dependency ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-def get_global_db_connection() -> sqlite3.Connection:
+def get_global_db_connection() -> Iterator[sqlite3.Connection]:
     """Dependency for Global DB Connection (Auth)."""
     global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
     conn = get_db_connection(global_db_path, check_same_thread=False, use_cache=False)
@@ -44,7 +36,6 @@ def get_global_db_connection() -> sqlite3.Connection:
     finally:
         conn.close()
 
-# Moved down to support get_current_user dependency
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -58,7 +49,7 @@ def get_current_user(
     token_data = decode_access_token(token)
     if token_data is None:
         raise credentials_exception
-    
+
     # Connect to GLOBAL DB for Auth - Now uses the 'conn' dependency which handles lifecycle and retries
     try:
         cursor = conn.cursor()
@@ -75,13 +66,13 @@ def get_current_user(
                     time.sleep(0.1 * (i + 1))
                     continue
                 raise
-                
+
         if row is None:
             raise credentials_exception
         user = User(
-            id=row[0], 
-            username=row[1], 
-            is_active=bool(row[2]), 
+            id=row[0],
+            username=row[1],
+            is_active=bool(row[2]),
             created_at=row[3],
             alias=row[4]
         )
@@ -92,7 +83,7 @@ def get_current_user(
         logging.error(f"Database error during authentication: {e}")
         raise HTTPException(status_code=503, detail="Authentication database temporarily unavailable")
 
-def get_user_db_connection(current_user: User = Depends(get_current_user)) -> sqlite3.Connection:
+def get_user_db_connection(current_user: User = Depends(get_current_user)) -> Iterator[sqlite3.Connection]:
     """Dependency for User Portfolio DB Connection."""
     user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
     db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
@@ -105,245 +96,280 @@ def get_user_db_connection(current_user: User = Depends(get_current_user)) -> sq
         conn.close()
 
 
-# Global cache for transactions to avoid reloading on every request.
-# --- KEY: username (str) --- Stable, filesystem-aligned, immune to user_id integer drift.
-_TRANSACTIONS_CACHE: Dict[str, pd.DataFrame] = {}
-_DATA_LOADING_LOCK = threading.Lock()  # Lock to prevent concurrent reloads (OOM protection)
-_IGNORED_INDICES: Dict[str, Set[int]] = {}
-_IGNORED_REASONS: Dict[str, Dict[int, str]] = {}
+# --- Per-user transaction/settings cache ---
 
-_MANUAL_OVERRIDES: Dict[str, Dict[str, Any]] = {}
-_USER_SYMBOL_MAP: Dict[str, Dict[str, str]] = {}
-_USER_EXCLUDED_SYMBOLS: Dict[str, Set[str]] = {}
-_ACCOUNT_CURRENCY_MAP: Dict[str, Dict[str, str]] = {}
-_ACCOUNT_CASH_MODE_MAP: Dict[str, Dict[str, str]] = {}
+TransactionData = Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], Dict[str, str], str, float]
 
-_DB_PATHS: Dict[str, str] = {}
-_DB_MTIMES: Dict[str, float] = {}
-_OVERRIDES_PATHS: Dict[str, str] = {}
-_OVERRIDES_MTIMES: Dict[str, float] = {}
-
-_GUI_CONFIG_CACHES: Dict[str, Dict[str, Any]] = {}
-_GUI_CONFIG_LOADED_PATHS: Dict[str, str] = {}
-_GUI_CONFIG_MTIMES: Dict[str, float] = {}
-_MANUAL_OVERRIDES_FILE_CACHES: Dict[str, Dict[str, Any]] = {}
-_MANUAL_OVERRIDES_FILE_MTIMES: Dict[str, float] = {}
+_EMPTY_RESULT: TransactionData = (pd.DataFrame(), {}, {}, set(), {}, {}, "", 0.0)
 
 
-def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], Dict[str, str], str, float]:
+@dataclass
+class _UserCacheEntry:
+    """Everything cached for one user. Entries are built off to the side and
+    swapped into the cache as a unit, so readers never observe a half-updated
+    mix of old and new state (the old design spread this across 12 dicts)."""
+    transactions: pd.DataFrame = field(default_factory=pd.DataFrame)
+    ignored_indices: Set[int] = field(default_factory=set)
+    ignored_reasons: Dict[int, str] = field(default_factory=dict)
+    manual_overrides: Dict[str, Any] = field(default_factory=dict)
+    symbol_map: Dict[str, str] = field(default_factory=dict)
+    excluded_symbols: Set[str] = field(default_factory=set)
+    account_currency_map: Dict[str, str] = field(default_factory=dict)
+    account_cash_mode_map: Dict[str, str] = field(default_factory=dict)
+    db_path: str = ""
+    db_mtime: float = 0.0
+    overrides_path: str = ""
+    overrides_mtime: float = 0.0
+    overrides_file_cache: Dict[str, Any] = field(default_factory=dict)
+    overrides_file_mtime: float = 0.0
+
+    def as_tuple(self) -> TransactionData:
+        return (
+            self.transactions,
+            self.manual_overrides,
+            self.symbol_map,
+            self.excluded_symbols,
+            self.account_currency_map,
+            self.account_cash_mode_map,
+            self.db_path,
+            self.db_mtime,
+        )
+
+
+class UserDataCache:
+    """Per-user transaction/settings cache, keyed by username.
+
+    Usernames are stable and filesystem-aligned (immune to user_id integer
+    drift). Reloads happen when the user's portfolio DB (or its WAL/SHM side
+    files) or manual_overrides.json changes on disk.
     """
-    Loads transaction data from the database for the current user.
-    Uses username (str) as the cache key — stable and filesystem-aligned.
-    Auto-reloads when the DB file modification time changes.
-    """
-    global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATHS, _DB_MTIMES, _OVERRIDES_PATHS, _OVERRIDES_MTIMES
 
-    # --- Use username (str) as the sole, stable cache key ---
-    username = current_user.username
+    def __init__(self):
+        self._entries: Dict[str, _UserCacheEntry] = {}
+        # One global load lock on purpose: parsing a large transaction history
+        # is memory-heavy, so at most one (re)load runs at a time (OOM protection).
+        self._load_lock = threading.Lock()
 
-    # --- User Data Directory ---
-    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
-    os.makedirs(user_data_dir, exist_ok=True)
+    # ---- public API ----
 
-    # ---------------------------
-    # --- 1. Load User Configuration (canonical path: <user_dir>/config/) ---
-    # ---------------------------
-    config_dir = os.path.join(user_data_dir, config.CONFIG_DIR)
-    gui_config_path = os.path.join(config_dir, config.GUI_CONFIG_FILENAME)
+    def get_or_load(self, username: str) -> TransactionData:
+        user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
+        os.makedirs(user_data_dir, exist_ok=True)
+        config_dir = os.path.join(user_data_dir, config.CONFIG_DIR)
 
-    gui_config = {}
-    if os.path.exists(gui_config_path):
-        try:
-            with open(gui_config_path, "r") as f:
-                gui_config = json.load(f)
-        except Exception:
-            pass
+        # User configuration is read fresh on every call — it determines the
+        # DB path and currency mapping, which drive the reload decision.
+        gui_config = self._read_gui_config(config_dir)
 
-    # --- 1b. Defaults ---
-    account_currency_map = {"SET": "THB"}
-    default_currency = config.DEFAULT_CURRENCY
-    user_symbol_map = {}
-    user_excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
+        account_currency_map = {"SET": "THB"}
+        account_currency_map.update(gui_config.get("account_currency_map", {}))
+        account_cash_mode_map = dict(gui_config.get("account_cash_mode_map", {}))
 
-    if "account_currency_map" in gui_config:
-        account_currency_map.update(gui_config["account_currency_map"])
+        db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+        if "transactions_file" in gui_config and os.path.exists(gui_config["transactions_file"]):
+            db_path = gui_config["transactions_file"]
 
-    account_cash_mode_map = {}
-    if "account_cash_mode_map" in gui_config:
-        account_cash_mode_map.update(gui_config["account_cash_mode_map"])
+        db_mtime = self._effective_db_mtime(db_path)
+        entry = self._entries.get(username)
+        db_needs_reload = entry is None or db_mtime != entry.db_mtime or db_path != entry.db_path
 
-    # --- 2. Determine DB Path for User ---
-    db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
-    if "transactions_file" in gui_config and os.path.exists(gui_config["transactions_file"]):
-        db_path = gui_config["transactions_file"]
+        if db_needs_reload or self._overrides_changed(entry):
+            with self._load_lock:
+                # Double-checked: another thread may have reloaded while we waited.
+                entry = self._entries.get(username)
+                fresh = (
+                    entry is not None
+                    and entry.db_mtime == db_mtime
+                    and entry.db_path == db_path
+                    and not self._overrides_changed(entry)
+                )
+                if fresh:
+                    logging.info(f"Skipping reload for user '{username}', handled by another thread.")
+                else:
+                    db_needs_reload = entry is None or db_mtime != entry.db_mtime or db_path != entry.db_path
+                    new_entry = self._load(
+                        username, entry, config_dir, db_path, db_mtime,
+                        db_needs_reload, account_currency_map, account_cash_mode_map,
+                    )
+                    if new_entry is None:
+                        return _EMPTY_RESULT
+                    self._entries[username] = new_entry
 
-    # --- 3. Check DB modification time ---
-    current_mtime = 0.0
-    if os.path.exists(db_path):
-        current_mtime = os.path.getmtime(db_path)
-        for ext in ("-wal", "-shm"):
+        entry = self._entries.get(username)
+        return entry.as_tuple() if entry is not None else _EMPTY_RESULT
+
+    def invalidate(self, username: Optional[str] = None) -> None:
+        """Drop cached data so the next access reloads from disk."""
+        if username is not None:
+            self._entries.pop(username, None)
+            logging.info(f"Data cache cleared for user '{username}'.")
+        else:
+            self._entries.clear()
+            logging.info("ALL data caches cleared for all users.")
+
+    def clear_settings(self, username: Optional[str] = None) -> None:
+        """Force overrides/settings to be re-read on next access (keeps the DB cache)."""
+        targets = [self._entries.get(username)] if username is not None else list(self._entries.values())
+        for entry in targets:
+            if entry is not None:
+                entry.overrides_mtime = 0.0
+                entry.overrides_file_mtime = 0.0
+        logging.info(f"Settings cache cleared for {'user ' + str(username) if username else 'all users'}.")
+
+    # ---- internals ----
+
+    @staticmethod
+    def _read_gui_config(config_dir: str) -> Dict[str, Any]:
+        gui_config_path = os.path.join(config_dir, config.GUI_CONFIG_FILENAME)
+        if os.path.exists(gui_config_path):
+            try:
+                with open(gui_config_path, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    @staticmethod
+    def _effective_db_mtime(db_path: str) -> float:
+        """DB mtime, also considering the WAL side file (writes may land there first).
+
+        The -shm file is deliberately excluded: it is WAL's transient shared-memory
+        index and gets touched by mere *reads*, so including it made every summary
+        request invalidate the cache that the previous one had just populated.
+        Durable changes always bump the main DB file or -wal.
+        """
+        if not os.path.exists(db_path):
+            return 0.0
+        mtime = os.path.getmtime(db_path)
+        for ext in ("-wal",):
             side_file = db_path + ext
             if os.path.exists(side_file):
-                side_mtime = os.path.getmtime(side_file)
-                if side_mtime > current_mtime:
-                    current_mtime = side_mtime
+                mtime = max(mtime, os.path.getmtime(side_file))
+        return mtime
 
-    # --- 4. Check overrides modification time ---
-    overrides_changed = False
-    user_overrides_path = _OVERRIDES_PATHS.get(username)
-    if user_overrides_path and os.path.exists(user_overrides_path):
-        current_overrides_mtime = os.path.getmtime(user_overrides_path)
-        if current_overrides_mtime != _OVERRIDES_MTIMES.get(username, 0.0):
-            overrides_changed = True
+    @staticmethod
+    def _overrides_changed(entry: Optional[_UserCacheEntry]) -> bool:
+        if entry is None or not entry.overrides_path or not os.path.exists(entry.overrides_path):
+            return False
+        return os.path.getmtime(entry.overrides_path) != entry.overrides_mtime
 
-    user_cache_exists = username in _TRANSACTIONS_CACHE
-    db_mtime_changed = current_mtime != _DB_MTIMES.get(username, 0.0)
-    db_path_changed = db_path != _DB_PATHS.get(username)
-    db_needs_reload = not user_cache_exists or db_mtime_changed or db_path_changed
+    def _load(
+        self,
+        username: str,
+        prev: Optional[_UserCacheEntry],
+        config_dir: str,
+        db_path: str,
+        db_mtime: float,
+        db_needs_reload: bool,
+        account_currency_map: Dict[str, str],
+        account_cash_mode_map: Dict[str, str],
+    ) -> Optional[_UserCacheEntry]:
+        """Build a fresh cache entry. Returns None if loading failed."""
+        if db_needs_reload:
+            logging.info(f"Loading/Reloading transactions for '{username}' from: {db_path}")
+        else:
+            logging.info(f"Reloading only overrides for '{username}' (DB is fresh).")
 
-    if db_needs_reload or overrides_changed:
-        with _DATA_LOADING_LOCK:
-            # Double-checked locking
-            is_cache_fresh = (
-                username in _TRANSACTIONS_CACHE
-                and _DB_MTIMES.get(username) == current_mtime
-                and _DB_PATHS.get(username) == db_path
-                and not overrides_changed
-            )
-
-            if is_cache_fresh:
-                logging.info(f"Skipping reload for user '{username}', handled by another thread.")
-            else:
-                if db_needs_reload:
-                    logging.info(f"Loading/Reloading transactions for '{username}' from: {db_path}")
-                else:
-                    logging.info(f"Reloading only overrides for '{username}' (DB is fresh).")
-
-                # --- 4b. Load manual_overrides.json (canonical: <user_dir>/config/) ---
-                global _MANUAL_OVERRIDES_FILE_CACHES, _MANUAL_OVERRIDES_FILE_MTIMES
-
-                overrides_path = os.path.join(config_dir, config.MANUAL_OVERRIDES_FILENAME)
-                full_overrides_json = {}
-
-                if os.path.exists(overrides_path):
-                    st_ov = os.stat(overrides_path)
-                    old_mtime = _MANUAL_OVERRIDES_FILE_MTIMES.get(username, 0.0)
-                    if username not in _MANUAL_OVERRIDES_FILE_CACHES or st_ov.st_mtime != old_mtime:
-                        try:
-                            with open(overrides_path, "r") as f:
-                                _MANUAL_OVERRIDES_FILE_CACHES[username] = json.load(f)
-                            _MANUAL_OVERRIDES_FILE_MTIMES[username] = st_ov.st_mtime
-                        except Exception as e:
-                            logging.warning(f"Failed to load overrides at {overrides_path}: {e}")
-                    full_overrides_json = _MANUAL_OVERRIDES_FILE_CACHES.get(username, {})
-                    _OVERRIDES_PATHS[username] = overrides_path
-                    _OVERRIDES_MTIMES[username] = os.path.getmtime(overrides_path)
-                else:
-                    _MANUAL_OVERRIDES_FILE_CACHES[username] = {}
-                    _OVERRIDES_PATHS[username] = ""
-                    _OVERRIDES_MTIMES[username] = 0.0
-
-                final_manual_overrides = full_overrides_json.get("manual_price_overrides", {})
-
-                if "user_excluded_symbols" in full_overrides_json:
-                    loaded_excluded = full_overrides_json.get("user_excluded_symbols", [])
-                    if isinstance(loaded_excluded, list):
-                        user_excluded_symbols.update({s.upper().strip() for s in loaded_excluded if isinstance(s, str)})
-                if "user_symbol_map" in full_overrides_json:
-                    user_symbol_map.update(full_overrides_json.get("user_symbol_map", {}))
-
+        # manual_overrides.json — parsed copy cached by mtime
+        overrides_path = os.path.join(config_dir, config.MANUAL_OVERRIDES_FILENAME)
+        overrides_file_cache = prev.overrides_file_cache if prev is not None else {}
+        overrides_file_mtime = prev.overrides_file_mtime if prev is not None else 0.0
+        new_overrides_path = ""
+        new_overrides_mtime = 0.0
+        if os.path.exists(overrides_path):
+            st_mtime = os.stat(overrides_path).st_mtime
+            if st_mtime != overrides_file_mtime:
                 try:
-                    is_db = db_path.lower().endswith((".db", ".sqlite", ".sqlite3"))
-
-                    if db_needs_reload:
-                        df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
-                            source_path=db_path,
-                            account_currency_map=account_currency_map,
-                            default_currency=default_currency,
-                            is_db_source=is_db
-                        )
-                    else:
-                        df = _TRANSACTIONS_CACHE.get(username, pd.DataFrame())
-                        ignored_indices = _IGNORED_INDICES.get(username, set())
-                        ignored_reasons = _IGNORED_REASONS.get(username, {})
-
-                    # --- No user_id filtering: file-level isolation IS the isolation mechanism.
-                    # Each user has their own portfolio.db. Filtering by user_id causes NULL-row
-                    # drops and ID-drift bugs. See DB Organization Plan, Phase 4.
-
-                    _TRANSACTIONS_CACHE[username] = df
-                    _IGNORED_INDICES[username] = ignored_indices
-                    _IGNORED_REASONS[username] = ignored_reasons
-                    _MANUAL_OVERRIDES[username] = final_manual_overrides
-                    _USER_SYMBOL_MAP[username] = user_symbol_map
-                    _USER_EXCLUDED_SYMBOLS[username] = user_excluded_symbols
-                    _ACCOUNT_CURRENCY_MAP[username] = account_currency_map
-                    _ACCOUNT_CASH_MODE_MAP[username] = account_cash_mode_map
-                    _DB_PATHS[username] = db_path
-                    _DB_MTIMES[username] = current_mtime
-
-                    logging.info(f"Loaded {len(df)} transactions for user '{username}'.")
+                    with open(overrides_path, "r") as f:
+                        overrides_file_cache = json.load(f)
+                    overrides_file_mtime = st_mtime
                 except Exception as e:
-                    logging.error(f"Error loading transactions for '{username}': {e}", exc_info=True)
-                    return pd.DataFrame(), {}, {}, set(), {}, {}, "", 0.0
+                    # Keep the previous parsed copy; mtime stays stale so we retry next time.
+                    logging.warning(f"Failed to load overrides at {overrides_path}: {e}")
+            new_overrides_path = overrides_path
+            new_overrides_mtime = os.path.getmtime(overrides_path)
+        else:
+            overrides_file_cache = {}
+            overrides_file_mtime = 0.0
 
-    return (
-        _TRANSACTIONS_CACHE.get(username, pd.DataFrame()),
-        _MANUAL_OVERRIDES.get(username, {}),
-        _USER_SYMBOL_MAP.get(username, {}),
-        _USER_EXCLUDED_SYMBOLS.get(username, set()),
-        _ACCOUNT_CURRENCY_MAP.get(username, {}),
-        _ACCOUNT_CASH_MODE_MAP.get(username, {}),
-        _DB_PATHS.get(username, ""),
-        _DB_MTIMES.get(username, 0.0)
-    )
+        manual_overrides = overrides_file_cache.get("manual_price_overrides", {})
+
+        excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS)
+        loaded_excluded = overrides_file_cache.get("user_excluded_symbols", [])
+        if isinstance(loaded_excluded, list):
+            excluded_symbols.update({s.upper().strip() for s in loaded_excluded if isinstance(s, str)})
+        symbol_map = dict(overrides_file_cache.get("user_symbol_map", {}))
+
+        try:
+            if db_needs_reload:
+                is_db = db_path.lower().endswith((".db", ".sqlite", ".sqlite3"))
+                df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
+                    source_path=db_path,
+                    account_currency_map=account_currency_map,
+                    default_currency=config.DEFAULT_CURRENCY,
+                    is_db_source=is_db,
+                )
+            else:
+                df = prev.transactions if prev is not None else pd.DataFrame()
+                ignored_indices = prev.ignored_indices if prev is not None else set()
+                ignored_reasons = prev.ignored_reasons if prev is not None else {}
+        except Exception as e:
+            logging.error(f"Error loading transactions for '{username}': {e}", exc_info=True)
+            return None
+
+        # No user_id filtering: file-level isolation IS the isolation mechanism.
+        # Each user has their own portfolio.db. Filtering by user_id causes NULL-row
+        # drops and ID-drift bugs. See DB Organization Plan, Phase 4.
+
+        if df is None:
+            df = pd.DataFrame()
+        logging.info(f"Loaded {len(df)} transactions for user '{username}'.")
+        return _UserCacheEntry(
+            transactions=df,
+            ignored_indices=ignored_indices,
+            ignored_reasons=ignored_reasons,
+            manual_overrides=manual_overrides,
+            symbol_map=symbol_map,
+            excluded_symbols=excluded_symbols,
+            account_currency_map=account_currency_map,
+            account_cash_mode_map=account_cash_mode_map,
+            db_path=db_path,
+            db_mtime=db_mtime,
+            overrides_path=new_overrides_path,
+            overrides_mtime=new_overrides_mtime,
+            overrides_file_cache=overrides_file_cache,
+            overrides_file_mtime=overrides_file_mtime,
+        )
+
+
+user_data_cache = UserDataCache()
+
+
+def get_transaction_data(current_user: User = Depends(get_current_user)) -> TransactionData:
+    """FastAPI dependency: the current user's transactions + settings (cached).
+
+    Returns (transactions_df, manual_overrides, symbol_map, excluded_symbols,
+    account_currency_map, account_cash_mode_map, db_path, db_mtime).
+    """
+    return user_data_cache.get_or_load(current_user.username)
+
 
 def reload_data(username: Optional[str] = None):
     """Forces a full reload of transaction data and settings.
-    
+
     If username is provided, clears only that user's cache.
     If None, clears ALL users' caches.
     """
-    global _TRANSACTIONS_CACHE, _DB_MTIMES, _DB_PATHS, _OVERRIDES_MTIMES, _OVERRIDES_PATHS
-    global _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP
-    global _GUI_CONFIG_CACHES, _MANUAL_OVERRIDES_FILE_CACHES
-    if username is not None:
-        for d in [_TRANSACTIONS_CACHE, _DB_MTIMES, _DB_PATHS, _OVERRIDES_MTIMES, _OVERRIDES_PATHS,
-                  _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP,
-                  _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _GUI_CONFIG_CACHES,
-                  _MANUAL_OVERRIDES_FILE_CACHES]:
-            d.pop(username, None)
-        logging.info(f"Data cache cleared for user '{username}'.")
-    else:
-        _TRANSACTIONS_CACHE.clear()
-        _DB_MTIMES.clear()
-        _DB_PATHS.clear()
-        _OVERRIDES_MTIMES.clear()
-        _OVERRIDES_PATHS.clear()
-        _IGNORED_INDICES.clear()
-        _IGNORED_REASONS.clear()
-        _MANUAL_OVERRIDES.clear()
-        _USER_SYMBOL_MAP.clear()
-        _USER_EXCLUDED_SYMBOLS.clear()
-        _ACCOUNT_CURRENCY_MAP.clear()
-        _GUI_CONFIG_CACHES.clear()
-        _MANUAL_OVERRIDES_FILE_CACHES.clear()
-        logging.info("ALL data caches cleared for all users.")
+    user_data_cache.invalidate(username)
 
 
 def clear_settings_cache(username: Optional[str] = None):
     """Clears settings/overrides cache, forcing a reload on next access.
-    
+
     If username is provided, clears only that user. If None, clears all.
     """
-    global _MANUAL_OVERRIDES_FILE_MTIMES, _OVERRIDES_MTIMES
-    if username is not None:
-        _MANUAL_OVERRIDES_FILE_MTIMES.pop(username, None)
-        _OVERRIDES_MTIMES.pop(username, None)
-    else:
-        _MANUAL_OVERRIDES_FILE_MTIMES.clear()
-        _OVERRIDES_MTIMES.clear()
-    logging.info(f"Settings cache cleared for {'user ' + str(username) if username else 'all users'}.")
+    user_data_cache.clear_settings(username)
+
 
 from config_manager import ConfigManager  # noqa: E402
 
@@ -356,10 +382,4 @@ def get_config_manager(current_user: User = Depends(get_current_user)) -> Config
 
 def reload_config():
     """Forces a reload of global configuration cache."""
-    # This is a placeholder if we need to reload global vars derived from config
-    # Currently get_transaction_data handles its own reloading of config files on each call if needed/logic allows
-    # But for immediate effect of overrides, we might need to clear _TRANSACTIONS_CACHE
     reload_data()
-
-# Moved up to support get_current_user dependency
-

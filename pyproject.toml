@@ -1,0 +1,42 @@
+[tool.pytest.ini_options]
+addopts = "--cov=src --cov-report=term-missing"
+# Make `import config`, `import server.api` etc. work without per-file sys.path hacks.
+pythonpath = ["src"]
+
+[tool.mypy]
+# Gradual adoption: only the files listed here are checked, and they must stay
+# clean. When you touch a module, consider adding it to the list.
+files = [
+    "src/server/auth.py",
+    "src/server/dependencies.py",
+    "src/server/main.py",
+    "src/server/rate_limit.py",
+    "src/server/route_utils.py",
+    "src/server/routes/auth.py",
+    "src/corporate_actions.py",
+    "src/portfolio_version.py",
+    "src/utils_time.py",
+]
+mypy_path = "src"
+explicit_package_bases = true
+follow_imports = "silent"
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]
+
+# The legacy Qt GUI is frozen (no new investment); keep it out of lint scope.
+extend-exclude = [
+    "src/main_gui.py",
+    "src/dialogs.py",
+    "src/models.py",
+    "src/ui_helpers.py",
+    "src/display_config.py",
+    "src/workers.py",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests insert src/ into sys.path before importing project modules,
+# so module-level imports necessarily follow that block.
+"tests/*" = ["E402"]

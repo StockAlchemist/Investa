@@ -1,14 +1,10 @@
 import sys
 import os
-import sqlite3
-import pandas as pd
-from typing import Dict, Any
 
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from server.api import _handle_auto_cash_generation
-from db_utils import add_transaction_to_db
+from server.routes.transactions import _handle_auto_cash_generation
 
 # Mock add_transaction_to_db to capture calls
 captured_transactions = []
@@ -18,8 +14,8 @@ def mock_add_transaction_to_db(conn, tx_data):
     return True, len(captured_transactions)
 
 # Patch the imported function
-import server.api
-server.api.add_transaction_to_db = mock_add_transaction_to_db
+import server.routes.transactions
+server.routes.transactions.add_transaction_to_db = mock_add_transaction_to_db
 
 def test_auto_cash_buy():
     global captured_transactions

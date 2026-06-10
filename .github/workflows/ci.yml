@@ -18,15 +18,8 @@ jobs:
   backend-tests:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
-    env:
-      # Parts of the test suite import PySide6 (Qt); run it headless.
-      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v6
-
-      # PySide6 needs these system libraries to load on a headless runner.
-      - name: Install Qt system libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
 
       - uses: actions/setup-python@v6
         with:
@@ -36,11 +29,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Legacy Qt GUI is frozen: no PySide6 in CI (test_models.py self-skips).
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run pytest
-        # pytest.ini already enables --cov=src --cov-report=term-missing
+        # pyproject.toml enables --cov=src --cov-report=term-missing
         run: pytest tests/
+
+      - name: Mypy (scoped baseline)
+        # Checks only the allowlist in pyproject.toml [tool.mypy] files —
+        # those modules must stay clean; expand the list as modules get typed.
+        run: python -m mypy
 
   backend-lint:
     name: Backend lint (ruff, changed files)
@@ -124,6 +123,9 @@ jobs:
         if: steps.changed.outputs.files != ''
         run: npx eslint ${{ steps.changed.outputs.files }}
 
+      - name: Unit tests (Vitest)
+        run: npm test
+
       # Build validates compilation and types for the whole app.
       # (Next 16 no longer runs ESLint during build; lint is gated separately above.)
       - name: Build
@@ -143,7 +145,8 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Legacy Qt GUI is frozen: no PySide6 in CI (test_models.py self-skips).
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - uses: actions/setup-node@v6
         with:

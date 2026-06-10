@@ -13,6 +13,8 @@ import os
 import json
 import logging
 import shutil
+import threading
+import uuid
 from typing import Dict, Any, Optional
 
 try:
@@ -27,6 +29,25 @@ from display_config import (
     DEFAULT_GRAPH_START_DATE,
     DEFAULT_GRAPH_END_DATE,
 )
+
+# One lock per config file path, shared across all ConfigManager instances.
+# The server creates a fresh ConfigManager per request, so instance-level
+# locks would not serialize anything: concurrent settings saves used to race
+# on a shared .tmp file and corrupt the JSON (interleaved writes -> "Extra
+# data" on load). Guard both the read-modify-write and the file write itself.
+# RLock: the settings route holds the lock across its load-mutate-save cycle,
+# and save_gui_config re-acquires it internally.
+_PATH_LOCKS: Dict[str, threading.RLock] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: str) -> threading.RLock:
+    with _PATH_LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(path)
+        if lock is None:
+            lock = _PATH_LOCKS[path] = threading.RLock()
+        return lock
+
 
 class ConfigManager:
     def __init__(self, app_data_path: str):
@@ -159,37 +180,50 @@ class ConfigManager:
                 if isinstance(k, str) and isinstance(v, str) and v in ("Manual", "Auto")
             }
 
+    def settings_lock(self) -> threading.RLock:
+        """Lock guarding this user's gui_config read-modify-write cycles.
+
+        Callers that load, mutate, and save the config (e.g. the settings
+        route) should hold this across the whole cycle so concurrent updates
+        don't drop each other's fields.
+        """
+        return _lock_for(self.CONFIG_FILE)
+
     def save_gui_config(self, config_dict: Optional[Dict[str, Any]] = None):
         if config_dict is not None:
             self.gui_config = config_dict
-        
+
         # Security: Remove API keys before saving
         save_data = self.gui_config.copy()
         save_data.pop("fmp_api_key", None)
-        
-        # 1. Backup existing
-        if os.path.exists(self.CONFIG_FILE):
-            try:
-                shutil.copy2(self.CONFIG_FILE, self.CONFIG_FILE + ".bak")
-            except Exception as e:
-                logging.warning(f"Failed to create config backup: {e}")
 
-        # 2. Atomic Write
-        tmp_file = self.CONFIG_FILE + ".tmp"
-        try:
-            with open(tmp_file, "w") as f:
-                json.dump(save_data, f, indent=4)
-                f.flush()
-                os.fsync(f.fileno()) # Ensure write to disk
-            
-            os.replace(tmp_file, self.CONFIG_FILE) # Atomic move
-        except Exception as e:
-            logging.error(f"Error saving GUI config: {e}")
-            if os.path.exists(tmp_file):
+        with _lock_for(self.CONFIG_FILE):
+            # 1. Backup existing
+            if os.path.exists(self.CONFIG_FILE):
                 try:
-                    os.remove(tmp_file)
-                except OSError:
-                    pass
+                    shutil.copy2(self.CONFIG_FILE, self.CONFIG_FILE + ".bak")
+                except Exception as e:
+                    logging.warning(f"Failed to create config backup: {e}")
+
+            # 2. Atomic write. Unique tmp name: the lock serializes writers in
+            # this process, but the desktop app may run its own backend against
+            # the same files — a shared tmp name would let cross-process writers
+            # interleave into one file and corrupt it.
+            tmp_file = f"{self.CONFIG_FILE}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+            try:
+                with open(tmp_file, "w") as f:
+                    json.dump(save_data, f, indent=4)
+                    f.flush()
+                    os.fsync(f.fileno()) # Ensure write to disk
+
+                os.replace(tmp_file, self.CONFIG_FILE) # Atomic move
+            except Exception as e:
+                logging.error(f"Error saving GUI config: {e}")
+                if os.path.exists(tmp_file):
+                    try:
+                        os.remove(tmp_file)
+                    except OSError:
+                        pass
 
     def load_manual_overrides(self):
         loaded = {}
@@ -249,29 +283,30 @@ class ConfigManager:
     def save_manual_overrides(self, overrides_data: Optional[Dict[str, Any]] = None):
         if overrides_data is not None:
             self.manual_overrides = overrides_data
-            
-        # 1. Backup existing
-        if os.path.exists(self.MANUAL_OVERRIDES_FILE):
-            try:
-                shutil.copy2(self.MANUAL_OVERRIDES_FILE, self.MANUAL_OVERRIDES_FILE + ".bak")
-            except Exception as e:
-                logging.warning(f"Failed to create manual overrides backup: {e}")
 
-        # 2. Atomic Write
-        tmp_file = self.MANUAL_OVERRIDES_FILE + ".tmp"
-        try:
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(self.manual_overrides, f, indent=4, ensure_ascii=False)
-                f.flush()
-                os.fsync(f.fileno())
-            
-            os.replace(tmp_file, self.MANUAL_OVERRIDES_FILE)
-            return True
-        except Exception as e:
-            logging.error(f"Error saving manual overrides: {e}")
-            if os.path.exists(tmp_file):
+        with _lock_for(self.MANUAL_OVERRIDES_FILE):
+            # 1. Backup existing
+            if os.path.exists(self.MANUAL_OVERRIDES_FILE):
                 try:
-                    os.remove(tmp_file)
-                except OSError:
-                    pass
-            return False
+                    shutil.copy2(self.MANUAL_OVERRIDES_FILE, self.MANUAL_OVERRIDES_FILE + ".bak")
+                except Exception as e:
+                    logging.warning(f"Failed to create manual overrides backup: {e}")
+
+            # 2. Atomic write (unique tmp name — see save_gui_config)
+            tmp_file = f"{self.MANUAL_OVERRIDES_FILE}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+            try:
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(self.manual_overrides, f, indent=4, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+
+                os.replace(tmp_file, self.MANUAL_OVERRIDES_FILE)
+                return True
+            except Exception as e:
+                logging.error(f"Error saving manual overrides: {e}")
+                if os.path.exists(tmp_file):
+                    try:
+                        os.remove(tmp_file)
+                    except OSError:
+                        pass
+                return False

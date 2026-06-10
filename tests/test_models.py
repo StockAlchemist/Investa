@@ -8,6 +8,11 @@ if src_dir not in sys.path:
 
 import pytest
 import pandas as pd
+
+# The legacy Qt GUI is frozen; skip these tests where PySide6 isn't installed
+# (e.g. CI, which only installs server deps).
+pytest.importorskip("PySide6", reason="legacy Qt GUI is frozen; PySide6 not installed")
+
 from PySide6.QtCore import Qt, QObject
 from PySide6.QtGui import QColor
 from models import PandasModel

@@ -40,6 +40,91 @@ def _to_float(value: str) -> float:
     return float(value.replace(",", "").replace(" ", ""))
 
 
+# IBKR ships the "Trades" section in two PDF layouts with different column
+# orders, so positional indexing can't serve both:
+#   Activity Statement:  Symbol | Date/Time | | Quantity | T. Price | C. Price | Proceeds | Comm/Fee | Basis | ...
+#   Trade Confirmation:  Acct ID | Symbol | Trade Date/Time | Settle Date | Exchange | Type | Quantity | Price | Proceeds | Comm | Fee | ...
+# (Proceeds is column 6 in the first, column 8 in the second.) Map the header
+# row to field names so each layout reads the right column.
+def _ibkr_trades_colmap(header: List[str]) -> Dict[str, int]:
+    cols: Dict[str, int] = {}
+    for i, raw in enumerate(header):
+        c = (raw or "").strip().lower()
+        if not c:
+            continue
+        if c == "acct id":
+            cols.setdefault("acct", i)
+        elif c == "symbol":
+            cols.setdefault("sym", i)
+        elif "date" in c:
+            cols.setdefault("date", i)  # 'Date/Time' / 'Trade Date/Time' (first wins, not 'Settle Date')
+        elif c == "exchange":
+            cols.setdefault("exchange", i)
+        elif c == "quantity":
+            cols.setdefault("qty", i)
+        elif c in ("price", "t. price"):
+            cols.setdefault("price", i)  # trade price (ignore 'C. Price')
+        elif c == "proceeds":
+            cols.setdefault("proceeds", i)
+        elif c.startswith("comm"):
+            cols.setdefault("comm", i)  # 'Comm' or 'Comm/Fee'
+        elif c == "fee":
+            cols.setdefault("fee", i)
+    return cols
+
+
+def _ibkr_trade_from_row(
+    row: List[str], colmap: Dict[str, int], account_name: str, user_id: int
+) -> Optional[Dict[str, Any]]:
+    """Build a trade transaction from a Trades data row using the header-derived
+    column map. Returns None for label/subtotal rows and for per-venue fills
+    (see the Exchange handling below)."""
+
+    def cell(key: str) -> str:
+        i = colmap.get(key)
+        return row[i].strip() if i is not None and i < len(row) and row[i] is not None else ""
+
+    sym = cell("sym")
+    qty_raw = cell("qty")
+    if not sym or not qty_raw:
+        return None  # 'Stocks' / 'USD' / 'Total ...' / blank rows
+
+    # Trade Confirmations list an order-summary row (Exchange "-") followed by
+    # the per-venue fills. Import the summary (it carries the order totals) and
+    # skip the fills so the order isn't double counted. Activity Statements have
+    # no Exchange column, so every data row is imported.
+    exch = cell("exchange")
+    if exch and exch != "-":
+        return None
+
+    q_val = _to_float(qty_raw)
+
+    # IBKR may split commission and exchange fees into separate columns; combine.
+    commission = abs(_to_float(cell("comm"))) if cell("comm") else 0.0
+    fee = cell("fee")
+    if fee:
+        commission += abs(_to_float(fee))
+
+    account = account_name
+    acct_i = colmap.get("acct")
+    if acct_i is not None and acct_i < len(row) and _ACCOUNT_ID_RE.match((row[acct_i] or "").strip()):
+        account = row[acct_i].strip()
+
+    return {
+        "Date": cell("date").split(",")[0].strip(),
+        "Type": "Buy" if q_val > 0 else "Sell",
+        "Symbol": sym,
+        "Quantity": abs(q_val),
+        "Price/Share": _to_float(cell("price")),
+        "Total Amount": abs(_to_float(cell("proceeds"))),
+        "Commission": commission,
+        "Account": account,
+        "Note": "IBKR Trade",
+        "Local Currency": "USD",
+        "user_id": user_id,
+    }
+
+
 def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
     transactions = []
     account_name = account_override or "IBKR Account"
@@ -77,6 +162,7 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                     # Track section state across rows — a single pdfplumber
                     # table can splice several IBKR logical sections together.
                     current_section = section
+                    trades_colmap: Optional[Dict[str, int]] = None  # header-derived map for Trades
 
                     for row in table:
                         if not row or len(row) < 3:
@@ -102,6 +188,16 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                         # Rebind for the rest of the loop body below.
                         section = current_section
 
+                        # Capture the Trades column header so data rows can be
+                        # mapped by name (IBKR's two layouts order Proceeds/Comm/
+                        # Fee differently). Must run before the label-skip below,
+                        # which would otherwise drop the 'Symbol ...' header row.
+                        if section == "Trades":
+                            low_cells = [c.lower() for c in row]
+                            if "quantity" in low_cells and "proceeds" in low_cells:
+                                trades_colmap = _ibkr_trades_colmap(row)
+                                continue
+
                         first_val = row[0]
                         # Header / label / subtotal rows. The fixed-column
                         # Trades / Transfers branches index by position, so a
@@ -118,6 +214,15 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
 
                         try:
                             if section == "Trades":
+                                if trades_colmap is not None:
+                                    txn = _ibkr_trade_from_row(row, trades_colmap, account_name, user_id)
+                                    if txn:
+                                        transactions.append(txn)
+                                    continue
+
+                                # Fallback: no column header captured for this
+                                # table — use the legacy multi-account positional
+                                # layout.
                                 if _ACCOUNT_ID_RE.match(row[0]):
                                     account = row[0]
                                     sym, date_str, qty_str, price_str, proceeds_str, comm_str = row[1], row[2].split(",")[0].strip(), row[6], row[7], row[9], row[10]

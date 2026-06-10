@@ -30,7 +30,8 @@ export const apiClient = createClient<paths>({
     // We can inject headers using a middleware
 });
 
-// Middleware to inject authentication token
+// Middleware: inject the auth token, and broadcast expiry on 401 so
+// AuthContext can log out (same contract authFetch in lib/api.ts had).
 apiClient.use({
     onRequest({ request }) {
         const headers = getAuthHeaders();
@@ -38,5 +39,15 @@ apiClient.use({
             request.headers.set('Authorization', headers.Authorization);
         }
         return request;
-    }
+    },
+    onResponse({ request, response }) {
+        if (
+            response.status === 401 &&
+            typeof window !== 'undefined' &&
+            !request.url.includes('/auth/login')
+        ) {
+            window.dispatchEvent(new CustomEvent('auth:expired'));
+        }
+        return response;
+    },
 });

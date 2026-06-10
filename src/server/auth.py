@@ -1,20 +1,29 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict
 import config
 
 # --- Password Hashing ---
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _password_bytes(password: str) -> bytes:
+    # bcrypt only reads the first 72 bytes; truncate explicitly so behaviour
+    # matches the passlib setup that produced existing hashes (newer bcrypt
+    # versions raise on longer inputs instead of truncating).
+    return password.encode("utf-8")[:72]
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifies a plain password against a hashed password."""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verifies a plain password against a stored bcrypt hash."""
+    try:
+        return bcrypt.checkpw(_password_bytes(plain_password), hashed_password.encode("utf-8"))
+    except ValueError:
+        # Malformed/non-bcrypt hash in the DB — treat as no match.
+        return False
 
 def get_password_hash(password: str) -> str:
-    """Hashes a password using bcrypt."""
-    return pwd_context.hash(password)
+    """Hashes a password using bcrypt (same $2b$, 12 rounds as the old passlib setup)."""
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 # --- JWT Tokens ---
 

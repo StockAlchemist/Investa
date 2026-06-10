@@ -1,0 +1,7 @@
+# Test and lint tooling.
+pytest==8.3.5
+pytest-cov==6.1.0
+pytest-mock==3.14.0
+ruff==0.12.2
+mypy==2.1.0
+line_profiler==4.2.0

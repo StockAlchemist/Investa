@@ -210,6 +210,27 @@ _FETCH_SEMAPHORE = threading.Semaphore(2)
 _LAST_RATE_LIMIT_TIME = 0.0 # Track when we last saw a 429
 _RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
 
+# Window after a 429 during which we keep using the heavy inter-batch throttle.
+_RATE_LIMIT_BACKOFF_WINDOW = 120.0
+
+
+def _adaptive_throttle_seconds(calm_min: float, calm_max: float,
+                               busy_min: float, busy_max: float) -> float:
+    """Inter-batch throttle that adapts to recent rate-limit pressure.
+
+    Yahoo flags rapid sequential batch requests as robotic, so we always pause
+    a little between batches. But the original fixed 3-10s pause was paid on
+    every request even when Yahoo was perfectly happy, dominating cold-load
+    latency. Instead: use a small "calm" delay normally, and fall back to the
+    original large "busy" delay only when a 429 was seen within the backoff
+    window (the global cool-down still applies separately on the 429 itself).
+    """
+    with _RATE_LIMIT_LOCK:
+        recently_limited = (time.time() - _LAST_RATE_LIMIT_TIME) < _RATE_LIMIT_BACKOFF_WINDOW
+    if recently_limited:
+        return random.uniform(busy_min, busy_max)
+    return random.uniform(calm_min, calm_max)
+
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -330,7 +351,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
         payload.update(kwargs)
         
         # Run subprocess
-        logging.info(f"WORKER START ATTEMPT: Task={task}, Tickers={tickers[:3]}...")
+        logging.debug(f"WORKER START ATTEMPT: Task={task}, Tickers={tickers[:3]}...")
         result = subprocess.run(
             [sys.executable, script_path],
             input=json.dumps(payload),
@@ -341,7 +362,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
 
         
         if result.stderr:
-             logging.info(f"Isolated fetch STDERR: {result.stderr}")
+             logging.debug(f"Isolated fetch STDERR: {result.stderr}")
 
         if result.returncode != 0:
             err_msg = f"Isolated fetch failed (Code {result.returncode})"
@@ -644,9 +665,10 @@ class MarketDataProvider:
             # REDUCED: Was 50. Smaller chunks prevent "poison" tickers from failing large groups.
             chunk_size = 20
             for i in range(0, len(missing_symbols), chunk_size):
-                # Randomized throttling between metadata batches
+                # Randomized throttling between metadata batches (adaptive:
+                # small when calm, full 2-5s only after a recent rate limit).
                 if i > 0:
-                    wait = random.uniform(2.0, 5.0)
+                    wait = _adaptive_throttle_seconds(0.3, 1.0, 2.0, 5.0)
                     logging.info(f"Metadata Throttling: Waiting {wait:.1f}s before next chunk...")
                     time.sleep(wait)
                     
@@ -1605,7 +1627,7 @@ class MarketDataProvider:
                              (price, change, changesPercentage, name, source, timestamp).
                              Returns cached data or empty dict on failure/rate limit.
         """
-        logging.info(
+        logging.debug(
             f"Fetching current quotes for {len(index_symbols)} index symbols..."
         )
         
@@ -1644,7 +1666,7 @@ class MarketDataProvider:
                             minutes=cache_duration_minutes
                         ):
                             cache_valid = True
-                            logging.info(
+                            logging.debug(
                                 f"Using valid cache for index quotes (Key: {cache_key[:30]}...)."
                             )
                     elif not cache_timestamp_str:
@@ -1693,7 +1715,7 @@ class MarketDataProvider:
                 return results
 
             yf_tickers_str = " ".join(yf_tickers_to_fetch)
-            logging.info(
+            logging.debug(
                 f"Fetching fresh index quotes for YF tickers: {yf_tickers_str}"
             )
             # --- END MODIFICATION ---
@@ -1762,7 +1784,7 @@ class MarketDataProvider:
                                         change = 0.0
                                         change_pct = 0.0
                                         
-                                    logging.info(f"Using history fallback for {yf_symbol}: Price={price}, Change={change}")
+                                    logging.debug(f"Using history fallback for {yf_symbol}: Price={price}, Change={change}")
                         except Exception as e_fallback:
                             logging.warning(f"Error using history fallback for {yf_symbol}: {e_fallback}")
 
@@ -2146,9 +2168,11 @@ class MarketDataProvider:
         all_missing_symbols = []
 
         for i in range(0, len(symbols_yf), fetch_batch_size):
-            # Randomized throttling between history batches
+            # Randomized throttling between history batches. Small delay when
+            # Yahoo is calm; full 3-10s delay only if we were recently rate
+            # limited (see _adaptive_throttle_seconds).
             if i > 0:
-                wait = random.uniform(3.0, 10.0)
+                wait = _adaptive_throttle_seconds(0.5, 1.5, 3.0, 10.0)
                 logging.info(f"Historical Throttling: Waiting {wait:.1f}s before next chunk...")
                 time.sleep(wait)
                 

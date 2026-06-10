@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency, formatCurrencyWhole } from '@/lib/utils';
 import { ResponsiveContainer, LineChart, Line } from 'recharts';
 import { LucideIcon, Loader2 } from 'lucide-react';
 
@@ -16,7 +16,6 @@ export interface MetricCardProps {
     subValueClassName?: string;
     currency?: string;
     isHero?: boolean;
-    isPercent?: boolean;
     trend?: number | string | null;
     icon?: LucideIcon;
     isLoading?: boolean;
@@ -119,7 +118,6 @@ export function MetricCard({
     value,
     subValue,
     isCurrency = true,
-    isPercent = false,
     colorClass = '',
     valueClassName = 'text-xl sm:text-2xl',
     containerClassName = '',
@@ -140,6 +138,18 @@ export function MetricCard({
         // Layout is a 3-row vertical stack (label → value → delta) so every card
         // shares the same rhythm regardless of currency width or whether a
         // sub-value is present — keeps the 2-col mobile grid visually aligned.
+
+        // The full number is always shown — never abbreviated or ellipsized.
+        // Cents drop out at ≥100k (formatCurrencyWhole) and the font steps
+        // down as the string grows so long amounts still fit the card.
+        const display = value !== null && value !== undefined
+            ? (isCurrency && typeof value === 'number' ? formatCurrencyWhole(value, currency) : String(value))
+            : '—';
+        const fitClass =
+            display.length > 13 ? 'text-sm sm:text-base' :
+            display.length > 11 ? 'text-base sm:text-lg' :
+            display.length > 9 ? 'text-lg sm:text-xl' : '';
+
         return (
             <div
                 className={cn(
@@ -155,7 +165,7 @@ export function MetricCard({
 
                 {/* Row 1 — label + icon */}
                 <div className="flex items-start justify-between gap-2 mb-2 relative z-10">
-                    <p className="section-label pr-1 leading-tight min-w-0 truncate">{title}</p>
+                    <p className="section-label pr-1 leading-tight min-w-0 line-clamp-2">{title}</p>
                     <div className="flex items-center gap-1.5 shrink-0">
                         {isRefreshing && (
                             <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
@@ -180,16 +190,17 @@ export function MetricCard({
                         <Skeleton className="h-7 w-28 opacity-50 rounded-lg" />
                     ) : (
                         <span
-                            title={value !== null && value !== undefined ? String(value) : undefined}
+                            title={value !== null && value !== undefined && isCurrency && typeof value === 'number'
+                                ? formatCurrency(value, currency)
+                                : undefined}
                             className={cn(
                                 'block font-bold tracking-tight leading-none tabular-nums text-foreground truncate',
                                 colorClass,
-                                valueClassName
+                                valueClassName,
+                                fitClass
                             )}
                         >
-                            {value !== null && value !== undefined
-                                ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value)
-                                : '—'}
+                            {display}
                         </span>
                     )}
                 </div>

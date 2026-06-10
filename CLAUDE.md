@@ -8,7 +8,7 @@ Investa is a financial portfolio management system with three deployment targets
 
 - **Web app** — Next.js 16 / React 19 PWA (`web_app/`)
 - **Desktop app** — Electron wrapper around the built web app (`desktop-electron/`)
-- **Legacy GUI** — PySide6 (Qt) desktop app (`src/main_gui.py`), largely in maintenance mode
+- **Legacy GUI** — PySide6 (Qt) desktop app (`src/main_gui.py`), **frozen** as of June 2026: no new features or refactoring; excluded from lint scope and CI (its tests self-skip without PySide6)
 
 ## Running the App
 
@@ -34,7 +34,9 @@ cd web_app && npm run build:desktop
 
 ### Python backend
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt          # server/runtime deps
+pip install -r requirements-dev.txt      # + pytest, ruff
+pip install -r requirements-gui.txt      # + PySide6/matplotlib (only for the frozen legacy Qt GUI)
 
 pytest tests/                              # all tests
 pytest tests/test_finutils.py -v          # single file
@@ -51,7 +53,8 @@ npm run dev          # dev server
 npm run build        # production build
 npm run build:desktop  # static export for Electron (outputs to out/)
 npm run lint         # ESLint
-npm run test:e2e     # Playwright E2E tests
+npm test             # Vitest unit tests (tests/unit/)
+npm run test:e2e     # Playwright E2E tests (hermetic — backend mocked via page.route)
 ```
 
 ### Electron (`desktop-electron/`)
@@ -113,6 +116,9 @@ Copy `.env` and populate:
 GEMINI_API_KEY=...
 FMP_API_KEY=...       # Financial Modeling Prep (optional)
 IBKR_PORT=...         # Interactive Brokers (optional)
+AUTH_SECRET_KEY=...   # JWT signing key (optional; auto-generated to data/config/auth_secret.key if unset)
+CORS_ALLOW_ORIGINS=... # Extra CORS origins, comma-separated (local/LAN/Tailscale covered by default)
+INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG when debugging)
 ```
 
 ## Key Conventions

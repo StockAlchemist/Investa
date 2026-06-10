@@ -28,6 +28,7 @@ import {
   PortfolioSummary
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import type { MarketIndex } from '@/components/MarketsTab';
 import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
 import { TAB_LAYOUT_ITEMS, TAB_INITIAL_VISIBLE, TAB_SECTION_LABELS } from '@/lib/layout_registry';
 import Dashboard from '@/components/Dashboard';
@@ -318,7 +319,9 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchLevel >= 2),
+    // Level 1 (not 2): this is the Performance tab's primary dataset and the
+    // server compute is slow — start it early so the tab opens populated.
+    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchLevel >= 1),
   });
 
   const capitalGainsQuery = useQuery({
@@ -395,7 +398,10 @@ export default function Home() {
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1y', benchmarks, '1d', undefined, undefined, signal),
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-    enabled: !!user && (activeTab === 'asset_change' || activeTab === 'performance'),
+    // backgroundFetchLevel: this was the only Performance-tab query with no
+    // background prefetch, so its drawdown/scoreboard panels always showed
+    // skeletons for the full (slow) history compute on first click.
+    enabled: !!user && (activeTab === 'asset_change' || activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
 
   const watchlistQuery = useQuery({
@@ -574,14 +580,13 @@ export default function Home() {
         return !indices ? (
           <p className="text-muted-foreground text-sm">Market data unavailable.</p>
         ) : (
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           <MarketsTab
-            indices={indices as any}
+            indices={indices as unknown as Record<string, MarketIndex>}
             onIndexClick={() => setIsIndexGraphModalOpen(true)}
             holdings={holdings}
             currency={currency}
             portfolioSymbols={holdings.map(h => h.Symbol).filter(Boolean)}
-            watchlistSymbols={(watchlistQuery.data || []).map((w: any) => w.Symbol).filter(Boolean)}
+            watchlistSymbols={(watchlistQuery.data || []).map((w) => w.Symbol).filter(Boolean)}
           />
         );
 

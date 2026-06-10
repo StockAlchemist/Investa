@@ -8,7 +8,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { fetchMarketNews, fetchStockNews, type MarketNewsItem, type Holding } from '@/lib/api';
 import { useStockModal } from '@/context/StockModalContext';
 
-interface MarketIndex {
+export interface MarketIndex {
     name: string;
     price: number;
     change: number;
@@ -212,7 +212,7 @@ function NewsSection({ title, news, isLoading }: { title: string; news: MarketNe
 
 function SummaryTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'pos' | 'neg' | 'neutral' }) {
     return (
-        <div className="flex-1 min-w-[120px] px-4 py-2.5 first:pl-0 last:pr-0">
+        <div className="flex-1 min-w-0 px-2 sm:px-4 py-2.5 first:pl-0 last:pr-0">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1.5">{label}</div>
             <div className={cn(
                 'text-lg sm:text-xl font-bold tabular-nums leading-none truncate',
@@ -238,7 +238,7 @@ function MarketsSummaryBar({ indices }: { indices: Record<string, MarketIndex> }
 
     return (
         <div className="metric-card p-3 sm:p-4">
-            <div className="flex flex-wrap divide-x divide-border/60">
+            <div className="flex divide-x divide-border/60">
                 <SummaryTile label="Breadth" value={`${up} ▲ / ${down} ▼`} sub={`${list.length} indices`} tone={up >= down ? 'pos' : 'neg'} />
                 <SummaryTile label="Best" value={`${best.changesPercentage >= 0 ? '+' : ''}${best.changesPercentage.toFixed(2)}%`} sub={best.name} tone="pos" />
                 <SummaryTile label="Worst" value={`${worst.changesPercentage >= 0 ? '+' : ''}${worst.changesPercentage.toFixed(2)}%`} sub={worst.name} tone="neg" />
