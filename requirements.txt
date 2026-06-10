@@ -18,8 +18,7 @@ scipy==1.16.0
 uvicorn==0.38.0
 yfinance==0.2.65
 lxml==5.3.0
-bcrypt==3.2.2
-passlib[bcrypt]
+bcrypt==5.0.0
 python-jose[cryptography]
 statsmodels==0.14.4
 pandas-market-calendars==4.4.1

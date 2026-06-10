@@ -17,12 +17,20 @@ const getApiBaseUrl = () => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+export class SessionExpiredError extends Error {
+    constructor() {
+        super('Session expired');
+        this.name = 'SessionExpiredError';
+    }
+}
+
 export async function fetchCurrentUser(token: string): Promise<User> {
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: {
             Authorization: `Bearer ${token}`,
         },
     });
+    if (res.status === 401) throw new SessionExpiredError();
     if (!res.ok) throw new Error('Failed to fetch user');
     return res.json();
 }

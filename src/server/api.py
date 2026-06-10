@@ -1,5 +1,9 @@
 # ruff: noqa: E402  # sys.path is mutated below; project imports must follow that block
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
+from server.rate_limit import (
+    enforce_limit, get_client_ip,
+    failed_auth_limiter, login_ip_limiter, register_ip_limiter,
+)
 from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict
@@ -439,9 +443,12 @@ class UserPasswordUpdate(BaseModel):
 from fastapi.security import OAuth2PasswordRequestForm
 
 @router.post("/auth/register", response_model=User)
-async def register(user: UserCreate, conn: sqlite3.Connection = Depends(get_global_db_connection)):
+async def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depends(get_global_db_connection)):
     # conn obtained from dependency is for GLOBAL DB (Users)
-    
+    client_ip = get_client_ip(request)
+    enforce_limit(register_ip_limiter, client_ip, "registration attempts")
+    register_ip_limiter.record(client_ip)
+
     try:
         cursor = conn.cursor()
         
@@ -499,20 +506,27 @@ async def register(user: UserCreate, conn: sqlite3.Connection = Depends(get_glob
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 @router.post("/auth/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
     # conn is GLOBAL DB
-    
+    client_ip = get_client_ip(request)
+    user_key = f"login:{form_data.username.lower()}"
+    enforce_limit(failed_auth_limiter, user_key, "failed login attempts")
+    enforce_limit(login_ip_limiter, client_ip, "login attempts")
+    login_ip_limiter.record(client_ip)
+
     cursor = conn.cursor()
     cursor.execute("SELECT id, username, hashed_password FROM users WHERE username = ?", (form_data.username,))
     row = cursor.fetchone()
-    
+
     if not row or not verify_password(form_data.password, row[2]):
+        failed_auth_limiter.record(user_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+    failed_auth_limiter.reset(user_key)
+
     access_token_expires = timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": row[1], "id": row[0]}, expires_delta=access_token_expires
@@ -584,19 +598,23 @@ async def change_password(
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_global_db_connection)
 ):
+    pw_key = f"change-password:{current_user.username.lower()}"
+    enforce_limit(failed_auth_limiter, pw_key, "incorrect password attempts")
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT hashed_password FROM users WHERE id = ?", (current_user.id,))
         row = cursor.fetchone()
-        
+
         if not row:
              raise HTTPException(status_code=404, detail="User not found")
-             
+
         stored_hash = row[0]
-        
+
         if not verify_password(password_data.current_password, stored_hash):
+            failed_auth_limiter.record(pw_key)
             raise HTTPException(status_code=400, detail="Incorrect current password")
-            
+        failed_auth_limiter.reset(pw_key)
+
         hashed_new_pw = get_password_hash(password_data.new_password)
         
         cursor.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (hashed_new_pw, current_user.id))

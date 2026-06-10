@@ -36,7 +36,10 @@ IBKR_TOKEN = os.getenv("IBKR_TOKEN")
 IBKR_QUERY_ID = os.getenv("IBKR_QUERY_ID")
 
 # --- Authentication Configuration ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7") # Fallback for dev only!
+# AUTH_SECRET_KEY is resolved below (after get_app_data_dir is defined):
+# the AUTH_SECRET_KEY env var wins; otherwise a per-installation random key
+# is generated and persisted under data/config/. There is deliberately no
+# hardcoded fallback — a key in source lets anyone forge auth tokens.
 AUTH_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 30 days
 
@@ -98,6 +101,44 @@ def get_app_data_dir() -> str:
     except Exception:
         # Fallback to CWD if permission issues (though unlikely in execution env)
         return os.path.join(os.getcwd(), "data")
+
+
+def _resolve_auth_secret_key() -> str:
+    """Resolve the JWT signing key: env var first, else a persisted per-installation key.
+
+    The persisted key lives at data/config/auth_secret.key (mode 0600) and is
+    created on first run, so self-hosted setups work without any configuration
+    while never sharing a signing key between installations.
+    """
+    env_key = os.getenv("AUTH_SECRET_KEY")
+    if env_key:
+        return env_key
+
+    key_path = os.path.join(get_app_data_dir(), CONFIG_DIR, "auth_secret.key")
+    try:
+        with open(key_path, "r", encoding="utf-8") as f:
+            key = f.read().strip()
+        if key:
+            return key
+    except FileNotFoundError:
+        pass
+
+    import secrets
+
+    key = secrets.token_hex(32)
+    os.makedirs(os.path.dirname(key_path), exist_ok=True)
+    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(key)
+    logging.info(
+        "Generated new auth signing key at %s (set the AUTH_SECRET_KEY env var to override). "
+        "Existing sessions are invalidated; users must log in again.",
+        key_path,
+    )
+    return key
+
+
+AUTH_SECRET_KEY = _resolve_auth_secret_key()
 
 
 def get_app_cache_dir() -> Optional[str]:

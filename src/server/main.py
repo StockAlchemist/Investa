@@ -52,13 +52,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)
 
-# Configure CORS to allow requests from the frontend (likely localhost:3000)
-# Configure CORS to allow requests from the frontend
-# Bearer-token auth — credentials (cookies) not needed, so wildcard origins are safe.
-# allow_credentials=True + allow_origins=["*"] is rejected by browsers per the CORS spec.
+# CORS: restrict to the origins Investa is actually served from, instead of "*",
+# so a random website can't make API requests with a stolen bearer token.
+# Default coverage: localhost, private LAN ranges (RFC 1918), Tailscale (CGNAT
+# IPs and *.ts.net hostnames), .local mDNS names — any port — plus the literal
+# "null" origin the Electron desktop app sends when loading the UI via file://.
+# Extra origins (e.g. a public domain) go in the CORS_ALLOW_ORIGINS env var,
+# comma-separated.
+_LOCAL_ORIGIN_REGEX = (
+    r"^https?://("
+    r"localhost|127\.0\.0\.1|\[::1\]"
+    r"|192\.168\.\d{1,3}\.\d{1,3}"
+    r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+    r"|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"
+    r"|[\w.-]+\.ts\.net"
+    r"|[\w-]+\.local"
+    r")(:\d+)?$"
+)
+_extra_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["null", *_extra_origins],
+    allow_origin_regex=_LOCAL_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
