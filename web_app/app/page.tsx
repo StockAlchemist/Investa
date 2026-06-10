@@ -28,6 +28,7 @@ import {
   PortfolioSummary
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import type { MarketIndex } from '@/components/MarketsTab';
 import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
 import { TAB_LAYOUT_ITEMS, TAB_INITIAL_VISIBLE, TAB_SECTION_LABELS } from '@/lib/layout_registry';
 import Dashboard from '@/components/Dashboard';
@@ -579,14 +580,13 @@ export default function Home() {
         return !indices ? (
           <p className="text-muted-foreground text-sm">Market data unavailable.</p>
         ) : (
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           <MarketsTab
-            indices={indices as any}
+            indices={indices as unknown as Record<string, MarketIndex>}
             onIndexClick={() => setIsIndexGraphModalOpen(true)}
             holdings={holdings}
             currency={currency}
             portfolioSymbols={holdings.map(h => h.Symbol).filter(Boolean)}
-            watchlistSymbols={(watchlistQuery.data || []).map((w: any) => w.Symbol).filter(Boolean)}
+            watchlistSymbols={(watchlistQuery.data || []).map((w) => w.Symbol).filter(Boolean)}
           />
         );
 

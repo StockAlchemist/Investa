@@ -73,7 +73,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
     const { user } = useAuth();
     const [symbol, setSymbol] = useState('');
     const [formData, setFormData] = useState<Record<string, string>>({});
-    const [liveDefaults, setLiveDefaults] = useState<Record<string, any>>({});
+    const [liveDefaults, setLiveDefaults] = useState<Record<string, number>>({});
     const [isLoadingDefaults, setIsLoadingDefaults] = useState(false);
 
     useEffect(() => {
@@ -87,7 +87,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
             try {
                 const results = await fetchIntrinsicValue(symbol);
                 if (results && results.models) {
-                    const defaults: Record<string, any> = {};
+                    const defaults: Record<string, number> = {};
                     const dcf = results.models.dcf?.parameters;
                     const graham = results.models.graham?.parameters;
 
@@ -123,9 +123,9 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
     useEffect(() => {
         const symUpper = symbol.toUpperCase();
         if (valuationOverrides[symUpper]) {
-            const existing = valuationOverrides[symUpper];
+            const existing = valuationOverrides[symUpper] as Record<string, number>;
             const newFormData: Record<string, string> = {};
-            Object.entries(existing).forEach(([key, val]: [string, any]) => {
+            Object.entries(existing).forEach(([key, val]) => {
                 const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
                 if (info) {
                     newFormData[key] = info.isPercent ? (val * 100).toFixed(2) : val.toString();
@@ -159,7 +159,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
         const currentOverrides = { ...valuationOverrides };
         const symUpper = symbol.toUpperCase();
 
-        const newEntry: Record<string, any> = {};
+        const newEntry: Record<string, number> = {};
         Object.entries(formData).forEach(([key, val]) => {
             if (val === '') return;
             const numVal = parseFloat(val);
@@ -299,7 +299,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         <div className="bg-white/40 dark:bg-black/20 p-4 sm:p-6 rounded-2xl border border-black/5 dark:border-white/5">
                             <h4 className="text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-6 flex items-center gap-3">
                                 <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]" />
-                                Graham's Formula
+                                Graham&apos;s Formula
                                 <div className="h-px flex-1 bg-gradient-to-r from-amber-500/20 to-transparent"></div>
                             </h4>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -363,7 +363,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {Object.entries(valuationOverrides).map(([sym, data]: [string, any]) => (
+                    {Object.entries(valuationOverrides as Record<string, Record<string, number>>).map(([sym, data]) => (
                         <div key={sym} className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 shadow-lg p-5 sm:p-6">
                             <div className="flex items-center justify-between gap-3 mb-5">
                                 <span className="font-black text-xl sm:text-2xl text-purple-600 dark:text-purple-400">{sym}</span>
@@ -396,7 +396,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                             DCF Model
                                         </div>
                                         <div className="grid grid-cols-1 gap-x-6 gap-y-3">
-                                            {Object.entries(data).filter(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin').map(([key, val]: [string, any]) => {
+                                            {Object.entries(data).filter(([k]) => k.startsWith('dcf') || k === 'target_fcf_margin').map(([key, val]) => {
                                                 const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
                                                 if (!info) return null;
 
@@ -428,10 +428,10 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                     <div className="bg-white/60 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-amber-500/20 shadow-sm relative overflow-hidden">
                                         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-400 to-orange-500 opacity-50" />
                                         <div className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                            Graham's Formula
+                                            Graham&apos;s Formula
                                         </div>
                                         <div className="grid grid-cols-1 gap-x-6 gap-y-3">
-                                            {Object.entries(data).filter(([k]) => k.startsWith('graham')).map(([key, val]: [string, any]) => {
+                                            {Object.entries(data).filter(([k]) => k.startsWith('graham')).map(([key, val]) => {
                                                 const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
                                                 if (!info) return null;
 

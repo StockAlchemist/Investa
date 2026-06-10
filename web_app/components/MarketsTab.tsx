@@ -8,7 +8,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { fetchMarketNews, fetchStockNews, type MarketNewsItem, type Holding } from '@/lib/api';
 import { useStockModal } from '@/context/StockModalContext';
 
-interface MarketIndex {
+export interface MarketIndex {
     name: string;
     price: number;
     change: number;
