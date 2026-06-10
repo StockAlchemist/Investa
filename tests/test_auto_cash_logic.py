@@ -1,14 +1,10 @@
 import sys
 import os
-import sqlite3
-import pandas as pd
-from typing import Dict, Any
 
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from server.routes.transactions import _handle_auto_cash_generation
-from db_utils import add_transaction_to_db
 
 # Mock add_transaction_to_db to capture calls
 captured_transactions = []

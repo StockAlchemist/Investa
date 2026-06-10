@@ -2302,22 +2302,28 @@ def _get_or_calculate_all_daily_holdings(
         f"ALL_HOLDINGS_{CURRENT_HIST_VERSION}_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
     )
 
-    cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
-    if not cache_dir_base:
+    cache_dir_base = (
+        QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+        if QStandardPaths is not None
+        else None
+    )
+    if cache_dir_base:
+        holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache_new")
+        os.makedirs(holdings_cache_dir, exist_ok=True)
+        key_file = os.path.join(holdings_cache_dir, f"{cache_key}.key")
+        qty_file = os.path.join(holdings_cache_dir, f"{cache_key}_qty.npy")
+        cash_file = os.path.join(holdings_cache_dir, f"{cache_key}_cash.npy")
+        prices_file = os.path.join(holdings_cache_dir, f"{cache_key}_prices.npy")
+    else:
+        # No Qt cache location (e.g. headless server without PySide6):
+        # still compute, just skip the load/save round-trip.
         logging.warning(
-            "Could not find cache directory. Layer 1 caching will be disabled."
+            "Could not find cache directory. Layer 1 caching disabled; computing without cache."
         )
-        return None, None, None
+        holdings_cache_dir = None
+        key_file = qty_file = cash_file = prices_file = None
 
-    holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache_new")
-    os.makedirs(holdings_cache_dir, exist_ok=True)
-
-    key_file = os.path.join(holdings_cache_dir, f"{cache_key}.key")
-    qty_file = os.path.join(holdings_cache_dir, f"{cache_key}_qty.npy")
-    cash_file = os.path.join(holdings_cache_dir, f"{cache_key}_cash.npy")
-    prices_file = os.path.join(holdings_cache_dir, f"{cache_key}_prices.npy")
-
-    if (
+    if holdings_cache_dir and (
         os.path.exists(key_file)
         and os.path.exists(qty_file)
         and os.path.exists(cash_file)
@@ -2468,15 +2474,16 @@ def _get_or_calculate_all_daily_holdings(
         )
     )
 
-    try:
-        np.save(qty_file, daily_holdings_qty)
-        np.save(cash_file, daily_cash_balances)
-        np.save(prices_file, daily_last_prices)
-        with open(key_file, "w") as f:
-            f.write("valid")
-        # logging.info("L1 Cache SAVE: Saved calculated daily holdings to cache.")
-    except Exception as e:
-        logging.error(f"L1 Cache SAVE Error: Failed to save numpy arrays: {e}")
+    if holdings_cache_dir:
+        try:
+            np.save(qty_file, daily_holdings_qty)
+            np.save(cash_file, daily_cash_balances)
+            np.save(prices_file, daily_last_prices)
+            with open(key_file, "w") as f:
+                f.write("valid")
+            # logging.info("L1 Cache SAVE: Saved calculated daily holdings to cache.")
+        except Exception as e:
+            logging.error(f"L1 Cache SAVE Error: Failed to save numpy arrays: {e}")
 
     return daily_holdings_qty, daily_cash_balances, daily_last_prices
 

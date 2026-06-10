@@ -161,109 +161,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/asset_change": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Asset Change
-         * @description Returns periodic asset change data (Annual, Monthly, Weekly, Daily).
-         *
-         *     Args:
-         *         currency (str): The display currency (e.g., USD, THB).
-         *         accounts (List[str], optional): List of account names to include.
-         *         benchmarks (List[str], optional): List of benchmark names or symbols.
-         *         data (tuple): Dependency injection for transaction data.
-         *
-         *     Returns:
-         *         Dict[str, List[Dict]]: Dictionary mapping periods (Annual, etc.) to lists of asset change records.
-         */
-        get: operations["get_asset_change_api_asset_change_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Portfolio Summary
-         * @description Returns the high-level portfolio summary (Total Value, G/L, etc.).
-         *
-         *     Args:
-         *         currency (str): The display currency.
-         *         accounts (List[str], optional): List of account names to filter by.
-         *         data (tuple): Dependency injection for transaction data.
-         *
-         *     Returns:
-         *         Dict[str, Any]: A dictionary containing 'metrics' (totals) and 'account_metrics' (per-account breakdowns).
-         */
-        get: operations["get_portfolio_summary_api_summary_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/summary/headline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Portfolio Summary Headline
-         * @description Fast path for the top card: total value, day change, and the other headline
-         *     metrics — and nothing else.
-         *
-         *     Shares the heavy calculation cache with /summary but SKIPS the expensive
-         *     historical TWR/dividend step, the index fetch, and the holdings/summary_df
-         *     serialization. This lets the dashboard's headline card render and update as
-         *     soon as the core math finishes, well before the full dashboard is ready.
-         */
-        get: operations["get_portfolio_summary_headline_api_summary_headline_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/portfolio/ai_review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Get Portfolio Ai Review
-         * @description Generates or retrieves a cached AI review for the portfolio.
-         */
-        post: operations["get_portfolio_ai_review_api_portfolio_ai_review_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/market_history": {
         parameters: {
             query?: never;
@@ -284,7 +181,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/holdings": {
+    "/api/stock_history/{symbol}": {
         parameters: {
             query?: never;
             header?: never;
@@ -292,18 +189,131 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Holdings
-         * @description Returns the list of current holdings.
-         *
-         *     Args:
-         *         currency (str): The display currency.
-         *         accounts (List[str], optional): List of account names to filter by.
-         *         data (tuple): Dependency injection.
-         *
-         *     Returns:
-         *         List[Dict]: A list of holding records with calculated metrics.
+         * Get Stock History
+         * @description Returns historical price data for a single stock, with optional benchmarks.
          */
-        get: operations["get_holdings_api_holdings_get"];
+        get: operations["get_stock_history_api_stock_history__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/earnings_dates/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Earnings Dates
+         * @description Returns historical (and upcoming) earnings report dates for a single stock,
+         *     used to overlay earnings markers on the price chart.
+         */
+        get: operations["get_earnings_dates_api_earnings_dates__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stock-analysis/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stock Analysis
+         * @description Returns AI-powered stock analysis for a given symbol.
+         */
+        get: operations["get_stock_analysis_api_stock_analysis__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fundamentals/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fundamentals Endpoint
+         * @description Returns fundamental data (ticker.info) for a symbol.
+         */
+        get: operations["get_fundamentals_endpoint_api_fundamentals__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/financials/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Financials Endpoint
+         * @description Returns historical financial statements for a symbol.
+         */
+        get: operations["get_financials_endpoint_api_financials__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ratios/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ratios Endpoint
+         * @description Returns calculated financial ratios for a symbol.
+         */
+        get: operations["get_ratios_endpoint_api_ratios__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intrinsic_value/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Intrinsic Value Endpoint
+         * @description Returns calculated intrinsic value results for a symbol.
+         */
+        get: operations["get_intrinsic_value_endpoint_api_intrinsic_value__symbol__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -539,6 +549,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/asset_change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Asset Change
+         * @description Returns periodic asset change data (Annual, Monthly, Weekly, Daily).
+         *
+         *     Args:
+         *         currency (str): The display currency (e.g., USD, THB).
+         *         accounts (List[str], optional): List of account names to include.
+         *         benchmarks (List[str], optional): List of benchmark names or symbols.
+         *         data (tuple): Dependency injection for transaction data.
+         *
+         *     Returns:
+         *         Dict[str, List[Dict]]: Dictionary mapping periods (Annual, etc.) to lists of asset change records.
+         */
+        get: operations["get_asset_change_api_asset_change_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portfolio Summary
+         * @description Returns the high-level portfolio summary (Total Value, G/L, etc.).
+         *
+         *     Args:
+         *         currency (str): The display currency.
+         *         accounts (List[str], optional): List of account names to filter by.
+         *         data (tuple): Dependency injection for transaction data.
+         *
+         *     Returns:
+         *         Dict[str, Any]: A dictionary containing 'metrics' (totals) and 'account_metrics' (per-account breakdowns).
+         */
+        get: operations["get_portfolio_summary_api_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/summary/headline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portfolio Summary Headline
+         * @description Fast path for the top card: total value, day change, and the other headline
+         *     metrics — and nothing else.
+         *
+         *     Shares the heavy calculation cache with /summary but SKIPS the expensive
+         *     historical TWR/dividend step, the index fetch, and the holdings/summary_df
+         *     serialization. This lets the dashboard's headline card render and update as
+         *     soon as the core math finishes, well before the full dashboard is ready.
+         */
+        get: operations["get_portfolio_summary_headline_api_summary_headline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/ai_review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Portfolio Ai Review
+         * @description Generates or retrieves a cached AI review for the portfolio.
+         */
+        post: operations["get_portfolio_ai_review_api_portfolio_ai_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Holdings
+         * @description Returns the list of current holdings.
+         *
+         *     Args:
+         *         currency (str): The display currency.
+         *         accounts (List[str], optional): List of account names to filter by.
+         *         data (tuple): Dependency injection.
+         *
+         *     Returns:
+         *         List[Dict]: A list of holding records with calculated metrics.
+         */
+        get: operations["get_holdings_api_holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history": {
         parameters: {
             query?: never;
@@ -559,7 +700,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/stock_history/{symbol}": {
+    "/api/portfolio_health": {
         parameters: {
             query?: never;
             header?: never;
@@ -567,31 +708,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Stock History
-         * @description Returns historical price data for a single stock, with optional benchmarks.
+         * Get Portfolio Health
+         * @description Returns a comprehensive portfolio health score and breakdown.
          */
-        get: operations["get_stock_history_api_stock_history__symbol__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/earnings_dates/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Earnings Dates
-         * @description Returns historical (and upcoming) earnings report dates for a single stock,
-         *     used to overlay earnings markers on the price chart.
-         */
-        get: operations["get_earnings_dates_api_earnings_dates__symbol__get"];
+        get: operations["get_portfolio_health_api_portfolio_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -676,67 +796,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/stock-analysis/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Stock Analysis
-         * @description Returns AI-powered stock analysis for a given symbol.
-         */
-        get: operations["get_stock_analysis_api_stock_analysis__symbol__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Settings
-         * @description Returns the current application configuration settings.
-         *     Fast version that avoids loading the full transaction dataframe.
-         */
-        get: operations["get_settings_api_settings_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Update Settings
-         * @description Updates the application settings (manual overrides, symbol map, exclude list).
-         */
-        post: operations["update_settings_api_settings_update_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/risk_metrics": {
         parameters: {
             query?: never;
@@ -798,7 +857,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/fundamentals/{symbol}": {
+    "/api/settings": {
         parameters: {
             query?: never;
             header?: never;
@@ -806,10 +865,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Fundamentals Endpoint
-         * @description Returns fundamental data (ticker.info) for a symbol.
+         * Get Settings
+         * @description Returns the current application configuration settings.
+         *     Fast version that avoids loading the full transaction dataframe.
          */
-        get: operations["get_fundamentals_endpoint_api_fundamentals__symbol__get"];
+        get: operations["get_settings_api_settings_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -818,60 +878,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/financials/{symbol}": {
+    "/api/settings/update": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Financials Endpoint
-         * @description Returns historical financial statements for a symbol.
-         */
-        get: operations["get_financials_endpoint_api_financials__symbol__get"];
+        get?: never;
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ratios/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
         /**
-         * Get Ratios Endpoint
-         * @description Returns calculated financial ratios for a symbol.
+         * Update Settings
+         * @description Updates the application settings (manual overrides, symbol map, exclude list).
          */
-        get: operations["get_ratios_endpoint_api_ratios__symbol__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/intrinsic_value/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Intrinsic Value Endpoint
-         * @description Returns calculated intrinsic value results for a symbol.
-         */
-        get: operations["get_intrinsic_value_endpoint_api_intrinsic_value__symbol__get"];
-        put?: never;
-        post?: never;
+        post: operations["update_settings_api_settings_update_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -899,26 +919,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/portfolio_health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Portfolio Health
-         * @description Returns a comprehensive portfolio health score and breakdown.
-         */
-        get: operations["get_portfolio_health_api_portfolio_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/webhook/refresh": {
         parameters: {
             query?: never;
@@ -935,98 +935,6 @@ export interface paths {
          */
         post: operations["webhook_refresh_api_webhook_refresh_post"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/watchlists": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Watchlists Endpoint
-         * @description List all watchlists for the current user.
-         */
-        get: operations["get_watchlists_endpoint_api_watchlists_get"];
-        put?: never;
-        /**
-         * Create Watchlist Endpoint
-         * @description Create a new watchlist.
-         */
-        post: operations["create_watchlist_endpoint_api_watchlists_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/watchlists/{watchlist_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Rename Watchlist Endpoint
-         * @description Rename a watchlist.
-         */
-        put: operations["rename_watchlist_endpoint_api_watchlists__watchlist_id__put"];
-        post?: never;
-        /**
-         * Delete Watchlist Endpoint
-         * @description Delete a watchlist.
-         */
-        delete: operations["delete_watchlist_endpoint_api_watchlists__watchlist_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/watchlist": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Watchlist Endpoint
-         * @description Fetch a watchlist enriched with current market prices, AI ratings, and fundamentals.
-         */
-        get: operations["get_watchlist_endpoint_api_watchlist_get"];
-        put?: never;
-        /**
-         * Add To Watchlist Api
-         * @description Add a symbol to a watchlist.
-         */
-        post: operations["add_to_watchlist_api_api_watchlist_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/watchlist/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove From Watchlist Api
-         * @description Remove a symbol from a watchlist.
-         */
-        delete: operations["remove_from_watchlist_api_api_watchlist__symbol__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1127,6 +1035,98 @@ export interface paths {
          */
         post: operations["chat_message_endpoint_api_chat_message_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Watchlists Endpoint
+         * @description List all watchlists for the current user.
+         */
+        get: operations["get_watchlists_endpoint_api_watchlists_get"];
+        put?: never;
+        /**
+         * Create Watchlist Endpoint
+         * @description Create a new watchlist.
+         */
+        post: operations["create_watchlist_endpoint_api_watchlists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlists/{watchlist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rename Watchlist Endpoint
+         * @description Rename a watchlist.
+         */
+        put: operations["rename_watchlist_endpoint_api_watchlists__watchlist_id__put"];
+        post?: never;
+        /**
+         * Delete Watchlist Endpoint
+         * @description Delete a watchlist.
+         */
+        delete: operations["delete_watchlist_endpoint_api_watchlists__watchlist_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Watchlist Endpoint
+         * @description Fetch a watchlist enriched with current market prices, AI ratings, and fundamentals.
+         */
+        get: operations["get_watchlist_endpoint_api_watchlist_get"];
+        put?: never;
+        /**
+         * Add To Watchlist Api
+         * @description Add a symbol to a watchlist.
+         */
+        post: operations["add_to_watchlist_api_api_watchlist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove From Watchlist Api
+         * @description Remove a symbol from a watchlist.
+         */
+        delete: operations["remove_from_watchlist_api_api_watchlist__symbol__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1289,109 +1289,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/asset_change": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Asset Change
-         * @description Returns periodic asset change data (Annual, Monthly, Weekly, Daily).
-         *
-         *     Args:
-         *         currency (str): The display currency (e.g., USD, THB).
-         *         accounts (List[str], optional): List of account names to include.
-         *         benchmarks (List[str], optional): List of benchmark names or symbols.
-         *         data (tuple): Dependency injection for transaction data.
-         *
-         *     Returns:
-         *         Dict[str, List[Dict]]: Dictionary mapping periods (Annual, etc.) to lists of asset change records.
-         */
-        get: operations["get_asset_change_asset_change_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Portfolio Summary
-         * @description Returns the high-level portfolio summary (Total Value, G/L, etc.).
-         *
-         *     Args:
-         *         currency (str): The display currency.
-         *         accounts (List[str], optional): List of account names to filter by.
-         *         data (tuple): Dependency injection for transaction data.
-         *
-         *     Returns:
-         *         Dict[str, Any]: A dictionary containing 'metrics' (totals) and 'account_metrics' (per-account breakdowns).
-         */
-        get: operations["get_portfolio_summary_summary_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/summary/headline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Portfolio Summary Headline
-         * @description Fast path for the top card: total value, day change, and the other headline
-         *     metrics — and nothing else.
-         *
-         *     Shares the heavy calculation cache with /summary but SKIPS the expensive
-         *     historical TWR/dividend step, the index fetch, and the holdings/summary_df
-         *     serialization. This lets the dashboard's headline card render and update as
-         *     soon as the core math finishes, well before the full dashboard is ready.
-         */
-        get: operations["get_portfolio_summary_headline_summary_headline_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/portfolio/ai_review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Get Portfolio Ai Review
-         * @description Generates or retrieves a cached AI review for the portfolio.
-         */
-        post: operations["get_portfolio_ai_review_portfolio_ai_review_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/market_history": {
         parameters: {
             query?: never;
@@ -1412,7 +1309,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/holdings": {
+    "/stock_history/{symbol}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1420,18 +1317,131 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Holdings
-         * @description Returns the list of current holdings.
-         *
-         *     Args:
-         *         currency (str): The display currency.
-         *         accounts (List[str], optional): List of account names to filter by.
-         *         data (tuple): Dependency injection.
-         *
-         *     Returns:
-         *         List[Dict]: A list of holding records with calculated metrics.
+         * Get Stock History
+         * @description Returns historical price data for a single stock, with optional benchmarks.
          */
-        get: operations["get_holdings_holdings_get"];
+        get: operations["get_stock_history_stock_history__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earnings_dates/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Earnings Dates
+         * @description Returns historical (and upcoming) earnings report dates for a single stock,
+         *     used to overlay earnings markers on the price chart.
+         */
+        get: operations["get_earnings_dates_earnings_dates__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stock-analysis/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stock Analysis
+         * @description Returns AI-powered stock analysis for a given symbol.
+         */
+        get: operations["get_stock_analysis_stock_analysis__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fundamentals/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fundamentals Endpoint
+         * @description Returns fundamental data (ticker.info) for a symbol.
+         */
+        get: operations["get_fundamentals_endpoint_fundamentals__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/financials/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Financials Endpoint
+         * @description Returns historical financial statements for a symbol.
+         */
+        get: operations["get_financials_endpoint_financials__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ratios/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ratios Endpoint
+         * @description Returns calculated financial ratios for a symbol.
+         */
+        get: operations["get_ratios_endpoint_ratios__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intrinsic_value/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Intrinsic Value Endpoint
+         * @description Returns calculated intrinsic value results for a symbol.
+         */
+        get: operations["get_intrinsic_value_endpoint_intrinsic_value__symbol__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1667,6 +1677,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/asset_change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Asset Change
+         * @description Returns periodic asset change data (Annual, Monthly, Weekly, Daily).
+         *
+         *     Args:
+         *         currency (str): The display currency (e.g., USD, THB).
+         *         accounts (List[str], optional): List of account names to include.
+         *         benchmarks (List[str], optional): List of benchmark names or symbols.
+         *         data (tuple): Dependency injection for transaction data.
+         *
+         *     Returns:
+         *         Dict[str, List[Dict]]: Dictionary mapping periods (Annual, etc.) to lists of asset change records.
+         */
+        get: operations["get_asset_change_asset_change_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portfolio Summary
+         * @description Returns the high-level portfolio summary (Total Value, G/L, etc.).
+         *
+         *     Args:
+         *         currency (str): The display currency.
+         *         accounts (List[str], optional): List of account names to filter by.
+         *         data (tuple): Dependency injection for transaction data.
+         *
+         *     Returns:
+         *         Dict[str, Any]: A dictionary containing 'metrics' (totals) and 'account_metrics' (per-account breakdowns).
+         */
+        get: operations["get_portfolio_summary_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/summary/headline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portfolio Summary Headline
+         * @description Fast path for the top card: total value, day change, and the other headline
+         *     metrics — and nothing else.
+         *
+         *     Shares the heavy calculation cache with /summary but SKIPS the expensive
+         *     historical TWR/dividend step, the index fetch, and the holdings/summary_df
+         *     serialization. This lets the dashboard's headline card render and update as
+         *     soon as the core math finishes, well before the full dashboard is ready.
+         */
+        get: operations["get_portfolio_summary_headline_summary_headline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/portfolio/ai_review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Portfolio Ai Review
+         * @description Generates or retrieves a cached AI review for the portfolio.
+         */
+        post: operations["get_portfolio_ai_review_portfolio_ai_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Holdings
+         * @description Returns the list of current holdings.
+         *
+         *     Args:
+         *         currency (str): The display currency.
+         *         accounts (List[str], optional): List of account names to filter by.
+         *         data (tuple): Dependency injection.
+         *
+         *     Returns:
+         *         List[Dict]: A list of holding records with calculated metrics.
+         */
+        get: operations["get_holdings_holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/history": {
         parameters: {
             query?: never;
@@ -1687,7 +1828,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/stock_history/{symbol}": {
+    "/portfolio_health": {
         parameters: {
             query?: never;
             header?: never;
@@ -1695,31 +1836,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Stock History
-         * @description Returns historical price data for a single stock, with optional benchmarks.
+         * Get Portfolio Health
+         * @description Returns a comprehensive portfolio health score and breakdown.
          */
-        get: operations["get_stock_history_stock_history__symbol__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/earnings_dates/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Earnings Dates
-         * @description Returns historical (and upcoming) earnings report dates for a single stock,
-         *     used to overlay earnings markers on the price chart.
-         */
-        get: operations["get_earnings_dates_earnings_dates__symbol__get"];
+        get: operations["get_portfolio_health_portfolio_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1804,67 +1924,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/stock-analysis/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Stock Analysis
-         * @description Returns AI-powered stock analysis for a given symbol.
-         */
-        get: operations["get_stock_analysis_stock_analysis__symbol__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Settings
-         * @description Returns the current application configuration settings.
-         *     Fast version that avoids loading the full transaction dataframe.
-         */
-        get: operations["get_settings_settings_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/settings/update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Update Settings
-         * @description Updates the application settings (manual overrides, symbol map, exclude list).
-         */
-        post: operations["update_settings_settings_update_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/risk_metrics": {
         parameters: {
             query?: never;
@@ -1926,7 +1985,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/fundamentals/{symbol}": {
+    "/settings": {
         parameters: {
             query?: never;
             header?: never;
@@ -1934,10 +1993,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Fundamentals Endpoint
-         * @description Returns fundamental data (ticker.info) for a symbol.
+         * Get Settings
+         * @description Returns the current application configuration settings.
+         *     Fast version that avoids loading the full transaction dataframe.
          */
-        get: operations["get_fundamentals_endpoint_fundamentals__symbol__get"];
+        get: operations["get_settings_settings_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1946,60 +2006,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/financials/{symbol}": {
+    "/settings/update": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Financials Endpoint
-         * @description Returns historical financial statements for a symbol.
-         */
-        get: operations["get_financials_endpoint_financials__symbol__get"];
+        get?: never;
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/ratios/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
         /**
-         * Get Ratios Endpoint
-         * @description Returns calculated financial ratios for a symbol.
+         * Update Settings
+         * @description Updates the application settings (manual overrides, symbol map, exclude list).
          */
-        get: operations["get_ratios_endpoint_ratios__symbol__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/intrinsic_value/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Intrinsic Value Endpoint
-         * @description Returns calculated intrinsic value results for a symbol.
-         */
-        get: operations["get_intrinsic_value_endpoint_intrinsic_value__symbol__get"];
-        put?: never;
-        post?: never;
+        post: operations["update_settings_settings_update_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2027,26 +2047,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/portfolio_health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Portfolio Health
-         * @description Returns a comprehensive portfolio health score and breakdown.
-         */
-        get: operations["get_portfolio_health_portfolio_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/webhook/refresh": {
         parameters: {
             query?: never;
@@ -2063,98 +2063,6 @@ export interface paths {
          */
         post: operations["webhook_refresh_webhook_refresh_post"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/watchlists": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Watchlists Endpoint
-         * @description List all watchlists for the current user.
-         */
-        get: operations["get_watchlists_endpoint_watchlists_get"];
-        put?: never;
-        /**
-         * Create Watchlist Endpoint
-         * @description Create a new watchlist.
-         */
-        post: operations["create_watchlist_endpoint_watchlists_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/watchlists/{watchlist_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Rename Watchlist Endpoint
-         * @description Rename a watchlist.
-         */
-        put: operations["rename_watchlist_endpoint_watchlists__watchlist_id__put"];
-        post?: never;
-        /**
-         * Delete Watchlist Endpoint
-         * @description Delete a watchlist.
-         */
-        delete: operations["delete_watchlist_endpoint_watchlists__watchlist_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/watchlist": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Watchlist Endpoint
-         * @description Fetch a watchlist enriched with current market prices, AI ratings, and fundamentals.
-         */
-        get: operations["get_watchlist_endpoint_watchlist_get"];
-        put?: never;
-        /**
-         * Add To Watchlist Api
-         * @description Add a symbol to a watchlist.
-         */
-        post: operations["add_to_watchlist_api_watchlist_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/watchlist/{symbol}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove From Watchlist Api
-         * @description Remove a symbol from a watchlist.
-         */
-        delete: operations["remove_from_watchlist_api_watchlist__symbol__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2255,6 +2163,98 @@ export interface paths {
          */
         post: operations["chat_message_endpoint_chat_message_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Watchlists Endpoint
+         * @description List all watchlists for the current user.
+         */
+        get: operations["get_watchlists_endpoint_watchlists_get"];
+        put?: never;
+        /**
+         * Create Watchlist Endpoint
+         * @description Create a new watchlist.
+         */
+        post: operations["create_watchlist_endpoint_watchlists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlists/{watchlist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rename Watchlist Endpoint
+         * @description Rename a watchlist.
+         */
+        put: operations["rename_watchlist_endpoint_watchlists__watchlist_id__put"];
+        post?: never;
+        /**
+         * Delete Watchlist Endpoint
+         * @description Delete a watchlist.
+         */
+        delete: operations["delete_watchlist_endpoint_watchlists__watchlist_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Watchlist Endpoint
+         * @description Fetch a watchlist enriched with current market prices, AI ratings, and fundamentals.
+         */
+        get: operations["get_watchlist_endpoint_watchlist_get"];
+        put?: never;
+        /**
+         * Add To Watchlist Api
+         * @description Add a symbol to a watchlist.
+         */
+        post: operations["add_to_watchlist_api_watchlist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlist/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove From Watchlist Api
+         * @description Remove a symbol from a watchlist.
+         */
+        delete: operations["remove_from_watchlist_api_watchlist__symbol__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2883,137 +2883,6 @@ export interface operations {
             };
         };
     };
-    get_asset_change_api_asset_change_get: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                benchmarks?: string[] | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_portfolio_summary_api_summary_get: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                show_closed?: boolean | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_portfolio_summary_headline_api_summary_headline_get: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_portfolio_ai_review_api_portfolio_ai_review_post: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                refresh?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_market_history_api_market_history_get: {
         parameters: {
             query: {
@@ -3048,15 +2917,216 @@ export interface operations {
             };
         };
     };
-    get_holdings_api_holdings_get: {
+    get_stock_history_api_stock_history__symbol__get: {
         parameters: {
             query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                show_closed?: boolean;
+                period?: string;
+                interval?: string;
+                benchmarks?: string[] | null;
             };
             header?: never;
-            path?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_earnings_dates_api_earnings_dates__symbol__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stock_analysis_api_stock_analysis__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fundamentals_endpoint_api_fundamentals__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_financials_endpoint_api_financials__symbol__get: {
+        parameters: {
+            query?: {
+                period_type?: string;
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ratios_endpoint_api_ratios__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_intrinsic_value_endpoint_api_intrinsic_value__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -3416,6 +3486,170 @@ export interface operations {
             };
         };
     };
+    get_asset_change_api_asset_change_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                benchmarks?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_summary_api_summary_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                show_closed?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_summary_headline_api_summary_headline_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_ai_review_api_portfolio_ai_review_post: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holdings_api_holdings_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                show_closed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_history_api_history_get: {
         parameters: {
             query?: {
@@ -3454,50 +3688,15 @@ export interface operations {
             };
         };
     };
-    get_stock_history_api_stock_history__symbol__get: {
+    get_portfolio_health_api_portfolio_health_get: {
         parameters: {
             query?: {
-                period?: string;
-                interval?: string;
-                benchmarks?: string[] | null;
+                currency?: string;
+                accounts?: string[] | null;
+                show_closed?: boolean | null;
             };
             header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_earnings_dates_api_earnings_dates__symbol__get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3620,92 +3819,6 @@ export interface operations {
             };
         };
     };
-    get_stock_analysis_api_stock_analysis__symbol__get: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_settings_api_settings_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    update_settings_api_settings_update_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SettingsUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_risk_metrics_api_risk_metrics_get: {
         parameters: {
             query?: {
@@ -3804,15 +3917,11 @@ export interface operations {
             };
         };
     };
-    get_fundamentals_endpoint_api_fundamentals__symbol__get: {
+    get_settings_api_settings_get: {
         parameters: {
-            query?: {
-                force?: boolean;
-            };
+            query?: never;
             header?: never;
-            path: {
-                symbol: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3826,96 +3935,20 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
-    get_financials_endpoint_api_financials__symbol__get: {
+    update_settings_api_settings_update_post: {
         parameters: {
-            query?: {
-                period_type?: string;
-                force?: boolean;
-            };
+            query?: never;
             header?: never;
-            path: {
-                symbol: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdate"];
             };
         };
-    };
-    get_ratios_endpoint_api_ratios__symbol__get: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_intrinsic_value_endpoint_api_intrinsic_value__symbol__get: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -3970,15 +4003,136 @@ export interface operations {
             };
         };
     };
-    get_portfolio_health_api_portfolio_health_get: {
+    webhook_refresh_api_webhook_refresh_post: {
         parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                show_closed?: boolean | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_cache_api_clear_cache_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    run_screener_api_screener_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreenerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    narrative_screener_api_screener_narrative_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_ai_review_api_screener_review__symbol__post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -4003,7 +4157,7 @@ export interface operations {
             };
         };
     };
-    webhook_refresh_api_webhook_refresh_post: {
+    chat_message_endpoint_api_chat_message_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4012,7 +4166,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WebhookRefreshRequest"];
+                "application/json": components["schemas"]["ChatRequest"];
             };
         };
         responses: {
@@ -4232,160 +4386,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clear_cache_api_clear_cache_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    run_screener_api_screener_run_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScreenerRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    narrative_screener_api_screener_narrative_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    trigger_ai_review_api_screener_review__symbol__post: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    chat_message_endpoint_api_chat_message_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatRequest"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4682,137 +4682,6 @@ export interface operations {
             };
         };
     };
-    get_asset_change_asset_change_get: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                benchmarks?: string[] | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_portfolio_summary_summary_get: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                show_closed?: boolean | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_portfolio_summary_headline_summary_headline_get: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_portfolio_ai_review_portfolio_ai_review_post: {
-        parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                refresh?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_market_history_market_history_get: {
         parameters: {
             query: {
@@ -4847,15 +4716,216 @@ export interface operations {
             };
         };
     };
-    get_holdings_holdings_get: {
+    get_stock_history_stock_history__symbol__get: {
         parameters: {
             query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                show_closed?: boolean;
+                period?: string;
+                interval?: string;
+                benchmarks?: string[] | null;
             };
             header?: never;
-            path?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_earnings_dates_earnings_dates__symbol__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stock_analysis_stock_analysis__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fundamentals_endpoint_fundamentals__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_financials_endpoint_financials__symbol__get: {
+        parameters: {
+            query?: {
+                period_type?: string;
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ratios_endpoint_ratios__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_intrinsic_value_endpoint_intrinsic_value__symbol__get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -5215,6 +5285,170 @@ export interface operations {
             };
         };
     };
+    get_asset_change_asset_change_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                benchmarks?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_summary_summary_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                show_closed?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_summary_headline_summary_headline_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_ai_review_portfolio_ai_review_post: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holdings_holdings_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                show_closed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_history_history_get: {
         parameters: {
             query?: {
@@ -5253,50 +5487,15 @@ export interface operations {
             };
         };
     };
-    get_stock_history_stock_history__symbol__get: {
+    get_portfolio_health_portfolio_health_get: {
         parameters: {
             query?: {
-                period?: string;
-                interval?: string;
-                benchmarks?: string[] | null;
+                currency?: string;
+                accounts?: string[] | null;
+                show_closed?: boolean | null;
             };
             header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_earnings_dates_earnings_dates__symbol__get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -5419,92 +5618,6 @@ export interface operations {
             };
         };
     };
-    get_stock_analysis_stock_analysis__symbol__get: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_settings_settings_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    update_settings_settings_update_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SettingsUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_risk_metrics_risk_metrics_get: {
         parameters: {
             query?: {
@@ -5603,15 +5716,11 @@ export interface operations {
             };
         };
     };
-    get_fundamentals_endpoint_fundamentals__symbol__get: {
+    get_settings_settings_get: {
         parameters: {
-            query?: {
-                force?: boolean;
-            };
+            query?: never;
             header?: never;
-            path: {
-                symbol: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -5625,96 +5734,20 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
-    get_financials_endpoint_financials__symbol__get: {
+    update_settings_settings_update_post: {
         parameters: {
-            query?: {
-                period_type?: string;
-                force?: boolean;
-            };
+            query?: never;
             header?: never;
-            path: {
-                symbol: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdate"];
             };
         };
-    };
-    get_ratios_endpoint_ratios__symbol__get: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_intrinsic_value_endpoint_intrinsic_value__symbol__get: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5769,15 +5802,136 @@ export interface operations {
             };
         };
     };
-    get_portfolio_health_portfolio_health_get: {
+    webhook_refresh_webhook_refresh_post: {
         parameters: {
-            query?: {
-                currency?: string;
-                accounts?: string[] | null;
-                show_closed?: boolean | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_cache_clear_cache_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    run_screener_screener_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreenerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    narrative_screener_screener_narrative_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_ai_review_screener_review__symbol__post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -5802,7 +5956,7 @@ export interface operations {
             };
         };
     };
-    webhook_refresh_webhook_refresh_post: {
+    chat_message_endpoint_chat_message_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5811,7 +5965,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WebhookRefreshRequest"];
+                "application/json": components["schemas"]["ChatRequest"];
             };
         };
         responses: {
@@ -6031,160 +6185,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clear_cache_clear_cache_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    run_screener_screener_run_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScreenerRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    narrative_screener_screener_narrative_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    trigger_ai_review_screener_review__symbol__post: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                symbol: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    chat_message_endpoint_chat_message_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatRequest"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {
