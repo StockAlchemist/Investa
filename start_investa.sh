@@ -2,9 +2,18 @@
 
 # Starts both the Backend Server and the Web App concurrently.
 # Automatically cleans up existing processes on ports 8000 and 3000.
+#
+# By default the frontend is served as an optimized production build
+# (rebuilt automatically when sources change). Pass --dev for the
+# hot-reloading dev server when actively working on the frontend.
 
 # Ensure we are running from the script's directory
 cd "$(dirname "$0")"
+
+DEV_MODE=0
+if [ "$1" = "--dev" ]; then
+    DEV_MODE=1
+fi
 
 # Function to kill all child processes on exit
 cleanup() {
@@ -95,11 +104,34 @@ BACKEND_PID=$!
 sleep 2
 
 # Start Frontend in background
-echo "Starting Web App..."
 cd web_app
-# Clean up Next.js lock file if it exists
-rm -rf .next/dev/lock
-npm run dev -- -H 0.0.0.0 &
+if [ "$DEV_MODE" = "1" ]; then
+    echo "Starting Web App (dev mode)..."
+    # Clean up Next.js lock file if it exists
+    rm -rf .next/dev/lock
+    npm run dev -- -H 0.0.0.0 &
+else
+    # Production mode. Rebuild when sources changed since the last *web* build.
+    # The marker file is only written here — a `build:desktop` (static export
+    # for Electron) leaves .next in a state `next start` can't serve, and the
+    # missing/stale marker forces a proper web rebuild after one.
+    BUILD_MARKER=".next/.investa-web-build"
+    if [ ! -f "$BUILD_MARKER" ] || [ -n "$(find app components context lib src public package.json next.config.ts tailwind.config.ts postcss.config.mjs tsconfig.json -newer "$BUILD_MARKER" -print -quit 2>/dev/null)" ]; then
+        echo "Building Web App (production)..."
+        if npm run build; then
+            touch "$BUILD_MARKER"
+        elif [ -f "$BUILD_MARKER" ]; then
+            echo "WARNING: Frontend build failed — serving the previous production build."
+        else
+            echo "ERROR: Frontend build failed and no previous build exists."
+            echo "Fix the build, or run './start_investa.sh --dev' to use the dev server."
+            kill $BACKEND_PID 2>/dev/null
+            exit 1
+        fi
+    fi
+    echo "Starting Web App (production)..."
+    npm run start -- -H 0.0.0.0 &
+fi
 FRONTEND_PID=$!
 
 echo "Investa is running."

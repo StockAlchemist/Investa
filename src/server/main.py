@@ -7,6 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 # Add project root to sys.path to allow importing from src
@@ -97,6 +98,8 @@ _LOCAL_ORIGIN_REGEX = (
     r")(:\d+)?$"
 )
 _extra_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()]
+# Compress large JSON payloads (summary/history/screener) — big win on LAN/Tailscale.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["null", *_extra_origins],
