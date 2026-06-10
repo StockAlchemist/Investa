@@ -443,7 +443,7 @@ class UserPasswordUpdate(BaseModel):
 from fastapi.security import OAuth2PasswordRequestForm
 
 @router.post("/auth/register", response_model=User)
-async def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depends(get_global_db_connection)):
+def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depends(get_global_db_connection)):
     # conn obtained from dependency is for GLOBAL DB (Users)
     client_ip = get_client_ip(request)
     enforce_limit(register_ip_limiter, client_ip, "registration attempts")
@@ -506,7 +506,7 @@ async def register(user: UserCreate, request: Request, conn: sqlite3.Connection 
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 @router.post("/auth/login", response_model=Token)
-async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
     # conn is GLOBAL DB
     client_ip = get_client_ip(request)
     user_key = f"login:{form_data.username.lower()}"
@@ -534,14 +534,14 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/auth/me", response_model=User)
-async def read_users_me(current_user: User = Depends(get_current_user)):
+def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 class UpdateUserProfile(BaseModel):
     alias: Optional[str] = None
 
 @router.patch("/auth/me", response_model=User)
-async def update_user_profile(
+def update_user_profile(
     profile_data: UpdateUserProfile,
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_global_db_connection)
@@ -562,7 +562,7 @@ async def update_user_profile(
         raise HTTPException(status_code=500, detail="Failed to update profile")
 
 @router.delete("/auth/me")
-async def delete_user_me(
+def delete_user_me(
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_global_db_connection)
 ):
@@ -593,7 +593,7 @@ async def delete_user_me(
 # --- End Auth Routes ---
 
 @router.post("/auth/change-password")
-async def change_password(
+def change_password(
     password_data: UserPasswordUpdate,
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_global_db_connection)
@@ -631,7 +631,7 @@ async def change_password(
 
 
 @router.get("/market_status")
-async def get_market_status():
+def get_market_status():
     """
     Returns whether the US stock market is currently open.
     """
@@ -659,7 +659,7 @@ async def get_indices():
 
 
 @router.get("/search")
-async def search_symbols(q: str = Query("", min_length=1)):
+def search_symbols(q: str = Query("", min_length=1)):
     """Symbol / name autocomplete using yfinance Search."""
     try:
         import yfinance as yf
@@ -677,7 +677,7 @@ async def search_symbols(q: str = Query("", min_length=1)):
 
 
 @router.get("/markets/news")
-async def get_market_news(
+def get_market_news(
     limit: int = Query(20, ge=1, le=50),
     symbols: Optional[str] = Query(None),
 ):
@@ -1637,7 +1637,7 @@ async def get_portfolio_ai_review(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/market_history")
-async def get_market_history(
+def get_market_history(
     benchmarks: List[str] = Query(...),
     period: str = "1y",
     interval: str = "1d",
@@ -1908,7 +1908,7 @@ async def get_holdings(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/transactions")
-async def get_transactions(
+def get_transactions(
     accounts: Optional[List[str]] = Query(None),
     data: tuple = Depends(get_transaction_data)
 ):
@@ -2067,7 +2067,7 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
             add_transaction_to_db(conn, cash_tx_comm)
 
 @router.post("/transactions")
-async def create_transaction(
+def create_transaction(
     transaction: TransactionInput,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
@@ -2113,7 +2113,7 @@ async def create_transaction(
 
 import fastapi
 @router.post("/transactions/parse_document")
-async def parse_document(
+def parse_document(
     file: UploadFile = File(...),
     cash_mode: Optional[str] = fastapi.Form(None),
     account_override: Optional[str] = fastapi.Form(None),
@@ -2163,7 +2163,7 @@ async def parse_document(
 
 
 @router.post("/transactions/batch")
-async def add_transactions_batch(
+def add_transactions_batch(
     payload: TransactionBatchInput,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
@@ -2229,7 +2229,7 @@ async def add_transactions_batch(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/transactions/{transaction_id}")
-async def update_transaction(
+def update_transaction(
     transaction_id: int,
     transaction: TransactionInput,
     data: tuple = Depends(get_transaction_data),
@@ -2271,7 +2271,7 @@ async def update_transaction(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/transactions/{transaction_id}")
-async def delete_transaction(
+def delete_transaction(
     transaction_id: int,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
@@ -2316,7 +2316,7 @@ class HoldingTagUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 @router.post("/holdings/update_tags")
-async def update_holding_tags(
+def update_holding_tags(
     update_data: HoldingTagUpdate,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
@@ -2471,7 +2471,7 @@ async def sync_ibkr(
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 @router.get("/sync/ibkr/pending")
-async def get_pending_ibkr(
+def get_pending_ibkr(
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection)
 ):
@@ -2484,7 +2484,7 @@ async def get_pending_ibkr(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sync/ibkr/approve")
-async def approve_ibkr(
+def approve_ibkr(
     ids: List[int],
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection)
@@ -2520,7 +2520,7 @@ async def approve_ibkr(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sync/ibkr/reject")
-async def reject_ibkr(
+def reject_ibkr(
     ids: List[int],
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection)
@@ -3074,7 +3074,7 @@ async def get_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stock_history/{symbol}")
-async def get_stock_history(
+def get_stock_history(
     symbol: str,
     period: str = "1y",
     interval: str = "1d",
@@ -3249,7 +3249,7 @@ async def get_stock_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/earnings_dates/{symbol}")
-async def get_earnings_dates(
+def get_earnings_dates(
     symbol: str,
     limit: int = 24,
     data: tuple = Depends(get_transaction_data)
@@ -3781,7 +3781,7 @@ async def get_projected_income(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stock-analysis/{symbol}")
-async def get_stock_analysis(
+def get_stock_analysis(
     symbol: str,
     force: bool = Query(False),
     data: tuple = Depends(get_transaction_data),
@@ -3914,7 +3914,7 @@ def _get_symbol_currency_map_sql(db_path: str) -> Dict[str, str]:
         return {}
 
 @router.get("/settings")
-async def get_settings(
+def get_settings(
     current_user: User = Depends(get_current_user),
     config_manager: ConfigManager = Depends(get_config_manager)
 ):
@@ -4010,7 +4010,7 @@ class SettingsUpdate(BaseModel):
     target_allocation: Optional[Dict[str, Dict[str, float]]] = None
 
 @router.post("/settings/update")
-async def update_settings(
+def update_settings(
     settings: SettingsUpdate,
     config_manager = Depends(get_config_manager),
     current_user: User = Depends(get_current_user)
@@ -4456,7 +4456,7 @@ async def get_dividend_calendar(
 # --- FUNDAMENTALS & FINANCIALS ENDPOINTS ---
 
 @router.get("/fundamentals/{symbol}")
-async def get_fundamentals_endpoint(
+def get_fundamentals_endpoint(
     symbol: str,
     force: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
@@ -4530,7 +4530,7 @@ async def get_fundamentals_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/financials/{symbol}")
-async def get_financials_endpoint(
+def get_financials_endpoint(
     symbol: str,
     period_type: str = "annual",
     force: bool = Query(False),
@@ -4585,7 +4585,7 @@ async def get_financials_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/ratios/{symbol}")
-async def get_ratios_endpoint(
+def get_ratios_endpoint(
     symbol: str,
     force: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
@@ -4638,7 +4638,7 @@ async def get_ratios_endpoint(
 
 
 @router.get("/intrinsic_value/{symbol}")
-async def get_intrinsic_value_endpoint(
+def get_intrinsic_value_endpoint(
     symbol: str,
     force: bool = Query(False),
     data: tuple = Depends(get_transaction_data),
@@ -4704,7 +4704,7 @@ class ManualOverrideRequest(BaseModel):
     # Add other fields as needed for future (sector, etc.)
 
 @router.post("/settings/manual_overrides")
-async def update_manual_override(
+def update_manual_override(
     override: ManualOverrideRequest,
     current_user: User = Depends(get_current_user),
     config_manager: ConfigManager = Depends(get_config_manager)
@@ -4861,7 +4861,7 @@ async def get_portfolio_health(
         }
 
 @router.post("/webhook/refresh")
-async def webhook_refresh(
+def webhook_refresh(
     request: WebhookRefreshRequest
 ):
     """
@@ -4907,7 +4907,7 @@ async def webhook_refresh(
 from server.routes.watchlist import router as _watchlist_router
 router.include_router(_watchlist_router)
 @router.post("/clear_cache")
-async def clear_cache():
+def clear_cache():
     """Clears all application caches (files and in-memory)."""
     try:
         logging.info("Starting Cache Clearing Process...")
@@ -5079,7 +5079,7 @@ async def run_screener(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/screener/narrative")
-async def narrative_screener(
+def narrative_screener(
     item: Dict[str, str],
     current_user: User = Depends(get_current_user)
 ):
@@ -5096,7 +5096,7 @@ async def narrative_screener(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/screener/review/{symbol}")
-async def trigger_ai_review(
+def trigger_ai_review(
     symbol: str,
     force: bool = Query(False),
     current_user: User = Depends(get_current_user),

@@ -36,10 +36,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # gui group pulls in requirements.txt; tests need PySide6 (test_models.py)
+          pip install -r requirements-gui.txt -r requirements-dev.txt
 
       - name: Run pytest
-        # pytest.ini already enables --cov=src --cov-report=term-missing
+        # pyproject.toml enables --cov=src --cov-report=term-missing
         run: pytest tests/
 
   backend-lint:
@@ -143,7 +144,8 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # gui group pulls in requirements.txt; tests need PySide6 (test_models.py)
+          pip install -r requirements-gui.txt -r requirements-dev.txt
 
       - uses: actions/setup-node@v6
         with:

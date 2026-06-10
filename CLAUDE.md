@@ -34,7 +34,9 @@ cd web_app && npm run build:desktop
 
 ### Python backend
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt          # server/runtime deps
+pip install -r requirements-dev.txt      # + pytest, ruff
+pip install -r requirements-gui.txt      # + PySide6/matplotlib (legacy Qt GUI; also needed to run the full test suite)
 
 pytest tests/                              # all tests
 pytest tests/test_finutils.py -v          # single file

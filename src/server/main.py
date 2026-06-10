@@ -1,11 +1,13 @@
 import sys
 import os
 import asyncio
+import re
 
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # Add project root to sys.path to allow importing from src
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +53,29 @@ async def lifespan(app: FastAPI):
         _PRECALC_POOL.shutdown(wait=False)
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Last-resort handler: log the full stack trace, return a clean 500.
+
+    Routes should not need their own `except Exception` catch-alls — anything
+    unexpected lands here with full context in the server log.
+    """
+    logging.error(
+        "Unhandled error on %s %s", request.method, request.url.path, exc_info=exc
+    )
+    # Responses from an Exception handler bypass the middleware stack, so CORS
+    # headers must be added by hand or browsers report the 500 as a CORS error.
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin and (
+        origin == "null" or origin in _extra_origins or re.match(_LOCAL_ORIGIN_REGEX, origin)
+    ):
+        headers["Access-Control-Allow-Origin"] = origin
+    return JSONResponse(
+        status_code=500, content={"detail": "Internal server error"}, headers=headers
+    )
 
 # CORS: restrict to the origins Investa is actually served from, instead of "*",
 # so a random website can't make API requests with a stolen bearer token.
