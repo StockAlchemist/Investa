@@ -231,11 +231,17 @@ class UserDataCache:
 
     @staticmethod
     def _effective_db_mtime(db_path: str) -> float:
-        """DB mtime, also considering WAL/SHM side files (writes may land there first)."""
+        """DB mtime, also considering the WAL side file (writes may land there first).
+
+        The -shm file is deliberately excluded: it is WAL's transient shared-memory
+        index and gets touched by mere *reads*, so including it made every summary
+        request invalidate the cache that the previous one had just populated.
+        Durable changes always bump the main DB file or -wal.
+        """
         if not os.path.exists(db_path):
             return 0.0
         mtime = os.path.getmtime(db_path)
-        for ext in ("-wal", "-shm"):
+        for ext in ("-wal",):
             side_file = db_path + ext
             if os.path.exists(side_file):
                 mtime = max(mtime, os.path.getmtime(side_file))

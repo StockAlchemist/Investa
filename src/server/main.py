@@ -32,6 +32,7 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     from db_utils import initialize_database, initialize_global_database
     from server.refresh_worker import refresh_loop, index_refresh_loop
+    from server.portfolio_service import warm_summary_caches
     initialize_database()
     initialize_global_database()
 
@@ -39,14 +40,17 @@ async def lifespan(app: FastAPI):
     refresh_task = asyncio.create_task(refresh_loop(), name="metadata-refresh")
     # Keep the header index-quote cache warm so /summary never blocks on it.
     index_task = asyncio.create_task(index_refresh_loop(), name="index-refresh")
+    # Pre-compute summaries for recently active users so the first dashboard
+    # load after a restart is served from cache.
+    warm_task = asyncio.create_task(warm_summary_caches(), name="summary-warmup")
 
     try:
         yield
     finally:
         # Graceful shutdown: cancel the background workers and drain the precalc pool.
-        for task in (refresh_task, index_task):
+        for task in (refresh_task, index_task, warm_task):
             task.cancel()
-        for task in (refresh_task, index_task):
+        for task in (refresh_task, index_task, warm_task):
             try:
                 await task
             except (asyncio.CancelledError, Exception):

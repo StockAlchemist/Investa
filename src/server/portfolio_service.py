@@ -241,6 +241,73 @@ def trigger_background_precalculation(current_user: User):
     _PRECALC_POOL.submit(run_precalc)
 
 
+async def warm_summary_caches(max_users: int = 2) -> None:
+    """Pre-compute portfolio summaries for the most recently active users.
+
+    Runs once from the server lifespan so the first dashboard load after a
+    restart doesn't pay the cold-cache cost (transaction load, price fetches,
+    full portfolio math). "Most recently active" is judged by portfolio.db
+    mtime. Even after the summary cache's TTL window expires, the underlying
+    transaction/FIFO/market-data caches stay warm, so later requests remain
+    far cheaper than a true cold start. Disable with INVESTA_WARM_CACHE=0.
+    """
+    if os.getenv("INVESTA_WARM_CACHE", "1") == "0":
+        return
+    from server.dependencies import get_transaction_data
+
+    app_dir = config.get_app_data_dir()
+    users_root = os.path.join(app_dir, config.USERS_DIR)
+    global_db_path = os.path.join(app_dir, config.DB_DIR, config.GLOBAL_DB_FILENAME)
+    try:
+        candidates = sorted(
+            (
+                (os.path.getmtime(db_path), name)
+                for name in os.listdir(users_root)
+                if os.path.isfile(db_path := os.path.join(users_root, name, config.PORTFOLIO_DB_FILENAME))
+            ),
+            reverse=True,
+        )
+    except OSError as e:
+        logging.warning(f"Summary warm-up skipped: cannot list users dir: {e}")
+        return
+
+    for _, username in candidates[:max_users]:
+        try:
+            conn = get_db_connection(global_db_path, use_cache=False)
+            if not conn:
+                return
+            try:
+                row = conn.execute(
+                    "SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?",
+                    (username,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if not row or not row[2]:
+                continue
+            user = User(id=row[0], username=row[1], is_active=True, created_at=row[3], alias=row[4])
+
+            data = await run_in_threadpool(get_transaction_data, user)
+            if data[0].empty:
+                continue
+            currency = get_config_manager(user).gui_config.get("display_currency", "USD")
+            t0 = time.perf_counter()
+            await _calculate_portfolio_summary_internal(
+                currency=currency,
+                include_accounts=None,
+                show_closed_positions=True,
+                data=data,
+                current_user=user,
+            )
+            logging.info(
+                f"Warmed summary cache for {username} ({currency}) in {time.perf_counter() - t0:.1f}s"
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception(f"Summary warm-up failed for {username}")
+
+
 async def _get_historical_performance_cached(
     df: pd.DataFrame,
     manual_overrides_dict: Dict,
