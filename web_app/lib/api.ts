@@ -345,7 +345,7 @@ export async function fetchMarketHistory(
     interval: string = '1d',
     currency: string = 'USD',
     signal?: AbortSignal
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
 ): Promise<any[]> {
     const { data, error } = await apiClient.GET("/api/market_history", {
         params: {
@@ -1021,7 +1021,7 @@ export interface StockAnalysisResponse {
         // New types (quality/value framing): add, trim, exit, monitor, tax_efficiency
         // Legacy types kept for backward-compat with old cached reviews.
         type: 'add' | 'trim' | 'exit' | 'monitor' | 'tax_efficiency'
-            | 'tax_loss_harvesting' | 'rebalancing' | 'diversification';
+        | 'tax_loss_harvesting' | 'rebalancing' | 'diversification';
         title: string;
         description: string;
         symbol: string;

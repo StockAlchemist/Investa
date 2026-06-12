@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatCurrency, formatCurrencyWhole } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { ResponsiveContainer, LineChart, Line } from 'recharts';
 import { LucideIcon, Loader2 } from 'lucide-react';
 
@@ -140,10 +140,10 @@ export function MetricCard({
         // sub-value is present — keeps the 2-col mobile grid visually aligned.
 
         // The full number is always shown — never abbreviated or ellipsized.
-        // Cents drop out at ≥100k (formatCurrencyWhole) and the font steps
-        // down as the string grows so long amounts still fit the card.
+        // The font steps down as the string grows so long amounts still fit
+        // the card.
         const display = value !== null && value !== undefined
-            ? (isCurrency && typeof value === 'number' ? formatCurrencyWhole(value, currency) : String(value))
+            ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : String(value))
             : '—';
         const fitClass =
             display.length > 13 ? 'text-sm sm:text-base' :
