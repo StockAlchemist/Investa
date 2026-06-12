@@ -157,7 +157,15 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     deduped_splits = deduped_splits.drop(columns=["__split_priority", "__split_ym"])
 
     # Re-combine, preserving order as much as possible
-    result = pd.concat([other_txs, deduped_splits])
+    frames = [f for f in [other_txs, deduped_splits] if not f.empty]
+    if not frames:
+        return df.iloc[:0]
+    
+    if len(frames) == 1:
+        result = frames[0].copy()
+    else:
+        result = pd.concat(frames)
+
     if "original_index" in result.columns:
         result = result.sort_values(by="original_index")
     else:
