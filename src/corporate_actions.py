@@ -155,10 +155,15 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
         subset=["Symbol", "__split_ym", "Split Ratio"], keep="first"
     )
     
-    # Avoid .drop() to prevent pandas block manager corruption causing concat IndexError.
-    # We explicitly select original columns and make a deep copy.
-    deduped_splits = deduped_splits[list(df.columns)].copy()
-    other_txs = other_txs.copy()
+    # Avoid pandas block manager corruption (AssertionError: Gaps in blk ref_locs)
+    # by explicitly rebuilding the dataframes column by column.
+    def _safe_rebuild(frame):
+        if frame.empty:
+            return df.iloc[:0]
+        return pd.DataFrame({c: frame[c].to_numpy() for c in df.columns}, index=frame.index)
+
+    deduped_splits = _safe_rebuild(deduped_splits)
+    other_txs = _safe_rebuild(other_txs)
 
     # Re-combine, preserving order as much as possible
     frames = [f for f in [other_txs, deduped_splits] if not f.empty]
@@ -168,14 +173,7 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     if len(frames) == 1:
         result = frames[0].copy()
     else:
-        # If concat still fails, fallback to recreating from dicts
-        try:
-            result = pd.concat(frames)
-        except IndexError:
-            # Fallback for severe pandas block corruption
-            result = pd.DataFrame(pd.concat([
-                pd.DataFrame(f.to_dict("list")) for f in frames
-            ]))
+        result = pd.concat(frames)
 
     if "original_index" in result.columns:
         result = result.sort_values(by="original_index")
