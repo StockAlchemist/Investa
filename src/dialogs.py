@@ -2349,11 +2349,32 @@ class AddTransactionDialog(QDialog):
         # Auto-calculation (ensure these are connected AFTER validators for proper behavior)
         self.quantity_edit.textChanged.connect(self._auto_calculate_total)
         self.price_edit.textChanged.connect(self._auto_calculate_total)
-        # --- FIX: Store lambda as an attribute to allow disconnection ---
+        self.commission_edit.textChanged.connect(self._auto_calculate_total)
+
+        # When the user manually types into qty, price, or commission, unlock
+        # total so auto-calc can update it. textEdited fires only on keyboard
+        # input (not programmatic setText), so this won't interfere with
+        # _populate_fields_for_edit.
+        def _unlock_total_and_recalc():
+            self.total_amount_locked_by_user = False
+            self._auto_calculate_total()
+
+        self.quantity_edit.textEdited.connect(lambda _: _unlock_total_and_recalc())
+        self.price_edit.textEdited.connect(lambda _: _unlock_total_and_recalc())
+        self.commission_edit.textEdited.connect(lambda _: _unlock_total_and_recalc())
+
+        # When the user manually types into total, lock it to prevent auto-calc
+        # from overwriting their value.
         self._total_amount_edited_slot = lambda text: setattr(
-            self, "total_amount_locked_by_user", bool(text)
+            self, "total_amount_locked_by_user", bool(text.strip())
         )
         self.total_amount_edit.textEdited.connect(self._total_amount_edited_slot)
+        
+        def _handle_total_amount_editing_finished():
+            if not getattr(self, "total_amount_locked_by_user", False):
+                self._auto_calculate_total()
+                
+        self.total_amount_edit.editingFinished.connect(_handle_total_amount_editing_finished)
         # --- END FIX ---
 
         # Tax Suggestion
@@ -2442,7 +2463,7 @@ class AddTransactionDialog(QDialog):
             qty_enabled = True
             price_enabled = True
             total_enabled = True
-            total_readonly = True  # Auto-calculated from Qty * Price
+            total_readonly = False  # Auto-calculated from Qty * Price +/- fee, but manually editable
         elif (
             tx_type_lower == "transfer"
         ):  # Asset/Cash Transfer (Price/Total not needed)
@@ -2697,15 +2718,28 @@ class AddTransactionDialog(QDialog):
                 self.price_edit.setFocus()
                 return None
 
-            # Total amount for these types is typically calculated Qty * Price.
-            # If total_amount_edit was locked (user entered or pre-filled), respect that value.
-            # --- FIX: If total is not provided, calculate it from qty and price ---
+            # Total amount: read from the UI field first (it includes fee from
+            # auto-calc or a manual user override), then fall back to
+            # recalculation only when the field is empty / unparseable.
+            if total_str_from_field:
+                try:
+                    total = float(total_str_from_field)
+                    logging.debug(
+                        f"Read Total Amount from field for '{tx_type_display_case}': {total}"
+                    )
+                except ValueError:
+                    total = None  # Will be recalculated below
+
             if total is None and qty is not None and price is not None:
-                total = qty * price
+                if tx_type_lower in ["buy", "buy to cover"]:
+                    total = (qty * price) + comm
+                elif tx_type_lower in ["sell", "short sell"]:
+                    total = (qty * price) - comm
+                else:
+                    total = qty * price
                 logging.debug(
                     f"Calculated Total Amount for '{tx_type_display_case}': {total}"
                 )
-            # --- END FIX ---
             # Otherwise, calculate it.
         elif tx_type_lower == "transfer":
             if not qty_str:
@@ -3073,7 +3107,7 @@ class AddTransactionDialog(QDialog):
 
     @Slot()
     def _auto_calculate_total(self):
-        """Automatically calculates Total Amount from Quantity and Price."""
+        """Automatically calculates Total Amount from Quantity, Price, and Commission."""
         # If the Total Amount field is itself read-only, it implies it's always auto-calculated.
         # The total_amount_locked_by_user flag is more for when Total Amount is editable by the user
         # and they have manually entered a value.
@@ -3088,7 +3122,7 @@ class AddTransactionDialog(QDialog):
         is_cash_tx = is_cash_symbol(current_symbol)
 
         logging.debug(
-            f"_auto_calculate_total: Called. Lock: {self.total_amount_locked_by_user}, Symbol: '{current_symbol}', Qty: '{self.quantity_edit.text()}', Price: '{self.price_edit.text()}'"
+            f"_auto_calculate_total: Called. Lock: {self.total_amount_locked_by_user}, Symbol: '{current_symbol}', Qty: '{self.quantity_edit.text()}', Price: '{self.price_edit.text()}', Comm: '{self.commission_edit.text()}'"
         )
 
         # If quantity cannot be entered, no auto-calculation based on it.
@@ -3136,7 +3170,21 @@ class AddTransactionDialog(QDialog):
                 # Allow calculation for qty >= 0 and price >= 0.
                 # Validators should prevent negative values where inappropriate.
                 if qty >= 0 and price >= 0:
-                    total = qty * price
+                    comm_str = self.commission_edit.text().strip().replace(",", "")
+                    comm = 0.0
+                    if comm_str:
+                        try:
+                            comm = float(comm_str)
+                        except ValueError:
+                            pass
+                    
+                    tx_type_lower = self.type_combo.currentText().lower()
+                    if tx_type_lower in ["buy", "buy to cover"]:
+                        total = (qty * price) + comm
+                    elif tx_type_lower in ["sell", "short sell"]:
+                        total = (qty * price) - comm
+                    else:
+                        total = qty * price
                     decimal_places = 2  # Default
                     parent_app = self.parent()  # PortfolioApp instance
                     if (
@@ -3147,7 +3195,7 @@ class AddTransactionDialog(QDialog):
                         decimal_places = parent_app.config.get("decimal_places", 2)
                     self.total_amount_edit.setText(f"{total:.{decimal_places}f}")
                     logging.debug(
-                        f"_auto_calculate_total: Calculated total {total:.{decimal_places}f}. Setting text."
+                        f"_auto_calculate_total: Calculated total {total:.{decimal_places}f}. (qty={qty}, price={price}, comm={comm}, type={tx_type_lower})"
                     )
                 else:
                     # This case implies qty or price was negative, which should be handled by validators.

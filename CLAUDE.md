@@ -128,3 +128,16 @@ INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG 
 - **Database migrations**: Run in isolation via scripts in `scripts/`; never modify the schema directly against a live DB.
 - **Numba**: JIT-compiled functions in `financial_ratios.py` and `portfolio_logic.py` must use NumPy-compatible code only.
 - **Multi-user**: The backend supports per-user data isolation; user context flows through FastAPI dependencies in `server/dependencies.py`.
+
+## ⚠️ Important: Dual UI Codebase
+
+The app has **two separate UI codebases** that share the same backend:
+
+| Feature | Web App (active) | Legacy Desktop (frozen) |
+|---------|-----------------|------------------------|
+| **UI code location** | `web_app/components/*.tsx` | `src/dialogs.py` |
+| **Transaction form** | `web_app/components/TransactionModal.tsx` | `src/dialogs.py` → `TransactionDialog` class |
+| **Runtime** | Next.js / React (browser) | PySide6 / Qt (native) |
+| **Launched via** | `./start_investa.sh` or `npm run dev` | `python src/main_gui.py` |
+
+**When modifying UI behavior (forms, dialogs, field calculations), always edit the web app components in `web_app/components/`**, not `src/dialogs.py`. The legacy Qt GUI is frozen and not used in the standard workflow. Editing `src/dialogs.py` will have no effect on the running web app.

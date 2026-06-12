@@ -125,6 +125,16 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     if not is_split.any():
         return df
 
+    # Safely de-fragment the DataFrame before ANY slicing or copying.
+    # The incoming DataFrame often arrives with "Gaps in blk ref_locs" block manager 
+    # corruption from upstream concatenations, which causes ~is_split or .copy() to crash.
+    try:
+        df = pd.DataFrame({c: df[c].to_numpy() for c in df.columns}, index=df.index)
+    except Exception:
+        original_index = df.index
+        df = pd.DataFrame(df.to_dict("records"))
+        df.index = original_index
+        
     other_txs = df[~is_split]
     splits_df = df[is_split].copy()
 
@@ -154,10 +164,22 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     deduped_splits = splits_df.drop_duplicates(
         subset=["Symbol", "__split_ym", "Split Ratio"], keep="first"
     )
-    deduped_splits = deduped_splits.drop(columns=["__split_priority", "__split_ym"])
+    
+    # We must explicitly select original columns and make a deep copy, since
+    # dropping columns can again cause block manager issues during concat.
+    deduped_splits = deduped_splits[list(df.columns)].copy()
+    other_txs = other_txs.copy()
 
     # Re-combine, preserving order as much as possible
-    result = pd.concat([other_txs, deduped_splits])
+    frames = [f for f in [other_txs, deduped_splits] if not f.empty]
+    if not frames:
+        return df.iloc[:0].copy()
+    
+    if len(frames) == 1:
+        result = frames[0].copy()
+    else:
+        result = pd.concat(frames)
+
     if "original_index" in result.columns:
         result = result.sort_values(by="original_index")
     else:
