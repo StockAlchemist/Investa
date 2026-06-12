@@ -134,8 +134,13 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 if (!totalLockedByUser) {
                     const qty = parseFloat(newData.Quantity);
                     const price = parseFloat(newData['Price/Share']);
+                    const comm = parseFloat(newData.Commission) || 0;
                     if (!isNaN(qty) && !isNaN(price)) {
-                        newData['Total Amount'] = parseFloat((qty * price).toFixed(2));
+                        if (['buy', 'buy to cover'].includes(txType)) {
+                            newData['Total Amount'] = parseFloat(((qty * price) + comm).toFixed(2));
+                        } else {
+                            newData['Total Amount'] = parseFloat(((qty * price) - comm).toFixed(2));
+                        }
                     } else if (isNaN(qty) || isNaN(price)) {
                         newData['Total Amount'] = '';
                     }
@@ -166,7 +171,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             return prev;
         });
 
-    }, [formData.Type, formData.Symbol, formData.Quantity, formData['Price/Share'], formData['From Account'], formData.Account, totalLockedByUser, isOpen]);
+    }, [formData.Type, formData.Symbol, formData.Quantity, formData['Price/Share'], formData.Commission, formData['From Account'], formData.Account, totalLockedByUser, isOpen]);
 
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -181,6 +186,11 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
 
         if (name === 'Total Amount') {
             setTotalLockedByUser(!!value);
+        }
+
+        // When user changes Quantity, Price, or Commission, unlock total so it auto-recalculates
+        if (['Quantity', 'Price/Share', 'Commission'].includes(name)) {
+            setTotalLockedByUser(false);
         }
 
         setFormData((prev: any) => {
@@ -321,7 +331,13 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
         try {
             let finalAmount = parseFloat(formData["Total Amount"]);
             if (isNaN(finalAmount) && !isNaN(qty) && !isNaN(price)) {
-                finalAmount = qty * price;
+                if (['buy', 'buy to cover'].includes(txType)) {
+                    finalAmount = (qty * price) + comm;
+                } else if (['sell', 'short sell'].includes(txType)) {
+                    finalAmount = (qty * price) - comm;
+                } else {
+                    finalAmount = qty * price;
+                }
             }
             if (['transfer', 'split'].includes(txType)) finalAmount = 0;
             if (['deposit', 'withdrawal', 'buy', 'sell'].includes(txType) && isCash) finalAmount = qty;
