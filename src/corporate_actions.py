@@ -154,17 +154,28 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     deduped_splits = splits_df.drop_duplicates(
         subset=["Symbol", "__split_ym", "Split Ratio"], keep="first"
     )
-    deduped_splits = deduped_splits.drop(columns=["__split_priority", "__split_ym"])
+    
+    # Avoid .drop() to prevent pandas block manager corruption causing concat IndexError.
+    # We explicitly select original columns and make a deep copy.
+    deduped_splits = deduped_splits[list(df.columns)].copy()
+    other_txs = other_txs.copy()
 
     # Re-combine, preserving order as much as possible
     frames = [f for f in [other_txs, deduped_splits] if not f.empty]
     if not frames:
-        return df.iloc[:0]
+        return df.iloc[:0].copy()
     
     if len(frames) == 1:
         result = frames[0].copy()
     else:
-        result = pd.concat(frames)
+        # If concat still fails, fallback to recreating from dicts
+        try:
+            result = pd.concat(frames)
+        except IndexError:
+            # Fallback for severe pandas block corruption
+            result = pd.DataFrame(pd.concat([
+                pd.DataFrame(f.to_dict("list")) for f in frames
+            ]))
 
     if "original_index" in result.columns:
         result = result.sort_values(by="original_index")
