@@ -63,11 +63,10 @@ METADATA_SCHEMA_VERSION = 3
 AI_REVIEW_CACHE_TTL = 604800  # 1 week for AI stock analysis
 
 # --- Logging Configuration ---
-# This level is a default; main_gui.py might override it for its own logging.
 LOGGING_LEVEL = logging.INFO  # Default logging level for the application
 
-# --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
-APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails
+# --- Application Name (used to build the cache/data directory paths) ---
+APP_NAME = "Investa"  # Used by db_utils.py for the application data folder
 APP_VERSION = "1.0.1"
 ORG_NAME = "StockAlchemist"  # Used for cache path consistency
 
@@ -145,28 +144,7 @@ def get_app_cache_dir() -> Optional[str]:
     """
     Returns the centralized application cache directory (e.g. ~/Library/Caches/StockAlchemist/Investa).
     """
-    try:
-        from PySide6.QtCore import QStandardPaths
-        pyside_available = True
-    except ImportError:
-        pyside_available = False
-
-    if pyside_available:
-        path = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
-        if path:
-            # If QStandardPaths didn't include the app name, append it manually
-            # On macOS, it's usually already correct if the app is bundled, 
-            # but for scripts we might need to be sure.
-            if APP_NAME not in path:
-                path = os.path.join(path, ORG_NAME, APP_NAME)
-            
-            try:
-                os.makedirs(path, exist_ok=True)
-                return path
-            except Exception:
-                pass
-
-    # Fallback: Check standard locations manually
+    # Resolve the platform-appropriate cache location.
     system = platform.system()
     home = os.path.expanduser("~")
     if system == "Darwin":

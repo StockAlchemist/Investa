@@ -51,14 +51,6 @@ from portfolio_version import CURRENT_HIST_VERSION
 from utils_time import get_est_today, get_latest_trading_date
 
 try:
-    from PySide6.QtCore import QStandardPaths
-except ImportError:
-    logging.warning(
-        "PySide6.QtCore.QStandardPaths not found. Cache paths might be relative."
-    )
-    QStandardPaths = None  # Fallback
-
-try:
     from line_profiler import profile
 except ImportError:
 
@@ -814,18 +806,7 @@ def _prepare_historical_inputs(
     fx_pairs_for_api_yf = sorted(list(set(fx_pairs_for_api_yf)))
 
     # Cache paths
-    app_cache_dir = None
-    if QStandardPaths:
-        cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
-        if cache_dir_base:
-            # FIX: Ensure we use the proper app structure (Org/App)
-            # QStandardPaths usually returns ~/Library/Caches on macOS for python scripts not in a bundle
-            if config.APP_NAME not in cache_dir_base:
-                app_cache_dir = os.path.join(cache_dir_base, config.ORG_NAME, config.APP_NAME)
-            else:
-                app_cache_dir = cache_dir_base
-            
-            os.makedirs(app_cache_dir, exist_ok=True)
+    app_cache_dir = config.get_app_cache_dir()
 
     raw_data_cache_file_name = (
         f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json"
@@ -2302,11 +2283,7 @@ def _get_or_calculate_all_daily_holdings(
         f"ALL_HOLDINGS_{CURRENT_HIST_VERSION}_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
     )
 
-    cache_dir_base = (
-        QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
-        if QStandardPaths is not None
-        else None
-    )
+    cache_dir_base = config.get_app_cache_dir()
     if cache_dir_base:
         holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache_new")
         os.makedirs(holdings_cache_dir, exist_ok=True)
@@ -2315,8 +2292,8 @@ def _get_or_calculate_all_daily_holdings(
         cash_file = os.path.join(holdings_cache_dir, f"{cache_key}_cash.npy")
         prices_file = os.path.join(holdings_cache_dir, f"{cache_key}_prices.npy")
     else:
-        # No Qt cache location (e.g. headless server without PySide6):
-        # still compute, just skip the load/save round-trip.
+        # No writable cache directory available: still compute, just skip the
+        # load/save round-trip.
         logging.warning(
             "Could not find cache directory. Layer 1 caching disabled; computing without cache."
         )

@@ -7,7 +7,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "build:desktop": "APP_ENV=desktop NEXT_PUBLIC_API_URL=http://127.0.0.1:8001/api next build",
     "generate:api": "npx openapi-typescript@7.13.0 http://localhost:8000/openapi.json -o src/api/types.ts",
     "generate:api:offline": "python3 ../scripts/export_openapi.py --out /tmp/investa-openapi.json && npx openapi-typescript@7.13.0 /tmp/investa-openapi.json -o src/api/types.ts && rm /tmp/investa-openapi.json",
     "check:api-drift": "python3 ../scripts/export_openapi.py --out /tmp/investa-openapi.json && npx openapi-typescript@7.13.0 /tmp/investa-openapi.json -o /tmp/investa-types-fresh.ts && diff -q src/api/types.ts /tmp/investa-types-fresh.ts && echo '\u2713 API types are up to date' || (echo '\u2717 API types out of date \u2014 run: npm run generate:api:offline' && exit 1)",

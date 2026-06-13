@@ -117,7 +117,6 @@ def test_per_user_config_defaults_to_own_db(tmp_path):
     users whose configs all pointed at data/db/portfolio.db and so read the
     same empty database instead of their own transactions.
     """
-    pytest.importorskip("PySide6")
     from config_manager import ConfigManager
     from db_utils import DB_FILENAME, get_database_path
 

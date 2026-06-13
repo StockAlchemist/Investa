@@ -111,10 +111,7 @@ if [ "$DEV_MODE" = "1" ]; then
     rm -rf .next/dev/lock
     npm run dev -- -H 0.0.0.0 &
 else
-    # Production mode. Rebuild when sources changed since the last *web* build.
-    # The marker file is only written here — a `build:desktop` (static export
-    # for Electron) leaves .next in a state `next start` can't serve, and the
-    # missing/stale marker forces a proper web rebuild after one.
+    # Production mode. Rebuild when sources changed since the last web build.
     BUILD_MARKER=".next/.investa-web-build"
     if [ ! -f "$BUILD_MARKER" ] || [ -n "$(find app components context lib src public package.json next.config.ts tailwind.config.ts postcss.config.mjs tsconfig.json -newer "$BUILD_MARKER" -print -quit 2>/dev/null)" ]; then
         echo "Building Web App (production)..."

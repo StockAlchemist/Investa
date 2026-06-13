@@ -85,15 +85,6 @@ except ImportError:
     logging.critical("CRITICAL ERROR: Could not import from data_loader.py. Exiting.")
     raise
 
-# --- Import QStandardPaths for cache directory ---
-try:
-    from PySide6.QtCore import QStandardPaths
-except ImportError:
-    logging.warning(
-        "PySide6.QtCore.QStandardPaths not found. Cache paths might be relative."
-    )
-    QStandardPaths = None  # Fallback
-
 # --- Import the NEW Market Data Provider ---
 try:
     from market_data import MarketDataProvider, get_shared_mdp

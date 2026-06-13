@@ -25,10 +25,10 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
         pip install -r requirements.txt
         ```
 
-        Otherwise, install them manually (core dependencies):
+        Then install the web app dependencies:
 
         ```bash
-        pip install PySide6 pandas numpy matplotlib yfinance scipy mplcursors requests numba
+        cd web_app && npm install && cd ..
         ```
 
 2. **Understanding Data Storage: The SQLite Database**
@@ -189,7 +189,7 @@ The special cash symbol **`$CASH`** is crucial for accurately tracking your port
     Open your terminal, ensure your virtual environment is active (if used), navigate to the Investa project directory, and run:
 
     ```bash
-    ./start_desktop.sh
+    ./start_investa.sh
     ```
 
 2. **Database Initialization (First Run):**
@@ -427,10 +427,6 @@ Below the donut charts, **Allocation Drift** cards let you set a target allocati
 * Each row shows the current %, the target %, and the drift (+/−).
 * Rows colour-code by severity: neutral for small deviations, amber for moderate drift, red for large.
 * A total-target display reminds you whether your targets sum to exactly 100%.
-
-### Desktop App (Legacy) — "Asset Allocation" Tab
-
-The PySide6 desktop app shows four static pie charts on the **"Asset Allocation"** tab with the same four dimensions. Data sources and manual-override behaviour are identical to the web app.
 
 **Important Notes on Allocation Data:**
 
@@ -684,10 +680,6 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
     * The application will prompt you to either locate the existing `.db` file or create a new one.
     * Ensure the path stored in `gui_config.json` under `database_path` is correct or select the correct file when prompted.
 
-  * **Error related to `matplotlib` or `PySide6` backend:**
-    * Ensure these libraries are correctly installed in your Python environment. Reinstalling them (`pip install --force-reinstall PySide6 matplotlib`) might help.
-    * Conflicts with other GUI libraries or incorrect environment setup can sometimes cause these. Using a clean virtual environment is recommended.
-
 ## Part 13: The Investa Web Dashboard
 
 Investa includes a modern Web Dashboard that allows you to view your portfolio from any device on your local network (e.g., your smartphone, tablet, or another computer).
@@ -750,7 +742,7 @@ The Web Dashboard uses a **collapsible sidebar** on desktop and a bottom navigat
 *   **Dividend History:** Detailed income tracking with Annual Yield %, income projector, and dividend calendar.
 *   **Dark Mode:** Full dark/light theme support including theme-aware chart colours that adapt to your selected theme.
 
-*Note: The Web Dashboard is primarily for **viewing** and **analyzing** your data. For bulk transaction imports or editing past records, use the Desktop Application or the CSV import flow.*
+*Note: The Web Dashboard supports adding and editing transactions directly. For bulk transaction imports, use the CSV import flow.*
 
 ## Part 14: Intrinsic Value Analysis
  

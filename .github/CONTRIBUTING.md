@@ -69,12 +69,12 @@ This is a brief reminder, for more details see the main `README.md`.
 3. **Install dependencies:**
 
     ```bash
-    pip install PySide6 pandas numpy matplotlib yfinance scipy mplcursors requests numba
+    pip install -r requirements.txt -r requirements-dev.txt
+    cd web_app && npm install && cd ..
     ```
 
-    *(Or `pip install -r requirements.txt` if one exists and is up-to-date)*
 4. **Run the application:**
 
     ```bash
-    python main_gui.py
+    ./start_investa.sh
     ```

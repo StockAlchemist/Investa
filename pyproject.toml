@@ -26,16 +26,6 @@ ignore_missing_imports = true
 target-version = "py312"
 src = ["src", "tests"]
 
-# The legacy Qt GUI is frozen (no new investment); keep it out of lint scope.
-extend-exclude = [
-    "src/main_gui.py",
-    "src/dialogs.py",
-    "src/models.py",
-    "src/ui_helpers.py",
-    "src/display_config.py",
-    "src/workers.py",
-]
-
 [tool.ruff.lint.per-file-ignores]
 # Tests insert src/ into sys.path before importing project modules,
 # so module-level imports necessarily follow that block.

@@ -17,18 +17,22 @@ import threading
 import uuid
 from typing import Dict, Any, Optional
 
-try:
-    from PySide6.QtCore import QStandardPaths
-except ImportError:
-    # Server/headless environments may not have Qt; fall back gracefully.
-    QStandardPaths = None
-
 import config
 from display_config import (
     get_column_definitions,
     DEFAULT_GRAPH_START_DATE,
     DEFAULT_GRAPH_END_DATE,
 )
+
+def _default_documents_dir() -> str:
+    """Best-effort default directory for the CSV import file picker.
+
+    Prefers the user's ~/Documents folder when it exists, otherwise falls back
+    to the current working directory.
+    """
+    documents = os.path.join(os.path.expanduser("~"), "Documents")
+    return documents if os.path.isdir(documents) else os.getcwd()
+
 
 # One lock per config file path, shared across all ConfigManager instances.
 # The server creates a fresh ConfigManager per request, so instance-level
@@ -115,12 +119,7 @@ class ConfigManager:
             "bar_periods_weekly": 12,
             "dividend_agg_period": "Annual",
             "dividend_periods_to_show": 10,
-            "last_csv_import_path": (
-                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
-                if QStandardPaths
-                else None
-            )
-            or os.getcwd(),
+            "last_csv_import_path": _default_documents_dir(),
             "theme": "light",
             "account_groups": {},
             "account_cash_mode_map": {},
