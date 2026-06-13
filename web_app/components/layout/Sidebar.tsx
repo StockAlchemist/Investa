@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- small static brand logos; next/image optimization adds no value and would require extra config */
+
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import {
@@ -35,40 +37,47 @@ interface SidebarProps {
   dayChangePct?: number;
 }
 
+function NavItem({ id, label, icon: Icon, activeTab, onTabChange, collapsed }: {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  collapsed: boolean;
+}) {
+  const active = activeTab === id;
+  return (
+    <button
+      onClick={() => onTabChange(id)}
+      title={collapsed ? label : undefined}
+      className={cn(
+        'group/item relative flex items-center w-full rounded-lg text-sm font-medium transition-all duration-150',
+        collapsed ? 'h-9 justify-center' : 'h-9 px-3 gap-2.5',
+        active
+          ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      {active && (
+        <span className="absolute left-0 inset-y-[6px] w-[3px] bg-blue-500 rounded-r-full" />
+      )}
+      <div className="w-6 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4" />
+      </div>
+      {!collapsed && <span className="truncate">{label}</span>}
+      {collapsed && (
+        <span className="pointer-events-none absolute left-full ml-2 z-50 px-2 py-1 rounded-md bg-popover border border-border text-xs font-medium shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-150 delay-200">
+          {label}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function Sidebar({
   activeTab, onTabChange, user, onLogout, collapsed, onToggle, onUserClick, dayChangePct,
 }: SidebarProps) {
   const { resolvedTheme, setTheme } = useTheme();
-
-  function NavItem({ id, label, icon: Icon }: { id: string; label: string; icon: React.ComponentType<{ className?: string }> }) {
-    const active = activeTab === id;
-    return (
-      <button
-        onClick={() => onTabChange(id)}
-        title={collapsed ? label : undefined}
-        className={cn(
-          'group/item relative flex items-center w-full rounded-lg text-sm font-medium transition-all duration-150',
-          collapsed ? 'h-9 justify-center' : 'h-9 px-3 gap-2.5',
-          active
-            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-        )}
-      >
-        {active && (
-          <span className="absolute left-0 inset-y-[6px] w-[3px] bg-blue-500 rounded-r-full" />
-        )}
-        <div className="w-6 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4" />
-        </div>
-        {!collapsed && <span className="truncate">{label}</span>}
-        {collapsed && (
-          <span className="pointer-events-none absolute left-full ml-2 z-50 px-2 py-1 rounded-md bg-popover border border-border text-xs font-medium shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-150 delay-200">
-            {label}
-          </span>
-        )}
-      </button>
-    );
-  }
 
   return (
     <aside
@@ -106,14 +115,14 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {PRIMARY_NAV.map(item => <NavItem key={item.id} {...item} />)}
+        {PRIMARY_NAV.map(item => <NavItem key={item.id} {...item} activeTab={activeTab} onTabChange={onTabChange} collapsed={collapsed} />)}
         <div className="my-2 border-t border-border" />
-        {SECONDARY_NAV.map(item => <NavItem key={item.id} {...item} />)}
+        {SECONDARY_NAV.map(item => <NavItem key={item.id} {...item} activeTab={activeTab} onTabChange={onTabChange} collapsed={collapsed} />)}
       </nav>
 
       {/* Bottom utilities */}
       <div className="border-t border-border px-2 py-2 space-y-0.5 shrink-0">
-        <NavItem id="settings" label="Settings" icon={Settings} />
+        <NavItem id="settings" label="Settings" icon={Settings} activeTab={activeTab} onTabChange={onTabChange} collapsed={collapsed} />
 
         <button
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}

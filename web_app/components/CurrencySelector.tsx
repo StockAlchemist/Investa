@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { cn, CURRENCY_SYMBOLS } from '@/lib/utils';
-import { ChevronDown, Globe } from 'lucide-react';
+import { Globe } from 'lucide-react';
 
 const AVAILABLE_CURRENCIES = ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY'];
 

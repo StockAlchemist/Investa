@@ -26,7 +26,7 @@ interface RiskMetricsProps {
 interface MetricItemProps {
     label: string;
     value: string | number | React.ReactNode;
-    icon: any;
+    icon: React.ElementType;
     description?: string;
     colorClass?: string;
     onClick: () => void;

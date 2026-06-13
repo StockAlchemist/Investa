@@ -1,7 +1,7 @@
+/* eslint-disable react-hooks/static-components -- CustomTooltip closes over chart props (period/currency/view) while recharts injects the tooltip props, so it is intentionally defined in render scope */
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 
-import { useQuery } from '@tanstack/react-query';
 import {
     LineChart,
     Line,
@@ -17,7 +17,7 @@ import {
 } from 'recharts';
 import PeriodSelector from './PeriodSelector';
 import BenchmarkSelector from './BenchmarkSelector';
-import { fetchHistory, PerformanceData } from '../lib/api';
+import { PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 
 
@@ -32,6 +32,14 @@ interface CustomTooltipProps {
     }[];
     label?: string;
 }
+
+// Performance data points carry extra dynamic fields (FX rate, baseline
+// marker, per-benchmark series) beyond the core PerformanceData shape.
+type PerfPoint = PerformanceData & {
+    fx_rate?: number | null;
+    is_baseline?: boolean;
+    [key: string]: number | string | boolean | null | undefined;
+};
 
 interface PerformanceGraphProps {
     currency: string;
@@ -61,7 +69,6 @@ const COLORS = [
 
 export default function PerformanceGraph({
     currency,
-    accounts,
     benchmarks,
     onBenchmarksChange,
     period,
@@ -95,6 +102,7 @@ export default function PerformanceGraph({
     // Client-side header to prevent hydration mismatch with Recharts
     const [mounted, setMounted] = useState(false);
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount flag for the SSR hydration guard
         setMounted(true);
     }, []);
 
@@ -106,7 +114,7 @@ export default function PerformanceGraph({
 
 
 
-    const hasFXRate = useMemo(() => data && data.length > 0 && data.some(d => (d as any).fx_rate != null), [data]);
+    const hasFXRate = useMemo(() => data && data.length > 0 && data.some(d => (d as PerfPoint).fx_rate != null), [data]);
 
     // Determine which keys to plot
     // Always plot 'twr' or 'value' for portfolio
@@ -127,15 +135,15 @@ export default function PerformanceGraph({
         if (!data || data.length === 0) return [];
 
         // Find the first valid fx_rate to use as baseline
-        const firstValidFXPoint = data.find(d => (d as any).fx_rate != null);
-        const startFX = firstValidFXPoint ? (firstValidFXPoint as any).fx_rate : undefined;
+        const firstValidFXPoint = data.find(d => (d as PerfPoint).fx_rate != null);
+        const startFX = firstValidFXPoint ? (firstValidFXPoint as PerfPoint).fx_rate : undefined;
 
         // TWR Normalization Baseline (First point / Baseline)
         const baseline = data[0];
         const baseTwrFactor = 1 + (baseline.twr / 100);
 
         return data.map(d => {
-            const currentFX = (d as any).fx_rate;
+            const currentFX = (d as PerfPoint).fx_rate;
 
             // Normalize TWR
             const currentTwrFactor = 1 + (d.twr / 100);
@@ -144,7 +152,7 @@ export default function PerformanceGraph({
             return {
                 ...d,
                 twr: adjTwr, // Override with normalized TWR
-                fx_return: startFX !== undefined && currentFX != null ? ((currentFX / startFX) - 1) * 100 : undefined
+                fx_return: startFX != null && currentFX != null ? ((currentFX / startFX) - 1) * 100 : undefined
             };
         });
     }, [data]);
@@ -196,7 +204,7 @@ export default function PerformanceGraph({
     }, [processedData, view, currency]);
 
     const chartedData = useMemo(() => {
-        const dataToPlot = (processedData as any[]).filter((d: any) => !d.is_baseline);
+        const dataToPlot = (processedData as PerfPoint[]).filter((d) => !d.is_baseline);
         return dataToPlot.map(d => ({
             ...d,
             timestamp: new Date(d.date).getTime()
@@ -401,7 +409,7 @@ export default function PerformanceGraph({
 
 
 
-    const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+    const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
         if (active && payload && payload.length) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const dataPoint = payload[0].payload as any;

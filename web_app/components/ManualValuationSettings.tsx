@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Trash2, Info, HelpCircle, Loader2, Edit2, Save } from 'lucide-react';
-import { updateSettings, Settings as SettingsType, fetchIntrinsicValue, IntrinsicValueResponse } from '../lib/api';
+import { updateSettings, Settings as SettingsType, fetchIntrinsicValue } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -117,7 +117,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
         return () => clearTimeout(timer);
     }, [symbol]);
 
-    const valuationOverrides = settings.valuation_overrides || {};
+    const valuationOverrides = useMemo(() => settings.valuation_overrides || {}, [settings.valuation_overrides]);
 
     // Load existing overrides when symbol matches
     useEffect(() => {
@@ -178,7 +178,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
             await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setSymbol('');
             setFormData({});
-        } catch (err) {
+        } catch {
             alert("Failed to save valuation override");
         }
     };
@@ -190,7 +190,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
         try {
             await updateSettings({ valuation_overrides: currentOverrides });
             await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-        } catch (err) {
+        } catch {
             alert("Failed to remove override");
         }
     };

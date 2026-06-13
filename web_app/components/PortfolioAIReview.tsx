@@ -4,7 +4,6 @@ import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolioAIReview } from '@/lib/api';
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, Gem, Scale, Target, AlertTriangle, Lightbulb, Clock } from 'lucide-react';
 import { MetricCard } from '@/components/MetricCard';
 import PortfolioOptimization from '@/components/PortfolioOptimization';
@@ -210,14 +209,6 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
         if (score >= 8) return "text-emerald-500";
         if (score >= 5) return "text-yellow-500";
         return "text-rose-500";
-    };
-
-    // Helper to determine theme color based on score
-    const getScoreTheme = (score: number) => {
-        if (!score) return "gray-500";
-        if (score >= 8) return "emerald-500";
-        if (score >= 5) return "yellow-500";
-        return "rose-500";
     };
 
     const getModalClasses = (score: number) => {

@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- renders small dynamic favicon/logo URLs; next/image gives no benefit here and would require remote-domain allowlisting */
+
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';

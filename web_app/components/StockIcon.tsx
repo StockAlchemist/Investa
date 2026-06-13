@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- renders small dynamic stock/exchange favicon URLs; next/image gives no benefit here and would require remote-domain allowlisting */
+
 import React, { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
@@ -18,11 +20,13 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount flag for the SSR hydration guard
         setMounted(true);
     }, []);
 
     // Reset error state when symbol changes
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentionally resync local fallback state when the symbol prop changes
         setError(false);
         setSourceIndex(0);
     }, [symbol]);

@@ -1,6 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import ChartSkeleton from "./ChartSkeleton";
-import TableSkeleton from "./TableSkeleton";
 
 interface TabContentSkeletonProps {
     type?: 'full' | 'chart-only' | 'table-only';

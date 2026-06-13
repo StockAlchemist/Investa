@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings, fetchTransactions } from '../lib/api';
-import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X } from 'lucide-react';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings, fetchTransactions } from '../lib/api';
+import { Trash2, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 import TableSkeleton from './skeletons/TableSkeleton';
@@ -133,7 +133,7 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
     );
 
     // React Query for pending items
-    const { data: pendingTransactions = [], isLoading: isPendingLoading } = useQuery<Transaction[]>({
+    const { data: pendingTransactions = [] } = useQuery<Transaction[]>({
         queryKey: ['pendingIbkr'],
         queryFn: fetchPendingIbkr,
     });

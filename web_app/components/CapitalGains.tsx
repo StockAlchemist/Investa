@@ -22,7 +22,7 @@ interface CapitalGainsProps {
 
 export default function CapitalGains({ data, currency, isLoading, visibleSections }: CapitalGainsProps) {
     const [selectedYear, setSelectedYear] = useState<string | null>(null);
-    const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
+    const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending'; isGainPct?: boolean } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -61,7 +61,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
         let sortableItems = [...filteredData];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
-                if (sortConfig.key === 'Realized Gain (Display)' && (sortConfig as any).isGainPct) {
+                if (sortConfig.key === 'Realized Gain (Display)' && sortConfig.isGainPct) {
                     const aCostBasis = a['Total Cost Basis (Display)'] || 0;
                     const bCostBasis = b['Total Cost Basis (Display)'] || 0;
                     const aGainPct = aCostBasis !== 0 ? (a['Realized Gain (Display)'] || 0) / aCostBasis : 0;
@@ -104,10 +104,10 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
 
     const requestSort = (key: keyof CapitalGain, isGainPct: boolean = false) => {
         let direction: 'ascending' | 'descending' = 'ascending';
-        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending' && (sortConfig as any).isGainPct === isGainPct) {
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending' && sortConfig.isGainPct === isGainPct) {
             direction = 'descending';
         }
-        setSortConfig({ key, direction, ...({ isGainPct } as any) });
+        setSortConfig({ key, direction, isGainPct });
     };
 
     const visibleData = sortedData.slice(0, visibleRows);
@@ -125,6 +125,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
         exportToCSV(sortedData as unknown as Record<string, unknown>[], `capital_gains${scope}.csv`);
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recharts Bar onClick payload shape is not cleanly typed
     const handleBarClick = (entry: any) => {
         // When clicking Bar directly, 'entry' is the data item itself (e.g. { year: '2023', gain: 100 })
         if (entry && entry.year) {

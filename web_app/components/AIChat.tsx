@@ -1,15 +1,13 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-    MessageCircle, 
-    X, 
-    Send, 
-    Sparkles, 
-    Loader2, 
-    Maximize2, 
+import {
+    X,
+    Send,
+    Sparkles,
+    Loader2,
+    Maximize2,
     Minimize2,
-    RefreshCw,
     Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';

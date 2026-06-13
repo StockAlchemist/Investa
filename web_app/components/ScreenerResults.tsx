@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Search, SlidersHorizontal, X, Filter } from 'lucide-react';
+import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react';
 import WatchlistStar from './WatchlistStar';
 import { Input } from "@/components/ui/input";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatCompactNumber, formatPercent, cn, getHeatmapClass } from "@/lib/utils";
+import { formatCurrency, formatPercent, cn, getHeatmapClass } from "@/lib/utils";
 
 import { useStockModal } from '@/context/StockModalContext';
 
@@ -21,12 +21,18 @@ interface ScreenResult {
     market_cap: number | null;
     sector: string | null;
     has_ai_review: boolean;
-    ai_score: number | null;
+    ai_score?: number | null;
+}
+
+interface ScreenReview {
+    scorecard?: Record<string, number>;
+    summary?: string;
+    analysis?: Record<string, string>;
 }
 
 interface ScreenerResultsProps {
     results: ScreenResult[];
-    onReview: (symbol: string, force?: boolean) => Promise<any>;
+    onReview: (symbol: string, force?: boolean) => Promise<ScreenReview | null>;
     reviewingSymbol: string | null;
     currency: string;
 }
@@ -41,7 +47,7 @@ interface SortConfig {
 
 const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, reviewingSymbol, currency }) => {
     const [expandedReview, setExpandedReview] = useState<string | null>(null);
-    const [reviews, setReviews] = useState<Record<string, any>>({});
+    const [reviews, setReviews] = useState<Record<string, ScreenReview>>({});
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'margin_of_safety', direction: 'desc' });
     const { openStockDetail } = useStockModal();
 
@@ -77,9 +83,9 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
             }));
         };
 
-        window.addEventListener('stock-intrinsic-value-updated' as any, handleIntrinsicUpdate as any);
+        window.addEventListener('stock-intrinsic-value-updated', handleIntrinsicUpdate as EventListener);
         return () => {
-            window.removeEventListener('stock-intrinsic-value-updated' as any, handleIntrinsicUpdate as any);
+            window.removeEventListener('stock-intrinsic-value-updated', handleIntrinsicUpdate as EventListener);
         };
     }, []);
 
@@ -530,7 +536,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                                 </div>
                                                             </div>
                                                             <div className="flex flex-wrap gap-3">
-                                                                {Object.entries(reviews[row.symbol].scorecard || {}).map(([k, v]: [string, any]) => (
+                                                                {Object.entries(reviews[row.symbol].scorecard || {}).map(([k, v]) => (
                                                                     <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 flex items-center gap-2">
                                                                         <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
                                                                         <span className={cn(
@@ -544,12 +550,12 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
 
                                                         <div className="p-4 rounded-xl bg-muted/30">
                                                             <p className="text-sm text-foreground/90 leading-relaxed font-semibold italic">
-                                                                "{reviews[row.symbol].summary}"
+                                                                &quot;{reviews[row.symbol].summary}&quot;
                                                             </p>
                                                         </div>
 
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                            {Object.entries(reviews[row.symbol].analysis || {}).map(([k, v]: [string, any]) => (
+                                                            {Object.entries(reviews[row.symbol].analysis || {}).map(([k, v]) => (
                                                                 <div key={k} className="space-y-1.5">
                                                                     <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                                                                         <ChevronRight className="w-3 h-3 text-purple-500" />

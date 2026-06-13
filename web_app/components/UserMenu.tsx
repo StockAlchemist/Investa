@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UserCircle, LogOut, User, ChevronDown } from 'lucide-react';
+import { UserCircle, LogOut, User as UserIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { User } from '@/lib/api';
 
 interface UserMenuProps {
-    user?: any;
+    user?: User | null;
     onLogout?: () => void;
     onUserClick: () => void;
     align?: 'left' | 'right';
@@ -57,7 +58,7 @@ export default function UserMenu({ user, onLogout, onUserClick, align = 'right' 
                             }}
                             className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5 text-left"
                         >
-                            <User className="w-4 h-4 text-indigo-500" />
+                            <UserIcon className="w-4 h-4 text-indigo-500" />
                             <span>User Settings</span>
                         </button>
                         <button

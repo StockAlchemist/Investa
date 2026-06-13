@@ -1,18 +1,14 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
-    LineChart,
     Line,
     XAxis,
     YAxis,
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    AreaChart,
     Area,
-    Legend,
     ReferenceLine,
-    BarChart,
     Bar,
     ComposedChart
 } from 'recharts';
@@ -71,27 +67,14 @@ const BENCHMARKS = [
 
 interface CustomTooltipProps {
     active?: boolean;
-    payload?: any[];
+    payload?: Array<{ value?: number; name?: string; color?: string; dataKey?: string | number; payload?: Record<string, unknown> }>;
     label?: string;
     view: 'price' | 'return';
     currency: string;
 }
 
 // --- Constants ---
-const COLORS = [
-    "#2563eb", // Primary Blue (Stock)
-    "#dc2626", // Red (Benchmark 1)
-    "#16a34a", // Green (Benchmark 2)
-    "#d97706", // Amber
-    "#9333ea", // Purple
-];
-
 // --- Helper Functions ---
-const formatValue = (val: number, view: 'price' | 'return', currency: string) => {
-    if (view === 'return') return `${val.toFixed(2)}%`;
-    return formatCurrency(val, currency);
-};
-
 const formatVolume = (val: number) => {
     if (val >= 1e9) return `${(val / 1e9).toFixed(2)}B`;
     if (val >= 1e6) return `${(val / 1e6).toFixed(2)}M`;
@@ -99,7 +82,7 @@ const formatVolume = (val: number) => {
     return val.toString();
 };
 
-const calculateSMA = (data: any[], period: number) => {
+const calculateSMA = (data: Array<{ value: number; [k: string]: unknown }>, period: number) => {
     if (data.length < period) return [];
     // Calculate SMA
     const smaData = data.map((item, index, array) => {
@@ -205,7 +188,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
         refetchInterval: period === '1d' ? 60 * 1000 : false,
     });
 
-    const data = rawData || [];
+    const data = useMemo(() => rawData || [], [rawData]);
     const isContinuous = period === '1d';
 
     // --- Overlay event data (only fetched when a toggle is enabled) ---
@@ -278,7 +261,6 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                     // Create midnight of that day in local or NY?
                     // Safe bet: Last 390 minutes (6.5 hours)?
                     // Better: Same Year-Month-Day as last point.
-                    const lastYMD = lastDate.toISOString().split('T')[0];
                     // Filter where date string starts with lastYMD
                     // But date object comparison is safer.
                     const startOfDay = new Date(lastDate);
@@ -338,7 +320,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
         }
 
         return processed;
-    }, [data, period]);
+    }, [data, period, fxRate]);
 
     // --- Build overlay event markers (snapped to visible chart points) ---
     // We attach event values directly onto the chart data points and render them via
@@ -598,11 +580,6 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
         if (period === '1d' && chartedData.length > 0) {
             // Force strict 09:30 - 16:00 EST visual range
             try {
-                // Get the date string in NY time from the first data point
-                const firstTs = chartedData[0].timestamp;
-                const d = new Date(firstTs);
-                const nyDateStr = d.toLocaleDateString("en-US", { timeZone: "America/New_York" });
-
                 // Construct 9:30 and 16:00 for *that* day
                 // We'll use a heuristic since we can't easily construct Date from NY string in JS without library.
                 // But we know the day. 
@@ -615,7 +592,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
 
                 // Let's rely on data extents + buffer or let auto handle it if backend is strict.
                 return ['auto', 'auto'];
-            } catch (e) {
+            } catch {
                 return ['auto', 'auto'];
             }
         }
@@ -634,9 +611,10 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
         }
     };
 
-    const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+    const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
         if (active && payload && payload.length) {
-            const dataPoint = payload[0].payload;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recharts tooltip point carries dynamic price/benchmark fields
+            const dataPoint = payload[0].payload as any;
             const dateStr = new Date(dataPoint.date).toLocaleString("en-US", {
                 timeZone: "America/New_York",
                 weekday: 'short', month: 'short', day: 'numeric',
@@ -912,7 +890,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                             <YAxis
                                 yAxisId="vol"
                                 orientation="right"
-                                tickFormatter={(val) => ""}
+                                tickFormatter={() => ""}
                                 axisLine={false}
                                 tickLine={false}
                                 width={0}

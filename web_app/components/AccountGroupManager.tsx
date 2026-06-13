@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Loader2, Pencil, X, GripVertical, Plus, Users } from 'lucide-react';
-import { updateSettings, Settings, fetchSettings } from '../lib/api';
+import { Trash2, Pencil, X, GripVertical, Plus, Users } from 'lucide-react';
+import { updateSettings, Settings } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -134,6 +134,7 @@ export default function AccountGroupManager({ availableAccounts, settings, onUpd
                 });
             }
             
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs the editable local list when the saved account groups/order change
             setGroupList(rawGroups);
         }
     }, [settings?.account_groups, settings?.account_group_order]);
@@ -175,8 +176,8 @@ export default function AccountGroupManager({ availableAccounts, settings, onUpd
     const handleCreateGroup = async () => {
         if (!newGroupName || selectedAccounts.length === 0 || !settings) return;
 
-        let newGroups: Record<string, string[]> = { ...settings.account_groups };
-        let newOrder = [...(settings.account_group_order || groupList.map(g => g.name))];
+        const newGroups: Record<string, string[]> = { ...settings.account_groups };
+        const newOrder = [...(settings.account_group_order || groupList.map(g => g.name))];
         
         if (editingGroupName) {
             if (editingGroupName !== newGroupName) {
