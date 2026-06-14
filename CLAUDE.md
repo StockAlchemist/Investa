@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Investa is a financial portfolio management system: a Next.js 16 / React 19 PWA (`web_app/`) on a single Python FastAPI backend (`src/`).
+Investa is a financial portfolio management system: a Next.js 16 / React 19 PWA (`web_app/`) on a single Python FastAPI backend (`src/`). A native SwiftUI macOS client (`macos_app/`) is in early development — it's a thin client of the same FastAPI backend (see `macos_app/README.md`).
 
 ## Running the App
 
@@ -105,4 +105,4 @@ INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG 
 - **Database migrations**: Run in isolation via scripts in `scripts/`; never modify the schema directly against a live DB.
 - **Numba**: JIT-compiled functions in `financial_ratios.py` and `portfolio_logic.py` must use NumPy-compatible code only.
 - **Multi-user**: The backend supports per-user data isolation; user context flows through FastAPI dependencies in `server/dependencies.py`.
-- **UI**: All UI lives in the web app (`web_app/components/*.tsx`); e.g. the transaction form is `web_app/components/TransactionModal.tsx`. There is no longer a desktop/Qt UI.
+- **UI**: The primary UI is the web app (`web_app/components/*.tsx`); e.g. the transaction form is `web_app/components/TransactionModal.tsx`. There is no longer a desktop/Qt UI. A native SwiftUI macOS client lives in `macos_app/` (SwiftUI + MVVM, async URLSession, generated via XcodeGen from `macos_app/project.yml`); it consumes the same FastAPI endpoints as the web app and mirrors `web_app/lib/api.ts`.

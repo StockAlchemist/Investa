@@ -1,0 +1,46 @@
+name: Investa
+options:
+  bundleIdPrefix: com.investa
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  Investa:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Investa
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.investa.mac
+        PRODUCT_NAME: Investa
+        INFOPLIST_FILE: Investa/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        COMBINE_HIDPI_IMAGES: YES
+        # App Sandbox is enabled with an outgoing-network entitlement so the
+        # client can reach the local FastAPI backend.
+        ENABLE_APP_SANDBOX: YES
+        CODE_SIGN_ENTITLEMENTS: Investa/Investa.entitlements
+    entitlements:
+      path: Investa/Investa.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+schemes:
+  Investa:
+    build:
+      targets:
+        Investa: all
+    run:
+      config: Debug
