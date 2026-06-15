@@ -3,12 +3,13 @@ import SwiftUI
 /// Loads a company logo by trying several sources in order and caching the
 /// result. Falls back to nil (→ monogram) only when every source fails.
 @MainActor
-final class LogoLoader: ObservableObject {
-    @Published var image: PlatformImage?
-    @Published var resolved = false
+@Observable
+final class LogoLoader {
+    var image: PlatformImage?
+    var resolved = false
 
-    private static var cache: [String: PlatformImage] = [:]
-    private static var misses: Set<String> = []
+    @ObservationIgnored private static var cache: [String: PlatformImage] = [:]
+    @ObservationIgnored private static var misses: Set<String> = []
 
     func load(symbol: String, sources: [URL]) async {
         if let cached = Self.cache[symbol] { image = cached; resolved = true; return }
@@ -34,7 +35,7 @@ final class LogoLoader: ObservableObject {
 struct StockIcon: View {
     let symbol: String
     var size: CGFloat = 18
-    @StateObject private var loader = LogoLoader()
+    @State private var loader = LogoLoader()
 
     // Ticker → brand domain. Used both for Clearbit (accurate logos) and the
     // favicon fallback. Covers the large/mid caps FMP commonly mis-serves.

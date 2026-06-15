@@ -6,13 +6,19 @@ struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = DashboardViewModel()
     @State private var detail: SymbolID?
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var isPhone: Bool { hSize == .compact }
+    #else
+    private var isPhone: Bool { false }
+    #endif
 
     private var cur: String { appState.displayCurrency }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
+            // On iPhone the nav bar already shows the "Dashboard" title.
+            if !isPhone { header; Divider() }
             ScrollView {
                 VStack(spacing: 16) {
                     if let error = viewModel.errorMessage { errorBanner(error) }
@@ -55,7 +61,7 @@ struct DashboardView: View {
                     }
                     attributionRow
                 }
-                .padding(20)
+                .padding(isPhone ? 14 : 20)
             }
         }
         .macMinSize(width: 900, height: 600)
@@ -175,7 +181,7 @@ struct DashboardView: View {
             "taxes": MetricCard(title: "Taxes", value: Fmt.currency(m?.taxes, code: cur), tint: .down),
         ]
         let cards = metricOrder.filter { vis($0) }.compactMap { byId[$0] }
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 165), spacing: 12)], spacing: 12) {
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: isPhone ? 150 : 165), spacing: 12)], spacing: 12) {
             ForEach(cards) { MetricCardView(card: $0) }
         }
     }

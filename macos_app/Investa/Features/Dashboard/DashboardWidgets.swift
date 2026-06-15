@@ -66,39 +66,10 @@ struct PortfolioHeroCard: View {
     var body: some View {
         let positive = (dayGL ?? 0) >= 0
         return VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("Total Portfolio Value", systemImage: "wallet.pass")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(Fmt.currency(metrics?.marketValue, code: currency))
-                            .font(.system(size: 40, weight: .black, design: .rounded))
-                            .minimumScaleFactor(0.5).lineLimit(1)
-                        if let g = dayGL {
-                            HStack(spacing: 4) {
-                                Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
-                                Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))").fontWeight(.semibold)
-                                if let p = dayGLPct {
-                                    Text("\(p >= 0 ? "+" : "")\(String(format: "%.2f%%", p))")
-                                        .font(.caption.bold())
-                                        .padding(.horizontal, 8).padding(.vertical, 2)
-                                        .background((positive ? Color.up : .down).opacity(0.12), in: Capsule())
-                                }
-                                Text("today").font(.caption).foregroundStyle(.secondary)
-                            }
-                            .foregroundStyle(positive ? Color.up : Color.down)
-                        }
-                    }
-                }
-                Spacer()
-                HStack(spacing: 0) {
-                    statPill("Total TWR", metrics?.cumulativeTWR, sub: nil)
-                    if let a = metrics?.annualizedTWR { Divider().frame(height: 30); statPill("Ann. TWR", a, sub: "p.a.") }
-                    if let irr = metrics?.portfolioMWR { Divider().frame(height: 30); statPill("IRR (MWR)", irr, sub: "p.a.") }
-                }
-                .padding(.vertical, 10)
-                .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.05), lineWidth: 1))
+            // Side-by-side when wide; stacked on a narrow (phone) width.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top) { valueBlock; Spacer(); pillCluster }
+                VStack(alignment: .leading, spacing: 12) { valueBlock; pillCluster }
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -135,6 +106,44 @@ struct PortfolioHeroCard: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.heroRadius))
         )
         .card(.hero)
+    }
+
+    private var valueBlock: some View {
+        let positive = (dayGL ?? 0) >= 0
+        return VStack(alignment: .leading, spacing: 6) {
+            Label("Total Portfolio Value", systemImage: "wallet.pass")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(Fmt.currency(metrics?.marketValue, code: currency))
+                    .font(.system(size: 40, weight: .black, design: .rounded))
+                    .minimumScaleFactor(0.5).lineLimit(1)
+                if let g = dayGL {
+                    HStack(spacing: 4) {
+                        Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
+                        Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))").fontWeight(.semibold)
+                        if let p = dayGLPct {
+                            Text("\(p >= 0 ? "+" : "")\(String(format: "%.2f%%", p))")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 8).padding(.vertical, 2)
+                                .background((positive ? Color.up : .down).opacity(0.12), in: Capsule())
+                        }
+                        Text("today").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .foregroundStyle(positive ? Color.up : Color.down)
+                }
+            }
+        }
+    }
+
+    private var pillCluster: some View {
+        HStack(spacing: 0) {
+            statPill("Total TWR", metrics?.cumulativeTWR, sub: nil)
+            if let a = metrics?.annualizedTWR { Divider().frame(height: 30); statPill("Ann. TWR", a, sub: "p.a.") }
+            if let irr = metrics?.portfolioMWR { Divider().frame(height: 30); statPill("IRR (MWR)", irr, sub: "p.a.") }
+        }
+        .padding(.vertical, 10)
+        .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.05), lineWidth: 1))
     }
 
     private func statPill(_ label: String, _ value: Double?, sub: String?) -> some View {
