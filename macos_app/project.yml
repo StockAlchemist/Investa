@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.investa
   deploymentTarget:
     macOS: "14.0"
+    iOS: "17.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -11,7 +12,6 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
-    ENABLE_HARDENED_RUNTIME: YES
 targets:
   Investa:
     type: application
@@ -19,6 +19,8 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: Investa
+        excludes:
+          - "Info-iOS.plist"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.investa.mac
@@ -28,6 +30,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
         COMBINE_HIDPI_IMAGES: YES
+        ENABLE_HARDENED_RUNTIME: YES
         # App Sandbox is enabled with an outgoing-network entitlement so the
         # client can reach the local FastAPI backend.
         ENABLE_APP_SANDBOX: YES
@@ -37,10 +40,33 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+  Investa-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Investa
+        excludes:
+          - "Info.plist"
+          - "Investa.entitlements"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.investa.ios
+        PRODUCT_NAME: Investa
+        INFOPLIST_FILE: Investa/Info-iOS.plist
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
 schemes:
   Investa:
     build:
       targets:
         Investa: all
+    run:
+      config: Debug
+  Investa-iOS:
+    build:
+      targets:
+        Investa-iOS: all
     run:
       config: Debug

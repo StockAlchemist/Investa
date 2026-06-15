@@ -1,14 +1,13 @@
 import SwiftUI
-import AppKit
 
 /// Loads a company logo by trying several sources in order and caching the
 /// result. Falls back to nil (→ monogram) only when every source fails.
 @MainActor
 final class LogoLoader: ObservableObject {
-    @Published var image: NSImage?
+    @Published var image: PlatformImage?
     @Published var resolved = false
 
-    private static var cache: [String: NSImage] = [:]
+    private static var cache: [String: PlatformImage] = [:]
     private static var misses: Set<String> = []
 
     func load(symbol: String, sources: [URL]) async {
@@ -18,7 +17,7 @@ final class LogoLoader: ObservableObject {
             guard let (data, response) = try? await URLSession.shared.data(from: url) else { continue }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { continue }
             // Reject tiny / empty placeholder responses.
-            if let img = NSImage(data: data), img.size.width >= 8, img.size.height >= 8 {
+            if let img = PlatformImage.decode(data), img.size.width >= 8, img.size.height >= 8 {
                 Self.cache[symbol] = img
                 image = img; resolved = true
                 return
@@ -90,8 +89,8 @@ struct StockIcon: View {
         Group {
             if isCash {
                 cashMonogram
-            } else if let nsImage = loader.image {
-                Image(nsImage: nsImage).resizable().aspectRatio(contentMode: .fit)
+            } else if let logo = loader.image {
+                Image(platformImage: logo).resizable().aspectRatio(contentMode: .fit)
                     .padding(size * 0.06).background(Color.white)
             } else if loader.resolved {
                 monogram

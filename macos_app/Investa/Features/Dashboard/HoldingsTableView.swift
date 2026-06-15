@@ -1,6 +1,5 @@
 import SwiftUI
 import Charts
-import AppKit
 
 // MARK: - Column model (mirrors web HoldingsTable COLUMN_DEFINITIONS)
 
@@ -324,7 +323,7 @@ struct HoldingsTableView: View {
             }
         } label: {
             toolLabel("line.3.horizontal.decrease", groupBy.map { k in "By \(groupingOptions.first { $0.key == k }?.label ?? k)" } ?? "Group", active: groupBy != nil)
-        }.menuStyle(.borderlessButton).fixedSize()
+        }.borderlessMenu().fixedSize()
     }
 
     private var accountMenu: some View {
@@ -336,7 +335,7 @@ struct HoldingsTableView: View {
             }
         } label: {
             toolLabel("person.crop.circle", selectedAccounts.isEmpty ? "Account" : "Account (\(selectedAccounts.count))", active: !selectedAccounts.isEmpty)
-        }.menuStyle(.borderlessButton).fixedSize()
+        }.borderlessMenu().fixedSize()
     }
 
     private var columnsButton: some View {
@@ -752,10 +751,6 @@ struct HoldingsTableView: View {
             }.joined(separator: ",")
             csv += line + "\n"
         }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "holdings.csv"
-        if panel.runModal() == .OK, let url = panel.url {
-            try? csv.write(to: url, atomically: true, encoding: .utf8)
-        }
+        exportText(csv, filename: "holdings.csv")
     }
 }

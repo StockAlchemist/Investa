@@ -51,7 +51,9 @@ struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
+            // iOS requires an optional single-selection binding; bridge to the
+            // non-optional state (ignore deselection).
+            List(selection: Binding(get: { selection }, set: { selection = $0 ?? selection })) {
                 Section {
                     ForEach(AppSection.group1) { row($0) }
                 }
@@ -119,7 +121,7 @@ struct MainView: View {
                     Label(auth.currentUser?.displayName ?? "Account", systemImage: "person.crop.circle")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .menuStyle(.borderlessButton)
+                .borderlessMenu()
                 .padding(.horizontal, 8).padding(.vertical, 6)
             }
             .padding(.vertical, 6)

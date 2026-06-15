@@ -70,7 +70,7 @@ struct CapitalGainsView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
     }

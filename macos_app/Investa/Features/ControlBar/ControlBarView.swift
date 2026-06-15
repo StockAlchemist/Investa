@@ -39,7 +39,7 @@ struct ControlBarView: View {
         } label: {
             Label(accountSummary, systemImage: "building.columns")
         }
-        .menuStyle(.borderlessButton)
+        .borderlessMenu()
         .fixedSize()
     }
 

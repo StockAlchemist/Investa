@@ -97,7 +97,7 @@ struct ScreenerView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .macMinSize(width: 820, height: 560)
         .task {
             await viewModel.loadWatchlists()
             if watchlistId.isEmpty { watchlistId = viewModel.watchlists.first.map { String($0.id) } ?? "" }

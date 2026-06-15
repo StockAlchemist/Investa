@@ -48,7 +48,7 @@ struct AIView: View {
             Divider()
             content
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .macMinSize(width: 820, height: 560)
         .task { if viewModel.review == nil { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: false) } }
         .onChange(of: signature) { _, _ in Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: false) } }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in

@@ -11,7 +11,7 @@ struct RootView: View {
             switch auth.state {
             case .checking:
                 ProgressView("Loading…")
-                    .frame(minWidth: 420, minHeight: 320)
+                    .macMinSize(width: 420, height: 320)
             case .loggedOut:
                 LoginView()
             case .loggedIn:

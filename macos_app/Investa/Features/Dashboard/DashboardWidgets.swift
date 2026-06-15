@@ -611,7 +611,7 @@ private struct SingleDonut: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(.background.tertiary, in: Capsule())
                         .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
-                    }.menuStyle(.borderlessButton).fixedSize()
+                    }.borderlessMenu().fixedSize()
                     Text(value(of: nil)).font(.title3.bold()).foregroundStyle(tint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.3)
                     Text(subtitle(of: nil)).font(.callout.weight(.bold)).foregroundStyle(subtitleTint(of: nil))

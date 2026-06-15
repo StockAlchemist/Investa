@@ -66,7 +66,9 @@ struct CommandPaletteView: View {
         .frame(width: 560, height: 460)
         .onAppear { focused = true }
         .onChange(of: query) { _, q in search(q) }
+        #if os(macOS)
         .onExitCommand { dismiss() }
+        #endif
     }
 
     private func navRow(_ cmd: NavCommand) -> some View {

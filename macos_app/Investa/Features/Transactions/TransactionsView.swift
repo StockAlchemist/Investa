@@ -1,5 +1,5 @@
 import SwiftUI
-import AppKit
+import UniformTypeIdentifiers
 
 enum TxDatePreset: String, CaseIterable, Identifiable {
     case all, mtd, ytd, d30, d90, y1, custom
@@ -37,6 +37,7 @@ struct TransactionsView: View {
     @State private var showingReview = false
     @State private var importAccount = ""
     @State private var autoAddCash = true
+    @State private var showImporter = false
 
     private var cur: String { appState.displayCurrency }
 
@@ -130,7 +131,7 @@ struct TransactionsView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .macMinSize(width: 820, height: 560)
         .task(id: accountSignature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         .sheet(isPresented: $showingAdd) { TransactionEditView(existing: nil, onSave: handleSave).environmentObject(appState) }
@@ -180,21 +181,22 @@ struct TransactionsView: View {
             }
             Toggle("Auto-add cash", isOn: $autoAddCash)
             Divider()
-            Button("Choose PDF / Image…") { openImportFile() }
+            Button("Choose PDF / Image…") { showImporter = true }
         } label: {
             if viewModel.isImporting { ProgressView().controlSize(.small) }
             else { Label("Import", systemImage: "doc.badge.plus") }
         }
-        .menuStyle(.borderlessButton).fixedSize()
+        .borderlessMenu().fixedSize()
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.pdf, .image]) { result in
+            if case .success(let url) = result { openImportFile(url) }
+        }
     }
 
-    private func openImportFile() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf, .image]
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    private func openImportFile(_ url: URL) {
         Task {
+            let access = url.startAccessingSecurityScopedResource()
             var parsed = await viewModel.parseDocument(url)
+            if access { url.stopAccessingSecurityScopedResource() }
             if !importAccount.isEmpty {
                 parsed = parsed.map { var t = $0; if t.account.isEmpty { t.account = importAccount }; return t }
             }
@@ -207,7 +209,7 @@ struct TransactionsView: View {
             HStack {
                 Text("Review Import (\(reviewTransactions.count))").font(.title2.bold())
                 Spacer()
-                Toggle("Auto-add cash", isOn: $autoAddCash).toggleStyle(.checkbox)
+                Toggle("Auto-add cash", isOn: $autoAddCash)
             }
             .padding(16)
             Divider()
@@ -420,16 +422,12 @@ struct TransactionsView: View {
     }
 
     private func exportCSV() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "transactions.csv"
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
         let header = "Date,Type,Symbol,Quantity,Price/Share,Commission,Total Amount,Local Currency,Account,Note"
         func esc(_ s: String) -> String { "\"\(s.replacingOccurrences(of: "\"", with: "\"\""))\"" }
         let lines = sorted.map { tx in
             [tx.date, tx.type, tx.symbol, String(tx.quantity), String(tx.pricePerShare), String(tx.commission),
              String(tx.totalAmount), tx.localCurrency, tx.account, tx.note ?? ""].map(esc).joined(separator: ",")
         }
-        try? ([header] + lines).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        exportText(([header] + lines).joined(separator: "\n"), filename: "transactions.csv")
     }
 }

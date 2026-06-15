@@ -123,7 +123,7 @@ struct WatchlistView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 860, minHeight: 560)
+        .macMinSize(width: 860, height: 560)
         .task { await viewModel.loadLists(); await viewModel.loadItems(currency: cur) }
         .onChange(of: viewModel.activeId) { _, _ in Task { await viewModel.loadItems(currency: cur) } }
         .onChange(of: cur) { _, _ in Task { await viewModel.loadItems(currency: cur) } }

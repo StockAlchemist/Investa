@@ -9,8 +9,9 @@ struct InvestaApp: App {
             RootView()
                 .environmentObject(auth)
                 .tint(Theme.brand)
-                .frame(minWidth: 900, minHeight: 600)
+                .macMinSize(width: 900, height: 600)
         }
+        #if os(macOS)
         .windowResizability(.contentMinSize)
         .commands {
             // Native menu bar entries; broadcast intents the dashboard observes.
@@ -41,6 +42,7 @@ struct InvestaApp: App {
                     .disabled(auth.currentUser == nil)
             }
         }
+        #endif
     }
 }
 

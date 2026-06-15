@@ -70,7 +70,7 @@ struct LoginView: View {
             .foregroundStyle(.secondary)
         }
         .padding(40)
-        .frame(minWidth: 420, minHeight: 460)
+        .macMinSize(width: 420, height: 460)
         .sheet(isPresented: $showingServerSettings) {
             serverSettingsSheet
         }

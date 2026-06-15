@@ -1,19 +1,10 @@
 import SwiftUI
-import AppKit
 
 extension Color {
     /// Gain (positive) semantic color — slightly desaturated, brighter in dark mode.
-    static let up = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.13, green: 0.77, blue: 0.37, alpha: 1)   // ~#22c55e
-            : NSColor(srgbRed: 0.09, green: 0.64, blue: 0.29, alpha: 1)   // ~#16a34a
-    })
+    static let up = Color.adaptive(light: (0.09, 0.64, 0.29), dark: (0.13, 0.77, 0.37))   // #16a34a / #22c55e
     /// Loss (negative) semantic color.
-    static let down = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1)   // ~#ef4444
-            : NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)   // ~#dc2626
-    })
+    static let down = Color.adaptive(light: (0.86, 0.15, 0.15), dark: (0.94, 0.27, 0.27)) // #dc2626 / #ef4444
 }
 
 // Make `.up` / `.down` usable directly in ShapeStyle contexts (.foregroundStyle,

@@ -174,7 +174,7 @@ struct GlobalControlBar: View {
         } label: {
             Label("Layout", systemImage: "slider.horizontal.3")
         }
-        .menuStyle(.borderlessButton).fixedSize()
+        .borderlessMenu().fixedSize()
     }
 
     private func itemButtons(_ items: [LayoutItem]) -> some View {

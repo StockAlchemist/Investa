@@ -58,7 +58,7 @@ struct DashboardView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .macMinSize(width: 900, height: 600)
         .task {
             if !appState.didLoadSettings { await appState.loadSettings() }
             reload()

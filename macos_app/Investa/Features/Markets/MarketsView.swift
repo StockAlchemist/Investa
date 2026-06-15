@@ -89,7 +89,7 @@ struct MarketsView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .macMinSize(width: 820, height: 560)
         .task { viewModel.reload(currency: cur) }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in viewModel.reload(currency: cur) }
         .sheet(item: $indexDetail) { idx in IndexGraphSheet(index: idx) }
