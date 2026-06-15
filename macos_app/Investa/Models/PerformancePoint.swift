@@ -35,9 +35,15 @@ struct PerformancePoint: Codable, Sendable, Identifiable {
 
     var id: String { date }
 
-    /// Parsed `Date` for charting; backend dates are ISO `yyyy-MM-dd` (or full ISO).
+    /// Parsed `Date` for charting; backend dates are `yyyy-MM-dd` (daily) or a
+    /// full intraday timestamp (`yyyy-MM-dd HH:mm:ss`) for the 1D/5D periods.
     var parsedDate: Date? {
-        PerformancePoint.dayFormatter.date(from: String(date.prefix(10)))
+        if date.count > 10 {
+            return PerformancePoint.intradayFormatter.date(from: date)
+                ?? ISO8601DateFormatter().date(from: date)
+                ?? PerformancePoint.dayFormatter.date(from: String(date.prefix(10)))
+        }
+        return PerformancePoint.dayFormatter.date(from: String(date.prefix(10)))
     }
 
     private static let dayFormatter: DateFormatter = {
@@ -45,6 +51,12 @@ struct PerformancePoint: Codable, Sendable, Identifiable {
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "UTC")
         f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    private static let intradayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return f
     }()
 }

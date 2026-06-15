@@ -43,6 +43,8 @@ struct MainView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selection: AppSection = .performance
     @State private var showingSettings = false
+    @State private var showingPalette = false
+    @State private var paletteStock: SymbolID?
     /// nil = follow system; true/false = forced.
     @AppStorage("investa.forceDark") private var forceDark = false
     @AppStorage("investa.appearanceSet") private var appearanceSet = false
@@ -60,12 +62,25 @@ struct MainView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
             .safeAreaInset(edge: .bottom) { footer }
         } detail: {
-            detail
+            VStack(spacing: 0) {
+                GlobalControlBar(section: selection)
+                Divider()
+                detail
+            }
+            .task { if !appState.didLoadSettings { await appState.loadSettings() } }
         }
         .preferredColorScheme(appearanceSet ? (forceDark ? .dark : .light) : nil)
         .sheet(isPresented: $showingSettings) {
             SettingsSheet().environmentObject(appState).environmentObject(auth)
         }
+        .sheet(isPresented: $showingPalette) {
+            CommandPaletteView(
+                onNavigate: { selection = $0 },
+                onOpenSettings: { showingSettings = true },
+                onOpenStock: { paletteStock = SymbolID(id: $0) })
+        }
+        .sheet(item: $paletteStock) { StockDetailView(symbol: $0.id, currency: appState.displayCurrency) }
+        .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
     }
 
     private func row(_ section: AppSection) -> some View {

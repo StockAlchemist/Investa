@@ -130,7 +130,7 @@ struct WatchlistView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in
             Task { await viewModel.loadItems(currency: cur) }
         }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id) }
+        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
 
     // MARK: - List selector
@@ -260,8 +260,10 @@ struct WatchlistView: View {
 
     private func rowView(_ item: WatchlistItem) -> some View {
         GridRow {
-            Button { detail = SymbolID(id: item.symbol) } label: { Text(item.symbol).fontWeight(.bold) }
-                .buttonStyle(.plain).gridColumnAlignment(.leading)
+            Button { detail = SymbolID(id: item.symbol) } label: {
+                HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 16); Text(item.symbol).fontWeight(.bold) }
+            }
+            .buttonStyle(.plain).gridColumnAlignment(.leading)
             Text(item.name ?? "-").foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 160, alignment: .leading).gridColumnAlignment(.leading)
             Text(item.price.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").monospacedDigit()
             Text(Fmt.percent(item.dayChangePct)).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))

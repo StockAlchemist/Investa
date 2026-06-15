@@ -62,10 +62,10 @@ struct CapitalGainsView: View {
             }
             ScrollView {
                 VStack(spacing: 20) {
-                    UnrealizedTaxSection(holdings: viewModel.holdings, currency: cur)
-                    CapitalGainsKpiStrip(gains: filteredGains, currency: cur)
-                    AnnualRealizedGainsCard(gains: viewModel.gains, currency: cur, selectedYear: $selectedYear)
-                    RealizedGainsTable(gains: filteredGains, currency: cur)
+                    if vis("unrealizedTax") { UnrealizedTaxSection(holdings: viewModel.holdings, currency: cur) }
+                    if vis("capitalGainsKpis") { CapitalGainsKpiStrip(gains: filteredGains, currency: cur) }
+                    if vis("annualCapitalGains") { AnnualRealizedGainsCard(gains: viewModel.gains, currency: cur, selectedYear: $selectedYear) }
+                    if vis("capitalGainsTransactions") { RealizedGainsTable(gains: filteredGains, currency: cur) }
                 }
                 .padding(20)
             }
@@ -74,6 +74,8 @@ struct CapitalGainsView: View {
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
     }
+
+    private func vis(_ id: String) -> Bool { appState.isVisible(.capitalGains, id) }
 
     private var signature: String {
         "\(cur)|\(appState.selectedAccounts.sorted().joined(separator: ","))"

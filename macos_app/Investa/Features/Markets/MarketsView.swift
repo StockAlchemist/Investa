@@ -29,7 +29,10 @@ final class MarketsViewModel: ObservableObject {
         async let wlR: [WatchlistItem] = api.get("/watchlist",
             query: [URLQueryItem(name: "currency", value: currency), URLQueryItem(name: "id", value: "1")])
 
-        if let map = try? await indicesR { indices = Array(map.values) }
+        if let map = try? await indicesR {
+            indices = map.map { k, v in var q = v; q.key = k; return q }
+                .sorted { ($0.name ?? "") < ($1.name ?? "") }
+        }
         do { marketNews = try await newsR } catch let e as APIError {
             if case .unauthorized = e { return }; errorMessage = e.errorDescription
         } catch is CancellationError { return } catch { errorMessage = error.localizedDescription }
@@ -90,7 +93,7 @@ struct MarketsView: View {
         .task { viewModel.reload(currency: cur) }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in viewModel.reload(currency: cur) }
         .sheet(item: $indexDetail) { idx in IndexGraphSheet(index: idx) }
-        .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id) }
+        .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
 
     // MARK: - Summary bar
@@ -127,7 +130,7 @@ struct MarketsView: View {
     private var indicesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Market Indices").font(.title3.bold())
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 16)], spacing: 16) {
                 ForEach(viewModel.indices) { idx in
                     Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
                 }
@@ -167,48 +170,124 @@ struct MarketsView: View {
 private struct IndexCard: View {
     let index: IndexQuote
     private var isUp: Bool { (index.change ?? 0) >= 0 }
+    private var accent: Color { Self.indexColor(index.name ?? "") }
+
+    /// Brand color per index — mirrors the web `getIndexStyle`.
+    static func indexColor(_ name: String) -> Color {
+        let n = name.lowercased()
+        if n.contains("nasdaq") { return Color(hex: 0x8b5cf6) }
+        if n.contains("s&p") || n.contains("500") { return Color(hex: 0x06b6d4) }
+        if n.contains("dow") || n.contains("jones") { return Color(hex: 0xf59e0b) }
+        if n.contains("russell") { return Color(hex: 0xf97316) }
+        if n.contains("ftse") { return Color(hex: 0x3b82f6) }
+        if n.contains("nikkei") || n.contains("japan") { return Color(hex: 0xec4899) }
+        if n.contains("dax") || n.contains("germany") { return Color(hex: 0x14b8a6) }
+        return Color(hex: 0x10b981)
+    }
+
+    private var priceText: String {
+        guard let p = index.price else { return "—" }
+        return p.formatted(.number.precision(.fractionLength(2)))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(index.name ?? "Index").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase).lineLimit(1)
-                        Text(Fmt.number(index.price)).font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        Text(index.name ?? "Index").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase).tracking(1).lineLimit(1)
+                        Text(priceText).font(.system(size: 28, weight: .bold)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.5)
                     }
-                    Spacer()
-                    HStack(spacing: 2) {
+                    Spacer(minLength: 6)
+                    HStack(spacing: 3) {
                         Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right").font(.caption2)
-                        Text(Fmt.percent(index.changesPercentage)).fontWeight(.bold)
+                        Text("\(isUp ? "+" : "")\(String(format: "%.2f%%", index.changesPercentage ?? 0))").fontWeight(.bold).monospacedDigit()
                     }
                     .font(.caption).foregroundStyle(isUp ? .green : .red)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background((isUp ? Color.green : .red).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 }
-                Text("\(isUp ? "+" : "")\(Fmt.number(index.change)) pts").font(.caption.weight(.semibold))
+                Text("\(isUp ? "+" : "")\(String(format: "%.2f", index.change ?? 0)) pts").font(.caption.weight(.semibold)).monospacedDigit()
                     .foregroundStyle(isUp ? .green : .red)
             }
             .padding(16)
             if index.sparkline.count > 1 {
                 Chart(Array(index.sparkline.enumerated()), id: \.offset) { i, v in
-                    AreaMark(x: .value("i", i), y: .value("v", v)).foregroundStyle((isUp ? Color.green : .red).opacity(0.2))
-                    LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(isUp ? .green : .red)
+                    AreaMark(x: .value("i", i), y: .value("v", v))
+                        .foregroundStyle(.linearGradient(colors: [accent.opacity(0.3), accent.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(accent).lineStyle(.init(lineWidth: 2.5)).interpolationMethod(.monotone)
                 }
-                .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 70)
+                .chartYScale(domain: sparkDomain)
+                .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 72)
+            } else {
+                Spacer().frame(height: 16)
             }
-            Text("7D Trend").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 10).padding(.top, 6)
+            Text("7D Trend").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
+                .padding(.horizontal, 16).padding(.bottom, 10).padding(.top, 6)
         }
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
+        .background(.background.secondary)
+        .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 4) }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary, lineWidth: 1))
+    }
+
+    /// Tight band so small intraday moves read clearly (mirrors the web domain).
+    private var sparkDomain: ClosedRange<Double> {
+        guard let lo = index.sparkline.min(), let hi = index.sparkline.max() else { return 0...1 }
+        if lo == hi { return (lo * 0.999)...(hi * 1.001) }
+        let pad = (hi - lo) * 0.15
+        return (lo - pad)...(hi + pad)
     }
 }
 
 // MARK: - Index graph sheet (mirrors IndexGraphModal)
 
+/// Fetches a single index's return-% history per period from `/market_history`.
+@MainActor private final class IndexHistoryModel: ObservableObject {
+    @Published var points: [(date: Date, ret: Double)] = []
+    @Published var isLoading = false
+
+    func load(key: String, period: String) async {
+        isLoading = true; defer { isLoading = false }
+        let interval = period == "1d" ? "2m" : (period == "5d" ? "15m" : "1d")
+        let raw: [[String: JSONValue]] = (try? await APIClient.shared.get("/market_history", query: [
+            URLQueryItem(name: "benchmarks", value: key),
+            URLQueryItem(name: "period", value: period),
+            URLQueryItem(name: "interval", value: interval),
+        ])) ?? []
+        points = raw.compactMap { row in
+            guard let ds = row["date"]?.stringValue, let v = row[key]?.doubleValue, let d = Self.parse(ds) else { return nil }
+            return (d, v)
+        }
+    }
+
+    private static func parse(_ s: String) -> Date? {
+        if s.count > 10 { return intraday.date(from: s) ?? day.date(from: String(s.prefix(10))) }
+        return day.date(from: s)
+    }
+    private static let day: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC"); f.dateFormat = "yyyy-MM-dd"; return f
+    }()
+    private static let intraday: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"; return f
+    }()
+}
+
 private struct IndexGraphSheet: View {
     @Environment(\.dismiss) private var dismiss
     let index: IndexQuote
+    @StateObject private var model = IndexHistoryModel()
+    @State private var period = "1y"
+
     private var isUp: Bool { (index.change ?? 0) >= 0 }
+    private var intradayPeriod: Bool { period == "1d" || period == "5d" }
+    private let periods: [(String, String)] = [
+        ("1D", "1d"), ("5D", "5d"), ("1M", "1m"), ("3M", "3m"), ("6M", "6m"), ("YTD", "ytd"),
+        ("1Y", "1y"), ("3Y", "3y"), ("5Y", "5y"), ("10Y", "10y"), ("All", "all"),
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -224,18 +303,53 @@ private struct IndexGraphSheet: View {
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).font(.title2).foregroundStyle(.secondary)
             }
-            if index.sparkline.count > 1 {
-                Chart(Array(index.sparkline.enumerated()), id: \.offset) { i, v in
-                    AreaMark(x: .value("i", i), y: .value("v", v))
-                        .foregroundStyle(.linearGradient(colors: [(isUp ? Color.green : .red).opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
-                    LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(isUp ? .green : .red).interpolationMethod(.monotone)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(periods, id: \.1) { label, value in
+                        Button { period = value } label: {
+                            Text(label).font(.caption.weight(.semibold))
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(period == value ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
+                                .foregroundStyle(period == value ? .white : .secondary)
+                        }.buttonStyle(.plain)
+                    }
                 }
-                .frame(height: 280)
-            } else {
-                ContentUnavailableView("No chart data", systemImage: "chart.xyaxis.line").frame(height: 280)
             }
+
+            chart
         }
-        .padding(24).frame(width: 560, height: 420)
+        .padding(24).frame(width: 600, height: 460)
+        .task(id: period) { await model.load(key: index.key ?? index.name ?? "", period: period) }
+    }
+
+    @ViewBuilder private var chart: some View {
+        if model.isLoading && model.points.isEmpty {
+            ProgressView().frame(maxWidth: .infinity).frame(height: 300)
+        } else if model.points.isEmpty {
+            ContentUnavailableView("No chart data", systemImage: "chart.xyaxis.line").frame(height: 300)
+        } else {
+            let pts = model.points
+            Chart {
+                ForEach(pts, id: \.date) { p in
+                    AreaMark(x: .value("Date", p.date), y: .value("Return", p.ret))
+                        .foregroundStyle(.linearGradient(colors: [(isUp ? Color.green : .red).opacity(0.25), .clear], startPoint: .top, endPoint: .bottom))
+                    LineMark(x: .value("Date", p.date), y: .value("Return", p.ret))
+                        .foregroundStyle(isUp ? .green : .red).interpolationMethod(.monotone)
+                }
+                RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.4)).lineStyle(.init(lineWidth: 1, dash: [3, 3]))
+            }
+            .chartYScale(domain: chartDomain(pts.map(\.ret) + [0]))
+            .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "%.1f%%", d)) } } } }
+            .chartHoverTooltip(pts.map(\.date)) { i in
+                let f = DateFormatter(); f.timeZone = TimeZone(identifier: "America/New_York")
+                f.dateFormat = intradayPeriod ? "EEE, MMM d h:mm a" : "EEE, MMM d, yyyy"
+                return ChartTooltipContent(title: f.string(from: pts[i].date),
+                                           rows: [ChartTooltipRow(color: isUp ? .green : .red, label: index.name ?? "Index",
+                                                                  value: String(format: "%.2f%%", pts[i].ret))])
+            }
+            .frame(height: 300)
+        }
     }
 }
 

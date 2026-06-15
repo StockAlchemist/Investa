@@ -14,6 +14,14 @@ struct AppSettings: Codable, Sendable {
     let accountInterestRates: [String: Double]?
     /// bucket (quoteType/sector/country/symbol) → name → target %.
     let targetAllocation: [String: [String: Double]]?
+    let accountClosureDates: [String: String]?
+    let userSymbolMap: [String: String]?
+    let userExcludedSymbols: [String]?
+    let accountCurrencyMap: [String: String]?
+    let accountCashModeMap: [String: String]?
+    let interestFreeThresholds: [String: Double]?
+    let ibkrToken: String?
+    let ibkrQueryId: String?
 
     enum CodingKeys: String, CodingKey {
         case availableCurrencies = "available_currencies"
@@ -26,6 +34,14 @@ struct AppSettings: Codable, Sendable {
         case manualOverrides = "manual_overrides"
         case accountInterestRates = "account_interest_rates"
         case targetAllocation = "target_allocation"
+        case accountClosureDates = "account_closure_dates"
+        case userSymbolMap = "user_symbol_map"
+        case userExcludedSymbols = "user_excluded_symbols"
+        case accountCurrencyMap = "account_currency_map"
+        case accountCashModeMap = "account_cash_mode_map"
+        case interestFreeThresholds = "interest_free_thresholds"
+        case ibkrToken = "ibkr_token"
+        case ibkrQueryId = "ibkr_query_id"
     }
 
     /// Manual price overrides flattened to symbol → price (handles both the bare

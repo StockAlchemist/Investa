@@ -26,6 +26,7 @@ struct CapitalGain: Codable, Sendable, Identifiable {
     var proceedsDisplay: Double { double("Total Proceeds (Display)") ?? 0 }
     var costBasisDisplay: Double { double("Total Cost Basis (Display)") ?? 0 }
     var realizedGainDisplay: Double { double("Realized Gain (Display)") ?? 0 }
+    var originalTxId: Int? { raw["original_tx_id"]?.doubleValue.map { Int($0) } }
 
     var id: String { "\(date)|\(symbol)|\(account)|\(quantity)|\(realizedGainDisplay)" }
 }

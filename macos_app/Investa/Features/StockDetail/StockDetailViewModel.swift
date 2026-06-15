@@ -11,17 +11,22 @@ final class StockDetailViewModel: ObservableObject {
     @Published var analysis: StockAnalysis?
     @Published var financials: FinancialsResponse?
     @Published var ratios: RatiosResponse?
+    @Published var userPosition: Holding?
+    @Published var news: [MarketNewsItem] = []
 
     @Published var isLoading = false
     @Published var isLoadingAnalysis = false
     @Published var isLoadingFinancials = false
+    @Published var isLoadingNews = false
     @Published var period = "1y"
     @Published var errorMessage: String?
 
+    let currency: String
     private let api: APIClient
 
-    init(symbol: String, api: APIClient = .shared) {
+    init(symbol: String, currency: String = "USD", api: APIClient = .shared) {
         self.symbol = symbol
+        self.currency = currency
         self.api = api
     }
 
@@ -31,10 +36,26 @@ final class StockDetailViewModel: ObservableObject {
         async let f: Fundamentals = api.get("/fundamentals/\(symbol)")
         async let iv: IntrinsicValueResponse = api.get("/intrinsic_value/\(symbol)")
         async let e: [EarningsDate] = api.get("/earnings_dates/\(symbol)")
+        async let h: [Holding] = api.get("/holdings", query: [URLQueryItem(name: "currency", value: currency)])
         do { fundamentals = try await f } catch { errorMessage = (error as? APIError)?.errorDescription }
         do { intrinsic = try await iv } catch {}
         do { earnings = try await e } catch {}
-        await loadHistory()
+        // Aggregate the user's position in this symbol across accounts.
+        if let holdings = try? await h {
+            userPosition = aggregatePosition(holdings.filter { $0.symbol == symbol })
+        }
+    }
+
+    private func aggregatePosition(_ rows: [Holding]) -> Holding? {
+        rows.first   // backend already aggregates per symbol+account; first match is representative
+    }
+
+    func loadNews() async {
+        guard news.isEmpty else { return }
+        isLoadingNews = true
+        defer { isLoadingNews = false }
+        news = (try? await api.get("/markets/news",
+            query: [URLQueryItem(name: "symbols", value: symbol), URLQueryItem(name: "limit", value: "20")])) ?? []
     }
 
     func loadHistory() async {

@@ -59,17 +59,18 @@ struct DividendsView: View {
             Divider()
             ScrollView {
                 VStack(spacing: 20) {
-                    IncomeKpiStrip(dividends: viewModel.dividends, currency: cur,
-                                   expectedDividends: viewModel.metrics?.estAnnualIncomeDisplay,
-                                   dividendYield: viewModel.metrics?.dividendYieldPct)
-                    IncomeProjectorCard(income: viewModel.projected, currency: cur)
-                    DividendCalendarSection(events: viewModel.calendar, currency: cur,
-                                            onSelect: { detail = SymbolID(id: $0) })
-                    twoColumn(TopPayersCard(dividends: viewModel.dividends, currency: cur,
-                                            onSelect: { detail = SymbolID(id: $0) }),
-                              ByAccountCard(dividends: viewModel.dividends, currency: cur))
-                    AnnualDividendsCard(dividends: viewModel.dividends, currency: cur)
-                    DividendTransactionsCard(dividends: viewModel.dividends, currency: cur)
+                    if vis("incomeKpis") {
+                        IncomeKpiStrip(dividends: viewModel.dividends, currency: cur,
+                                       expectedDividends: viewModel.metrics?.estAnnualIncomeDisplay,
+                                       dividendYield: viewModel.metrics?.dividendYieldPct)
+                    }
+                    if vis("incomeProjector") { IncomeProjectorCard(income: viewModel.projected, currency: cur) }
+                    if vis("dividendCalendar") {
+                        DividendCalendarSection(events: viewModel.calendar, currency: cur, onSelect: { detail = SymbolID(id: $0) })
+                    }
+                    payersRow
+                    if vis("annualDividends") { AnnualDividendsCard(dividends: viewModel.dividends, currency: cur) }
+                    if vis("dividendTransactions") { DividendTransactionsCard(dividends: viewModel.dividends, currency: cur) }
                 }
                 .padding(20)
             }
@@ -77,7 +78,21 @@ struct DividendsView: View {
         .frame(minWidth: 820, minHeight: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id) }
+        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
+    }
+
+    private func vis(_ id: String) -> Bool { appState.isVisible(.dividend, id) }
+
+    @ViewBuilder private var payersRow: some View {
+        let payers = vis("topPayers"); let byAcct = vis("byAccount")
+        if payers && byAcct {
+            twoColumn(TopPayersCard(dividends: viewModel.dividends, currency: cur, onSelect: { detail = SymbolID(id: $0) }),
+                      ByAccountCard(dividends: viewModel.dividends, currency: cur))
+        } else if payers {
+            TopPayersCard(dividends: viewModel.dividends, currency: cur, onSelect: { detail = SymbolID(id: $0) })
+        } else if byAcct {
+            ByAccountCard(dividends: viewModel.dividends, currency: cur)
+        }
     }
 
     @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {

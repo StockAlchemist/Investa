@@ -136,6 +136,12 @@ struct ReturnsChart: View {
         return out
     }
 
+    private var distinctDates: [String] {
+        var seen = Set<String>(); var out: [String] = []
+        for b in bars where !seen.contains(b.date) { seen.insert(b.date); out.append(b.date) }
+        return out
+    }
+
     var body: some View {
         PSection(title: "Returns", trailing: AnyView(controls)) {
             if bars.isEmpty {
@@ -157,6 +163,16 @@ struct ReturnsChart: View {
                     }
                 }
                 .chartLegend(.visible)
+                .chartHoverTooltip(distinctDates) { i in
+                    let date = distinctDates[i]
+                    let entries = bars.filter { $0.date == date }
+                    guard !entries.isEmpty else { return nil }
+                    return ChartTooltipContent(title: date, rows: entries.map {
+                        ChartTooltipRow(label: $0.series,
+                                        value: valueMode ? Fmt.number($0.value, fractionDigits: 0)
+                                                         : String(format: "%.2f%%", $0.value))
+                    })
+                }
                 .frame(height: 280)
             }
         }
@@ -277,6 +293,11 @@ struct DrawdownTimeline: View {
                         .foregroundStyle(.red.opacity(0.25))
                     LineMark(x: .value("Date", item.0), y: .value("Drawdown", item.1)).foregroundStyle(.red)
                 }
+                .chartHoverTooltip(s.series.map(\.0)) { i in
+                    ChartTooltipContent(title: Self.ddFmt.string(from: s.series[i].0),
+                                        rows: [ChartTooltipRow(color: .red, label: "Drawdown",
+                                                               value: String(format: "%.2f%%", s.series[i].1))])
+                }
                 .frame(height: 200)
                 if let t = s.trough { Text("Deepest trough on \(t)").font(.caption2).foregroundStyle(.secondary) }
             }
@@ -288,6 +309,7 @@ struct DrawdownTimeline: View {
             Text(v).font(.title3.bold()).foregroundStyle(tone)
         }
     }
+    static let ddFmt: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; return f }()
 }
 
 // MARK: - Benchmark scoreboard (mirrors performance/BenchmarkScoreboard.tsx)

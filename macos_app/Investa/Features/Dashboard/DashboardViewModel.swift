@@ -29,15 +29,17 @@ final class DashboardViewModel: ObservableObject {
     }
 
     /// Reload everything for the given selection. Cancels any in-flight load.
-    func reload(currency: String, accounts: [String]?, period: Period, showClosed: Bool, benchmarks: [String]) {
+    func reload(currency: String, accounts: [String]?, period: Period, showClosed: Bool, benchmarks: [String],
+                customFrom: String? = nil, customTo: String? = nil) {
         loadTask?.cancel()
         loadTask = Task { [weak self] in
-            await self?.load(currency: currency, accounts: accounts,
-                             period: period, showClosed: showClosed, benchmarks: benchmarks)
+            await self?.load(currency: currency, accounts: accounts, period: period, showClosed: showClosed,
+                             benchmarks: benchmarks, customFrom: customFrom, customTo: customTo)
         }
     }
 
-    private func load(currency: String, accounts: [String]?, period: Period, showClosed: Bool, benchmarks: [String]) async {
+    private func load(currency: String, accounts: [String]?, period: Period, showClosed: Bool, benchmarks: [String],
+                      customFrom: String?, customTo: String?) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -61,11 +63,15 @@ final class DashboardViewModel: ObservableObject {
             "/summary", query: [curItem, closedItem] + accountItems)
         async let holdingsResult: [Holding] = api.get(
             "/holdings", query: [curItem, closedItem] + accountItems)
-        async let historyResult: [PerformancePoint] = api.get(
-            "/history",
-            query: [curItem, URLQueryItem(name: "period", value: period.rawValue),
-                    URLQueryItem(name: "interval", value: "1d")]
-                + accountItems + APIClient.arrayQuery("benchmarks", benchmarks))
+        var historyQuery: [URLQueryItem] = [curItem,
+            URLQueryItem(name: "period", value: period.rawValue),
+            URLQueryItem(name: "interval", value: period.interval)]
+        if period == .custom {
+            if let f = customFrom { historyQuery.append(URLQueryItem(name: "from", value: f)) }
+            if let t = customTo { historyQuery.append(URLQueryItem(name: "to", value: t)) }
+        }
+        historyQuery += accountItems + APIClient.arrayQuery("benchmarks", benchmarks)
+        async let historyResult: [PerformancePoint] = api.get("/history", query: historyQuery)
         async let riskResult: RiskMetrics = api.get(
             "/risk_metrics", query: [curItem, closedItem] + accountItems)
         async let healthResult: PortfolioHealth = api.get(

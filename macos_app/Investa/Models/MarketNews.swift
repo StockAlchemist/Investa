@@ -33,6 +33,8 @@ struct IndexQuote: Decodable, Sendable, Identifiable {
     let change: Double?
     let changesPercentage: Double?
     let sparkline: [Double]
+    /// The `/indices` map key (e.g. `.DJI`), used to fetch this index's history.
+    var key: String?
 
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode([String: JSONValue].self)

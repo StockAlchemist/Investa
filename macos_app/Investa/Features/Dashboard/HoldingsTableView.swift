@@ -108,7 +108,7 @@ struct HoldingsTableView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1)
         )
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id) }
+        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
     }
 
     // Columns are grouped into sub-builders because @TableColumnBuilder only
@@ -116,8 +116,10 @@ struct HoldingsTableView: View {
 
     @TableColumnBuilder<HoldingRow, KeyPathComparator<HoldingRow>>
     private var coreColumns: some TableColumnContent<HoldingRow, KeyPathComparator<HoldingRow>> {
-        TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
-            .width(min: 64, ideal: 80)
+        TableColumn("Symbol", value: \.symbol) { row in
+            HStack(spacing: 6) { StockIcon(symbol: row.symbol, size: 16); Text(row.symbol).fontWeight(.medium) }
+        }
+        .width(min: 80, ideal: 100)
         TableColumn("7d", value: \.symbol) { sparkline($0) }
             .width(60)
         TableColumn("Qty", value: \.quantity) { Text(Fmt.number($0.quantity)).monospacedDigit() }
@@ -206,7 +208,7 @@ struct HoldingsTableView: View {
             let up = (row.sparkline.last ?? 0) >= (row.sparkline.first ?? 0)
             Chart(Array(row.sparkline.enumerated()), id: \.offset) { idx, value in
                 LineMark(x: .value("i", idx), y: .value("v", value))
-                    .foregroundStyle(up ? .green : .red)
+                    .foregroundStyle(up ? Color.up : Color.down)
             }
             .chartXAxis(.hidden).chartYAxis(.hidden)
             .frame(height: 22)

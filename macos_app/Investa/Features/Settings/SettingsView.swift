@@ -1,57 +1,84 @@
 import SwiftUI
 
+/// Dynamic coding key so we can POST a single `settings/update` field by name.
+private struct DynamicKey: CodingKey {
+    var stringValue: String; var intValue: Int? { nil }
+    init(_ s: String) { stringValue = s }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+}
+private struct KV<T: Encodable>: Encodable {
+    let key: String; let value: T
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: DynamicKey.self)
+        try c.encode(value, forKey: DynamicKey(key))
+    }
+}
+
 @MainActor
 final class SettingsViewModel: ObservableObject {
     @Published var settings: AppSettings?
-    @Published var overridePrices: [String: Double] = [:]
     @Published var isLoading = false
-    @Published var statusMessage: String?
+    @Published var status: String?
 
     private let api: APIClient
     init(api: APIClient = .shared) { self.api = api }
 
     func load() async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            let s: AppSettings = try await api.get("/settings")
-            settings = s
-            overridePrices = s.manualOverridePrices
-        } catch { statusMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+        isLoading = true; defer { isLoading = false }
+        settings = try? await api.get("/settings")
     }
 
-    /// Persist a subset of settings via `POST /api/settings/update`.
-    func update(displayCurrency: String?, showClosed: Bool?, benchmarks: [String]?) async {
-        struct Update: Encodable {
-            let display_currency: String?
-            let show_closed: Bool?
-            let benchmarks: [String]?
-        }
+    /// POST a single settings field, then reload.
+    func update<T: Encodable>(_ key: String, _ value: T, note: String = "Saved.") async {
         do {
-            let _: StatusResponse = try await api.send(
-                method: "POST", path: "/settings/update",
-                body: Update(display_currency: displayCurrency, show_closed: showClosed, benchmarks: benchmarks)
-            )
-            statusMessage = "Saved."
-        } catch { statusMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription }
-    }
-
-    func setOverride(symbol: String, price: Double?) async {
-        struct Body: Encodable { let symbol: String; let price: Double? }
-        do {
-            let _: StatusResponse = try await api.send(
-                method: "POST", path: "/settings/manual_overrides",
-                body: Body(symbol: symbol, price: price)
-            )
-            if let price { overridePrices[symbol] = price } else { overridePrices.removeValue(forKey: symbol) }
-        } catch { statusMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+            let _: StatusResponse = try await api.send(method: "POST", path: "/settings/update", body: KV(key: key, value: value))
+            status = note
+            await load()
+        } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
     }
 
     func clearCache() async {
-        do {
-            let _: StatusResponse = try await api.send(method: "POST", path: "/clear_cache")
-            statusMessage = "Cache cleared."
-        } catch { statusMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+        do { let _: StatusResponse = try await api.send(method: "POST", path: "/clear_cache"); status = "Cache cleared." }
+        catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+    func triggerRefresh(secret: String) async {
+        struct Body: Encodable { let secret: String }
+        do { let _: StatusResponse = try await api.send(method: "POST", path: "/webhook/refresh", body: Body(secret: secret)); status = "Refresh triggered." }
+        catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+    func syncIbkr() async {
+        status = "Syncing IBKR…"
+        do { let _: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr"); status = "IBKR sync complete." }
+        catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+    func updateProfile(alias: String) async {
+        struct Body: Encodable { let alias: String }
+        do { let _: User = try await api.send(method: "PATCH", path: "/auth/me", body: Body(alias: alias)); status = "Profile updated." }
+        catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+    func deleteAccount() async {
+        let _: StatusResponse? = try? await api.send(method: "DELETE", path: "/auth/me")
+    }
+}
+
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case accounts = "Accounts", symbols = "Symbols", overrides = "Overrides", advanced = "Advanced", account = "Profile & Security"
+    var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .accounts: return "person.2"; case .symbols: return "map"; case .overrides: return "slider.horizontal.3"
+        case .advanced: return "gearshape.2"; case .account: return "person.crop.circle"
+        }
+    }
+    var description: String {
+        switch self {
+        case .accounts: return "Account groups, per-account currency/cash/closure settings, and cash-yield assumptions."
+        case .symbols: return "Map portfolio symbols to their Yahoo Finance ticker and manage excluded symbols."
+        case .overrides: return "Manually override price/metadata for specific symbols."
+        case .advanced: return "Display, webhook integration, Interactive Brokers sync, and system cache."
+        case .account: return "Manage your user profile, password, and login."
+        }
     }
 }
 
@@ -59,109 +86,58 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var auth: AuthViewModel
     @StateObject private var viewModel = SettingsViewModel()
-
-    @State private var benchmarksText = ""
-    @State private var newOverrideSymbol = ""
-    @State private var newOverridePrice = ""
-    @State private var serverURL = APIConfig.baseURL
-    @State private var showingPassword = false
+    @State private var tab: SettingsTab = .overrides
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("Settings").font(.title2.bold())
+                    .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
                 if viewModel.isLoading { ProgressView().controlSize(.small) }
                 Spacer()
-                if let msg = viewModel.statusMessage {
-                    Text(msg).font(.caption).foregroundStyle(.secondary)
-                }
+                if let s = viewModel.status { Text(s).font(.caption).foregroundStyle(.secondary) }
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
-            Divider()
-            Form {
-                generalSection
-                benchmarksSection
-                manualOverridesSection
-                serverSection
-                accountSection
+            Picker("", selection: $tab) {
+                ForEach(SettingsTab.allCases) { Label($0.rawValue, systemImage: $0.icon).tag($0) }
             }
-            .formStyle(.grouped)
-        }
-        .frame(minWidth: 700, minHeight: 560)
-        .task {
-            await viewModel.load()
-            benchmarksText = (viewModel.settings?.benchmarks ?? []).joined(separator: ", ")
-        }
-        .sheet(isPresented: $showingPassword) { ChangePasswordView().environmentObject(auth) }
-    }
-
-    private var generalSection: some View {
-        Section("Display") {
-            Picker("Display Currency", selection: $appState.displayCurrency) {
-                ForEach(appState.availableCurrencies, id: \.self) { Text($0).tag($0) }
-            }
-            .onChange(of: appState.displayCurrency) { _, new in
-                Task { await viewModel.update(displayCurrency: new, showClosed: nil, benchmarks: nil) }
-            }
-            Toggle("Include closed accounts", isOn: $appState.showClosed)
-                .onChange(of: appState.showClosed) { _, new in
-                    Task { await viewModel.update(displayCurrency: nil, showClosed: new, benchmarks: nil) }
+            .pickerStyle(.segmented).labelsHidden().padding(.horizontal, 20)
+            Text(tab.description).font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.top, 6)
+            Divider().padding(.top, 8)
+            ScrollView {
+                Group {
+                    switch tab {
+                    case .accounts: AccountsSettings(vm: viewModel, settings: viewModel.settings, accounts: appState.allAccounts)
+                    case .symbols: SymbolsSettings(vm: viewModel, settings: viewModel.settings)
+                    case .overrides: OverridesSettings(vm: viewModel, settings: viewModel.settings)
+                    case .advanced: AdvancedSettings(vm: viewModel, settings: viewModel.settings)
+                    case .account: AccountSecuritySettings(vm: viewModel).environmentObject(auth)
+                    }
                 }
-        }
-    }
-
-    private var benchmarksSection: some View {
-        Section("Benchmarks") {
-            TextField("Comma-separated (e.g. SPY, QQQ)", text: $benchmarksText)
-            Button("Save Benchmarks") {
-                let list = benchmarksText.split(separator: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces).uppercased() }.filter { !$0.isEmpty }
-                Task { await viewModel.update(displayCurrency: nil, showClosed: nil, benchmarks: list) }
+                .padding(20)
             }
         }
+        .task { await viewModel.load() }
     }
+}
 
-    private var manualOverridesSection: some View {
-        Section("Manual Price Overrides") {
-            HStack {
-                TextField("Symbol", text: $newOverrideSymbol).frame(width: 100)
-                TextField("Price", text: $newOverridePrice).frame(width: 100)
-                Button("Add") {
-                    let sym = newOverrideSymbol.trimmingCharacters(in: .whitespaces).uppercased()
-                    guard !sym.isEmpty, let price = Double(newOverridePrice) else { return }
-                    newOverrideSymbol = ""; newOverridePrice = ""
-                    Task { await viewModel.setOverride(symbol: sym, price: price) }
-                }
-            }
-            ForEach(viewModel.overridePrices.sorted(by: { $0.key < $1.key }), id: \.key) { sym, price in
-                HStack {
-                    Text(sym).fontWeight(.medium)
-                    Spacer()
-                    Text(Fmt.number(price))
-                    Button(role: .destructive) {
-                        Task { await viewModel.setOverride(symbol: sym, price: nil) }
-                    } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless)
-                }
-            }
-        }
-    }
+// MARK: - Reusable card
 
-    private var serverSection: some View {
-        Section("Backend Server") {
-            TextField("Base URL", text: $serverURL)
-            Button("Save Server URL") { APIConfig.baseURL = serverURL }
-            Button("Clear Server Cache") { Task { await viewModel.clearCache() } }
+struct SettingsCard<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            content
         }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
     }
+}
 
-    private var accountSection: some View {
-        Section("Account") {
-            if let user = auth.currentUser {
-                LabeledContent("Signed in as", value: user.displayName)
-            }
-            Button("Change Password…") { showingPassword = true }
-            Button("Log Out", role: .destructive) { auth.logout() }
-        }
-    }
+private func deleteButton(_ action: @escaping () -> Void) -> some View {
+    Button(role: .destructive, action: action) { Image(systemName: "trash") }.buttonStyle(.borderless).foregroundStyle(.red)
 }

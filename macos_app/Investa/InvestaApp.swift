@@ -8,6 +8,7 @@ struct InvestaApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(auth)
+                .tint(Theme.brand)
                 .frame(minWidth: 900, minHeight: 600)
         }
         .windowResizability(.contentMinSize)
@@ -18,6 +19,11 @@ struct InvestaApp: App {
                     NotificationCenter.default.post(name: .refreshRequested, object: nil)
                 }
                 .keyboardShortcut("r", modifiers: .command)
+                .disabled(auth.currentUser == nil)
+                Button("Command Palette…") {
+                    NotificationCenter.default.post(name: .commandPalette, object: nil)
+                }
+                .keyboardShortcut("k", modifiers: .command)
                 .disabled(auth.currentUser == nil)
             }
             CommandGroup(replacing: .appInfo) {
@@ -41,4 +47,6 @@ struct InvestaApp: App {
 extension Notification.Name {
     /// Posted by the Refresh menu command (⌘R); the dashboard reloads on it.
     static let refreshRequested = Notification.Name("investa.refreshRequested")
+    /// Posted by ⌘K to open the command palette.
+    static let commandPalette = Notification.Name("investa.commandPalette")
 }

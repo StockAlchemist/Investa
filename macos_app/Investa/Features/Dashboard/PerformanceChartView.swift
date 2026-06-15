@@ -6,6 +6,8 @@ struct PerformanceChartView: View {
     let currency: String
     let benchmarks: [String]
     @Binding var period: Period
+    @Binding var customFrom: Date
+    @Binding var customTo: Date
 
     @State private var view: PerformanceView = .value
 
@@ -37,18 +39,20 @@ struct PerformanceChartView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Performance").font(.headline)
+            HStack(spacing: 7) {
+                Image(systemName: "chart.xyaxis.line").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
+                Text("Performance").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Picker("View", selection: $view) {
                     ForEach(PerformanceView.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented).fixedSize()
-                Picker("Period", selection: $period) {
-                    ForEach(Period.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented).fixedSize()
             }
+            Divider()
+
+            periodRow
+            if period == .custom { customDateRow }
 
             if seriesData.isEmpty {
                 ContentUnavailableView("No history", systemImage: "chart.xyaxis.line")
@@ -58,10 +62,36 @@ struct PerformanceChartView: View {
             }
         }
         .padding(16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(.standard)
+    }
+
+    private var periodRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Period.allCases) { p in
+                    Button { period = p } label: {
+                        Text(p.label).font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(period == p ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
+                            .foregroundStyle(period == p ? .white : .secondary)
+                    }.buttonStyle(.plain)
+                }
+            }.padding(.vertical, 1)
+        }
+    }
+
+    private var customDateRow: some View {
+        HStack(spacing: 8) {
+            Text("FROM").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            DatePicker("", selection: $customFrom, in: ...customTo, displayedComponents: .date)
+                .labelsHidden().datePickerStyle(.field).fixedSize()
+            Text("TO").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            DatePicker("", selection: $customTo, in: customFrom...Date(), displayedComponents: .date)
+                .labelsHidden().datePickerStyle(.field).fixedSize()
+            Spacer()
+        }
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder private var chart: some View {
@@ -79,6 +109,7 @@ struct PerformanceChartView: View {
                 .interpolationMethod(.monotone)
         }
         .chartForegroundStyleScale(range: seriesColors)
+        .chartYScale(domain: chartDomain(seriesData.map(\.value)))
         .chartLegend(view == .twr && !benchmarks.isEmpty ? .visible : .hidden)
         .chartYAxis {
             AxisMarks { value in
@@ -90,7 +121,40 @@ struct PerformanceChartView: View {
                 }
             }
         }
+        .chartHoverTooltip(distinctDates) { i in
+            let date = distinctDates[i]
+            let entries = seriesData.filter { $0.date == date }
+            guard !entries.isEmpty else { return nil }
+            return ChartTooltipContent(title: tooltipString(date), rows: entries.map {
+                ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
+                                value: view == .value ? Fmt.currency($0.value, code: currency)
+                                                      : String(format: "%.2f%%", $0.value))
+            })
+        }
         .frame(height: 260)
+    }
+
+    private var distinctDates: [Date] {
+        var seen = Set<Date>(); var out: [Date] = []
+        for p in seriesData where !seen.contains(p.date) { seen.insert(p.date); out.append(p.date) }
+        return out
+    }
+
+    private func seriesColor(_ name: String) -> Color {
+        if name == "Portfolio" { return view == .drawdown ? .red : .accentColor }
+        let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
+        if let idx = benchmarks.firstIndex(of: name) { return palette[idx % palette.count] }
+        return .secondary
+    }
+
+    private func tooltipString(_ d: Date) -> String {
+        let f = DateFormatter()
+        if period == .oneDay || period == .fiveDays {
+            f.timeZone = TimeZone(identifier: "America/New_York"); f.dateFormat = "EEE, MMM d h:mm a"
+        } else {
+            f.dateStyle = .medium
+        }
+        return f.string(from: d)
     }
 
     private var seriesColors: [Color] {

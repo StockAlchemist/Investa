@@ -55,7 +55,7 @@ struct AIView: View {
             Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: true) }
         }
         .sheet(item: $detail) { metricSheet($0) }
-        .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id) }
+        .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
 
     // MARK: - Header

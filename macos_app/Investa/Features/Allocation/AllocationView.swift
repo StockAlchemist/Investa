@@ -89,35 +89,41 @@ struct AllocationView: View {
                 ScrollView {
                     // space-y-6 between sections, matching Allocation.tsx.
                     VStack(spacing: 24) {
-                        HoldingsTableView(holdings: viewModel.holdings, currency: cur)
-                        ConcentrationKpiStrip(holdings: viewModel.holdings, currency: cur)
+                        if vis("holdingsTable") { HoldingsTableView(holdings: viewModel.holdings, currency: cur) }
+                        if vis("concentrationKpis") { ConcentrationKpiStrip(holdings: viewModel.holdings, currency: cur) }
 
                         // Category drift — grid-cols-1 md:grid-cols-2 xl:grid-cols-3 (up to 3-up).
-                        LazyVGrid(columns: flexColumns(count: geo.size.width >= 1100 ? 3 : (geo.size.width >= 720 ? 2 : 1)), spacing: 24) {
-                            AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
-                                                bucketKey: "quoteType", settingsBucket: "quoteType",
-                                                title: "Asset Type — drift vs target", vm: viewModel)
-                            AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
-                                                bucketKey: "Sector", settingsBucket: "sector",
-                                                title: "Sector — drift vs target", vm: viewModel)
-                            AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
-                                                bucketKey: "Country", settingsBucket: "country",
-                                                title: "Country — drift vs target", vm: viewModel)
+                        if vis("categoryDrift") {
+                            LazyVGrid(columns: flexColumns(count: geo.size.width >= 1100 ? 3 : (geo.size.width >= 720 ? 2 : 1)), spacing: 24) {
+                                AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                    bucketKey: "quoteType", settingsBucket: "quoteType",
+                                                    title: "Asset Type — drift vs target", vm: viewModel)
+                                AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                    bucketKey: "Sector", settingsBucket: "sector",
+                                                    title: "Sector — drift vs target", vm: viewModel)
+                                AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                    bucketKey: "Country", settingsBucket: "country",
+                                                    title: "Country — drift vs target", vm: viewModel)
+                            }
                         }
 
-                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
-                                            bucketKey: "Symbol", settingsBucket: "symbol",
-                                            title: "Stocks — drift vs target", vm: viewModel, scrollable: true)
+                        if vis("stockDrift") {
+                            AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                bucketKey: "Symbol", settingsBucket: "symbol",
+                                                title: "Stocks — drift vs target", vm: viewModel, scrollable: true)
+                        }
 
-                        RebalanceHelperCard(holdings: viewModel.holdings, currency: cur, vm: viewModel)
-                        PortfolioTreemapView(holdings: viewModel.holdings, currency: cur)
+                        if vis("rebalanceHelper") { RebalanceHelperCard(holdings: viewModel.holdings, currency: cur, vm: viewModel) }
+                        if vis("treemap") { PortfolioTreemapView(holdings: viewModel.holdings, currency: cur) }
 
                         // Donut charts — grid-cols-1 md:grid-cols-2 (exactly 2-up).
-                        LazyVGrid(columns: flexColumns(count: geo.size.width >= 720 ? 2 : 1), spacing: 24) {
-                            AllocationDonutChart(title: "By Asset Type", holdings: viewModel.holdings, currency: cur, bucketKey: "quoteType")
-                            AllocationDonutChart(title: "By Sector", holdings: viewModel.holdings, currency: cur, bucketKey: "Sector")
-                            AllocationDonutChart(title: "By Industry", holdings: viewModel.holdings, currency: cur, bucketKey: "Industry")
-                            AllocationDonutChart(title: "By Country", holdings: viewModel.holdings, currency: cur, bucketKey: "Country")
+                        if vis("donutCharts") {
+                            LazyVGrid(columns: flexColumns(count: geo.size.width >= 720 ? 2 : 1), spacing: 24) {
+                                AllocationDonutChart(title: "By Asset Type", holdings: viewModel.holdings, currency: cur, bucketKey: "quoteType")
+                                AllocationDonutChart(title: "By Sector", holdings: viewModel.holdings, currency: cur, bucketKey: "Sector")
+                                AllocationDonutChart(title: "By Industry", holdings: viewModel.holdings, currency: cur, bucketKey: "Industry")
+                                AllocationDonutChart(title: "By Country", holdings: viewModel.holdings, currency: cur, bucketKey: "Country")
+                            }
                         }
                     }
                     .padding(16)
@@ -128,8 +134,10 @@ struct AllocationView: View {
         .frame(minWidth: 820, minHeight: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id) }
+        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
+
+    private func vis(_ id: String) -> Bool { appState.isVisible(.allocation, id) }
 
     private func flexColumns(count: Int) -> [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 24), count: max(1, count))

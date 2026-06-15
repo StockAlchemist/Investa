@@ -95,7 +95,7 @@ struct ScreenerResultsView: View {
             .padding(16)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-            .sheet(item: $detail) { StockDetailView(symbol: $0.id) }
+            .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
         }
     }
 
@@ -177,9 +177,12 @@ struct ScreenerResultsView: View {
     private func resultRow(_ row: ScreenerResult) -> some View {
         HStack(spacing: 8) {
             Button { detail = SymbolID(id: row.symbol) } label: {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.symbol).font(.callout.bold())
-                    Text(row.name ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 8) {
+                    StockIcon(symbol: row.symbol, size: 26)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.symbol).font(.callout.bold())
+                        Text(row.name ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
             }.buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)

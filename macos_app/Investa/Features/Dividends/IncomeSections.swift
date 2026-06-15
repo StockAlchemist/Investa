@@ -96,6 +96,11 @@ struct IncomeProjectorCard: View {
     private var segs: [Seg] {
         income.flatMap { row in row.segments.map { Seg(month: row.month, symbol: $0.symbol, amount: $0.amount) } }
     }
+    private var projectorMonths: [String] {
+        var seen = Set<String>(); var out: [String] = []
+        for s in segs where !seen.contains(s.month) { seen.insert(s.month); out.append(s.month) }
+        return out
+    }
 
     var body: some View {
         ISection(title: "Projected 12M Income") {
@@ -104,6 +109,11 @@ struct IncomeProjectorCard: View {
             } else if segs.isEmpty {
                 // No per-symbol breakdown — fall back to the monthly total.
                 Chart(income) { BarMark(x: .value("Month", $0.month), y: .value("Income", $0.value)).foregroundStyle(.green) }
+                    .chartHoverTooltip(income.map(\.month)) { i in
+                        ChartTooltipContent(title: income[i].month,
+                                            rows: [ChartTooltipRow(color: .green, label: "Income",
+                                                                   value: Fmt.currency(income[i].value, code: currency))])
+                    }
                     .frame(height: 280)
             } else {
                 Chart(segs) { s in
@@ -111,6 +121,16 @@ struct IncomeProjectorCard: View {
                         .foregroundStyle(by: .value("Symbol", s.symbol))
                 }
                 .chartLegend(.visible)
+                .chartHoverTooltip(projectorMonths) { i in
+                    let month = projectorMonths[i]
+                    let rows = segs.filter { $0.month == month }.sorted { $0.amount > $1.amount }
+                    let total = rows.reduce(0) { $0 + $1.amount }
+                    var out = rows.prefix(8).map {
+                        ChartTooltipRow(label: $0.symbol, value: Fmt.currency($0.amount, code: currency))
+                    }
+                    out.append(ChartTooltipRow(label: "Total", value: Fmt.currency(total, code: currency)))
+                    return ChartTooltipContent(title: month, rows: out)
+                }
                 .frame(height: 280)
             }
         }
@@ -196,6 +216,7 @@ struct TopPayersCard: View {
                 Button { onSelect(row.symbol) } label: {
                     HStack(spacing: 10) {
                         Text("\(idx + 1)").font(.caption2.bold()).foregroundStyle(.secondary).frame(width: 18, alignment: .trailing)
+                        StockIcon(symbol: row.symbol, size: 18)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(row.symbol).fontWeight(.bold)
@@ -294,6 +315,14 @@ struct AnnualDividendsCard: View {
                                     .font(.caption2.bold()).foregroundStyle(y >= 0 ? .green : .red)
                             }
                         }
+                }
+                .chartHoverTooltip(data.map(\.year)) { i in
+                    var rows = [ChartTooltipRow(color: .green, label: "Dividends",
+                                               value: Fmt.currency(data[i].amount, code: currency))]
+                    if let y = data[i].yoy {
+                        rows.append(ChartTooltipRow(label: "YoY", value: "\(y > 0 ? "+" : "")\(String(format: "%.1f", y))%"))
+                    }
+                    return ChartTooltipContent(title: data[i].year, rows: rows)
                 }
                 .frame(height: 260)
             }

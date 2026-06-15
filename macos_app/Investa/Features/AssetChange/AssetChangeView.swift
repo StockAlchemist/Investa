@@ -61,6 +61,7 @@ final class AssetChangeViewModel: ObservableObject {
 struct AssetChangeView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = AssetChangeViewModel()
+    @State private var detail: SymbolID?
 
     private var cur: String { appState.displayCurrency }
 
@@ -78,16 +79,14 @@ struct AssetChangeView: View {
             }
             ScrollView {
                 VStack(spacing: 20) {
-                    PerfKpiStrip(data: viewModel.data, metrics: viewModel.metrics,
-                                 risk: viewModel.risk, benchmarks: appState.benchmarks)
-                    ReturnsChart(data: viewModel.data, currency: cur)
-                    MonthlyHeatmap(data: viewModel.data)
-                    twoColumn(DrawdownTimeline(history: viewModel.history),
-                              BenchmarkScoreboard(history: viewModel.history))
-                    if let attr = viewModel.attribution {
-                        twoColumn(SectorAttributionCard(attribution: attr, currency: cur),
-                                  TopContributorsCard(attribution: attr, currency: cur))
+                    if vis("kpiStrip") {
+                        PerfKpiStrip(data: viewModel.data, metrics: viewModel.metrics,
+                                     risk: viewModel.risk, benchmarks: appState.benchmarks)
                     }
+                    if vis("returnsChart") { ReturnsChart(data: viewModel.data, currency: cur) }
+                    if vis("monthlyHeatmap") { MonthlyHeatmap(data: viewModel.data) }
+                    drawdownBenchmarkRow
+                    attributionRow
                 }
                 .padding(20)
             }
@@ -95,6 +94,33 @@ struct AssetChangeView: View {
         .frame(minWidth: 820, minHeight: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
+    }
+
+    private func vis(_ id: String) -> Bool { appState.isVisible(.assetChange, id) }
+
+    @ViewBuilder private var drawdownBenchmarkRow: some View {
+        let dd = vis("drawdownTimeline"); let bs = vis("benchmarkScoreboard")
+        if dd && bs {
+            twoColumn(DrawdownTimeline(history: viewModel.history), BenchmarkScoreboard(history: viewModel.history))
+        } else if dd { DrawdownTimeline(history: viewModel.history) }
+        else if bs { BenchmarkScoreboard(history: viewModel.history) }
+    }
+
+    @ViewBuilder private var attributionRow: some View {
+        if let attr = viewModel.attribution {
+            let sector = vis("sectorAttribution"); let top = vis("topContributors")
+            if sector && top {
+                twoColumn(SectorAttributionCard(attribution: attr, currency: cur), topContributors(attr))
+            } else if sector { SectorAttributionCard(attribution: attr, currency: cur) }
+            else if top { topContributors(attr) }
+        }
+    }
+
+    private func topContributors(_ attr: Attribution) -> some View {
+        TopContributorsCard(attribution: attr, currency: cur,
+                            accounts: appState.accountsQuery, showClosed: appState.showClosed,
+                            onSelectSymbol: { detail = SymbolID(id: $0) })
     }
 
     @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {

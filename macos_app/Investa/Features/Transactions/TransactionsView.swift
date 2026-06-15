@@ -32,6 +32,11 @@ struct TransactionsView: View {
     @State private var showingAdd = false
     @State private var pendingDelete: Transaction?
     @State private var pendingBulkDelete = false
+    // Import / IBKR
+    @State private var reviewTransactions: [Transaction] = []
+    @State private var showingReview = false
+    @State private var importAccount = ""
+    @State private var autoAddCash = true
 
     private var cur: String { appState.displayCurrency }
 
@@ -116,6 +121,7 @@ struct TransactionsView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     TxKpiStrip(transactions: sorted, preferredCurrency: cur)
+                    if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
                     if duplicateCount > 0 { duplicateBanner }
                     toolbar
                     if showFilters { filterPanel }
@@ -129,6 +135,7 @@ struct TransactionsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         .sheet(isPresented: $showingAdd) { TransactionEditView(existing: nil, onSave: handleSave).environmentObject(appState) }
         .sheet(item: $editing) { tx in TransactionEditView(existing: tx, onSave: handleSave).environmentObject(appState) }
+        .sheet(isPresented: $showingReview) { reviewSheet }
         .alert("Delete transaction?", isPresented: deleteBinding, presenting: pendingDelete) { tx in
             Button("Delete", role: .destructive) { Task { await viewModel.delete(tx); reload() } }
             Button("Cancel", role: .cancel) {}
@@ -145,6 +152,9 @@ struct TransactionsView: View {
         HStack {
             Button { showingAdd = true } label: { Label("Add", systemImage: "plus") }
                 .buttonStyle(.borderedProminent)
+            importControl
+            Button { Task { await viewModel.syncIbkr() } } label: { Label("IBKR Sync", systemImage: "arrow.triangle.2.circlepath") }
+                .buttonStyle(.bordered)
             if !selection.isEmpty {
                 Button(role: .destructive) { pendingBulkDelete = true } label: {
                     Label("Delete (\(selection.count))", systemImage: "trash")
@@ -158,6 +168,126 @@ struct TransactionsView: View {
             Button { exportCSV() } label: { Label("Export", systemImage: "square.and.arrow.up") }
                 .buttonStyle(.bordered)
         }
+    }
+
+    // MARK: - Import (PDF/IBKR document parsing)
+
+    private var importControl: some View {
+        Menu {
+            Picker("Import to account", selection: $importAccount) {
+                Text("Default").tag("")
+                ForEach(appState.allAccounts, id: \.self) { Text($0).tag($0) }
+            }
+            Toggle("Auto-add cash", isOn: $autoAddCash)
+            Divider()
+            Button("Choose PDF / Image…") { openImportFile() }
+        } label: {
+            if viewModel.isImporting { ProgressView().controlSize(.small) }
+            else { Label("Import", systemImage: "doc.badge.plus") }
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+    }
+
+    private func openImportFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf, .image]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            var parsed = await viewModel.parseDocument(url)
+            if !importAccount.isEmpty {
+                parsed = parsed.map { var t = $0; if t.account.isEmpty { t.account = importAccount }; return t }
+            }
+            if !parsed.isEmpty { reviewTransactions = parsed; showingReview = true }
+        }
+    }
+
+    private var reviewSheet: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Review Import (\(reviewTransactions.count))").font(.title2.bold())
+                Spacer()
+                Toggle("Auto-add cash", isOn: $autoAddCash).toggleStyle(.checkbox)
+            }
+            .padding(16)
+            Divider()
+            if reviewTransactions.isEmpty {
+                ContentUnavailableView("Nothing to import", systemImage: "doc")
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(reviewTransactions.enumerated()), id: \.offset) { i, tx in
+                            HStack {
+                                Text(tx.date).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                                Text(tx.type).frame(width: 80, alignment: .leading)
+                                Text(tx.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
+                                Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
+                                Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).monospacedDigit().frame(width: 100, alignment: .trailing)
+                                TextField("Account", text: Binding(
+                                    get: { reviewTransactions[i].account },
+                                    set: { reviewTransactions[i].account = $0 })).textFieldStyle(.roundedBorder).frame(width: 120)
+                                Spacer()
+                                Button(role: .destructive) { reviewTransactions.remove(at: i) } label: { Image(systemName: "trash") }
+                                    .buttonStyle(.borderless).foregroundStyle(.red)
+                            }
+                            .font(.callout).padding(.vertical, 6).padding(.horizontal, 16)
+                            Divider()
+                        }
+                    }
+                }
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button("Cancel") { showingReview = false; reviewTransactions = [] }
+                Button("Import \(reviewTransactions.count)") {
+                    Task {
+                        let ok = await viewModel.addBatch(reviewTransactions, autoAddCash: autoAddCash)
+                        if ok { showingReview = false; reviewTransactions = []; reload() }
+                    }
+                }
+                .buttonStyle(.borderedProminent).disabled(reviewTransactions.isEmpty || viewModel.isImporting)
+            }
+            .padding(16)
+        }
+        .frame(width: 760, height: 560)
+    }
+
+    // MARK: - IBKR pending
+
+    private var ibkrPendingCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("\(viewModel.pendingIbkr.count) pending IBKR transactions", systemImage: "tray.full").font(.headline)
+                Spacer()
+                Button("Approve All") { Task { await viewModel.approvePending(viewModel.pendingIbkr.compactMap { $0.id }) } }
+                    .buttonStyle(.borderedProminent).tint(.green)
+                Button("Reject All", role: .destructive) { Task { await viewModel.rejectPending(viewModel.pendingIbkr.compactMap { $0.id }) } }
+                    .buttonStyle(.bordered)
+            }
+            ForEach(viewModel.pendingIbkr) { tx in
+                HStack {
+                    Text(tx.date).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                    Text(tx.type).frame(width: 80, alignment: .leading)
+                    Text(tx.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
+                    Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
+                    Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).monospacedDigit().frame(width: 100, alignment: .trailing)
+                    Text(tx.account).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if let id = tx.id {
+                        Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle") }
+                            .buttonStyle(.borderless).foregroundStyle(.green)
+                        Button { Task { await viewModel.rejectPending([id]) } } label: { Image(systemName: "xmark.circle") }
+                            .buttonStyle(.borderless).foregroundStyle(.red)
+                    }
+                }
+                .font(.callout).padding(.vertical, 3)
+                Divider()
+            }
+        }
+        .padding(16)
+        .background(.cyan.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.cyan.opacity(0.3), lineWidth: 1))
     }
 
     private var duplicateBanner: some View {

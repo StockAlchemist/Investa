@@ -40,6 +40,25 @@ final class APIClient: Sendable {
         return try await send(request)
     }
 
+    /// POST a `multipart/form-data` upload of a single file (used by document parsing).
+    func postMultipart<T: Decodable>(_ path: String, fileURL: URL, fieldName: String = "file") async throws -> T {
+        var request = try makeRequest(path: path, method: "POST", query: [])
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+        let fileData: Data
+        do { fileData = try Data(contentsOf: fileURL) } catch { throw APIError.transport(underlying: error) }
+        var body = Data()
+        func append(_ s: String) { body.append(s.data(using: .utf8)!) }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileURL.lastPathComponent)\"\r\n")
+        append("Content-Type: application/octet-stream\r\n\r\n")
+        body.append(fileData)
+        append("\r\n--\(boundary)--\r\n")
+        request.httpBody = body
+        return try await send(request)
+    }
+
     /// Generic JSON request for POST/PUT/DELETE with an optional `Encodable` body.
     func send<T: Decodable>(
         method: String, path: String, query: [URLQueryItem] = [], body: (any Encodable)? = nil

@@ -3,8 +3,11 @@ import Foundation
 @MainActor
 final class TransactionsViewModel: ObservableObject {
     @Published var transactions: [Transaction] = []
+    @Published var pendingIbkr: [Transaction] = []
     @Published var isLoading = false
+    @Published var isImporting = false
     @Published var errorMessage: String?
+    @Published var statusMessage: String?
 
     private let api: APIClient
     private var loadTask: Task<Void, Never>?
@@ -15,7 +18,72 @@ final class TransactionsViewModel: ObservableObject {
 
     func reload(accounts: [String]?) {
         loadTask?.cancel()
-        loadTask = Task { [weak self] in await self?.load(accounts: accounts) }
+        loadTask = Task { [weak self] in
+            await self?.load(accounts: accounts)
+            await self?.loadPending()
+        }
+    }
+
+    // MARK: - Document import + batch
+
+    struct ParseResult: Decodable, Sendable {
+        let transactions: [Transaction]
+        let count: Int?
+        let message: String?
+        init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
+            count = raw["count"]?.doubleValue.map { Int($0) }
+            message = raw["message"]?.stringValue
+            if let arr = raw["transactions"]?.arrayValue {
+                let data = try JSONEncoder().encode(arr)
+                transactions = (try? JSONDecoder().decode([Transaction].self, from: data)) ?? []
+            } else { transactions = [] }
+        }
+    }
+
+    /// Parse a PDF/image document into draft transactions for review.
+    func parseDocument(_ fileURL: URL) async -> [Transaction] {
+        isImporting = true; errorMessage = nil
+        defer { isImporting = false }
+        do {
+            let result: ParseResult = try await api.postMultipart("/transactions/parse_document", fileURL: fileURL)
+            if result.transactions.isEmpty { statusMessage = result.message ?? "No transactions found in document." }
+            return result.transactions
+        } catch let error as APIError {
+            errorMessage = error.errorDescription; return []
+        } catch { errorMessage = error.localizedDescription; return [] }
+    }
+
+    /// Commit reviewed transactions in one batch.
+    func addBatch(_ txns: [Transaction], autoAddCash: Bool) async -> Bool {
+        struct Body: Encodable { let transactions: [Transaction]; let auto_add_cash: Bool }
+        do {
+            let res: StatusResponse = try await api.send(method: "POST", path: "/transactions/batch",
+                body: Body(transactions: txns, auto_add_cash: autoAddCash))
+            statusMessage = "Imported \(res.id ?? txns.count) transactions."
+            return true
+        } catch let error as APIError { errorMessage = error.errorDescription; return false }
+        catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    // MARK: - IBKR
+
+    func syncIbkr() async {
+        statusMessage = "Syncing IBKR…"
+        let _: StatusResponse? = try? await api.send(method: "POST", path: "/sync/ibkr")
+        await loadPending()
+        statusMessage = pendingIbkr.isEmpty ? "No new IBKR transactions." : "\(pendingIbkr.count) pending IBKR transactions."
+    }
+    func loadPending() async {
+        pendingIbkr = (try? await api.get("/sync/ibkr/pending")) ?? []
+    }
+    func approvePending(_ ids: [Int]) async {
+        let _: StatusResponse? = try? await api.send(method: "POST", path: "/sync/ibkr/approve", body: ids)
+        await loadPending(); reload(accounts: nil)
+    }
+    func rejectPending(_ ids: [Int]) async {
+        let _: StatusResponse? = try? await api.send(method: "POST", path: "/sync/ibkr/reject", body: ids)
+        await loadPending()
     }
 
     private func load(accounts: [String]?) async {

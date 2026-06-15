@@ -249,16 +249,12 @@ struct AnnualRealizedGainsCard: View {
                         .opacity(selectedYear == nil || selectedYear == row.year ? 1 : 0.4)
                 }
                 .frame(height: 240)
-                .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Rectangle().fill(.clear).contentShape(Rectangle())
-                            .onTapGesture { location in
-                                if let plotFrame = proxy.plotFrame,
-                                   let year: String = proxy.value(atX: location.x - geo[plotFrame].origin.x) {
-                                    selectedYear = (selectedYear == year) ? nil : year
-                                }
-                            }
-                    }
+                .chartHoverTooltip(data.map(\.year),
+                                   onTap: { i in let y = data[i].year; selectedYear = (selectedYear == y) ? nil : y }) { i in
+                    ChartTooltipContent(title: data[i].year,
+                                        rows: [ChartTooltipRow(color: data[i].gain >= 0 ? .green : .red,
+                                                               label: "Realized Gain",
+                                                               value: Fmt.currency(data[i].gain, code: currency))])
                 }
                 // Year chips as an explicit fallback for selecting.
                 HStack {
