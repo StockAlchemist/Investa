@@ -114,7 +114,8 @@ struct AllocationView: View {
                         }
 
                         if vis("rebalanceHelper") { RebalanceHelperCard(holdings: viewModel.holdings, currency: cur, vm: viewModel) }
-                        if vis("treemap") { PortfolioTreemapView(holdings: viewModel.holdings, currency: cur) }
+                        if vis("treemap") { PortfolioTreemapView(holdings: viewModel.holdings, currency: cur,
+                                                                  onSelectSymbol: { detail = SymbolID(id: $0) }) }
 
                         // Donut charts — grid-cols-1 md:grid-cols-2 (exactly 2-up).
                         if vis("donutCharts") {

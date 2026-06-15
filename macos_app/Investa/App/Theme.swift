@@ -16,6 +16,13 @@ extension Color {
     })
 }
 
+// Make `.up` / `.down` usable directly in ShapeStyle contexts (.foregroundStyle,
+// .fill, .background, chart .foregroundStyle) — like the built-in `.red`/`.green`.
+extension ShapeStyle where Self == Color {
+    static var up: Color { Color.up }
+    static var down: Color { Color.down }
+}
+
 /// App-wide visual tokens. Centralizes the card chrome that was previously
 /// copy-pasted across every feature, so the whole app can be retuned in one place.
 enum Theme {

@@ -12,6 +12,30 @@ enum Fmt {
         return f.string(from: NSNumber(value: value)) ?? "—"
     }
 
+    /// Compact currency (e.g. `$1.2M`, `฿12K`) — mirrors the web `formatCompactNumber`.
+    static func compact(_ value: Double, code: String) -> String {
+        if value == 0 { return "0" }
+        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = code
+        var symbol = f.currencySymbol ?? code
+        if code == "THB" { symbol = "฿" }
+        let sign = value < 0 ? "-" : ""
+        let a = Swift.abs(value)
+        let (scaled, suffix): (Double, String)
+        switch a {
+        case 1e12...: (scaled, suffix) = (a / 1e12, "T")
+        case 1e9...: (scaled, suffix) = (a / 1e9, "B")
+        case 1e6...: (scaled, suffix) = (a / 1e6, "M")
+        case 1e3...: (scaled, suffix) = (a / 1e3, "K")
+        default: (scaled, suffix) = (a, "")
+        }
+        var num = String(format: "%.2f", scaled)
+        if num.contains(".") {
+            while num.hasSuffix("0") { num.removeLast() }
+            if num.hasSuffix(".") { num.removeLast() }
+        }
+        return "\(sign)\(symbol)\(num)\(suffix)"
+    }
+
     static func number(_ value: Double?, fractionDigits: Int = 2) -> String {
         guard let value else { return "—" }
         let f = NumberFormatter()
