@@ -6,8 +6,19 @@ import SwiftUI
 struct GlobalControlBar: View {
     @EnvironmentObject private var appState: AppState
     let section: AppSection
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    #endif
 
     var body: some View {
+        #if os(iOS)
+        if hSize == .compact { compactBar } else { regularBar }
+        #else
+        regularBar
+        #endif
+    }
+
+    private var regularBar: some View {
         HStack(spacing: 12) {
             accountMenu
             currencyMenu
@@ -17,6 +28,22 @@ struct GlobalControlBar: View {
             if TabLayout.hasLayout(section) { layoutMenu }
         }
         .padding(.horizontal, 20).padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    /// Compact (iPhone): a single horizontally-scrollable row so the controls
+    /// never overflow the narrow width.
+    private var compactBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                accountMenu
+                currencyMenu
+                benchmarkButton
+                showClosedToggle
+                if TabLayout.hasLayout(section) { layoutMenu }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+        }
         .background(.bar)
     }
 

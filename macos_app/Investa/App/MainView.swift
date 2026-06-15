@@ -48,18 +48,42 @@ struct MainView: View {
     /// nil = follow system; true/false = forced.
     @AppStorage("investa.forceDark") private var forceDark = false
     @AppStorage("investa.appearanceSet") private var appearanceSet = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    #endif
 
     var body: some View {
+        shell
+            .preferredColorScheme(appearanceSet ? (forceDark ? .dark : .light) : nil)
+            .sheet(isPresented: $showingSettings) {
+                SettingsSheet().environmentObject(appState).environmentObject(auth)
+            }
+            .sheet(isPresented: $showingPalette) {
+                CommandPaletteView(
+                    onNavigate: { selection = $0 },
+                    onOpenSettings: { showingSettings = true },
+                    onOpenStock: { paletteStock = SymbolID(id: $0) })
+            }
+            .sheet(item: $paletteStock) { StockDetailView(symbol: $0.id, currency: appState.displayCurrency) }
+            .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
+    }
+
+    @ViewBuilder private var shell: some View {
+        #if os(iOS)
+        if hSize == .compact { phoneShell } else { splitShell }
+        #else
+        splitShell
+        #endif
+    }
+
+    /// Sidebar shell — macOS and iPad (regular width).
+    private var splitShell: some View {
         NavigationSplitView {
             // iOS requires an optional single-selection binding; bridge to the
             // non-optional state (ignore deselection).
             List(selection: Binding(get: { selection }, set: { selection = $0 ?? selection })) {
-                Section {
-                    ForEach(AppSection.group1) { row($0) }
-                }
-                Section {
-                    ForEach(AppSection.group2) { row($0) }
-                }
+                Section { ForEach(AppSection.group1) { row($0) } }
+                Section { ForEach(AppSection.group2) { row($0) } }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
             .safeAreaInset(edge: .bottom) { footer }
@@ -67,30 +91,18 @@ struct MainView: View {
             VStack(spacing: 0) {
                 GlobalControlBar(section: selection)
                 Divider()
-                detail
+                sectionView(selection)
             }
             .task { if !appState.didLoadSettings { await appState.loadSettings() } }
         }
-        .preferredColorScheme(appearanceSet ? (forceDark ? .dark : .light) : nil)
-        .sheet(isPresented: $showingSettings) {
-            SettingsSheet().environmentObject(appState).environmentObject(auth)
-        }
-        .sheet(isPresented: $showingPalette) {
-            CommandPaletteView(
-                onNavigate: { selection = $0 },
-                onOpenSettings: { showingSettings = true },
-                onOpenStock: { paletteStock = SymbolID(id: $0) })
-        }
-        .sheet(item: $paletteStock) { StockDetailView(symbol: $0.id, currency: appState.displayCurrency) }
-        .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
     }
 
     private func row(_ section: AppSection) -> some View {
         Label(section.rawValue, systemImage: section.icon).tag(section)
     }
 
-    @ViewBuilder private var detail: some View {
-        switch selection {
+    @ViewBuilder private func sectionView(_ section: AppSection) -> some View {
+        switch section {
         case .performance: DashboardView()
         case .allocation: AllocationView()
         case .assetChange: AssetChangeView()
@@ -135,6 +147,47 @@ struct MainView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 8).padding(.vertical, 6)
     }
+
+    #if os(iOS)
+    // MARK: - iPhone shell (TabView; iOS auto-adds a "More" tab beyond 5 items)
+
+    private var phoneShell: some View {
+        TabView(selection: $selection) {
+            ForEach(AppSection.allCases) { section in
+                phoneTab(section)
+                    .tabItem { Label(section.rawValue, systemImage: section.icon) }
+                    .tag(section)
+            }
+        }
+        .task { if !appState.didLoadSettings { await appState.loadSettings() } }
+    }
+
+    private func phoneTab(_ section: AppSection) -> some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                GlobalControlBar(section: section)
+                Divider()
+                sectionView(section)
+            }
+            .navigationTitle(section.rawValue)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { accountToolbarMenu } }
+        }
+    }
+
+    private var accountToolbarMenu: some View {
+        Menu {
+            if let user = auth.currentUser { Text("Signed in as \(user.displayName)"); Divider() }
+            Button { showingSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+            Button { appearanceSet = true; forceDark.toggle() } label: {
+                Label(forceDark ? "Light mode" : "Dark mode", systemImage: forceDark ? "sun.max" : "moon")
+            }
+            Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+            Divider()
+            Button(role: .destructive) { auth.logout() } label: { Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right") }
+        } label: { Image(systemName: "person.crop.circle") }
+    }
+    #endif
 }
 
 /// Wraps SettingsView in a dismissible sheet container.
