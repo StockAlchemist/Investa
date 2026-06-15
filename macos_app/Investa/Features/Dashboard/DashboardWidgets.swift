@@ -41,6 +41,12 @@ struct PortfolioHeroCard: View {
     let currency: String
     let longHistory: [PerformancePoint]
     @State private var period: HeroPeriod = .day
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var compact: Bool { hSize == .compact }
+    #else
+    private var compact: Bool { false }
+    #endif
 
     private var dayGL: Double? { metrics?.dayChangeDisplay }
     private var dayGLPct: Double? { metrics?.dayChangePercent }
@@ -66,10 +72,14 @@ struct PortfolioHeroCard: View {
     var body: some View {
         let positive = (dayGL ?? 0) >= 0
         return VStack(alignment: .leading, spacing: 14) {
-            // Side-by-side when wide; stacked on a narrow (phone) width.
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top) { valueBlock; Spacer(); pillCluster }
+            // Stacked on phone; side-by-side (with graceful fallback) when wide.
+            if compact {
                 VStack(alignment: .leading, spacing: 12) { valueBlock; pillCluster }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top) { valueBlock; Spacer(); pillCluster }
+                    VStack(alignment: .leading, spacing: 12) { valueBlock; pillCluster }
+                }
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -110,38 +120,52 @@ struct PortfolioHeroCard: View {
 
     private var valueBlock: some View {
         let positive = (dayGL ?? 0) >= 0
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: compact ? 4 : 6) {
             Label("Total Portfolio Value", systemImage: "wallet.pass")
                 .font(.caption).foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(Fmt.currency(metrics?.marketValue, code: currency))
-                    .font(.system(size: 40, weight: .black, design: .rounded))
-                    .minimumScaleFactor(0.5).lineLimit(1)
-                if let g = dayGL {
-                    HStack(spacing: 4) {
-                        Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
-                        Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))").fontWeight(.semibold)
-                        if let p = dayGLPct {
-                            Text("\(p >= 0 ? "+" : "")\(String(format: "%.2f%%", p))")
-                                .font(.caption.bold())
-                                .padding(.horizontal, 8).padding(.vertical, 2)
-                                .background((positive ? Color.up : .down).opacity(0.12), in: Capsule())
-                        }
-                        Text("today").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .foregroundStyle(positive ? Color.up : Color.down)
-                }
+            // The day-change sits beside the value when wide, below it on phone
+            // (so the big value never gets squeezed/truncated).
+            if compact {
+                valueText
+                deltaView(positive)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) { valueText; deltaView(positive) }
             }
+        }
+    }
+
+    private var valueText: some View {
+        Text(Fmt.currency(metrics?.marketValue, code: currency))
+            .font(.system(size: compact ? 34 : 40, weight: .black, design: .rounded))
+            .minimumScaleFactor(0.5).lineLimit(1)
+    }
+
+    @ViewBuilder private func deltaView(_ positive: Bool) -> some View {
+        if let g = dayGL {
+            HStack(spacing: 4) {
+                Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
+                Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))").fontWeight(.semibold)
+                if let p = dayGLPct {
+                    Text("\(p >= 0 ? "+" : "")\(String(format: "%.2f%%", p))")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background((positive ? Color.up : .down).opacity(0.12), in: Capsule())
+                }
+                Text("today").font(.caption).foregroundStyle(.secondary)
+            }
+            .foregroundStyle(positive ? Color.up : Color.down)
+            .lineLimit(1).minimumScaleFactor(0.7)
         }
     }
 
     private var pillCluster: some View {
         HStack(spacing: 0) {
             statPill("Total TWR", metrics?.cumulativeTWR, sub: nil)
-            if let a = metrics?.annualizedTWR { Divider().frame(height: 30); statPill("Ann. TWR", a, sub: "p.a.") }
-            if let irr = metrics?.portfolioMWR { Divider().frame(height: 30); statPill("IRR (MWR)", irr, sub: "p.a.") }
+            if let a = metrics?.annualizedTWR { Divider().frame(height: 32); statPill("Ann. TWR", a, sub: "p.a.") }
+            if let irr = metrics?.portfolioMWR { Divider().frame(height: 32); statPill("IRR (MWR)", irr, sub: "p.a.") }
         }
         .padding(.vertical, 10)
+        .frame(maxWidth: compact ? .infinity : nil)
         .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.05), lineWidth: 1))
     }
@@ -149,10 +173,13 @@ struct PortfolioHeroCard: View {
     private func statPill(_ label: String, _ value: Double?, sub: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(Fmt.percent(value)).font(.title3.bold()).foregroundStyle(Fmt.tint(for: value))
+                .lineLimit(1).minimumScaleFactor(0.5)
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
         }
-        .padding(.horizontal, 16)
+        .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
+        .padding(.horizontal, compact ? 10 : 16)
     }
 
     private static func cutoff(_ period: HeroPeriod) -> Date {
@@ -225,11 +252,19 @@ struct TodayStripCard: View {
                 }
             }
             ForEach(Array(top)) { idx in
-                HStack {
+                let pct = idx.changesPercentage ?? 0
+                let delta = portfolioDayPct.map { $0 - pct }   // portfolio vs index
+                HStack(spacing: 6) {
                     Text(idx.name ?? "Index").lineLimit(1)
-                    Spacer()
-                    Text(Fmt.percent(idx.changesPercentage)).fontWeight(.bold)
+                    Spacer(minLength: 6)
+                    Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct))").fontWeight(.bold)
                         .foregroundStyle(Fmt.tint(for: idx.change))
+                    if let d = delta {
+                        Text("(\(d >= 0 ? "+" : "")\(String(format: "%.2f", d)))")
+                            .font(.caption2).monospacedDigit()
+                            .foregroundStyle((d >= 0 ? Color.up : Color.down).opacity(0.7))
+                            .frame(width: 48, alignment: .trailing)
+                    }
                 }.font(.caption)
             }
         }
@@ -245,12 +280,16 @@ struct TodayStripCard: View {
             } else {
                 ForEach(rows, id: \.symbol) { r in
                     Button { onSelectSymbol(r.symbol) } label: {
-                        HStack {
+                        HStack(spacing: 6) {
                             StockIcon(symbol: r.symbol, size: 14)
-                            Text(r.symbol).fontWeight(.bold)
-                            Spacer()
+                            Text(r.symbol).fontWeight(.bold).lineLimit(1)
+                            Spacer(minLength: 6)
                             Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))")
-                                .foregroundStyle(positive ? Color.up : Color.down)
+                                .fontWeight(.bold).foregroundStyle(positive ? Color.up : Color.down)
+                            Text(compactChange(r.contribution))
+                                .font(.caption2).monospacedDigit()
+                                .foregroundStyle((positive ? Color.up : Color.down).opacity(0.8))
+                                .frame(width: 52, alignment: .trailing)
                         }
                         .font(.caption)
                         .padding(.horizontal, 6).padding(.vertical, 3)
@@ -261,6 +300,17 @@ struct TodayStripCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Today's $ change shown compactly (e.g. "+$1.2K"), mirroring the web column.
+    private func compactChange(_ v: Double) -> String {
+        let sign = v >= 0 ? "+" : "-"
+        let a = abs(v)
+        let num: String
+        if a >= 1_000_000 { num = String(format: "%.1fM", a / 1_000_000) }
+        else if a >= 1_000 { num = String(format: "%.1fK", a / 1_000) }
+        else { num = String(format: "%.0f", a) }
+        return "\(sign)\(Fmt.symbol(currency))\(num)"
     }
 }
 
@@ -724,7 +774,7 @@ struct RiskMetricsCard: View {
 
     var body: some View {
         Card(title: "Risk Analytics", icon: "shield.lefthalf.filled") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                 ForEach(items, id: \.key) { item in
                     Button { selectedMetric = item.key } label: { cell(item.label, item.value, item.tint) }
                         .buttonStyle(.plain)
@@ -760,6 +810,7 @@ private struct MetricID: Identifiable { let id: String }
 /// Currency with no fraction digits (matches the web attribution cards).
 private func attrCurrency(_ v: Double, _ code: String) -> String {
     let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = code
+    f.currencySymbol = Fmt.symbol(code)
     f.maximumFractionDigits = 0; f.minimumFractionDigits = 0
     return f.string(from: NSNumber(value: v)) ?? "—"
 }

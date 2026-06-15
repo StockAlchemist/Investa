@@ -164,10 +164,16 @@ struct MainView: View {
 
     private func phoneTab(_ section: AppSection) -> some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                GlobalControlBar(section: section)
-                Divider()
-                sectionView(section)
+            // Bind the content to the live geometry width so it re-lays-out after a
+            // rotation round-trip — SwiftUI's ScrollView otherwise keeps the stale
+            // (landscape) width, leaving the portrait layout shifted/clipped.
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    GlobalControlBar(section: section)
+                    Divider()
+                    sectionView(section)
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
             .navigationTitle(section.rawValue)
             .navigationBarTitleDisplayMode(.inline)

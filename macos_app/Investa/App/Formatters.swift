@@ -8,16 +8,27 @@ enum Fmt {
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = code
+        f.currencySymbol = symbol(code)
         f.maximumFractionDigits = 2
         return f.string(from: NSNumber(value: value)) ?? "—"
+    }
+
+    /// The symbol to render for a currency code. Forces `$` for USD (rather than
+    /// the locale-dependent `US$`) and `฿` for THB; otherwise the system symbol.
+    static func symbol(_ code: String) -> String {
+        switch code {
+        case "USD": return "$"
+        case "THB": return "฿"
+        default:
+            let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = code
+            return f.currencySymbol ?? code
+        }
     }
 
     /// Compact currency (e.g. `$1.2M`, `฿12K`) — mirrors the web `formatCompactNumber`.
     static func compact(_ value: Double, code: String) -> String {
         if value == 0 { return "0" }
-        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = code
-        var symbol = f.currencySymbol ?? code
-        if code == "THB" { symbol = "฿" }
+        let symbol = symbol(code)
         let sign = value < 0 ? "-" : ""
         let a = Swift.abs(value)
         let (scaled, suffix): (Double, String)

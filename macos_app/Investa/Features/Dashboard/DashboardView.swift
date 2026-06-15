@@ -181,7 +181,12 @@ struct DashboardView: View {
             "taxes": MetricCard(title: "Taxes", value: Fmt.currency(m?.taxes, code: cur), tint: .down),
         ]
         let cards = metricOrder.filter { vis($0) }.compactMap { byId[$0] }
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: isPhone ? 150 : 165), spacing: 12)], spacing: 12) {
+        // macOS: a fixed 6-column grid (the 12 metric cards land in two rows of 6);
+        // iPhone: adaptive so cards stay legible on the narrow width.
+        let columns: [GridItem] = isPhone
+            ? [GridItem(.adaptive(minimum: 150), spacing: 12)]
+            : Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
+        return LazyVGrid(columns: columns, spacing: 12) {
             ForEach(cards) { MetricCardView(card: $0) }
         }
     }
