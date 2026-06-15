@@ -419,8 +419,11 @@ struct HoldingsTableView: View {
                         }
                     }
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    // Pad inside the frame (matching `cell`) so each header is exactly
+                    // columnWidth wide and stays aligned with the data columns below.
+                    .padding(.horizontal, 8)
                     .frame(width: columnWidth(h), alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
-                    .padding(.horizontal, 8).padding(.vertical, 8)
+                    .padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
@@ -628,14 +631,20 @@ struct HoldingsTableView: View {
             ForEach(visibleColumns, id: \.self) { h in
                 Group {
                     if h == "Symbol" {
-                        HStack(spacing: 3) { Text("↳").font(.system(size: 9)).foregroundStyle(.tertiary); Text("Lot: \(lot["Date"]?.stringValue?.prefix(10) ?? "")").italic() }
-                            .frame(width: columnWidth(h), alignment: .leading)
+                        HStack(spacing: 3) {
+                            Text("↳").font(.system(size: 9)).foregroundStyle(.tertiary)
+                            Text("Lot: \(lot["Date"]?.stringValue?.prefix(10) ?? "")").italic().lineLimit(1).fixedSize()
+                        }
                     } else {
-                        Text(lotCell(lot, h, r.price)).monospacedDigit()
-                            .foregroundStyle(.secondary).frame(width: columnWidth(h), alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
+                        Text(lotCell(lot, h, r.price)).monospacedDigit().lineLimit(1)
                     }
                 }
-                .padding(.horizontal, 8).padding(.vertical, 4)
+                // Pad inside the frame (matching `cell`) so each lot cell is exactly
+                // columnWidth wide and stays aligned with the header/data columns.
+                .padding(.horizontal, 8)
+                .frame(width: columnWidth(h), alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
+                .padding(.vertical, 4)
+                .foregroundStyle(.secondary)
             }
         }
         .font(.caption)
