@@ -1,68 +1,134 @@
 import SwiftUI
 
+/// Sidebar sections — order, labels, icons, and grouping match the web app's
+/// left sidebar exactly (see screenshot): two groups separated by a divider.
 enum AppSection: String, CaseIterable, Identifiable {
-    case dashboard = "Dashboard"
+    // Group 1
+    case performance = "Dashboard"
+    case allocation = "Portfolio"
+    case assetChange = "Performance"
     case transactions = "Transactions"
-    case dividends = "Dividends"
+    case dividend = "Income"
     case capitalGains = "Capital Gains"
+    // Group 2
+    case market = "Screener"
     case watchlist = "Watchlist"
+    case markets = "Markets"
+    case aiReview = "AI Insights"
 
     var id: String { rawValue }
+
+    static let group1: [AppSection] = [.performance, .allocation, .assetChange, .transactions, .dividend, .capitalGains]
+    static let group2: [AppSection] = [.market, .watchlist, .markets, .aiReview]
+
     var icon: String {
         switch self {
-        case .dashboard: return "chart.pie"
-        case .transactions: return "list.bullet.rectangle"
-        case .dividends: return "dollarsign.circle"
-        case .capitalGains: return "arrow.up.right"
+        case .performance: return "square.grid.2x2"
+        case .allocation: return "chart.pie"
+        case .assetChange: return "chart.line.uptrend.xyaxis"
+        case .transactions: return "arrow.left.arrow.right"
+        case .dividend: return "dollarsign"
+        case .capitalGains: return "chart.bar"
+        case .market: return "magnifyingglass"
         case .watchlist: return "star"
+        case .markets: return "globe"
+        case .aiReview: return "sparkles"
         }
     }
 }
 
-/// Sidebar-based shell hosting the feature tabs. Replaces the standalone
-/// dashboard window once the user is logged in.
+/// Sidebar-based shell hosting the feature tabs.
 struct MainView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var appState: AppState
-    @State private var selection: AppSection = .dashboard
+    @State private var selection: AppSection = .performance
+    @State private var showingSettings = false
+    /// nil = follow system; true/false = forced.
+    @AppStorage("investa.forceDark") private var forceDark = false
+    @AppStorage("investa.appearanceSet") private var appearanceSet = false
 
     var body: some View {
         NavigationSplitView {
-            List(AppSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.icon)
-                    .tag(section)
+            List(selection: $selection) {
+                Section {
+                    ForEach(AppSection.group1) { row($0) }
+                }
+                Section {
+                    ForEach(AppSection.group2) { row($0) }
+                }
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
-            .safeAreaInset(edge: .bottom) { accountFooter }
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+            .safeAreaInset(edge: .bottom) { footer }
         } detail: {
-            switch selection {
-            case .dashboard: DashboardView()
-            case .transactions: TransactionsView()
-            case .dividends: DividendsView()
-            case .capitalGains: CapitalGainsView()
-            case .watchlist: WatchlistView()
-            }
+            detail
+        }
+        .preferredColorScheme(appearanceSet ? (forceDark ? .dark : .light) : nil)
+        .sheet(isPresented: $showingSettings) {
+            SettingsSheet().environmentObject(appState).environmentObject(auth)
         }
     }
 
-    private var accountFooter: some View {
+    private func row(_ section: AppSection) -> some View {
+        Label(section.rawValue, systemImage: section.icon).tag(section)
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch selection {
+        case .performance: DashboardView()
+        case .allocation: AllocationView()
+        case .assetChange: AssetChangeView()
+        case .transactions: TransactionsView()
+        case .dividend: DividendsView()
+        case .capitalGains: CapitalGainsView()
+        case .market: ScreenerView()
+        case .watchlist: WatchlistView()
+        case .markets: MarketsView()
+        case .aiReview: AIView()
+        }
+    }
+
+    private var footer: some View {
         VStack(spacing: 0) {
             Divider()
-            Menu {
-                if let user = auth.currentUser {
-                    Text("Signed in as \(user.displayName)")
-                    Divider()
+            VStack(alignment: .leading, spacing: 2) {
+                footerButton("Settings", "gearshape") { showingSettings = true }
+                footerButton("Dark mode", forceDark ? "sun.max" : "moon") {
+                    appearanceSet = true
+                    forceDark.toggle()
                 }
-                Button("Refresh") {
-                    NotificationCenter.default.post(name: .refreshRequested, object: nil)
+                Menu {
+                    if let user = auth.currentUser { Text("Signed in as \(user.displayName)"); Divider() }
+                    Button("Refresh") { NotificationCenter.default.post(name: .refreshRequested, object: nil) }
+                    Button("Log Out") { auth.logout() }
+                } label: {
+                    Label(auth.currentUser?.displayName ?? "Account", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Button("Log Out") { auth.logout() }
-            } label: {
-                Label(auth.currentUser?.displayName ?? "Account", systemImage: "person.crop.circle")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                .menuStyle(.borderlessButton)
+                .padding(.horizontal, 8).padding(.vertical, 6)
             }
-            .menuStyle(.borderlessButton)
-            .padding(10)
+            .padding(.vertical, 6)
         }
+    }
+
+    private func footerButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8).padding(.vertical, 6)
+    }
+}
+
+/// Wraps SettingsView in a dismissible sheet container.
+private struct SettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+                .padding(12)
+            SettingsView()
+        }
+        .frame(width: 720, height: 640)
     }
 }

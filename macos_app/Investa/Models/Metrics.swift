@@ -42,4 +42,16 @@ struct Metrics: Codable, Sendable {
     var maxDrawdown: Double? { double("max_drawdown") }
     var sharpeRatio: Double? { double("sharpe_ratio") }
     var allSelectedClosed: Bool { bool("all_selected_closed") ?? false }
+
+    var commissions: Double? { double("commissions") }
+    var taxes: Double? { double("taxes") }
+    var fxGainLossDisplay: Double? { double("fx_gain_loss_display") }
+    var fxGainLossPct: Double? { double("fx_gain_loss_pct") }
+    var dividendReturnCumulative: Double? { double("dividend_return_cumulative") }
+    var dividendReturnAnnualized: Double? { double("dividend_return_annualized") }
+    var dividendYieldPct: Double? { double("dividend_yield_pct") }
+    var ytdReturn: Double? { double("ytd_return") }
+    var volatilityAnn: Double? { double("volatility_ann") }
+    var beta: Double? { double("beta") }
+    var estAnnualIncomeDisplay: Double? { double("est_annual_income_display") }
 }

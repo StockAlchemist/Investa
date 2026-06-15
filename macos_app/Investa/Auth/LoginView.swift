@@ -5,6 +5,7 @@ struct LoginView: View {
 
     @State private var username = ""
     @State private var password = ""
+    @State private var isRegistering = false
     @State private var showingServerSettings = false
     @State private var serverURL = APIConfig.baseURL
 
@@ -16,7 +17,7 @@ struct LoginView: View {
                     .foregroundStyle(.tint)
                 Text("Investa")
                     .font(.largeTitle.bold())
-                Text("Sign in to your portfolio")
+                Text(isRegistering ? "Create an account" : "Sign in to your portfolio")
                     .foregroundStyle(.secondary)
             }
 
@@ -41,12 +42,20 @@ struct LoginView: View {
                     if auth.isSubmitting {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text("Log In").frame(maxWidth: .infinity)
+                        Text(isRegistering ? "Create Account" : "Log In").frame(maxWidth: .infinity)
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(!canSubmit)
+
+                Button(isRegistering ? "Have an account? Log in" : "Create an account") {
+                    auth.errorMessage = nil
+                    isRegistering.toggle()
+                }
+                .buttonStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(.tint)
             }
             .frame(width: 280)
 
@@ -73,7 +82,13 @@ struct LoginView: View {
 
     private func submit() {
         guard canSubmit else { return }
-        Task { await auth.login(username: username, password: password) }
+        Task {
+            if isRegistering {
+                await auth.register(username: username, password: password)
+            } else {
+                await auth.login(username: username, password: password)
+            }
+        }
     }
 
     private var serverSettingsSheet: some View {

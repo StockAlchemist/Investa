@@ -1,35 +1,33 @@
 import Foundation
 
-/// An item from `GET /api/watchlist`. Many analytics fields are optional/null.
-struct WatchlistItem: Codable, Sendable, Identifiable {
-    let symbol: String
-    let note: String
-    let name: String?
-    let currency: String?
-    let price: Double?
-    let dayChange: Double?
-    let dayChangePct: Double?
-
-    enum CodingKeys: String, CodingKey {
-        case symbol = "Symbol"
-        case note = "Note"
-        case name = "Name"
-        case currency = "Currency"
-        case price = "Price"
-        case dayChange = "Day Change"
-        case dayChangePct = "Day Change %"
-    }
+/// An item from `GET /api/watchlist`. Decoded tolerantly via `JSONValue` since
+/// the backend mixes types and many analytics fields are null.
+struct WatchlistItem: Decodable, Sendable, Identifiable {
+    let raw: [String: JSONValue]
 
     init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        symbol = try c.decodeIfPresent(String.self, forKey: .symbol) ?? "?"
-        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
-        name = try c.decodeIfPresent(String.self, forKey: .name)
-        currency = try c.decodeIfPresent(String.self, forKey: .currency)
-        price = try c.decodeIfPresent(Double.self, forKey: .price)
-        dayChange = try c.decodeIfPresent(Double.self, forKey: .dayChange)
-        dayChangePct = try c.decodeIfPresent(Double.self, forKey: .dayChangePct)
+        raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
     }
+
+    private func d(_ k: String) -> Double? { raw[k]?.doubleValue }
+    private func s(_ k: String) -> String? { raw[k]?.stringValue }
+
+    var symbol: String { s("Symbol") ?? "?" }
+    var note: String { s("Note") ?? "" }
+    var name: String? { s("Name") }
+    var currency: String? { s("Currency") }
+    var price: Double? { d("Price") }
+    var dayChange: Double? { d("Day Change") }
+    var dayChangePct: Double? { d("Day Change %") }
+    var marketCap: Double? { d("Market Cap") }
+    var peRatio: Double? { d("PE Ratio") }
+    var dividendYield: Double? { d("Dividend Yield") }
+    var aiScore: Double? { d("ai_score") }
+    var intrinsicValue: Double? { d("intrinsic_value") }
+    var marginOfSafety: Double? { d("margin_of_safety") }
+    var sentiment: Double? { d("ai_sentiment") }
+    var catalystCount: Int { raw["ai_catalysts"]?.arrayValue?.count ?? 0 }
+    var sparkline: [Double] { raw["Sparkline"]?.arrayValue?.compactMap { $0.doubleValue } ?? [] }
 
     var id: String { symbol }
 }

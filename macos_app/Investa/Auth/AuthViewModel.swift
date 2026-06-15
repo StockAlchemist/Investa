@@ -65,6 +65,41 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    func register(username: String, password: String) async {
+        errorMessage = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
+        struct Body: Encodable { let username: String; let password: String }
+        do {
+            // Create the account, then log in to obtain a token.
+            let _: User = try await api.send(
+                method: "POST", path: "/auth/register",
+                body: Body(username: username, password: password)
+            )
+            await login(username: username, password: password)
+        } catch let error as APIError {
+            errorMessage = error.errorDescription
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Returns nil on success, or an error message.
+    func changePassword(current: String, new: String) async -> String? {
+        struct Body: Encodable { let current_password: String; let new_password: String }
+        do {
+            let _: StatusResponse = try await api.send(
+                method: "POST", path: "/auth/change-password",
+                body: Body(current_password: current, new_password: new)
+            )
+            return nil
+        } catch let error as APIError {
+            return error.errorDescription
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     func logout() {
         KeychainStore.deleteToken()
         state = .loggedOut

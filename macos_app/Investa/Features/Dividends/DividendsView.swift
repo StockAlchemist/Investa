@@ -3,6 +3,9 @@ import SwiftUI
 @MainActor
 final class DividendsViewModel: ObservableObject {
     @Published var dividends: [Dividend] = []
+    @Published var projected: [ProjectedIncome] = []
+    @Published var calendar: [DividendEvent] = []
+    @Published var metrics: Metrics?
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -19,69 +22,75 @@ final class DividendsViewModel: ObservableObject {
     private func load(currency: String, accounts: [String]?) async {
         isLoading = true; errorMessage = nil
         defer { isLoading = false }
+        let q = [URLQueryItem(name: "currency", value: currency)] + APIClient.arrayQuery("accounts", accounts)
+        async let divR: [Dividend] = api.get("/dividends", query: q)
+        async let projR: [ProjectedIncome] = api.get("/projected_income", query: q)
+        async let calR: [DividendEvent] = api.get("/dividend_calendar", query: q)
+        async let summaryR: SummaryResponse = api.get("/summary", query: q)
         do {
-            let items: [Dividend] = try await api.get(
-                "/dividends",
-                query: [URLQueryItem(name: "currency", value: currency)]
-                    + APIClient.arrayQuery("accounts", accounts)
-            )
-            if Task.isCancelled { return }
-            dividends = items
-        } catch is CancellationError {
-        } catch let error as APIError {
+            dividends = try await divR
+        } catch is CancellationError { return }
+        catch let error as APIError {
             if case .unauthorized = error { return }
             errorMessage = error.errorDescription
         } catch { errorMessage = error.localizedDescription }
+        projected = (try? await projR) ?? []
+        calendar = (try? await calR) ?? []
+        metrics = (try? await summaryR)?.metrics
     }
 }
 
+/// Income tab — mirrors the web "Dividend" tab (Dividend.tsx, layout group "Income Sections").
 struct DividendsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = DividendsViewModel()
-    @State private var sortOrder = [KeyPathComparator(\Dividend.date, order: .reverse)]
+    @State private var detail: SymbolID?
 
-    private var rows: [Dividend] { viewModel.dividends.sorted(using: sortOrder) }
     private var cur: String { appState.displayCurrency }
-
-    private var total: Double { viewModel.dividends.reduce(0) { $0 + $1.amountDisplay } }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Dividends").font(.title2.bold())
+                Text("Income").font(.title2.bold())
                 if viewModel.isLoading { ProgressView().controlSize(.small) }
                 Spacer()
-                Text("Total: \(Fmt.currency(total, code: cur))")
-                    .font(.headline).foregroundStyle(.green)
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
-            if viewModel.dividends.isEmpty && !viewModel.isLoading {
-                ContentUnavailableView("No dividends", systemImage: "dollarsign.circle")
-            } else {
-                Table(rows, sortOrder: $sortOrder) {
-                    TableColumn("Date", value: \.date) { Text($0.date) }
-                    TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
-                    TableColumn("Account", value: \.account) { Text($0.account) }
-                    TableColumn("Amount (Local)", value: \.amountLocal) { d in
-                        Text(Fmt.currency(d.amountLocal, code: d.localCurrency)).monospacedDigit()
-                    }
-                    TableColumn("Amount (\(cur))", value: \.amountDisplay) { d in
-                        Text(Fmt.currency(d.amountDisplay, code: cur)).monospacedDigit()
-                            .foregroundStyle(.green)
-                    }
+            ScrollView {
+                VStack(spacing: 20) {
+                    IncomeKpiStrip(dividends: viewModel.dividends, currency: cur,
+                                   expectedDividends: viewModel.metrics?.estAnnualIncomeDisplay,
+                                   dividendYield: viewModel.metrics?.dividendYieldPct)
+                    IncomeProjectorCard(income: viewModel.projected, currency: cur)
+                    DividendCalendarSection(events: viewModel.calendar, currency: cur,
+                                            onSelect: { detail = SymbolID(id: $0) })
+                    twoColumn(TopPayersCard(dividends: viewModel.dividends, currency: cur,
+                                            onSelect: { detail = SymbolID(id: $0) }),
+                              ByAccountCard(dividends: viewModel.dividends, currency: cur))
+                    AnnualDividendsCard(dividends: viewModel.dividends, currency: cur)
+                    DividendTransactionsCard(dividends: viewModel.dividends, currency: cur)
                 }
+                .padding(20)
             }
         }
-        .frame(minWidth: 700, minHeight: 500)
+        .frame(minWidth: 820, minHeight: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        .sheet(item: $detail) { StockDetailView(symbol: $0.id) }
+    }
+
+    @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 20) { left; right }
+            VStack(spacing: 20) { left; right }
+        }
     }
 
     private var signature: String {
-        "\(appState.displayCurrency)|\(appState.selectedAccounts.sorted().joined(separator: ","))"
+        "\(cur)|\(appState.selectedAccounts.sorted().joined(separator: ","))"
     }
     private func reload() {
-        viewModel.reload(currency: appState.displayCurrency, accounts: appState.accountsQuery)
+        viewModel.reload(currency: cur, accounts: appState.accountsQuery)
     }
 }

@@ -10,6 +10,10 @@ struct AppSettings: Codable, Sendable {
     let selectedAccounts: [String]?
     let benchmarks: [String]?
     let showClosed: Bool?
+    let manualOverrides: [String: JSONValue]?
+    let accountInterestRates: [String: Double]?
+    /// bucket (quoteType/sector/country/symbol) → name → target %.
+    let targetAllocation: [String: [String: Double]]?
 
     enum CodingKeys: String, CodingKey {
         case availableCurrencies = "available_currencies"
@@ -19,6 +23,20 @@ struct AppSettings: Codable, Sendable {
         case selectedAccounts = "selected_accounts"
         case benchmarks
         case showClosed = "show_closed"
+        case manualOverrides = "manual_overrides"
+        case accountInterestRates = "account_interest_rates"
+        case targetAllocation = "target_allocation"
+    }
+
+    /// Manual price overrides flattened to symbol → price (handles both the bare
+    /// number and the `{ price, ... }` object form the backend may return).
+    var manualOverridePrices: [String: Double] {
+        var out: [String: Double] = [:]
+        for (symbol, value) in manualOverrides ?? [:] {
+            if let p = value.doubleValue { out[symbol] = p }
+            else if let p = value["price"]?.doubleValue { out[symbol] = p }
+        }
+        return out
     }
 
     /// Flattened, de-duplicated list of every account across all groups,

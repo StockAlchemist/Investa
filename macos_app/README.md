@@ -1,19 +1,34 @@
 # Investa — Native macOS App
 
-A native SwiftUI macOS client for the Investa FastAPI backend, with a sidebar
-shell hosting these tabs:
+A native SwiftUI macOS client for the Investa FastAPI backend, aiming for feature
+parity with the web app. The sidebar mirrors the web app's tabs (same order), and
+each tab composes the same widgets the web shows:
 
-- **Dashboard** — login, control bar (account/currency/period), metric cards,
-  holdings table, and a Swift Charts performance graph.
-- **Transactions** — full CRUD (add/edit/delete) with the backend's signed
-  Total Amount logic replicated from the web modal.
-- **Dividends** — read-only table with display-currency totals.
-- **Capital Gains** — read-only realized-gains table.
-- **Watchlist** — view items plus add/remove (default watchlist).
+- **Performance** — control bar, 18 metric cards, performance graph
+  (Value/TWR/Drawdown toggle + benchmark overlay + period), portfolio health,
+  risk metrics, sector & top-contributor attribution, allocation donuts, dividend
+  calendar, and the full holdings table.
+- **Watchlist** — items + add/remove (default watchlist), with detail on click.
+- **Market** — screener: run by universe (watchlist/manual/S&P/etc.) or AI narrative.
+- **Transactions** — full CRUD with the backend's signed Total Amount logic.
+- **Allocation** — holdings table + donut breakdowns by sector / asset type /
+  geography / industry / account / currency.
+- **Asset Change** — period-over-period asset value series + detail grid.
+- **Capital Gains** — unrealized gains by holding + realized-gains table.
+- **Dividend** — projected income chart + dividend calendar + dividend history.
+- **AI Review** — portfolio AI review (scorecard + recommendations) and chat.
+- **Markets** (native extra) — index quotes + market news.
+- **Settings** — currency, closed-account toggle, benchmarks, manual price
+  overrides, backend URL, cache clear, change password, log out.
 
-It exercises the full stack — auth → networking → models → SwiftUI + Swift
-Charts — and is the skeleton the remaining tabs (screener, stock detail, AI
-analysis, settings editing, …) are added onto.
+The holdings table carries ~22 columns + a 7d sparkline. **Stock Detail** opens
+as a sheet from any holding/watchlist/screener row.
+
+**Stock Detail** opens as a sheet (double-click / "View Details" on a holding,
+watchlist, or screener row): fundamentals, price chart, intrinsic value, earnings,
+and an on-demand AI review. **Register** is available from the login screen.
+
+Auth → networking → models → SwiftUI + Swift Charts throughout.
 
 The app is a **client**; it does not bundle the Python backend. Run the backend
 separately and point the app at it (default `http://localhost:8000/api`, editable
@@ -63,7 +78,11 @@ committed — add them to `.gitignore` if desired.
 
 ## What's next
 
-Screener, stock detail modal, AI analysis/chat, settings editing, IBKR sync,
-document parsing. Each is a new `Features/<Tab>/` module reusing `APIClient` and
-the `JSONValue` decoding approach. Bundling the Python backend into the `.app`
-is a separate, larger effort.
+Remaining web features not yet ported: IBKR sync (pending/approve/reject),
+document/statement parsing upload, portfolio optimization & allocation drift,
+account-group management and per-account closure-date/interest-rate editing,
+target-allocation editing, and the command palette. The performance graph also
+doesn't yet overlay benchmarks or toggle TWR/drawdown. Each is a new or expanded
+`Features/<Tab>/` module reusing `APIClient` and the `JSONValue` decoding
+approach. Bundling the Python backend into the `.app` is a separate, larger
+effort.

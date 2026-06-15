@@ -1,128 +1,305 @@
 import SwiftUI
+import AppKit
+
+enum TxDatePreset: String, CaseIterable, Identifiable {
+    case all, mtd, ytd, d30, d90, y1, custom
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all: return "All"; case .mtd: return "This month"; case .ytd: return "YTD"
+        case .d30: return "30D"; case .d90: return "90D"; case .y1: return "1Y"; case .custom: return "Custom"
+        }
+    }
+}
 
 struct TransactionsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = TransactionsViewModel()
 
+    @State private var symbolFilter = ""
+    @State private var accountFilter = ""
+    @State private var filterTypes: Set<String> = []
+    @State private var datePreset: TxDatePreset = .all
+    @State private var customFrom = Date()
+    @State private var customTo = Date()
+    @State private var showFilters = false
+    @State private var showDuplicatesOnly = false
+    @State private var showInternalCash = false
+
+    @State private var sortOrder = [KeyPathComparator(\Transaction.date, order: .reverse)]
+    @State private var selection: Set<Int> = []
     @State private var editing: Transaction?
     @State private var showingAdd = false
-    @State private var sortOrder = [KeyPathComparator(\Transaction.date, order: .reverse)]
     @State private var pendingDelete: Transaction?
+    @State private var pendingBulkDelete = false
 
-    private var rows: [Transaction] { viewModel.transactions.sorted(using: sortOrder) }
+    private var cur: String { appState.displayCurrency }
+
+    // MARK: - Derived data
+
+    private func isInternalCash(_ tx: Transaction) -> Bool {
+        let s = tx.symbol.uppercased()
+        let cash = s == "$CASH" || s == "CASH" || s.hasPrefix("CASH (")
+        return cash && (tx.note ?? "").lowercased().hasPrefix("auto-cash")
+    }
+
+    private func dupKey(_ tx: Transaction) -> String {
+        "\(tx.symbol)|\(tx.date.prefix(10))|\(tx.type)|\(abs(tx.quantity))|\(tx.totalAmount)|\(tx.account)|\(tx.note ?? "")"
+    }
+
+    private var duplicateKeys: Set<String> {
+        var counts: [String: Int] = [:]
+        for tx in viewModel.transactions where !isInternalCash(tx) { counts[dupKey(tx), default: 0] += 1 }
+        return Set(counts.filter { $0.value > 1 }.keys)
+    }
+    private var duplicateCount: Int {
+        let keys = duplicateKeys
+        return viewModel.transactions.filter { !isInternalCash($0) && keys.contains(dupKey($0)) }.count
+    }
+
+    private var dateRange: (from: String?, to: String?) {
+        let cal = Calendar.current; let now = Date()
+        func iso(_ d: Date) -> String {
+            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f.string(from: d)
+        }
+        switch datePreset {
+        case .all: return (nil, nil)
+        case .mtd: return (iso(cal.date(from: cal.dateComponents([.year, .month], from: now))!), nil)
+        case .ytd: return (iso(cal.date(from: cal.dateComponents([.year], from: now))!), nil)
+        case .d30: return (iso(cal.date(byAdding: .day, value: -30, to: now)!), nil)
+        case .d90: return (iso(cal.date(byAdding: .day, value: -90, to: now)!), nil)
+        case .y1: return (iso(cal.date(byAdding: .year, value: -1, to: now)!), nil)
+        case .custom: return (iso(customFrom), iso(customTo))
+        }
+    }
+
+    private var filtered: [Transaction] {
+        let range = dateRange
+        let types = Set(filterTypes.map { $0.lowercased() })
+        return viewModel.transactions.filter { tx in
+            let symOK = symbolFilter.isEmpty || tx.symbol.lowercased().contains(symbolFilter.lowercased())
+            let accOK = accountFilter.isEmpty || tx.account.lowercased().contains(accountFilter.lowercased())
+            let typeOK = types.isEmpty || types.contains(tx.type.lowercased())
+            let d = String(tx.date.prefix(10))
+            let dateOK = (range.from == nil || d >= range.from!) && (range.to == nil || d <= range.to!)
+            let dupOK = !showDuplicatesOnly || duplicateKeys.contains(dupKey(tx))
+            let cashOK = (showInternalCash || showDuplicatesOnly) || !isInternalCash(tx)
+            return symOK && accOK && typeOK && dateOK && dupOK && cashOK
+        }
+    }
+    private var sorted: [Transaction] { filtered.sorted(using: sortOrder) }
+    private var existingTypes: [String] { Array(Set(viewModel.transactions.map { $0.type })).sorted() }
+
+    private static func typeColor(_ type: String) -> Color {
+        switch type.uppercased() {
+        case "BUY", "DEPOSIT", "BUY TO COVER": return .green
+        case "SELL", "WITHDRAWAL", "SHORT SELL": return .red
+        case "DIVIDEND", "INTEREST": return .indigo
+        default: return .gray
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
-            if let error = viewModel.errorMessage {
-                errorBanner(error)
+            HStack {
+                Text("Transactions").font(.title2.bold())
+                if viewModel.isLoading { ProgressView().controlSize(.small) }
+                Spacer()
+                Text("Showing \(sorted.count) of \(viewModel.transactions.count)")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            content
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            Divider()
+            if let error = viewModel.errorMessage { errorBanner(error) }
+            ScrollView {
+                VStack(spacing: 16) {
+                    TxKpiStrip(transactions: sorted, preferredCurrency: cur)
+                    if duplicateCount > 0 { duplicateBanner }
+                    toolbar
+                    if showFilters { filterPanel }
+                    table
+                }
+                .padding(20)
+            }
         }
-        .frame(minWidth: 700, minHeight: 500)
+        .frame(minWidth: 820, minHeight: 560)
         .task(id: accountSignature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .sheet(isPresented: $showingAdd) {
-            TransactionEditView(existing: nil, onSave: handleSave)
-                .environmentObject(appState)
-        }
-        .sheet(item: $editing) { tx in
-            TransactionEditView(existing: tx, onSave: handleSave)
-                .environmentObject(appState)
-        }
-        .alert("Delete transaction?", isPresented: deleteAlertBinding, presenting: pendingDelete) { tx in
-            Button("Delete", role: .destructive) { Task { await viewModel.delete(tx) } }
+        .sheet(isPresented: $showingAdd) { TransactionEditView(existing: nil, onSave: handleSave).environmentObject(appState) }
+        .sheet(item: $editing) { tx in TransactionEditView(existing: tx, onSave: handleSave).environmentObject(appState) }
+        .alert("Delete transaction?", isPresented: deleteBinding, presenting: pendingDelete) { tx in
+            Button("Delete", role: .destructive) { Task { await viewModel.delete(tx); reload() } }
             Button("Cancel", role: .cancel) {}
-        } message: { tx in
-            Text("\(tx.type) \(tx.symbol) on \(tx.date) will be permanently removed.")
+        } message: { tx in Text("\(tx.type) \(tx.symbol) on \(tx.date) will be removed.") }
+        .alert("Delete \(selection.count) transactions?", isPresented: $pendingBulkDelete) {
+            Button("Delete", role: .destructive) { bulkDelete() }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
-    private var header: some View {
+    // MARK: - Toolbar
+
+    private var toolbar: some View {
         HStack {
-            Text("Transactions").font(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
-            Spacer()
             Button { showingAdd = true } label: { Label("Add", systemImage: "plus") }
                 .buttonStyle(.borderedProminent)
+            if !selection.isEmpty {
+                Button(role: .destructive) { pendingBulkDelete = true } label: {
+                    Label("Delete (\(selection.count))", systemImage: "trash")
+                }.buttonStyle(.bordered)
+            }
+            Spacer()
+            Button { showFilters.toggle(); if !showFilters { resetFilters() } } label: {
+                Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
+            }
+            .buttonStyle(.bordered).tint(showFilters ? .accentColor : nil)
+            Button { exportCSV() } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                .buttonStyle(.bordered)
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
     }
 
-    @ViewBuilder private var content: some View {
-        if viewModel.transactions.isEmpty && !viewModel.isLoading {
-            ContentUnavailableView("No transactions", systemImage: "list.bullet.rectangle",
-                                   description: Text("Add one with the + button."))
-        } else {
-            Table(rows, sortOrder: $sortOrder) {
-                TableColumn("Date", value: \.date) { Text($0.date) }
-                    .width(min: 90, ideal: 100)
-                TableColumn("Type", value: \.type) { Text($0.type) }
-                    .width(min: 80, ideal: 100)
-                TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
-                    .width(min: 70, ideal: 90)
-                TableColumn("Account", value: \.account) { Text($0.account) }
-                    .width(min: 80, ideal: 120)
-                TableColumn("Qty", value: \.quantity) {
-                    Text(Fmt.number($0.quantity)).monospacedDigit()
-                }
-                .width(min: 60, ideal: 80)
-                TableColumn("Price", value: \.pricePerShare) {
-                    Text(Fmt.number($0.pricePerShare)).monospacedDigit()
-                }
-                .width(min: 70, ideal: 90)
-                TableColumn("Total", value: \.totalAmount) { tx in
-                    Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency))
-                        .monospacedDigit()
-                        .foregroundStyle(Fmt.tint(for: tx.totalAmount))
-                }
-                .width(min: 90, ideal: 120)
-                TableColumn("") { tx in
-                    HStack(spacing: 4) {
-                        Button { editing = tx } label: { Image(systemName: "pencil") }
-                            .buttonStyle(.borderless)
-                        Button { pendingDelete = tx } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(.red)
+    private var duplicateBanner: some View {
+        Button { showDuplicatesOnly.toggle() } label: {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                Text("\(duplicateCount) potential duplicate \(duplicateCount == 1 ? "transaction" : "transactions") detected")
+                    .font(.callout)
+                Spacer()
+                Text(showDuplicatesOnly ? "Showing — tap to clear" : "Review").font(.caption.bold())
+            }
+            .padding(12)
+            .background(.orange.opacity(showDuplicatesOnly ? 0.2 : 0.1), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(.orange)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var filterPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                TextField("Filter symbol…", text: $symbolFilter).textFieldStyle(.roundedBorder).frame(width: 160)
+                TextField("Filter account…", text: $accountFilter).textFieldStyle(.roundedBorder).frame(width: 180)
+                Toggle("Internal cash", isOn: $showInternalCash)
+                Spacer()
+            }
+            // Type chips
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(existingTypes, id: \.self) { type in
+                        let on = filterTypes.contains(type)
+                        Button {
+                            if on { filterTypes.remove(type) } else { filterTypes.insert(type) }
+                        } label: {
+                            Text(type).font(.caption.weight(.medium))
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(on ? Self.typeColor(type).opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
+                                .foregroundStyle(on ? Self.typeColor(type) : Color.gray)
+                        }.buttonStyle(.plain)
                     }
                 }
-                .width(60)
             }
-            .contextMenu(forSelectionType: Transaction.ID.self) { _ in } primaryAction: { ids in
-                if let id = ids.first, let tx = viewModel.transactions.first(where: { $0.id == id }) {
-                    editing = tx
+            // Date presets
+            HStack(spacing: 6) {
+                ForEach(TxDatePreset.allCases) { p in
+                    Button { datePreset = p } label: {
+                        Text(p.label).font(.caption.weight(.medium))
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(datePreset == p ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
+                            .foregroundStyle(datePreset == p ? Color.accentColor : Color.gray)
+                    }.buttonStyle(.plain)
+                }
+                if datePreset == .custom {
+                    DatePicker("", selection: $customFrom, displayedComponents: .date).labelsHidden()
+                    Text("→").foregroundStyle(.secondary)
+                    DatePicker("", selection: $customTo, displayedComponents: .date).labelsHidden()
                 }
             }
         }
+        .padding(16)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Table
+
+    private var table: some View {
+        Table(sorted, selection: tableSelection, sortOrder: $sortOrder) {
+            TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
+                .width(min: 90, ideal: 110)
+            TableColumn("Type", value: \.type) { tx in
+                Text(tx.type.uppercased()).font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
+                    .foregroundStyle(Self.typeColor(tx.type))
+            }
+            .width(min: 80, ideal: 100)
+            TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
+                .width(min: 70, ideal: 90)
+            TableColumn("Qty", value: \.quantity) { Text($0.quantity == 0 ? "-" : Fmt.number($0.quantity)).monospacedDigit() }
+                .width(min: 60, ideal: 80)
+            TableColumn("Price", value: \.pricePerShare) { Text($0.pricePerShare == 0 ? "-" : Fmt.number($0.pricePerShare)).monospacedDigit() }
+                .width(min: 64, ideal: 84)
+            TableColumn("Total", value: \.totalAmount) { tx in
+                Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).fontWeight(.bold).monospacedDigit()
+                    .foregroundStyle(Fmt.tint(for: tx.totalAmount))
+            }
+            .width(min: 90, ideal: 120)
+            TableColumn("Account", value: \.account) { Text($0.account).font(.caption).foregroundStyle(.secondary) }
+                .width(min: 90, ideal: 130)
+            TableColumn("") { tx in
+                HStack(spacing: 4) {
+                    Button { editing = tx } label: { Image(systemName: "pencil") }.buttonStyle(.borderless)
+                    Button { pendingDelete = tx } label: { Image(systemName: "trash") }.buttonStyle(.borderless).foregroundStyle(.red)
+                }
+            }
+            .width(56)
+        }
+        .frame(minHeight: 460)
+    }
+
+    /// Table selection works on the row id (`Int?`); bridge to a `Set<Int>`.
+    private var tableSelection: Binding<Set<Int?>> {
+        Binding(
+            get: { Set(selection.map { Optional($0) }) },
+            set: { selection = Set($0.compactMap { $0 }) }
+        )
     }
 
     private func errorBanner(_ message: String) -> some View {
-        HStack {
-            Image(systemName: "exclamationmark.triangle.fill")
-            Text(message)
-            Spacer()
-            Button("Retry") { reload() }
-        }
-        .font(.callout).padding(12)
-        .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-        .foregroundStyle(.red)
-        .padding(.horizontal, 20).padding(.top, 12)
+        HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(message); Spacer(); Button("Retry") { reload() } }
+            .font(.callout).padding(12).foregroundStyle(.red)
+            .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 20).padding(.top, 12)
     }
 
-    private var accountSignature: String {
-        appState.selectedAccounts.sorted().joined(separator: ",")
-    }
+    // MARK: - Actions
 
-    private var deleteAlertBinding: Binding<Bool> {
-        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
-    }
-
+    private var accountSignature: String { appState.selectedAccounts.sorted().joined(separator: ",") }
+    private var deleteBinding: Binding<Bool> { Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }) }
     private func reload() { viewModel.reload(accounts: appState.accountsQuery) }
-
+    private func resetFilters() {
+        symbolFilter = ""; accountFilter = ""; filterTypes = []; datePreset = .all; showInternalCash = false; showDuplicatesOnly = false
+    }
     private func handleSave(_ tx: Transaction) async -> Bool {
-        let ok = await viewModel.save(tx)
-        if ok { reload() }
-        return ok
+        let ok = await viewModel.save(tx); if ok { reload() }; return ok
+    }
+    private func bulkDelete() {
+        let toDelete = viewModel.transactions.filter { $0.id.map { selection.contains($0) } ?? false }
+        selection = []
+        Task { for tx in toDelete { await viewModel.delete(tx) }; reload() }
+    }
+
+    private func exportCSV() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "transactions.csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let header = "Date,Type,Symbol,Quantity,Price/Share,Commission,Total Amount,Local Currency,Account,Note"
+        func esc(_ s: String) -> String { "\"\(s.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+        let lines = sorted.map { tx in
+            [tx.date, tx.type, tx.symbol, String(tx.quantity), String(tx.pricePerShare), String(tx.commission),
+             String(tx.totalAmount), tx.localCurrency, tx.account, tx.note ?? ""].map(esc).joined(separator: ",")
+        }
+        try? ([header] + lines).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 }

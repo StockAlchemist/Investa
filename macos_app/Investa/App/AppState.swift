@@ -35,6 +35,7 @@ final class AppState: ObservableObject {
     @Published var selectedAccounts: Set<String> = []
     @Published var period: Period = .oneYear
     @Published var showClosed: Bool = false
+    @Published var benchmarks: [String] = []
     @Published private(set) var didLoadSettings = false
 
     private let api: APIClient
@@ -64,6 +65,7 @@ final class AppState: ObservableObject {
                 selectedAccounts = Set(saved.filter { allAccounts.contains($0) })
             }
             showClosed = settings.showClosed ?? false
+            benchmarks = settings.benchmarks ?? []
             didLoadSettings = true
         } catch {
             // Non-fatal: fall back to defaults so the dashboard still loads.
