@@ -8,13 +8,15 @@ struct LoginView: View {
     @State private var isRegistering = false
     @State private var showingServerSettings = false
     @State private var serverURL = APIConfig.baseURL
+    @State private var activeServerURL = APIConfig.baseURL
 
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 8) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 44, weight: .semibold))
-                    .foregroundStyle(.tint)
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 44)
                 Text("Investa")
                     .font(.largeTitle.bold())
                 Text(isRegistering ? "Create an account" : "Sign in to your portfolio")
@@ -63,7 +65,7 @@ struct LoginView: View {
                 serverURL = APIConfig.baseURL
                 showingServerSettings = true
             } label: {
-                Label("Server: \(APIConfig.baseURL)", systemImage: "network")
+                Label("Server: \(activeServerURL)", systemImage: "network")
                     .font(.caption)
             }
             .buttonStyle(.plain)
@@ -108,6 +110,7 @@ struct LoginView: View {
                 Button("Cancel") { showingServerSettings = false }
                 Button("Save") {
                     APIConfig.baseURL = serverURL
+                    activeServerURL = serverURL
                     showingServerSettings = false
                 }
                 .buttonStyle(.borderedProminent)

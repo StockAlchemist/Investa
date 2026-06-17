@@ -39,15 +39,17 @@ struct PerformanceChartView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: "chart.xyaxis.line").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
-                Text("Performance").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 7) {
+                    Image(systemName: "chart.xyaxis.line").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
+                    Text("Performance").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
                 Picker("View", selection: $view) {
                     ForEach(PerformanceView.allCases) { Text($0.rawValue).tag($0) }
                 }
-                .pickerStyle(.segmented).fixedSize()
+                .pickerStyle(.segmented)
             }
             Divider()
 

@@ -69,6 +69,38 @@ struct AIView: View {
     }
 
     private var header: some View {
+        #if os(iOS)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Portfolio AI Review").font(.title2.bold())
+                    .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                Text("AI-driven insights and recommendations for your portfolio.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let gen = viewModel.review?.generatedAt, !gen.isEmpty {
+                    Label("Generated \(gen)", systemImage: "clock").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            if let o = overall {
+                HStack(spacing: 8) {
+                    Text(o.grade).font(.system(size: 30, weight: .black)).foregroundStyle(tone(o.avg))
+                    VStack(alignment: .leading) {
+                        Text("Overall").font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+                        Text("\(String(format: "%.1f", o.avg))/10").font(.caption.bold()).foregroundStyle(tone(o.avg))
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+            }
+            Button { Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: true) } } label: {
+                if viewModel.isRefreshing { HStack { ProgressView().controlSize(.small); Text("Analyzing…") } }
+                else { Label("Refresh Analysis", systemImage: "arrow.clockwise") }
+            }
+            .buttonStyle(.bordered).disabled(viewModel.isRefreshing)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        #else
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Portfolio AI Review").font(.title2.bold())
@@ -99,6 +131,7 @@ struct AIView: View {
             .buttonStyle(.bordered).disabled(viewModel.isRefreshing)
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
+        #endif
     }
 
     // MARK: - Content
@@ -240,9 +273,15 @@ struct AIView: View {
     private func optimizationHub(_ opts: [PortfolioAIReview.Optimization]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("AI Optimization Hub", systemImage: "bolt.fill").font(.headline).foregroundStyle(.orange)
+            #if os(iOS)
+            LazyVStack(spacing: 12) {
+                ForEach(opts) { opt in optimizationCard(opt) }
+            }
+            #else
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
                 ForEach(opts) { opt in optimizationCard(opt) }
             }
+            #endif
             Text("Suggestions are anchored in business fundamentals and intrinsic value, not market timing. Verify against your own thesis.")
                 .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: .infinity)
         }
@@ -309,7 +348,11 @@ struct AIView: View {
             }
             ScrollView { Text(Self.md(m.content)).font(.callout).frame(maxWidth: .infinity, alignment: .leading) }
         }
+        #if os(iOS)
+        .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
         .padding(24).frame(width: 520, height: 420)
+        #endif
     }
 
     private var signature: String {

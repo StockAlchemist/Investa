@@ -104,6 +104,21 @@ struct MarketsView: View {
         let down = list.count - up
         let best = list.max { ($0.changesPercentage ?? 0) < ($1.changesPercentage ?? 0) }
         let worst = list.min { ($0.changesPercentage ?? 0) < ($1.changesPercentage ?? 0) }
+        #if os(iOS)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                tile("Breadth", "\(up) ▲ / \(down) ▼", "\(list.count) indices", up >= down ? .green : .red)
+                Divider().frame(height: 36)
+                tile("Best", best.map { Fmt.percent($0.changesPercentage) } ?? "–", best?.name, .green)
+                Divider().frame(height: 36)
+                tile("Worst", worst.map { Fmt.percent($0.changesPercentage) } ?? "–", worst?.name, .red)
+                Spacer()
+            }
+            .padding(16)
+        }
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        #else
         return HStack(spacing: 0) {
             tile("Breadth", "\(up) ▲ / \(down) ▼", "\(list.count) indices", up >= down ? .green : .red)
             Divider().frame(height: 36)
@@ -115,6 +130,7 @@ struct MarketsView: View {
         .padding(16)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        #endif
     }
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -130,11 +146,19 @@ struct MarketsView: View {
     private var indicesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Market Indices").font(.title3.bold())
+            #if os(iOS)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
+                ForEach(viewModel.indices) { idx in
+                    Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
+                }
+            }
+            #else
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 16)], spacing: 16) {
                 ForEach(viewModel.indices) { idx in
                     Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
                 }
             }
+            #endif
         }
     }
 
@@ -157,9 +181,15 @@ struct MarketsView: View {
             if news.isEmpty {
                 Text("No news available.").font(.callout).foregroundStyle(.secondary)
             } else {
+                #if os(iOS)
+                LazyVStack(spacing: 12) {
+                    ForEach(news) { item in NewsCard(item: item) { if let u = URL(string: item.url) { openURL(u) } } }
+                }
+                #else
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 12)], spacing: 12) {
                     ForEach(news) { item in NewsCard(item: item) { if let u = URL(string: item.url) { openURL(u) } } }
                 }
+                #endif
             }
         }
     }
@@ -319,7 +349,11 @@ private struct IndexGraphSheet: View {
 
             chart
         }
+        #if os(iOS)
+        .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
         .padding(24).frame(width: 600, height: 460)
+        #endif
         .task(id: period) { await model.load(key: index.key ?? index.name ?? "", period: period) }
     }
 
@@ -379,6 +413,16 @@ private struct YourMoversSection: View {
         if !m.gainers.isEmpty || !m.losers.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Your Movers Today", systemImage: "chart.bar").font(.title3.bold())
+                #if os(iOS)
+                VStack(alignment: .leading, spacing: 24) {
+                    column("Top Gainers", m.gainers, true)
+                    column("Top Losers", m.losers, false)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+                #else
                 HStack(alignment: .top, spacing: 32) {
                     column("Top Gainers", m.gainers, true)
                     column("Top Losers", m.losers, false)
@@ -387,6 +431,7 @@ private struct YourMoversSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+                #endif
             }
         }
     }

@@ -99,7 +99,7 @@ final class APIClient: Sendable {
         if let token = KeychainStore.loadToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        request.timeoutInterval = 30
+        request.timeoutInterval = 90
         return request
     }
 

@@ -20,6 +20,13 @@ private struct CGSection<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.headline)
+                if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
+                if let trailing { trailing }
+            }
+            #else
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.headline)
@@ -27,6 +34,7 @@ private struct CGSection<Content: View>: View {
                 }
                 Spacer(); if let trailing { trailing }
             }
+            #endif
             content
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -75,11 +83,23 @@ struct UnrealizedTaxSection: View {
         let harvest = all.filter { $0.gain < -minHarvestLoss }.sorted { $0.gain < $1.gain }
         let ripening = all.filter { !$0.isLT && $0.daysToLong > 0 && $0.daysToLong <= 30 && $0.gain > 0 }.sorted { $0.daysToLong < $1.daysToLong }
         return VStack(spacing: 12) {
+            #if os(iOS)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    summaryTile("Short-term", st, "Taxed as ordinary income if sold today").frame(width: 240)
+                    summaryTile("Long-term", lt, "Taxed at LTCG rate if sold today").frame(width: 240)
+                    summaryTile("Total unrealized", st + lt, "\(all.count) tax lots").frame(width: 240)
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.horizontal, -20)
+            #else
             HStack(spacing: 12) {
                 summaryTile("Short-term", st, "Taxed as ordinary income if sold today")
                 summaryTile("Long-term", lt, "Taxed at LTCG rate if sold today")
                 summaryTile("Total unrealized", st + lt, "\(all.count) tax lots")
             }
+            #endif
             harvestCard(harvest)
             if !ripening.isEmpty { ripeningCard(ripening) }
         }
@@ -107,6 +127,42 @@ struct UnrealizedTaxSection: View {
             if harvest.isEmpty {
                 Text("No lots with significant unrealized losses — nothing to harvest right now.").foregroundStyle(.secondary)
             } else {
+                #if os(iOS)
+                LazyVStack(spacing: 12) {
+                    ForEach(harvest.prefix(maxCandidates)) { c in
+                        VStack(spacing: 8) {
+                            HStack {
+                                Text(c.symbol).fontWeight(.bold)
+                                termBadge(c.isLT)
+                                if let acc = c.account {
+                                    Text(acc).foregroundStyle(.secondary).font(.caption2)
+                                }
+                                Spacer()
+                                Text("\(Fmt.currency(c.gain, code: currency))").foregroundStyle(.red).fontWeight(.bold)
+                            }
+                            HStack {
+                                Text("Acquired \(c.date)").font(.caption2).foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.red).font(.caption.weight(.bold))
+                            }
+                            Divider()
+                            HStack {
+                                Text("Qty").font(.caption).foregroundStyle(.secondary)
+                                Text(Fmt.number(c.qty)).font(.caption.bold())
+                                Spacer()
+                                Text("Cost").font(.caption).foregroundStyle(.secondary)
+                                Text(Fmt.currency(c.cost, code: currency)).font(.caption.bold()).foregroundStyle(.secondary)
+                                Spacer()
+                                Text("Value").font(.caption).foregroundStyle(.secondary)
+                                Text(Fmt.currency(c.value, code: currency)).font(.caption.bold())
+                            }
+                        }
+                        .padding(12)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
+                    }
+                }
+                #else
                 Grid(alignment: .trailing, horizontalSpacing: 14, verticalSpacing: 6) {
                     GridRow {
                         Text("Symbol").gridColumnAlignment(.leading); Text("Acquired").gridColumnAlignment(.leading)
@@ -125,6 +181,7 @@ struct UnrealizedTaxSection: View {
                         }.font(.caption).monospacedDigit()
                     }
                 }
+                #endif
                 Label("Watch the wash-sale rule: selling at a loss and rebuying substantially the same security within 30 days disallows the deduction.",
                       systemImage: "info.circle").font(.caption2).foregroundStyle(.secondary)
             }
@@ -190,10 +247,17 @@ struct CapitalGainsKpiStrip: View {
                 tile("Cost Basis", cgCompact(cost, currency), "of sold lots", .primary)
             }
             if biggestWin != nil || biggestLoss != nil {
+                #if os(iOS)
+                VStack(spacing: 12) {
+                    if let w = biggestWin { callout("Biggest Win", w, .green, "+") }
+                    if let l = biggestLoss { callout("Biggest Loss", l, .red, "") }
+                }
+                #else
                 HStack(spacing: 12) {
                     if let w = biggestWin { callout("Biggest Win", w, .green, "+") }
                     if let l = biggestLoss { callout("Biggest Loss", l, .red, "") }
                 }
+                #endif
             }
         }
     }
@@ -257,6 +321,20 @@ struct AnnualRealizedGainsCard: View {
                                                                value: Fmt.currency(data[i].gain, code: currency))])
                 }
                 // Year chips as an explicit fallback for selecting.
+                #if os(iOS)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(data, id: \.year) { row in
+                            Button { selectedYear = selectedYear == row.year ? nil : row.year } label: {
+                                Text(row.year).font(.caption.weight(.medium))
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(selectedYear == row.year ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(selectedYear == row.year ? Color.accentColor : Color.gray)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                #else
                 HStack {
                     ForEach(data, id: \.year) { row in
                         Button { selectedYear = selectedYear == row.year ? nil : row.year } label: {
@@ -267,6 +345,7 @@ struct AnnualRealizedGainsCard: View {
                         }.buttonStyle(.plain)
                     }
                 }
+                #endif
             }
         }
     }
@@ -303,6 +382,13 @@ struct RealizedGainsTable: View {
             if rows.isEmpty {
                 Text("No realized gains.").foregroundStyle(.secondary)
             } else {
+                #if os(iOS)
+                LazyVStack(spacing: 12) {
+                    ForEach(rows) { row in
+                        iosCGRow(row)
+                    }
+                }
+                #else
                 Table(rows, sortOrder: $sortOrder) {
                     TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
                     TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
@@ -319,7 +405,38 @@ struct RealizedGainsTable: View {
                     }
                 }
                 .frame(minHeight: 340)
+                #endif
             }
         }
+    }
+
+    private func iosCGRow(_ r: CGRow) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(r.symbol).font(.headline).fontWeight(.bold)
+                Text(r.type).font(.caption.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
+                Spacer()
+                Text(Fmt.currency(r.gain, code: currency)).fontWeight(.medium).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gain))
+            }
+            HStack {
+                Text(r.date).font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text(r.account).font(.caption2).foregroundStyle(.tertiary)
+            }
+            Divider()
+            HStack {
+                Text("Proceeds").font(.caption).foregroundStyle(.secondary)
+                Text(Fmt.currency(r.proceeds, code: currency)).font(.caption.bold()).monospacedDigit()
+                Spacer()
+                Text("Cost").font(.caption).foregroundStyle(.secondary)
+                Text(Fmt.currency(r.cost, code: currency)).font(.caption.bold()).monospacedDigit()
+                Spacer()
+                Text("Gain").font(.caption).foregroundStyle(.secondary)
+                Text(Fmt.percent(r.gainPct)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct))
+            }
+        }
+        .padding(14)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
     }
 }

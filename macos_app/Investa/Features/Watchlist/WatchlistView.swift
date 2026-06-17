@@ -136,6 +136,28 @@ struct WatchlistView: View {
     // MARK: - List selector
 
     private var listSelector: some View {
+        #if os(iOS)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(viewModel.watchlists) { wl in
+                    Button { viewModel.activeId = wl.id } label: {
+                        Text(wl.name).font(.callout.weight(.medium))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(viewModel.activeId == wl.id ? Color.accentColor : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(viewModel.activeId == wl.id ? .white : .primary)
+                    }.buttonStyle(.plain)
+                }
+                if creatingList {
+                    TextField("List name", text: $newListName).textFieldStyle(.roundedBorder).frame(width: 130)
+                    Button { Task { await viewModel.createList(name: newListName, currency: cur); newListName = ""; creatingList = false } } label: { Image(systemName: "checkmark") }
+                    Button { creatingList = false } label: { Image(systemName: "xmark") }
+                } else {
+                    Button { creatingList = true } label: { Label("New List", systemImage: "plus") }.buttonStyle(.bordered)
+                }
+                Spacer()
+            }
+        }
+        #else
         HStack(spacing: 8) {
             ForEach(viewModel.watchlists) { wl in
                 Button { viewModel.activeId = wl.id } label: {
@@ -154,6 +176,7 @@ struct WatchlistView: View {
             }
             Spacer()
         }
+        #endif
     }
 
     // MARK: - Card (header + add form + table)
@@ -185,6 +208,27 @@ struct WatchlistView: View {
     }
 
     private var addForm: some View {
+        #if os(iOS)
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Symbol").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                TextField("e.g. AAPL, BTC-USD", text: $newSymbol).textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Note (optional)").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                TextField("Add a description…", text: $newNote).textFieldStyle(.roundedBorder)
+            }
+            Button {
+                let sym = newSymbol.trimmingCharacters(in: .whitespaces)
+                guard !sym.isEmpty else { return }
+                let note = newNote; newSymbol = ""; newNote = ""
+                Task { await viewModel.add(symbol: sym, note: note, currency: cur) }
+            } label: { Label("Add to List", systemImage: "plus") }
+                .buttonStyle(.borderedProminent)
+                .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .padding(12).background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
+        #else
         HStack(alignment: .bottom, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Symbol").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
@@ -204,6 +248,7 @@ struct WatchlistView: View {
                 .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding(12).background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
+        #endif
     }
 
     // MARK: - Table
@@ -214,6 +259,13 @@ struct WatchlistView: View {
                 ContentUnavailableView("No symbols in this list yet", systemImage: "star",
                                        description: Text("Add a symbol above to start tracking it."))
             } else {
+                #if os(iOS)
+                LazyVStack(spacing: 12) {
+                    ForEach(filtered) { item in
+                        iosWatchlistRow(item)
+                    }
+                }
+                #else
                 ScrollView(.horizontal, showsIndicators: true) {
                     Grid(alignment: .trailing, horizontalSpacing: 14, verticalSpacing: 0) {
                         headerRow
@@ -224,9 +276,61 @@ struct WatchlistView: View {
                         }
                     }
                 }
+                #endif
             }
         }
     }
+
+    #if os(iOS)
+    private func iosWatchlistRow(_ item: WatchlistItem) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Button { detail = SymbolID(id: item.symbol) } label: {
+                    HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 24); Text(item.symbol).font(.headline).fontWeight(.bold) }
+                }.buttonStyle(.plain)
+                Spacer()
+                Text(item.price.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").font(.headline).monospacedDigit()
+            }
+            HStack {
+                Text(item.name ?? "-").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Text(Fmt.percent(item.dayChangePct)).font(.subheadline.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))
+            }
+            Divider()
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Mkt Cap").font(.caption2).foregroundStyle(.secondary)
+                    Text(item.marketCap.map { Fmt.number($0, fractionDigits: 0) } ?? "-").monospacedDigit().font(.caption)
+                }
+                Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Intrinsic").font(.caption2).foregroundStyle(.secondary)
+                    Text(item.intrinsicValue.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").monospacedDigit().font(.caption)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("AI").font(.caption2).foregroundStyle(.secondary)
+                    Text(item.aiScore.map { String(format: "%.1f", $0) } ?? "-").monospacedDigit().font(.caption)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("7D").font(.caption2).foregroundStyle(.secondary)
+                    sparkline(item.sparkline)
+                }
+            }
+            Divider()
+            HStack {
+                noteCell(item)
+                Spacer()
+                Button { Task { await viewModel.remove(symbol: item.symbol, currency: cur) } } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless).foregroundStyle(.red)
+            }
+        }
+        .padding(12)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+    }
+    #endif
 
     private var headerRow: some View {
         GridRow {
@@ -327,6 +431,25 @@ struct WatchlistKpiStrip: View {
         let best = items.compactMap { i in i.dayChangePct.map { (i.symbol, $0) } }.max { $0.1 < $1.1 }
         let worst = items.compactMap { i in i.dayChangePct.map { (i.symbol, $0) } }.min { $0.1 < $1.1 }
         let opportunities = items.filter { ($0.marginOfSafety ?? 0) > 0 }.count
+        #if os(iOS)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                tile("Symbols", "\(items.count)", "tracked", .primary)
+                Divider().frame(height: 36)
+                tile("Avg Day Change", avg.map { Fmt.percent($0) } ?? "–", nil, Fmt.tint(for: avg))
+                Divider().frame(height: 36)
+                tile("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
+                Divider().frame(height: 36)
+                tile("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
+                Divider().frame(height: 36)
+                tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? .green : .primary)
+                Spacer()
+            }
+            .padding(16)
+        }
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        #else
         return HStack(spacing: 0) {
             tile("Symbols", "\(items.count)", "tracked", .primary)
             Divider().frame(height: 36)
@@ -342,6 +465,7 @@ struct WatchlistKpiStrip: View {
         .padding(16)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        #endif
     }
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {

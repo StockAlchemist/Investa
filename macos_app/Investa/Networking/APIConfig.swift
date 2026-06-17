@@ -4,7 +4,7 @@ import Foundation
 /// Mirrors the web client's `getApiBaseUrl()` default of `http://localhost:8000/api`.
 enum APIConfig {
     private static let defaultsKey = "investa.api.baseURL"
-    static let fallbackBaseURL = "http://localhost:8000/api"
+    static let fallbackBaseURL = "https://investa-api-743496585571.us-central1.run.app/api"
 
     static var baseURL: String {
         get {

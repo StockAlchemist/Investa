@@ -38,7 +38,7 @@ final class StockDetailViewModel: ObservableObject {
         async let e: [EarningsDate] = api.get("/earnings_dates/\(symbol)")
         async let h: [Holding] = api.get("/holdings", query: [URLQueryItem(name: "currency", value: currency)])
         do { fundamentals = try await f } catch { errorMessage = (error as? APIError)?.errorDescription }
-        do { intrinsic = try await iv } catch {}
+        do { intrinsic = try await iv } catch { print("Intrinsic error: \(error)") }
         do { earnings = try await e } catch {}
         // Aggregate the user's position in this symbol across accounts.
         if let holdings = try? await h {

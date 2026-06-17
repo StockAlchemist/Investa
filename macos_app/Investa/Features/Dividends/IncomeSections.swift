@@ -19,7 +19,14 @@ private struct ISection<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.headline)
+                if let trailing { trailing }
+            }
+            #else
             HStack { Text(title).font(.headline); Spacer(); if let trailing { trailing } }
+            #endif
             content
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -357,10 +364,17 @@ struct DividendTransactionsCard: View {
 
     var body: some View {
         ISection(title: "Dividend Transactions", trailing: AnyView(
-            TextField("Search symbol or account…", text: $search).textFieldStyle(.roundedBorder).frame(width: 220))) {
+            TextField("Search symbol or account…", text: $search).textFieldStyle(.roundedBorder).frame(maxWidth: 220))) {
             if rows.isEmpty {
                 Text("No dividend transactions.").foregroundStyle(.secondary)
             } else {
+                #if os(iOS)
+                LazyVStack(spacing: 12) {
+                    ForEach(rows) { row in
+                        iosDivRow(row)
+                    }
+                }
+                #else
                 Table(rows, sortOrder: $sortOrder) {
                     TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
                     TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
@@ -370,7 +384,34 @@ struct DividendTransactionsCard: View {
                     TableColumn("Net", value: \.net) { Text(Fmt.currency($0.net, code: currency)).fontWeight(.bold).monospacedDigit() }
                 }
                 .frame(minHeight: 320)
+                #endif
             }
         }
+    }
+
+    private func iosDivRow(_ r: DivRow) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(r.symbol).font(.headline).fontWeight(.bold)
+                Spacer()
+                Text(Fmt.currency(r.net, code: currency)).fontWeight(.bold).monospacedDigit()
+            }
+            HStack {
+                Text(r.date).font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text(r.account).font(.caption2).foregroundStyle(.tertiary)
+            }
+            Divider()
+            HStack {
+                Text("Gross").font(.caption).foregroundStyle(.secondary)
+                Text(Fmt.currency(r.gross, code: currency)).font(.caption.bold()).monospacedDigit().foregroundStyle(.green)
+                Spacer()
+                Text("Tax").font(.caption).foregroundStyle(.secondary)
+                Text(r.tax > 0 ? Fmt.currency(r.tax, code: currency) : "—").font(.caption.bold()).monospacedDigit().foregroundStyle(.red)
+            }
+        }
+        .padding(14)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
     }
 }

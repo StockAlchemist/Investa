@@ -49,8 +49,9 @@ struct PerfKpiStrip: View {
         let monthly = AssetChangeData.returns(data, period: "M", series: "Portfolio")
         out.ytd = metrics?.ytdReturn
         if out.ytd == nil, !monthly.isEmpty {
-            let yr = Calendar.current.component(.year, from: Date())
-            out.ytd = monthly.filter { AssetChangeData.year($0.0) == yr }.reduce(0) { $0 + $1.1 }
+            let latestYr = monthly.compactMap { AssetChangeData.year($0.0) }.max() ?? Calendar.current.component(.year, from: Date())
+            let ytdVals = monthly.filter { AssetChangeData.year($0.0) == latestYr }.map { $0.1 }
+            out.ytd = compounded(ytdVals)
         }
         let last12 = Array(monthly.suffix(12))
         if !last12.isEmpty { out.oneYear = compounded(last12.map { $0.1 }) }
@@ -143,7 +144,10 @@ struct ReturnsChart: View {
     }
 
     var body: some View {
-        PSection(title: "Returns", trailing: AnyView(controls)) {
+        PSection(title: "Returns") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                controls.padding(.bottom, 8)
+            }
             if bars.isEmpty {
                 Text("No return data.").foregroundStyle(.secondary).frame(height: 240)
             } else {
@@ -368,20 +372,26 @@ struct BenchmarkScoreboard: View {
             if data.isEmpty {
                 Text("Not enough history to compute risk-adjusted stats.").foregroundStyle(.secondary)
             } else {
-                Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 6) {
+                Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 6) {
                     GridRow {
-                        Text("Benchmark").gridColumnAlignment(.leading); Text("α"); Text("β"); Text("R²"); Text("TE"); Text("IR"); Text("Excess")
+                        Text("Benchmark").gridColumnAlignment(.leading).lineLimit(1).minimumScaleFactor(0.8)
+                        Text("α").lineLimit(1)
+                        Text("β").lineLimit(1)
+                        Text("R²").lineLimit(1)
+                        Text("TE").lineLimit(1)
+                        Text("IR").lineLimit(1)
+                        Text("Excess").lineLimit(1)
                     }.font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                     Divider()
                     ForEach(data) { r in
                         GridRow {
-                            Text(r.name).gridColumnAlignment(.leading).fontWeight(.medium).lineLimit(1)
-                            Text(signed(r.alpha) + "%").foregroundStyle(Fmt.tint(for: r.alpha))
-                            Text(String(format: "%.2f", r.beta))
-                            Text(String(format: "%.2f", r.r2))
-                            Text(String(format: "%.2f%%", r.te))
-                            Text(String(format: "%.2f", r.ir))
-                            Text(signed(r.excess) + "%").foregroundStyle(Fmt.tint(for: r.excess))
+                            Text(r.name).gridColumnAlignment(.leading).fontWeight(.medium).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(signed(r.alpha) + "%").foregroundStyle(Fmt.tint(for: r.alpha)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.2f", r.beta)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.2f", r.r2)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.1f%%", r.te)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.2f", r.ir)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(signed(r.excess) + "%").foregroundStyle(Fmt.tint(for: r.excess)).lineLimit(1).minimumScaleFactor(0.8)
                         }.font(.caption).monospacedDigit()
                     }
                 }

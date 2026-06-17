@@ -90,6 +90,9 @@ struct StockIcon: View {
         Group {
             if isCash {
                 cashMonogram
+            } else if let localImg = PlatformImage(named: symbol.lowercased()) {
+                Image(platformImage: localImg).resizable().aspectRatio(contentMode: .fit)
+                    .padding(size * 0.06).background(Color.white)
             } else if let logo = loader.image {
                 Image(platformImage: logo).resizable().aspectRatio(contentMode: .fit)
                     .padding(size * 0.06).background(Color.white)
@@ -101,7 +104,11 @@ struct StockIcon: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
-        .task(id: symbol) { if !isCash { await loader.load(symbol: symbol, sources: sources) } }
+        .task(id: symbol) {
+            if !isCash && PlatformImage(named: symbol.lowercased()) == nil {
+                await loader.load(symbol: symbol, sources: sources)
+            }
+        }
     }
 
     private var monogram: some View {

@@ -69,6 +69,22 @@ struct TxKpiStrip: View {
         let c = computed
         return VStack(alignment: .leading, spacing: 14) {
             // Activity counts
+            #if os(iOS)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    Text("Activity").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                    activity("\(c.counts.total)", "transactions")
+                    if c.counts.buy + c.counts.sell > 0 {
+                        HStack(spacing: 4) { activity("\(c.counts.buy)", "buys"); Text("/").foregroundStyle(.secondary); activity("\(c.counts.sell)", "sells") }
+                    }
+                    if c.counts.dividend + c.counts.interest > 0 {
+                        activity("\(c.counts.dividend)", "div", tint: .green)
+                        if c.counts.interest > 0 { activity("\(c.counts.interest)", "int", tint: .green) }
+                    }
+                    if c.counts.deposit + c.counts.withdrawal > 0 { activity("\(c.counts.deposit + c.counts.withdrawal)", "cash flows") }
+                }
+            }
+            #else
             HStack(spacing: 16) {
                 Text("Activity").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
                 Spacer()
@@ -82,6 +98,7 @@ struct TxKpiStrip: View {
                 }
                 if c.counts.deposit + c.counts.withdrawal > 0 { activity("\(c.counts.deposit + c.counts.withdrawal)", "cash flows") }
             }
+            #endif
             if !c.rows.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 12)], spacing: 12) {
                     ForEach(c.rows) { row in currencyCard(row) }

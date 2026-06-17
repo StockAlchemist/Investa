@@ -42,6 +42,7 @@ struct GlobalControlBar: View {
                 showClosedToggle
                 if TabLayout.hasLayout(section) { layoutMenu }
             }
+            .labelStyle(.iconOnly)
             .padding(.horizontal, 16).padding(.vertical, 8)
         }
         .background(.bar)
@@ -96,7 +97,14 @@ struct GlobalControlBar: View {
                 }.buttonStyle(.borderedProminent)
             }
         }
-        .padding(14).frame(width: 240)
+        .padding(14)
+        #if os(iOS)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        #else
+        .frame(width: 240)
+        #endif
     }
 
     private func toggleBenchmark(_ b: String) {
@@ -155,7 +163,13 @@ struct GlobalControlBar: View {
             }
             .padding(.vertical, 4)
         }
+        #if os(iOS)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        #else
         .frame(minWidth: 220, maxHeight: 440)
+        #endif
     }
 
     private func accountSectionHeader(_ title: String) -> some View {

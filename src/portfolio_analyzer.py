@@ -1768,6 +1768,8 @@ def _build_summary_rows(
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
                 "Name": "Cash",
+                "Market Value (Local)": market_value_local,
+                "fx_rate": fx_rate,
             })
 
     # --- Post-Process: Apply Cash Yield Interest (Aggregated by Account) ---
@@ -1788,12 +1790,19 @@ def _build_summary_rows(
                 
             thresh = interest_free_thresholds.get(acc_name, 0.0)
             
+            # Extract fx_rate from the first cash row to convert threshold (assumed in USD) to display currency
+            fx_rate = 1.0
+            if rows and "fx_rate" in rows[0] and pd.notna(rows[0]["fx_rate"]):
+                fx_rate = rows[0]["fx_rate"]
+            
+            thresh_display = thresh * fx_rate
+            
             # Calculate Total Market Value (Display Currency) for this account's cash
             total_mv_display = sum(r.get(f"Market Value ({display_currency})", 0.0) for r in rows)
             
             # Calculate Effective Balance (Global Threshold Application)
-            # Assuming threshold is in Display Currency (USD usually) or same as MarketValue units
-            effective_balance_display = max(0.0, total_mv_display - thresh)
+            # Threshold is now properly converted to Display Currency
+            effective_balance_display = max(0.0, total_mv_display - thresh_display)
             
             # Calculate Total Expected Annual Income
             total_income_display = effective_balance_display * (rate_pct / 100.0)

@@ -120,6 +120,49 @@ struct ScreenerView: View {
     private var inputCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Initial Parameters", systemImage: "line.3.horizontal.decrease.circle").font(.headline)
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Universe").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Picker("", selection: $universe) {
+                        ForEach(ScreenerUniverse.allCases) { Text($0.label).tag($0) }
+                    }.labelsHidden()
+                }
+                if universe == .watchlist {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Target Portfolio").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Picker("", selection: $watchlistId) {
+                            ForEach(viewModel.watchlists) { Text($0.name).tag(String($0.id)) }
+                        }.labelsHidden()
+                    }
+                }
+                if universe == .narrative {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("AI Search Prompt", systemImage: "sparkles").font(.caption.weight(.semibold)).foregroundStyle(.cyan)
+                        TextField("e.g. high-growth tech with margin of safety > 20%", text: $prompt)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+                if universe == .manual {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Manual Symbols").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        TextField("e.g. AAPL, MSFT, NVDA", text: $manualText)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+                Button(action: run) {
+                    if viewModel.isLoading {
+                        HStack { ProgressView().controlSize(.small); Text("AI is analyzing…") }
+                    } else {
+                        Label(universe == .narrative ? "Search with AI" : "Execute Screen",
+                              systemImage: universe == .narrative ? "sparkles" : "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isLoading || (universe == .watchlist && watchlistId.isEmpty))
+                .frame(maxWidth: .infinity)
+            }
+            #else
             HStack(alignment: .bottom, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Universe").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -161,6 +204,7 @@ struct ScreenerView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.isLoading || (universe == .watchlist && watchlistId.isEmpty))
             }
+            #endif
             Label(universe == .narrative
                   ? "Narrative Search uses AI to translate natural language into a query. Works best on cached stocks."
                   : "Screening large universes may take 1–5 min on the first run to build the cache. Subsequent runs are instant.",

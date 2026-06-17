@@ -162,22 +162,40 @@ struct MainView: View {
         .task { if !appState.didLoadSettings { await appState.loadSettings() } }
     }
 
+    @ViewBuilder
     private func phoneTab(_ section: AppSection) -> some View {
-        NavigationStack {
-            // Bind the content to the live geometry width so it re-lays-out after a
-            // rotation round-trip — SwiftUI's ScrollView otherwise keeps the stale
-            // (landscape) width, leaving the portrait layout shifted/clipped.
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    GlobalControlBar(section: section)
-                    Divider()
-                    sectionView(section)
-                }
-                .frame(width: geo.size.width, height: geo.size.height)
+        let isMainTab = Array(AppSection.allCases.prefix(4)).contains(section)
+        if isMainTab {
+            NavigationStack {
+                phoneTabContent(section)
             }
-            .navigationTitle(section.rawValue)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { accountToolbarMenu } }
+        } else {
+            phoneTabContent(section)
+        }
+    }
+
+    private func phoneTabContent(_ section: AppSection) -> some View {
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                GlobalControlBar(section: section)
+                Divider()
+                sectionView(section)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 6) {
+                    Image("AppLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 24)
+                    Text("Investa")
+                        .font(.headline)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) { accountToolbarMenu }
         }
     }
 

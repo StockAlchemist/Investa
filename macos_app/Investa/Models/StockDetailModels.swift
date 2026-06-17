@@ -118,15 +118,17 @@ struct IntrinsicValueResponse: Codable, Sendable {
     }
 
     struct Range: Codable, Sendable { let bear: Double?; let bull: Double? }
-    struct MC: Codable, Sendable { let bear: Double?; let base: Double?; let bull: Double? }
+    struct HistogramPoint: Codable, Sendable { let price: Double?; let count: Double? }
+    struct MC: Codable, Sendable { let bear: Double?; let base: Double?; let bull: Double?; let histogram: [HistogramPoint]? }
     struct Model: Codable, Sendable {
         let intrinsicValue: Double?
         let error: String?
         let model: String?
         let mc: MC?
+        let parameters: [String: JSONValue]?
         enum CodingKeys: String, CodingKey {
             case intrinsicValue = "intrinsic_value"
-            case error, model, mc
+            case error, model, mc, parameters
         }
     }
     struct Models: Codable, Sendable {

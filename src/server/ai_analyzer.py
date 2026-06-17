@@ -268,8 +268,9 @@ No markdown, no commentary outside the JSON.
                 if response.status_code == 429 or 500 <= response.status_code < 600:
                     logging.warning(f"AI Analysis: Model '{model}' (Search: {current_search_setting}) failed (status {response.status_code}). Response: {response.text[:200]}...")
                     if "exceeded your current quota" in response.text:
-                        logging.warning(f"Hard quota limit reached for {model}.")
+                        logging.warning(f"Hard quota limit reached for {model}. Stopping fallback to prevent charges.")
                         quota_exhausted = True
+                        break
                     # If this was with search, the inner loop will try without search.
                     # If this was already without search, we break to the next model.
                     continue 
@@ -327,6 +328,9 @@ No markdown, no commentary outside the JSON.
                          error_msg += f" | Body: {e.response.text}"
                 logging.warning(f"AI Analysis: Model '{model}' (Search: {current_search_setting}) failed completely. Error: {error_msg}")
                 continue # Try next option or next model
+
+        if quota_exhausted:
+            break
 
     logging.error(f"AI Analysis: All models in fallback chain failed for {symbol}.")
     if stale_result:

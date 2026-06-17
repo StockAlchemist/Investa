@@ -285,7 +285,9 @@ struct HoldingsTableView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: "tablecells").font(.caption.weight(.semibold)).foregroundStyle(Color(hex: 0x6366f1))
+            #if !os(iOS)
             Text("Holdings").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase).foregroundStyle(.secondary)
+            #endif
             Text(groupBy != nil ? "\(baseRows.count) items · \(groups.count) groups" : "\(baseRows.count)")
                 .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 2)
@@ -304,6 +306,17 @@ struct HoldingsTableView: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
+        #if os(iOS)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                groupMenu
+                if !uniqueAccounts.isEmpty { accountMenu }
+                columnsButton
+                toolButton("Lots", "square.stack.3d.up", active: !expandedLots.isEmpty) { toggleAllLots() }
+                toolButton("Export", "square.and.arrow.down", active: false) { exportCSV() }
+            }
+        }
+        #else
         HStack(spacing: 8) {
             groupMenu
             if !uniqueAccounts.isEmpty { accountMenu }
@@ -312,6 +325,7 @@ struct HoldingsTableView: View {
             Spacer()
             toolButton("Export", "square.and.arrow.down", active: false) { exportCSV() }
         }
+        #endif
     }
 
     private var groupMenu: some View {
@@ -342,7 +356,9 @@ struct HoldingsTableView: View {
         Button { showColumns.toggle() } label: {
             HStack(spacing: 5) {
                 Image(systemName: "slider.horizontal.3").font(.caption)
+                #if !os(iOS)
                 Text("Columns").font(.subheadline.weight(.medium))
+                #endif
                 Text("\(visibleColumns.count)").font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 5).background(Theme.brand.opacity(0.15), in: Capsule()).foregroundStyle(Theme.brand)
             }
@@ -388,7 +404,13 @@ struct HoldingsTableView: View {
                 }.padding(10)
             }
         }
+        #if os(iOS)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        #else
         .frame(width: 320, height: 420)
+        #endif
     }
 
     private func toolButton(_ title: String, _ icon: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -398,7 +420,9 @@ struct HoldingsTableView: View {
     private func toolLabel(_ icon: String, _ title: String, active: Bool) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon).font(.caption)
+            #if !os(iOS)
             Text(title).font(.subheadline.weight(.medium))
+            #endif
         }
         .foregroundStyle(active ? .white : .primary)
         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -407,15 +431,83 @@ struct HoldingsTableView: View {
 
     // MARK: Header row
 
+    private func columnIcon(_ h: String) -> String {
+        switch h {
+        case "Symbol": return "textformat"
+        case "Account": return "building.columns"
+        case "Sector": return "chart.pie.fill"
+        case "Industry": return "building.2"
+        case "Quantity": return "number"
+        case "Price": return "tag"
+        case "Avg Cost", "Cost Basis", "Total Buy Cost": return "cart"
+        case "Mkt Val": return "dollarsign.circle"
+        case "Day Chg", "Day Chg %": return "clock"
+        case "% of Total", "Contribution %": return "chart.pie"
+        case "Unreal. G/L", "Unreal. G/L %": return "chart.line.uptrend.xyaxis"
+        case "Real. G/L", "Total G/L", "Total Ret %": return "dollarsign.square"
+        case "IRR (%)": return "arrow.up.right"
+        case "Divs", "Est. Income", "Yield (Cost) %", "Yield (Mkt) %": return "banknote"
+        case "Fees": return "minus.circle"
+        case "FX G/L %": return "arrow.left.arrow.right"
+        case "7d Trend": return "chart.xyaxis.line"
+        case "Tags": return "tag"
+        case "AI Score": return "sparkles"
+        case "Intrinsic Value": return "target"
+        default: return "info.circle"
+        }
+    }
+
+    private func shortColumnName(_ h: String) -> String {
+        switch h {
+        case "Symbol": return "Sym"
+        case "7d Trend": return "7d"
+        case "Quantity": return "Qty"
+        case "Avg Cost": return "Avg Cost"
+        case "Cost Basis", "Total Buy Cost": return "Cost"
+        case "Mkt Val": return "Value"
+        case "Day Chg": return "Day"
+        case "Day Chg %": return "Day %"
+        case "% of Total": return "% Tot"
+        case "Contribution %": return "% Con"
+        case "Unreal. G/L": return "U. G/L"
+        case "Unreal. G/L %": return "U. G/L%"
+        case "Real. G/L": return "R. G/L"
+        case "Total G/L": return "Tot G/L"
+        case "Total Ret %": return "Ret %"
+        case "IRR (%)": return "IRR"
+        case "Divs": return "Div"
+        case "Est. Income": return "Inc"
+        case "Yield (Cost) %": return "Yld(C)"
+        case "Yield (Mkt) %": return "Yld(M)"
+        case "Fees": return "Fee"
+        case "FX G/L %": return "FX %"
+        case "Tags": return "Tag"
+        case "AI Score": return "AI"
+        case "Intrinsic Value": return "IV"
+        default: return h
+        }
+    }
+
     private var headerRow: some View {
         HStack(spacing: 0) {
             ForEach(visibleColumns, id: \.self) { h in
                 Button { sort(h) } label: {
                     HStack(spacing: 3) {
                         if leftAlignedHeaders.contains(h) {
-                            Text(h); sortArrow(h); Spacer(minLength: 0)
+                            #if os(iOS)
+                            Text(shortColumnName(h))
+                            #else
+                            Text(h)
+                            #endif
+                            sortArrow(h); Spacer(minLength: 0)
                         } else {
-                            Spacer(minLength: 0); Text(h); sortArrow(h)
+                            Spacer(minLength: 0)
+                            #if os(iOS)
+                            Text(shortColumnName(h))
+                            #else
+                            Text(h)
+                            #endif
+                            sortArrow(h)
                         }
                     }
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)

@@ -99,6 +99,7 @@ _LOCAL_ORIGIN_REGEX = (
     r"|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"
     r"|[\w.-]+\.ts\.net"
     r"|[\w-]+\.local"
+    r"|[\w.-]+\.run\.app"
     r")(:\d+)?$"
 )
 _extra_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()]

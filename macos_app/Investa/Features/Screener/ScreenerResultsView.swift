@@ -111,6 +111,18 @@ struct ScreenerResultsView: View {
     }
 
     private var summaryRow: some View {
+        #if os(iOS)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 24) {
+                stat("Results", "\(summary.count)", .primary)
+                stat("Undervalued", "\(summary.undervalued)", .green)
+                stat("Avg MOS", summary.avgMOS.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))%" } ?? "–",
+                     Fmt.tint(for: summary.avgMOS))
+                stat("AI Reviewed", "\(summary.aiReviewed) of \(summary.count)", .purple)
+                Spacer()
+            }
+        }
+        #else
         HStack(spacing: 24) {
             stat("Results", "\(summary.count)", .primary)
             stat("Undervalued", "\(summary.undervalued)", .green)
@@ -119,6 +131,7 @@ struct ScreenerResultsView: View {
             stat("AI Reviewed", "\(summary.aiReviewed) of \(summary.count)", .purple)
             Spacer()
         }
+        #endif
     }
     private func stat(_ l: String, _ v: String, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -128,6 +141,19 @@ struct ScreenerResultsView: View {
     }
 
     private var filterPanel: some View {
+        #if os(iOS)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], alignment: .leading, spacing: 12) {
+            field("Min MOS %", $minMOS)
+            field("Max P/E", $maxPE)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Market Cap").font(.caption2).foregroundStyle(.secondary)
+                Picker("", selection: $marketCap) { ForEach(capOptions, id: \.key) { Text($0.label).tag($0.key) } }
+                    .labelsHidden()
+            }
+            Toggle("AI Reviewed", isOn: $onlyAI)
+        }
+        .padding(12).background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
+        #else
         HStack(spacing: 12) {
             field("Min MOS %", $minMOS)
             field("Max P/E", $maxPE)
@@ -140,6 +166,7 @@ struct ScreenerResultsView: View {
             Spacer()
         }
         .padding(12).background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
+        #endif
     }
     private func field(_ label: String, _ binding: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -150,7 +177,10 @@ struct ScreenerResultsView: View {
 
     // MARK: - Table
 
-    private var tableHeader: some View {
+    @ViewBuilder private var tableHeader: some View {
+        #if os(iOS)
+        EmptyView()
+        #else
         HStack(spacing: 8) {
             sortButton("Asset", .symbol, align: .leading).frame(maxWidth: .infinity, alignment: .leading)
             sortButton("Price", .price, align: .trailing).frame(width: 90, alignment: .trailing)
@@ -160,6 +190,7 @@ struct ScreenerResultsView: View {
             sortButton("AI Score", .aiScore, align: .trailing).frame(width: 80, alignment: .trailing)
             Text("AI Audit").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).frame(width: 110, alignment: .trailing)
         }
+        #endif
     }
     private func sortButton(_ label: String, _ key: ScreenSortKey, align: Alignment) -> some View {
         Button {
@@ -174,7 +205,10 @@ struct ScreenerResultsView: View {
         .buttonStyle(.plain)
     }
 
-    private func resultRow(_ row: ScreenerResult) -> some View {
+    @ViewBuilder private func resultRow(_ row: ScreenerResult) -> some View {
+        #if os(iOS)
+        iosResultRow(row)
+        #else
         HStack(spacing: 8) {
             Button { detail = SymbolID(id: row.symbol) } label: {
                 HStack(spacing: 8) {
@@ -198,7 +232,50 @@ struct ScreenerResultsView: View {
         }
         .font(.callout)
         .padding(.vertical, 4)
+        #endif
     }
+
+    #if os(iOS)
+    private func iosResultRow(_ row: ScreenerResult) -> some View {
+        VStack(spacing: 12) {
+            HStack {
+                Button { detail = SymbolID(id: row.symbol) } label: {
+                    HStack(spacing: 8) {
+                        StockIcon(symbol: row.symbol, size: 26)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.symbol).font(.callout.bold())
+                            Text(row.name ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                }.buttonStyle(.plain)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(Fmt.currency(row.price, code: "USD")).monospacedDigit().fontWeight(.bold)
+                    Text("P/E: \(row.peRatio.map { String(format: "%.1f", $0) } ?? "-")").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Divider()
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MOS").font(.caption2).foregroundStyle(.secondary)
+                    mosCell(row.marginOfSafety)
+                }
+                Spacer()
+                VStack(alignment: .center, spacing: 2) {
+                    Text("Intrinsic").font(.caption2).foregroundStyle(.secondary)
+                    Text(row.intrinsicValue.map { Fmt.currency($0, code: "USD") } ?? "-").monospacedDigit().font(.caption.bold())
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("AI Score").font(.caption2).foregroundStyle(.secondary)
+                    aiScoreCell(row.aiScore)
+                }
+            }
+            auditButton(row).frame(maxWidth: .infinity)
+        }
+        .padding(.vertical, 8)
+    }
+    #endif
 
     @ViewBuilder private func mosCell(_ mos: Double?) -> some View {
         if let mos {
