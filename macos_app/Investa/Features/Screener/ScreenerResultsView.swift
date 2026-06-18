@@ -80,7 +80,7 @@ struct ScreenerResultsView: View {
                                    description: Text("Configure parameters and execute a scan."))
                 .frame(minHeight: 200)
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 headerRow
                 summaryRow
                 if showFilters { filterPanel }
