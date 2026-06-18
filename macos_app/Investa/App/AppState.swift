@@ -75,6 +75,9 @@ final class AppState: ObservableObject {
     /// Current exchange rate of displayCurrency to USD (if not USD).
     @Published var currentFXRateToUSD: Double? = nil
 
+    /// Global market indices for the app title bar strip.
+    @Published var indices: [IndexQuote] = []
+
     private let api: APIClient
     private let visibleDefaultsKey = "investa.tabVisible"
 
@@ -174,10 +177,12 @@ final class AppState: ObservableObject {
                 selectedAccounts = Set(saved.filter { allAccounts.contains($0) })
             }
             await fetchFXRate()
+            await fetchIndices()
             didLoadSettings = true
         } catch {
             // Non-fatal: fall back to defaults so the dashboard still loads.
             didLoadSettings = true
+            await fetchIndices()
         }
     }
 
@@ -196,6 +201,23 @@ final class AppState: ObservableObject {
             }
         } catch {
             print("Failed to fetch FX rate: \(error)")
+        }
+    }
+
+    /// Fetch the global market indices for the app title bar.
+    func fetchIndices() async {
+        do {
+            if let map: [String: IndexQuote] = try await api.get("/indices") {
+                let preferredOrder = ["S&P 500", "Dow Jones", "NASDAQ", "Russell 2000", "VIX"]
+                indices = Array(map.values).sorted { (a: IndexQuote, b: IndexQuote) -> Bool in
+                    let iA = preferredOrder.firstIndex(of: a.name ?? "") ?? 99
+                    let iB = preferredOrder.firstIndex(of: b.name ?? "") ?? 99
+                    if iA != iB { return iA < iB }
+                    return (a.name ?? "") < (b.name ?? "")
+                }
+            }
+        } catch {
+            print("Failed to fetch indices: \(error)")
         }
     }
 }

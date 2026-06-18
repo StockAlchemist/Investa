@@ -107,6 +107,15 @@ struct MainView: View {
                 visitedSections.insert(newSelection)
             }
         }
+        #if os(macOS)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                if !appState.indices.isEmpty {
+                    IndexStrip(indices: appState.indices)
+                }
+            }
+        }
+        #endif
     }
 
     private func row(_ section: AppSection) -> some View {
@@ -238,5 +247,34 @@ private struct SettingsSheet: View {
         #if os(macOS)
         .frame(width: 720, height: 640)
         #endif
+    }
+}
+
+/// A horizontally scrolling strip showing market indices, typically placed in the app title bar.
+struct IndexStrip: View {
+    let indices: [IndexQuote]
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ForEach(indices) { index in
+                let isUp = (index.change ?? 0) >= 0
+                HStack(spacing: 4) {
+                    Text(index.name ?? "Index")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    
+                    Text(Fmt.number(index.price))
+                        .font(.caption.monospacedDigit())
+                    
+                    HStack(spacing: 2) {
+                        Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                            .font(.system(size: 8))
+                        Text(String(format: "%.2f%%", abs(index.changesPercentage ?? 0)))
+                            .font(.caption.monospacedDigit())
+                    }
+                    .foregroundStyle(isUp ? Color.green : Color.red)
+                }
+            }
+        }
     }
 }
