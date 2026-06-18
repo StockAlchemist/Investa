@@ -14,6 +14,7 @@ struct AppSettings: Codable, Sendable {
     let accountInterestRates: [String: Double]?
     /// bucket (quoteType/sector/country/symbol) → name → target %.
     let targetAllocation: [String: [String: Double]]?
+    let valuationOverrides: [String: [String: Double]]?
     let accountClosureDates: [String: String]?
     let userSymbolMap: [String: String]?
     let userExcludedSymbols: [String]?
@@ -34,6 +35,7 @@ struct AppSettings: Codable, Sendable {
         case manualOverrides = "manual_overrides"
         case accountInterestRates = "account_interest_rates"
         case targetAllocation = "target_allocation"
+        case valuationOverrides = "valuation_overrides"
         case accountClosureDates = "account_closure_dates"
         case userSymbolMap = "user_symbol_map"
         case userExcludedSymbols = "user_excluded_symbols"

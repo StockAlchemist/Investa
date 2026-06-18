@@ -47,28 +47,40 @@ class IBKRConnector:
             "v": "3"
         }
         
-        xml_resp = self._make_request(FLEX_SEND_REQUEST_URL, params)
-        if not xml_resp:
-            return None, None
+        max_retries = 3
+        for attempt in range(max_retries):
+            xml_resp = self._make_request(FLEX_SEND_REQUEST_URL, params)
+            if not xml_resp:
+                return None, None
 
-        try:
-            root = ET.fromstring(xml_resp)
-            status = root.find("Status").text if root.find("Status") is not None else "Fail"
-            
-            if status == "Success":
-                reference_code = root.find("ReferenceCode").text
-                url = root.find("Url").text
-                self.logger.info(f"IBKR Report request successful. Ref: {reference_code}")
-                return reference_code, url
-            else:
-                err_msg = root.find("ErrorMessage").text if root.find("ErrorMessage") is not None else "Unknown Error"
-                self.logger.error(f"IBKR Report request failed: {err_msg}")
-                raise Exception(f"IBKR API Error: {err_msg}")
-        except Exception as e:
-            if "IBKR API Error" in str(e):
-                raise e
-            self.logger.error(f"Failed to parse IBKR SendRequest response: {e}")
-            raise Exception(f"Failed to initiate IBKR sync: {str(e)}")
+            try:
+                root = ET.fromstring(xml_resp)
+                status = root.find("Status").text if root.find("Status") is not None else "Fail"
+                
+                if status == "Success":
+                    reference_code = root.find("ReferenceCode").text
+                    url = root.find("Url").text
+                    self.logger.info(f"IBKR Report request successful. Ref: {reference_code}")
+                    return reference_code, url
+                else:
+                    err_msg = root.find("ErrorMessage").text if root.find("ErrorMessage") is not None else "Unknown Error"
+                    
+                    if "try again shortly" in err_msg.lower() or "statement could not be generated" in err_msg.lower():
+                        if attempt < max_retries - 1:
+                            wait_time = 15
+                            self.logger.warning(f"IBKR Report generation busy: {err_msg}. Retrying in {wait_time}s...")
+                            time.sleep(wait_time)
+                            continue
+                            
+                    self.logger.error(f"IBKR Report request failed: {err_msg}")
+                    raise Exception(f"IBKR API Error: {err_msg}")
+            except Exception as e:
+                if "IBKR API Error" in str(e):
+                    raise e
+                self.logger.error(f"Failed to parse IBKR SendRequest response: {e}")
+                raise Exception(f"Failed to initiate IBKR sync: {str(e)}")
+                
+        return None, None
 
     def download_report(self, reference_code: str, url: str) -> Optional[str]:
         """Downloads the actual report XML using the reference code."""

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings, fetchTransactions } from '../lib/api';
-import { Trash2, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X } from 'lucide-react';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings, fetchTransactions, syncIbkr } from '../lib/api';
+import { Trash2, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X, RefreshCw } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 import TableSkeleton from './skeletons/TableSkeleton';
@@ -162,8 +162,24 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
 
     const [selectedPendingIds, setSelectedPendingIds] = useState<Set<number>>(new Set());
     const [isApproving, setIsApproving] = useState(false);
-
+    const [isSyncingIbkr, setIsSyncingIbkr] = useState(false);
     const queryClient = useQueryClient();
+
+    const hasIbkrCredentials = !!(settingsQuery.data?.ibkr_token && settingsQuery.data?.ibkr_query_id);
+
+    const handleSyncIbkr = async () => {
+        setIsSyncingIbkr(true);
+        try {
+            await syncIbkr();
+            queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
+        } catch (error) {
+            console.error("Failed to sync IBKR:", error);
+            alert("Failed to sync IBKR");
+        } finally {
+            setIsSyncingIbkr(false);
+        }
+    };
+
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [isImporting, setIsImporting] = useState(false);
     const [autoAddCashOnImport, setAutoAddCashOnImport] = useState(true);
@@ -883,6 +899,18 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                             <Plus className="h-3.5 w-3.5" />
                             <span>Add</span>
                         </button>
+
+                        {hasIbkrCredentials && (
+                            <button
+                                onClick={handleSyncIbkr}
+                                disabled={isSyncingIbkr || isImporting}
+                                className="flex-shrink-0 px-3 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+                                title="Sync IBKR"
+                            >
+                                <RefreshCw className={cn("h-3.5 w-3.5", isSyncingIbkr && "animate-spin")} />
+                                <span>{isSyncingIbkr ? 'Syncing...' : 'IBKR Sync'}</span>
+                            </button>
+                        )}
 
                         <div className="flex-shrink-0 flex items-center bg-purple-600 rounded-md overflow-hidden h-9">
                             <button

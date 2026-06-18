@@ -223,6 +223,8 @@ private struct SettingsSheet: View {
                 .padding(12)
             SettingsView()
         }
+        #if os(macOS)
         .frame(width: 720, height: 640)
+        #endif
     }
 }

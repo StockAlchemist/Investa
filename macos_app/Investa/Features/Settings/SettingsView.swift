@@ -98,17 +98,23 @@ struct SettingsView: View {
                 if let s = viewModel.status { Text(s).font(.caption).foregroundStyle(.secondary) }
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
-            Picker("", selection: $tab) {
+            Picker("Settings Tab", selection: $tab) {
                 ForEach(SettingsTab.allCases) { Label($0.rawValue, systemImage: $0.icon).tag($0) }
             }
-            .pickerStyle(.segmented).labelsHidden().padding(.horizontal, 20)
+            #if os(macOS)
+            .pickerStyle(.segmented)
+            #else
+            .pickerStyle(.menu)
+            #endif
+            .labelsHidden().padding(.horizontal, 20)
             Text(tab.description).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.top, 6)
             Divider().padding(.top, 8)
             ScrollView {
                 Group {
                     switch tab {
-                    case .accounts: AccountsSettings(vm: viewModel, settings: viewModel.settings, accounts: appState.allAccounts)
+                    case .accounts: AccountsSettings(vm: viewModel, settings: viewModel.settings, accounts: appState.allAccounts, appState: appState)
                     case .symbols: SymbolsSettings(vm: viewModel, settings: viewModel.settings)
                     case .overrides: OverridesSettings(vm: viewModel, settings: viewModel.settings)
                     case .advanced: AdvancedSettings(vm: viewModel, settings: viewModel.settings)
