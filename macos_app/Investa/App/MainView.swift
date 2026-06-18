@@ -109,7 +109,7 @@ struct MainView: View {
         }
         #if os(macOS)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .primaryAction) {
                 if !appState.indices.isEmpty {
                     IndexStrip(indices: appState.indices)
                 }
