@@ -100,8 +100,8 @@ final class APIClient: Sendable {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
-        let isSlowEndpoint = trimmed.hasPrefix("ai") || trimmed.hasPrefix("sync") || trimmed.hasPrefix("stock-analysis")
-        request.timeoutInterval = isSlowEndpoint ? 90 : 60
+        let isSlowEndpoint = trimmed.hasPrefix("ai") || trimmed.hasPrefix("sync") || trimmed.hasPrefix("stock-analysis") || trimmed.hasPrefix("screener")
+        request.timeoutInterval = isSlowEndpoint ? 300 : 60
         
         return request
     }
