@@ -16,8 +16,6 @@ private let columnKey: [String: String] = [
     "Tags": "Tags", "Contribution %": "Contribution %", "AI Score": "ai_score", "Intrinsic Value": "intrinsic_value",
 ]
 
-private let defaultVisibleColumns = ["Symbol", "7d Trend", "Quantity", "% of Total", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L"]
-
 private let columnPickerGroups: [(label: String, cols: [String])] = [
     ("Core", ["Symbol", "Account", "Quantity", "Price", "Mkt Val", "% of Total", "7d Trend"]),
     ("Daily", ["Day Chg", "Day Chg %"]),
@@ -26,6 +24,8 @@ private let columnPickerGroups: [(label: String, cols: [String])] = [
     ("Income", ["Divs", "Est. Income", "Yield (Cost) %", "Yield (Mkt) %"]),
     ("Details", ["Sector", "Industry", "FX G/L %", "Fees", "Tags", "Contribution %", "AI Score", "Intrinsic Value"]),
 ]
+
+private let defaultVisibleColumns = columnPickerGroups.flatMap { $0.cols }
 
 private let leftAlignedHeaders: Set<String> = ["Symbol", "Account", "Sector", "Industry", "Tags"]
 private let glHeaders: Set<String> = ["Day Chg", "Day Chg %", "Unreal. G/L", "Unreal. G/L %", "Real. G/L", "Total G/L", "Total Ret %", "FX G/L %", "IRR (%)"]
@@ -94,6 +94,7 @@ struct HoldingsTableView: View {
     let holdings: [Holding]
     let currency: String
 
+    @Environment(\.horizontalSizeClass) var hSizeClass
     @State private var visibleColumns = defaultVisibleColumns
     @State private var sortKey = "Mkt Val"
     @State private var sortAsc = false
@@ -264,14 +265,16 @@ struct HoldingsTableView: View {
             if holdings.isEmpty {
                 EmptyHint(text: "No holdings found.", systemImage: "tray").frame(height: 160)
             } else {
-                ScrollView(.horizontal, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        headerRow
-                        Divider()
-                        if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
-                    }
-                    .frame(width: totalWidth, alignment: .leading)
+                #if os(iOS)
+                if hSizeClass == .compact {
+                    if let gb = groupBy, !gb.isEmpty { iosGroupedBody } else { iosFlatBody }
+                } else {
+                    macBody
                 }
+                #else
+                macBody
+                #endif
+                
                 if groupBy == nil { pagination }
             }
         }
@@ -280,6 +283,17 @@ struct HoldingsTableView: View {
         .card(.standard)
         .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
         .onChange(of: groupBy) { _, _ in expandedGroups = Set(groups.map(\.key)) }
+    }
+
+    private var macBody: some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                headerRow
+                Divider()
+                if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
+            }
+            .frame(width: totalWidth, alignment: .leading)
+        }
     }
 
     private var header: some View {
@@ -356,14 +370,13 @@ struct HoldingsTableView: View {
         Button { showColumns.toggle() } label: {
             HStack(spacing: 5) {
                 Image(systemName: "slider.horizontal.3").font(.caption)
-                #if !os(iOS)
                 Text("Columns").font(.subheadline.weight(.medium))
-                #endif
                 Text("\(visibleColumns.count)").font(.system(size: 10, weight: .bold))
-                    .padding(.horizontal, 5).background(Theme.brand.opacity(0.15), in: Capsule()).foregroundStyle(Theme.brand)
+                    .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.brand.opacity(0.15), in: Capsule()).foregroundStyle(Theme.brand)
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(.background.secondary, in: Capsule())
+            .overlay(Capsule().strokeBorder(.quaternary, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showColumns, arrowEdge: .bottom) { columnsPanel }
@@ -418,15 +431,14 @@ struct HoldingsTableView: View {
     }
 
     private func toolLabel(_ icon: String, _ title: String, active: Bool) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: icon).font(.caption)
-            #if !os(iOS)
             Text(title).font(.subheadline.weight(.medium))
-            #endif
         }
         .foregroundStyle(active ? .white : .primary)
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(active ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.background.tertiary), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(active ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.background.secondary), in: Capsule())
+        .overlay(Capsule().strokeBorder(active ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.quaternary), lineWidth: 0.5))
     }
 
     // MARK: Header row
@@ -586,6 +598,161 @@ struct HoldingsTableView: View {
         }
     }
 
+    // MARK: - iOS Compact Views
+
+    private var iosFlatBody: some View {
+        let rows = sortedRows(baseRows)
+        let shown = Array(rows.prefix(visibleRows))
+        return LazyVStack(spacing: 12) {
+            ForEach(shown) { r in iosHoldingRow(r) }
+        }
+    }
+    
+    private var iosGroupedBody: some View {
+        LazyVStack(spacing: 12) {
+            ForEach(groups) { g in
+                iosGroupHeaderRow(g)
+                if expandedGroups.contains(g.key) {
+                    ForEach(g.rows) { r in iosHoldingRow(r) }
+                }
+            }
+        }
+    }
+
+    private func iosGroupHeaderRow(_ g: HGroup) -> some View {
+        Button { toggleGroup(g.key) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: expandedGroups.contains(g.key) ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.secondary)
+                Text(g.key).font(.subheadline.weight(.semibold))
+                Text("\(g.rows.count)").font(.caption2).foregroundStyle(.secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 1).background(.background.tertiary, in: Capsule())
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(Fmt.currency(g.agg["Mkt Val"], code: currency)).font(.caption.weight(.bold)).monospacedDigit()
+                    Text(pctString(g.agg["Day Chg %"])).font(.caption2).monospacedDigit().foregroundStyle(glColor(g.agg["Day Chg %"]))
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(.background.secondary.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
+    private func iosHoldingRow(_ r: HRow) -> some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                StockIcon(symbol: r.symbol, size: 40)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(r.symbol).font(.headline.weight(.bold))
+                    Text("\(Fmt.number(r.num["Quantity"])) shs")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer(minLength: 4)
+                
+                if r.sparkline.count > 1 {
+                    let up = (r.sparkline.last ?? 0) >= (r.sparkline.first ?? 0)
+                    Chart(Array(r.sparkline.enumerated()), id: \.offset) { i, v in
+                        LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(up ? Color.up : Color.down).lineStyle(StrokeStyle(lineWidth: 1.5))
+                    }
+                    .chartYScale(domain: chartDomain(r.sparkline)).chartXAxis(.hidden).chartYAxis(.hidden)
+                    .frame(width: 48, height: 24).clipped()
+                }
+                
+                Spacer(minLength: 4)
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(Fmt.currency(r.num["Mkt Val"], code: currency))
+                        .font(.subheadline.weight(.bold))
+                        .monospacedDigit()
+                    
+                    if let dayChgPct = r.num["Day Chg %"] {
+                        Text(pctString(dayChgPct))
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .background(heatmapColor(dayChgPct).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                            .foregroundStyle(heatmapColor(dayChgPct))
+                    }
+                }
+            }
+            
+            iosExtraColumns(r)
+            
+            if !r.lots.isEmpty {
+                Button { toggleLot(r.symbol) } label: {
+                    HStack {
+                        Text("\(r.lots.count) Lots")
+                        Spacer()
+                        Image(systemName: expandedLots.contains(r.symbol) ? "chevron.up" : "chevron.down")
+                    }
+                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                }.buttonStyle(.plain)
+            }
+            if expandedLots.contains(r.symbol), !r.lots.isEmpty {
+                Divider()
+                ForEach(Array(r.lots.enumerated()), id: \.offset) { _, lot in iosLotRow(r, lot) }
+            }
+        }
+        .padding(14)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+        .onTapGesture { detail = SymbolID(id: r.symbol) }
+    }
+
+    @ViewBuilder private func iosExtraColumns(_ r: HRow) -> some View {
+        let excluded: Set<String> = ["Symbol", "Quantity", "7d Trend", "Mkt Val", "Day Chg %"]
+        let extras = visibleColumns.filter { !excluded.contains($0) }
+        
+        if !extras.isEmpty {
+            Divider()
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 10) {
+                ForEach(extras, id: \.self) { h in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(shortColumnName(h)).font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase).lineLimit(1)
+                        iosExtraCell(h, r)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    @ViewBuilder private func iosExtraCell(_ h: String, _ r: HRow) -> some View {
+        switch h {
+        case "% of Total", "Contribution %": progressCell(r.num[h])
+        case "AI Score": aiScoreCell(r.num["AI Score"])
+        case "Intrinsic Value": 
+            intrinsicCell(r).font(.caption2.weight(.medium))
+        case "Tags": tagsCell(r.tags)
+        case "Account", "Sector", "Industry":
+            Text(textValue(r, h).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
+                .font(.caption2)
+                .foregroundStyle(h == "Account" ? .primary : .secondary).lineLimit(1)
+        default:
+            Text(format(r.num[h], h))
+                .font(.caption2.weight(.medium)).monospacedDigit()
+                .foregroundStyle(cellColor(h, r.num[h]))
+                .lineLimit(1)
+        }
+    }
+
+    private func iosLotRow(_ r: HRow, _ lot: JSONValue) -> some View {
+        let qty = lot["Quantity"]?.doubleValue ?? 0
+        let cost = lot["Cost Basis"]?.doubleValue
+        let date = lot["Date"]?.stringValue?.prefix(10) ?? ""
+        func mkt() -> Double? { lot["Market Value"]?.doubleValue ?? ((r.num["Price"] ?? 0) > 0 ? (r.num["Price"]!) * qty : nil) }
+        let g = lot["Unreal. Gain"]?.doubleValue ?? ((mkt() ?? 0) - (cost ?? 0))
+        
+        return HStack {
+            Text("↳ \(date)").font(.caption2).foregroundStyle(.tertiary)
+            Spacer()
+            Text("\(Fmt.number(qty)) shs").font(.caption2).foregroundStyle(.secondary)
+            Spacer()
+            Text(format(g, "Unreal. G/L")).font(.caption2).monospacedDigit().foregroundStyle(heatmapColor(g))
+        }
+    }
+
     // MARK: Data row
 
     private func dataRow(_ r: HRow) -> some View {
@@ -682,11 +849,22 @@ struct HoldingsTableView: View {
     @ViewBuilder private func intrinsicCell(_ r: HRow) -> some View {
         if let iv = r.intrinsic, iv > 0 {
             let tone: Color = iv > r.price ? .up : (iv < r.price ? .down : .primary)
-            VStack(alignment: .trailing, spacing: 3) {
+            
+            #if os(iOS)
+            let align: HorizontalAlignment = hSizeClass == .compact ? .leading : .trailing
+            #else
+            let align: HorizontalAlignment = .trailing
+            #endif
+            
+            VStack(alignment: align, spacing: 3) {
                 HStack(spacing: 4) {
                     Text(Fmt.currency(iv, code: currency)).foregroundStyle(tone)
                     if let m = r.mos { Text("(\(String(format: "%.1f", abs(m)))%)").font(.system(size: 9)).foregroundStyle(.secondary) }
-                }.monospacedDigit()
+                }
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
                 if let m = r.mos {
                     GeometryReader { geo in
                         let half = geo.size.width / 2

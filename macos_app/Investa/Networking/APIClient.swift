@@ -99,7 +99,10 @@ final class APIClient: Sendable {
         if let token = KeychainStore.loadToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        request.timeoutInterval = 90
+        
+        let isSlowEndpoint = trimmed.hasPrefix("ai") || trimmed.hasPrefix("sync") || trimmed.hasPrefix("stock-analysis")
+        request.timeoutInterval = isSlowEndpoint ? 90 : 60
+        
         return request
     }
 
@@ -109,6 +112,10 @@ final class APIClient: Sendable {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
+            print("APIClient transport error for \(request.url?.absoluteString ?? "unknown"): \(error)")
             throw APIError.transport(underlying: error)
         }
 

@@ -27,7 +27,7 @@ struct MarketNewsItem: Decodable, Sendable, Identifiable {
 
 /// One index quote from `GET /api/indices` (values keyed by index id).
 /// Decoded tolerantly; includes a short sparkline series when present.
-struct IndexQuote: Decodable, Sendable, Identifiable {
+struct IndexQuote: Decodable, Sendable, Identifiable, Equatable {
     let name: String?
     let price: Double?
     let change: Double?

@@ -45,6 +45,10 @@ struct DividendsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = DividendsViewModel()
     @State private var detail: SymbolID?
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.verticalSizeClass) private var vSize
+    #endif
 
     private var cur: String { appState.displayCurrency }
 
@@ -96,10 +100,15 @@ struct DividendsView: View {
     }
 
     @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 20) { left; right }
+        #if os(iOS)
+        if hSize == .compact && vSize == .regular {
             VStack(spacing: 20) { left; right }
+        } else {
+            HStack(alignment: .top, spacing: 20) { left; right }
         }
+        #else
+        HStack(alignment: .top, spacing: 20) { left; right }
+        #endif
     }
 
     private var signature: String {

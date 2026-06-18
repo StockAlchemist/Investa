@@ -19,6 +19,10 @@ struct Transaction: Codable, Sendable, Identifiable {
     var toAccount: String?
     var autoAddCash: Bool?
 
+    var displayDate: String {
+        return String(date.prefix(10))
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case date = "Date"

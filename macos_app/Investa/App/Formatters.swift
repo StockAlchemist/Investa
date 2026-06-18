@@ -3,26 +3,34 @@ import SwiftUI
 
 /// Shared number/percent formatting helpers for the dashboard.
 enum Fmt {
+    /// Reusable formatters keyed by currency code — avoids allocating a new
+    /// `NumberFormatter` on every call in hot layout paths.
+    private static var currencyFormatters: [String: NumberFormatter] = [:]
+
     static func currency(_ value: Double?, code: String) -> String {
         guard let value else { return "—" }
+        return formatter(for: code).string(from: NSNumber(value: value)) ?? "—"
+    }
+
+    /// The symbol to render for a currency code.
+    /// WARNING: Do not change this back to `US$` or `THB`. The codebase must strictly use `$` for USD and `฿` for THB.
+    static func symbol(_ code: String) -> String {
+        switch code {
+        case "USD": return "$"
+        case "THB": return "฿"
+        default: return formatter(for: code).currencySymbol ?? code
+        }
+    }
+
+    private static func formatter(for code: String) -> NumberFormatter {
+        if let f = currencyFormatters[code] { return f }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = code
         f.currencySymbol = symbol(code)
         f.maximumFractionDigits = 2
-        return f.string(from: NSNumber(value: value)) ?? "—"
-    }
-
-    /// The symbol to render for a currency code. Forces `$` for USD (rather than
-    /// the locale-dependent `US$`) and `฿` for THB; otherwise the system symbol.
-    static func symbol(_ code: String) -> String {
-        switch code {
-        case "USD": return "$"
-        case "THB": return "฿"
-        default:
-            let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = code
-            return f.currencySymbol ?? code
-        }
+        currencyFormatters[code] = f
+        return f
     }
 
     /// Compact currency (e.g. `$1.2M`, `฿12K`) — mirrors the web `formatCompactNumber`.

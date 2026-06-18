@@ -3,9 +3,15 @@ import SwiftUI
 /// Persistent header controls shown on every tab (mirrors the web PageHeader):
 /// account selector (+ closed indicator), currency, show-closed toggle, and a
 /// per-tab Layout configurator menu.
-struct GlobalControlBar: View {
+struct GlobalControlBar<Trailing: View>: View {
     @EnvironmentObject private var appState: AppState
     let section: AppSection
+    let trailing: Trailing
+
+    init(section: AppSection, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+        self.section = section
+        self.trailing = trailing()
+    }
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
     #endif
@@ -21,11 +27,12 @@ struct GlobalControlBar: View {
     private var regularBar: some View {
         HStack(spacing: 12) {
             accountMenu
-            currencyMenu
+            if TabLayout.hasLayout(section) { layoutMenu }
             benchmarkButton
             showClosedToggle
             Spacer()
-            if TabLayout.hasLayout(section) { layoutMenu }
+            currencyMenu
+            trailing
         }
         .padding(.horizontal, 20).padding(.vertical, 8)
         .background(.bar)
@@ -34,16 +41,22 @@ struct GlobalControlBar: View {
     /// Compact (iPhone): a single horizontally-scrollable row so the controls
     /// never overflow the narrow width.
     private var compactBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                accountMenu
-                currencyMenu
-                benchmarkButton
-                showClosedToggle
-                if TabLayout.hasLayout(section) { layoutMenu }
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    accountMenu
+                    if TabLayout.hasLayout(section) { layoutMenu }
+                    benchmarkButton
+                    showClosedToggle
+                    currencyMenu
+                }
+                .labelStyle(.iconOnly)
+                .padding(.leading, 16)
+                .padding(.vertical, 8)
             }
-            .labelStyle(.iconOnly)
-            .padding(.horizontal, 16).padding(.vertical, 8)
+            Spacer(minLength: 0)
+            trailing
+                .padding(.trailing, 16)
         }
         .background(.bar)
     }
@@ -52,7 +65,7 @@ struct GlobalControlBar: View {
 
     @State private var showBenchmarks = false
     @State private var customBenchmark = ""
-    private static let presetBenchmarks = [
+    private let presetBenchmarks = [
         "S&P 500", "Dow Jones", "NASDAQ", "Russell 2000",
         "SPY (S&P 500 ETF)", "QQQ (Nasdaq 100 ETF)", "DIA (Dow Jones ETF)", "S&P 500 Total Return",
     ]
@@ -68,7 +81,7 @@ struct GlobalControlBar: View {
     private var benchmarkPopover: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Benchmarks").font(.headline)
-            ForEach(Self.presetBenchmarks, id: \.self) { b in
+            ForEach(presetBenchmarks, id: \.self) { b in
                 let on = appState.benchmarks.contains(b)
                 Button { toggleBenchmark(b) } label: {
                     HStack {
@@ -78,7 +91,7 @@ struct GlobalControlBar: View {
                 }.buttonStyle(.plain)
             }
             // Custom tickers currently selected.
-            let custom = appState.benchmarks.filter { !Self.presetBenchmarks.contains($0) }
+            let custom = appState.benchmarks.filter { !presetBenchmarks.contains($0) }
             if !custom.isEmpty {
                 Divider()
                 ForEach(custom, id: \.self) { c in
@@ -187,15 +200,25 @@ struct GlobalControlBar: View {
     // MARK: - Currency / show-closed
 
     private var currencyMenu: some View {
-        Picker("Currency", selection: $appState.displayCurrency) {
-            ForEach(appState.availableCurrencies, id: \.self) { Text($0).tag($0) }
+        HStack(spacing: 8) {
+            if appState.displayCurrency != "USD", let rate = appState.currentFXRateToUSD {
+                Text("1 USD = \(String(format: "%.2f", rate)) \(appState.displayCurrency)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Picker("Currency", selection: $appState.displayCurrency) {
+                ForEach(appState.availableCurrencies, id: \.self) { Text($0).tag($0) }
+            }
+            .pickerStyle(.menu).labelsHidden().fixedSize()
         }
-        .pickerStyle(.menu).labelsHidden().fixedSize()
+        .onChange(of: appState.displayCurrency) {
+            Task { await appState.fetchFXRate() }
+        }
     }
 
     private var showClosedToggle: some View {
         Toggle(isOn: $appState.showClosed) {
-            Label("Show Closed", systemImage: "archivebox")
+            Label("Show Closed", systemImage: appState.showClosed ? "eye" : "eye.slash")
         }
         .toggleStyle(.button).controlSize(.small)
     }

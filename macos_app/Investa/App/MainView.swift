@@ -42,6 +42,7 @@ struct MainView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var appState: AppState
     @State private var selection: AppSection = .performance
+    @State private var visitedSections: Set<AppSection> = [.performance]
     @State private var showingSettings = false
     @State private var showingPalette = false
     @State private var paletteStock: SymbolID?
@@ -91,9 +92,20 @@ struct MainView: View {
             VStack(spacing: 0) {
                 GlobalControlBar(section: selection)
                 Divider()
-                sectionView(selection)
+                ZStack {
+                    ForEach(AppSection.allCases) { section in
+                        if visitedSections.contains(section) {
+                            sectionView(section)
+                                .opacity(selection == section ? 1 : 0)
+                                .allowsHitTesting(selection == section)
+                        }
+                    }
+                }
             }
             .task { if !appState.didLoadSettings { await appState.loadSettings() } }
+            .onChange(of: selection) { _, newSelection in
+                visitedSections.insert(newSelection)
+            }
         }
     }
 

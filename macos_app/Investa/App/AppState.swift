@@ -71,6 +71,9 @@ final class AppState: ObservableObject {
     @Published var tabVisible: [String: Set<String>] = [:]
     /// Accounts marked closed (for the account-selector indicator).
     @Published var closedAccounts: Set<String> = []
+    
+    /// Current exchange rate of displayCurrency to USD (if not USD).
+    @Published var currentFXRateToUSD: Double? = nil
 
     private let api: APIClient
     private let visibleDefaultsKey = "investa.tabVisible"
@@ -170,10 +173,29 @@ final class AppState: ObservableObject {
             if let saved = settings.selectedAccounts, !saved.isEmpty {
                 selectedAccounts = Set(saved.filter { allAccounts.contains($0) })
             }
+            await fetchFXRate()
             didLoadSettings = true
         } catch {
             // Non-fatal: fall back to defaults so the dashboard still loads.
             didLoadSettings = true
+        }
+    }
+
+    /// Fetch the exchange rate for the current display currency vs USD.
+    func fetchFXRate() async {
+        guard displayCurrency != "USD" else {
+            currentFXRateToUSD = nil
+            return
+        }
+        struct FXRateResponse: Codable { let rate: Double? }
+        let currentCur = displayCurrency
+        do {
+            let res: FXRateResponse = try await api.get("/fx_rate/\(currentCur)")
+            if self.displayCurrency == currentCur {
+                self.currentFXRateToUSD = res.rate
+            }
+        } catch {
+            print("Failed to fetch FX rate: \(error)")
         }
     }
 }

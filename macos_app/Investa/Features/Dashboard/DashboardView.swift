@@ -8,6 +8,7 @@ struct DashboardView: View {
     @State private var detail: SymbolID?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.verticalSizeClass) private var vSize
     private var isPhone: Bool { hSize == .compact }
     #else
     private var isPhone: Bool { false }
@@ -72,6 +73,7 @@ struct DashboardView: View {
         .onChange(of: selectionSignature) { _, _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
+        .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
     }
 
     private var header: some View {
@@ -96,10 +98,15 @@ struct DashboardView: View {
     }
 
     @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 16) { left; right }
+        #if os(iOS)
+        if hSize == .compact && vSize == .regular {
             VStack(spacing: 16) { left; right }
+        } else {
+            HStack(alignment: .top, spacing: 16) { left; right }
         }
+        #else
+        HStack(alignment: .top, spacing: 16) { left; right }
+        #endif
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.performance, id) }
@@ -216,5 +223,12 @@ struct DashboardView: View {
                          showClosed: appState.showClosed, benchmarks: appState.benchmarks,
                          customFrom: appState.period == .custom ? appState.customFromYMD : nil,
                          customTo: appState.period == .custom ? appState.customToYMD : nil)
+    }
+}
+
+struct IndicesPreferenceKey: PreferenceKey {
+    static var defaultValue: [IndexQuote] = []
+    static func reduce(value: inout [IndexQuote], nextValue: () -> [IndexQuote]) {
+        value = nextValue()
     }
 }

@@ -33,6 +33,10 @@ struct AIView: View {
     @StateObject private var viewModel = AIViewModel()
     @State private var detail: MetricDetail?
     @State private var stockDetail: SymbolID?
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.verticalSizeClass) private var vSize
+    #endif
 
     private var cur: String { appState.displayCurrency }
 
@@ -233,10 +237,15 @@ struct AIView: View {
 
     @ViewBuilder private func twoColumn(_ l: (some View)?, _ r: (some View)?) -> some View {
         if let l, let r {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 16) { l; r }
+            #if os(iOS)
+            if hSize == .compact && vSize == .regular {
                 VStack(spacing: 16) { l; r }
+            } else {
+                HStack(alignment: .top, spacing: 16) { l; r }
             }
+            #else
+            HStack(alignment: .top, spacing: 16) { l; r }
+            #endif
         } else if let l { l } else if let r { r }
     }
 

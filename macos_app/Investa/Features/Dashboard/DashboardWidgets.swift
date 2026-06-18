@@ -82,15 +82,31 @@ struct PortfolioHeroCard: View {
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Picker("", selection: $period) {
-                        ForEach(HeroPeriod.allCases) { Text($0.rawValue).tag($0) }
+                if compact {
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if period != .day, let pct = periodView.pct, let absV = periodView.abs {
+                            Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct)) (\(Fmt.currency(absV, code: currency)))")
+                                .font(.caption.weight(.bold)).foregroundStyle(Fmt.tint(for: pct))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        Picker("", selection: $period) {
+                            ForEach(HeroPeriod.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented).fixedSize()
-                    Spacer()
-                    if period != .day, let pct = periodView.pct, let absV = periodView.abs {
-                        Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct)) (\(Fmt.currency(absV, code: currency)))")
-                            .font(.caption.weight(.bold)).foregroundStyle(Fmt.tint(for: pct))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                } else {
+                    HStack {
+                        Picker("", selection: $period) {
+                            ForEach(HeroPeriod.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented).fixedSize()
+                        Spacer()
+                        if period != .day, let pct = periodView.pct, let absV = periodView.abs {
+                            Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct)) (\(Fmt.currency(absV, code: currency)))")
+                                .font(.caption.weight(.bold)).foregroundStyle(Fmt.tint(for: pct))
+                        }
                     }
                 }
                 if periodView.series.count > 1 {
@@ -174,9 +190,11 @@ struct PortfolioHeroCard: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
                 .lineLimit(1).minimumScaleFactor(0.7)
-            Text(Fmt.percent(value)).font(.title3.bold()).foregroundStyle(Fmt.tint(for: value))
-                .lineLimit(1).minimumScaleFactor(0.5)
-            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(Fmt.percent(value)).font(.title3.bold()).foregroundStyle(Fmt.tint(for: value))
+                    .lineLimit(1).minimumScaleFactor(0.5)
+                if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+            }
         }
         .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
         .padding(.horizontal, compact ? 10 : 16)
@@ -650,31 +668,31 @@ private struct SingleDonut: View {
     @ViewBuilder private var centerOverlay: some View {
         // Constrain content to the inner hole so long values (e.g. THB) scale to fit.
         GeometryReader { geo in
-            let holeWidth = min(geo.size.width, geo.size.height) * 0.42
+            let holeWidth = min(geo.size.width, geo.size.height) * 0.30
             VStack(spacing: 2) {
                 if let a = active {
-                    StockIcon(symbol: a.name, size: 30)
-                    Text(a.name).font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
-                    Text(value(of: a)).font(.title3.bold()).foregroundStyle(tint(of: a))
-                        .lineLimit(1).minimumScaleFactor(0.3)
-                    Text(subtitle(of: a)).font(.callout.weight(.bold)).foregroundStyle(subtitleTint(of: a))
-                        .lineLimit(1).minimumScaleFactor(0.5)
+                    StockIcon(symbol: a.name, size: 24)
+                    Text(a.name).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(value(of: a)).font(.system(size: 16, weight: .bold)).foregroundStyle(tint(of: a))
+                        .lineLimit(1).minimumScaleFactor(0.4)
+                    Text(subtitle(of: a)).font(.system(size: 12, weight: .bold)).foregroundStyle(subtitleTint(of: a))
+                        .lineLimit(1).minimumScaleFactor(0.4)
                 } else {
                     Menu {
                         ForEach(CompositionMetric.allCases) { m in Button(m.label) { metric = m } }
                     } label: {
                         HStack(spacing: 3) {
-                            Text(metric.label).font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                            Text(metric.label).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
                             Image(systemName: "chevron.down").font(.system(size: 8)).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(.background.tertiary, in: Capsule())
                         .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
                     }.borderlessMenu().fixedSize()
-                    Text(value(of: nil)).font(.title3.bold()).foregroundStyle(tint(of: nil))
-                        .lineLimit(1).minimumScaleFactor(0.3)
-                    Text(subtitle(of: nil)).font(.callout.weight(.bold)).foregroundStyle(subtitleTint(of: nil))
-                        .lineLimit(1).minimumScaleFactor(0.5)
+                    Text(value(of: nil)).font(.system(size: 16, weight: .bold)).foregroundStyle(tint(of: nil))
+                        .lineLimit(1).minimumScaleFactor(0.4)
+                    Text(subtitle(of: nil)).font(.system(size: 12, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
+                        .lineLimit(1).minimumScaleFactor(0.4)
                 }
             }
             .frame(width: holeWidth)

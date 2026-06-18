@@ -105,6 +105,20 @@ struct TransactionsView: View {
         }
     }
 
+    private func iconForType(_ type: String) -> String {
+        switch type.uppercased() {
+        case "BUY": return "bag.fill"
+        case "SELL": return "tag.fill"
+        case "DEPOSIT": return "arrow.down.circle.fill"
+        case "WITHDRAWAL": return "arrow.up.circle.fill"
+        case "DIVIDEND": return "dollarsign.circle.fill"
+        case "INTEREST": return "percent"
+        case "SHORT SELL": return "arrow.down.right.circle.fill"
+        case "BUY TO COVER": return "arrow.up.left.circle.fill"
+        default: return "doc.text.fill"
+        }
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -140,7 +154,7 @@ struct TransactionsView: View {
         .alert("Delete transaction?", isPresented: deleteBinding, presenting: pendingDelete) { tx in
             Button("Delete", role: .destructive) { Task { await viewModel.delete(tx); reload() } }
             Button("Cancel", role: .cancel) {}
-        } message: { tx in Text("\(tx.type) \(tx.symbol) on \(tx.date) will be removed.") }
+        } message: { tx in Text("\(tx.type) \(tx.symbol) on \(tx.displayDate) will be removed.") }
         .alert("Delete \(selection.count) transactions?", isPresented: $pendingBulkDelete) {
             Button("Delete", role: .destructive) { bulkDelete() }
             Button("Cancel", role: .cancel) {}
@@ -254,7 +268,7 @@ struct TransactionsView: View {
                                     Text("\(Fmt.number(tx.quantity))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                                 }
                                 HStack {
-                                    Text(tx.date).font(.caption2).foregroundStyle(.secondary)
+                                    Text(tx.displayDate).font(.caption2).foregroundStyle(.secondary)
                                     Spacer()
                                     TextField("Account", text: Binding(
                                         get: { reviewTransactions[i].account },
@@ -266,7 +280,7 @@ struct TransactionsView: View {
                             Divider()
                             #else
                             HStack {
-                                Text(tx.date).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                                Text(tx.displayDate).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
                                 Text(tx.type).frame(width: 80, alignment: .leading)
                                 Text(tx.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
                                 Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
@@ -333,7 +347,7 @@ struct TransactionsView: View {
                         }
                     }
                     HStack {
-                        Text(tx.date).font(.caption2).foregroundStyle(.secondary)
+                        Text(tx.displayDate).font(.caption2).foregroundStyle(.secondary)
                         Spacer()
                         if let id = tx.id {
                             Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.green).font(.title3)
@@ -354,7 +368,7 @@ struct TransactionsView: View {
             }
             ForEach(viewModel.pendingIbkr) { tx in
                 HStack {
-                    Text(tx.date).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                    Text(tx.displayDate).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
                     Text(tx.type).frame(width: 80, alignment: .leading)
                     Text(tx.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
                     Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
@@ -479,7 +493,7 @@ struct TransactionsView: View {
         }
         #else
         Table(sorted, selection: tableSelection, sortOrder: $sortOrder) {
-            TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
+            TableColumn("Date", value: \.date) { Text($0.displayDate).foregroundStyle(.secondary) }
                 .width(min: 90, ideal: 110)
             TableColumn("Type", value: \.type) { tx in
                 Text(tx.type.uppercased()).font(.caption2.weight(.bold))
@@ -514,38 +528,73 @@ struct TransactionsView: View {
     }
 
     private func iosTransactionRow(_ tx: Transaction) -> some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text(tx.symbol).font(.headline).fontWeight(.bold)
-                Spacer()
-                Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).fontWeight(.bold).monospacedDigit()
-                    .foregroundStyle(Fmt.tint(for: tx.totalAmount))
-            }
-            HStack {
-                Text(tx.type.uppercased()).font(.caption2.weight(.bold))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
-                    .foregroundStyle(Self.typeColor(tx.type))
-                Spacer()
-                if tx.quantity != 0 {
-                    Text("\(Fmt.number(tx.quantity)) @ \(Fmt.number(tx.pricePerShare))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 16) {
+            // Icon
+            StockIcon(symbol: tx.symbol.isEmpty ? "CASH" : tx.symbol, size: 42)
+                .frame(width: 48, height: 48)
+
+            // Middle: Symbol, Type, Date
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(tx.symbol.isEmpty ? tx.type : tx.symbol)
+                        .font(.headline.weight(.bold))
+                        .lineLimit(1)
+                    if !tx.symbol.isEmpty {
+                        Text(tx.type.uppercased())
+                            .font(.system(size: 9, weight: .bold))
+                            .lineLimit(1)
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
+                            .foregroundStyle(Self.typeColor(tx.type))
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                
+                HStack(spacing: 4) {
+                    Text(tx.displayDate)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if tx.quantity != 0 {
+                        Text("•")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                        Text("\(Fmt.number(tx.quantity)) @ \(Fmt.number(tx.pricePerShare))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
-            HStack {
-                Text(tx.date).font(.caption2).foregroundStyle(.secondary)
-                Spacer()
-                Text(tx.account).font(.caption2).foregroundStyle(.tertiary)
-            }
-            Divider()
-            HStack {
-                Spacer()
-                Button { editing = tx } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).foregroundStyle(.secondary)
-                Button { pendingDelete = tx } label: { Image(systemName: "trash") }.buttonStyle(.borderless).foregroundStyle(.red)
+
+            Spacer(minLength: 8)
+
+            // Right: Amount, Account, Menu
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency))
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(Fmt.tint(for: tx.totalAmount))
+                
+                HStack(spacing: 8) {
+                    Text(tx.account)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                    
+                    Menu {
+                        Button { editing = tx } label: { Label("Edit", systemImage: "pencil") }
+                        Button(role: .destructive) { pendingDelete = tx } label: { Label("Delete", systemImage: "trash") }
+                    } label: {
+                        Image(systemName: "ellipsis.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
         }
-        .padding(14)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
     }
 
     /// Table selection works on the row id (`Int?`); bridge to a `Set<Int>`.

@@ -917,3 +917,52 @@ def get_intrinsic_value_endpoint(
         logging.error(f"Error calculating intrinsic value for {yf_symbol}: {e}")
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+import re
+import asyncio
+
+# FX rate cache: {currency_code: (rate, expiry_timestamp)}
+_FX_RATE_CACHE: dict = {}
+_FX_RATE_TTL = 300  # 5 minutes
+
+def _fetch_fx_rate_sync(currency_code: str) -> float | None:
+    """Fetch FX rate via yfinance (blocking I/O)."""
+    import yfinance as yf
+    import time
+    
+    ticker = f"{currency_code}=X"
+    if currency_code == "USD":
+        return 1.0
+        
+    now = time.time()
+    if currency_code in _FX_RATE_CACHE:
+        rate, expiry = _FX_RATE_CACHE[currency_code]
+        if now < expiry:
+            return rate
+            
+    try:
+        tkr = yf.Ticker(ticker)
+        data = tkr.history(period="1d", interval="1d")
+        if not data.empty and "Close" in data.columns:
+            rate = float(data["Close"].iloc[-1])
+            _FX_RATE_CACHE[currency_code] = (rate, now + _FX_RATE_TTL)
+            return rate
+    except Exception as e:
+        print(f"Error fetching fx rate for {currency_code}: {e}")
+    return None
+
+@router.get("/fx_rate/{currency}")
+async def get_fx_rate(currency: str):
+    """
+    Returns the current exchange rate for USD to the given currency.
+    """
+    if currency.upper() == "USD":
+        return {"rate": 1.0}
+        
+    if not re.match(r"^[A-Z]{3}$", currency.upper()):
+        raise HTTPException(status_code=400, detail="Invalid currency code format")
+        
+    rate = await asyncio.to_thread(_fetch_fx_rate_sync, currency.upper())
+    if rate is None:
+        raise HTTPException(status_code=404, detail=f"Exchange rate not found for {currency}")
+    return {"rate": rate}
