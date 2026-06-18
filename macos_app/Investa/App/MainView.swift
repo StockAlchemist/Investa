@@ -276,5 +276,7 @@ struct IndexStrip: View {
                 }
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
     }
 }
