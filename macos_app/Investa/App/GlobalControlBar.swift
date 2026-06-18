@@ -206,10 +206,14 @@ struct GlobalControlBar<Trailing: View>: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Picker("Currency", selection: $appState.displayCurrency) {
-                ForEach(appState.availableCurrencies, id: \.self) { Text($0).tag($0) }
+            Menu {
+                ForEach(appState.availableCurrencies, id: \.self) { cur in
+                    Button(cur) { appState.displayCurrency = cur }
+                }
+            } label: {
+                Text(appState.displayCurrency)
             }
-            .pickerStyle(.menu).labelsHidden().fixedSize()
+            .fixedSize()
         }
         .onChange(of: appState.displayCurrency) {
             Task { await appState.fetchFXRate() }
