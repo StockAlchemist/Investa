@@ -54,13 +54,14 @@ struct ControlBarView: View {
     // MARK: - Currency
 
     private var currencyPicker: some View {
-        Picker("Currency", selection: $appState.displayCurrency) {
+        Menu {
             ForEach(appState.availableCurrencies, id: \.self) { code in
-                Text(code).tag(code)
+                Button(code) { appState.displayCurrency = code }
             }
+        } label: {
+            Text(appState.displayCurrency)
         }
-        .pickerStyle(.menu)
-        .labelsHidden()
+        .borderlessMenu()
         .fixedSize()
     }
 

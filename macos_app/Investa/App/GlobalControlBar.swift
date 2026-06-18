@@ -213,7 +213,7 @@ struct GlobalControlBar<Trailing: View>: View {
             } label: {
                 Text(appState.displayCurrency)
             }
-            .fixedSize()
+            .borderlessMenu().fixedSize()
         }
         .onChange(of: appState.displayCurrency) {
             Task { await appState.fetchFXRate() }
