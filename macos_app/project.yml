@@ -40,6 +40,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # Required for the NSOpenPanel file import (PDF/image statement parsing).
+        com.apple.security.files.user-selected.read-only: true
   Investa-iOS:
     type: application
     platform: iOS
