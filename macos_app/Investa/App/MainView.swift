@@ -311,6 +311,7 @@ struct IndexStrip: View {
                     
                     HStack(spacing: 0) {
                         Text("(")
+                            .font(.caption.monospacedDigit())
                         Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                             .font(.system(size: 8))
                         Text(String(format: "%.2f%%)", abs(index.changesPercentage ?? 0)))
