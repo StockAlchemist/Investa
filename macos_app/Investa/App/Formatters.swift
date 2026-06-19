@@ -27,7 +27,11 @@ enum Fmt {
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = code
-        f.currencySymbol = symbol(code)
+        if code == "USD" {
+            f.currencySymbol = "$"
+        } else if code == "THB" {
+            f.currencySymbol = "฿"
+        }
         f.maximumFractionDigits = 2
         currencyFormatters[code] = f
         return f
