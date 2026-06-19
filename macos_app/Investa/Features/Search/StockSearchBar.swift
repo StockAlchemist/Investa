@@ -23,6 +23,12 @@ struct StockSearchBar: View {
         open && (!results.isEmpty || (!trimmed.isEmpty && !loading))
     }
 
+    /// Collapsed to an icon-sized pill when idle; expands once focused or typed
+    /// into (mirrors the web search bar). Keeps the bar compact in portrait.
+    private var expanded: Bool { focused || !query.isEmpty }
+    private var collapsedWidth: CGFloat { 38 }
+    private var expandedWidth: CGFloat { 230 }
+
     var body: some View {
         field
             .overlay(alignment: .topLeading) {
@@ -44,6 +50,8 @@ struct StockSearchBar: View {
             }
             .frame(width: 16, height: 16)
 
+            // The text field stays in the hierarchy (so it can be focused on tap)
+            // but is hidden and clipped away while the bar is collapsed.
             TextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
                 .font(.callout)
@@ -55,8 +63,9 @@ struct StockSearchBar: View {
                 .onSubmit(submit)
                 .onChange(of: query) { _, q in open = true; runSearch(q) }
                 .onChange(of: focused) { _, isFocused in handleFocus(isFocused) }
+                .opacity(expanded ? 1 : 0)
 
-            if !query.isEmpty {
+            if expanded && !query.isEmpty {
                 Button {
                     query = ""; results = []; focused = true
                 } label: {
@@ -67,9 +76,13 @@ struct StockSearchBar: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .frame(minWidth: 150, idealWidth: 200, maxWidth: 240)
+        .frame(width: expanded ? expandedWidth : collapsedWidth, alignment: .leading)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { if !focused { focused = true } }
+        .animation(.easeInOut(duration: 0.2), value: expanded)
     }
 
     // MARK: - Results dropdown

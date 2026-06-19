@@ -56,8 +56,11 @@ struct GlobalControlBar<Trailing: View>: View {
                 .padding(.leading, 16)
                 .padding(.vertical, 8)
             }
-            Spacer(minLength: 8)
+            // Take only the leftover width and scroll internally — otherwise the
+            // ScrollView claims its full content width and overlaps the search box.
+            .frame(maxWidth: .infinity)
             StockSearchBar(currency: appState.displayCurrency)
+                .layoutPriority(1)
             trailing
                 .padding(.trailing, 16)
         }
