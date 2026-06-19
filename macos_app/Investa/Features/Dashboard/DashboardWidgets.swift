@@ -228,6 +228,13 @@ struct TodayStripCard: View {
     let indices: [IndexQuote]
     let onSelectSymbol: (String) -> Void
 
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var compact: Bool { hSize == .compact }
+    #else
+    private var compact: Bool { false }
+    #endif
+
     private struct Mover { let symbol: String; let pct: Double; let contribution: Double }
 
     private func isCash(_ s: String) -> Bool {
@@ -251,9 +258,13 @@ struct TodayStripCard: View {
     var body: some View {
         Card(title: "Today", icon: "sun.max") {
             let m = movers
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 24) { marketCol; moverCol("Top Gainers", m.gainers, true); moverCol("Top Losers", m.losers, false) }
+            if compact {
                 VStack(alignment: .leading, spacing: 16) { marketCol; moverCol("Top Gainers", m.gainers, true); moverCol("Top Losers", m.losers, false) }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 24) { marketCol; moverCol("Top Gainers", m.gainers, true); moverCol("Top Losers", m.losers, false) }
+                    VStack(alignment: .leading, spacing: 16) { marketCol; moverCol("Top Gainers", m.gainers, true); moverCol("Top Losers", m.losers, false) }
+                }
             }
         }
     }
