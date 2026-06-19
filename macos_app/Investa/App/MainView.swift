@@ -116,6 +116,14 @@ struct MainView: View {
                 }
             }
         }
+        #elseif os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if !appState.indices.isEmpty {
+                    IndexStrip(indices: appState.indices)
+                }
+            }
+        }
         #endif
     }
 

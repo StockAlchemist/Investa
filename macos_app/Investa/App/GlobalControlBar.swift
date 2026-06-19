@@ -18,7 +18,7 @@ struct GlobalControlBar<Trailing: View>: View {
 
     var body: some View {
         #if os(iOS)
-        if hSize == .compact { compactBar } else { regularBar }
+        compactBar
         #else
         regularBar
         #endif
