@@ -40,6 +40,9 @@ struct TransactionsView: View {
     @State private var showImporter = false
 
     private var cur: String { appState.displayCurrency }
+    private var isImportAccountAutoCash: Bool {
+        !importAccount.isEmpty && (appState.accountCashModeMap[importAccount] ?? "Manual") == "Auto"
+    }
 
     // MARK: - Derived data
 
@@ -51,6 +54,26 @@ struct TransactionsView: View {
 
     private func dupKey(_ tx: Transaction) -> String {
         "\(tx.symbol)|\(tx.date.prefix(10))|\(tx.type)|\(abs(tx.quantity))|\(tx.totalAmount)|\(tx.account)|\(tx.note ?? "")"
+    }
+
+    // Mirrors web app importMatchKey: symbol|date|type (dividend/tax omit qty to handle parser qty=0 cases)
+    private func importMatchKey(_ tx: Transaction) -> String {
+        let date = String(tx.date.prefix(10))
+        let sym = tx.symbol.uppercased()
+        let type = tx.type.lowercased()
+        if type == "dividend" || type == "tax" {
+            return "\(sym)|\(date)|\(type)"
+        }
+        return "\(sym)|\(date)|\(type)|\(abs(tx.quantity))"
+    }
+
+    private var existingTxKeys: Set<String> {
+        Set(viewModel.transactions.map { importMatchKey($0) })
+    }
+
+    private var reviewDuplicateCount: Int {
+        let keys = existingTxKeys
+        return reviewTransactions.filter { keys.contains(importMatchKey($0)) }.count
     }
 
     private var duplicateKeys: Set<String> {
@@ -95,6 +118,9 @@ struct TransactionsView: View {
     }
     private var sorted: [Transaction] { filtered.sorted(using: sortOrder) }
     private var existingTypes: [String] { Array(Set(viewModel.transactions.map { $0.type })).sorted() }
+    private var existingSymbols: [String] {
+        Array(Set(viewModel.transactions.map { $0.symbol }.filter { !$0.isEmpty })).sorted()
+    }
 
     private static func typeColor(_ type: String) -> Color {
         switch type.uppercased() {
@@ -148,8 +174,8 @@ struct TransactionsView: View {
         .macMinSize(width: 820, height: 560)
         .task(id: accountSignature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .sheet(isPresented: $showingAdd) { TransactionEditView(existing: nil, onSave: handleSave).environmentObject(appState) }
-        .sheet(item: $editing) { tx in TransactionEditView(existing: tx, onSave: handleSave).environmentObject(appState) }
+        .sheet(isPresented: $showingAdd) { TransactionEditView(existing: nil, onSave: handleSave, existingSymbols: existingSymbols).environmentObject(appState) }
+        .sheet(item: $editing) { tx in TransactionEditView(existing: tx, onSave: handleSave, existingSymbols: existingSymbols).environmentObject(appState) }
         .sheet(isPresented: $showingReview) { reviewSheet }
         .alert("Delete transaction?", isPresented: deleteBinding, presenting: pendingDelete) { tx in
             Button("Delete", role: .destructive) { Task { await viewModel.delete(tx); reload() } }
@@ -215,7 +241,11 @@ struct TransactionsView: View {
                 Text("Default").tag("")
                 ForEach(appState.allAccounts, id: \.self) { Text($0).tag($0) }
             }
+            .onChange(of: importAccount) { _, _ in
+                if isImportAccountAutoCash { autoAddCash = false }
+            }
             Toggle("Auto-add cash", isOn: $autoAddCash)
+                .disabled(isImportAccountAutoCash)
             Divider()
             Button("Choose PDF / Image…") { showImporter = true }
         } label: {
@@ -228,13 +258,27 @@ struct TransactionsView: View {
         }
     }
 
+    private static let outflowTypes: Set<String> = [
+        "buy", "withdrawal", "fees", "fee", "tax", "withholding tax",
+        "split", "stock split", "buy to cover"
+    ]
+
     private func openImportFile(_ url: URL) {
-        Task {
+        Task { @MainActor in
             let access = url.startAccessingSecurityScopedResource()
             var parsed = await viewModel.parseDocument(url)
             if access { url.stopAccessingSecurityScopedResource() }
-            if !importAccount.isEmpty {
-                parsed = parsed.map { var t = $0; if t.account.isEmpty { t.account = importAccount }; return t }
+            parsed = parsed.map { tx in
+                var t = tx
+                // Mirror web: importAccount overrides parsed account; fall back to "Default" if both empty.
+                t.account = importAccount.isEmpty ? (t.account.isEmpty ? "Default" : t.account) : importAccount
+                // Apply sign convention: parsers emit positive values; outflows store negative.
+                let absTotal = abs(t.totalAmount)
+                if absTotal > 1e-9 {
+                    let isOutflow = Self.outflowTypes.contains(t.type.lowercased().trimmingCharacters(in: .whitespaces))
+                    t.totalAmount = isOutflow ? -absTotal : absTotal
+                }
+                return t
             }
             if !parsed.isEmpty { reviewTransactions = parsed; showingReview = true }
         }
@@ -243,7 +287,13 @@ struct TransactionsView: View {
     private var reviewSheet: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Review Import (\(reviewTransactions.count))").font(.title2.bold())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Review Import (\(reviewTransactions.count))").font(.title2.bold())
+                    if reviewDuplicateCount > 0 {
+                        Label("\(reviewDuplicateCount) already in your table (highlighted)", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }
                 Spacer()
                 Toggle("Auto-add cash", isOn: $autoAddCash)
             }
@@ -252,47 +302,146 @@ struct TransactionsView: View {
             if reviewTransactions.isEmpty {
                 ContentUnavailableView("Nothing to import", systemImage: "doc")
             } else {
+                #if os(macOS)
+                // Column headers
+                HStack(spacing: 0) {
+                    Text("Date").frame(width: 90, alignment: .leading)
+                    Text("Type").frame(width: 88, alignment: .leading)
+                    Text("Symbol").frame(width: 82, alignment: .leading)
+                    Text("Qty").frame(width: 58, alignment: .trailing)
+                    Text("Price").frame(width: 65, alignment: .trailing)
+                    Text("Total").frame(width: 92, alignment: .trailing)
+                    Text("Account").frame(width: 114, alignment: .leading).padding(.leading, 6)
+                    Spacer()
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16).padding(.vertical, 6)
+                Divider()
+                #endif
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(Array(reviewTransactions.enumerated()), id: \.offset) { i, tx in
+                            let isDuplicate = existingTxKeys.contains(importMatchKey(tx))
+                            // Normalize stored type casing to match allTypes tags for Picker selection.
+                            let normalizedType = Transaction.allTypes.first { $0.lowercased() == tx.type.lowercased() } ?? tx.type
                             #if os(iOS)
                             VStack(spacing: 6) {
+                                // Row 1: Symbol (editable) + duplicate badge | Total (editable)
                                 HStack {
-                                    Text(tx.symbol).fontWeight(.bold)
+                                    TextField("Symbol", text: Binding(
+                                        get: { reviewTransactions[i].symbol },
+                                        set: { reviewTransactions[i].symbol = $0.uppercased() }))
+                                        .fontWeight(.bold).textCase(.uppercase)
+                                    if isDuplicate {
+                                        Label("Duplicate", systemImage: "exclamationmark.triangle.fill")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(.orange)
+                                            .padding(.horizontal, 5).padding(.vertical, 2)
+                                            .background(.orange.opacity(0.15), in: Capsule())
+                                    }
                                     Spacer()
-                                    Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).monospacedDigit()
+                                    TextField("Total", text: Binding(
+                                        get: { reviewTransactions[i].totalAmount == 0 ? "" : String(reviewTransactions[i].totalAmount) },
+                                        set: { if let v = Double($0) { reviewTransactions[i].totalAmount = v } }))
+                                        .decimalKeyboard()
+                                        .multilineTextAlignment(.trailing).monospacedDigit().frame(width: 90)
                                 }
+                                // Row 2: Type (Picker) | Qty (editable) | Price (editable)
                                 HStack {
-                                    Text(tx.type).font(.caption.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
+                                    Picker("", selection: Binding(
+                                        get: { normalizedType },
+                                        set: { reviewTransactions[i].type = $0 })) {
+                                        ForEach(Transaction.allTypes, id: \.self) { Text($0).tag($0) }
+                                    }
+                                    .labelsHidden().pickerStyle(.menu)
+                                    .font(.caption.weight(.bold))
                                     Spacer()
-                                    Text("\(Fmt.number(tx.quantity))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                    TextField("Qty", text: Binding(
+                                        get: { reviewTransactions[i].quantity == 0 ? "" : Fmt.number(reviewTransactions[i].quantity) },
+                                        set: { if let v = Double($0) { reviewTransactions[i].quantity = v } }))
+                                        .decimalKeyboard()
+                                        .multilineTextAlignment(.trailing).monospacedDigit().font(.caption).frame(width: 70)
+                                    Text("@").font(.caption2).foregroundStyle(.tertiary)
+                                    TextField("Price", text: Binding(
+                                        get: { reviewTransactions[i].pricePerShare == 0 ? "" : Fmt.number(reviewTransactions[i].pricePerShare) },
+                                        set: { if let v = Double($0) { reviewTransactions[i].pricePerShare = v } }))
+                                        .decimalKeyboard()
+                                        .multilineTextAlignment(.trailing).monospacedDigit().font(.caption).frame(width: 70)
                                 }
+                                // Row 3: Date (editable) | Account (editable) | Delete
                                 HStack {
-                                    Text(tx.displayDate).font(.caption2).foregroundStyle(.secondary)
+                                    TextField("YYYY-MM-DD", text: Binding(
+                                        get: { String(reviewTransactions[i].date.prefix(10)) },
+                                        set: { reviewTransactions[i].date = $0 }))
+                                        .font(.caption2).foregroundStyle(.secondary).frame(width: 90)
                                     Spacer()
                                     TextField("Account", text: Binding(
                                         get: { reviewTransactions[i].account },
-                                        set: { reviewTransactions[i].account = $0 })).textFieldStyle(.roundedBorder).frame(width: 140)
-                                    Button(role: .destructive) { reviewTransactions.remove(at: i) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).foregroundStyle(.red)
+                                        set: { reviewTransactions[i].account = $0 }))
+                                        .textFieldStyle(.roundedBorder).frame(width: 130)
+                                    Button(role: .destructive) { reviewTransactions.remove(at: i) } label: { Image(systemName: "trash") }
+                                        .buttonStyle(.borderless).foregroundStyle(.red)
                                 }
                             }
                             .padding(.vertical, 12).padding(.horizontal, 16)
+                            .background(isDuplicate ? Color.orange.opacity(0.08) : Color.clear)
                             Divider()
                             #else
-                            HStack {
-                                Text(tx.displayDate).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
-                                Text(tx.type).frame(width: 80, alignment: .leading)
-                                Text(tx.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
-                                Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
-                                Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).monospacedDigit().frame(width: 100, alignment: .trailing)
+                            HStack(spacing: 0) {
+                                // Date
+                                TextField("YYYY-MM-DD", text: Binding(
+                                    get: { String(reviewTransactions[i].date.prefix(10)) },
+                                    set: { reviewTransactions[i].date = $0 }))
+                                    .foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                                // Type
+                                Picker("", selection: Binding(
+                                    get: { normalizedType },
+                                    set: { reviewTransactions[i].type = $0 })) {
+                                    ForEach(Transaction.allTypes, id: \.self) { Text($0).tag($0) }
+                                }
+                                .labelsHidden().pickerStyle(.menu).frame(width: 88, alignment: .leading)
+                                // Symbol + duplicate badge
+                                HStack(spacing: 4) {
+                                    TextField("Symbol", text: Binding(
+                                        get: { reviewTransactions[i].symbol },
+                                        set: { reviewTransactions[i].symbol = $0.uppercased() }))
+                                        .fontWeight(.medium).textCase(.uppercase)
+                                    if isDuplicate {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(.orange)
+                                            .help("This transaction already exists in your table")
+                                    }
+                                }
+                                .frame(width: 82, alignment: .leading)
+                                // Qty
+                                TextField("Qty", text: Binding(
+                                    get: { reviewTransactions[i].quantity == 0 ? "" : Fmt.number(reviewTransactions[i].quantity) },
+                                    set: { if let v = Double($0) { reviewTransactions[i].quantity = v } }))
+                                    .multilineTextAlignment(.trailing).monospacedDigit().frame(width: 58, alignment: .trailing)
+                                // Price
+                                TextField("Price", text: Binding(
+                                    get: { reviewTransactions[i].pricePerShare == 0 ? "" : Fmt.number(reviewTransactions[i].pricePerShare) },
+                                    set: { if let v = Double($0) { reviewTransactions[i].pricePerShare = v } }))
+                                    .multilineTextAlignment(.trailing).monospacedDigit().frame(width: 65, alignment: .trailing)
+                                // Total
+                                TextField("Total", text: Binding(
+                                    get: { reviewTransactions[i].totalAmount == 0 ? "" : String(reviewTransactions[i].totalAmount) },
+                                    set: { if let v = Double($0) { reviewTransactions[i].totalAmount = v } }))
+                                    .multilineTextAlignment(.trailing).monospacedDigit().frame(width: 92, alignment: .trailing)
+                                // Account
                                 TextField("Account", text: Binding(
                                     get: { reviewTransactions[i].account },
-                                    set: { reviewTransactions[i].account = $0 })).textFieldStyle(.roundedBorder).frame(width: 120)
+                                    set: { reviewTransactions[i].account = $0 }))
+                                    .textFieldStyle(.roundedBorder).frame(width: 108)
+                                    .padding(.leading, 6)
                                 Spacer()
                                 Button(role: .destructive) { reviewTransactions.remove(at: i) } label: { Image(systemName: "trash") }
                                     .buttonStyle(.borderless).foregroundStyle(.red)
                             }
                             .font(.callout).padding(.vertical, 6).padding(.horizontal, 16)
+                            .background(isDuplicate ? Color.orange.opacity(0.08) : Color.clear)
                             Divider()
                             #endif
                         }

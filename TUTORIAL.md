@@ -177,7 +177,23 @@ The special cash symbol **`$CASH`** is crucial for accurately tracking your port
     * `Price/Share`: 1
     * `Total Amount`: -10 (or 10 if Quantity is negative)
     * `Account`: Brokerage A
-    * **TWR Impact:** Fees paid from cash are like withdrawals for TWR purposes if they are external to the core investment activity (e.g. advisory fees). If they are transaction fees, they are part of the cost of the transaction. The `Fees` type with `$CASH` implies an expense that reduces the account's cash and is typically treated as a negative return or an outflow.
+    * **Growth Outliers:** Flags companies priced with unrealistic growth expectations (e.g., >30% sustained growth needed to justify current price).
+* **Deep Value:** High conviction screener identifying companies with high AI scores, large margin of safety, and strong historical profitability.
+
+## Part 19: Apple Native Apps (macOS, iOS, iPadOS)
+
+Investa includes a comprehensive native Apple client application built entirely in SwiftUI. This single codebase runs seamlessly across Mac, iPhone, and iPad, adapting its layout to the device (sidebar navigation on Mac/iPad, bottom tab bar on iPhone).
+
+The native app connects directly to your Investa backend API, offering real-time performance and deep OS integration.
+
+### Setting up the Native App
+
+1. **Start the Backend:** Ensure your Investa backend is running (e.g., `./start_investa.sh`). The backend serves the API on port `8000`.
+2. **Open the Project:** Navigate to the `macos_app` folder and open `Investa.xcodeproj` in Xcode 16 or later.
+3. **Configure API URL (If Remote):** If you are running the backend on a different machine (e.g., a home server or via Tailscale), open `Networking/APIConfig.swift` in Xcode and update `baseURL` to match your server's IP or Tailscale address (e.g., `http://your-server-ip:8000`). If running locally on a Mac, `http://localhost:8000` is the default and requires no changes.
+4. **Build and Run:** Select your target device (My Mac, iPhone Simulator, or a physical iPad/iPhone) from the top-left dropdown in Xcode and press `Cmd + R` to build and run the application.
+
+*Note: For deploying to a physical iPhone or iPad, you will need to add your free Apple ID to Xcode settings under the Accounts tab to sign the application for local development.* The `Fees` type with `$CASH` implies an expense that reduces the account's cash and is typically treated as a negative return or an outflow.
 
 * **Key for TWR:** Accurately logging `Deposit` and `Withdrawal` transactions for `$CASH` is paramount for correct TWR calculation, as these define the external cash flows against which investment performance is measured. Internal conversions (buying/selling assets) do not count as external flows.
 
@@ -911,6 +927,21 @@ For any stock in the screener or your watchlist, you can trigger an **AI Audit**
 *   **Valuation Context:** Comparison of current price to intrinsic value estimates.
 
 The **AI Score** helps you quickly prioritize which opportunities to investigate further, acting as a second opinion on the quantitative data.
+
+## Part 19: Apple Native Apps (macOS, iOS, iPadOS)
+
+Investa includes a comprehensive native Apple client application built entirely in SwiftUI. This single codebase runs seamlessly across Mac, iPhone, and iPad, adapting its layout to the device (sidebar navigation on Mac/iPad, bottom tab bar on iPhone).
+
+The native app connects directly to your Investa backend API, offering real-time performance and deep OS integration.
+
+### Setting up the Native App
+
+1. **Start the Backend:** Ensure your Investa backend is running (e.g., `./start_investa.sh`). The backend serves the API on port `8000`.
+2. **Open the Project:** Navigate to the `macos_app` folder and open `Investa.xcodeproj` in Xcode 16 or later.
+3. **Configure API URL (If Remote):** If you are running the backend on a different machine (e.g., a home server or via Tailscale), open `Networking/APIConfig.swift` in Xcode and update `baseURL` to match your server's IP or Tailscale address (e.g., `http://your-server-ip:8000`). If running locally on a Mac, `http://localhost:8000` is the default and requires no changes.
+4. **Build and Run:** Select your target device (My Mac, iPhone Simulator, or a physical iPad/iPhone) from the top-left dropdown in Xcode and press `Cmd + R` to build and run the application.
+
+*Note: For deploying to a physical iPhone or iPad, you will need to add your free Apple ID to Xcode settings under the Accounts tab to sign the application for local development.*
 
 ---
 

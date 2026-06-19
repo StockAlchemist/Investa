@@ -288,29 +288,31 @@ struct HoldingsTableView: View {
     private var macBody: some View {
         HStack(spacing: 0) {
             if let firstCol = visibleColumns.first {
+                let pinnedCols = [firstCol]
+                let scrollCols = Array(visibleColumns.dropFirst())
                 let fw = columnWidth(firstCol)
-                
+                let scrollWidth = scrollCols.reduce(0) { $0 + columnWidth($1) }
+
+                // Pinned first column — renders only the first column's cells.
                 VStack(alignment: .leading, spacing: 0) {
-                    headerRow
+                    headerRow(columns: pinnedCols)
                     Divider()
-                    if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
+                    if let gb = groupBy, !gb.isEmpty { groupedBody(columns: pinnedCols, width: fw, part: .label) } else { flatBody(columns: pinnedCols) }
                 }
-                .frame(width: totalWidth, alignment: .leading)
                 .frame(width: fw, alignment: .leading)
-                .clipped()
-                .background(.background)
+                .background(.background.secondary)
                 .zIndex(1)
-                
+
                 Divider()
-                
+
+                // Scrollable remaining columns — renders only the non-pinned cells.
                 ScrollView(.horizontal, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 0) {
-                        headerRow
+                        headerRow(columns: scrollCols)
                         Divider()
-                        if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
+                        if let gb = groupBy, !gb.isEmpty { groupedBody(columns: scrollCols, width: scrollWidth, part: .stats) } else { flatBody(columns: scrollCols) }
                     }
-                    .frame(width: totalWidth, alignment: .leading)
-                    .padding(.leading, -fw)
+                    .frame(width: scrollWidth, alignment: .leading)
                 }
                 .clipped()
             } else {
@@ -530,9 +532,11 @@ struct HoldingsTableView: View {
         }
     }
 
-    private var headerRow: some View {
+    private var headerRow: some View { headerRow(columns: visibleColumns) }
+
+    private func headerRow(columns: [String]) -> some View {
         HStack(spacing: 0) {
-            ForEach(visibleColumns, id: \.self) { h in
+            ForEach(columns, id: \.self) { h in
                 Button { sort(h) } label: {
                     HStack(spacing: 3) {
                         if leftAlignedHeaders.contains(h) {
@@ -571,51 +575,71 @@ struct HoldingsTableView: View {
 
     // MARK: Bodies
 
-    private var flatBody: some View {
+    private var flatBody: some View { flatBody(columns: visibleColumns) }
+
+    private func flatBody(columns: [String]) -> some View {
         let rows = sortedRows(baseRows)
         let shown = Array(rows.prefix(visibleRows))
         return LazyVStack(spacing: 0) {
-            ForEach(shown) { r in rowAndLots(r) }
+            ForEach(shown) { r in rowAndLots(r, columns: columns) }
         }
     }
 
-    @ViewBuilder private var groupedBody: some View {
+    /// Which part of a group header to render. When the table splits into a
+    /// pinned first column + scrollable remainder, the chevron/name/badge belong
+    /// to the pinned side (`.label`) and the aggregate stats to the scroll side
+    /// (`.stats`); a non-split table renders everything (`.full`).
+    private enum GroupHeaderPart { case full, label, stats }
+
+    @ViewBuilder private var groupedBody: some View { groupedBody(columns: visibleColumns, width: totalWidth) }
+
+    @ViewBuilder private func groupedBody(columns: [String], width: CGFloat, part: GroupHeaderPart = .full) -> some View {
         LazyVStack(spacing: 0) {
             ForEach(groups) { g in
-                groupHeaderRow(g)
+                groupHeaderRow(g, columns: columns, width: width, part: part)
                 if expandedGroups.contains(g.key) {
-                    ForEach(g.rows) { r in rowAndLots(r) }
+                    ForEach(g.rows) { r in rowAndLots(r, columns: columns) }
                 }
             }
         }
     }
 
-    @ViewBuilder private func rowAndLots(_ r: HRow) -> some View {
-        dataRow(r)
+    @ViewBuilder private func rowAndLots(_ r: HRow) -> some View { rowAndLots(r, columns: visibleColumns) }
+
+    @ViewBuilder private func rowAndLots(_ r: HRow, columns: [String]) -> some View {
+        dataRow(r, columns: columns)
         Divider().opacity(0.4)
         if expandedLots.contains(r.symbol), !r.lots.isEmpty {
-            ForEach(Array(r.lots.enumerated()), id: \.offset) { _, lot in lotRow(r, lot) }
+            ForEach(Array(r.lots.enumerated()), id: \.offset) { _, lot in lotRow(r, lot, columns: columns) }
         }
     }
 
-    private func groupHeaderRow(_ g: HGroup) -> some View {
+    private func groupHeaderRow(_ g: HGroup) -> some View { groupHeaderRow(g, columns: visibleColumns, width: totalWidth) }
+
+    private func groupHeaderRow(_ g: HGroup, columns: [String], width: CGFloat, part: GroupHeaderPart = .full) -> some View {
         Button { toggleGroup(g.key) } label: {
             HStack(spacing: 8) {
-                Image(systemName: expandedGroups.contains(g.key) ? "chevron.down" : "chevron.right").font(.caption2).foregroundStyle(.secondary)
-                Text(g.key).fontWeight(.semibold)
-                Text("\(g.rows.count)").font(.caption2).foregroundStyle(.secondary)
-                    .padding(.horizontal, 6).padding(.vertical, 1).background(.background.tertiary, in: Capsule())
-                Spacer()
-                HStack(spacing: 18) {
-                    if visibleColumns.contains("Mkt Val") { groupStat("Mkt", g.agg["Mkt Val"], .primary) }
-                    if visibleColumns.contains("Day Chg") { groupStat("Day", g.agg["Day Chg"], glColor(g.agg["Day Chg"])) }
-                    if visibleColumns.contains("Day Chg %") { groupStat(nil, g.agg["Day Chg %"], glColor(g.agg["Day Chg %"]), pct: true) }
-                    if visibleColumns.contains("Unreal. G/L") { groupStat("Unreal", g.agg["Unreal. G/L"], glColor(g.agg["Unreal. G/L"])) }
-                }.padding(.trailing, 8)
+                // Chevron + name + count live on the pinned side (or the full row).
+                if part != .stats {
+                    Image(systemName: expandedGroups.contains(g.key) ? "chevron.down" : "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                    Text(g.key).fontWeight(.semibold)
+                    Text("\(g.rows.count)").font(.caption2).foregroundStyle(.secondary)
+                        .padding(.horizontal, 6).padding(.vertical, 1).background(.background.tertiary, in: Capsule())
+                }
+                // Aggregate stats live on the scroll side (or the full row).
+                if part != .label {
+                    Spacer()
+                    HStack(spacing: 18) {
+                        if columns.contains("Mkt Val") { groupStat("Mkt", g.agg["Mkt Val"], .primary) }
+                        if columns.contains("Day Chg") { groupStat("Day", g.agg["Day Chg"], glColor(g.agg["Day Chg"])) }
+                        if columns.contains("Day Chg %") { groupStat(nil, g.agg["Day Chg %"], glColor(g.agg["Day Chg %"]), pct: true) }
+                        if columns.contains("Unreal. G/L") { groupStat("Unreal", g.agg["Unreal. G/L"], glColor(g.agg["Unreal. G/L"])) }
+                    }.padding(.trailing, 8)
+                }
             }
             .font(.callout)
             .padding(.horizontal, 8).padding(.vertical, 9)
-            .frame(width: totalWidth, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .background(.background.secondary.opacity(0.6))
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -787,8 +811,10 @@ struct HoldingsTableView: View {
 
     // MARK: Data row
 
-    private func dataRow(_ r: HRow) -> some View {
-        HStack(spacing: 0) { ForEach(visibleColumns, id: \.self) { h in cell(h, r) } }
+    private func dataRow(_ r: HRow) -> some View { dataRow(r, columns: visibleColumns) }
+
+    private func dataRow(_ r: HRow, columns: [String]) -> some View {
+        HStack(spacing: 0) { ForEach(columns, id: \.self) { h in cell(h, r) } }
     }
 
     private func cell(_ h: String, _ r: HRow) -> some View {
@@ -928,9 +954,11 @@ struct HoldingsTableView: View {
 
     // MARK: Lot row
 
-    private func lotRow(_ r: HRow, _ lot: JSONValue) -> some View {
+    private func lotRow(_ r: HRow, _ lot: JSONValue) -> some View { lotRow(r, lot, columns: visibleColumns) }
+
+    private func lotRow(_ r: HRow, _ lot: JSONValue, columns: [String]) -> some View {
         HStack(spacing: 0) {
-            ForEach(visibleColumns, id: \.self) { h in
+            ForEach(columns, id: \.self) { h in
                 Group {
                     if h == "Symbol" {
                         HStack(spacing: 3) {

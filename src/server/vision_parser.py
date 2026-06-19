@@ -17,6 +17,25 @@ VISION_MODELS = [
     "gemini-3-pro-preview"
 ]
 
+_VISION_OUTFLOW_WITH_COMM = {"buy", "short sell", "buy to cover"}
+_VISION_INFLOW_WITH_COMM = {"sell"}
+
+
+def _vision_apply_commission(tx: Dict[str, Any]) -> None:
+    """Fold commission into Total Amount in-place to match the web app formula.
+    Buy-side: total = gross + commission.  Sell-side: total = gross - commission.
+    The AI returns gross amounts with commission separate; this normalises them."""
+    tx_type = str(tx.get("Type", "")).lower().strip()
+    commission = float(tx.get("Commission") or 0)
+    total = float(tx.get("Total Amount") or 0)
+    if commission <= 1e-9 or total <= 1e-9:
+        return
+    if tx_type in _VISION_OUTFLOW_WITH_COMM:
+        tx["Total Amount"] = total + commission
+    elif tx_type in _VISION_INFLOW_WITH_COMM:
+        tx["Total Amount"] = max(0.0, total - commission)
+
+
 def parse_document_with_ai(file_path: str, mime_type: str) -> List[Dict[str, Any]]:
     """
     Parses a brokerage statement (PDF or Image) using Gemini Vision.
@@ -43,7 +62,8 @@ def parse_document_with_ai(file_path: str, mime_type: str) -> List[Dict[str, Any
            - For Dividend/Tax, use the ticker of the paying security.
         4. ALL numerical values (Quantity, Price/Share, Total Amount, Commission) must be POSITIVE absolute values.
            The system will handle the sign based on the Type.
-        5. 'Total Amount' is the net amount (Quantity * Price) BEFORE commission/fees if possible, or the net impact.
+        5. 'Total Amount' is the absolute gross amount (Quantity * Price) before any commission/fees.
+           Commission/fees go in the 'Commission' field only. The system will add/subtract commission automatically.
         
         Also, extract the following summary information:
         - Statement Period (Start Date and End Date)
@@ -144,7 +164,7 @@ def parse_document_with_ai(file_path: str, mime_type: str) -> List[Dict[str, Any
                         else:
                             transactions = []
 
-                        # Type validation for each transaction
+                        # Type validation and commission normalisation for each transaction
                         for tx in transactions:
                             # Ensure required fields exist or have defaults
                             tx.setdefault("Type", "Buy")
@@ -153,6 +173,10 @@ def parse_document_with_ai(file_path: str, mime_type: str) -> List[Dict[str, Any
                             tx.setdefault("Total Amount", 0.0)
                             tx.setdefault("Commission", 0.0)
                             tx.setdefault("Local Currency", "USD")
+                            # Fold commission into Total Amount to match web app formula:
+                            # Buy/Short Sell/Buy to Cover: total = gross + commission
+                            # Sell: total = gross - commission
+                            _vision_apply_commission(tx)
                             
                         logging.info(f"Vision Parser: Successfully extracted {len(transactions)} transactions using {model}.")
                         return transactions

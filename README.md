@@ -17,6 +17,7 @@ Investa is a comprehensive portfolio management solution with a modern **Web Das
 * **Advanced Analysis:** Asset allocation, Correlation Matrix, Factor Analysis, and Scenario Analysis.
 * **Rebalancing:** Calculator to help you rebalance portfolio to target allocations.
 * **Web & Mobile:** Sleek Web Dashboard with mobile-optimized navigation, market indices, and a **comprehensive Market Screener**.
+* **Apple Ecosystem:** Native client application for **macOS, iOS, and iPadOS** written in SwiftUI. It connects to the Investa backend to provide a seamless, high-performance native experience with real-time charts and dynamic portfolio views.
 * **Market Screener:** identify opportunities across your Watchlist, Holdings, or the **entire database ("All Stocks")** with quantitative intrinsic value filters.
 * **AI Score:** Intelligent **scorecard-based rankings** in the Watchlist and Screener to help prioritize high-probability investments.
 * **Custom Groups (Tags):** Organize holdings with custom tags (e.g., "Core", "Speculative") for personalized grouping.

@@ -87,7 +87,7 @@ extension Transaction {
 
     private static func isCashSymbol(_ symbol: String) -> Bool {
         let s = symbol.trimmingCharacters(in: .whitespaces).uppercased()
-        return s == "$CASH" || s == "CASH"
+        return s == "$CASH" || s == "CASH" || s.hasPrefix("CASH (")
     }
 
     /// Replicates the web modal's Total Amount computation and sign convention.

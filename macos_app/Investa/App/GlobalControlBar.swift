@@ -19,8 +19,10 @@ struct GlobalControlBar<Trailing: View>: View {
     var body: some View {
         #if os(iOS)
         compactBar
+            .zIndex(1) // keep the search dropdown above the tab content below
         #else
         regularBar
+            .zIndex(1)
         #endif
     }
 
@@ -31,6 +33,7 @@ struct GlobalControlBar<Trailing: View>: View {
             benchmarkButton
             showClosedToggle
             Spacer()
+            StockSearchBar(currency: appState.displayCurrency)
             currencyMenu
             trailing
         }
@@ -53,7 +56,8 @@ struct GlobalControlBar<Trailing: View>: View {
                 .padding(.leading, 16)
                 .padding(.vertical, 8)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            StockSearchBar(currency: appState.displayCurrency)
             trailing
                 .padding(.trailing, 16)
         }

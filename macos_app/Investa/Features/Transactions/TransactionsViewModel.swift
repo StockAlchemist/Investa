@@ -27,31 +27,27 @@ final class TransactionsViewModel: ObservableObject {
     // MARK: - Document import + batch
 
     struct ParseResult: Decodable, Sendable {
-        let transactions: [Transaction]
+        let transactions: [Transaction]?
         let count: Int?
         let message: String?
-        init(from decoder: Decoder) throws {
-            let raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
-            count = raw["count"]?.doubleValue.map { Int($0) }
-            message = raw["message"]?.stringValue
-            if let arr = raw["transactions"]?.arrayValue {
-                let data = try JSONEncoder().encode(arr)
-                transactions = (try? JSONDecoder().decode([Transaction].self, from: data)) ?? []
-            } else { transactions = [] }
-        }
     }
 
     /// Parse a PDF/image document into draft transactions for review.
     func parseDocument(_ fileURL: URL) async -> [Transaction] {
         isImporting = true; errorMessage = nil
-        defer { isImporting = false }
         do {
             let result: ParseResult = try await api.postMultipart("/transactions/parse_document", fileURL: fileURL)
-            if result.transactions.isEmpty { statusMessage = result.message ?? "No transactions found in document." }
-            return result.transactions
+            let txs = result.transactions ?? []
+            isImporting = false
+            if txs.isEmpty { statusMessage = result.message ?? "No transactions found in document." }
+            return txs
         } catch let error as APIError {
+            isImporting = false
             errorMessage = error.errorDescription; return []
-        } catch { errorMessage = error.localizedDescription; return [] }
+        } catch { 
+            isImporting = false
+            errorMessage = error.localizedDescription; return [] 
+        }
     }
 
     /// Commit reviewed transactions in one batch.

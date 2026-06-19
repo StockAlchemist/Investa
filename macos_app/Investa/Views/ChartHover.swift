@@ -61,16 +61,12 @@ private struct ChartHoverTooltip<X: Plottable & Hashable>: ViewModifier {
                     let plot = geo[anchor]
                     ZStack(alignment: .topLeading) {
                         Rectangle().fill(.clear).contentShape(Rectangle())
-                            .onContinuousHover { phase in
-                                switch phase {
-                                case .active(let pt):
-                                    guard plot.contains(pt) else { selection = nil; return }
-                                    selection = nearest(pt.x - plot.minX, proxy)
-                                case .ended:
-                                    selection = nil
-                                }
-                            }
                             #if os(iOS)
+                            // On iOS, use a zero-distance DragGesture to drive
+                            // touch-and-drag tooltip tracking. `value.location`
+                            // is relative to this Rectangle, which fills the
+                            // GeometryReader and therefore matches the chart's
+                            // coordinate space.
                             .gesture(
                                 DragGesture(minimumDistance: 0)
                                     .onChanged { value in
@@ -80,13 +76,22 @@ private struct ChartHoverTooltip<X: Plottable & Hashable>: ViewModifier {
                                     .onEnded { value in
                                         selection = nil
                                         let d = hypot(value.translation.width, value.translation.height)
-                                        if d < 10, let onTap, plot.contains(value.location),
+                                        if d < 15, let onTap, plot.contains(value.location),
                                            let i = nearest(value.location.x - plot.minX, proxy) {
                                             onTap(i)
                                         }
                                     }
                             )
                             #else
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let pt):
+                                    guard plot.contains(pt) else { selection = nil; return }
+                                    selection = nearest(pt.x - plot.minX, proxy)
+                                case .ended:
+                                    selection = nil
+                                }
+                            }
                             .gesture(SpatialTapGesture().onEnded { value in
                                 guard let onTap, plot.contains(value.location),
                                       let i = nearest(value.location.x - plot.minX, proxy) else { return }

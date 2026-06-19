@@ -71,6 +71,10 @@ final class AppState: ObservableObject {
     @Published var tabVisible: [String: Set<String>] = [:]
     /// Accounts marked closed (for the account-selector indicator).
     @Published var closedAccounts: Set<String> = []
+    /// account → ISO currency code (e.g. "IBKR USD" → "USD").
+    @Published var accountCurrencyMap: [String: String] = [:]
+    /// account → cash mode: "Auto" or "Manual".
+    @Published var accountCashModeMap: [String: String] = [:]
     
     /// Current exchange rate of displayCurrency to USD (if not USD).
     @Published var currentFXRateToUSD: Double? = nil
@@ -173,6 +177,8 @@ final class AppState: ObservableObject {
             accounts.formUnion(closedAccounts)
             accounts.formUnion(accountGroups.values.flatMap { $0 })
             allAccounts = accounts.sorted()
+            accountCurrencyMap = settings.accountCurrencyMap ?? [:]
+            accountCashModeMap = settings.accountCashModeMap ?? [:]
             if let saved = settings.selectedAccounts, !saved.isEmpty {
                 selectedAccounts = Set(saved.filter { allAccounts.contains($0) })
             }

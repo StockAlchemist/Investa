@@ -312,6 +312,19 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         fileInputRef.current?.click();
     };
 
+    // Outflow types store a negative Total Amount (money leaves the account).
+    // The AI parser prompt asks for positive absolute values; apply the sign here
+    // so the review shows the correct sign and the batch endpoint stores it right.
+    const applyTotalAmountSign = (tx: Transaction): Transaction => {
+        const outflowTypes = new Set(['buy', 'withdrawal', 'fees', 'fee', 'tax', 'withholding tax', 'split', 'stock split', 'buy to cover']);
+        const txType = (tx.Type || '').toLowerCase().trim();
+        const total = Number(tx['Total Amount'] ?? 0);
+        if (!isFinite(total) || Math.abs(total) < 1e-9) return tx;
+        const signed = outflowTypes.has(txType) ? -Math.abs(total) : Math.abs(total);
+        if (signed === total) return tx;
+        return { ...tx, 'Total Amount': signed };
+    };
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -321,11 +334,14 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
             const result = await parseDocument(file);
 
             if (result.transactions && result.transactions.length > 0) {
-                // Apply the selected import account to all extracted transactions if they don't have one
-                const enrichedTransactions = result.transactions.map(tx => ({
-                    ...tx,
-                    Account: importAccount || tx.Account || 'Default'
-                }));
+                // Apply account fallback then sign convention so the review shows
+                // the same signed Total Amount that will be stored after import.
+                const enrichedTransactions = result.transactions.map(tx =>
+                    applyTotalAmountSign({
+                        ...tx,
+                        Account: importAccount || tx.Account || 'Default',
+                    })
+                );
                 setReviewTransactions(enrichedTransactions);
                 setIsReviewing(true);
             } else {

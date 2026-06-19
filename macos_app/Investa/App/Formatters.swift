@@ -5,7 +5,12 @@ import SwiftUI
 enum Fmt {
     /// Reusable formatters keyed by currency code — avoids allocating a new
     /// `NumberFormatter` on every call in hot layout paths.
-    private static var currencyFormatters: [String: NumberFormatter] = [:]
+    ///
+    /// Guarded by a lock because both the main thread (UI rendering) and
+    /// background `Task`s (e.g. document-import decoding) can call
+    /// `formatter(for:)` concurrently.
+    private static let _lock = NSLock()
+    private static var _currencyFormatters: [String: NumberFormatter] = [:]
 
     static func currency(_ value: Double?, code: String) -> String {
         guard let value else { return "—" }
@@ -23,7 +28,9 @@ enum Fmt {
     }
 
     private static func formatter(for code: String) -> NumberFormatter {
-        if let f = currencyFormatters[code] { return f }
+        _lock.lock()
+        defer { _lock.unlock() }
+        if let f = _currencyFormatters[code] { return f }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = code
@@ -39,7 +46,7 @@ enum Fmt {
             f.maximumFractionDigits = 2
         }
         
-        currencyFormatters[code] = f
+        _currencyFormatters[code] = f
         return f
     }
 
