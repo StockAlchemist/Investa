@@ -213,14 +213,22 @@ struct MainView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                HStack(spacing: 6) {
+                ViewThatFits {
+                    HStack(spacing: 6) {
+                        Image("AppLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 24)
+                        Text("Investa")
+                            .font(.title3).bold()
+                            .foregroundColor(.primary)
+                            .fixedSize()
+                    }
+                    
                     Image("AppLogo")
                         .resizable()
                         .scaledToFit()
                         .frame(height: 24)
-                    Text("Investa")
-                        .font(.title3).bold()
-                        .foregroundColor(.primary)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
