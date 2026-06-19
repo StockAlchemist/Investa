@@ -282,6 +282,13 @@ struct IndexStrip: View {
     }
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            fullStrip
+            shortStrip
+        }
+    }
+
+    private var fullStrip: some View {
         HStack(spacing: 12) {
             ForEach(indices) { index in
                 let isUp = (index.change ?? 0) >= 0
@@ -290,12 +297,42 @@ struct IndexStrip: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.primary)
                     
-                    #if os(macOS)
                     Text(Fmt.number(index.price))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .padding(.leading, 2)
-                    #endif
+                        
+                    if let change = index.change {
+                        Text("\(isUp ? "+" : "")\(Fmt.number(change))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(isUp ? Color.green : Color.red)
+                            .padding(.leading, 2)
+                    }
+                    
+                    HStack(spacing: 0) {
+                        Text("(")
+                        Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                            .font(.system(size: 8))
+                        Text(String(format: "%.2f%%)", abs(index.changesPercentage ?? 0)))
+                            .font(.caption.monospacedDigit())
+                    }
+                    .foregroundStyle(isUp ? Color.green : Color.red)
+                    .padding(.leading, 2)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+    }
+
+    private var shortStrip: some View {
+        HStack(spacing: 12) {
+            ForEach(indices) { index in
+                let isUp = (index.change ?? 0) >= 0
+                HStack(spacing: 2) {
+                    Text(shortName(index.name))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.primary)
                     
                     HStack(spacing: 0) {
                         Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
