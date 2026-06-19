@@ -159,17 +159,7 @@ struct TransactionsView: View {
             .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
             if let error = viewModel.errorMessage { errorBanner(error) }
-            ScrollView {
-                VStack(spacing: 16) {
-                    TxKpiStrip(transactions: sorted, preferredCurrency: cur)
-                    if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
-                    if duplicateCount > 0 { duplicateBanner }
-                    toolbar
-                    if showFilters { filterPanel }
-                    table
-                }
-                .padding(20)
-            }
+            contentBody
         }
         .macMinSize(width: 820, height: 560)
         .task(id: accountSignature) { reload() }
@@ -185,6 +175,37 @@ struct TransactionsView: View {
             Button("Delete", role: .destructive) { bulkDelete() }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    // MARK: - Content
+
+    /// macOS keeps the controls fixed at the top and lets the `Table` fill the
+    /// remaining window height (the table scrolls internally). iOS scrolls the
+    /// whole page since its rows are a plain `LazyVStack`.
+    @ViewBuilder private var contentBody: some View {
+        #if os(macOS)
+        VStack(spacing: 16) {
+            TxKpiStrip(transactions: sorted, preferredCurrency: cur)
+            if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
+            if duplicateCount > 0 { duplicateBanner }
+            toolbar
+            if showFilters { filterPanel }
+            table
+        }
+        .padding(20)
+        #else
+        ScrollView {
+            VStack(spacing: 16) {
+                TxKpiStrip(transactions: sorted, preferredCurrency: cur)
+                if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
+                if duplicateCount > 0 { duplicateBanner }
+                toolbar
+                if showFilters { filterPanel }
+                table
+            }
+            .padding(20)
+        }
+        #endif
     }
 
     // MARK: - Toolbar
@@ -672,7 +693,7 @@ struct TransactionsView: View {
             }
             .width(56)
         }
-        .frame(minHeight: 460)
+        .frame(maxHeight: .infinity)
         #endif
     }
 
