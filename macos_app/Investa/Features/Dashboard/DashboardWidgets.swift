@@ -552,40 +552,42 @@ private func donutSlices(_ holdings: [Holding], currency: String, by keyFor: (Ho
     return slices
 }
 
-private struct DonutWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
 struct PortfolioCompositionCard: View {
     let holdings: [Holding]
     let currency: String
-    @State private var cardWidth: CGFloat = 0
+
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var compact: Bool { hSize == .compact }
+    #else
+    private var compact: Bool { false }
+    #endif
 
     private var byHolding: [DonutSlice] { donutSlices(holdings, currency: currency) { $0.symbol } }
     private var byAccount: [DonutSlice] { donutSlices(holdings, currency: currency) { $0.account ?? "Unknown" } }
 
     var body: some View {
         Card(title: "Portfolio Composition", icon: "chart.pie") {
-            // Donuts size to the available width: two-up when wide, stacked when narrow.
-            let twoUp = cardWidth >= 680
-            let side = twoUp ? min((cardWidth - 16) / 2, 560) : min(max(cardWidth, 1), 560)
             Group {
-                if twoUp {
-                    HStack(alignment: .top, spacing: 16) {
-                        SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: side)
-                        SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: side, forceAllLabels: true)
+                if compact {
+                    VStack(spacing: 32) {
+                        SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: 300)
+                        SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: 300, forceAllLabels: true)
                     }
                 } else {
-                    VStack(spacing: 16) {
-                        SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: side)
-                        SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: side, forceAllLabels: true)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 24) {
+                            SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: 360)
+                            SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: 360, forceAllLabels: true)
+                        }
+                        VStack(spacing: 32) {
+                            SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: 360)
+                            SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: 360, forceAllLabels: true)
+                        }
                     }
                 }
             }
             .frame(maxWidth: .infinity)
-            .background(GeometryReader { g in Color.clear.preference(key: DonutWidthKey.self, value: g.size.width) })
-            .onPreferenceChange(DonutWidthKey.self) { cardWidth = $0 }
         }
     }
 }
