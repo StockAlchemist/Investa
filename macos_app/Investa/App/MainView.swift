@@ -107,18 +107,19 @@ struct MainView: View {
             .onChange(of: selection) { _, newSelection in
                 visitedSections.insert(newSelection)
             }
+            #if os(iOS)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !appState.indices.isEmpty {
+                        IndexStrip(indices: appState.indices)
+                    }
+                }
+            }
+            #endif
         }
         #if os(macOS)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if !appState.indices.isEmpty {
-                    IndexStrip(indices: appState.indices)
-                }
-            }
-        }
-        #elseif os(iOS)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
                 if !appState.indices.isEmpty {
                     IndexStrip(indices: appState.indices)
                 }
