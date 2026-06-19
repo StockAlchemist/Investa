@@ -38,17 +38,15 @@ struct GlobalControlBar<Trailing: View>: View {
         .background(.bar)
     }
 
-    /// Compact (iPhone): a single horizontally-scrollable row so the controls
-    /// never overflow the narrow width.
     private var compactBar: some View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     accountMenu
-                    currencyMenu
+                    if TabLayout.hasLayout(section) { layoutMenu }
                     benchmarkButton
                     showClosedToggle
-                    if TabLayout.hasLayout(section) { layoutMenu }
+                    currencyMenu
                 }
                 .labelStyle(.iconOnly)
                 .font(.title3) // to make the icons roughly the same size as in screenshot
