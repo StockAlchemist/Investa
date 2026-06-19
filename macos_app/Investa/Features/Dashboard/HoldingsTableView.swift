@@ -286,13 +286,42 @@ struct HoldingsTableView: View {
     }
 
     private var macBody: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 0) {
-                headerRow
+        HStack(spacing: 0) {
+            if let firstCol = visibleColumns.first {
+                let fw = columnWidth(firstCol)
+                
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow
+                    Divider()
+                    if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
+                }
+                .frame(width: fw, alignment: .leading)
+                .clipped()
+                .background(.background)
+                .zIndex(1)
+                
                 Divider()
-                if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
+                
+                ScrollView(.horizontal, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        headerRow
+                        Divider()
+                        if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
+                    }
+                    .frame(width: totalWidth, alignment: .leading)
+                    .padding(.leading, -fw)
+                }
+                .clipped()
+            } else {
+                ScrollView(.horizontal, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        headerRow
+                        Divider()
+                        if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
+                    }
+                    .frame(width: totalWidth, alignment: .leading)
+                }
             }
-            .frame(width: totalWidth, alignment: .leading)
         }
     }
 
