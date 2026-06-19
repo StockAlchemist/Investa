@@ -96,3 +96,34 @@ private struct RowHover: ViewModifier {
 extension View {
     func rowHover() -> some View { modifier(RowHover()) }
 }
+
+/// A unified modifier that applies the iOS 26 / macOS 16 Liquid Glass effect
+/// if available, and falls back to a standard material or bar background otherwise.
+struct LiquidGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 16.0, *) {
+            content.glassEffect()
+        } else {
+            content.background(.bar)
+        }
+    }
+}
+
+extension View {
+    /// Applies the Liquid Glass effect if supported by the OS, otherwise falls back to a standard bar background.
+    func liquidGlass() -> some View {
+        modifier(LiquidGlassModifier())
+    }
+}
+
+extension View {
+    /// Applies the interactive state to Liquid Glass elements if supported by the OS.
+    @ViewBuilder
+    func interactiveGlass() -> some View {
+        if #available(iOS 26.0, macOS 16.0, *) {
+            self.glassEffect(.regular.interactive())
+        } else {
+            self
+        }
+    }
+}

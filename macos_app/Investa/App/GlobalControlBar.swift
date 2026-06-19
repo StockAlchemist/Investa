@@ -35,7 +35,7 @@ struct GlobalControlBar<Trailing: View>: View {
             trailing
         }
         .padding(.horizontal, 20).padding(.vertical, 8)
-        .background(.bar)
+        .liquidGlass()
     }
 
     private var compactBar: some View {
@@ -57,7 +57,7 @@ struct GlobalControlBar<Trailing: View>: View {
             trailing
                 .padding(.trailing, 16)
         }
-        .background(.bar)
+        .liquidGlass()
     }
 
     // MARK: - Benchmarks
@@ -74,6 +74,7 @@ struct GlobalControlBar<Trailing: View>: View {
             Label("Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line")
         }
         .buttonStyle(.borderless)
+        .interactiveGlass()
         .popover(isPresented: $showBenchmarks, arrowEdge: .bottom) { benchmarkPopover }
     }
 
@@ -145,6 +146,7 @@ struct GlobalControlBar<Trailing: View>: View {
             Label(accountSummary, systemImage: "building.columns")
         }
         .buttonStyle(.borderless)
+        .interactiveGlass()
         .popover(isPresented: $showAccounts, arrowEdge: .bottom) { accountPopover }
     }
 
@@ -217,6 +219,7 @@ struct GlobalControlBar<Trailing: View>: View {
                 }
             }
             .borderlessMenu().fixedSize()
+            .interactiveGlass()
         }
         .onChange(of: appState.displayCurrency) {
             Task { await appState.fetchFXRate() }
@@ -228,6 +231,7 @@ struct GlobalControlBar<Trailing: View>: View {
             Label("Show Closed", systemImage: appState.showClosed ? "eye" : "eye.slash")
         }
         .toggleStyle(.button).controlSize(.small)
+        .interactiveGlass()
     }
 
     // MARK: - Layout configurator
@@ -246,6 +250,7 @@ struct GlobalControlBar<Trailing: View>: View {
             Label("Layout", systemImage: "slider.horizontal.3")
         }
         .borderlessMenu().fixedSize()
+        .interactiveGlass()
     }
 
     private func itemButtons(_ items: [LayoutItem]) -> some View {
