@@ -43,14 +43,15 @@ struct GlobalControlBar<Trailing: View>: View {
     private var compactBar: some View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(spacing: 16) {
                     accountMenu
-                    if TabLayout.hasLayout(section) { layoutMenu }
+                    currencyMenu
                     benchmarkButton
                     showClosedToggle
-                    currencyMenu
+                    if TabLayout.hasLayout(section) { layoutMenu }
                 }
                 .labelStyle(.iconOnly)
+                .font(.title3) // to make the icons roughly the same size as in screenshot
                 .padding(.leading, 16)
                 .padding(.vertical, 8)
             }
@@ -211,7 +212,11 @@ struct GlobalControlBar<Trailing: View>: View {
                     Button(cur) { appState.displayCurrency = cur }
                 }
             } label: {
-                Text(appState.displayCurrency)
+                HStack(spacing: 4) {
+                    Text(appState.displayCurrency)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 14))
+                }
             }
             .borderlessMenu().fixedSize()
         }

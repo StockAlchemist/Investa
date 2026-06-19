@@ -198,7 +198,13 @@ struct MainView: View {
     private func phoneTabContent(_ section: AppSection) -> some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                GlobalControlBar(section: section)
+                GlobalControlBar(section: section) {
+                    HStack(spacing: 16) {
+                        Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: { Image(systemName: "arrow.clockwise") }
+                        accountToolbarMenu
+                    }
+                    .font(.system(size: 20))
+                }
                 Divider()
                 sectionView(section)
             }
@@ -206,17 +212,22 @@ struct MainView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .topBarLeading) {
                 HStack(spacing: 6) {
                     Image("AppLogo")
                         .resizable()
                         .scaledToFit()
                         .frame(height: 24)
                     Text("Investa")
-                        .font(.headline)
+                        .font(.title3).bold()
+                        .foregroundColor(.primary)
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) { accountToolbarMenu }
+            ToolbarItem(placement: .topBarTrailing) {
+                if !appState.indices.isEmpty {
+                    IndexStrip(indices: appState.indices)
+                }
+            }
         }
     }
 
@@ -227,7 +238,6 @@ struct MainView: View {
             Button { appearanceSet = true; forceDark.toggle() } label: {
                 Label(forceDark ? "Light mode" : "Dark mode", systemImage: forceDark ? "sun.max" : "moon")
             }
-            Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
             Divider()
             Button(role: .destructive) { auth.logout() } label: { Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right") }
         } label: { Image(systemName: "person.crop.circle") }
