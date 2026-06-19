@@ -628,7 +628,7 @@ struct HoldingsTableView: View {
                     .padding(.horizontal, 6).padding(.vertical, 1).background(.background.tertiary, in: Capsule())
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(Fmt.currency(g.agg["Mkt Val"], code: currency)).font(.caption.weight(.bold)).monospacedDigit()
+                    Text(Fmt.currency(g.agg["Mkt Val"], code: currency)).font(.caption.weight(.bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                     Text(pctString(g.agg["Day Chg %"])).font(.caption2).monospacedDigit().foregroundStyle(glColor(g.agg["Day Chg %"]))
                 }
             }
@@ -666,6 +666,8 @@ struct HoldingsTableView: View {
                     Text(Fmt.currency(r.num["Mkt Val"], code: currency))
                         .font(.subheadline.weight(.bold))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                     
                     if let dayChgPct = r.num["Day Chg %"] {
                         Text(pctString(dayChgPct))
