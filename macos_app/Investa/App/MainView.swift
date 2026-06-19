@@ -264,25 +264,40 @@ private struct SettingsSheet: View {
 struct IndexStrip: View {
     let indices: [IndexQuote]
 
+    private func shortName(_ name: String?) -> String {
+        guard let name = name else { return "IDX" }
+        let upper = name.uppercased()
+        if upper.contains("DOW") { return "DOW" }
+        if upper.contains("S&P") { return "S&P" }
+        if upper.contains("NASDAQ") || upper.contains("NAS") { return "NAS" }
+        if upper.contains("RUSSELL") { return "RUT" }
+        return String(upper.prefix(3))
+    }
+
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             ForEach(indices) { index in
                 let isUp = (index.change ?? 0) >= 0
-                HStack(spacing: 4) {
-                    Text(index.name ?? "Index")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 2) {
+                    Text(shortName(index.name))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.primary)
                     
+                    #if os(macOS)
                     Text(Fmt.number(index.price))
                         .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 2)
+                    #endif
                     
-                    HStack(spacing: 2) {
+                    HStack(spacing: 0) {
                         Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                             .font(.system(size: 8))
                         Text(String(format: "%.2f%%", abs(index.changesPercentage ?? 0)))
                             .font(.caption.monospacedDigit())
                     }
                     .foregroundStyle(isUp ? Color.green : Color.red)
+                    .padding(.leading, 2)
                 }
             }
         }
