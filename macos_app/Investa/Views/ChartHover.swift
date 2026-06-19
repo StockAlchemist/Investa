@@ -70,11 +70,29 @@ private struct ChartHoverTooltip<X: Plottable & Hashable>: ViewModifier {
                                     selection = nil
                                 }
                             }
+                            #if os(iOS)
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        guard plot.contains(value.location) else { selection = nil; return }
+                                        selection = nearest(value.location.x - plot.minX, proxy)
+                                    }
+                                    .onEnded { value in
+                                        selection = nil
+                                        let d = hypot(value.translation.width, value.translation.height)
+                                        if d < 10, let onTap, plot.contains(value.location),
+                                           let i = nearest(value.location.x - plot.minX, proxy) {
+                                            onTap(i)
+                                        }
+                                    }
+                            )
+                            #else
                             .gesture(SpatialTapGesture().onEnded { value in
                                 guard let onTap, plot.contains(value.location),
                                       let i = nearest(value.location.x - plot.minX, proxy) else { return }
                                 onTap(i)
                             })
+                            #endif
                         if let sel = selection, xs.indices.contains(sel),
                            let c = tooltip(sel), let px = proxy.position(forX: xs[sel]) {
                             let lineX = plot.minX + px
