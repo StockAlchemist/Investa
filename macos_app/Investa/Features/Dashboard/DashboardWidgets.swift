@@ -1022,7 +1022,11 @@ private struct AllContributorsSheet: View {
                 }
             }
         }
+        #if os(macOS)
         .frame(width: 800, height: 600)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
         .task { await loadFull() }
     }
 

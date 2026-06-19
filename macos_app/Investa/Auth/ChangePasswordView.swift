@@ -26,7 +26,11 @@ struct ChangePasswordView: View {
             }
         }
         .padding(24)
+        #if os(macOS)
         .frame(width: 380)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        #endif
     }
 
     private var isValid: Bool {

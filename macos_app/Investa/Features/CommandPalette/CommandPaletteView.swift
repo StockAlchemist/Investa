@@ -63,7 +63,11 @@ struct CommandPaletteView: View {
                 .padding(.bottom, 8)
             }
         }
+        #if os(macOS)
         .frame(width: 560, height: 460)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
         .onAppear { focused = true }
         .onChange(of: query) { _, q in search(q) }
         #if os(macOS)

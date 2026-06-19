@@ -101,7 +101,9 @@ struct LoginView: View {
                 .foregroundStyle(.secondary)
             TextField("http://localhost:8000/api", text: $serverURL)
                 .textFieldStyle(.roundedBorder)
+                #if os(macOS)
                 .frame(width: 360)
+                #endif
             HStack {
                 Button("Reset to Default") {
                     serverURL = APIConfig.fallbackBaseURL
@@ -118,6 +120,10 @@ struct LoginView: View {
             }
         }
         .padding(24)
+        #if os(macOS)
         .frame(width: 420)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        #endif
     }
 }

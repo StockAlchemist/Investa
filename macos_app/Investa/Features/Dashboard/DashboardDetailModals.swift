@@ -234,7 +234,11 @@ struct InsightsDetailSheet: View {
                 .padding(20)
             }
         }
+        #if os(macOS)
         .frame(width: 640, height: 600)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
     }
 
     private var currentEmpty: Bool {
@@ -413,7 +417,11 @@ struct ConfirmedDividendsSheet: View {
                 }
             }
         }
+        #if os(macOS)
         .frame(width: 480, height: 560)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
     }
 
     private func displayDate(_ iso: String) -> String {
@@ -469,7 +477,11 @@ struct HealthAnalysisSheet: View {
                 .padding(20)
             }
         }
+        #if os(macOS)
         .frame(width: 540, height: 620)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
     }
 
     private func weightCell(_ pct: String, _ label: String, _ tint: Color) -> some View {
@@ -576,7 +588,11 @@ struct MetricExplanationSheet: View {
                 .padding(20)
             }
         }
+        #if os(macOS)
         .frame(width: 460, height: 480)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
     }
 
     private func block(_ heading: String, _ body: String) -> some View {

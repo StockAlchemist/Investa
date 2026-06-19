@@ -155,7 +155,11 @@ struct TransactionEditView: View {
             }
             .padding(16)
         }
+        #if os(macOS)
         .frame(width: 460, height: 660)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
         .onAppear(perform: populate)
     }
 
