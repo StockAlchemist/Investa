@@ -295,6 +295,7 @@ struct HoldingsTableView: View {
                     Divider()
                     if let gb = groupBy, !gb.isEmpty { groupedBody } else { flatBody }
                 }
+                .frame(width: totalWidth, alignment: .leading)
                 .frame(width: fw, alignment: .leading)
                 .clipped()
                 .background(.background)
