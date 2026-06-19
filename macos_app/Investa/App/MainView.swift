@@ -51,6 +51,7 @@ struct MainView: View {
     @AppStorage("investa.appearanceSet") private var appearanceSet = false
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.verticalSizeClass) private var vSize
     #endif
 
     var body: some View {
@@ -209,31 +210,26 @@ struct MainView: View {
                 sectionView(section)
             }
             .frame(width: geo.size.width, height: geo.size.height)
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                ViewThatFits {
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 6) {
                         Image("AppLogo")
                             .resizable()
                             .scaledToFit()
                             .frame(height: 24)
-                        Text("Investa")
-                            .font(.title3).bold()
-                            .foregroundColor(.primary)
-                            .fixedSize()
+                        
+                        if geo.size.width > 450 {
+                            Text("Investa")
+                                .font(.title3).bold()
+                                .foregroundColor(.primary)
+                        }
                     }
-                    
-                    Image("AppLogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 24)
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if !appState.indices.isEmpty {
-                    IndexStrip(indices: appState.indices)
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !appState.indices.isEmpty {
+                        IndexStrip(indices: appState.indices)
+                    }
                 }
             }
         }
