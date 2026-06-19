@@ -225,6 +225,9 @@ struct MainView: View {
                                 .foregroundColor(.primary)
                         }
                     }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !appState.indices.isEmpty {
