@@ -32,7 +32,13 @@ enum Fmt {
         } else if code == "THB" {
             f.currencySymbol = "฿"
         }
-        f.maximumFractionDigits = 2
+        if ["JPY", "KRW", "VND", "IDR", "HUF"].contains(code.uppercased()) {
+            f.maximumFractionDigits = 0
+            f.minimumFractionDigits = 0
+        } else {
+            f.maximumFractionDigits = 2
+        }
+        
         currencyFormatters[code] = f
         return f
     }
