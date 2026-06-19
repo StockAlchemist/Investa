@@ -333,6 +333,8 @@ struct IndexStrip: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
     }
 
     private var shortStrip: some View {
@@ -357,5 +359,7 @@ struct IndexStrip: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
     }
 }
