@@ -334,6 +334,10 @@ struct IndexStrip: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .lineLimit(1)
+        // Render at intrinsic width when chosen so the toolbar doesn't truncate
+        // the last index with an ellipsis. ViewThatFits still falls back to
+        // shortStrip when this doesn't fit the available width.
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var shortStrip: some View {
