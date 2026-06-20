@@ -69,6 +69,27 @@ struct GlobalControlBar<Trailing: View>: View {
         }
     }
 
+    /// Space-saving market status for the compact (iPhone/iPad) bar: a colored
+    /// dot (green pulse when open, muted when closed) + the last-updated time.
+    /// The dot color conveys open/closed without the "LIVE/CLOSED" word.
+    @ViewBuilder private var marketStatusCompact: some View {
+        if let open = appState.marketIsOpen {
+            HStack(spacing: 4) {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 6))
+                    .symbolEffect(.pulse, options: .repeating, isActive: open)
+                    .foregroundStyle(open ? Color.green : .secondary)
+                if let ts = appState.lastUpdated {
+                    Text(ts.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 10, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityLabel(open ? "Market open" : "Market closed")
+            .fixedSize()
+        }
+    }
+
     private var compactBar: some View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -89,6 +110,7 @@ struct GlobalControlBar<Trailing: View>: View {
             .frame(maxWidth: .infinity)
             StockSearchBar(currency: appState.displayCurrency)
                 .layoutPriority(1)
+            marketStatusCompact
             trailing
                 .padding(.trailing, 16)
         }
