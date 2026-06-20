@@ -91,28 +91,29 @@ struct GlobalControlBar<Trailing: View>: View {
     }
 
     private var compactBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     accountMenu
                     if TabLayout.hasLayout(section) { layoutMenu }
                     benchmarkButton
                     showClosedToggle
-                    currencyMenu
                 }
                 .labelStyle(.iconOnly)
-                .font(.title3) // to make the icons roughly the same size as in screenshot
-                .padding(.leading, 16)
+                .font(.body) // compact glyphs so the dense control row isn't cramped
+                .padding(.leading, 12)
                 .padding(.vertical, 8)
             }
             // Take only the leftover width and scroll internally — otherwise the
             // ScrollView claims its full content width and overlaps the search box.
             .frame(maxWidth: .infinity)
+            // Currency stays out of the scroll so "USD" never clips at the edge.
+            currencyMenu
             StockSearchBar(currency: appState.displayCurrency)
                 .layoutPriority(1)
             marketStatusCompact
             trailing
-                .padding(.trailing, 16)
+                .padding(.trailing, 12)
         }
         .liquidGlass()
     }
