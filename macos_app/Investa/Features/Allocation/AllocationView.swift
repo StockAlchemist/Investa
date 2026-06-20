@@ -5,7 +5,9 @@ final class AllocationViewModel: ObservableObject {
     @Published var holdings: [Holding] = []
     /// bucket → name → target %.
     @Published var targets: [String: [String: Double]] = [:]
-    @Published var isLoading = false
+    // Starts true so the first render shows a loading state, not an empty one,
+    // before the initial `.task` fires.
+    @Published var isLoading = true
     @Published var errorMessage: String?
 
     private let api: APIClient
@@ -82,8 +84,18 @@ struct AllocationView: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
-            if viewModel.holdings.isEmpty && !viewModel.isLoading {
-                ContentUnavailableView("No holdings", systemImage: "chart.pie")
+            if viewModel.holdings.isEmpty {
+                // Distinguish "still loading" from "genuinely empty" — otherwise
+                // the in-flight initial fetch reads as "No holdings".
+                if viewModel.isLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading holdings…").font(.callout).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ContentUnavailableView("No holdings", systemImage: "chart.pie")
+                }
             } else {
                 GeometryReader { geo in
                 ScrollView {
