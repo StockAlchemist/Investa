@@ -83,9 +83,14 @@ final class AppState: ObservableObject {
     @Published var indices: [IndexQuote] = []
     /// Whether the US market is currently open (nil until first fetch).
     @Published var marketIsOpen: Bool? = nil
+    /// When the global market data (indices / market status) was last fetched.
+    @Published var lastUpdated: Date? = nil
 
     private let api: APIClient
     private let visibleDefaultsKey = "investa.tabVisible"
+    /// Background poll that keeps prices fresh while the market is open.
+    private var autoRefreshTask: Task<Void, Never>?
+    private let autoRefreshInterval: UInt64 = 60_000_000_000  // 60s
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -229,6 +234,27 @@ final class AppState: ObservableObject {
         }
         if let status: MarketStatusResponse = try? await api.get("/market_status") {
             marketIsOpen = status.is_open
+        }
+        lastUpdated = Date()
+    }
+
+    // MARK: - Auto-refresh while the market is open
+
+    /// Enable/disable the background poll (call with `true` when the app is
+    /// foregrounded, `false` when backgrounded). While running it refreshes
+    /// market data + the active tab every 60s, but only when the market is open.
+    func setAutoRefresh(_ enabled: Bool) {
+        autoRefreshTask?.cancel()
+        guard enabled else { autoRefreshTask = nil; return }
+        autoRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: self?.autoRefreshInterval ?? 60_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                if self.marketIsOpen == true {
+                    await self.fetchIndices()
+                    NotificationCenter.default.post(name: .refreshRequested, object: nil)
+                }
+            }
         }
     }
 }

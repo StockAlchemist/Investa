@@ -34,6 +34,7 @@ struct GlobalControlBar<Trailing: View>: View {
             showClosedToggle
             Spacer()
             marketStatusBadge
+            lastUpdatedLabel
             StockSearchBar(currency: appState.displayCurrency)
             currencyMenu
             trailing
@@ -56,6 +57,15 @@ struct GlobalControlBar<Trailing: View>: View {
             .foregroundStyle(open ? Color.green : .secondary)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background((open ? Color.green : Color.secondary).opacity(0.12), in: Capsule())
+        }
+    }
+
+    /// Last time the market data was refreshed (mirrors the web header time).
+    @ViewBuilder private var lastUpdatedLabel: some View {
+        if let ts = appState.lastUpdated {
+            Text(ts.formatted(date: .omitted, time: .shortened))
+                .font(.system(size: 10, weight: .medium)).monospacedDigit()
+                .foregroundStyle(.secondary)
         }
     }
 
