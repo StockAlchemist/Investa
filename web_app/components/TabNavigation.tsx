@@ -1,16 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import {
-    ChevronDown,
     LayoutDashboard,
     Eye,
     History,
     PieChart,
     TrendingUp,
     DollarSign,
-    Activity,
     Coins,
-    Settings as SettingsIcon,
     Menu,
     ScanSearch,
     LogOut,
@@ -61,11 +58,6 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [isOpen]);
-
-    const handleTabSelect = (tabId: string) => {
-        onTabChange(tabId);
-        setIsOpen(false);
-    };
 
     return (
         <div className="relative inline-block text-left" ref={dropdownRef}>

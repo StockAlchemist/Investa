@@ -1,0 +1,4 @@
+# Formatting Rules
+
+- **Currency Symbols**: ALWAYS use `$` for USD and `฿` for THB throughout the macOS and iOS apps. DO NOT use `US$` or `THB`. This is an explicit user preference and must not be reverted. 
+- Ensure `NumberFormatter` logic explicitly sets `f.currencySymbol` because Swift will automatically default to `US$` in many non-US locales if you only set `f.currencyCode = "USD"`.

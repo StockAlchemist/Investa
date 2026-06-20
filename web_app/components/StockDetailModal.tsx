@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- renders a small dynamic stock logo/favicon; next/image gives no benefit here and would require remote-domain allowlisting */
+
 import React, { useState, useEffect, useId, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
@@ -11,13 +13,9 @@ import {
     fetchIntrinsicValue,
     fetchStockAnalysis,
     fetchStockNews,
-    Fundamentals,
-    FinancialsResponse,
-    RatiosResponse,
-    IntrinsicValueResponse,
-    StockAnalysisResponse,
     fetchHoldings,
-    Holding
+    Holding,
+    FinancialRatio
 } from '../lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -148,6 +146,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     useEffect(() => {
         setMounted(true);
     }, []);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AI analysis response is a large, loosely-shaped payload consumed across many sections
     const [analysis, setAnalysis] = useState<any>(null);
     const [analysisLoading, setAnalysisLoading] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -206,9 +205,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 accounts: savedAccounts ? JSON.parse(savedAccounts) : [],
                 showClosed: savedShowClosed === 'true'
             };
-        } catch (e) {
+        } catch {
             return { accounts: [], showClosed: false };
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-reads localStorage each time the modal opens
     }, [isOpen]);
 
     // Fetch holdings to check if user has a position
@@ -324,9 +324,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     } else {
                         setAnalysis(data);
                     }
-                } catch (err: any) {
+                } catch (err) {
                     console.error("Analysis fetch error:", err);
-                    setAnalysisError(err.message || "Failed to load AI analysis.");
+                    setAnalysisError(err instanceof Error ? err.message : "Failed to load AI analysis.");
                 } finally {
                     setAnalysisLoading(false);
                 }
@@ -391,9 +391,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     detail: { symbol, analysis: data }
                 }));
             }
-        } catch (err: any) {
+        } catch (err) {
             console.error("Analysis regeneration error:", err);
-            setAnalysisError(err.message || "Failed to regenerate AI analysis.");
+            setAnalysisError(err instanceof Error ? err.message : "Failed to regenerate AI analysis.");
         } finally {
             setAnalysisLoading(false);
         }
@@ -665,7 +665,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     ].map((btn) => (
                         <button
                             key={btn.id}
-                            onClick={() => setFinType(btn.id as any)}
+                            onClick={() => setFinType(btn.id as 'income' | 'balance' | 'cash' | 'equity')}
                             className={cn(
                                 "flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap flex-shrink-0",
                                 finType === btn.id
@@ -953,7 +953,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         
                         <div className="space-y-4">
                             {analysis.catalysts && analysis.catalysts.length > 0 ? (
-                                analysis.catalysts.map((c: any, i: number) => (
+                                analysis.catalysts.map((c: { date?: string; event?: string; impact?: string }, i: number) => (
                                     <div key={i} className="flex gap-4 group">
                                         <div className="flex flex-col items-center">
                                             <div className={cn(
@@ -1066,7 +1066,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         </Pie>
                                         <Tooltip
                                             wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                                            formatter={(value: any) => `${Number(value).toFixed(2)}%`}
+                                            formatter={(value) => `${Number(value).toFixed(2)}%`}
                                             contentStyle={{ backgroundColor: 'transparent', border: 'none' }}
                                             content={({ active, payload }) => {
                                                 if (active && payload && payload.length) {
@@ -1086,7 +1086,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             layout="vertical"
                                             verticalAlign="middle"
                                             align="right"
-                                            formatter={(value, entry: any) => <span className="text-xs text-muted-foreground ml-1">{value}</span>}
+                                            formatter={(value) => <span className="text-xs text-muted-foreground ml-1">{value}</span>}
                                         />
                                     </PieChart>
                                 </ResponsiveContainer>
@@ -1207,11 +1207,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
                             <Info className="w-8 h-8 text-indigo-500" />
                         </div>
-                        <h3 className="text-xl font-bold mb-3">Why standard models aren't shown?</h3>
+                        <h3 className="text-xl font-bold mb-3">Why standard models aren&apos;t shown?</h3>
                         <p className="text-muted-foreground text-sm leading-relaxed max-w-xl mx-auto mb-6">
-                            Traditional valuation methods like <strong>Discounted Cash Flow (DCF)</strong> and <strong>Graham's Formula</strong> rely on free cash flow and earnings growth, which are company-specific metrics.
+                            Traditional valuation methods like <strong>Discounted Cash Flow (DCF)</strong> and <strong>Graham&apos;s Formula</strong> rely on free cash flow and earnings growth, which are company-specific metrics.
                             <br /><br />
-                            For <strong>ETFs and Mutual Funds</strong>, the intrinsic value is best represented by the <strong>Net Asset Value (NAV)</strong>, which is the total value of the fund's assets minus its liabilities, divided by the number of outstanding shares.
+                            For <strong>ETFs and Mutual Funds</strong>, the intrinsic value is best represented by the <strong>Net Asset Value (NAV)</strong>, which is the total value of the fund&apos;s assets minus its liabilities, divided by the number of outstanding shares.
                         </p>
                         <div className="inline-flex items-center gap-2 px-4 py-2 bg-background rounded-full text-xs font-medium text-foreground">
                             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -1484,7 +1484,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         );
     };
 
-    const ParamItem = ({ label, value, info, className }: { label: string, value: any, info?: { description: string, default: string }, className?: string }) => (
+    const ParamItem = ({ label, value, info, className }: { label: string, value: React.ReactNode, info?: { description: string, default: string }, className?: string }) => (
         <div>
             <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">{label}</p>
@@ -1981,7 +1981,20 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         document.body
     );
 }
-function StatCard({ icon: Icon, label, value, subValue, color, valueColor, subValueColor, extra, rangeMin, rangeMax, rotate }: any) {
+function StatCard({ icon: Icon, label, value, subValue, color, valueColor, subValueColor, extra, rangeMin, rangeMax, rotate }: {
+    icon: React.ElementType;
+    label: React.ReactNode;
+    value: React.ReactNode;
+    subValue?: React.ReactNode;
+    color?: string;
+    valueColor?: string;
+    subValueColor?: string;
+    extra?: React.ReactNode;
+    rangeMin?: number | string;
+    rangeMax?: number | string;
+    rotate?: string;
+    className?: string;
+}) {
     return (
         <div className="bg-muted py-1.5 px-3 rounded-xl flex items-center gap-3 transition-all hover:bg-muted/50 group relative overflow-hidden">
             {/* Soft background glow */}
@@ -2022,7 +2035,12 @@ function StatCard({ icon: Icon, label, value, subValue, color, valueColor, subVa
     );
 }
 
-function TabButton({ active, onClick, icon: Icon, label }: any) {
+function TabButton({ active, onClick, icon: Icon, label }: {
+    active: boolean;
+    onClick: () => void;
+    icon: React.ElementType;
+    label: React.ReactNode;
+}) {
     return (
         <button
             onClick={onClick}
@@ -2037,7 +2055,13 @@ function TabButton({ active, onClick, icon: Icon, label }: any) {
     );
 }
 
-function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
+function RatioChart({ data, dataKey, title, color, suffix = "" }: {
+    data: FinancialRatio[];
+    dataKey: string;
+    title: React.ReactNode;
+    color: string;
+    suffix?: string;
+}) {
     const sanitizedId = `gradient-${dataKey.replace(/[^a-zA-Z0-9]/g, '')}`;
     return (
         <div className="bg-muted p-6 rounded-2xl">
@@ -2142,7 +2166,7 @@ function Sparkline({ data }: { data: number[] }) {
                         fill={`url(#splitFill-${id})`}
                         strokeWidth={1.5}
                         isAnimationActive={false}
-                        dot={(props: any) => {
+                        dot={(props: { cx?: number; cy?: number; index?: number }) => {
                             const { cx, cy, index } = props;
                             if (index === values.length - 1) {
                                 const color = values[values.length - 1] >= baseline ? "#10b981" : "#ef4444";

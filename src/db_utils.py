@@ -917,6 +917,37 @@ def load_all_transactions_from_db(
         return None, False
 
 
+_OUTFLOW_TYPES = frozenset(
+    {"buy", "withdrawal", "fees", "fee", "tax", "withholding tax", "split", "stock split", "buy to cover"}
+)
+
+
+def _apply_total_amount_sign(transaction_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise the sign of 'Total Amount' to match the outflow/inflow convention.
+
+    Outflow types (Buy, Withdrawal, Fees, Tax, Split, Buy To Cover) are stored as
+    negative; inflow types (Sell, Deposit, Dividend, Interest, Transfer …) are positive.
+    This is idempotent — already-signed values from the web manual-add form are unaffected
+    because we always start from abs() and then re-apply the direction.
+    """
+    total = transaction_data.get("Total Amount")
+    if total is None:
+        return transaction_data
+    try:
+        total_f = float(total)
+    except (TypeError, ValueError):
+        return transaction_data
+    if pd.isna(total_f) or abs(total_f) < 1e-9:
+        return transaction_data
+    tx_type = str(transaction_data.get("Type", "")).lower().strip()
+    signed = -abs(total_f) if tx_type in _OUTFLOW_TYPES else abs(total_f)
+    if signed == total_f:
+        return transaction_data
+    result = dict(transaction_data)
+    result["Total Amount"] = signed
+    return result
+
+
 def add_transaction_to_db(
     db_conn: sqlite3.Connection, transaction_data: Dict[str, Any]
 ) -> Tuple[bool, Optional[int]]:
@@ -937,7 +968,9 @@ def add_transaction_to_db(
         "ExternalID",
         "user_id",
     ]
-    
+
+    transaction_data = _apply_total_amount_sign(transaction_data)
+
     # --- Deduplication Check ---
     external_id = transaction_data.get("ExternalID")
     if external_id:
@@ -1019,6 +1052,7 @@ def add_transaction_to_db(
 def update_transaction_in_db(
     db_conn: sqlite3.Connection, transaction_id: int, new_data_dict: Dict[str, Any]
 ) -> bool:
+    new_data_dict = _apply_total_amount_sign(new_data_dict)
     set_clauses = []
     values_for_sql: Dict[str, Any] = {}
 

@@ -134,7 +134,7 @@ def test_trade_row_sums_commission_and_vat():
            "0.50", "NYSE", "", ""]
     tx = _webull_trade_row(row, _TRADE_HEADER, "Acct", user_id=3, default_currency="THB")
     assert tx["Commission"] == 2.0  # Comm/Fee/Tax 1.50 + VAT 0.50
-    assert tx["Total Amount"] == 1090.26
+    assert tx["Total Amount"] == 1092.26  # gross 1090.26 + 2.00 commission (Buy net cost)
 
 
 def test_trade_row_infers_sell_from_negative_quantity():

@@ -24,7 +24,6 @@ import {
   fetchMarketStatus,
   fetchIndices,
   fetchHeadline,
-  PerformanceData,
   PortfolioSummary
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -244,7 +243,7 @@ export default function Home() {
       if (Object.keys(updates).length > 0) settingsMutation.mutate(updates);
     }, 1000);
     return () => clearTimeout(id);
-  }, [currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, settingsQuery.data]);
+  }, [currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, graphPeriod, graphView, settingsQuery.data, settingsMutation]);
 
   // Command palette keyboard shortcut
   useEffect(() => {
@@ -788,7 +787,7 @@ export default function Home() {
         isOpen={isIndexGraphModalOpen}
         onClose={() => setIsIndexGraphModalOpen(false)}
         benchmarks={benchmarks}
-        currentIndices={indices}
+        currentIndices={indices as unknown as Record<string, MarketIndex> | undefined}
       />
 
       {/* ── Mobile bottom nav ── */}

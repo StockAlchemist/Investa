@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- small static brand logos; next/image optimization adds no value and would require extra config */
+
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import {

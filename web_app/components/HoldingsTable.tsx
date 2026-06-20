@@ -2,10 +2,9 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { exportToCSV } from '../lib/export';
-import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
+import { Holding, Lot, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
-import { Search, X, Filter, LayoutGrid, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter, Check } from 'lucide-react';
+import { Search, X, LayoutGrid, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter, Check } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { Card } from "@/components/ui/card";
@@ -142,7 +141,6 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
     const columnMenuRef = useRef<HTMLDivElement>(null);
-    const isLoaded = useRef(false);
     const [visibleRows, setVisibleRows] = useState(10);
     const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('table');
     const { openStockDetail } = useStockModal();
@@ -394,7 +392,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                     if (def) {
                         const valA = getRawVal(current, header);
                         const valB = getRawVal(h, header);
-                        (current as any)[def] = valA + valB;
+                        (current as Record<string, number>)[def] = valA + valB;
                     }
                 });
 
@@ -402,7 +400,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                 const currentTags = Array.isArray(getValue(current, "Tags")) ? getValue(current, "Tags") as string[] : [];
                 const newTags = Array.isArray(getValue(h, "Tags")) ? getValue(h, "Tags") as string[] : [];
                 const mergedTags = Array.from(new Set([...currentTags, ...newTags]));
-                (current as any)["Tags"] = mergedTags;
+                (current as Record<string, string[]>)["Tags"] = mergedTags;
             }
         });
 
@@ -417,18 +415,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
             const totalGl = getRawVal(h, 'Total G/L');
 
             if (qty !== 0) {
-                (h as any)['Price'] = mktVal / qty;
-                (h as any)['Avg Cost'] = costBasis / qty;
+                (h as Record<string, number>)['Price'] = mktVal / qty;
+                (h as Record<string, number>)['Avg Cost'] = costBasis / qty;
             }
 
             if (mktVal - dayChg !== 0) {
-                (h as any)['Day Change %'] = (dayChg / (mktVal - dayChg)) * 100;
+                (h as Record<string, number>)['Day Change %'] = (dayChg / (mktVal - dayChg)) * 100;
             } else {
-                (h as any)['Day Change %'] = 0;
+                (h as Record<string, number>)['Day Change %'] = 0;
             }
 
             const EPSILON = 0.0001;
-            const isCash = h.Symbol === '$CASH' || h.Symbol === 'CASH' || h.Symbol.toUpperCase().includes('CASH (');
             const totalBuyCost = getRawVal(h, 'Total Buy Cost');
 
             // Use Total Buy Cost (Cumulative Purchases/Deposits) as the denominator if available
@@ -437,22 +434,22 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
             const hasDenominator = Math.abs(denominator) > EPSILON;
 
             if (hasDenominator) {
-                (h as any)['Unreal. Gain %'] = (unrealGl / denominator) * 100;
-                (h as any)['Div. Yield (Cost) %'] = (estIncome / denominator) * 100;
-                (h as any)['Total Return %'] = (totalGl / denominator) * 100;
+                (h as Record<string, number>)['Unreal. Gain %'] = (unrealGl / denominator) * 100;
+                (h as Record<string, number>)['Div. Yield (Cost) %'] = (estIncome / denominator) * 100;
+                (h as Record<string, number>)['Total Return %'] = (totalGl / denominator) * 100;
             } else {
-                (h as any)['Unreal. Gain %'] = unrealGl > EPSILON ? Infinity : 0;
-                (h as any)['Div. Yield (Cost) %'] = estIncome > EPSILON ? Infinity : 0;
-                (h as any)['Total Return %'] = totalGl > EPSILON ? Infinity : 0;
+                (h as Record<string, number>)['Unreal. Gain %'] = unrealGl > EPSILON ? Infinity : 0;
+                (h as Record<string, number>)['Div. Yield (Cost) %'] = estIncome > EPSILON ? Infinity : 0;
+                (h as Record<string, number>)['Total Return %'] = totalGl > EPSILON ? Infinity : 0;
             }
 
             if (mktVal !== 0) {
-                (h as any)['Div. Yield (Current) %'] = (estIncome / mktVal) * 100;
+                (h as Record<string, number>)['Div. Yield (Current) %'] = (estIncome / mktVal) * 100;
             }
 
             // ADDED: Use true Aggregate IRR for the combined row if provided by the backend
-            if ((h as any)['Aggregate IRR (%)'] !== undefined && (h as any)['Aggregate IRR (%)'] !== null) {
-                (h as any)['IRR (%)'] = (h as any)['Aggregate IRR (%)'];
+            if ((h as Record<string, number | null | undefined>)['Aggregate IRR (%)'] != null) {
+                (h as Record<string, number | null | undefined>)['IRR (%)'] = (h as Record<string, number | null | undefined>)['Aggregate IRR (%)'];
             }
 
             return h;
@@ -467,7 +464,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
         const groups = new Map<string, {
             key: string;
             holdings: Holding[];
-            aggregates: Record<string, any>;
+            aggregates: Record<string, number>;
         }>();
 
         aggregatedHoldings.forEach(h => {
@@ -475,18 +472,18 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
             let groupKey = 'Other';
             if (groupBy === 'Market') {
                 // Use 'fullExchangeName' or 'exchange' if available, then fallback to 'Market' or 'Unknown'
-                const rawExchange = (h as Record<string, any>)['fullExchangeName'] || (h as Record<string, any>)['exchange'] || (h as Record<string, any>)['Market'] || 'Unknown';
+                const rawExchange = (h as Record<string, string>)['fullExchangeName'] || (h as Record<string, string>)['exchange'] || (h as Record<string, string>)['Market'] || 'Unknown';
                 const exchange = normalizeMarketName(rawExchange);
                 if (h.Symbol === 'AAPL') console.log(`DEBUG_MARKET: AAPL -> Raw: ${rawExchange}, Norm: ${exchange}`, h);
                 groupKey = exchange;
             } else if (groupBy === 'quoteType') {
-                const rawType = (h as Record<string, any>)['quoteType'] || 'Other';
+                const rawType = (h as Record<string, string>)['quoteType'] || 'Other';
                 groupKey = INVESTMENT_TYPE_MAP[rawType] || rawType;
             } else if (groupBy === 'Country') {
                 // Prioritize 'geography' over 'Country'
-                groupKey = (h as Record<string, any>)['geography'] || (h as Record<string, any>)['Country'] || 'Unknown';
+                groupKey = (h as Record<string, string>)['geography'] || (h as Record<string, string>)['Country'] || 'Unknown';
             } else if (groupBy === 'Currency') {
-                const rawCurrency = (h as Record<string, any>)['Local Currency'] || 'Unknown';
+                const rawCurrency = (h as Record<string, string>)['Local Currency'] || 'Unknown';
                 groupKey = CURRENCY_MAP[rawCurrency] || rawCurrency;
             } else {
                 const val = getValue(h, groupBy);
@@ -585,7 +582,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
         if (groupedHoldings) {
             setExpandedGroups(new Set(groupedHoldings.map(g => g.key)));
         }
-    }, [groupBy]); // This might cause re-expansion on data updates, which might be annoying if user collapsed. 
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-expands only when the grouping mode changes, not on every price-driven data update
+    }, [groupBy]); // This might cause re-expansion on data updates, which might be annoying if user collapsed.
     // Better: Only expand if expandedGroups is empty? 
     // Or just depend on `groupBy` changing. 
     // If we put `groupedHoldings` dependency, it triggers on every price update.
@@ -1646,7 +1644,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                                     autoFocus
                                 />
                                 <p className="text-xs text-muted-foreground">
-                                    Separate multiple tags with commas (e.g. "Long Term, High Risk").
+                                    Separate multiple tags with commas (e.g. &quot;Long Term, High Risk&quot;).
                                 </p>
                             </div>
                             <div className="flex justify-end gap-2">

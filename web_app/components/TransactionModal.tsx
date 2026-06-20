@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Transaction } from '../lib/api';
 
+// Dynamic transaction form blob: keys hold strings or auto-computed numbers,
+// and fields are added/updated dynamically by name.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally permissive: form values are strings or auto-computed numbers keyed by field name
+type TxForm = Record<string, any>;
+
 interface TransactionModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSubmit: (data: Transaction) => Promise<void>;
-    initialData?: any; // Using any for flexibility with edit data
+    initialData?: TxForm | null;
     mode: 'add' | 'edit';
     accountCurrencyMap: { [account: string]: string };
     existingAccounts?: string[];
@@ -26,7 +31,7 @@ const isCashSymbol = (symbol: string) => {
 };
 
 export default function TransactionModal({ isOpen, onClose, onSubmit, initialData, mode, accountCurrencyMap, existingAccounts = [], existingSymbols = [], accountCashModeMap = {} }: TransactionModalProps) {
-    const [formData, setFormData] = useState<any>({
+    const [formData, setFormData] = useState<TxForm>({
         Date: new Date().toISOString().split('T')[0],
         Type: 'Buy',
         Symbol: '',
@@ -114,7 +119,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
         const isCash = isCashSymbol(symbol);
         const isTransfer = txType === 'transfer';
 
-        setFormData((prev: any) => {
+        setFormData((prev: TxForm) => {
             const newData = { ...prev };
 
             // 1. Handle Cash Symbols
@@ -171,6 +176,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             return prev;
         });
 
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally recomputes derived fields only on these form inputs; adding the cash-mode map/flags would retrigger unnecessarily
     }, [formData.Type, formData.Symbol, formData.Quantity, formData['Price/Share'], formData.Commission, formData['From Account'], formData.Account, totalLockedByUser, isOpen]);
 
 
@@ -193,10 +199,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             setTotalLockedByUser(false);
         }
 
-        setFormData((prev: any) => {
+        setFormData((prev: TxForm) => {
             const newData = { ...prev, [name]: val };
-
-            const txType = (newData.Type || '').toLowerCase();
 
             if (name === 'Type') {
                 if (val === 'Dividend') {
@@ -228,7 +232,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     };
 
     const handleSuggestionClick = (value: string, field: 'Symbol' | 'Account' | 'From Account' | 'To Account') => {
-        setFormData((prev: any) => {
+        setFormData((prev: TxForm) => {
             const newData = { ...prev, [field]: value };
             if (field === 'Symbol' && value === '$CASH') {
                 newData['Price/Share'] = 1.0;
@@ -377,7 +381,6 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const isCash = isCashSymbol(formData.Symbol);
     const isSplit = txType === 'split' || txType === 'stock split';
     const canAutoAddCash = (['buy', 'sell', 'short sell', 'buy to cover'].includes(txType)) && !isCash;
-    const isDividend = txType === 'dividend';
     const selectedAccount = isTransfer ? formData['From Account'] : formData.Account;
     const isAccountAutoCash = (accountCashModeMap[selectedAccount || ''] || 'Manual') === 'Auto';
 
@@ -589,7 +592,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                     id="auto-add-cash"
                                     name="Auto-add Cash"
                                     checked={!!formData["Auto-add Cash"]}
-                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, "Auto-add Cash": e.target.checked }))}
+                                    onChange={(e) => setFormData((prev: TxForm) => ({ ...prev, "Auto-add Cash": e.target.checked }))}
                                     disabled={isAccountAutoCash}
                                     className={`h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 ${isAccountAutoCash ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 />

@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- small static brand logos; next/image optimization adds no value and would require extra config */
+
 import dynamic from 'next/dynamic';
 import { cn, formatCompactNumber } from '@/lib/utils';
 import { Menu, ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
@@ -67,7 +69,6 @@ export function PageHeader({
   onVisibleItemsChange,
   layoutItems,
   layoutSectionTitle,
-  onCommandPaletteOpen,
   fxRate,
   availableCurrencies,
   isFetching,

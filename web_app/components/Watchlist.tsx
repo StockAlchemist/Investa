@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     fetchWatchlist,
@@ -16,8 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Search } from "lucide-react";
-import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { Plus, Trash2, RefreshCw, Pencil, Check, X, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, formatCompactNumber, cn, getHeatmapClass } from "@/lib/utils";
 import StockTicker from './StockTicker';
@@ -69,7 +68,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
     });
 
     // Fetch Active Watchlist Items
-    const { data: watchlist, isLoading: isLoadingItems, isError, refetch } = useQuery({
+    const { data: watchlist, isLoading: isLoadingItems, refetch } = useQuery({
         queryKey: ['watchlist', currency, activeWatchlistId],
         queryFn: ({ signal }) => fetchWatchlist(currency, activeWatchlistId, signal),
     });
@@ -102,7 +101,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 setActiveWatchlistId(newItem.id);
             }
         },
-        onError: (err: any, variables, context) => {
+        onError: (err: Error, variables, context) => {
             if (context?.previousWatchlists) {
                 queryClient.setQueryData(['watchlists'], context.previousWatchlists);
             }
@@ -120,7 +119,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
             setIsRenaming(false);
             setRenameName("");
         },
-        onError: (err: any) => alert(`Failed to rename list: ${err.message}`)
+        onError: (err: Error) => alert(`Failed to rename list: ${err.message}`)
     });
 
     const deleteListMutation = useMutation({
@@ -129,7 +128,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
             queryClient.invalidateQueries({ queryKey: ['watchlists'] });
             setActiveWatchlistId(1); // Switch to default
         },
-        onError: (err: any) => alert(`Failed to delete list: ${err.message}`)
+        onError: (err: Error) => alert(`Failed to delete list: ${err.message}`)
     });
 
     const addMutation = useMutation({

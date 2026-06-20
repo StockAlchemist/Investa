@@ -587,7 +587,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                             try {
                                                                 await updateUserProfile({ alias: newAlias });
                                                                 await refreshUser();
-                                                            } catch (err) {
+                                                            } catch {
                                                                 alert("Failed to update alias");
                                                             }
                                                         }

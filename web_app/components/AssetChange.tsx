@@ -39,6 +39,7 @@ export default function AssetChange({
     visibleSections,
 }: AssetChangeProps) {
     const [mounted, setMounted] = useState(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount flag for the SSR hydration guard
     useEffect(() => setMounted(true), []);
 
     const show = (id: string) => !visibleSections || visibleSections.includes(id);

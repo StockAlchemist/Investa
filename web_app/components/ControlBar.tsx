@@ -4,6 +4,7 @@ import CurrencySelector from '@/components/CurrencySelector';
 import ThemeToggle from '@/components/ThemeToggle';
 import UserMenu from '@/components/UserMenu';
 import { Settings as SettingsIcon, Home } from 'lucide-react';
+import type { User } from '@/lib/api';
 
 interface ControlBarProps {
     activeTab: string;
@@ -15,7 +16,7 @@ interface ControlBarProps {
     availableCurrencies?: string[];
     onSettingsClick: () => void;
     onUserClick: () => void;
-    user?: any;
+    user?: User | null;
 }
 
 export default function ControlBar({

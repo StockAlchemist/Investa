@@ -115,6 +115,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
         if (isOpen && fullData.length <= 10) {
             loadFullData();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-checks only when the modal open state toggles
     }, [isOpen]);
 
     if (!isOpen) return null;
@@ -284,7 +285,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
     );
 }
 
-export function TopContributors({ data, isLoading, isRefreshing = false, currency, accounts, showClosed }: CommonProps & { accounts?: string[], showClosed?: boolean }) {
+export function TopContributors({ data, isLoading, isRefreshing = false, currency, showClosed }: CommonProps & { accounts?: string[], showClosed?: boolean }) {
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [isAllModalOpen, setIsAllModalOpen] = useState(false);
 

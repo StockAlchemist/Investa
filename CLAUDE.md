@@ -4,11 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Investa is a financial portfolio management system with three deployment targets sharing a single Python FastAPI backend:
-
-- **Web app** — Next.js 16 / React 19 PWA (`web_app/`)
-- **Desktop app** — Electron wrapper around the built web app (`desktop-electron/`)
-- **Legacy GUI** — PySide6 (Qt) desktop app (`src/main_gui.py`), **frozen** as of June 2026: no new features or refactoring; excluded from lint scope and CI (its tests self-skip without PySide6)
+Investa is a financial portfolio management system: a Next.js 16 / React 19 PWA (`web_app/`) on a single Python FastAPI backend (`src/`). A native SwiftUI macOS client (`macos_app/`) is in early development — it's a thin client of the same FastAPI backend (see `macos_app/README.md`).
 
 ## Running the App
 
@@ -21,13 +17,6 @@ cd src && uvicorn server.main:app --reload --port 8000
 
 # Frontend only
 cd web_app && npm run dev
-
-# Legacy Qt GUI
-python src/main_gui.py
-
-# Electron desktop (requires built frontend)
-cd web_app && npm run build:desktop
-./start_desktop.sh
 ```
 
 ## Commands
@@ -36,7 +25,6 @@ cd web_app && npm run build:desktop
 ```bash
 pip install -r requirements.txt          # server/runtime deps
 pip install -r requirements-dev.txt      # + pytest, ruff
-pip install -r requirements-gui.txt      # + PySide6/matplotlib (only for the frozen legacy Qt GUI)
 
 pytest tests/                              # all tests
 pytest tests/test_finutils.py -v          # single file
@@ -51,17 +39,9 @@ ruff format src/                           # format
 npm install
 npm run dev          # dev server
 npm run build        # production build
-npm run build:desktop  # static export for Electron (outputs to out/)
 npm run lint         # ESLint
 npm test             # Vitest unit tests (tests/unit/)
 npm run test:e2e     # Playwright E2E tests (hermetic — backend mocked via page.route)
-```
-
-### Electron (`desktop-electron/`)
-```bash
-npm start            # dev run
-npm run pack         # test packaging
-npm run dist         # full distributable build
 ```
 
 ## Architecture
@@ -78,10 +58,9 @@ The backend separates concerns across large modules. Key files:
 | `portfolio_analyzer.py` | Performance metrics, returns, drawdown |
 | `market_data.py` | yfinance integration, price caching, fallbacks |
 | `db_utils.py` | SQLite ORM, all database operations |
-| `models.py` | Pydantic request/response models |
 | `finutils.py` | Low-level financial math |
 | `financial_ratios.py` | DCF valuation, financial ratios |
-| `workers.py` | Background tasks (price refresh, etc.) |
+| `server/refresh_worker.py` | Background tasks (price refresh, etc.) |
 | `server/ai_analyzer.py` | Per-stock Gemini AI analysis |
 | `server/screener_service.py` | Market screener logic |
 | `ibkr_connector.py` | Interactive Brokers sync |
@@ -107,8 +86,6 @@ Data fetching uses **TanStack Query** (React Query). UI primitives come from **R
 - `data/config/` — `gui_config.json`, `manual_overrides.json`
 - `data/users/` — Per-user storage
 
-The desktop Electron app spawns its own Python backend on port **8001** (not 8000) to avoid conflicts with a running web instance.
-
 ## Environment
 
 Copy `.env` and populate:
@@ -128,16 +105,4 @@ INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG 
 - **Database migrations**: Run in isolation via scripts in `scripts/`; never modify the schema directly against a live DB.
 - **Numba**: JIT-compiled functions in `financial_ratios.py` and `portfolio_logic.py` must use NumPy-compatible code only.
 - **Multi-user**: The backend supports per-user data isolation; user context flows through FastAPI dependencies in `server/dependencies.py`.
-
-## ⚠️ Important: Dual UI Codebase
-
-The app has **two separate UI codebases** that share the same backend:
-
-| Feature | Web App (active) | Legacy Desktop (frozen) |
-|---------|-----------------|------------------------|
-| **UI code location** | `web_app/components/*.tsx` | `src/dialogs.py` |
-| **Transaction form** | `web_app/components/TransactionModal.tsx` | `src/dialogs.py` → `TransactionDialog` class |
-| **Runtime** | Next.js / React (browser) | PySide6 / Qt (native) |
-| **Launched via** | `./start_investa.sh` or `npm run dev` | `python src/main_gui.py` |
-
-**When modifying UI behavior (forms, dialogs, field calculations), always edit the web app components in `web_app/components/`**, not `src/dialogs.py`. The legacy Qt GUI is frozen and not used in the standard workflow. Editing `src/dialogs.py` will have no effect on the running web app.
+- **UI**: The primary UI is the web app (`web_app/components/*.tsx`); e.g. the transaction form is `web_app/components/TransactionModal.tsx`. There is no longer a desktop/Qt UI. A native SwiftUI macOS client lives in `macos_app/` (SwiftUI + MVVM, async URLSession, generated via XcodeGen from `macos_app/project.yml`); it consumes the same FastAPI endpoints as the web app and mirrors `web_app/lib/api.ts`.

@@ -25,10 +25,10 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
         pip install -r requirements.txt
         ```
 
-        Otherwise, install them manually (core dependencies):
+        Then install the web app dependencies:
 
         ```bash
-        pip install PySide6 pandas numpy matplotlib yfinance scipy mplcursors requests numba
+        cd web_app && npm install && cd ..
         ```
 
 2. **Understanding Data Storage: The SQLite Database**
@@ -177,7 +177,23 @@ The special cash symbol **`$CASH`** is crucial for accurately tracking your port
     * `Price/Share`: 1
     * `Total Amount`: -10 (or 10 if Quantity is negative)
     * `Account`: Brokerage A
-    * **TWR Impact:** Fees paid from cash are like withdrawals for TWR purposes if they are external to the core investment activity (e.g. advisory fees). If they are transaction fees, they are part of the cost of the transaction. The `Fees` type with `$CASH` implies an expense that reduces the account's cash and is typically treated as a negative return or an outflow.
+    * **Growth Outliers:** Flags companies priced with unrealistic growth expectations (e.g., >30% sustained growth needed to justify current price).
+* **Deep Value:** High conviction screener identifying companies with high AI scores, large margin of safety, and strong historical profitability.
+
+## Part 19: Apple Native Apps (macOS, iOS, iPadOS)
+
+Investa includes a comprehensive native Apple client application built entirely in SwiftUI. This single codebase runs seamlessly across Mac, iPhone, and iPad, adapting its layout to the device (sidebar navigation on Mac/iPad, bottom tab bar on iPhone).
+
+The native app connects directly to your Investa backend API, offering real-time performance and deep OS integration.
+
+### Setting up the Native App
+
+1. **Start the Backend:** Ensure your Investa backend is running (e.g., `./start_investa.sh`). The backend serves the API on port `8000`.
+2. **Open the Project:** Navigate to the `macos_app` folder and open `Investa.xcodeproj` in Xcode 16 or later.
+3. **Configure API URL (If Remote):** If you are running the backend on a different machine (e.g., a home server or via Tailscale), open `Networking/APIConfig.swift` in Xcode and update `baseURL` to match your server's IP or Tailscale address (e.g., `http://your-server-ip:8000`). If running locally on a Mac, `http://localhost:8000` is the default and requires no changes.
+4. **Build and Run:** Select your target device (My Mac, iPhone Simulator, or a physical iPad/iPhone) from the top-left dropdown in Xcode and press `Cmd + R` to build and run the application.
+
+*Note: For deploying to a physical iPhone or iPad, you will need to add your free Apple ID to Xcode settings under the Accounts tab to sign the application for local development.* The `Fees` type with `$CASH` implies an expense that reduces the account's cash and is typically treated as a negative return or an outflow.
 
 * **Key for TWR:** Accurately logging `Deposit` and `Withdrawal` transactions for `$CASH` is paramount for correct TWR calculation, as these define the external cash flows against which investment performance is measured. Internal conversions (buying/selling assets) do not count as external flows.
 
@@ -189,7 +205,7 @@ The special cash symbol **`$CASH`** is crucial for accurately tracking your port
     Open your terminal, ensure your virtual environment is active (if used), navigate to the Investa project directory, and run:
 
     ```bash
-    ./start_desktop.sh
+    ./start_investa.sh
     ```
 
 2. **Database Initialization (First Run):**
@@ -427,10 +443,6 @@ Below the donut charts, **Allocation Drift** cards let you set a target allocati
 * Each row shows the current %, the target %, and the drift (+/−).
 * Rows colour-code by severity: neutral for small deviations, amber for moderate drift, red for large.
 * A total-target display reminds you whether your targets sum to exactly 100%.
-
-### Desktop App (Legacy) — "Asset Allocation" Tab
-
-The PySide6 desktop app shows four static pie charts on the **"Asset Allocation"** tab with the same four dimensions. Data sources and manual-override behaviour are identical to the web app.
 
 **Important Notes on Allocation Data:**
 
@@ -684,10 +696,6 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
     * The application will prompt you to either locate the existing `.db` file or create a new one.
     * Ensure the path stored in `gui_config.json` under `database_path` is correct or select the correct file when prompted.
 
-  * **Error related to `matplotlib` or `PySide6` backend:**
-    * Ensure these libraries are correctly installed in your Python environment. Reinstalling them (`pip install --force-reinstall PySide6 matplotlib`) might help.
-    * Conflicts with other GUI libraries or incorrect environment setup can sometimes cause these. Using a clean virtual environment is recommended.
-
 ## Part 13: The Investa Web Dashboard
 
 Investa includes a modern Web Dashboard that allows you to view your portfolio from any device on your local network (e.g., your smartphone, tablet, or another computer).
@@ -750,7 +758,7 @@ The Web Dashboard uses a **collapsible sidebar** on desktop and a bottom navigat
 *   **Dividend History:** Detailed income tracking with Annual Yield %, income projector, and dividend calendar.
 *   **Dark Mode:** Full dark/light theme support including theme-aware chart colours that adapt to your selected theme.
 
-*Note: The Web Dashboard is primarily for **viewing** and **analyzing** your data. For bulk transaction imports or editing past records, use the Desktop Application or the CSV import flow.*
+*Note: The Web Dashboard supports adding and editing transactions directly. For bulk transaction imports, use the CSV import flow.*
 
 ## Part 14: Intrinsic Value Analysis
  
@@ -919,6 +927,21 @@ For any stock in the screener or your watchlist, you can trigger an **AI Audit**
 *   **Valuation Context:** Comparison of current price to intrinsic value estimates.
 
 The **AI Score** helps you quickly prioritize which opportunities to investigate further, acting as a second opinion on the quantitative data.
+
+## Part 19: Apple Native Apps (macOS, iOS, iPadOS)
+
+Investa includes a comprehensive native Apple client application built entirely in SwiftUI. This single codebase runs seamlessly across Mac, iPhone, and iPad, adapting its layout to the device (sidebar navigation on Mac/iPad, bottom tab bar on iPhone).
+
+The native app connects directly to your Investa backend API, offering real-time performance and deep OS integration.
+
+### Setting up the Native App
+
+1. **Start the Backend:** Ensure your Investa backend is running (e.g., `./start_investa.sh`). The backend serves the API on port `8000`.
+2. **Open the Project:** Navigate to the `macos_app` folder and open `Investa.xcodeproj` in Xcode 16 or later.
+3. **Configure API URL (If Remote):** If you are running the backend on a different machine (e.g., a home server or via Tailscale), open `Networking/APIConfig.swift` in Xcode and update `baseURL` to match your server's IP or Tailscale address (e.g., `http://your-server-ip:8000`). If running locally on a Mac, `http://localhost:8000` is the default and requires no changes.
+4. **Build and Run:** Select your target device (My Mac, iPhone Simulator, or a physical iPad/iPhone) from the top-left dropdown in Xcode and press `Cmd + R` to build and run the application.
+
+*Note: For deploying to a physical iPhone or iPad, you will need to add your free Apple ID to Xcode settings under the Accounts tab to sign the application for local development.*
 
 ---
 

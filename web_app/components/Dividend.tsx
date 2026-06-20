@@ -179,6 +179,7 @@ export default function Dividend({
                             <Bar dataKey="amount" fill="#10b981" name="Dividend Amount" radius={[4, 4, 0, 0]}>
                                 <LabelList
                                     dataKey="yoyPct"
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recharts LabelList content render-prop shape is not cleanly typed
                                     content={(props: any) => {
                                         const { x, y, width, value } = props;
                                         if (typeof value !== 'number' || !isFinite(value)) return null;

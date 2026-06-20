@@ -110,13 +110,17 @@ def _ibkr_trade_from_row(
     if acct_i is not None and acct_i < len(row) and _ACCOUNT_ID_RE.match((row[acct_i] or "").strip()):
         account = row[acct_i].strip()
 
+    is_buy = q_val > 0
+    gross = abs(_to_float(cell("proceeds")))
+    # Match web app formula: Buy total includes commission; Sell total is net of commission.
+    total_amount = gross + commission if is_buy else max(0.0, gross - commission)
     return {
         "Date": cell("date").split(",")[0].strip(),
-        "Type": "Buy" if q_val > 0 else "Sell",
+        "Type": "Buy" if is_buy else "Sell",
         "Symbol": sym,
         "Quantity": abs(q_val),
         "Price/Share": _to_float(cell("price")),
-        "Total Amount": abs(_to_float(cell("proceeds"))),
+        "Total Amount": total_amount,
         "Commission": commission,
         "Account": account,
         "Note": "IBKR Trade",
@@ -707,7 +711,9 @@ def _webull_trade_row(
         exchange = cell(_webull_col_index(header, "exchange")).upper()
         currency = _WEBULL_EXCHANGE_CURRENCY.get(exchange, default_currency)
 
-    total = abs(gross) if gross else abs(qty * price)
+    gross_abs = abs(gross) if gross else abs(qty * price)
+    # Match web app formula: Buy total includes commission; Sell total is net of commission.
+    total = gross_abs + commission if side == "Buy" else max(0.0, gross_abs - commission)
 
     return {
         "Date": date_str,

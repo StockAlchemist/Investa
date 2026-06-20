@@ -322,6 +322,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fx_rate/{currency}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fx Rate
+         * @description Returns the current exchange rate for USD to the given currency.
+         */
+        get: operations["get_fx_rate_api_fx_rate__currency__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions": {
         parameters: {
             query?: never;
@@ -1442,6 +1462,26 @@ export interface paths {
          * @description Returns calculated intrinsic value results for a symbol.
          */
         get: operations["get_intrinsic_value_endpoint_intrinsic_value__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fx_rate/{currency}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fx Rate
+         * @description Returns the current exchange rate for USD to the given currency.
+         */
+        get: operations["get_fx_rate_fx_rate__currency__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3126,6 +3166,37 @@ export interface operations {
             header?: never;
             path: {
                 symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fx_rate_api_fx_rate__currency__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                currency: string;
             };
             cookie?: never;
         };
@@ -4925,6 +4996,37 @@ export interface operations {
             header?: never;
             path: {
                 symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fx_rate_fx_rate__currency__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                currency: string;
             };
             cookie?: never;
         };

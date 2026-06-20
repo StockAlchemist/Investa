@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Star, Check } from 'lucide-react';
+import { Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWatchlist } from '@/context/WatchlistContext';
 import StockIcon from './StockIcon';
@@ -104,7 +104,8 @@ export default function WatchlistStar({ symbol, size = "md", className, iconClas
                 <div
                     ref={dropdownRef}
                     className="fixed w-48 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[9999] overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-200"
-                    style={{ 
+                    style={{
+                        // eslint-disable-next-line react-hooks/refs -- reads the trigger button's rect during render to position the portal dropdown
                         top: dropdownPosition.top + (dropdownPosition.top < (starButtonRef.current?.getBoundingClientRect().top ?? 0) ? -8 : 8),
                         left: (dropdownPosition.right - 192 < 10) 
                             ? dropdownPosition.left 

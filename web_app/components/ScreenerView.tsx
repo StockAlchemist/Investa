@@ -4,78 +4,20 @@ import React, { useState, useEffect } from 'react';
 import ScreenerInput from './ScreenerInput';
 import ScreenerResults from './ScreenerResults';
 import { Telescope } from 'lucide-react';
-import { runScreener, runNarrativeSearch, fetchScreenerReview, fetchWatchlist, addToWatchlist, removeFromWatchlist, getWatchlists } from '@/lib/api';
-import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
+import { runScreener, runNarrativeSearch, fetchScreenerReview, ScreenerResult } from '@/lib/api';
 
 interface ScreenerViewProps {
     currency: string;
 }
 
 const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
-    const [results, setResults] = useState<any[]>([]);
+    const [results, setResults] = useState<ScreenerResult[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [reviewingSymbol, setReviewingSymbol] = useState<string | null>(null);
-    const [isInitialized, setIsInitialized] = useState(false);
-    const queryClient = useQueryClient();
-
-    // Fetch all watchlists metadata
-    const { data: watchlists = [] } = useQuery({
-        queryKey: ['watchlists'],
-        queryFn: ({ signal }) => getWatchlists(signal),
-    });
-
-    // Fetch all items from all watchlists to build a symbol mapping
-    const watchlistQueries = useQueries({
-        queries: watchlists.map(wl => ({
-            queryKey: ['watchlist', currency, wl.id],
-            queryFn: ({ signal }: { signal?: AbortSignal }) => fetchWatchlist(currency, wl.id, signal),
-            staleTime: 1000 * 60 * 5, // 5 minutes
-        }))
-    });
-
-    const symbolWatchlistMap = React.useMemo(() => {
-        const map: Record<string, Set<number>> = {};
-        watchlistQueries.forEach((query, index) => {
-            if (query.data) {
-                const watchlistId = watchlists[index].id;
-                query.data.forEach(item => {
-                    if (!map[item.Symbol]) map[item.Symbol] = new Set();
-                    map[item.Symbol].add(watchlistId);
-                });
-            }
-        });
-        return map;
-    }, [watchlistQueries, watchlists]);
-
-    const starredSymbols = React.useMemo(() => {
-        return new Set(Object.keys(symbolWatchlistMap));
-    }, [symbolWatchlistMap]);
-
-    const addMutation = useMutation({
-        mutationFn: ({ symbol, watchlistId }: { symbol: string, watchlistId: number }) => addToWatchlist(symbol, "", watchlistId),
-        onSuccess: (_, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, variables.watchlistId] });
-        },
-    });
-
-    const removeMutation = useMutation({
-        mutationFn: ({ symbol, watchlistId }: { symbol: string, watchlistId: number }) => removeFromWatchlist(symbol, watchlistId),
-        onSuccess: (_, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, variables.watchlistId] });
-        },
-    });
-
-    const handleToggleWatchlist = (symbol: string, watchlistId: number) => {
-        if (symbolWatchlistMap[symbol]?.has(watchlistId)) {
-            removeMutation.mutate({ symbol, watchlistId });
-        } else {
-            addMutation.mutate({ symbol, watchlistId });
-        }
-    };
 
     useEffect(() => {
-        const handleUpdate = (e: any) => {
-            const { symbol, analysis } = e.detail;
+        const handleUpdate = (e: Event) => {
+            const { symbol, analysis } = (e as CustomEvent).detail;
 
             // Calculate average AI score live
             let aiScore = null;
@@ -120,7 +62,7 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
             if (universeType === 'narrative' && narrativePrompt) {
                 const data = await runNarrativeSearch(narrativePrompt);
                 // Deduplicate by symbol to prevent key errors
-                const uniqueResults = Array.from(new Map(data.map((item: any) => [item.symbol, item])).values());
+                const uniqueResults = Array.from(new Map(data.map((item) => [item.symbol, item])).values());
                 setResults(uniqueResults);
                 return;
             }
@@ -135,7 +77,7 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
 
             if (fastData && fastData.length > 0) {
                 // Deduplicate by symbol to prevent key errors
-                const uniqueFastData = Array.from(new Map(fastData.map((item: any) => [item.symbol, item])).values());
+                const uniqueFastData = Array.from(new Map(fastData.map((item) => [item.symbol, item])).values());
                 setResults(uniqueFastData);
                 setIsLoading(false); // Stop main loading spinner, show content
                 setIsRefreshing(true); // Start background refresh indicator
@@ -151,7 +93,7 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
             });
 
             // Deduplicate by symbol
-            const uniqueFreshData = Array.from(new Map(freshData.map((item: any) => [item.symbol, item])).values());
+            const uniqueFreshData = Array.from(new Map(freshData.map((item) => [item.symbol, item])).values());
             setResults(uniqueFreshData);
         } catch (e) {
             console.error("Screening error", e);

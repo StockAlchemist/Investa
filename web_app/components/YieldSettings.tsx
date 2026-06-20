@@ -91,19 +91,39 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
         await queryClient.invalidateQueries({ queryKey: ['dividends', user?.username] }); 
     };
 
-    // Pre-calculate cash balances to avoid expensive loops on every keystroke
-    const accountCashBalances = useMemo(() => {
-        const balances: Record<string, number> = {};
+    // Pre-calculate cash balances and fx rates to avoid expensive loops on every keystroke
+    const accountCashData = useMemo(() => {
+        const data: Record<string, { balance: number, currency: string, fxRate: number }> = {};
+        let defaultCurrency = 'USD';
 
         for (const h of holdings) {
             if (h.Account && (h.Symbol === '$CASH' || h.Symbol === 'Cash' || h.Symbol.includes('Cash'))) {
-                const mvKey = Object.keys(h).find(k => k.startsWith('Market Value'));
+                const mvKey = Object.keys(h).find(k => k.startsWith('Market Value ('));
                 const val = mvKey ? (h[mvKey] as number) : 0;
-                balances[h.Account] = (balances[h.Account] || 0) + (val || 0);
+                
+                let curr = 'USD';
+                if (mvKey) {
+                    const match = mvKey.match(/\(([^)]+)\)/);
+                    if (match) curr = match[1];
+                }
+                defaultCurrency = curr;
+
+                if (!data[h.Account]) {
+                    data[h.Account] = { balance: 0, currency: curr, fxRate: h.fx_rate || 1 };
+                }
+                data[h.Account].balance += val || 0;
             }
         }
-        return balances;
+        return { data, defaultCurrency };
     }, [holdings]);
+
+    const accountCashBalances = useMemo(() => {
+        const balances: Record<string, number> = {};
+        for (const [acc, info] of Object.entries(accountCashData.data)) {
+            balances[acc] = info.balance;
+        }
+        return balances;
+    }, [accountCashData]);
 
     // Filter useful accounts (with cash or existing settings)
     const activeAccounts = useMemo(() => {
@@ -164,7 +184,9 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                 <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cash Balance</th>
                                 <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Est. Annual Interest</th>
                                 <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Annual Rate (%)</th>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Exempt Threshold</th>
+                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    Exempt Threshold {accountCashData.defaultCurrency !== 'USD' && `(${accountCashData.defaultCurrency})`}
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-black/5 dark:divide-white/5">
@@ -180,19 +202,25 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                             ) : (
                                 activeAccounts.map(account => {
                                     const accountCash = accountCashBalances[account] || 0;
+                                    const accData = accountCashData.data[account] || { balance: 0, currency: accountCashData.defaultCurrency, fxRate: 1 };
+                                    const displayCurrency = accData.currency;
+                                    const fxRate = accData.fxRate || 1;
+                                    
+                                    // Threshold is stored in settings in USD. Convert to display currency for UI.
+                                    const thresholdUSD = localThresholds[account] || 0;
+                                    const thresholdDisplay = Math.round(thresholdUSD * fxRate);
 
                                     return (
                                         <tr key={account} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-foreground">{account}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-muted-foreground font-medium">
-                                                {accountCash.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
+                                                {accountCash.toLocaleString(undefined, { style: 'currency', currency: displayCurrency })}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-green-600 dark:text-green-400 font-bold">
                                                 {(() => {
                                                     const rate = (localRates[account] || 0) / 100;
-                                                    const threshold = localThresholds[account] || 0;
-                                                    const interest = Math.max(0, accountCash - threshold) * rate;
-                                                    return interest.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+                                                    const interest = Math.max(0, accountCash - thresholdDisplay) * rate;
+                                                    return interest.toLocaleString(undefined, { style: 'currency', currency: displayCurrency });
                                                 })()}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -212,8 +240,15 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                                 <div className="max-w-[150px]">
                                                     <input
                                                         type="text"
-                                                        value={localThresholds[account] ? localThresholds[account].toLocaleString('en-US') : ''}
-                                                        onChange={(e) => handleThresholdChange(account, e.target.value)}
+                                                        value={thresholdDisplay ? thresholdDisplay.toLocaleString('en-US') : ''}
+                                                        onChange={(e) => {
+                                                            const cleanValue = e.target.value.replace(/\D/g, '');
+                                                            const numValDisplay = cleanValue === '' ? 0 : parseInt(cleanValue, 10);
+                                                            // Convert back to USD for saving
+                                                            const numValUSD = Math.round(numValDisplay / fxRate);
+                                                            setLocalThresholds(prev => ({ ...prev, [account]: numValUSD }));
+                                                            setSaveStatus(null);
+                                                        }}
                                                         placeholder="0"
                                                         className={`${inputClassName} font-mono`}
                                                     />

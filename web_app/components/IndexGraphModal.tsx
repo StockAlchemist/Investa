@@ -9,21 +9,20 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
-    ResponsiveContainer,
-    Legend
+    ResponsiveContainer
 } from 'recharts';
 import { X, TrendingUp, Info } from 'lucide-react';
 import PeriodSelector from './PeriodSelector';
 import { fetchMarketHistory } from '../lib/api';
 import { Badge } from './ui/badge';
-import StockIcon from './StockIcon';
+import type { MarketIndex } from './MarketsTab';
 import { cn } from '@/lib/utils';
 
 interface IndexGraphModalProps {
     isOpen: boolean;
     onClose: () => void;
     benchmarks: string[];
-    currentIndices?: Record<string, any>;
+    currentIndices?: Record<string, MarketIndex>;
 }
 
 const COLORS = [
@@ -34,12 +33,17 @@ const COLORS = [
     "#10b981", // Emerald
 ];
 
-const CustomTooltip = ({ active, payload, label, period }: any) => {
+const CustomTooltip = ({ active, payload, label, period }: {
+    active?: boolean;
+    payload?: Array<{ value: number; name?: string; color?: string; payload?: Record<string, number> }>;
+    label?: string | number;
+    period?: string;
+}) => {
     if (active && payload && payload.length) {
         return (
             <div className="bg-background/60 backdrop-blur-xl p-4 rounded-2xl min-w-[280px] border border-border/50 shadow-2xl">
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 pb-2">
-                    {new Date(label).toLocaleString([], {
+                    {new Date(label as string | number).toLocaleString([], {
                         timeZone: 'America/New_York',
                         month: 'short',
                         day: 'numeric',
@@ -49,7 +53,7 @@ const CustomTooltip = ({ active, payload, label, period }: any) => {
                     })}
                 </p>
                 <div className="space-y-2.5">
-                    {payload.map((entry: any, index: number) => (
+                    {payload.map((entry, index: number) => (
                         <div key={index} className="flex items-center justify-between gap-6">
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
@@ -76,7 +80,7 @@ const CustomTooltip = ({ active, payload, label, period }: any) => {
 
 export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIndices }: IndexGraphModalProps) {
     const [period, setPeriod] = useState('1y');
-    const [data, setData] = useState<any[]>([]);
+    const [data, setData] = useState<Array<Record<string, number | string | null>>>([]);
     const [loading, setLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
 
@@ -168,10 +172,10 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                     const lookupName = bench === 'Dow Jones' ? 'Dow' : (bench === 'NASDAQ' ? 'Nasdaq' : bench);
 
                                     // Find live data by name
-                                    const liveIndex = currentIndices ? Object.values(currentIndices).find((i: any) => i.name === lookupName || i.name === bench) : null;
+                                    const liveIndex = currentIndices ? Object.values(currentIndices).find((i) => i.name === lookupName || i.name === bench) : null;
 
-                                    const displayPrice = liveIndex?.price ?? graphPrice;
-                                    const displayPct = liveIndex?.changesPercentage ?? graphLatest;
+                                    const displayPrice = liveIndex?.price ?? (graphPrice != null ? Number(graphPrice) : undefined);
+                                    const displayPct = liveIndex?.changesPercentage ?? (graphLatest != null ? Number(graphLatest) : undefined);
 
                                     if (displayPct === undefined) return null;
                                     return (
@@ -180,7 +184,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                             <div className="flex flex-col items-end">
                                                 <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80 mb-0.5">{bench}</span>
                                                 <span className="text-xl font-bold tracking-tighter tabular-nums text-foreground">
-                                                    {displayPrice !== undefined ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
+                                                    {displayPrice != null ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
                                                 </span>
                                                 <span className={cn(
                                                     "text-[10px] font-bold tracking-tight tabular-nums",

@@ -1,0 +1,56 @@
+Created At: 2026-06-18T16:35:36Z
+Completed At: 2026-06-18T16:35:40Z
+
+				The command completed successfully.
+				Output:
+				Created At: 2026-06-18T14:59:10Z
+Completed At: 2026-06-18T14:59:10Z
+
+				The command completed successfully.
+				Output:
+				diff --git a/macos_app/Investa/App/MainView.swift b/macos_app/Investa/App/MainView.swift
+index 68f4183..83eb2c5 100644
+--- a/macos_app/Investa/App/MainView.swift
++++ b/macos_app/Investa/App/MainView.swift
+@@ -45,6 +45,7 @@ struct MainView: View {
+     @State private var showingSettings = false
+     @State private var showingPalette = false
+     @State private var paletteStock: SymbolID?
++    @State private var topBarIndices: [IndexQuote] = []
+     /// nil = follow system; true/false = forced.
+     @AppStorage("investa.forceDark") private var forceDark = false
+     @AppStorage("investa.appearanceSet") private var appearanceSet = false
+@@ -94,6 +95,36 @@ struct MainView: View {
+                 sectionView(selection)
+             }
+             .task { if !appState.didLoadSettings { await appState.loadSettings() } }
++            .onPreferenceChange(IndicesPreferenceKey.self) { topBarIndices = $0 }
++            .toolbar {
++                #if os(macOS)
++                ToolbarItem(placement: .primaryAction) {
++                    HStack(spacing: 16) {
++                        ForEach(topBarIndices) { index in
++                            HStack(spacing: 4) {
++                                Text(String((index.name ?? "").prefix(3)).uppercased())
++                                    .font(.caption.weight(.medium))
++                                    .foregroundStyle(.secondary)
++                                if let price = index.price {
++                                    Text(String(format: "%.2f", price))
++                                        .font(.caption.monospacedDigit())
++                                }
++                                if let change = index.change, let pct = index.changesPercentage {
++                                    let sign = change > 0 ? "+" : ""
++                                    Text("\(sign)\(String(format: "%.2f", change)) (\(Fmt.percent(pct)))")
++  
+<truncated 3131 bytes>
+
++                Image("AppLogo").resizable().scaledToFit().frame(height: 24)
++                Text("Investa").font(.headline)
++            }
++            Spacer()
++            ForEach(indices) { index in
++                HStack(spacing: 2) {
++                    Text(String((index.name ?? "").prefix(3)).uppercased()).font(.caption2.weight(.medium))
++                    Text(index.changesPercentage != nil ? Fmt.percent(index.changesPercentage!) : "").font(.caption2).foregroundStyle(Fmt.tint(for: index.changesPercentage))
++                }
+

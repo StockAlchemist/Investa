@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings, fetchTransactions } from '../lib/api';
-import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X } from 'lucide-react';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, fetchPendingIbkr, approveIbkr, rejectIbkr, parseDocument, addTransactionsBatch, fetchSettings, fetchTransactions, syncIbkr } from '../lib/api';
+import { Trash2, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock, FileText, Search, X, RefreshCw } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 import TableSkeleton from './skeletons/TableSkeleton';
@@ -133,7 +133,7 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
     );
 
     // React Query for pending items
-    const { data: pendingTransactions = [], isLoading: isPendingLoading } = useQuery<Transaction[]>({
+    const { data: pendingTransactions = [] } = useQuery<Transaction[]>({
         queryKey: ['pendingIbkr'],
         queryFn: fetchPendingIbkr,
     });
@@ -162,8 +162,24 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
 
     const [selectedPendingIds, setSelectedPendingIds] = useState<Set<number>>(new Set());
     const [isApproving, setIsApproving] = useState(false);
-
+    const [isSyncingIbkr, setIsSyncingIbkr] = useState(false);
     const queryClient = useQueryClient();
+
+    const hasIbkrCredentials = !!(settingsQuery.data?.ibkr_token && settingsQuery.data?.ibkr_query_id);
+
+    const handleSyncIbkr = async () => {
+        setIsSyncingIbkr(true);
+        try {
+            await syncIbkr();
+            queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
+        } catch (error) {
+            console.error("Failed to sync IBKR:", error);
+            alert("Failed to sync IBKR");
+        } finally {
+            setIsSyncingIbkr(false);
+        }
+    };
+
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [isImporting, setIsImporting] = useState(false);
     const [autoAddCashOnImport, setAutoAddCashOnImport] = useState(true);
@@ -296,6 +312,19 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         fileInputRef.current?.click();
     };
 
+    // Outflow types store a negative Total Amount (money leaves the account).
+    // The AI parser prompt asks for positive absolute values; apply the sign here
+    // so the review shows the correct sign and the batch endpoint stores it right.
+    const applyTotalAmountSign = (tx: Transaction): Transaction => {
+        const outflowTypes = new Set(['buy', 'withdrawal', 'fees', 'fee', 'tax', 'withholding tax', 'split', 'stock split', 'buy to cover']);
+        const txType = (tx.Type || '').toLowerCase().trim();
+        const total = Number(tx['Total Amount'] ?? 0);
+        if (!isFinite(total) || Math.abs(total) < 1e-9) return tx;
+        const signed = outflowTypes.has(txType) ? -Math.abs(total) : Math.abs(total);
+        if (signed === total) return tx;
+        return { ...tx, 'Total Amount': signed };
+    };
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -305,11 +334,14 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
             const result = await parseDocument(file);
 
             if (result.transactions && result.transactions.length > 0) {
-                // Apply the selected import account to all extracted transactions if they don't have one
-                const enrichedTransactions = result.transactions.map(tx => ({
-                    ...tx,
-                    Account: importAccount || tx.Account || 'Default'
-                }));
+                // Apply account fallback then sign convention so the review shows
+                // the same signed Total Amount that will be stored after import.
+                const enrichedTransactions = result.transactions.map(tx =>
+                    applyTotalAmountSign({
+                        ...tx,
+                        Account: importAccount || tx.Account || 'Default',
+                    })
+                );
                 setReviewTransactions(enrichedTransactions);
                 setIsReviewing(true);
             } else {
@@ -883,6 +915,18 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                             <Plus className="h-3.5 w-3.5" />
                             <span>Add</span>
                         </button>
+
+                        {hasIbkrCredentials && (
+                            <button
+                                onClick={handleSyncIbkr}
+                                disabled={isSyncingIbkr || isImporting}
+                                className="flex-shrink-0 px-3 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+                                title="Sync IBKR"
+                            >
+                                <RefreshCw className={cn("h-3.5 w-3.5", isSyncingIbkr && "animate-spin")} />
+                                <span>{isSyncingIbkr ? 'Syncing...' : 'IBKR Sync'}</span>
+                            </button>
+                        )}
 
                         <div className="flex-shrink-0 flex items-center bg-purple-600 rounded-md overflow-hidden h-9">
                             <button

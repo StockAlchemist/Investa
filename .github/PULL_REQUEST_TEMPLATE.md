@@ -30,7 +30,7 @@ Please delete options that are not relevant.
 
 <!-- Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. -->
 <!-- e.g.
-- Ran `python main_gui.py` and tested the new dialog.
+- Ran `./start_investa.sh` and tested the new behavior in the web app.
 - Added new unit tests for X function.
 -->
 

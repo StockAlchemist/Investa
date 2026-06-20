@@ -1,12 +1,13 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- small static brand logos; next/image optimization adds no value and would require extra config */
+
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
 import { API_BASE_URL } from "@/lib/api";
 
 export default function LoginPage() {
@@ -38,8 +39,8 @@ export default function LoginPage() {
 
             const data = await res.json();
             login(data.access_token);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Login failed");
         } finally {
             setLoading(false);
         }
@@ -110,7 +111,7 @@ export default function LoginPage() {
                 </CardContent>
                 <CardFooter className="flex justify-center">
                     <p className="text-sm text-muted-foreground">
-                        Don't have an account?{" "}
+                        Don&apos;t have an account?{" "}
                         <Link href="/register" className="text-primary hover:underline">
                             Register
                         </Link>

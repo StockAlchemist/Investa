@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Investa is a comprehensive portfolio management solution offering both a feature-rich **Desktop Application** and a modern **Web Dashboard**. It helps you track, analyze, and visualize your investment portfolio using a local SQLite database for complete data privacy.
+Investa is a comprehensive portfolio management solution with a modern **Web Dashboard**. It helps you track, analyze, and visualize your investment portfolio using a local SQLite database for complete data privacy.
 
 ## Features
 
@@ -17,6 +17,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Advanced Analysis:** Asset allocation, Correlation Matrix, Factor Analysis, and Scenario Analysis.
 * **Rebalancing:** Calculator to help you rebalance portfolio to target allocations.
 * **Web & Mobile:** Sleek Web Dashboard with mobile-optimized navigation, market indices, and a **comprehensive Market Screener**.
+* **Apple Ecosystem:** Native client application for **macOS, iOS, and iPadOS** written in SwiftUI. It connects to the Investa backend to provide a seamless, high-performance native experience with real-time charts and dynamic portfolio views.
 * **Market Screener:** identify opportunities across your Watchlist, Holdings, or the **entire database ("All Stocks")** with quantitative intrinsic value filters.
 * **AI Score:** Intelligent **scorecard-based rankings** in the Watchlist and Screener to help prioritize high-probability investments.
 * **Custom Groups (Tags):** Organize holdings with custom tags (e.g., "Core", "Speculative") for personalized grouping.
@@ -73,10 +74,6 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
     </tr>
     <tr>
       <td align="center">
-        <b>Desktop App</b><br>
-        <img src="docs/screenshots/screenshot_05.png" width="400">
-      </td>
-      <td align="center">
         <b>Mobile View</b><br>
         <img src="docs/screenshots/mobile_view.jpg" height="400">
       </td>
@@ -86,7 +83,6 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
 
 ## Technology Stack
 
-* **GUI:** PySide6 (Qt for Python)
 * **Web:** Next.js, React, Tailwind CSS, FastAPI
 * **Data:** pandas, NumPy, sqlite3, yfinance
 * **Analysis:** SciPy, Numba, statsmodels
@@ -123,22 +119,10 @@ Requires Python 3.8+.
 
 ## Quick Usage
 
-**Run Everything (Desktop + Web):**
+**Run the full stack (backend on :8000, frontend on :3000):**
 
 ```bash
 ./start_investa.sh
-```
-
-**Run Desktop App (Electron):**
-
-```bash
-./start_desktop.sh
-```
-
-**Run Legacy Python GUI:**
-
-```bash
-python src/main_gui.py
 ```
 
 *See the [Tutorial](TUTORIAL.md) for detailed usage instructions.*
