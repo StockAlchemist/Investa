@@ -49,6 +49,7 @@ struct MainView: View {
     /// nil = follow system; true/false = forced.
     @AppStorage("investa.forceDark") private var forceDark = false
     @AppStorage("investa.appearanceSet") private var appearanceSet = false
+    @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.verticalSizeClass) private var vSize
@@ -73,6 +74,11 @@ struct MainView: View {
             }
             .sheet(item: $paletteStock) { StockDetailView(symbol: $0.id, currency: appState.displayCurrency) }
             .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
+            // Poll for fresh prices only while the app is foregrounded (the poll
+            // itself no-ops unless the market is open).
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                appState.setAutoRefresh(phase == .active)
+            }
     }
 
     /// Keep the floating AI launcher clear of the iPhone tab bar.
