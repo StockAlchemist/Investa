@@ -338,10 +338,10 @@ struct StockPriceChartView: View {
         HStack(spacing: 8) {
             Text("FROM").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customFrom, in: ...customTo, displayedComponents: .date)
-                .labelsHidden().datePickerStyle(.compact).fixedSize()
+                .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
             Text("TO").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customTo, in: customFrom...Date(), displayedComponents: .date)
-                .labelsHidden().datePickerStyle(.compact).fixedSize()
+                .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
             Spacer()
         }
     }

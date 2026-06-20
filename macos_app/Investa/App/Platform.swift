@@ -77,6 +77,14 @@ extension View {
         self
         #endif
     }
+
+    /// Forces the Gregorian calendar for date pickers so they don't render a
+    /// locale-specific calendar (e.g. the Buddhist era under a Thai locale).
+    /// Transactions are stored as ISO `yyyy-MM-dd`, so the picker should always
+    /// show Gregorian years regardless of the user's regional settings.
+    func gregorianCalendar() -> some View {
+        environment(\.calendar, Calendar(identifier: .gregorian))
+    }
 }
 
 // MARK: - File export (save panel on macOS, share sheet on iOS)

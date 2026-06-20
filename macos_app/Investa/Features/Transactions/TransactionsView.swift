@@ -627,7 +627,9 @@ struct TransactionsView: View {
             if datePreset == .custom {
                 VStack(alignment: .leading, spacing: 8) {
                     DatePicker("From", selection: $customFrom, displayedComponents: .date)
+                        .gregorianCalendar()
                     DatePicker("To", selection: $customTo, displayedComponents: .date)
+                        .gregorianCalendar()
                 }
             }
             #else
@@ -642,8 +644,10 @@ struct TransactionsView: View {
                 }
                 if datePreset == .custom {
                     DatePicker("", selection: $customFrom, displayedComponents: .date).labelsHidden()
+                        .gregorianCalendar()
                     Text("→").foregroundStyle(.secondary)
                     DatePicker("", selection: $customTo, displayedComponents: .date).labelsHidden()
+                        .gregorianCalendar()
                 }
             }
             #endif

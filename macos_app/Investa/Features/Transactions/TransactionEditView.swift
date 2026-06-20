@@ -81,6 +81,7 @@ struct TransactionEditView: View {
                         ForEach(Transaction.allTypes, id: \.self) { Text($0).tag($0) }
                     }
                     DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .gregorianCalendar()
                     TextField("Symbol", text: symbolBinding)
                         .textCase(.uppercase)
                         .focused($focusedField, equals: .symbol)
