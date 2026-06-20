@@ -81,6 +81,8 @@ final class AppState: ObservableObject {
 
     /// Global market indices for the app title bar strip.
     @Published var indices: [IndexQuote] = []
+    /// Whether the US market is currently open (nil until first fetch).
+    @Published var marketIsOpen: Bool? = nil
 
     private let api: APIClient
     private let visibleDefaultsKey = "investa.tabVisible"
@@ -225,5 +227,13 @@ final class AppState: ObservableObject {
         } catch {
             print("Failed to fetch indices: \(error)")
         }
+        if let status: MarketStatusResponse = try? await api.get("/market_status") {
+            marketIsOpen = status.is_open
+        }
     }
+}
+
+/// `GET /market_status` → `{ "is_open": bool }`.
+private struct MarketStatusResponse: Decodable, Sendable {
+    let is_open: Bool
 }

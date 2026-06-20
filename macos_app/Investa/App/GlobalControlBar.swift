@@ -33,12 +33,30 @@ struct GlobalControlBar<Trailing: View>: View {
             benchmarkButton
             showClosedToggle
             Spacer()
+            marketStatusBadge
             StockSearchBar(currency: appState.displayCurrency)
             currencyMenu
             trailing
         }
         .padding(.horizontal, 20).padding(.vertical, 8)
         .liquidGlass()
+    }
+
+    /// "Live" / "Closed" market-status pill (mirrors the web header badge).
+    /// Shown only in the regular (macOS/iPad) bar, matching the web's hide-on-small.
+    @ViewBuilder private var marketStatusBadge: some View {
+        if let open = appState.marketIsOpen {
+            HStack(spacing: 5) {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 6))
+                    .symbolEffect(.pulse, options: .repeating, isActive: open)
+                Text(open ? "LIVE" : "CLOSED")
+                    .font(.system(size: 10, weight: .bold)).tracking(0.5)
+            }
+            .foregroundStyle(open ? Color.green : .secondary)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background((open ? Color.green : Color.secondary).opacity(0.12), in: Capsule())
+        }
     }
 
     private var compactBar: some View {
