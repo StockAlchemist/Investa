@@ -7,7 +7,8 @@ final class MarketsViewModel: ObservableObject {
     @Published var marketNews: [MarketNewsItem] = []
     @Published var stockNews: [MarketNewsItem] = []
     @Published var holdings: [Holding] = []
-    @Published var isLoading = false
+    // Starts true so the first render shows a loading state, not empty sections.
+    @Published var isLoading = true
     @Published var errorMessage: String?
 
     private let api: APIClient
@@ -146,19 +147,27 @@ struct MarketsView: View {
     private var indicesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Market Indices").font(.title3.bold())
-            #if os(iOS)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
-                ForEach(viewModel.indices) { idx in
-                    Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
+            if viewModel.indices.isEmpty {
+                if viewModel.isLoading {
+                    HStack { Spacer(); ProgressView(); Spacer() }.frame(height: 120)
+                } else {
+                    Text("No market data available.").font(.callout).foregroundStyle(.secondary)
                 }
-            }
-            #else
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 16)], spacing: 16) {
-                ForEach(viewModel.indices) { idx in
-                    Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
+            } else {
+                #if os(iOS)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
+                    ForEach(viewModel.indices) { idx in
+                        Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
+                    }
                 }
+                #else
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 16)], spacing: 16) {
+                    ForEach(viewModel.indices) { idx in
+                        Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
+                    }
+                }
+                #endif
             }
-            #endif
         }
     }
 
@@ -179,7 +188,11 @@ struct MarketsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "newspaper").font(.title3.bold())
             if news.isEmpty {
-                Text("No news available.").font(.callout).foregroundStyle(.secondary)
+                if viewModel.isLoading {
+                    HStack { Spacer(); ProgressView().controlSize(.small); Spacer() }.frame(height: 60)
+                } else {
+                    Text("No news available.").font(.callout).foregroundStyle(.secondary)
+                }
             } else {
                 #if os(iOS)
                 LazyVStack(spacing: 12) {
@@ -227,7 +240,7 @@ private struct IndexCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(index.name ?? "Index").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase).tracking(1).lineLimit(1)
                         Text(priceText).font(.system(size: 28, weight: .bold)).monospacedDigit()
-                            .lineLimit(1).minimumScaleFactor(0.5)
+                            .lineLimit(1).minimumScaleFactor(0.4)
                     }
                     Spacer(minLength: 6)
                     HStack(spacing: 3) {

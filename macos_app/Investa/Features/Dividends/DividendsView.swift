@@ -6,7 +6,9 @@ final class DividendsViewModel: ObservableObject {
     @Published var projected: [ProjectedIncome] = []
     @Published var calendar: [DividendEvent] = []
     @Published var metrics: Metrics?
-    @Published var isLoading = false
+    // Starts true so the first render shows a loading state, not empty/zeroed
+    // sections, before the initial `.task` fires.
+    @Published var isLoading = true
     @Published var errorMessage: String?
 
     private let api: APIClient
@@ -61,6 +63,13 @@ struct DividendsView: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
+            if isInitialLoading {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading income…").font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             ScrollView {
                 VStack(spacing: 20) {
                     if vis("incomeKpis") {
@@ -78,11 +87,19 @@ struct DividendsView: View {
                 }
                 .padding(20)
             }
+            }
         }
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
+    }
+
+    /// True only during the initial fetch, before any data has arrived — so we
+    /// show a loading state instead of zeroed KPIs and "no income" placeholders.
+    private var isInitialLoading: Bool {
+        viewModel.isLoading && viewModel.dividends.isEmpty && viewModel.projected.isEmpty
+            && viewModel.calendar.isEmpty && viewModel.metrics == nil
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.dividend, id) }
