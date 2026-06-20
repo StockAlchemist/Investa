@@ -229,11 +229,11 @@ struct MainView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 GlobalControlBar(section: section) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 12) {
                         Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: { Image(systemName: "arrow.clockwise") }
                         accountToolbarMenu
                     }
-                    .font(.system(size: 20))
+                    .font(.system(size: 17))
                 }
                 Divider()
                 sectionView(section)
