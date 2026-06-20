@@ -22,6 +22,7 @@ def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
             user_symbol_map,
             user_excluded_symbols,
             account_currency_map,
+            account_cash_mode_map,
             db_path,
             db_mtime
         ) = data
