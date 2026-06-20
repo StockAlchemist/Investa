@@ -788,9 +788,9 @@ struct HoldingsTableView: View {
         switch h {
         case "% of Total", "Contribution %": progressCell(r.num[h])
         case "AI Score": aiScoreCell(r.num["AI Score"])
-        case "Intrinsic Value": 
+        case "Intrinsic Value":
             intrinsicCell(r).font(.caption2.weight(.medium))
-        case "Tags": tagsCell(r.tags)
+        case "Tags": tagsCellEditable(r)
         case "Account", "Sector", "Industry":
             Text(textValue(r, h).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
                 .font(.caption2)
