@@ -56,6 +56,11 @@ struct MainView: View {
 
     var body: some View {
         shell
+            .overlay(alignment: .bottomTrailing) {
+                AIChatLauncher()
+                    .padding(.trailing, 20)
+                    .padding(.bottom, chatLauncherBottomPadding)
+            }
             .preferredColorScheme(appearanceSet ? (forceDark ? .dark : .light) : nil)
             .sheet(isPresented: $showingSettings) {
                 SettingsSheet().environmentObject(appState).environmentObject(auth)
@@ -68,6 +73,15 @@ struct MainView: View {
             }
             .sheet(item: $paletteStock) { StockDetailView(symbol: $0.id, currency: appState.displayCurrency) }
             .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
+    }
+
+    /// Keep the floating AI launcher clear of the iPhone tab bar.
+    private var chatLauncherBottomPadding: CGFloat {
+        #if os(iOS)
+        return hSize == .compact ? 70 : 24
+        #else
+        return 24
+        #endif
     }
 
     @ViewBuilder private var shell: some View {
