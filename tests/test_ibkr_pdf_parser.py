@@ -70,7 +70,9 @@ def test_colmap_activity_statement():
 
 
 def test_trade_confirmation_summary_row():
-    """The reported bug: Total Amount must be the Proceeds, not the commission."""
+    """Total Amount is the net proceeds (Proceeds - commission for a Sell), not
+    the bare commission. Net matches the manual-add / IBKR-connector convention
+    the valuation kernel uses for cash flow."""
     cols = _ibkr_trades_colmap(TC_HEADER)
     txn = _ibkr_trade_from_row(TC_SUMMARY, cols, "IBKR", user_id=1)
     assert txn is not None
@@ -78,7 +80,7 @@ def test_trade_confirmation_summary_row():
     assert txn["Symbol"] == "ASML"
     assert txn["Quantity"] == 6.0
     assert txn["Price/Share"] == 1677.0
-    assert txn["Total Amount"] == 10062.0  # not 1.21
+    assert txn["Total Amount"] == 10060.79  # proceeds 10062.00 net of 1.21 commission
     assert txn["Commission"] == 1.21
     assert txn["Account"] == "U13340051"  # taken from the Acct ID column
 
@@ -108,6 +110,6 @@ def test_activity_statement_row_imported():
     assert txn is not None
     assert txn["Symbol"] == "AAPL"
     assert txn["Quantity"] == 78.0
-    assert txn["Total Amount"] == 20072.36
+    assert txn["Total Amount"] == 20071.34  # proceeds 20072.36 net of 1.02 commission (Sell)
     assert txn["Commission"] == 1.02
     assert txn["Account"] == "IBKR"  # no Acct ID column -> falls back to override

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 import traceback
@@ -917,9 +918,6 @@ def get_intrinsic_value_endpoint(
         logging.error(f"Error calculating intrinsic value for {yf_symbol}: {e}")
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-
-import re
-import asyncio
 
 # FX rate cache: {currency_code: (rate, expiry_timestamp)}
 _FX_RATE_CACHE: dict = {}

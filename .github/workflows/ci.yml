@@ -120,7 +120,9 @@ jobs:
 
       - name: Lint (changed files)
         if: steps.changed.outputs.files != ''
-        run: npx eslint ${{ steps.changed.outputs.files }}
+        # Pipe through xargs so paths with shell metacharacters (e.g. Next.js
+        # route groups like app/(auth)/...) aren't re-parsed by the shell.
+        run: echo "${{ steps.changed.outputs.files }}" | xargs npx eslint
 
       - name: Unit tests (Vitest)
         run: npm test
