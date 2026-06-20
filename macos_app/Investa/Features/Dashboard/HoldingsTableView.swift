@@ -106,6 +106,11 @@ struct HoldingsTableView: View {
     @State private var visibleRows = 10
     @State private var showColumns = false
     @State private var detail: SymbolID?
+    @State private var tagEdit: TagEdit?
+
+    /// Identifies a holding whose tags are being edited (applies across all of
+    /// its accounts).
+    struct TagEdit: Identifiable { let id = UUID(); let symbol: String; let accounts: [String]; let tags: [String] }
 
     private let rowHeight: CGFloat = 46
 
@@ -282,6 +287,11 @@ struct HoldingsTableView: View {
         .overlay(alignment: .top) { Rectangle().fill(Color(hex: 0x6366f1).opacity(0.8)).frame(height: 2) }
         .card(.standard)
         .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
+        .sheet(item: $tagEdit) { edit in
+            TagEditorSheet(edit: edit) {
+                NotificationCenter.default.post(name: .refreshRequested, object: nil)
+            }
+        }
         .onChange(of: groupBy) { _, _ in expandedGroups = Set(groups.map(\.key)) }
     }
 
@@ -835,7 +845,7 @@ struct HoldingsTableView: View {
         case "% of Total", "Contribution %": progressCell(r.num[h])
         case "AI Score": aiScoreCell(r.num["AI Score"])
         case "Intrinsic Value": intrinsicCell(r)
-        case "Tags": tagsCell(r.tags)
+        case "Tags": tagsCellEditable(r)
         case "Account", "Sector", "Industry":
             Text(textValue(r, h).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
                 .foregroundStyle(h == "Account" ? .primary : .secondary).lineLimit(1)
@@ -936,6 +946,26 @@ struct HoldingsTableView: View {
                 }
             }
         } else { Text("—").foregroundStyle(.tertiary) }
+    }
+
+    /// Editable Tags cell — tapping opens the tag editor for this holding
+    /// (applied across every account the symbol is held in).
+    private func tagsCellEditable(_ r: HRow) -> some View {
+        Button {
+            let accounts = Array(Set(holdings.filter { $0.symbol == r.symbol }
+                .compactMap { $0.account }.filter { !$0.isEmpty }))
+            tagEdit = TagEdit(symbol: r.symbol,
+                              accounts: accounts.isEmpty ? [r.account] : accounts,
+                              tags: r.tags)
+        } label: {
+            HStack(spacing: 4) {
+                tagsCell(r.tags)
+                Image(systemName: "pencil").font(.system(size: 8)).foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private func tagsCell(_ tags: [String]) -> some View {
@@ -1091,5 +1121,72 @@ struct HoldingsTableView: View {
             csv += line + "\n"
         }
         exportText(csv, filename: "holdings.csv")
+    }
+}
+
+// MARK: - Tag editor
+
+/// Edits a holding's custom tags (comma-separated) and writes them to every
+/// account the symbol is held in via `/holdings/update_tags` (mirrors the web).
+private struct TagEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let edit: HoldingsTableView.TagEdit
+    let onSaved: () -> Void
+
+    @State private var text = ""
+    @State private var isSaving = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Edit Tags").font(.title2.bold()).padding(20)
+            Divider()
+            Form {
+                Section {
+                    LabeledContent("Symbol") { Text(edit.symbol).foregroundStyle(.secondary) }
+                    TextField("Tags (comma-separated)", text: $text)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                } footer: {
+                    Text("Comma-separated, e.g. Core, Speculative, Dividend")
+                }
+                if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            }
+            .formStyle(.grouped)
+            Divider()
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { save() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSaving)
+            }
+            .padding(16)
+        }
+        #if os(macOS)
+        .frame(width: 420, height: 320)
+        #endif
+        .onAppear { text = edit.tags.joined(separator: ", ") }
+    }
+
+    private func save() {
+        isSaving = true; error = nil
+        let tags = text.trimmingCharacters(in: .whitespaces)
+        struct Req: Encodable { let account: String; let symbol: String; let tags: String }
+        Task {
+            do {
+                for account in edit.accounts {
+                    let _: StatusResponse = try await APIClient.shared.send(
+                        method: "POST", path: "/holdings/update_tags",
+                        body: Req(account: account, symbol: edit.symbol, tags: tags))
+                }
+                onSaved()
+                dismiss()
+            } catch {
+                isSaving = false
+                self.error = "Failed to update tags. Please try again."
+            }
+        }
     }
 }
