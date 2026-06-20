@@ -91,19 +91,20 @@ struct GlobalControlBar<Trailing: View>: View {
     }
 
     private var compactBar: some View {
+        // Same left→right order as the macOS regularBar:
+        // Accounts, Layout, Benchmarks, Show Closed, market status, Search, Currency.
+        // (The scroll stands in for macOS's Spacer; refresh/profile `trailing` is
+        // appended since those live in the sidebar on macOS.)
         HStack(spacing: 6) {
-            // Primary scope controls — kept fixed/leftmost so they're always visible.
             accountMenu
                 .labelStyle(.iconOnly)
                 .font(.body)
                 .padding(.leading, 12)
-            currencyMenu
-            // Secondary config (show-closed, benchmarks, layout) scrolls if tight.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    showClosedToggle
-                    benchmarkButton
                     if TabLayout.hasLayout(section) { layoutMenu }
+                    benchmarkButton
+                    showClosedToggle
                 }
                 .labelStyle(.iconOnly)
                 .font(.body) // compact glyphs so the dense control row isn't cramped
@@ -112,9 +113,10 @@ struct GlobalControlBar<Trailing: View>: View {
             // Take only the leftover width and scroll internally — otherwise the
             // ScrollView claims its full content width and overlaps the search box.
             .frame(maxWidth: .infinity)
+            marketStatusCompact
             StockSearchBar(currency: appState.displayCurrency)
                 .layoutPriority(1)
-            marketStatusCompact
+            currencyMenu
             trailing
                 .padding(.trailing, 12)
         }
