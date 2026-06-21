@@ -20,13 +20,20 @@ struct PerformanceChartView: View {
 
     private var seriesData: [SeriesPoint] {
         var out: [SeriesPoint] = []
+        // Normalize TWR relative to the first point in the period (mirrors the
+        // web PerformanceGraph), so the line starts at 0 and its end equals the
+        // period TWR shown in the header.
+        let baseFactor = 1 + (points.first(where: { $0.twr != nil })?.twr ?? 0) / 100
         for p in points {
             guard let d = p.parsedDate else { continue }
             switch view {
             case .value:
                 out.append(SeriesPoint(date: d, value: p.value, series: "Portfolio"))
             case .twr:
-                if let t = p.twr { out.append(SeriesPoint(date: d, value: t, series: "Portfolio")) }
+                if let t = p.twr {
+                    let adj = baseFactor != 0 ? ((1 + t / 100) / baseFactor - 1) * 100 : t
+                    out.append(SeriesPoint(date: d, value: adj, series: "Portfolio"))
+                }
                 for b in benchmarks {
                     if let v = p.benchmark(b) { out.append(SeriesPoint(date: d, value: v, series: b)) }
                 }
@@ -37,6 +44,42 @@ struct PerformanceChartView: View {
         return out
     }
 
+    /// Headline stats for the selected period, matching the web PerformanceGraph:
+    /// the value change (currency + %) for the Value view, and the period TWR
+    /// (plus annualized when over a year) for the TWR view.
+    private struct PeriodStat: Identifiable { let id = UUID(); let label: String; let text: String; let positive: Bool }
+
+    private func pctStr(_ v: Double) -> String { String(format: "%.2f%%", v) }
+
+    private var periodStats: [PeriodStat]? {
+        guard points.count >= 2 else { return nil }
+        switch view {
+        case .value:
+            guard let startVal = points.first?.value, let endVal = points.last?.value else { return nil }
+            let change = endVal - startVal
+            let pct = startVal != 0 ? change / startVal * 100 : 0
+            return [PeriodStat(label: "Period Change",
+                               text: "\(Fmt.currency(change, code: currency)) (\(pctStr(pct)))",
+                               positive: change >= 0)]
+        case .twr:
+            let twrs = points.compactMap(\.twr)
+            guard let startTwr = twrs.first, let endTwr = twrs.last else { return nil }
+            let baseFactor = 1 + startTwr / 100
+            let periodTwr = baseFactor != 0 ? ((1 + endTwr / 100) / baseFactor - 1) * 100 : endTwr
+            var stats = [PeriodStat(label: "Period TWR", text: pctStr(periodTwr), positive: periodTwr >= 0)]
+            if let sd = points.first?.parsedDate, let ed = points.last?.parsedDate {
+                let years = ed.timeIntervalSince(sd) / (365.25 * 86400)
+                if years > 1 {
+                    let ann = (pow(1 + periodTwr / 100, 1 / years) - 1) * 100
+                    stats.append(PeriodStat(label: "Ann. TWR", text: pctStr(ann), positive: ann >= 0))
+                }
+            }
+            return stats
+        case .drawdown:
+            return nil
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 12) {
@@ -45,6 +88,19 @@ struct PerformanceChartView: View {
                     Text("Performance").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
                         .foregroundStyle(.secondary)
                     Spacer()
+                }
+                if let stats = periodStats {
+                    HStack(spacing: 16) {
+                        ForEach(stats) { s in
+                            HStack(spacing: 6) {
+                                Text(s.label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+                                Text(s.text).font(.callout.weight(.bold))
+                                    .foregroundStyle(s.positive ? .green : .red)
+                                    .lineLimit(1).minimumScaleFactor(0.7)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
                 }
                 Picker("View", selection: $view) {
                     ForEach(PerformanceView.allCases) { Text($0.rawValue).tag($0) }
