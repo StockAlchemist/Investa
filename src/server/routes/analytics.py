@@ -619,12 +619,17 @@ async def get_projection(
             end_date=date.today(),
             display_currency=currency,
             include_accounts=accounts,
-            benchmark_symbols_yf=[],  # required arg; projection needs no benchmark
+            benchmark_symbols_yf=["^GSPC"],  # matches the proven risk_metrics call path
             interval="D",
             account_cash_mode_map=account_cash_mode_map,
             db_mtime=db_mtime,
         )
         if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
+            logging.warning(
+                "Projection: no usable history (daily_df is None: %s, cols: %s)",
+                daily_df is None,
+                None if daily_df is None else list(daily_df.columns),
+            )
             return {"available": False}
 
         # Current total value (V0) from the summary.
@@ -633,8 +638,14 @@ async def get_projection(
         )
         current_value = (summary.get("metrics") or {}).get("market_value")
 
-        result = compute_projection(daily_df["Portfolio Accumulated Gain"], current_value)
+        twr_series = daily_df["Portfolio Accumulated Gain"].dropna()
+        result = compute_projection(twr_series, current_value)
         result["currency"] = currency
+        if not result.get("available"):
+            logging.warning(
+                "Projection unavailable: current_value=%s, twr_points=%s",
+                current_value, len(twr_series),
+            )
         return clean_nans(result)
 
     except Exception as e:
