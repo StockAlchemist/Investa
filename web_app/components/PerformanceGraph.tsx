@@ -211,6 +211,23 @@ export default function PerformanceGraph({
         }));
     }, [processedData]);
 
+    // Narrow currency symbol (e.g. "$", "฿") for the millions-unit y-axis labels.
+    const currencySymbol = useMemo(() => {
+        if (currency === 'THB') return '฿';
+        const part = new Intl.NumberFormat('en-US', { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+            .formatToParts(0).find(p => p.type === 'currency');
+        return part?.value ?? '';
+    }, [currency]);
+
+    // Enough decimals that adjacent value ticks read differently (from the range).
+    const valueDecimals = useMemo(() => {
+        const vals = chartedData.map(d => d.value).filter((v): v is number => typeof v === 'number');
+        if (vals.length < 2) return 2;
+        const range = Math.max(...vals) - Math.min(...vals);
+        const stepM = Math.max((range / 1e6) / 5, 1e-9);   // ~5 ticks
+        return Math.min(3, Math.max(0, Math.ceil(-Math.log10(stepM))));
+    }, [chartedData]);
+
     const xDomain = useMemo(() => {
         if (period === '1d' && chartedData.length > 0) {
             // Robustly calculate 9:30 AM ET and 4:00 PM ET for the given day
@@ -387,24 +404,9 @@ export default function PerformanceGraph({
     const formatYAxis = (tickItem: number) => {
         if (view === 'return' || view === 'drawdown') {
             return `${tickItem.toFixed(1)}%`;
-        } else {
-            // Check if we need more precision
-            // If the range is small, we might see duplicate ticks like "1.7M", "1.7M", "1.7M"
-            // We can check the data range to decide.
-            // But formatting happens per tick.
-
-            // Heuristic working with the tick value itself isn't enough, we need context.
-            // However, we can just use more localized formatting if the number is large?
-            // Or just increase fraction digits to 2 or 3?
-
-            // Let's try 3 fraction digits for compact notation.
-            // "1.662M" vs "1.7M"
-            return new Intl.NumberFormat('en-US', {
-                notation: "compact",
-                maximumFractionDigits: 3,
-                minimumFractionDigits: 0
-            }).format(tickItem);
         }
+        // Value view: label in millions, with just enough decimals to distinguish ticks.
+        return `${currencySymbol}${(tickItem / 1e6).toFixed(valueDecimals)}M`;
     };
 
 

@@ -182,7 +182,7 @@ struct PerformanceChartView: View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
-                        Text(view == .value ? Fmt.currency(v, code: currency) : String(format: "%.0f%%", v))
+                        Text(view == .value ? valueAxisLabel(v, domain) : String(format: "%.0f%%", v))
                     }
                 }
             }
@@ -198,6 +198,15 @@ struct PerformanceChartView: View {
             })
         }
         .frame(height: 260)
+    }
+
+    /// Y-axis label for the Value view: in millions, with just enough decimals
+    /// that adjacent ticks read differently (derived from the visible range).
+    private func valueAxisLabel(_ v: Double, _ domain: ClosedRange<Double>) -> String {
+        let rangeM = (domain.upperBound - domain.lowerBound) / 1_000_000
+        let stepM = max(rangeM / 5, 1e-9)   // ~5 ticks
+        let decimals = min(3, max(0, Int(ceil(-log10(stepM)))))
+        return "\(Fmt.symbol(currency))\(String(format: "%.\(decimals)f", v / 1_000_000))M"
     }
 
     private var distinctDates: [Date] {
