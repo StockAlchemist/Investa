@@ -648,7 +648,11 @@ struct StockDetailView: View {
                     .foregroundStyle(LinearGradient(colors: [color.opacity(0.3), color.opacity(0.0)], startPoint: .top, endPoint: .bottom))
                     .interpolationMethod(.monotone)
             }
-            .chartXAxis(.hidden).chartYAxis(.hidden).chartYScale(domain: chartDomain(data)).frame(width: 64, height: 24)
+            .chartXAxis(.hidden).chartYAxis(.hidden).chartYScale(domain: chartDomain(data))
+            .frame(width: 64, height: 24)
+            // Confine the gradient area fill to the cell; otherwise it bleeds into
+            // neighbouring rows and the columns merge into one continuous band.
+            .clipped()
         } else { Text("—").foregroundStyle(.secondary).frame(width: 64, alignment: .center) }
     }
 
