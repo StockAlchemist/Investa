@@ -619,6 +619,7 @@ async def get_projection(
             end_date=date.today(),
             display_currency=currency,
             include_accounts=accounts,
+            benchmark_symbols_yf=[],  # required arg; projection needs no benchmark
             interval="D",
             account_cash_mode_map=account_cash_mode_map,
             db_mtime=db_mtime,
