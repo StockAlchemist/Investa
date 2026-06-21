@@ -108,6 +108,15 @@ struct GlobalControlBar<Trailing: View>: View {
                     .labelStyle(.iconOnly)
                     .font(.body)
                     .padding(.leading, 12)
+                if TabLayout.hasLayout(section) {
+                    Menu {
+                        layoutMenuContent
+                    } label: {
+                        Label("Customize Layout", systemImage: "slider.horizontal.3")
+                    }
+                    .labelStyle(.iconOnly)
+                    .font(.body)
+                }
                 Spacer(minLength: 8)
                 marketStatusCompact
             }
@@ -130,19 +139,12 @@ struct GlobalControlBar<Trailing: View>: View {
         .liquidGlass()
     }
 
-    /// All the secondary/rarely-used controls, collapsed into one "•••" menu so
-    /// the compact bar stays uncluttered. Section-specific layout toggles appear
-    /// as a submenu; the host-supplied `trailing` (refresh / settings / account)
+    /// The secondary/rarely-used controls, collapsed into one "•••" menu so the
+    /// compact bar stays uncluttered. (Customize Layout sits inline next to the
+    /// account menu.) The host-supplied `trailing` (refresh / settings / account)
     /// is appended below a divider.
     private var overflowMenu: some View {
         Menu {
-            if TabLayout.hasLayout(section) {
-                Menu {
-                    layoutMenuContent
-                } label: {
-                    Label("Customize Layout", systemImage: "slider.horizontal.3")
-                }
-            }
             Button { showBenchmarks = true } label: {
                 Label("Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line")
             }
