@@ -60,7 +60,7 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                     <div className="flex items-baseline gap-4 text-sm">
                         <span className="text-muted-foreground">
                             Assumed return{' '}
-                            <span className="font-bold text-foreground">{formatPercent((data.annual_return_pct ?? 0) / 100)}</span>/yr
+                            <span className="font-bold text-foreground">{formatPercent((data.annual_return_pct ?? 0) / 100)}</span> p.a.
                         </span>
                         <span className="text-muted-foreground">
                             Volatility{' '}

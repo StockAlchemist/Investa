@@ -54,19 +54,24 @@ struct ProjectionCardView: View {
         }
     }
 
-    private func assumptions(_ p: Projection) -> some View {
-        HStack(spacing: 16) {
-            stat("Assumed return", "\(Fmt.percent(p.annualReturnPct))/yr")
-            stat("Volatility", String(format: "%.2f%%", p.annualVolatilityPct ?? 0))
-            Spacer(minLength: 0)
+    @ViewBuilder private func assumptions(_ p: Projection) -> some View {
+        let ret = stat("Assumed return", "\(Fmt.percent(p.annualReturnPct)) p.a.")
+        let vol = stat("Volatility", String(format: "%.2f%%", p.annualVolatilityPct ?? 0))
+        // Stack vertically on iPhone so neither stat wraps/truncates in the narrow bar.
+        if isPhone {
+            VStack(alignment: .leading, spacing: 4) { ret; vol }
+        } else {
+            HStack(spacing: 16) { ret; vol; Spacer(minLength: 0) }
         }
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
         HStack(spacing: 6) {
             Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+                .lineLimit(1)
             Text(value).font(.callout.weight(.bold)).lineLimit(1)
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var chart: some View {
