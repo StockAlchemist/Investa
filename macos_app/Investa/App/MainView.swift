@@ -228,12 +228,24 @@ struct MainView: View {
     private func phoneTabContent(_ section: AppSection) -> some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
+                // These render as items inside the control bar's overflow ("•••")
+                // menu, so the phone bar no longer needs standalone refresh/profile
+                // icons.
                 GlobalControlBar(section: section) {
-                    HStack(spacing: 12) {
-                        Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: { Image(systemName: "arrow.clockwise") }
-                        accountToolbarMenu
+                    Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
                     }
-                    .font(.system(size: 17))
+                    Button { showingSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    Button { appearanceSet = true; forceDark.toggle() } label: {
+                        Label(forceDark ? "Light Mode" : "Dark Mode", systemImage: forceDark ? "sun.max" : "moon")
+                    }
+                    Divider()
+                    if let user = auth.currentUser { Text("Signed in as \(user.displayName)") }
+                    Button(role: .destructive) { auth.logout() } label: {
+                        Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
                 }
                 Divider()
                 sectionView(section)
@@ -267,17 +279,6 @@ struct MainView: View {
         }
     }
 
-    private var accountToolbarMenu: some View {
-        Menu {
-            if let user = auth.currentUser { Text("Signed in as \(user.displayName)"); Divider() }
-            Button { showingSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-            Button { appearanceSet = true; forceDark.toggle() } label: {
-                Label(forceDark ? "Light mode" : "Dark mode", systemImage: forceDark ? "sun.max" : "moon")
-            }
-            Divider()
-            Button(role: .destructive) { auth.logout() } label: { Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right") }
-        } label: { Image(systemName: "person.crop.circle") }
-    }
     #endif
 }
 

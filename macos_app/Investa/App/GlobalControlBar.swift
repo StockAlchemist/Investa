@@ -90,37 +90,58 @@ struct GlobalControlBar<Trailing: View>: View {
         }
     }
 
+    /// Compact bar for iPhone (and iPad portrait). The previous design crammed
+    /// nine controls + a horizontal scroll into one row; this keeps only the
+    /// frequently-used controls inline (account, search, currency, market status)
+    /// and folds the rest — Layout, Benchmarks, Show Closed, plus the host's
+    /// refresh/settings/account actions — into a single overflow menu.
     private var compactBar: some View {
-        // Same left→right order as the macOS regularBar:
-        // Accounts, Layout, Benchmarks, Show Closed, market status, Search, Currency.
-        // (The scroll stands in for macOS's Spacer; refresh/profile `trailing` is
-        // appended since those live in the sidebar on macOS.)
-        HStack(spacing: 6) {
+        HStack(spacing: 10) {
             accountMenu
                 .labelStyle(.iconOnly)
                 .font(.body)
                 .padding(.leading, 12)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    if TabLayout.hasLayout(section) { layoutMenu }
-                    benchmarkButton
-                    showClosedToggle
-                }
-                .labelStyle(.iconOnly)
-                .font(.body) // compact glyphs so the dense control row isn't cramped
-                .padding(.vertical, 8)
-            }
-            // Take only the leftover width and scroll internally — otherwise the
-            // ScrollView claims its full content width and overlaps the search box.
-            .frame(maxWidth: .infinity)
+            Spacer(minLength: 8)
             marketStatusCompact
             StockSearchBar(currency: appState.displayCurrency)
                 .layoutPriority(1)
             currencyMenu
-            trailing
+            overflowMenu
                 .padding(.trailing, 12)
         }
+        .padding(.vertical, 4)
         .liquidGlass()
+    }
+
+    /// All the secondary/rarely-used controls, collapsed into one "•••" menu so
+    /// the compact bar stays uncluttered. Section-specific layout toggles appear
+    /// as a submenu; the host-supplied `trailing` (refresh / settings / account)
+    /// is appended below a divider.
+    private var overflowMenu: some View {
+        Menu {
+            if TabLayout.hasLayout(section) {
+                Menu {
+                    layoutMenuContent
+                } label: {
+                    Label("Customize Layout", systemImage: "slider.horizontal.3")
+                }
+            }
+            Button { showBenchmarks = true } label: {
+                Label("Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line")
+            }
+            Toggle(isOn: $appState.showClosed) {
+                Label("Show Closed Accounts", systemImage: "eye.slash")
+            }
+            Divider()
+            trailing
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .sheet(isPresented: $showBenchmarks) { benchmarkPopover }
     }
 
     // MARK: - Benchmarks
@@ -301,19 +322,25 @@ struct GlobalControlBar<Trailing: View>: View {
 
     private var layoutMenu: some View {
         Menu {
-            Text(TabLayout.sectionTitle(for: section))
-            Divider()
-            let items = TabLayout.items(for: section)
-            // Render grouped (group header as a disabled label) preserving order.
-            ForEach(Array(groupedItems(items).enumerated()), id: \.offset) { _, group in
-                if let label = group.label { Section(label) { itemButtons(group.items) } }
-                else { itemButtons(group.items) }
-            }
+            layoutMenuContent
         } label: {
             Label("Layout", systemImage: "slider.horizontal.3")
         }
         .borderlessMenu().fixedSize()
         .interactiveGlass()
+    }
+
+    /// The per-tab visible-section toggles, reusable both as the macOS bar's
+    /// Layout menu and as a submenu inside the compact overflow menu.
+    @ViewBuilder private var layoutMenuContent: some View {
+        Text(TabLayout.sectionTitle(for: section))
+        Divider()
+        let items = TabLayout.items(for: section)
+        // Render grouped (group header as a disabled label) preserving order.
+        ForEach(Array(groupedItems(items).enumerated()), id: \.offset) { _, group in
+            if let label = group.label { Section(label) { itemButtons(group.items) } }
+            else { itemButtons(group.items) }
+        }
     }
 
     private func itemButtons(_ items: [LayoutItem]) -> some View {
