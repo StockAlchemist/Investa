@@ -405,30 +405,39 @@ struct StockPriceChartView: View {
     private var overlayRow: some View {
         HStack(spacing: 8) {
             Text("OVERLAYS").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-            pill("Buys", showBuys, StockChartModel.EventKind.buy.color) { showBuys.toggle() }
-            pill("Sells", showSells, StockChartModel.EventKind.sell.color) { showSells.toggle() }
-            pill("Dividends", showDividends, StockChartModel.EventKind.dividend.color) { showDividends.toggle() }
-            pill("Earnings", showEarnings, StockChartModel.EventKind.earnings.color) { showEarnings.toggle() }
-            Spacer()
+            // Scrolls so the pills keep their natural width instead of being
+            // squeezed (which wrapped "Dividends"/"Earnings" onto two lines).
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    pill("Buys", showBuys, StockChartModel.EventKind.buy.color) { showBuys.toggle() }
+                    pill("Sells", showSells, StockChartModel.EventKind.sell.color) { showSells.toggle() }
+                    pill("Dividends", showDividends, StockChartModel.EventKind.dividend.color) { showDividends.toggle() }
+                    pill("Earnings", showEarnings, StockChartModel.EventKind.earnings.color) { showEarnings.toggle() }
+                }
+            }
         }
     }
 
     private var benchmarkRow: some View {
         HStack(spacing: 8) {
             Text("BENCHMARKS").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-            ForEach(benchmarks, id: \.key) { b in
-                pill(b.name, selectedBenchmarks.contains(b.name), b.color) {
-                    if let i = selectedBenchmarks.firstIndex(of: b.name) { selectedBenchmarks.remove(at: i) }
-                    else { selectedBenchmarks.append(b.name) }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(benchmarks, id: \.key) { b in
+                        pill(b.name, selectedBenchmarks.contains(b.name), b.color) {
+                            if let i = selectedBenchmarks.firstIndex(of: b.name) { selectedBenchmarks.remove(at: i) }
+                            else { selectedBenchmarks.append(b.name) }
+                        }
+                    }
                 }
             }
-            Spacer()
         }
     }
 
     private func toggleChip(_ label: String, _ on: Bool, _ color: Color, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label).font(.system(size: 10, weight: .bold))
+                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(on ? color : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
                 .foregroundStyle(on ? .white : .secondary)
@@ -439,6 +448,7 @@ struct StockPriceChartView: View {
             HStack(spacing: 5) {
                 Circle().fill(on ? .white : color).frame(width: 7, height: 7)
                 Text(label).font(.system(size: 10, weight: .bold))
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 9).padding(.vertical, 4)
             .background(on ? color : Color.gray.opacity(0.12), in: Capsule())
