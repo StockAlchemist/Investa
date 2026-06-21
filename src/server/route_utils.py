@@ -33,6 +33,10 @@ def get_mdp():
 
 def clean_nans(obj):
     """Recursively replace NaN/Infinity with None for JSON serialization."""
+    # bool is a subclass of int — check it first so True/False stay JSON booleans
+    # instead of being coerced to 1/0 (which strict clients like Swift reject).
+    if isinstance(obj, (bool, np.bool_)):
+        return bool(obj)
     if isinstance(obj, (float, np.floating)):
         if np.isnan(obj) or np.isinf(obj):
             return None
