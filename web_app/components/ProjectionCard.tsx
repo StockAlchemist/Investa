@@ -35,12 +35,12 @@ const MILESTONES = [1, 3, 5, 10, 20];
 export default function ProjectionCard({ data, isLoading, isRefreshing, currency }: ProjectionCardProps) {
     const cur = data?.currency || currency;
 
-    // Cap the y-axis at the final horizon's 75th percentile so the median and the
-    // likely (25–75%) band fill the height instead of being dwarfed by the extreme
-    // upper tail; the outer band just extends past the top for the longest horizons.
+    // Top of the y-axis: the final horizon's p90 (the band's true max) plus a
+    // little headroom, so the whole band fits without being clipped but the axis
+    // doesn't round up to a much larger value.
     const yMax = useMemo(() => {
         const last = data?.horizons?.[data.horizons.length - 1];
-        return last ? Math.max(last.p75, last.median_value) : undefined;
+        return last ? last.p90 * 1.03 : undefined;
     }, [data]);
 
     const chartData = useMemo(() => {
@@ -105,7 +105,6 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                                 />
                                 <YAxis
                                     domain={[0, yMax ?? 'auto']}
-                                    allowDataOverflow
                                     tickFormatter={(v) => compactCurrency(v as number, cur)}
                                     tickLine={false}
                                     axisLine={false}

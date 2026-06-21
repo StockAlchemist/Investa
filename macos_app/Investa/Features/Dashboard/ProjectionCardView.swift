@@ -21,11 +21,10 @@ struct ProjectionCardView: View {
     private var horizons: [ProjectionHorizon] { projection?.horizons ?? [] }
     private var milestoneHorizons: [ProjectionHorizon] { horizons.filter { Self.milestones.contains($0.years) } }
 
-    /// Cap the y-axis at the final horizon's 75th percentile so the median and the
-    /// likely (25–75%) band fill the height instead of being dwarfed by the
-    /// extreme upper tail; the outer band simply extends past the top for the
-    /// longest horizons.
-    private var yMax: Double { horizons.last.map { max($0.p75, $0.medianValue) } ?? 1 }
+    /// Top of the y-axis: the final horizon's p90 (the band's true max) plus a
+    /// little headroom, so the whole band fits without being clipped/cut off but
+    /// the axis doesn't round up to a much larger value.
+    private var yMax: Double { (horizons.last?.p90 ?? 1) * 1.03 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
