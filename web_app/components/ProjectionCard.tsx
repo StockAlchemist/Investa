@@ -40,6 +40,7 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
         return data.horizons.map(h => ({
             years: h.years,
             median: h.median_value,
+            expected: h.expected_value,
             band90: [h.p10, h.p90] as [number, number],
             band50: [h.p25, h.p75] as [number, number],
         }));
@@ -106,13 +107,15 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                                         if (Array.isArray(value)) {
                                             return [`${formatCurrency(value[0], cur)} – ${formatCurrency(value[1], cur)}`, name === 'band90' ? '10–90%' : '25–75%'];
                                         }
-                                        return [formatCurrency(value as number, cur), 'Median'];
+                                        return [formatCurrency(value as number, cur), name === 'expected' ? 'Expected' : 'Median'];
                                     }}
                                     labelFormatter={(y) => `In ${y}Y`}
                                     contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
                                 />
                                 <Area dataKey="band90" stroke="none" fill="#6366f1" fillOpacity={0.12} isAnimationActive={false} />
                                 <Area dataKey="band50" stroke="none" fill="#6366f1" fillOpacity={0.22} isAnimationActive={false} />
+                                {/* Invisible line so "Expected" appears in the tooltip without cluttering the chart. */}
+                                <Line dataKey="expected" stroke="#6366f1" strokeOpacity={0} dot={false} activeDot={false} isAnimationActive={false} legendType="none" />
                                 <Line dataKey="median" stroke="#6366f1" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                             </ComposedChart>
                         </ResponsiveContainer>
