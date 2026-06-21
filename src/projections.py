@@ -18,8 +18,9 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 
-# Default horizons (years) shown in the UI.
-HORIZONS_YEARS: List[int] = [1, 3, 5, 10, 20]
+# Every year out to 20 so the chart can draw a smooth cone; clients pick which
+# horizons to tabulate (typically the 1/3/5/10/20y milestones).
+HORIZONS_YEARS: List[int] = list(range(1, 21))
 
 _TRADING_DAYS = 252
 

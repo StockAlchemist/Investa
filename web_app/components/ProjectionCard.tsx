@@ -29,13 +29,16 @@ function compactCurrency(value: number, currency: string): string {
     return formatCurrency(value, currency);
 }
 
+// Horizons tabulated below the chart (the chart itself plots every year).
+const MILESTONES = [1, 3, 5, 10, 20];
+
 export default function ProjectionCard({ data, isLoading, isRefreshing, currency }: ProjectionCardProps) {
     const cur = data?.currency || currency;
 
     const chartData = useMemo(() => {
         if (!data?.available || !data.horizons) return [];
         return data.horizons.map(h => ({
-            label: `${h.years}Y`,
+            years: h.years,
             median: h.median_value,
             band90: [h.p10, h.p90] as [number, number],
             band50: [h.p25, h.p75] as [number, number],
@@ -81,7 +84,16 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                         <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" className="stroke-border/40" vertical={false} />
-                                <XAxis dataKey="label" tickLine={false} axisLine={false} className="text-xs" />
+                                <XAxis
+                                    dataKey="years"
+                                    type="number"
+                                    domain={[1, 20]}
+                                    ticks={[1, 3, 5, 10, 15, 20]}
+                                    tickFormatter={(y) => `${y}Y`}
+                                    tickLine={false}
+                                    axisLine={false}
+                                    className="text-xs"
+                                />
                                 <YAxis
                                     tickFormatter={(v) => compactCurrency(v as number, cur)}
                                     tickLine={false}
@@ -96,12 +108,12 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                                         }
                                         return [formatCurrency(value as number, cur), 'Median'];
                                     }}
-                                    labelFormatter={(l) => `In ${l}`}
+                                    labelFormatter={(y) => `In ${y}Y`}
                                     contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
                                 />
                                 <Area dataKey="band90" stroke="none" fill="#6366f1" fillOpacity={0.12} isAnimationActive={false} />
                                 <Area dataKey="band50" stroke="none" fill="#6366f1" fillOpacity={0.22} isAnimationActive={false} />
-                                <Line dataKey="median" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 3 }} isAnimationActive={false} />
+                                <Line dataKey="median" stroke="#6366f1" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                             </ComposedChart>
                         </ResponsiveContainer>
                     </div>
@@ -117,7 +129,7 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                                 </tr>
                             </thead>
                             <tbody>
-                                {data.horizons!.map(h => (
+                                {data.horizons!.filter(h => MILESTONES.includes(h.years)).map(h => (
                                     <tr key={h.years} className="border-t border-border/40 text-right">
                                         <td className="text-left font-semibold py-2">{h.years} {h.years === 1 ? 'year' : 'years'}</td>
                                         <td className="py-2 font-bold tabular-nums">{formatCurrency(h.median_value, cur)}</td>

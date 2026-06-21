@@ -14,8 +14,12 @@ struct ProjectionCardView: View {
     private var isPhone: Bool { false }
     #endif
 
+    /// Years tabulated below the chart (the chart plots every year).
+    private static let milestones: Set<Int> = [1, 3, 5, 10, 20]
+
     private var cur: String { projection?.currency ?? currency }
     private var horizons: [ProjectionHorizon] { projection?.horizons ?? [] }
+    private var milestoneHorizons: [ProjectionHorizon] { horizons.filter { Self.milestones.contains($0.years) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -81,6 +85,8 @@ struct ProjectionCardView: View {
                 LineMark(x: .value("Years", h.years), y: .value("Median", h.medianValue))
                     .foregroundStyle(Theme.brand)
                     .interpolationMethod(.monotone)
+            }
+            ForEach(milestoneHorizons) { h in
                 PointMark(x: .value("Years", h.years), y: .value("Median", h.medianValue))
                     .foregroundStyle(Theme.brand)
                     .symbolSize(24)
@@ -88,7 +94,7 @@ struct ProjectionCardView: View {
         }
         .chartXScale(domain: 0...(Double(horizons.last?.years ?? 20)))
         .chartXAxis {
-            AxisMarks(values: horizons.map { $0.years }) { value in
+            AxisMarks(values: [1, 5, 10, 15, 20]) { value in
                 AxisGridLine()
                 AxisValueLabel {
                     if let y = value.as(Int.self) { Text("\(y)Y") }
@@ -131,7 +137,7 @@ struct ProjectionCardView: View {
             .foregroundStyle(.secondary)
             .padding(.bottom, 6)
 
-            ForEach(horizons) { h in
+            ForEach(milestoneHorizons) { h in
                 Divider()
                 HStack {
                     Text("\(h.years) \(h.years == 1 ? "year" : "years")")
