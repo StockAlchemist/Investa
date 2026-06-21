@@ -9,6 +9,10 @@ struct InvestaApp: App {
             RootView()
                 .environmentObject(auth)
                 .tint(Theme.brand)
+                // Force Gregorian app-wide so chart date axes (and SwiftUI date
+                // rendering) don't show the Buddhist era under a Thai locale.
+                // Financial dates are stored as ISO yyyy-MM-dd.
+                .gregorianCalendar()
                 .macMinSize(width: 900, height: 600)
         }
         #if os(macOS)

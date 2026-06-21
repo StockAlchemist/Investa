@@ -207,6 +207,7 @@ struct PerformanceChartView: View {
 
     private func tooltipString(_ d: Date) -> String {
         let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
         if period == .oneDay || period == .fiveDays {
             f.timeZone = TimeZone(identifier: "America/New_York"); f.dateFormat = "EEE, MMM d h:mm a"
         } else {
