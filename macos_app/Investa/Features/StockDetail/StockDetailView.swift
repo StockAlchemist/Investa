@@ -705,35 +705,8 @@ struct StockDetailView: View {
     @ViewBuilder private var valuationTab: some View {
         VStack(spacing: 24) {
             if let iv = viewModel.intrinsic {
-                HStack(spacing: 16) {
-                    VStack(spacing: 8) {
-                        Text("Average Intrinsic Value").font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                        Text(Fmt.currency(iv.averageIntrinsicValue, code: nativeCur)).font(.system(size: 28, weight: .bold)).foregroundStyle(.indigo)
-                        if let r = iv.range {
-                            Text("Range: \(Fmt.currency(r.bear, code: nativeCur)) - \(Fmt.currency(r.bull, code: nativeCur))")
-                                .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity).padding(24)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
-                    
-                    VStack(spacing: 8) {
-                        Text("Current Price").font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                        Text(Fmt.currency(iv.currentPrice, code: nativeCur)).font(.system(size: 28, weight: .bold))
-                    }
-                    .frame(maxWidth: .infinity).padding(24)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
-                    
-                    let mos = iv.marginOfSafetyPct ?? 0
-                    VStack(spacing: 8) {
-                        Text("Margin of Safety").font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                        Text("\(mos >= 0 ? "+" : "")\(Fmt.percent(mos))").font(.system(size: 28, weight: .bold))
-                            .foregroundStyle(mos >= 0 ? .green : .red)
-                    }
-                    .frame(maxWidth: .infinity).padding(24)
-                    .background(mos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 16))
-                }
-                
+                valuationSummaryCards(iv)
+
                 if let note = iv.valuationNote {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title3)
@@ -766,6 +739,57 @@ struct StockDetailView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(40)
             } else {
                 ContentUnavailableView("Valuation unavailable", systemImage: "dollarsign.circle").frame(height: 200)
+            }
+        }
+    }
+
+    /// The three valuation summary cards (intrinsic value / current price /
+    /// margin of safety). Side-by-side on regular widths; stacked on compact
+    /// (iPhone) so the large figures aren't squeezed into a third of the screen
+    /// and wrapped character-by-character.
+    @ViewBuilder private func valuationSummaryCards(_ iv: IntrinsicValueResponse) -> some View {
+        let mos = iv.marginOfSafetyPct ?? 0
+        let intrinsic = valuationCard(label: "Average Intrinsic Value",
+                                      value: Fmt.currency(iv.averageIntrinsicValue, code: nativeCur),
+                                      valueColor: .indigo) {
+            if let r = iv.range {
+                Text("Range: \(Fmt.currency(r.bear, code: nativeCur)) - \(Fmt.currency(r.bull, code: nativeCur))")
+                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        let current = valuationCard(label: "Current Price",
+                                    value: Fmt.currency(iv.currentPrice, code: nativeCur),
+                                    valueColor: .primary) { EmptyView() }
+        let safety = valuationCard(label: "Margin of Safety",
+                                   value: "\(mos >= 0 ? "+" : "")\(Fmt.percent(mos))",
+                                   valueColor: mos >= 0 ? .green : .red,
+                                   tint: mos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1)) { EmptyView() }
+
+        if hSizeClass == .compact {
+            VStack(spacing: 12) { intrinsic; current; safety }
+        } else {
+            HStack(spacing: 16) { intrinsic; current; safety }
+        }
+    }
+
+    private func valuationCard<Sub: View>(label: String, value: String, valueColor: Color,
+                                          tint: Color? = nil,
+                                          @ViewBuilder sub: () -> Sub) -> some View {
+        VStack(spacing: 8) {
+            Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+                .multilineTextAlignment(.center)
+            Text(value).font(.system(size: 28, weight: .bold)).foregroundStyle(valueColor)
+                .lineLimit(1).minimumScaleFactor(0.5)   // shrink instead of wrapping
+            sub()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(hSizeClass == .compact ? 16 : 24)
+        .background {
+            if let tint {
+                RoundedRectangle(cornerRadius: 16).fill(tint)
+            } else {
+                RoundedRectangle(cornerRadius: 16).fill(.background.secondary)
             }
         }
     }

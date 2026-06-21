@@ -95,20 +95,37 @@ struct GlobalControlBar<Trailing: View>: View {
     /// frequently-used controls inline (account, search, currency, market status)
     /// and folds the rest — Layout, Benchmarks, Show Closed, plus the host's
     /// refresh/settings/account actions — into a single overflow menu.
+    /// While the search field is focused it takes over the whole bar (the other
+    /// controls hide) — the standard iOS search pattern. This prevents the
+    /// expanded field from shoving the currency menu off-screen and the glass
+    /// container from ballooning when everything no longer fits in one row.
+    @State private var searchActive = false
+
     private var compactBar: some View {
         HStack(spacing: 10) {
-            accountMenu
-                .labelStyle(.iconOnly)
-                .font(.body)
-                .padding(.leading, 12)
-            Spacer(minLength: 8)
-            marketStatusCompact
-            StockSearchBar(currency: appState.displayCurrency)
+            if !searchActive {
+                accountMenu
+                    .labelStyle(.iconOnly)
+                    .font(.body)
+                    .padding(.leading, 12)
+                Spacer(minLength: 8)
+                marketStatusCompact
+            }
+            // Single instance kept across the active/inactive switch so focus and
+            // typed text survive when the sibling controls show/hide.
+            StockSearchBar(currency: appState.displayCurrency,
+                           fillExpanded: true,
+                           onActiveChange: { active in
+                               withAnimation(.easeInOut(duration: 0.2)) { searchActive = active }
+                           })
                 .layoutPriority(1)
-            currencyMenu
-            overflowMenu
-                .padding(.trailing, 12)
+                .padding(.leading, searchActive ? 12 : 0)
+            if !searchActive {
+                currencyMenu
+                overflowMenu
+            }
         }
+        .padding(.trailing, 12)
         .padding(.vertical, 4)
         .liquidGlass()
     }
@@ -284,12 +301,25 @@ struct GlobalControlBar<Trailing: View>: View {
 
     // MARK: - Currency / show-closed
 
+    /// The FX rate caption is only shown where there's room. On iPhone (compact)
+    /// it's hidden — otherwise, when the bar is tight, the untruncated string
+    /// wraps to several lines and balloons the glass container.
+    private var showFXRate: Bool {
+        #if os(iOS)
+        return hSize != .compact
+        #else
+        return true
+        #endif
+    }
+
     private var currencyMenu: some View {
         HStack(spacing: 8) {
-            if appState.displayCurrency != "USD", let rate = appState.currentFXRateToUSD {
+            if showFXRate, appState.displayCurrency != "USD", let rate = appState.currentFXRateToUSD {
                 Text("1 USD = \(String(format: "%.2f", rate)) \(appState.displayCurrency)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             Menu {
                 ForEach(appState.availableCurrencies, id: \.self) { cur in

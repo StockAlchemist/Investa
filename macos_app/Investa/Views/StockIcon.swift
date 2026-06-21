@@ -91,11 +91,9 @@ struct StockIcon: View {
             if isCash {
                 cashMonogram
             } else if let localImg = PlatformImage(named: symbol.lowercased()) {
-                Image(platformImage: localImg).resizable().aspectRatio(contentMode: .fit)
-                    .padding(size * 0.06).background(Color.white)
+                logoTile(Image(platformImage: localImg))
             } else if let logo = loader.image {
-                Image(platformImage: logo).resizable().aspectRatio(contentMode: .fit)
-                    .padding(size * 0.06).background(Color.white)
+                logoTile(Image(platformImage: logo))
             } else if loader.resolved {
                 monogram
             } else {
@@ -109,6 +107,19 @@ struct StockIcon: View {
                 await loader.load(symbol: symbol, sources: sources)
             }
         }
+    }
+
+    /// A logo on a white tile. The interior padding keeps full-bleed logos (e.g.
+    /// the bundled Apple mark, which touches every edge) clear of the rounded
+    /// corners, so they no longer look cropped. White fills the whole frame so
+    /// the corners stay clean regardless of the logo's own margins.
+    private func logoTile(_ image: Image) -> some View {
+        image
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .padding(size * 0.16)
+            .frame(width: size, height: size)
+            .background(Color.white)
     }
 
     private var monogram: some View {

@@ -7,6 +7,12 @@ import SwiftUI
 struct StockSearchBar: View {
     let currency: String
     var placeholder: String = "Search symbol…"
+    /// When true, the expanded field fills the available width instead of using a
+    /// fixed width — used on iPhone so a focused search takes the whole bar.
+    var fillExpanded: Bool = false
+    /// Reports focus changes so a host bar can hide its other controls while the
+    /// search is active (mirrors the iOS "search takes over the bar" pattern).
+    var onActiveChange: ((Bool) -> Void)? = nil
 
     @State private var query = ""
     @State private var results: [SymbolSearchResult] = []
@@ -76,7 +82,8 @@ struct StockSearchBar: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .frame(width: expanded ? expandedWidth : collapsedWidth, alignment: .leading)
+        .frame(maxWidth: expanded ? (fillExpanded ? .infinity : expandedWidth) : collapsedWidth,
+               alignment: .leading)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
@@ -101,16 +108,25 @@ struct StockSearchBar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-            } else {
+            } else if results.count > 6 {
+                // Long lists scroll within a fixed height.
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(results) { resultRow($0) }
                     }
                 }
-                .frame(maxHeight: 320)
+                .frame(height: 320)
+            } else {
+                // Short lists size to their content. A ScrollView here would adopt
+                // the small height the overlay proposes and clip the rows (cropping
+                // the taller logo tiles), so use a plain VStack instead.
+                VStack(spacing: 0) {
+                    ForEach(results) { resultRow($0) }
+                }
             }
         }
         .frame(width: 300)
+        .fixedSize(horizontal: false, vertical: true)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(0.5), lineWidth: 1))
         .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
@@ -175,6 +191,7 @@ struct StockSearchBar: View {
 
     private func handleFocus(_ isFocused: Bool) {
         closeWork?.cancel()
+        onActiveChange?(isFocused)
         if isFocused {
             open = true
         } else {
