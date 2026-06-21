@@ -30,7 +30,7 @@ enum TabLayout {
         LayoutItem("fxGL", "FX Gain/Loss", group: "Costs & FX"),
         LayoutItem("fees", "Fees", group: "Costs & FX"),
         LayoutItem("taxes", "Taxes", group: "Costs & FX"),
-        LayoutItem("portfolioDonut", "Portfolio Composition", group: "Charts"),
+        LayoutItem("portfolioDonut", "Composition", group: "Charts"),
         LayoutItem("performanceGraph", "Performance Graph", group: "Charts"),
         LayoutItem("projection", "Projected Value", group: "Charts"),
         LayoutItem("riskMetrics", "Risk Analytics", group: "Risk & Attribution"),
