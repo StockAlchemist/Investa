@@ -103,6 +103,18 @@ struct ProjectionCardView: View {
                 }
             }
         }
+        .chartHoverTooltip(horizons.map(\.years)) { i in
+            guard i < horizons.count else { return nil }
+            let h = horizons[i]
+            return ChartTooltipContent(title: "In \(h.years) \(h.years == 1 ? "year" : "years")", rows: [
+                ChartTooltipRow(color: Theme.brand, label: "Median",
+                                value: Fmt.currency(h.medianValue, code: cur)),
+                ChartTooltipRow(label: "Return",
+                                value: "\(h.medianReturnPct >= 0 ? "+" : "")\(Fmt.percent(h.medianReturnPct))"),
+                ChartTooltipRow(label: "10–90%",
+                                value: "\(Fmt.compact(h.p10, code: cur)) – \(Fmt.compact(h.p90, code: cur))"),
+            ])
+        }
         .frame(height: 220)
     }
 
