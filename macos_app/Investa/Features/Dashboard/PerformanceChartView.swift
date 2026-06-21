@@ -153,21 +153,29 @@ struct PerformanceChartView: View {
     }
 
     @ViewBuilder private var chart: some View {
+        let domain = chartDomain(seriesData.map(\.value))
         Chart(seriesData) { item in
-            if view == .value || view == .drawdown {
+            if view == .value {
+                // Bound the fill to the visible domain; an implicit 0 baseline
+                // sits far below the domain min and spills below the x-axis.
+                AreaMark(x: .value("Date", item.date),
+                         yStart: .value("Min", domain.lowerBound),
+                         yEnd: .value("Value", item.value))
+                    .foregroundStyle(
+                        .linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)],
+                                        startPoint: .top, endPoint: .bottom))
+            } else if view == .drawdown {
                 AreaMark(x: .value("Date", item.date), y: .value("Value", item.value))
                     .foregroundStyle(
-                        .linearGradient(
-                            colors: [(view == .drawdown ? Color.red : .accentColor).opacity(0.30),
-                                     (view == .drawdown ? Color.red : .accentColor).opacity(0.02)],
-                            startPoint: .top, endPoint: .bottom))
+                        .linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)],
+                                        startPoint: .top, endPoint: .bottom))
             }
             LineMark(x: .value("Date", item.date), y: .value("Value", item.value))
                 .foregroundStyle(by: .value("Series", item.series))
                 .interpolationMethod(.monotone)
         }
         .chartForegroundStyleScale(range: seriesColors)
-        .chartYScale(domain: chartDomain(seriesData.map(\.value)))
+        .chartYScale(domain: domain)
         .chartLegend(view == .twr && !benchmarks.isEmpty ? .visible : .hidden)
         .chartYAxis {
             AxisMarks { value in
