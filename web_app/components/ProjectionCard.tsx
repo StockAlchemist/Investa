@@ -56,11 +56,11 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                     <div className="flex items-baseline gap-4 text-sm">
                         <span className="text-muted-foreground">
                             Assumed return{' '}
-                            <span className="font-bold text-foreground">{formatPercent(data.annual_return_pct ?? 0)}</span>/yr
+                            <span className="font-bold text-foreground">{formatPercent((data.annual_return_pct ?? 0) / 100)}</span>/yr
                         </span>
                         <span className="text-muted-foreground">
                             Volatility{' '}
-                            <span className="font-bold text-foreground">{formatPercent(data.annual_volatility_pct ?? 0)}</span>
+                            <span className="font-bold text-foreground">{formatPercent((data.annual_volatility_pct ?? 0) / 100)}</span>
                         </span>
                     </div>
                 )}
@@ -122,7 +122,7 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                                         <td className="text-left font-semibold py-2">{h.years} {h.years === 1 ? 'year' : 'years'}</td>
                                         <td className="py-2 font-bold tabular-nums">{formatCurrency(h.median_value, cur)}</td>
                                         <td className={`py-2 font-semibold tabular-nums ${h.median_return_pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
-                                            {h.median_return_pct >= 0 ? '+' : ''}{formatPercent(h.median_return_pct)}
+                                            {h.median_return_pct >= 0 ? '+' : ''}{formatPercent(h.median_return_pct / 100)}
                                         </td>
                                         <td className="py-2 text-muted-foreground tabular-nums">
                                             {compactCurrency(h.p10, cur)} – {compactCurrency(h.p90, cur)}

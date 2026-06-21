@@ -53,7 +53,7 @@ struct ProjectionCardView: View {
     private func assumptions(_ p: Projection) -> some View {
         HStack(spacing: 16) {
             stat("Assumed return", "\(Fmt.percent(p.annualReturnPct))/yr")
-            stat("Volatility", Fmt.percent(p.annualVolatilityPct))
+            stat("Volatility", String(format: "%.2f%%", p.annualVolatilityPct ?? 0))
             Spacer(minLength: 0)
         }
     }
@@ -109,8 +109,7 @@ struct ProjectionCardView: View {
             return ChartTooltipContent(title: "In \(h.years) \(h.years == 1 ? "year" : "years")", rows: [
                 ChartTooltipRow(color: Theme.brand, label: "Median",
                                 value: Fmt.currency(h.medianValue, code: cur)),
-                ChartTooltipRow(label: "Return",
-                                value: "\(h.medianReturnPct >= 0 ? "+" : "")\(Fmt.percent(h.medianReturnPct))"),
+                ChartTooltipRow(label: "Return", value: Fmt.percent(h.medianReturnPct)),
                 ChartTooltipRow(label: "10–90%",
                                 value: "\(Fmt.compact(h.p10, code: cur)) – \(Fmt.compact(h.p90, code: cur))"),
             ])
@@ -141,7 +140,7 @@ struct ProjectionCardView: View {
                     Text(Fmt.currency(h.medianValue, code: cur))
                         .fontWeight(.bold).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                    Text("\(h.medianReturnPct >= 0 ? "+" : "")\(Fmt.percent(h.medianReturnPct))")
+                    Text(Fmt.percent(h.medianReturnPct))  // Fmt.percent already prefixes +/-
                         .fontWeight(.semibold).monospacedDigit()
                         .foregroundStyle(h.medianReturnPct >= 0 ? Color.green : .red)
                         .frame(maxWidth: .infinity, alignment: .trailing)
