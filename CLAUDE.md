@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Investa is a financial portfolio management system: a Next.js 16 / React 19 PWA (`web_app/`) on a single Python FastAPI backend (`src/`). A native SwiftUI macOS client (`macos_app/`) is in early development — it's a thin client of the same FastAPI backend (see `macos_app/README.md`).
 
+> **Feature parity (required):** Investa has three clients — the **web app** (`web_app/`), the native **macOS app**, and the native **iOS/iPhone app** (macOS and iOS share the SwiftUI codebase in `macos_app/`). Any new user-facing function or feature MUST be implemented in **all three** (web, macOS, and iOS), not just one. Keep `web_app/lib/api.ts` and the SwiftUI API client in sync with the backend when adding endpoints.
+
 ## Running the App
 
 ```bash
