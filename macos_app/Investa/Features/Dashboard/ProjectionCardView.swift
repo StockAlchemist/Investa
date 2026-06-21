@@ -21,6 +21,12 @@ struct ProjectionCardView: View {
     private var horizons: [ProjectionHorizon] { projection?.horizons ?? [] }
     private var milestoneHorizons: [ProjectionHorizon] { horizons.filter { Self.milestones.contains($0.years) } }
 
+    /// Cap the y-axis at the final horizon's 75th percentile so the median and the
+    /// likely (25–75%) band fill the height instead of being dwarfed by the
+    /// extreme upper tail; the outer band simply extends past the top for the
+    /// longest horizons.
+    private var yMax: Double { horizons.last.map { max($0.p75, $0.medianValue) } ?? 1 }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
@@ -107,6 +113,7 @@ struct ProjectionCardView: View {
             "25–75%": Theme.brand.opacity(0.22),
         ])
         .chartLegend(.hidden)
+        .chartYScale(domain: 0...yMax)
         .chartXScale(domain: 0...(Double(horizons.last?.years ?? 20)))
         .chartXAxis {
             AxisMarks(values: [1, 5, 10, 15, 20]) { value in
