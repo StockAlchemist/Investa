@@ -149,7 +149,7 @@ struct GlobalControlBar<Trailing: View>: View {
                 Label("Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line")
             }
             Toggle(isOn: $appState.showClosed) {
-                Label("Show Closed Accounts", systemImage: "eye.slash")
+                Label("Show Closed", systemImage: "eye.slash")
             }
             Divider()
             trailing
