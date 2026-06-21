@@ -71,14 +71,18 @@ struct ProjectionCardView: View {
 
     private var chart: some View {
         Chart {
+            // Each band is its own series, otherwise Swift Charts interleaves the
+            // two bands' points into one zigzag (sawtooth) path.
             ForEach(horizons) { h in
                 AreaMark(x: .value("Years", h.years),
-                         yStart: .value("P10", h.p10), yEnd: .value("P90", h.p90))
-                    .foregroundStyle(Theme.brand.opacity(0.12))
+                         yStart: .value("Low", h.p10), yEnd: .value("High", h.p90))
+                    .foregroundStyle(by: .value("Band", "10–90%"))
                     .interpolationMethod(.monotone)
+            }
+            ForEach(horizons) { h in
                 AreaMark(x: .value("Years", h.years),
-                         yStart: .value("P25", h.p25), yEnd: .value("P75", h.p75))
-                    .foregroundStyle(Theme.brand.opacity(0.22))
+                         yStart: .value("Low", h.p25), yEnd: .value("High", h.p75))
+                    .foregroundStyle(by: .value("Band", "25–75%"))
                     .interpolationMethod(.monotone)
             }
             ForEach(horizons) { h in
@@ -92,6 +96,11 @@ struct ProjectionCardView: View {
                     .symbolSize(24)
             }
         }
+        .chartForegroundStyleScale([
+            "10–90%": Theme.brand.opacity(0.12),
+            "25–75%": Theme.brand.opacity(0.22),
+        ])
+        .chartLegend(.hidden)
         .chartXScale(domain: 0...(Double(horizons.last?.years ?? 20)))
         .chartXAxis {
             AxisMarks(values: [1, 5, 10, 15, 20]) { value in
