@@ -585,6 +585,37 @@ export async function fetchRiskMetrics(currency: string = 'USD', accounts?: stri
     return data as unknown as RiskMetrics;
 }
 
+export interface ProjectionHorizon {
+    years: number;
+    median_value: number;
+    median_return_pct: number;
+    expected_value: number;
+    p10: number;
+    p25: number;
+    p75: number;
+    p90: number;
+}
+
+export interface Projection {
+    available: boolean;
+    current_value?: number;
+    annual_return_pct?: number;
+    annual_volatility_pct?: number;
+    currency?: string;
+    horizons?: ProjectionHorizon[];
+}
+
+export async function fetchProjection(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<Projection> {
+    const { data, error } = await apiClient.GET("/api/projection", {
+        params: {
+            query: { currency, accounts: accounts || undefined }
+        },
+        signal
+    });
+    if (error) throw new Error('Failed to fetch projection');
+    return data as unknown as Projection;
+}
+
 export interface AttributionData {
     sectors: {
         sector: string;

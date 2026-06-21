@@ -836,6 +836,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Projection
+         * @description Projects the portfolio's future value over standard horizons (1/3/5/10/20y)
+         *     using a lognormal model parameterized by the historical annualized return
+         *     (drift) and volatility. Returns the median plus percentile bands per horizon.
+         */
+        get: operations["get_projection_api_projection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/attribution": {
         parameters: {
             query?: never;
@@ -1976,6 +1998,28 @@ export interface paths {
          * @description Returns portfolio risk metrics (Sharpe, Volatility, Max Drawdown).
          */
         get: operations["get_risk_metrics_risk_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Projection
+         * @description Projects the portfolio's future value over standard horizons (1/3/5/10/20y)
+         *     using a lognormal model parameterized by the historical annualized return
+         *     (drift) and volatility. Returns the median plus percentile bands per horizon.
+         */
+        get: operations["get_projection_projection_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3922,6 +3966,38 @@ export interface operations {
             };
         };
     };
+    get_projection_api_projection_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_attribution_api_attribution_get: {
         parameters: {
             query?: {
@@ -5721,6 +5797,38 @@ export interface operations {
         };
     };
     get_risk_metrics_risk_metrics_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_projection_projection_get: {
         parameters: {
             query?: {
                 currency?: string;

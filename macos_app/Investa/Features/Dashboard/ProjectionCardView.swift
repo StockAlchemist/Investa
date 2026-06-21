@@ -1,0 +1,153 @@
+import SwiftUI
+import Charts
+
+/// Forward portfolio-value projection (mirrors the web `ProjectionCard`):
+/// a fan chart of the median + 10–90 / 25–75 percentile bands over 1/3/5/10/20y,
+/// plus a table. Driven by `GET /projection` (lognormal model).
+struct ProjectionCardView: View {
+    let projection: Projection?
+    let currency: String
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var isPhone: Bool { hSize == .compact }
+    #else
+    private var isPhone: Bool { false }
+    #endif
+
+    private var cur: String { projection?.currency ?? currency }
+    private var horizons: [ProjectionHorizon] { projection?.horizons ?? [] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            Divider()
+
+            if let p = projection, p.available, !horizons.isEmpty {
+                assumptions(p)
+                chart
+                table
+                footnote
+            } else {
+                ContentUnavailableView(
+                    "Not enough history",
+                    systemImage: "chart.line.uptrend.xyaxis",
+                    description: Text("Projections appear once the portfolio has a longer track record.")
+                )
+                .frame(height: 200)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(.standard)
+    }
+
+    private var header: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "chart.line.uptrend.xyaxis").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
+            Text("Projected Value").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    private func assumptions(_ p: Projection) -> some View {
+        HStack(spacing: 16) {
+            stat("Assumed return", "\(Fmt.percent(p.annualReturnPct))/yr")
+            stat("Volatility", Fmt.percent(p.annualVolatilityPct))
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func stat(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(value).font(.callout.weight(.bold)).lineLimit(1)
+        }
+    }
+
+    private var chart: some View {
+        Chart {
+            ForEach(horizons) { h in
+                AreaMark(x: .value("Years", h.years),
+                         yStart: .value("P10", h.p10), yEnd: .value("P90", h.p90))
+                    .foregroundStyle(Theme.brand.opacity(0.12))
+                    .interpolationMethod(.monotone)
+                AreaMark(x: .value("Years", h.years),
+                         yStart: .value("P25", h.p25), yEnd: .value("P75", h.p75))
+                    .foregroundStyle(Theme.brand.opacity(0.22))
+                    .interpolationMethod(.monotone)
+            }
+            ForEach(horizons) { h in
+                LineMark(x: .value("Years", h.years), y: .value("Median", h.medianValue))
+                    .foregroundStyle(Theme.brand)
+                    .interpolationMethod(.monotone)
+                PointMark(x: .value("Years", h.years), y: .value("Median", h.medianValue))
+                    .foregroundStyle(Theme.brand)
+                    .symbolSize(24)
+            }
+        }
+        .chartXScale(domain: 0...(Double(horizons.last?.years ?? 20)))
+        .chartXAxis {
+            AxisMarks(values: horizons.map { $0.years }) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let y = value.as(Int.self) { Text("\(y)Y") }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let v = value.as(Double.self) { Text(Fmt.compact(v, code: cur)) }
+                }
+            }
+        }
+        .frame(height: 220)
+    }
+
+    private var table: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Horizon").frame(maxWidth: .infinity, alignment: .leading)
+                Text("Median").frame(maxWidth: .infinity, alignment: .trailing)
+                Text("Return").frame(maxWidth: .infinity, alignment: .trailing)
+                if !isPhone {
+                    Text("Range (10–90%)").frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            .font(.system(size: 10, weight: .bold)).textCase(.uppercase).tracking(0.5)
+            .foregroundStyle(.secondary)
+            .padding(.bottom, 6)
+
+            ForEach(horizons) { h in
+                Divider()
+                HStack {
+                    Text("\(h.years) \(h.years == 1 ? "year" : "years")")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(Fmt.currency(h.medianValue, code: cur))
+                        .fontWeight(.bold).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    Text("\(h.medianReturnPct >= 0 ? "+" : "")\(Fmt.percent(h.medianReturnPct))")
+                        .fontWeight(.semibold).monospacedDigit()
+                        .foregroundStyle(h.medianReturnPct >= 0 ? Color.green : .red)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    if !isPhone {
+                        Text("\(Fmt.compact(h.p10, code: cur)) – \(Fmt.compact(h.p90, code: cur))")
+                            .foregroundStyle(.secondary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+                .font(.subheadline)
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private var footnote: some View {
+        Text("Compounds the portfolio's historical annualized return and volatility forward (lognormal model). The median is the central estimate; the band shows the 10th–90th percentile range. Past performance does not guarantee future results — longer horizons are far more uncertain.")
+            .font(.caption2).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}

@@ -53,6 +53,9 @@ struct DashboardView: View {
                                              benchmarks: appState.benchmarks, period: $appState.period,
                                              customFrom: $appState.customFrom, customTo: $appState.customTo)
                     }
+                    if vis("projection") {
+                        ProjectionCardView(projection: viewModel.projection, currency: cur)
+                    }
                     if vis("riskMetrics") {
                         if let health = viewModel.health {
                             twoColumn(PortfolioHealthCard(health: health), RiskMetricsCard(risk: viewModel.risk))
@@ -113,7 +116,7 @@ struct DashboardView: View {
     private var anyInsightsVisible: Bool { vis("dashboardEvents") || vis("dashboardInsights") }
     private var anyMetricVisible: Bool { metricOrder.contains(where: vis) }
     private var anyAnalyticsVisible: Bool {
-        vis("portfolioDonut") || vis("performanceGraph") || vis("riskMetrics") || vis("sectorContribution") || vis("topContributors")
+        vis("portfolioDonut") || vis("performanceGraph") || vis("projection") || vis("riskMetrics") || vis("sectorContribution") || vis("topContributors")
     }
 
     @ViewBuilder private var eventsAndInsights: some View {

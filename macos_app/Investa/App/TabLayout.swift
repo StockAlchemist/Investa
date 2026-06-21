@@ -32,6 +32,7 @@ enum TabLayout {
         LayoutItem("taxes", "Taxes", group: "Costs & FX"),
         LayoutItem("portfolioDonut", "Portfolio Composition", group: "Charts"),
         LayoutItem("performanceGraph", "Performance Graph", group: "Charts"),
+        LayoutItem("projection", "Projected Value", group: "Charts"),
         LayoutItem("riskMetrics", "Risk Analytics", group: "Risk & Attribution"),
         LayoutItem("sectorContribution", "Sector Contribution", group: "Risk & Attribution"),
         LayoutItem("topContributors", "Top Contributors", group: "Risk & Attribution"),
@@ -40,7 +41,7 @@ enum TabLayout {
         "portfolioHero", "todayStrip", "dashboardEvents", "dashboardInsights",
         "totalReturn", "unrealizedGL", "realizedGain", "annualTWR", "mwr",
         "ytdDividends", "dividendYield", "ytdReturn", "cashBalance", "fxGL", "fees", "taxes",
-        "portfolioDonut", "performanceGraph",
+        "portfolioDonut", "performanceGraph", "projection",
     ]
 
     static let allocationItems: [LayoutItem] = [

@@ -12,6 +12,7 @@ import {
   fetchCapitalGains,
   fetchDividends,
   fetchRiskMetrics,
+  fetchProjection,
   fetchAttribution,
   fetchDividendCalendar,
   fetchHistory,
@@ -61,6 +62,7 @@ const PortfolioAIReview    = dynamic(() => import('@/components/PortfolioAIRevie
 const IndexGraphModal      = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
 const MarketsTab           = dynamic(() => import('@/components/MarketsTab'), { ssr: false });
 const RiskMetrics          = dynamic(() => import('@/components/RiskMetrics'), { ssr: false });
+const ProjectionCard       = dynamic(() => import('@/components/ProjectionCard'), { ssr: false });
 const SectorAttribution    = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.SectorAttribution })), { ssr: false });
 const TopContributors      = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.TopContributors })), { ssr: false });
 
@@ -339,6 +341,14 @@ export default function Home() {
     enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
   });
 
+  const projectionQuery = useQuery({
+    queryKey: ['projection', user?.username, currency, selectedAccounts],
+    queryFn: ({ signal }) => fetchProjection(currency, selectedAccounts, signal),
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
+  });
+
   const riskMetricsQuery = useQuery({
     queryKey: ['riskMetrics', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, showClosed, signal),
@@ -510,7 +520,7 @@ export default function Home() {
               // the dashboard reads top-to-bottom in a deliberate order:
               // composition → performance → risk → attribution.
               // Dashboard skips these in its Analytics grid.
-              excludeFromAnalytics={['riskMetrics', 'sectorContribution', 'topContributors', 'performanceGraph']}
+              excludeFromAnalytics={['riskMetrics', 'sectorContribution', 'topContributors', 'performanceGraph', 'projection']}
             />
             {visibleItems.includes('performanceGraph') && (
               <PerformanceGraph
@@ -528,6 +538,14 @@ export default function Home() {
                 onCustomFromDateChange={setGraphCustomFromDate}
                 customToDate={graphCustomToDate}
                 onCustomToDateChange={setGraphCustomToDate}
+              />
+            )}
+            {visibleItems.includes('projection') && (
+              <ProjectionCard
+                data={projectionQuery.data}
+                isLoading={projectionQuery.isLoading && !projectionQuery.data}
+                isRefreshing={projectionQuery.isFetching}
+                currency={currency}
               />
             )}
             {visibleItems.includes('riskMetrics') && (

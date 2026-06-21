@@ -5,6 +5,7 @@
 export const COMPLEX_METRIC_IDS = [
     'portfolioDonut',
     'performanceGraph',
+    'projection',
     'riskMetrics',
     'sectorContribution',
     'topContributors',
@@ -48,6 +49,7 @@ export const DEFAULT_ITEMS = [
     // Charts (full-width sections rendered in this order by page.tsx)
     { id: 'portfolioDonut', title: 'Portfolio Composition', group: 'Charts', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
     { id: 'performanceGraph', title: 'Performance Graph', group: 'Charts', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    { id: 'projection', title: 'Projected Value', group: 'Charts', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
     // Risk & Attribution
     { id: 'riskMetrics', title: 'Risk Analytics', group: 'Risk & Attribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
     { id: 'sectorContribution', title: 'Sector Contribution', group: 'Risk & Attribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
@@ -73,6 +75,7 @@ export const INITIAL_VISIBLE_ITEMS = [
     'taxes',
     'portfolioDonut',
     'performanceGraph',
+    'projection',
 ];
 
 export const TAB_THEMES: Record<string, { color: string; glow: string; bgGlow: string; bgSolid: string; textSolid: string; shadowSolid: string }> = {

@@ -13,6 +13,7 @@ final class DashboardViewModel: ObservableObject {
     /// independent of the global period that drives the performance graph.
     @Published var heroHistory: [PerformancePoint] = []
     @Published var risk: RiskMetrics?
+    @Published var projection: Projection?
     @Published var health: PortfolioHealth?
     @Published var attribution: Attribution?
     @Published var dividendEvents: [DividendEvent] = []
@@ -74,6 +75,8 @@ final class DashboardViewModel: ObservableObject {
         async let historyResult: [PerformancePoint] = api.get("/history", query: historyQuery)
         async let riskResult: RiskMetrics = api.get(
             "/risk_metrics", query: [curItem, closedItem] + accountItems)
+        async let projectionResult: Projection = api.get(
+            "/projection", query: [curItem] + accountItems)
         async let healthResult: PortfolioHealth = api.get(
             "/portfolio_health", query: [curItem, closedItem] + accountItems)
         async let attrResult: Attribution = api.get(
@@ -99,6 +102,7 @@ final class DashboardViewModel: ObservableObject {
 
         // Secondary widgets — tolerate individual failures.
         risk = try? await riskResult
+        projection = try? await projectionResult
         health = try? await healthResult
         attribution = try? await attrResult
         dividendEvents = (try? await divCalResult) ?? []

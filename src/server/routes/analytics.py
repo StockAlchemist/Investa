@@ -17,6 +17,7 @@ from portfolio_analyzer import (
     extract_realized_capital_gains_history,
     generate_cash_interest_events,
 )
+from projections import compute_projection
 from risk_metrics import calculate_all_risk_metrics
 from server.auth import User
 from server.dependencies import get_config_manager, get_current_user, get_transaction_data
@@ -587,6 +588,57 @@ async def get_risk_metrics(
     except Exception as e:
         logging.error(f"Error calculating risk metrics: {e}")
         return {"error": str(e)}
+
+
+@router.get("/projection")
+async def get_projection(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Projects the portfolio's future value over standard horizons (1/3/5/10/20y)
+    using a lognormal model parameterized by the historical annualized return
+    (drift) and volatility. Returns the median plus percentile bands per horizon.
+    """
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, db_mtime = data
+    if df.empty:
+        return {"available": False}
+
+    try:
+        # Long history for stable drift/volatility estimates.
+        daily_df, _, _, _ = await _get_historical_performance_cached(
+            df=df,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
+            start_date=date(2000, 1, 1),
+            end_date=date.today(),
+            display_currency=currency,
+            include_accounts=accounts,
+            interval="D",
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=db_mtime,
+        )
+        if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
+            return {"available": False}
+
+        # Current total value (V0) from the summary.
+        summary = await _calculate_portfolio_summary_internal(
+            currency=currency, include_accounts=accounts, data=data, current_user=current_user
+        )
+        current_value = (summary.get("metrics") or {}).get("market_value")
+
+        result = compute_projection(daily_df["Portfolio Accumulated Gain"], current_value)
+        result["currency"] = currency
+        return clean_nans(result)
+
+    except Exception as e:
+        logging.error(f"Error calculating projection: {e}", exc_info=True)
+        return {"available": False, "error": str(e)}
 
 
 @router.get("/attribution")
