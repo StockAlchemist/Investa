@@ -57,6 +57,12 @@ async def lifespan(app: FastAPI):
                 pass
         from server.portfolio_service import _PRECALC_POOL
         _PRECALC_POOL.shutdown(wait=False)
+        # Terminate the long-lived market-data fetch workers.
+        try:
+            from market_data import shutdown_fetch_workers
+            shutdown_fetch_workers()
+        except Exception:
+            pass
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)
 

@@ -512,46 +512,83 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
         log(f"Error in fetch_data: {e}\n{traceback.format_exc()}")
         return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
 
+# Sentinel prefix written before each JSON response in --serve mode so the
+# parent can ignore any stray stdout (library warnings/progress) without
+# desyncing the request/response protocol. MUST match _WORKER_RESULT_MARKER
+# in market_data.py.
+RESULT_MARKER = "\x01INVESTA_RESULT\x01"
+
+
+def process_request(request):
+    """Dispatch a single fetch request to the matching task handler."""
+    task = request.get("task", "history")
+    symbols = request.get("symbols", [])
+    start = request.get("start")
+    end = request.get("end")
+    period = request.get("period")
+    interval = request.get("interval", "1d")
+    output_file = request.get("output_file")
+
+    if not output_file:
+        # Generate a temp file path
+        fd, output_file = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+
+    if task == "info":
+        return fetch_info(symbols, output_file, minimal=request.get("minimal", False))
+    elif task == "statement":
+        return fetch_statement(symbols[0], request.get("statement_type"), request.get("period_type"), output_file)
+    elif task == "statements_batch":
+        return fetch_statements_batch(symbols, request.get("period_type"), output_file)
+    elif task == "dividends":
+        return fetch_dividends(symbols[0], output_file)
+    elif task == "calendar":
+        return fetch_calendar(symbols[0], output_file)
+    elif task == "earnings_dates":
+        return fetch_earnings_dates(symbols[0], output_file, limit=request.get("limit", 24))
+    else:
+        return fetch_data(symbols, start, end, interval, output_file, period=period)
+
+
+def serve_loop():
+    """Long-lived mode: read newline-delimited JSON requests from stdin and
+    write marker-prefixed JSON responses to stdout until stdin closes.
+
+    yfinance/pandas are imported lazily on the first request, then reused, so
+    only the first request per worker pays the heavy import cost.
+    """
+    log("WORKER SERVE LOOP STARTING")
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break  # Parent closed stdin — shut down.
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            request = json.loads(line)
+            result = process_request(request)
+        except Exception as e:
+            log(f"Serve request error: {e}\n{traceback.format_exc()}")
+            result = {"status": "error", "message": f"Worker request error: {e}"}
+        sys.stdout.write(RESULT_MARKER + json.dumps(result) + "\n")
+        sys.stdout.flush()
+        # Release per-request memory so a long-lived worker doesn't creep toward OOM.
+        gc.collect()
+
+
 if __name__ == "__main__":
-    sys.stderr.write("WORKER MAIN STARTING...\n")
-    try:
-        # Read input from stdin
-        input_json = sys.stdin.read()
-        request = json.loads(input_json)
-        
-        task = request.get("task", "history")
-        symbols = request.get("symbols", [])
-        start = request.get("start")
-        end = request.get("end")
-        period = request.get("period")
-        interval = request.get("interval", "1d")
-        output_file = request.get("output_file")
-        
-        if not output_file:
-            # Generate a temp file path
-            fd, output_file = tempfile.mkstemp(suffix=".json")
-            os.close(fd)
-        
-        if task == "info":
-            result = fetch_info(symbols, output_file, minimal=request.get("minimal", False))
-        elif task == "statement":
-            result = fetch_statement(symbols[0], request.get("statement_type"), request.get("period_type"), output_file)
-        elif task == "statements_batch":
-            result = fetch_statements_batch(symbols, request.get("period_type"), output_file)
-        elif task == "dividends":
-            result = fetch_dividends(symbols[0], output_file)
-        elif task == "calendar":
-            result = fetch_calendar(symbols[0], output_file)
-        elif task == "earnings_dates":
-            result = fetch_earnings_dates(symbols[0], output_file, limit=request.get("limit", 24))
-        else:
-            result = fetch_data(symbols, start, end, interval, output_file, period=period)
-
-
-        
-        # Print result metadata to stdout (path to file)
-        print(json.dumps(result))
-        
-    except Exception as e:
-        log(f"Worker main error: {e}")
-        print(json.dumps({"status": "error", "message": f"Worker input error: {e}"}))
+    if "--serve" in sys.argv:
+        serve_loop()
+    else:
+        sys.stderr.write("WORKER MAIN STARTING...\n")
+        try:
+            # Read input from stdin (one-shot mode)
+            input_json = sys.stdin.read()
+            request = json.loads(input_json)
+            result = process_request(request)
+            # Print result metadata to stdout (path to file)
+            print(json.dumps(result))
+        except Exception as e:
+            log(f"Worker main error: {e}")
+            print(json.dumps({"status": "error", "message": f"Worker input error: {e}"}))

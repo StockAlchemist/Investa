@@ -15,6 +15,7 @@ import traceback  # For detailed error logging
 from io import StringIO  # For historical cache loading
 import subprocess
 import tempfile
+import queue
 from market_db import MarketDatabase
 
 
@@ -210,6 +211,153 @@ _FETCH_SEMAPHORE = threading.Semaphore(2)
 _LAST_RATE_LIMIT_TIME = 0.0 # Track when we last saw a 429
 _RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
 
+# --- Persistent fetch workers ---
+# Each yfinance fetch used to spawn a fresh `python market_data_worker.py`
+# subprocess, paying interpreter startup + a lazy yfinance/pandas import
+# (~1-3s) every call. Instead we keep a small pool of long-lived worker
+# processes that import yfinance once and then serve many requests over a pipe,
+# while preserving the crash/OOM isolation that motivated the subprocess design.
+# Set INVESTA_PERSISTENT_WORKER=0 to fall back to one-shot subprocesses.
+_PERSISTENT_WORKER_ENABLED = os.environ.get("INVESTA_PERSISTENT_WORKER", "1") != "0"
+_WORKER_POOL_SIZE = 2          # matches _FETCH_SEMAPHORE concurrency
+_MAX_REQUESTS_PER_WORKER = 150  # recycle to bound memory growth (OOM safety)
+# Sentinel prefix the worker writes before each JSON response so stray stdout
+# (library warnings/progress) can never desync the protocol. MUST match the
+# RESULT_MARKER literal in market_data_worker.py.
+_WORKER_RESULT_MARKER = "\x01INVESTA_RESULT\x01"
+_WORKER_POOL: "Optional[queue.Queue]" = None
+_WORKER_POOL_LOCK = threading.Lock()
+
+
+def _build_worker_command():
+    """Command that launches one persistent worker process (overridable in tests)."""
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py")
+    return [sys.executable, script_path, "--serve"]
+
+
+class _PersistentFetchWorker:
+    """A long-lived `market_data_worker.py --serve` process.
+
+    One request is in flight at a time per worker (the pool gates concurrency).
+    The worker is killed and lazily restarted on timeout, death, a protocol
+    error, or after _MAX_REQUESTS_PER_WORKER requests (to bound memory).
+    """
+
+    def __init__(self):
+        self._proc: Optional[subprocess.Popen] = None
+        self._queue: Optional[queue.Queue] = None
+        self._served = 0
+
+    def _alive(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def _start(self):
+        self._queue = queue.Queue()
+        self._proc = subprocess.Popen(
+            _build_worker_command(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,  # worker logs to its own temp file; don't block on an undrained pipe
+            text=True,
+        )
+        self._served = 0
+        # A dedicated reader thread turns the blocking pipe into a queue we can
+        # poll with a timeout. Only marker-prefixed lines are forwarded.
+        reader = threading.Thread(
+            target=self._read_loop, args=(self._proc.stdout, self._queue), daemon=True
+        )
+        reader.start()
+
+    @staticmethod
+    def _read_loop(stdout, q: queue.Queue):
+        try:
+            while True:
+                line = stdout.readline()
+                if not line:
+                    break  # EOF — worker exited
+                if line.startswith(_WORKER_RESULT_MARKER):
+                    q.put(line[len(_WORKER_RESULT_MARKER):])
+                # else: stray stdout (warnings/progress) — ignore
+        except Exception:
+            pass
+        finally:
+            q.put(None)  # signal EOF to any waiter
+
+    def _kill(self):
+        proc = self._proc
+        self._proc = None
+        self._queue = None
+        if proc is not None:
+            for closer in (lambda: proc.stdin.close(), proc.kill):
+                try:
+                    closer()
+                except Exception:
+                    pass
+
+    def run(self, payload: dict, timeout: float) -> Optional[dict]:
+        """Send one request, return the parsed response dict, or None on failure."""
+        if not self._alive():
+            self._start()
+        try:
+            self._proc.stdin.write(json.dumps(payload) + "\n")
+            self._proc.stdin.flush()
+        except Exception as e:
+            logging.warning(f"Persistent worker write failed: {e}; restarting worker.")
+            self._kill()
+            return None
+
+        try:
+            line = self._queue.get(timeout=timeout)
+        except queue.Empty:
+            logging.error(f"Persistent worker timed out after {timeout}s; restarting worker.")
+            self._kill()
+            return None
+
+        if line is None:  # reader hit EOF — worker died mid-request
+            logging.error("Persistent worker exited unexpectedly; will restart on next call.")
+            self._kill()
+            return None
+
+        self._served += 1
+        if self._served >= _MAX_REQUESTS_PER_WORKER:
+            logging.info(f"Recycling persistent fetch worker after {self._served} requests.")
+            self._kill()
+
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            logging.error(f"Persistent worker returned invalid JSON: {line[:200]}")
+            self._kill()
+            return None
+
+
+def _get_worker_pool() -> queue.Queue:
+    global _WORKER_POOL
+    if _WORKER_POOL is None:
+        with _WORKER_POOL_LOCK:
+            if _WORKER_POOL is None:
+                pool: queue.Queue = queue.Queue()
+                for _ in range(_WORKER_POOL_SIZE):
+                    pool.put(_PersistentFetchWorker())
+                _WORKER_POOL = pool
+    return _WORKER_POOL
+
+
+def shutdown_fetch_workers():
+    """Terminate any persistent fetch workers (call on server shutdown)."""
+    global _WORKER_POOL
+    if _WORKER_POOL is None:
+        return
+    drained = []
+    try:
+        while True:
+            drained.append(_WORKER_POOL.get_nowait())
+    except queue.Empty:
+        pass
+    for w in drained:
+        w._kill()
+        _WORKER_POOL.put(w)
+
 # Window after a 429 during which we keep using the heavy inter-batch throttle.
 _RATE_LIMIT_BACKOFF_WINDOW = 120.0
 
@@ -316,12 +464,127 @@ def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="hist
         return _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeout=timeout, **kwargs)
 
 
-def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeout=180, **kwargs):
+def _subprocess_transport(payload, timeout):
+    """One-shot worker subprocess (legacy path / fallback).
+
+    Returns the parsed response-metadata dict, or None if the process failed
+    (non-zero exit, OOM kill, or unparseable metadata). A timeout raises
+    ``subprocess.TimeoutExpired``, handled by the caller.
     """
-    Actual implementation of the isolated fetch.
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py")
+    result = subprocess.run(
+        [sys.executable, script_path],
+        input=json.dumps(payload),
+        capture_output=True,  # Still capture metadata output
+        text=True,
+        timeout=timeout,
+    )
+
+    if result.stderr:
+        logging.debug(f"Isolated fetch STDERR: {result.stderr}")
+
+    if result.returncode != 0:
+        err_msg = f"Isolated fetch failed (Code {result.returncode})"
+        if result.returncode == -9:
+            err_msg += " - Process KILLED (Likely Memory Exhaustion/OOM)"
+        logging.error(f"{err_msg}: {result.stderr}")
+        return None
+
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        logging.error(f"Isolated fetch returned invalid JSON metadata: {result.stdout[:200]}")
+        return None
+
+
+def _persistent_transport(payload, timeout):
+    """Run via the persistent worker pool. Returns the response dict, or None."""
+    pool = _get_worker_pool()
+    worker = pool.get()
+    try:
+        return worker.run(payload, timeout)
+    finally:
+        pool.put(worker)
+
+
+def _handle_worker_response(response, temp_output, task):
+    """Turn a worker response dict into the final DataFrame/Series/dict result.
+
+    Owns temp-file cleanup and the 429 cool-down side effect, so the persistent
+    and one-shot transports produce byte-identical results.
     """
     global _LAST_RATE_LIMIT_TIME
 
+    if response.get("status") == "success":
+        # Check if empty
+        if response.get("data") is None and "file" not in response:
+            # Empty result path
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+            return pd.DataFrame() if task not in ["info", "calendar", "statements_batch"] else {}
+
+        # Load results from file
+        file_path = response.get("file")
+        if file_path and os.path.exists(file_path):
+            try:
+                if task in ["info", "calendar", "statements_batch"]:
+                    with open(file_path, "r") as f:
+                        data_loaded = json.load(f)
+                    return data_loaded.get("data", {})
+                elif task == "dividends":
+                    # Series orient='split'
+                    df = pd.read_json(file_path, orient='split')
+                    # Convert to Series if it's 1-column
+                    if not df.empty:
+                        return df.iloc[:, 0]
+                    return pd.Series()
+                else:
+                    # history or statement (DataFrame orient='split')
+                    df = pd.read_json(file_path, orient='split')
+                    if not df.empty and task == "history":
+                        logging.info(f"Isolated fetch: Deserialized raw result columns: {list(df.columns[:5])} (Type: {type(df.columns[0]) if not df.empty else 'N/A'})")
+                        df.index = pd.to_datetime(df.index, utc=True)
+                        # Reconstruct MultiIndex if it was flattened to tuples during JSON serialization
+                        if len(df.columns) > 0 and isinstance(df.columns[0], (list, tuple)):
+                            try:
+                                df.columns = pd.MultiIndex.from_tuples(df.columns)
+                                logging.info("Isolated fetch: Reconstructed MultiIndex successfully.")
+                            except Exception as e_mi:
+                                logging.warning(f"Isolated fetch: Could not reconstruct MultiIndex: {e_mi}")
+                    return df
+
+            except Exception as e_read:
+                logging.error(f"Error reading isolated fetch result file ({task}): {e_read}")
+                return {} if task in ["info", "calendar"] else pd.DataFrame()
+            finally:
+                # Clean up
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+        else:
+            # "data": None case or file missing
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+            return {} if task in ["info", "calendar"] else (pd.Series() if task == "dividends" else pd.DataFrame())
+    else:
+        msg = response.get('message', 'Unknown error')
+        if "Too Many Requests" in msg or "429" in msg or "Rate Limit" in msg:
+            logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Triggering 60s Global Cool-down.")
+            with _RATE_LIMIT_LOCK:
+                _LAST_RATE_LIMIT_TIME = time.time()
+        else:
+            logging.error(f"Isolated fetch worker reported error: {msg}")
+
+        if os.path.exists(temp_output):
+            os.remove(temp_output)
+        return {} if task in ["info", "calendar", "statements_batch"] else (pd.Series() if task == "dividends" else pd.DataFrame())
+
+
+def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeout=180, **kwargs):
+    """
+    Actual implementation of the isolated fetch. Routes through the persistent
+    worker pool (default) or a one-shot subprocess (INVESTA_PERSISTENT_WORKER=0);
+    both share the cool-down, payload, and response-parsing logic below.
+    """
     # Check for global cool-down before starting (lock for consistent read)
     with _RATE_LIMIT_LOCK:
         elapsed_since_429 = time.time() - _LAST_RATE_LIMIT_TIME
@@ -332,12 +595,10 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
 
     temp_output = None
     try:
-        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py")
-        
         # Create a temp file path for the worker to write to
         fd, temp_output = tempfile.mkstemp(suffix=".json")
-        os.close(fd) # Output file path only
-        
+        os.close(fd)  # Output file path only
+
         payload = {
             "task": task,
             "symbols": tickers,
@@ -349,101 +610,20 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
         }
         # Add any extra kwargs (like statement_type, period_type)
         payload.update(kwargs)
-        
-        # Run subprocess
+
         logging.debug(f"WORKER START ATTEMPT: Task={task}, Tickers={tickers[:3]}...")
-        result = subprocess.run(
-            [sys.executable, script_path],
-            input=json.dumps(payload),
-            capture_output=True, # Still capture metadata output
-            text=True,
-            timeout=timeout
-        )
-
-        
-        if result.stderr:
-             logging.debug(f"Isolated fetch STDERR: {result.stderr}")
-
-        if result.returncode != 0:
-            err_msg = f"Isolated fetch failed (Code {result.returncode})"
-            if result.returncode == -9:
-                err_msg += " - Process KILLED (Likely Memory Exhaustion/OOM)"
-            logging.error(f"{err_msg}: {result.stderr}")
-            if os.path.exists(temp_output):
-                os.remove(temp_output)
-            return pd.DataFrame() if task not in ["info", "calendar"] else {}
-            
-        # Parse metadata output
-        try:
-            response = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            logging.error(f"Isolated fetch returned invalid JSON metadata: {result.stdout[:200]}")
-            if os.path.exists(temp_output):
-                os.remove(temp_output)
-            return pd.DataFrame() if task not in ["info", "calendar"] else {}
-            
-        if response.get("status") == "success":
-            # Check if empty
-            if response.get("data") is None and "file" not in response:
-                 # Empty result path
-                 if os.path.exists(temp_output):
-                     os.remove(temp_output)
-                 return pd.DataFrame() if task not in ["info", "calendar", "statements_batch"] else {}
-
-            # Load results from file
-            file_path = response.get("file")
-            if file_path and os.path.exists(file_path):
-                try:
-                    if task in ["info", "calendar", "statements_batch"]:
-                        with open(file_path, "r") as f:
-                            data_loaded = json.load(f)
-                        return data_loaded.get("data", {})
-                    elif task == "dividends":
-                        # Series orient='split'
-                        df = pd.read_json(file_path, orient='split')
-                        # Convert to Series if it's 1-column
-                        if not df.empty:
-                            return df.iloc[:, 0]
-                        return pd.Series()
-                    else:
-                        # history or statement (DataFrame orient='split')
-                        df = pd.read_json(file_path, orient='split')
-                        if not df.empty and task == "history":
-                            logging.info(f"Isolated fetch: Deserialized raw result columns: {list(df.columns[:5])} (Type: {type(df.columns[0]) if not df.empty else 'N/A'})")
-                            df.index = pd.to_datetime(df.index, utc=True)
-                            # Reconstruct MultiIndex if it was flattened to tuples during JSON serialization
-                            if len(df.columns) > 0 and isinstance(df.columns[0], (list, tuple)):
-                                try:
-                                    df.columns = pd.MultiIndex.from_tuples(df.columns)
-                                    logging.info("Isolated fetch: Reconstructed MultiIndex successfully.")
-                                except Exception as e_mi:
-                                    logging.warning(f"Isolated fetch: Could not reconstruct MultiIndex: {e_mi}")
-                        return df
-
-                except Exception as e_read:
-                    logging.error(f"Error reading isolated fetch result file ({task}): {e_read}")
-                    return {} if task in ["info", "calendar"] else pd.DataFrame()
-                finally:
-                    # Clean up
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-            else:
-                 # "data": None case or file missing
-                 if os.path.exists(temp_output):
-                     os.remove(temp_output)
-                 return {} if task in ["info", "calendar"] else (pd.Series() if task == "dividends" else pd.DataFrame())
+        if _PERSISTENT_WORKER_ENABLED:
+            response = _persistent_transport(payload, timeout)
         else:
-            msg = response.get('message', 'Unknown error')
-            if "Too Many Requests" in msg or "429" in msg or "Rate Limit" in msg:
-                logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Triggering 60s Global Cool-down.")
-                with _RATE_LIMIT_LOCK:
-                    _LAST_RATE_LIMIT_TIME = time.time()
-            else:
-                logging.error(f"Isolated fetch worker reported error: {msg}")
-            
+            response = _subprocess_transport(payload, timeout)
+
+        if response is None:
+            # Transport failed (dead worker / non-zero exit / unparseable metadata).
             if os.path.exists(temp_output):
                 os.remove(temp_output)
-            return {} if task in ["info", "calendar", "statements_batch"] else (pd.Series() if task == "dividends" else pd.DataFrame())
+            return pd.DataFrame() if task not in ["info", "calendar"] else {}
+
+        return _handle_worker_response(response, temp_output, task)
 
     except Exception as e:
         logging.error(f"Error running isolated fetch: {e}")
