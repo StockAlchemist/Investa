@@ -24,13 +24,21 @@ export class SessionExpiredError extends Error {
     }
 }
 
-export async function fetchCurrentUser(token: string): Promise<User> {
-    const { data, response } = await apiClient.GET("/api/auth/me", {
-        headers: { Authorization: `Bearer ${token}` },
-    });
+export async function fetchCurrentUser(): Promise<User> {
+    // Auth rides in the httpOnly cookie (apiClient sends credentials).
+    const { data, response } = await apiClient.GET("/api/auth/me");
     if (response.status === 401) throw new SessionExpiredError();
     if (!response.ok || !data) throw new Error('Failed to fetch user');
     return data as unknown as User;
+}
+
+export async function logoutRequest(): Promise<void> {
+    // Clears the httpOnly auth cookie server-side. Best-effort.
+    try {
+        await apiClient.POST("/api/auth/logout");
+    } catch {
+        // Ignore — local session is cleared regardless.
+    }
 }
 
 export async function updateUserProfile(data: { alias: string }): Promise<User> {
@@ -49,11 +57,6 @@ export interface User {
     created_at: string;
 }
 
-const getAuthHeaders = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
-};
-
 export async function deleteUser(): Promise<StatusResponse> {
     const { data, error } = await apiClient.DELETE("/api/auth/me");
     if (error) throw new Error('Failed to delete user');
@@ -69,12 +72,8 @@ export async function changePassword(currentPassword: string, newPassword: strin
 }
 
 const authFetch = async (url: string, options: RequestInit = {}) => {
-    const headers = {
-        ...getAuthHeaders(),
-        ...(options.headers || {}),
-    } as HeadersInit;
-
-    const response = await fetch(url, { ...options, headers });
+    // Auth rides in the httpOnly cookie — include credentials on every call.
+    const response = await fetch(url, { ...options, credentials: 'include' });
 
     if (response.status === 401 && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('auth:expired'));

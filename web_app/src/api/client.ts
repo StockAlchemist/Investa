@@ -19,27 +19,17 @@ const getApiBaseUrl = () => {
     return url.replace(/\/api\/?$/, '');
 };
 
-const getAuthHeaders = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
-// Create a globally typed API client using the generated paths
+// Create a globally typed API client using the generated paths.
+// credentials:'include' sends the httpOnly auth cookie on every request (the
+// token is no longer kept in JS-readable localStorage).
 export const apiClient = createClient<paths>({
     baseUrl: getApiBaseUrl(),
-    // We can inject headers using a middleware
+    credentials: 'include',
 });
 
-// Middleware: inject the auth token, and broadcast expiry on 401 so
-// AuthContext can log out (same contract authFetch in lib/api.ts had).
+// Middleware: broadcast expiry on 401 so AuthContext can log out (same contract
+// authFetch in lib/api.ts had).
 apiClient.use({
-    onRequest({ request }) {
-        const headers = getAuthHeaders();
-        if (headers.Authorization) {
-            request.headers.set('Authorization', headers.Authorization);
-        }
-        return request;
-    },
     onResponse({ request, response }) {
         if (
             response.status === 401 &&

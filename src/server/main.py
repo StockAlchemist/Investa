@@ -90,10 +90,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 # CORS: restrict to the origins Investa is actually served from, instead of "*",
-# so a random website can't make API requests with a stolen bearer token.
+# so a random website can't make API requests. allow_credentials=True is required
+# for the httpOnly auth cookie to be sent/accepted cross-origin (the regex below
+# reflects the specific matched origin, never "*", which credentialed CORS forbids).
 # Default coverage: localhost, private LAN ranges (RFC 1918), Tailscale (CGNAT
-# IPs and *.ts.net hostnames), .local mDNS names — any port — plus the literal
-# "null" origin the Electron desktop app sends when loading the UI via file://.
+# IPs and *.ts.net hostnames), .local mDNS names — any port.
 # Extra origins (e.g. a public domain) go in the CORS_ALLOW_ORIGINS env var,
 # comma-separated.
 _LOCAL_ORIGIN_REGEX = (
@@ -113,9 +114,9 @@ _extra_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split("
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["null", *_extra_origins],
+    allow_origins=_extra_origins,
     allow_origin_regex=_LOCAL_ORIGIN_REGEX,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

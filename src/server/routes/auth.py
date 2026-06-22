@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
@@ -98,8 +98,25 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
         logging.error(f"Registration error: {e}")
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
+def _set_auth_cookie(response: Response, token: str) -> None:
+    """Set the httpOnly auth cookie used by the web app.
+
+    Native macOS/iOS clients ignore this and use the access_token in the JSON
+    body via the Authorization: Bearer header instead.
+    """
+    response.set_cookie(
+        key=config.AUTH_COOKIE_NAME,
+        value=token,
+        max_age=config.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=True,
+        secure=config.AUTH_COOKIE_SECURE,
+        samesite=config.AUTH_COOKIE_SAMESITE,
+        path="/",
+    )
+
+
 @router.post("/auth/login", response_model=Token)
-def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
+def login(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
     # conn is GLOBAL DB
     client_ip = get_client_ip(request)
     user_key = f"login:{form_data.username.lower()}"
@@ -124,7 +141,23 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), co
     access_token = create_access_token(
         data={"sub": row[1], "id": row[0]}, expires_delta=access_token_expires
     )
+    # Web app: token rides in an httpOnly cookie (not readable by JS). The body
+    # token is retained for the native clients, which use the Bearer header.
+    _set_auth_cookie(response, access_token)
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/auth/logout")
+def logout(response: Response):
+    """Clear the web app's httpOnly auth cookie. (Native clients just drop their
+    Keychain token client-side.)"""
+    response.delete_cookie(
+        key=config.AUTH_COOKIE_NAME,
+        path="/",
+        secure=config.AUTH_COOKIE_SECURE,
+        samesite=config.AUTH_COOKIE_SAMESITE,
+    )
+    return {"detail": "Logged out"}
 
 @router.get("/auth/me", response_model=User)
 def read_users_me(current_user: User = Depends(get_current_user)):
