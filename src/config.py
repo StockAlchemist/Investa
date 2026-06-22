@@ -17,7 +17,7 @@ import logging
 import os
 import platform
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional, cast
 from dotenv import load_dotenv
 
 # Load environment variables from .env file. `override=True` so .env wins over
@@ -49,7 +49,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 30 days
 # HTTP LAN/Tailscale access still works; set AUTH_COOKIE_SECURE=1 behind HTTPS.
 AUTH_COOKIE_NAME = "access_token"
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "0") == "1"
-AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "lax")
+_samesite = os.getenv("AUTH_COOKIE_SAMESITE", "lax").lower()
+if _samesite not in ("lax", "strict", "none"):
+    _samesite = "lax"
+# Typed as the literal Response.set_cookie expects (validated above).
+AUTH_COOKIE_SAMESITE = cast(Literal["lax", "strict", "none"], _samesite)
 
 # --- Cache Configuration ---
 HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted_v2"

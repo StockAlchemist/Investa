@@ -60,8 +60,8 @@ def decode_access_token(token: str) -> Optional[TokenData]:
     """Decodes a JWT access token."""
     try:
         payload = jwt.decode(token, config.AUTH_SECRET_KEY, algorithms=[config.AUTH_ALGORITHM])
-        username: str = payload.get("sub")
-        user_id: int = payload.get("id")
+        username = payload.get("sub")
+        user_id = payload.get("id")
         if username is None or user_id is None:
             return None
         return TokenData(username=username, user_id=user_id)
