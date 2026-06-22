@@ -29,17 +29,19 @@ from portfolio_logic import (
 )
 from server.auth import User
 from server.dependencies import get_config_manager, reload_data
-from server.route_utils import _lru_get, _lru_put, clean_nans, get_mdp
+from server.route_utils import SWRCache, _lru_get, _lru_put, clean_nans, get_mdp
 from server.routes.market import clear_market_history_cache
 from utils_time import get_est_today, get_latest_trading_date, is_market_open
 
 _PRECALC_POOL = ThreadPoolExecutor(max_workers=2)
 _PRECALC_IN_FLIGHT: set = set()
 _PORTFOLIO_SUMMARY_CACHE: OrderedDict = OrderedDict()
-_RAW_CALC_CACHE: OrderedDict = OrderedDict()
-_PORTFOLIO_HISTORY_CACHE: OrderedDict = OrderedDict()
-_HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
-_SUMMARY_CALC_LOCK = asyncio.Lock() # Lock to prevent concurrent calculation on cache miss
+# The two heavy computations use stale-while-revalidate: a rolled-over cache
+# window serves the previous result instantly and refreshes in the background,
+# instead of blocking the request for the full 11–50s recompute. Freshness is
+# tracked per entry, so their keys no longer embed a time bucket.
+_RAW_CALC_CACHE = SWRCache()
+_PORTFOLIO_HISTORY_CACHE = SWRCache()
 
 
 def _user_db_path(username: str) -> str:
@@ -340,20 +342,20 @@ async def _get_historical_performance_cached(
     db_mtime: float
 ) -> Tuple[pd.DataFrame, Dict, Dict, str]:
     """
-    Wrapper for calculate_historical_performance that uses a shared in-memory cache
-    and implements concurrency control (task sharing) to prevent the thundering herd effect.
+    Wrapper for calculate_historical_performance that uses a shared in-memory
+    stale-while-revalidate cache: a rolled-over freshness window serves the
+    previous result instantly and refreshes in the background, while concurrent
+    callers coalesce onto one computation (prevents the thundering-herd effect).
     """
-    # Create a unique key for the request parameters and data state
+    # Create a unique key for the request parameters and data state. Freshness is
+    # tracked per entry by the SWR cache, so no time bucket goes in the key; a
+    # transaction write changes db_mtime, which evicts via a new key.
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
     benchmarks_key = tuple(sorted(benchmark_symbols_yf)) if benchmark_symbols_yf else ()
-    
-    # We bucket market data freshness to 5 minutes if market is open, or 1 hour if closed
-    from utils_time import is_market_open
-    if is_market_open():
-        time_bucket = int(time.time() / (5 * 60)) # 5 mins
-    else:
-        time_bucket = int(time.time() / (60 * 60)) # 1 hour
-        
+
+    # Match the old freshness windows: 5 min while the market is open, 1 hour after.
+    ttl_seconds = (5 * 60) if is_market_open() else (60 * 60)
+
     cache_key = (
         display_currency,
         accounts_key,
@@ -362,33 +364,12 @@ async def _get_historical_performance_cached(
         end_date,
         interval,
         db_mtime,
-        time_bucket,
         CURRENT_HIST_VERSION
     )
-    
-    # 1. Check if we already have a cached result
-    cached = _lru_get(_PORTFOLIO_HISTORY_CACHE, cache_key)
-    if cached is not None:
-        logging.info(f"Using cached Portfolio History for key: {cache_key[:3]}...")
-        return cached
-        
-    # 2. Check if another request is already calculating this
-    if cache_key in _HISTORY_CALC_FUTURES:
-        logging.info(f"Historical calculation in progress for key {cache_key[:3]}... waiting.")
-        try:
-            return await _HISTORY_CALC_FUTURES[cache_key]
-        except Exception as e:
-            # If the future failed, we'll try to re-calculate (though usually better to just re-raise)
-            logging.error(f"Waiting for historical calculation failed: {e}")
-            raise
-        
-    # 3. No cache and no in-flight request, so we calculate
-    future = asyncio.Future()
-    _HISTORY_CALC_FUTURES[cache_key] = future
-    
-    try:
-        logging.info(f"Starting historical performance calculation for key {cache_key[:3]}...")
-        
+
+    async def compute():
+        logging.info(f"Calculating historical performance (SWR) for key {cache_key[:3]}...")
+
         # Since calculate_historical_performance is CPU-bound, run in threadpool
         def run_calc():
             return calculate_historical_performance(
@@ -410,19 +391,10 @@ async def _get_historical_performance_cached(
                 original_csv_file_path=original_csv_file_path,
                 account_cash_mode_map=account_cash_mode_map # PASSING IT HERE
             )
-            
-        result = await run_in_threadpool(run_calc)
-        _lru_put(_PORTFOLIO_HISTORY_CACHE, cache_key, result)
-        future.set_result(result)
-        return result
-    except Exception as e:
-        if not future.done():
-            future.set_exception(e)
-        logging.error(f"Error in historical calculation: {e}", exc_info=True)
-        raise
-    finally:
-        # Remove from in-flight tracker
-        _HISTORY_CALC_FUTURES.pop(cache_key, None)
+
+        return await run_in_threadpool(run_calc)
+
+    return await _PORTFOLIO_HISTORY_CACHE.get_or_compute(cache_key, ttl_seconds, compute)
 
 
 def _filter_closed_positions(result: Dict[str, Any], show_closed_positions: bool) -> Dict[str, Any]:
@@ -513,21 +485,13 @@ async def _compute_raw_summary(
     ) = data
 
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
+    # Freshness is tracked by SWRCache, so the key carries no time bucket; a
+    # transaction write changes db_mtime, which evicts via a new key.
     cache_ttl_seconds = 60 if is_market_open() else 300
-    time_key = int(time.time() / cache_ttl_seconds)
-    raw_key = (currency, accounts_key, db_path, db_mtime, time_key)
+    raw_key = (currency, accounts_key, db_path, db_mtime)
 
-    cached = _lru_get(_RAW_CALC_CACHE, raw_key)
-    if cached is not None:
-        return cached
-
-    async with _SUMMARY_CALC_LOCK:
-        # Another request may have computed it while we waited for the lock.
-        cached = _lru_get(_RAW_CALC_CACHE, raw_key)
-        if cached is not None:
-            return cached
-
-        logging.info(f"Acquired lock. Calculating raw summary. Time key: {time_key}")
+    async def compute():
+        logging.info("Calculating raw summary (SWR).")
         mdp = get_mdp()
 
         # Offload heavy synchronous calculation to threadpool
@@ -569,9 +533,9 @@ async def _compute_raw_summary(
             logging.error(f"Error in calculate_portfolio_summary: {e_calc}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Calculation Error: {str(e_calc)}")
 
-        raw = (overall_summary_metrics, summary_df, holdings_dict, account_level_metrics)
-        _lru_put(_RAW_CALC_CACHE, raw_key, raw)
-        return raw
+        return (overall_summary_metrics, summary_df, holdings_dict, account_level_metrics)
+
+    return await _RAW_CALC_CACHE.get_or_compute(raw_key, cache_ttl_seconds, compute)
 
 
 async def _calculate_portfolio_summary_internal(
