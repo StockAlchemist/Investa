@@ -11,7 +11,12 @@ if src_dir not in sys.path:
 # --- End Path Addition ---
 
 import config
-from server.auth import get_password_hash, verify_password
+from server.auth import (
+    create_access_token,
+    decode_access_token,
+    get_password_hash,
+    verify_password,
+)
 from server.rate_limit import SlidingWindowLimiter
 
 
@@ -46,6 +51,50 @@ def test_long_password_truncated_like_passlib():
 def test_malformed_stored_hash_is_no_match():
     assert not verify_password("anything", "not-a-bcrypt-hash")
     assert not verify_password("anything", "")
+
+
+# --- JWT access tokens (PyJWT) ---
+
+
+def test_jwt_roundtrip_returns_claims():
+    token = create_access_token({"sub": "alice", "id": 7})
+    assert isinstance(token, str)
+    data = decode_access_token(token)
+    assert data is not None
+    assert data.username == "alice"
+    assert data.user_id == 7
+
+
+def test_jwt_expired_token_is_rejected():
+    from datetime import timedelta
+
+    token = create_access_token({"sub": "bob", "id": 1}, expires_delta=timedelta(seconds=-1))
+    assert decode_access_token(token) is None
+
+
+def test_jwt_tampered_signature_is_rejected():
+    token = create_access_token({"sub": "carol", "id": 2})
+    parts = token.split(".")
+    parts[2] = ("A" if parts[2][0] != "A" else "B") + parts[2][1:]
+    assert decode_access_token(".".join(parts)) is None
+
+
+def test_jwt_wrong_key_is_rejected():
+    # A token signed with a different secret must not validate against ours.
+    foreign = jwt_encode_with_key({"sub": "dave", "id": 3}, "a-different-secret-key-" + "0" * 48)
+    assert decode_access_token(foreign) is None
+
+
+def test_jwt_missing_claims_returns_none():
+    # Valid signature but no sub/id — decode_access_token should reject it.
+    token = create_access_token({"foo": "bar"})
+    assert decode_access_token(token) is None
+
+
+def jwt_encode_with_key(claims, key):
+    import jwt
+
+    return jwt.encode(claims, key, algorithm=config.AUTH_ALGORITHM)
 
 
 # --- Rate limiter ---

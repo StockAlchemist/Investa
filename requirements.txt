@@ -5,7 +5,7 @@ uvicorn==0.38.0
 pydantic==2.10.6
 python-multipart==0.0.21
 python-dotenv==1.0.1
-python-jose[cryptography]
+PyJWT==2.13.0
 bcrypt==5.0.0
 numpy==2.0.0
 pandas==2.3.1

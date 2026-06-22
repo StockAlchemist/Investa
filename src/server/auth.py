@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import bcrypt
-from jose import JWTError, jwt
+import jwt
 from pydantic import BaseModel, ConfigDict
 import config
 
@@ -48,9 +48,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Creates a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, config.AUTH_SECRET_KEY, algorithm=config.AUTH_ALGORITHM)
@@ -65,5 +65,6 @@ def decode_access_token(token: str) -> Optional[TokenData]:
         if username is None or user_id is None:
             return None
         return TokenData(username=username, user_id=user_id)
-    except JWTError:
+    except jwt.PyJWTError:
+        # Covers invalid signature, expired token, and malformed input.
         return None
