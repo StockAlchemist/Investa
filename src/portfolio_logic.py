@@ -41,8 +41,6 @@ except ImportError:
         return func  # No-op decorator if line_profiler not installed
 
 
-
-
 # --- END ADDED ---
 
 # --- Configure Logging ---
@@ -104,7 +102,7 @@ try:
         _build_summary_rows,
         _calculate_aggregate_metrics,
         calculate_fifo_lots_and_gains,  # NEW IMPORT
-        extract_dividend_history, # NEW IMPORT
+        extract_dividend_history,  # NEW IMPORT
     )
 
     ANALYZER_FUNCTIONS_AVAILABLE = True
@@ -123,7 +121,6 @@ except ImportError:
 # _calculate_cash_balances
 # _build_summary_rows
 # _calculate_aggregate_metrics
-
 
 
 # --- Engine split (2026-06): the functions below moved to focused modules and are
@@ -192,6 +189,8 @@ def get_default_metrics_dict(
         "_available_accounts": available_accs_list_arg,
     }
     return metrics
+
+
 def _enrich_summary_rows_with_sector_geo(
     portfolio_summary_rows,
     market_provider,
@@ -212,7 +211,13 @@ def _enrich_summary_rows_with_sector_geo(
         summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
         if "Symbol" in summary_df_unfiltered_temp.columns:
             symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
-            sector_map, quote_type_map, country_map, industry_map, exchange_map = {}, {}, {}, {}, {}
+            sector_map, quote_type_map, country_map, industry_map, exchange_map = (
+                {},
+                {},
+                {},
+                {},
+                {},
+            )
 
             # PERF FIX (BN-07): Batch pre-fetch metadata for ALL symbols at once.
             # Previously, get_fundamental_data() was called per-symbol inside the loop,
@@ -221,7 +226,9 @@ def _enrich_summary_rows_with_sector_geo(
             yf_symbols_for_metadata = set()
             internal_to_yf_for_sector = {}
             for internal_symbol in symbols_in_summary:
-                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith("Cash ("):
+                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
+                    "Cash ("
+                ):
                     continue
                 yf_ticker = map_to_yf_symbol(
                     internal_symbol,
@@ -231,12 +238,18 @@ def _enrich_summary_rows_with_sector_geo(
                 if yf_ticker:
                     yf_symbols_for_metadata.add(yf_ticker)
                     internal_to_yf_for_sector[internal_symbol] = yf_ticker
-            
+
             # Single batch fetch — returns cached metadata including sector, industry, country, quoteType
             batch_metadata = {}
-            if yf_symbols_for_metadata and MARKET_PROVIDER_AVAILABLE and market_provider:
+            if (
+                yf_symbols_for_metadata
+                and MARKET_PROVIDER_AVAILABLE
+                and market_provider
+            ):
                 try:
-                    batch_metadata = market_provider._ensure_metadata_batch(yf_symbols_for_metadata)
+                    batch_metadata = market_provider._ensure_metadata_batch(
+                        yf_symbols_for_metadata
+                    )
                 except Exception as e_batch_meta:
                     logging.warning(f"Batch metadata pre-fetch failed: {e_batch_meta}")
 
@@ -257,14 +270,16 @@ def _enrich_summary_rows_with_sector_geo(
                     quote_type_map[internal_symbol] = "CASH"
                     country_map[internal_symbol] = "Cash"
                     industry_map[internal_symbol] = "Cash"
-                    exchange_map[internal_symbol] = "Cash" # Set Market for Cash
-                    
+                    exchange_map[internal_symbol] = "Cash"  # Set Market for Cash
+
                     if manual_exchange:
-                         exchange_map[internal_symbol] = manual_exchange
+                        exchange_map[internal_symbol] = manual_exchange
                     continue
 
                 if internal_symbol == "SCBRM1":
-                     logging.info(f"DEBUG_OVERRIDE_SCBRM1: ManualExchange={manual_exchange}, AllOverrides={symbol_overrides}")
+                    logging.info(
+                        f"DEBUG_OVERRIDE_SCBRM1: ManualExchange={manual_exchange}, AllOverrides={symbol_overrides}"
+                    )
 
                 yf_ticker_for_sector = internal_to_yf_for_sector.get(internal_symbol)
                 sector_map[internal_symbol] = (
@@ -291,7 +306,11 @@ def _enrich_summary_rows_with_sector_geo(
                     # PERF FIX (BN-07): Use batch-prefetched metadata instead of per-symbol fetch.
                     # Falls back to get_fundamental_data only if metadata is missing for this symbol.
                     fundamental_info = batch_metadata.get(yf_ticker_for_sector)
-                    if not fundamental_info and MARKET_PROVIDER_AVAILABLE and market_provider:
+                    if (
+                        not fundamental_info
+                        and MARKET_PROVIDER_AVAILABLE
+                        and market_provider
+                    ):
                         fundamental_info = market_provider.get_fundamental_data(
                             yf_ticker_for_sector
                         )
@@ -305,9 +324,10 @@ def _enrich_summary_rows_with_sector_geo(
                                 "quoteType", "UNKNOWN"
                             )
                         if not manual_geography:
-                            country_map[internal_symbol] = fundamental_info.get(
-                                "country", "Unknown Region"
-                            ) or "Unknown Region"
+                            country_map[internal_symbol] = (
+                                fundamental_info.get("country", "Unknown Region")
+                                or "Unknown Region"
+                            )
                         if not manual_industry:
                             industry_map[internal_symbol] = fundamental_info.get(
                                 "industry", "Unknown Industry"
@@ -343,7 +363,14 @@ def _enrich_summary_rows_with_sector_geo(
                 .fillna("Unknown Industry")
             )
             # Apply Manual Exchange Overrides
-            existing_exchange = summary_df_unfiltered_temp["exchange"] if "exchange" in summary_df_unfiltered_temp.columns else pd.Series([None] * len(summary_df_unfiltered_temp), index=summary_df_unfiltered_temp.index)
+            existing_exchange = (
+                summary_df_unfiltered_temp["exchange"]
+                if "exchange" in summary_df_unfiltered_temp.columns
+                else pd.Series(
+                    [None] * len(summary_df_unfiltered_temp),
+                    index=summary_df_unfiltered_temp.index,
+                )
+            )
             summary_df_unfiltered_temp["exchange"] = (
                 summary_df_unfiltered_temp["Symbol"]
                 .map(exchange_map)
@@ -353,6 +380,8 @@ def _enrich_summary_rows_with_sector_geo(
                 orient="records"
             )
     return portfolio_summary_rows
+
+
 def _prepare_historical_fx_rates(
     transactions_df_filtered,
     all_transactions_df_cleaned,
@@ -441,7 +470,7 @@ def _prepare_historical_fx_rates(
 
         # --- OPTIMIZED: Vectorized FX Rate Calculation ---
         # Instead of iterating dates and currencies, we build a master DataFrame.
-        
+
         fx_series_list = []
         if historical_fx_data_usd_based:
             for pair, df in historical_fx_data_usd_based.items():
@@ -451,19 +480,21 @@ def _prepare_historical_fx_rates(
                 # Ensure index is datetime/date
                 if not isinstance(df.index, pd.DatetimeIndex):
                     df.index = pd.to_datetime(df.index)
-                
+
                 # Just take the price column (prefer 'Close' from Yahoo, fallback to 'price' if internal mock)
-                if 'Close' in df.columns:
-                    series = df['Close'].rename(curr_code)
-                elif 'price' in df.columns:
-                    series = df['price'].rename(curr_code)
+                if "Close" in df.columns:
+                    series = df["Close"].rename(curr_code)
+                elif "price" in df.columns:
+                    series = df["price"].rename(curr_code)
                 else:
-                    logging.warning(f"Warning: neither 'Close' nor 'price' column found in historical FX for {pair}. Columns: {df.columns}")
+                    logging.warning(
+                        f"Warning: neither 'Close' nor 'price' column found in historical FX for {pair}. Columns: {df.columns}"
+                    )
                     continue
                 # Ensure index is date (not datetime with time)
                 series.index = series.index.date
                 # Remove duplicates in index if any
-                series = series[~series.index.duplicated(keep='last')]
+                series = series[~series.index.duplicated(keep="last")]
                 fx_series_list.append(series)
 
         if fx_series_list:
@@ -473,14 +504,13 @@ def _prepare_historical_fx_rates(
             master_fx_df.sort_index(inplace=True)
             master_fx_df = master_fx_df.ffill().bfill()
 
-            
             # --- ADDED: Normalize column names (e.g. USDTHB=X -> THB) ---
             # This ensures that 'THB' is found in master_fx_df.columns later.
             rename_map = {}
             for col in master_fx_df.columns:
                 # 1. Strip =X suffix if present
                 clean_name = col.replace("=X", "").upper()
-                
+
                 # 2. Extract local currency if it's a USD pair (e.g. USDTHB or EURUSD)
                 if len(clean_name) == 6:
                     if clean_name.startswith("USD"):
@@ -491,11 +521,10 @@ def _prepare_historical_fx_rates(
                         final_code = clean_name
                 else:
                     final_code = clean_name
-                
+
                 if final_code != col:
                     rename_map[col] = final_code
 
-            
             if rename_map:
                 master_fx_df.rename(columns=rename_map, inplace=True)
                 logging.debug(f"Normalized FX columns: {rename_map}")
@@ -505,121 +534,139 @@ def _prepare_historical_fx_rates(
             all_needed_dates = sorted(list(set(master_fx_df.index) | set(unique_dates)))
             # ADDED: bfill() to handle cases where transactions start before FX history
             master_fx_df = master_fx_df.reindex(all_needed_dates).ffill().bfill()
-            
+
             # --- ADDED: Fallback for completely missing currencies ---
             # If a currency was requested but is not in master_fx_df (e.g. history fetch failed completely),
             # we try to fetch the CURRENT rate and use it as a constant fallback.
             existing_cols = set(master_fx_df.columns)
             missing_currencies = [
-                c for c in cleaned_currencies_for_hist_fx 
+                c
+                for c in cleaned_currencies_for_hist_fx
                 if c and c.upper() != "USD" and c not in existing_cols
             ]
-            
+
             if missing_currencies:
-                logging.warning(f"Historical FX missing for {missing_currencies}. Attempting to fetch current rates as fallback.")
+                logging.warning(
+                    f"Historical FX missing for {missing_currencies}. Attempting to fetch current rates as fallback."
+                )
                 missing_pairs = [f"{c.upper()}=X" for c in missing_currencies]
                 try:
                     # Fetch current quotes for missing pairs
-                    _, current_fx_rates, _, _, _ = market_provider_for_hist_fx.get_current_quotes(
-                        internal_stock_symbols=[],
-                        required_currencies=set(missing_pairs),
-                        user_symbol_map={},
-                        user_excluded_symbols=set()
+                    _, current_fx_rates, _, _, _ = (
+                        market_provider_for_hist_fx.get_current_quotes(
+                            internal_stock_symbols=[],
+                            required_currencies=set(missing_pairs),
+                            user_symbol_map={},
+                            user_excluded_symbols=set(),
+                        )
                     )
-                    
+
                     for curr in missing_currencies:
                         curr_upper = curr.upper()
-                        if curr_upper in current_fx_rates and pd.notna(current_fx_rates[curr_upper]):
+                        if curr_upper in current_fx_rates and pd.notna(
+                            current_fx_rates[curr_upper]
+                        ):
                             rate = current_fx_rates[curr_upper]
-                            logging.info(f"Using current FX rate {rate} for {curr} as historical fallback (constant).")
+                            logging.info(
+                                f"Using current FX rate {rate} for {curr} as historical fallback (constant)."
+                            )
                             master_fx_df[curr] = rate
                         else:
-                            logging.error(f"Could not get even current FX rate for {curr}. FX conversion will fail/default.")
-                            
+                            logging.error(
+                                f"Could not get even current FX rate for {curr}. FX conversion will fail/default."
+                            )
+
                 except Exception as e_fallback:
                     logging.error(f"Error fetching current FX fallback: {e_fallback}")
 
             # 3. Add USD column (always 1.0)
-            master_fx_df['USD'] = 1.0
-            
+            master_fx_df["USD"] = 1.0
+
             # 4. Calculate Cross Rates (Display / Local)
             display_curr_col = display_currency.upper()
             if display_curr_col not in master_fx_df.columns:
-                if display_curr_col == 'USD':
-                     master_fx_df[display_curr_col] = 1.0
+                if display_curr_col == "USD":
+                    master_fx_df[display_curr_col] = 1.0
                 else:
-                     logging.warning(f"Display currency {display_curr_col} not found in FX data. FX conversion may fail.")
-            
+                    logging.warning(
+                        f"Display currency {display_curr_col} not found in FX data. FX conversion may fail."
+                    )
+
             if display_curr_col in master_fx_df.columns:
                 display_rates = master_fx_df[display_curr_col]
-                
+
                 # Iterate over all available currencies to calculate cross rates
                 for curr_col in master_fx_df.columns:
                     try:
                         # Calculate cross rate vector: Rate = Display / Local
                         # --- MODIFIED: Robust Cross Rate Calculation ---
                         # master_fx_df[curr_col] is the rate fetched from YF.
-                        # YF is inconsistent: 
+                        # YF is inconsistent:
                         # - USDTHB=X (~35) is THB/USD (Local/USD)
                         # - EURUSD=X (~1.08) is USD/EUR (USD/Local)
                         # We want all rates in 'master_fx_df' to effectively be 'Local / USD' (units per 1 USD)
                         # so that: Display/Local = (Display/USD) / (Local/USD)
-                        
+
                         raw_rate = master_fx_df[curr_col]
-                        
+
                         # Heuristic: Determine if rate is Local/USD or USD/Local.
                         # YF symbols like EUR=X, GBP=X usually return Local/USD (~0.9, ~0.8).
                         # But explicit pairs like EURUSD=X return USD/Local (~1.08).
                         # We want all rates to be Local / USD for the divisor logic.
-                        
+
                         rate_to_use = raw_rate
-                        
+
                         # --- IMPROVED HEURISTIC ---
                         # Standardize all rates to "Local per 1 USD" (e.g. THB=35, JPY=150, EUR=0.92)
                         # so that: Rate_to_Target = Target_per_USD / Local_per_USD
-                        
+
                         avg_rate = raw_rate.mean()
                         is_major = curr_col in ["EUR", "GBP", "AUD", "NZD"]
-                        
+
                         # 1. If it's a major currency and > 1.0 (e.g. 1.08), it's USD/Local. Invert to get Local/USD (~0.92).
                         if is_major and avg_rate > 1.0:
                             rate_to_use = 1.0 / raw_rate
-                            logging.debug(f"Vectorized FX: Inverting major {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
+                            logging.debug(
+                                f"Vectorized FX: Inverting major {curr_col} (Avg={avg_rate:.4f}) to Local/USD."
+                            )
                         # 2. If it's THB and < 1.0 (e.g. 0.028), it's USD/THB. Invert to get THB/USD (~35.0).
                         elif curr_col == "THB" and avg_rate < 1.0:
                             rate_to_use = 1.0 / raw_rate
-                            logging.debug(f"Vectorized FX: Inverting {curr_col} (Avg={avg_rate:.4f}) to THB/USD.")
+                            logging.debug(
+                                f"Vectorized FX: Inverting {curr_col} (Avg={avg_rate:.4f}) to THB/USD."
+                            )
                         # 3. General catch-all: if rate is extremely small (< 0.1), it's likely USD/Local
                         elif avg_rate < 0.1:
                             rate_to_use = 1.0 / raw_rate
-                            logging.debug(f"Vectorized FX: Inverting low-rate {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
+                            logging.debug(
+                                f"Vectorized FX: Inverting low-rate {curr_col} (Avg={avg_rate:.4f}) to Local/USD."
+                            )
                         else:
                             rate_to_use = raw_rate
 
-                        
                         cross_rates = display_rates / rate_to_use
-                        
+
                         # Filter for relevant dates and update dict
-                        relevant_rates = cross_rates.loc[cross_rates.index.isin(unique_dates)]
-                        
+                        relevant_rates = cross_rates.loc[
+                            cross_rates.index.isin(unique_dates)
+                        ]
+
                         # Update the dictionary
                         for d, r in relevant_rates.items():
                             if pd.notna(r):
                                 historical_fx_for_processing[(d, curr_col)] = float(r)
-                                
+
                     except Exception as e:
-                        logging.warning(f"Error calculating vectorized FX for {curr_col}: {e}")
-        
+                        logging.warning(
+                            f"Error calculating vectorized FX for {curr_col}: {e}"
+                        )
+
         # Fallback/Fill for USD if not present
         for d in unique_dates:
-            if (d, 'USD') not in historical_fx_for_processing:
-                historical_fx_for_processing[(d, 'USD')] = 1.0
+            if (d, "USD") not in historical_fx_for_processing:
+                historical_fx_for_processing[(d, "USD")] = 1.0
 
     return historical_fx_for_processing, historical_fx_data_usd_based, fx_warning
-
-
-
-
 
 
 # --- Main Calculation Function (Current Portfolio Summary) ---
@@ -647,11 +694,11 @@ def calculate_portfolio_summary(
     default_currency: str = DEFAULT_CURRENCY,
     account_currency_map: Optional[Dict[str, str]] = None,
     market_provider: Optional[Any] = None,  # Added for dependency injection
-    calc_method: Optional[str] = None, # Added for benchmarking override
+    calc_method: Optional[str] = None,  # Added for benchmarking override
     account_interest_rates: Optional[Dict[str, float]] = None,
     interest_free_thresholds: Optional[Dict[str, float]] = None,
     account_cash_mode_map: Optional[Dict[str, str]] = None,
-    db_mtime: float = 0.0, # NEW: for caching FIFO results
+    db_mtime: float = 0.0,  # NEW: for caching FIFO results
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -701,7 +748,6 @@ def calculate_portfolio_summary(
     has_errors = False
     has_warnings = False
     status_parts = []
-
 
     # Use the passed-in ignored data from the initial load
     report_date = get_latest_trading_date()  # Defined early for use in default metrics
@@ -880,18 +926,26 @@ def calculate_portfolio_summary(
             # If we exclude the split transaction because it's in a different account (e.g. Sharebuilder vs E*TRADE),
             # the holdings calculation will be incorrect (missing the quantity adjustment).
             split_mask = (
-                all_transactions_df_cleaned["Type"].astype(str).str.lower().isin(["split", "stock split"])
+                all_transactions_df_cleaned["Type"]
+                .astype(str)
+                .str.lower()
+                .isin(["split", "stock split"])
             )
-            
+
             # --- MODIFIED: Ensure "All Accounts" transactions are always included ---
             # This is critical because some global actions (like splits, or manual adjustments)
             # are recorded under "All Accounts" and must not be filtered out when viewing a specific account.
             all_accounts_mask = (
-                all_transactions_df_cleaned["Account"].astype(str).str.lower() == "all accounts"
+                all_transactions_df_cleaned["Account"].astype(str).str.lower()
+                == "all accounts"
             )
-            
+
             final_combined_mask = (
-                from_account_mask | to_account_mask | preceding_tx_mask | split_mask | all_accounts_mask
+                from_account_mask
+                | to_account_mask
+                | preceding_tx_mask
+                | split_mask
+                | all_accounts_mask
             )
 
             transactions_df_filtered = all_transactions_df_cleaned[
@@ -938,16 +992,24 @@ def calculate_portfolio_summary(
         has_warnings = True
 
     # --- 3. Process Stock/ETF Transactions ---
-    holdings, _, _, _, taxes_local, ignored_indices_proc, ignored_reasons_proc, transfer_costs, warn_proc = (
-        _process_transactions_to_holdings(
-            transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
-            default_currency=default_currency,
-            shortable_symbols=SHORTABLE_SYMBOLS,
-            historical_fx_lookup=historical_fx_for_processing,  # NEW ARG
-            display_currency_for_hist_fx=display_currency,  # NEW ARG
-            report_date=report_date,
-            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
-        )
+    (
+        holdings,
+        _,
+        _,
+        _,
+        taxes_local,
+        ignored_indices_proc,
+        ignored_reasons_proc,
+        transfer_costs,
+        warn_proc,
+    ) = _process_transactions_to_holdings(
+        transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
+        default_currency=default_currency,
+        shortable_symbols=SHORTABLE_SYMBOLS,
+        historical_fx_lookup=historical_fx_for_processing,  # NEW ARG
+        display_currency_for_hist_fx=display_currency,  # NEW ARG
+        report_date=report_date,
+        account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
     )
 
     # --- NEW: Patch Transfer Prices for Summary Calculation ---
@@ -955,26 +1017,28 @@ def calculate_portfolio_summary(
     # so that the cash flow is generated correctly (as a flow at cost).
     transactions_for_summary = transactions_df_filtered.copy()
     if transfer_costs:
-        logging.debug(f"Patching {len(transfer_costs)} transfer transactions with cost-based prices for IRR...")
+        logging.debug(
+            f"Patching {len(transfer_costs)} transfer transactions with cost-based prices for IRR..."
+        )
         # We can iterate and set, or use map if index aligns.
         # Since transfer_costs keys are 'original_index', and transactions_for_summary has 'original_index' column:
-        
+
         # Create a mapping series
         transfer_cost_series = pd.Series(transfer_costs)
-        
+
         # Find rows where original_index is in the map
         mask = transactions_for_summary["original_index"].isin(transfer_costs.keys())
-        
+
         # For these rows, update 'Price/Share'
         # We need to map the original_index to the price.
         # set_index temporarily to map easily
         temp_df = transactions_for_summary.set_index("original_index")
         temp_df.update(pd.DataFrame({"Price/Share": transfer_cost_series}))
-        
+
         # Restore index/structure (update modifies in place but we need to be careful with index)
         # Actually, simpler loop might be safer to avoid index mess if original_index is not unique (though it should be)
         for orig_idx, cost_price in transfer_costs.items():
-             transactions_for_summary.loc[
+            transactions_for_summary.loc[
                 transactions_for_summary["original_index"] == orig_idx, "Price/Share"
             ] = cost_price
     # --- END NEW ---
@@ -996,11 +1060,16 @@ def calculate_portfolio_summary(
     required_currencies: Set[str] = set([display_currency, default_currency])
     for data in holdings.values():
         required_currencies.add(data.get("local_currency", default_currency))
-    
+
     # --- ADDED: Scan all transactions for used currencies ---
     # This ensures we have rates even for currencies not in the current account map (e.g. historical/closed)
-    if isinstance(all_transactions_df_cleaned, pd.DataFrame) and "Local Currency" in all_transactions_df_cleaned.columns:
-        unique_tx_currencies = all_transactions_df_cleaned["Local Currency"].dropna().unique()
+    if (
+        isinstance(all_transactions_df_cleaned, pd.DataFrame)
+        and "Local Currency" in all_transactions_df_cleaned.columns
+    ):
+        unique_tx_currencies = (
+            all_transactions_df_cleaned["Local Currency"].dropna().unique()
+        )
         for curr in unique_tx_currencies:
             if isinstance(curr, str) and len(curr.strip()) == 3:
                 required_currencies.add(curr.strip().upper())
@@ -1020,27 +1089,30 @@ def calculate_portfolio_summary(
 
     if market_provider is None:
         market_provider = MarketDataProvider(current_cache_file=cache_file_path)
-    current_stock_data_internal, current_fx_rates_vs_usd, current_fx_prev_close_vs_usd, err_fetch, warn_fetch = (
-        market_provider.get_current_quotes(
-            internal_stock_symbols=all_stock_symbols_internal,
-            required_currencies=required_currencies,  # Pass as set
-            user_symbol_map=effective_user_symbol_map,
-            user_excluded_symbols=effective_user_excluded_symbols,
-        )
+    (
+        current_stock_data_internal,
+        current_fx_rates_vs_usd,
+        current_fx_prev_close_vs_usd,
+        err_fetch,
+        warn_fetch,
+    ) = market_provider.get_current_quotes(
+        internal_stock_symbols=all_stock_symbols_internal,
+        required_currencies=required_currencies,  # Pass as set
+        user_symbol_map=effective_user_symbol_map,
+        user_excluded_symbols=effective_user_excluded_symbols,
     )
     if err_fetch:  # If get_current_quotes signals a critical error
         has_errors = True  # Treat critical fetch error as overall error
         status_parts.append("Fetch Failed Critically")
-    
+
     if warn_fetch:
         has_warnings = True
         status_parts.append("Fetch Warnings")
 
-
     # If fetch failed critically, we might not be able to proceed meaningfully.
     if has_errors and "Fetch Failed Critically" in status_parts:
         msg = "Error: Price/FX fetch failed critically via MarketDataProvider. Proceeding with partial data/fallbacks."
-        logging.error(f"WARNING: {msg}") # Downgrade to warning for execution flow
+        logging.error(f"WARNING: {msg}")  # Downgrade to warning for execution flow
         # final_status_prefix = "Finished with Errors"
         # final_status = f"{final_status_prefix} ({filter_desc})" + (
         #     f" [{'; '.join(status_parts)}]" if status_parts else ""
@@ -1058,8 +1130,7 @@ def calculate_portfolio_summary(
         #     combined_ignored_reasons,
         #     final_status,
         # )
-        pass # Continue execution
-
+        pass  # Continue execution
 
     # --- 6. Build Detailed Summary Rows ---
     # --- ADDED: Calculate Realized Gains using FIFO (Capital Gains Logic) ---
@@ -1069,20 +1140,20 @@ def calculate_portfolio_summary(
     open_lots_dict = {}  # NEW: To store open lots
     try:
         logging.info("Calculating FIFO Realized Gains & Lots for Dashboard...")
-        
+
         # Ensure transactions are sorted chronologically and by original index for stable FIFO
         # This matches the logic in strict capital gains extraction
         fifo_input_df = all_transactions_df_cleaned.copy()
         if "original_index" in fifo_input_df.columns:
-             fifo_input_df.sort_values(by=["Date", "original_index"], inplace=True)
+            fifo_input_df.sort_values(by=["Date", "original_index"], inplace=True)
         else:
-             fifo_input_df.sort_values(by=["Date"], inplace=True)
+            fifo_input_df.sort_values(by=["Date"], inplace=True)
 
         # BN-08: Cache FIFO results keyed by db_mtime and display_currency
         global _FIFO_CACHE
-        if '_FIFO_CACHE' not in globals():
+        if "_FIFO_CACHE" not in globals():
             _FIFO_CACHE = {}
-            
+
         fifo_cache_key = (db_mtime, display_currency)
         if db_mtime > 0 and fifo_cache_key in _FIFO_CACHE:
             logging.info("Using cached FIFO Realized Gains & Lots...")
@@ -1090,25 +1161,27 @@ def calculate_portfolio_summary(
         else:
             # Call the function that returns both gains and lots
             fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
-                transactions_df=fifo_input_df, # Use SORTED FULL history
+                transactions_df=fifo_input_df,  # Use SORTED FULL history
                 display_currency=display_currency,
                 historical_fx_yf=historical_fx_data_usd_based,
                 default_currency=default_currency,
                 shortable_symbols=SHORTABLE_SYMBOLS,
                 stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
-                current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass the available rates!
+                current_fx_rates_vs_usd=current_fx_rates_vs_usd,  # Pass the available rates!
             )
-            
+
             if db_mtime > 0:
-                _FIFO_CACHE.clear() # keep only the latest
+                _FIFO_CACHE.clear()  # keep only the latest
                 _FIFO_CACHE[fifo_cache_key] = (fifo_realized_gains_df, open_lots_dict)
-        
+
         # --- DEBUG LOGGING ---
         logging.info(f"FIFO DF Shape: {fifo_realized_gains_df.shape}")
         logging.info(f"Open Lots Count: {len(open_lots_dict)}")
         if not fifo_realized_gains_df.empty:
             if "Realized Gain (Display)" in fifo_realized_gains_df.columns:
-                nans_disp = fifo_realized_gains_df["Realized Gain (Display)"].isna().sum()
+                nans_disp = (
+                    fifo_realized_gains_df["Realized Gain (Display)"].isna().sum()
+                )
                 logging.info(f"NaNs in Realized Gain (Display): {nans_disp}")
         # ---------------------
 
@@ -1129,39 +1202,49 @@ def calculate_portfolio_summary(
             sym_key_upper = str(sym).upper().strip()
             acct_key_upper = str(acct).upper().strip()
             lookup_key = (sym_key_upper, acct_key_upper)
-            
+
             # 1. Override Realized Gains
             if lookup_key in fifo_gains_agg:
-                fifo_gain_display = fifo_gains_agg[lookup_key].get("Realized Gain (Display)", 0.0)
-                fifo_gain_local = fifo_gains_agg[lookup_key].get("Realized Gain (Local)", 0.0)
-                
+                fifo_gain_display = fifo_gains_agg[lookup_key].get(
+                    "Realized Gain (Display)", 0.0
+                )
+                fifo_gain_local = fifo_gains_agg[lookup_key].get(
+                    "Realized Gain (Local)", 0.0
+                )
+
                 holding_data["realized_gain_display"] = fifo_gain_display
                 holding_data["realized_gain_local"] = fifo_gain_local
-                logging.debug(f"Overrode realized gain for {sym}/{acct} with FIFO value: {fifo_gain_display}")
+                logging.debug(
+                    f"Overrode realized gain for {sym}/{acct} with FIFO value: {fifo_gain_display}"
+                )
             else:
                 # Same fallback logic as before
                 # ... (keep existing fallback checks if needed, or simplify)
                 # If no FIFO record found, set to 0 unless shortable/cash special case
-                 is_shortable = sym in SHORTABLE_SYMBOLS
-                 is_cash = sym == CASH_SYMBOL_CSV or sym == "$CASH"
-                 avg_cost_gain = holding_data.get("realized_gain_display", 0.0)
-                 
-                 if abs(avg_cost_gain) > 1e-9 and not is_shortable and not is_cash:
-                      # If avg cost logic had a gain but FIFO doesn't, it might mean FIFO failed or logic diff.
-                      # Ideally we set to 0 for consistency, but let's be safe.
-                      pass
+                is_shortable = sym in SHORTABLE_SYMBOLS
+                is_cash = sym == CASH_SYMBOL_CSV or sym == "$CASH"
+                avg_cost_gain = holding_data.get("realized_gain_display", 0.0)
+
+                if abs(avg_cost_gain) > 1e-9 and not is_shortable and not is_cash:
+                    # If avg cost logic had a gain but FIFO doesn't, it might mean FIFO failed or logic diff.
+                    # Ideally we set to 0 for consistency, but let's be safe.
+                    pass
 
             # 2. Attach and Calculate Lots
             if lookup_key in open_lots_dict:
                 lots = open_lots_dict[lookup_key]
                 processed_lots = []
-                
+
                 # We need current price/FX to calc Lot Market Value & Unrealized Gain
                 # Manual price overrides win — without this, lots for symbols yfinance
                 # can't quote (e.g. SET tickers) get Market Value = 0 even though the
                 # rest of the engine uses the override correctly.
                 current_price = 0.0
-                manual_override_for_sym = manual_overrides_effective.get(sym) if manual_overrides_effective else None
+                manual_override_for_sym = (
+                    manual_overrides_effective.get(sym)
+                    if manual_overrides_effective
+                    else None
+                )
                 if isinstance(manual_override_for_sym, dict):
                     manual_price_val = manual_override_for_sym.get("price")
                     if manual_price_val is not None and pd.notna(manual_price_val):
@@ -1175,7 +1258,7 @@ def calculate_portfolio_summary(
                     fetched_price = current_stock_data_internal[sym].get("price", 0.0)
                     if pd.notna(fetched_price):
                         current_price = fetched_price
-                
+
                 # We also need conversion rate from Local -> Display
                 # holding_data has 'local_currency'
                 local_curr = holding_data.get("local_currency", default_currency)
@@ -1183,44 +1266,54 @@ def calculate_portfolio_summary(
                     local_curr, display_currency, current_fx_rates_vs_usd
                 )
                 if pd.isna(fx_rate_curr):
-                    fx_rate_curr = 0.0 # Safety
+                    fx_rate_curr = 0.0  # Safety
 
                 for lot in lots:
                     # Lot fields needed: Date, Quantity, Cost Basis (Display), Mkt Val (Display), Unreal Gain (Display)
                     # Lot struct from analyzer: 'qty', 'cost_per_share_local_net', 'purchase_date', 'purchase_fx_to_display'
-                    
+
                     l_qty = lot["qty"]
                     l_date = lot["purchase_date"]
                     l_cost_local = lot["cost_per_share_local_net"]
                     l_purch_fx = lot["purchase_fx_to_display"]
-                    
+
                     if pd.isna(l_purch_fx):
-                        l_purch_fx = 0.0 # Should not happen if data good
-                    
+                        l_purch_fx = 0.0  # Should not happen if data good
+
                     # Cost Basis Display = Qty * Cost_Local * Purchase_FX
                     l_cost_basis_display = l_qty * l_cost_local * l_purch_fx
-                    
+
                     # Market Value Display = Qty * Current_Price_Local * Current_FX
                     l_mkt_val_display = l_qty * current_price * fx_rate_curr
-                    
-                    l_unreal_gain_display = l_mkt_val_display - l_cost_basis_display
-                    l_unreal_gain_pct = (l_unreal_gain_display / l_cost_basis_display * 100) if abs(l_cost_basis_display) > 1e-9 else 0.0
 
-                    processed_lots.append({
-                        "Date": l_date.strftime("%Y-%m-%d") if isinstance(l_date, (date, datetime)) else str(l_date),
-                        "Quantity": l_qty,
-                        "Cost Basis": l_cost_basis_display,
-                        "Market Value": l_mkt_val_display,
-                        "Unreal. Gain": l_unreal_gain_display,
-                        "Unreal. Gain %": l_unreal_gain_pct,
-                        "purchase_fx": l_purch_fx, # Debug
-                        "cost_local": l_cost_local # Debug
-                    })
-                
+                    l_unreal_gain_display = l_mkt_val_display - l_cost_basis_display
+                    l_unreal_gain_pct = (
+                        (l_unreal_gain_display / l_cost_basis_display * 100)
+                        if abs(l_cost_basis_display) > 1e-9
+                        else 0.0
+                    )
+
+                    processed_lots.append(
+                        {
+                            "Date": l_date.strftime("%Y-%m-%d")
+                            if isinstance(l_date, (date, datetime))
+                            else str(l_date),
+                            "Quantity": l_qty,
+                            "Cost Basis": l_cost_basis_display,
+                            "Market Value": l_mkt_val_display,
+                            "Unreal. Gain": l_unreal_gain_display,
+                            "Unreal. Gain %": l_unreal_gain_pct,
+                            "purchase_fx": l_purch_fx,  # Debug
+                            "cost_local": l_cost_local,  # Debug
+                        }
+                    )
+
                 holding_data["lots"] = processed_lots
 
     except Exception as e_fifo:
-        logging.error(f"Error calculating FIFO realized gains & lots for Dashboard: {e_fifo}")
+        logging.error(
+            f"Error calculating FIFO realized gains & lots for Dashboard: {e_fifo}"
+        )
         logging.error(traceback.format_exc())
         # Fallback: Do nothing, keep Average Cost values
     # --- END ADDED ---
@@ -1257,7 +1350,9 @@ def calculate_portfolio_summary(
             current_fx_rates_vs_usd if current_fx_rates_vs_usd is not None else {}
         ),
         current_fx_prev_close_vs_usd=(
-            current_fx_prev_close_vs_usd if current_fx_prev_close_vs_usd is not None else {}
+            current_fx_prev_close_vs_usd
+            if current_fx_prev_close_vs_usd is not None
+            else {}
         ),
         display_currency=display_currency,
         default_currency=default_currency,
@@ -1267,8 +1362,8 @@ def calculate_portfolio_summary(
         user_excluded_symbols=effective_user_excluded_symbols,
         user_symbol_map=effective_user_symbol_map,
         manual_prices_dict=manual_prices_for_build_rows,
-        account_interest_rates=account_interest_rates, # NEW
-        interest_free_thresholds=interest_free_thresholds, # NEW
+        account_interest_rates=account_interest_rates,  # NEW
+        interest_free_thresholds=interest_free_thresholds,  # NEW
         include_accounts=include_accounts,
     )
 
@@ -1293,7 +1388,7 @@ def calculate_portfolio_summary(
                 is_empty_data_case=False,
             ),  # MODIFIED
             None,  # summary_df_final
-            {},    # holdings dictionary (empty) <-- ADDED
+            {},  # holdings dictionary (empty) <-- ADDED
             None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
@@ -1311,26 +1406,30 @@ def calculate_portfolio_summary(
     if portfolio_summary_rows and holdings:
         # Create a normalized map for case-insensitive lookup: (upper_sym, upper_acct) -> original_key
         holdings_map_norm = {
-            (str(k[0]).upper().strip(), str(k[1]).upper().strip()): k 
+            (str(k[0]).upper().strip(), str(k[1]).upper().strip()): k
             for k in holdings.keys()
         }
-        
+
         for row in portfolio_summary_rows:
             r_sym = row.get("Symbol")
             r_acct = row.get("Account")
             if r_sym and r_acct:
                 # Reconstruct lookup key (upper)
                 h_key_upper = (str(r_sym).upper().strip(), str(r_acct).upper().strip())
-                
+
                 # Look up original key
                 original_key = holdings_map_norm.get(h_key_upper)
-                
+
                 if original_key and original_key in holdings:
                     holdings[original_key]["Symbol"] = r_sym
                     holdings[original_key]["Account"] = r_acct
                     holdings[original_key]["Quantity"] = row.get("Quantity", 0)
-                    holdings[original_key]["Avg Cost"] = row.get(f"Avg Cost ({display_currency})", 0)
-                    holdings[original_key]["Market Value"] = row.get(f"Market Value ({display_currency})", 0)
+                    holdings[original_key]["Avg Cost"] = row.get(
+                        f"Avg Cost ({display_currency})", 0
+                    )
+                    holdings[original_key]["Market Value"] = row.get(
+                        f"Market Value ({display_currency})", 0
+                    )
 
     # --- Add Sector/Geo information ---
     portfolio_summary_rows = _enrich_summary_rows_with_sector_geo(
@@ -1422,7 +1521,7 @@ def calculate_portfolio_summary(
                 include_accounts=include_accounts,
                 all_available_accounts=available_accounts_for_errors,
                 transactions_df=transactions_for_summary,
-                historical_fx_rates=historical_fx_for_processing, # ADDED: Historical FX Data
+                historical_fx_rates=historical_fx_for_processing,  # ADDED: Historical FX Data
             )
         )
         # Ensure types before assignment
@@ -1436,7 +1535,6 @@ def calculate_portfolio_summary(
             if isinstance(account_level_metrics_temp, dict)
             else {}
         )
-        
 
         if err_agg:
             has_errors = True
@@ -1466,81 +1564,105 @@ def calculate_portfolio_summary(
     # --- MOVED OUTSIDE if/else: Override Dividends (Consistency with Dividends Tab) ---
     # This ensures that even if 'summary_df_unfiltered' is empty (closed account), we still calculate correct totals.
     try:
-            # Extract dividend history using the authoritative function
-            div_history_df = extract_dividend_history(
-                all_transactions_df=transactions_df_filtered, # Use filtered tx
-                display_currency=display_currency,
-                historical_fx_yf=historical_fx_data_usd_based,
-                default_currency=default_currency,
-                include_accounts=include_accounts
+        # Extract dividend history using the authoritative function
+        div_history_df = extract_dividend_history(
+            all_transactions_df=transactions_df_filtered,  # Use filtered tx
+            display_currency=display_currency,
+            historical_fx_yf=historical_fx_data_usd_based,
+            default_currency=default_currency,
+            include_accounts=include_accounts,
+        )
+
+        if not div_history_df.empty:
+            total_dividends_override = div_history_df[
+                "DividendAmountDisplayCurrency"
+            ].sum()
+
+            # Override Overall Dividends
+            overall_summary_metrics["dividends"] = total_dividends_override
+            overall_summary_metrics["total_dividends_display"] = (
+                total_dividends_override
             )
 
-            if not div_history_df.empty:
-                total_dividends_override = div_history_df["DividendAmountDisplayCurrency"].sum()
-                
-                # Override Overall Dividends
-                overall_summary_metrics["dividends"] = total_dividends_override
-                overall_summary_metrics["total_dividends_display"] = total_dividends_override
-                
-                # Recalculate Total Gain (using UNMODIFIED realized/unrealized for now - realized will be updated next)
-                unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
-                realized = overall_summary_metrics.get("realized_gain", 0.0)
-                commissions = overall_summary_metrics.get("commissions", 0.0)
-                taxes = overall_summary_metrics.get("taxes", 0.0)
+            # Recalculate Total Gain (using UNMODIFIED realized/unrealized for now - realized will be updated next)
+            unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
+            realized = overall_summary_metrics.get("realized_gain", 0.0)
+            commissions = overall_summary_metrics.get("commissions", 0.0)
+            taxes = overall_summary_metrics.get("taxes", 0.0)
 
-                new_total_gain_div = realized + unrealized + total_dividends_override - commissions - taxes
-                overall_summary_metrics["total_gain"] = new_total_gain_div
-                
-                # Recalc Total Return %
-                total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
-                if abs(total_buy_cost) > 1e-9:
-                    overall_summary_metrics["total_return_pct"] = (new_total_gain_div / total_buy_cost) * 100.0
-                elif abs(new_total_gain_div) <= 1e-9:
-                    overall_summary_metrics["total_return_pct"] = 0.0
+            new_total_gain_div = (
+                realized + unrealized + total_dividends_override - commissions - taxes
+            )
+            overall_summary_metrics["total_gain"] = new_total_gain_div
 
-                # Override Account-Level Dividends
-                divs_by_account = div_history_df.groupby("Account")["DividendAmountDisplayCurrency"].sum().to_dict()
-                
-                # FIX: Ensure all accounts with dividends exist in metrics, creating them if needed (for closed accounts)
-                for acct, div_amt in divs_by_account.items():
-                    if acct not in account_level_metrics:
-                         account_level_metrics[acct] = {
-                             "total_realized_gain_display": 0.0,
-                             "total_unrealized_gain_display": 0.0,
-                             "total_dividends_display": 0.0,
-                             "total_commissions_display": 0.0,
-                             "total_taxes_display": 0.0,
-                             "total_gain_display": 0.0,
-                             "total_buy_cost_display": 0.0,
-                             "total_return_pct": 0.0,
-                             "market_value": 0.0
-                         }
-                    
-                    metrics = account_level_metrics[acct]
-                    metrics["total_dividends_display"] = div_amt
-                    
-                    # Recalculate Account Total Gain
-                    acct_realized = metrics.get("total_realized_gain_display", 0.0)
-                    acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
-                    acct_commissions = metrics.get("total_commissions_display", 0.0)
-                    acct_taxes = metrics.get("total_taxes_display", 0.0)
+            # Recalc Total Return %
+            total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
+            if abs(total_buy_cost) > 1e-9:
+                overall_summary_metrics["total_return_pct"] = (
+                    new_total_gain_div / total_buy_cost
+                ) * 100.0
+            elif abs(new_total_gain_div) <= 1e-9:
+                overall_summary_metrics["total_return_pct"] = 0.0
 
-                    acct_new_total_gain = acct_realized + acct_unrealized + div_amt - acct_commissions - acct_taxes
-                    metrics["total_gain_display"] = acct_new_total_gain
-                    
-                    acct_buy_cost = metrics.get("total_buy_cost_display", 0.0)
-                    if abs(acct_buy_cost) > 1e-9:
-                            metrics["total_return_pct"] = (acct_new_total_gain / acct_buy_cost) * 100.0
-                    elif abs(acct_new_total_gain) <= 1e-9:
-                            metrics["total_return_pct"] = 0.0
-                
-                logging.info(f"Overrode Dashboard Total Dividends: {total_dividends_override} (Legacy Extraction)")
-            else:
-                logging.info("Dividend extraction returned empty. Using default aggregation.")
-                
+            # Override Account-Level Dividends
+            divs_by_account = (
+                div_history_df.groupby("Account")["DividendAmountDisplayCurrency"]
+                .sum()
+                .to_dict()
+            )
+
+            # FIX: Ensure all accounts with dividends exist in metrics, creating them if needed (for closed accounts)
+            for acct, div_amt in divs_by_account.items():
+                if acct not in account_level_metrics:
+                    account_level_metrics[acct] = {
+                        "total_realized_gain_display": 0.0,
+                        "total_unrealized_gain_display": 0.0,
+                        "total_dividends_display": 0.0,
+                        "total_commissions_display": 0.0,
+                        "total_taxes_display": 0.0,
+                        "total_gain_display": 0.0,
+                        "total_buy_cost_display": 0.0,
+                        "total_return_pct": 0.0,
+                        "market_value": 0.0,
+                    }
+
+                metrics = account_level_metrics[acct]
+                metrics["total_dividends_display"] = div_amt
+
+                # Recalculate Account Total Gain
+                acct_realized = metrics.get("total_realized_gain_display", 0.0)
+                acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
+                acct_commissions = metrics.get("total_commissions_display", 0.0)
+                acct_taxes = metrics.get("total_taxes_display", 0.0)
+
+                acct_new_total_gain = (
+                    acct_realized
+                    + acct_unrealized
+                    + div_amt
+                    - acct_commissions
+                    - acct_taxes
+                )
+                metrics["total_gain_display"] = acct_new_total_gain
+
+                acct_buy_cost = metrics.get("total_buy_cost_display", 0.0)
+                if abs(acct_buy_cost) > 1e-9:
+                    metrics["total_return_pct"] = (
+                        acct_new_total_gain / acct_buy_cost
+                    ) * 100.0
+                elif abs(acct_new_total_gain) <= 1e-9:
+                    metrics["total_return_pct"] = 0.0
+
+            logging.info(
+                f"Overrode Dashboard Total Dividends: {total_dividends_override} (Legacy Extraction)"
+            )
+        else:
+            logging.info(
+                "Dividend extraction returned empty. Using default aggregation."
+            )
+
     except Exception as e_div:
-            logging.error(f"Error overriding dividends: {e_div}")
-            logging.error(traceback.format_exc())
+        logging.error(f"Error overriding dividends: {e_div}")
+        logging.error(traceback.format_exc())
 
     # --- MOVED OUTSIDE if/else: Override Aggregate Realized Gains with FIFO Totals ---
     if not fifo_realized_gains_df.empty:
@@ -1549,97 +1671,131 @@ def calculate_portfolio_summary(
 
             # Filter by Account if specific accounts are requested
             if include_accounts and isinstance(include_accounts, list):
-                    # Ensure we match account names correctly (case-insensitive usually preferred but stick to strict match if data is clean)
-                    # fifo_realized_gains_df usually has Normalized Upper case accounts? 
-                    # calculate_fifo_lots_and_gains normalizes accounts to upper.
-                    # include_accounts should be normalized too.
-                    # Let's normalize both for safety.
-                    include_norm = [str(a).strip().upper() for a in include_accounts]
-                    fifo_df_for_sum = fifo_df_for_sum[fifo_df_for_sum['Account'].isin(include_norm)]
-                    
+                # Ensure we match account names correctly (case-insensitive usually preferred but stick to strict match if data is clean)
+                # fifo_realized_gains_df usually has Normalized Upper case accounts?
+                # calculate_fifo_lots_and_gains normalizes accounts to upper.
+                # include_accounts should be normalized too.
+                # Let's normalize both for safety.
+                include_norm = [str(a).strip().upper() for a in include_accounts]
+                fifo_df_for_sum = fifo_df_for_sum[
+                    fifo_df_for_sum["Account"].isin(include_norm)
+                ]
+
             # 1. Overall Override
             total_fifo_gain = fifo_df_for_sum["Realized Gain (Display)"].sum()
-            
+
             # DEBUG LOGGING for User Issue
             if include_accounts is None:
-                logging.info(f"debug_agg: All Accounts View. Total FIFO Gain: {total_fifo_gain}")
+                logging.info(
+                    f"debug_agg: All Accounts View. Total FIFO Gain: {total_fifo_gain}"
+                )
                 # Log top contributors
-                breakdown = fifo_df_for_sum.groupby("Account")["Realized Gain (Display)"].sum().sort_values(ascending=False)
+                breakdown = (
+                    fifo_df_for_sum.groupby("Account")["Realized Gain (Display)"]
+                    .sum()
+                    .sort_values(ascending=False)
+                )
                 logging.info(f"debug_agg: Breakdown by Account: {breakdown.to_dict()}")
             else:
-                logging.info(f"debug_agg: Filtered View ({include_accounts}). Total FIFO Gain: {total_fifo_gain}")
-            
+                logging.info(
+                    f"debug_agg: Filtered View ({include_accounts}). Total FIFO Gain: {total_fifo_gain}"
+                )
+
             # Update realized gain
             old_realized = overall_summary_metrics.get("realized_gain", 0.0)
             overall_summary_metrics["realized_gain"] = total_fifo_gain
             overall_summary_metrics["total_realized_gain_display"] = total_fifo_gain
-            
+
             # Update Total Gain (Realized + Unrealized + Div - Comm)
             # Re-calculate to ensure consistency
             unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
-            dividends = overall_summary_metrics.get("dividends", 0.0) # Already overridden (if applicable)
+            dividends = overall_summary_metrics.get(
+                "dividends", 0.0
+            )  # Already overridden (if applicable)
             commissions = overall_summary_metrics.get("commissions", 0.0)
             taxes = overall_summary_metrics.get("taxes", 0.0)
 
-            new_total_gain = total_fifo_gain + unrealized + dividends - commissions - taxes
+            new_total_gain = (
+                total_fifo_gain + unrealized + dividends - commissions - taxes
+            )
             overall_summary_metrics["total_gain"] = new_total_gain
-            
+
             # Recalculate Total Return %
             total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
             if abs(total_buy_cost) > 1e-9:
-                overall_summary_metrics["total_return_pct"] = (new_total_gain / total_buy_cost) * 100.0
+                overall_summary_metrics["total_return_pct"] = (
+                    new_total_gain / total_buy_cost
+                ) * 100.0
             elif abs(new_total_gain) <= 1e-9:
                 overall_summary_metrics["total_return_pct"] = 0.0
-            
-            logging.info(f"Overrode Dashboard Total Realized Gain: {old_realized} -> {total_fifo_gain} (FIFO Local)")
+
+            logging.info(
+                f"Overrode Dashboard Total Realized Gain: {old_realized} -> {total_fifo_gain} (FIFO Local)"
+            )
 
             # 2. Account-Level Override
-            fifo_gains_by_account = fifo_realized_gains_df.groupby("Account")["Realized Gain (Display)"].sum().to_dict()
-            
+            fifo_gains_by_account = (
+                fifo_realized_gains_df.groupby("Account")["Realized Gain (Display)"]
+                .sum()
+                .to_dict()
+            )
+
             # FIX: Ensure all accounts with gains exist in metrics (Closed Accounts)
             for acct, acct_fifo_gain in fifo_gains_by_account.items():
                 if include_accounts and isinstance(include_accounts, list):
-                     if str(acct).strip().upper() not in [str(a).strip().upper() for a in include_accounts]:
-                         continue # Skip if not in requested filter
+                    if str(acct).strip().upper() not in [
+                        str(a).strip().upper() for a in include_accounts
+                    ]:
+                        continue  # Skip if not in requested filter
 
                 if acct not in account_level_metrics:
-                         account_level_metrics[acct] = {
-                             "total_realized_gain_display": 0.0,
-                             "total_unrealized_gain_display": 0.0,
-                             "total_dividends_display": 0.0,
-                             "total_commissions_display": 0.0,
-                             "total_taxes_display": 0.0,
-                             "total_gain_display": 0.0,
-                             "total_buy_cost_display": 0.0,
-                             "total_return_pct": 0.0,
-                             "market_value": 0.0
-                         }
+                    account_level_metrics[acct] = {
+                        "total_realized_gain_display": 0.0,
+                        "total_unrealized_gain_display": 0.0,
+                        "total_dividends_display": 0.0,
+                        "total_commissions_display": 0.0,
+                        "total_taxes_display": 0.0,
+                        "total_gain_display": 0.0,
+                        "total_buy_cost_display": 0.0,
+                        "total_return_pct": 0.0,
+                        "market_value": 0.0,
+                    }
 
                 metrics = account_level_metrics[acct]
-                
+
                 _old_acct_realized = metrics.get("total_realized_gain_display", 0.0)
                 metrics["total_realized_gain_display"] = acct_fifo_gain
-                
+
                 # Update Total Gain for account
                 acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
                 acct_dividends = metrics.get("total_dividends_display", 0.0)
                 acct_commissions = metrics.get("total_commissions_display", 0.0)
                 acct_taxes = metrics.get("total_taxes_display", 0.0)
 
-                acct_new_total_gain = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions - acct_taxes
+                acct_new_total_gain = (
+                    acct_fifo_gain
+                    + acct_unrealized
+                    + acct_dividends
+                    - acct_commissions
+                    - acct_taxes
+                )
                 metrics["total_gain_display"] = acct_new_total_gain
-                
+
                 # Update Account Total Return %
                 acct_buy_cost = metrics.get("total_buy_cost_display", 0.0)
                 if abs(acct_buy_cost) > 1e-9:
-                        metrics["total_return_pct"] = (acct_new_total_gain / acct_buy_cost) * 100.0
+                    metrics["total_return_pct"] = (
+                        acct_new_total_gain / acct_buy_cost
+                    ) * 100.0
                 elif abs(acct_new_total_gain) <= 1e-9:
-                        metrics["total_return_pct"] = 0.0
-                
+                    metrics["total_return_pct"] = 0.0
+
                 # logging.debug(f"Overrode Account {acct} Realized Gain: {old_acct_realized} -> {acct_fifo_gain}")
-                    
+
         except Exception as e_override:
-            logging.error(f"Error overriding aggregate realized gains with FIFO: {e_override}")
+            logging.error(
+                f"Error overriding aggregate realized gains with FIFO: {e_override}"
+            )
 
     # --- 8. Filter Closed Positions ---
     summary_df_final = pd.DataFrame()
@@ -1668,12 +1824,14 @@ def calculate_portfolio_summary(
     if not summary_df_final.empty and overall_summary_metrics:
         total_inv = overall_summary_metrics.get("total_cost_invested", 0.0)
         total_gain_col = f"Total Gain ({display_currency})"
-        
+
         # Calculate Contribution % (Total Gain / Total Cost Invested)
         if total_gain_col in summary_df_final.columns and abs(total_inv) > 1e-9:
-             summary_df_final["Contribution %"] = (summary_df_final[total_gain_col] / total_inv) * 100.0
+            summary_df_final["Contribution %"] = (
+                summary_df_final[total_gain_col] / total_inv
+            ) * 100.0
         else:
-             summary_df_final["Contribution %"] = 0.0
+            summary_df_final["Contribution %"] = 0.0
 
     # --- 9b. Calculate % of Total ---
     if not summary_df_final.empty:
@@ -1682,7 +1840,9 @@ def calculate_portfolio_summary(
         if mkt_val_col in summary_df_final.columns:
             actual_total_mkt_val = summary_df_final[mkt_val_col].sum()
             if abs(actual_total_mkt_val) > 1e-9:
-                summary_df_final["pct_of_total"] = (summary_df_final[mkt_val_col] / actual_total_mkt_val) * 100.0
+                summary_df_final["pct_of_total"] = (
+                    summary_df_final[mkt_val_col] / actual_total_mkt_val
+                ) * 100.0
             else:
                 summary_df_final["pct_of_total"] = 0.0
         else:
@@ -1695,13 +1855,23 @@ def calculate_portfolio_summary(
     unique_available_accounts = set()
     if all_transactions_df_cleaned is not None:
         if "Account" in all_transactions_df_cleaned.columns:
-            unique_available_accounts.update(all_transactions_df_cleaned["Account"].dropna().unique())
+            unique_available_accounts.update(
+                all_transactions_df_cleaned["Account"].dropna().unique()
+            )
         if "To Account" in all_transactions_df_cleaned.columns:
-            unique_available_accounts.update(all_transactions_df_cleaned["To Account"].dropna().unique())
-    
+            unique_available_accounts.update(
+                all_transactions_df_cleaned["To Account"].dropna().unique()
+            )
+
     # Filter out empty strings and None values explicitly
-    unique_available_accounts = {acc for acc in unique_available_accounts if acc and isinstance(acc, str) and acc.strip()}
-    overall_summary_metrics["_available_accounts"] = sorted(list(unique_available_accounts))
+    unique_available_accounts = {
+        acc
+        for acc in unique_available_accounts
+        if acc and isinstance(acc, str) and acc.strip()
+    }
+    overall_summary_metrics["_available_accounts"] = sorted(
+        list(unique_available_accounts)
+    )
     if display_currency != default_currency and current_fx_rates_vs_usd:
         rate_to_display = get_conversion_rate(
             default_currency, display_currency, current_fx_rates_vs_usd
@@ -1709,7 +1879,7 @@ def calculate_portfolio_summary(
         overall_summary_metrics["exchange_rate_to_display"] = (
             rate_to_display if pd.notna(rate_to_display) else None
         )
-    
+
     # Store full FX rates list for downstream conversions (e.g. projected income)
     overall_summary_metrics["_fx_rates_vs_usd"] = current_fx_rates_vs_usd
 
@@ -1749,13 +1919,14 @@ def calculate_portfolio_summary(
         holdings = {
             k: v
             for k, v in holdings.items()
-            if str(k[1] if isinstance(k, tuple) and len(k) > 1 else "").strip().upper() in _include_norm
+            if str(k[1] if isinstance(k, tuple) and len(k) > 1 else "").strip().upper()
+            in _include_norm
         }
 
     return (
         overall_summary_metrics,
         summary_df_final,
-        holdings, # holdings dictionary (with lots) <-- ADDED
+        holdings,  # holdings dictionary (with lots) <-- ADDED
         dict(account_level_metrics),  # Ensure it's a dict
         combined_ignored_indices,
         combined_ignored_reasons,
@@ -1767,8 +1938,6 @@ def calculate_portfolio_summary(
 # --- SECTION: HISTORICAL PERFORMANCE CALCULATION FUNCTIONS (REVISED) ---
 # =======================================================================
 # --- NOTE: These functions remain in portfolio_logic.py as they were not moved ---
-
-
 
 
 # --- Function to Unadjust Prices (Keep as is) ---
@@ -1786,10 +1955,6 @@ def calculate_portfolio_summary(
 # --- VECTORIZED CASH FLOW CALCULATION ---
 
 
-
-
-
-
 # --- START NUMBA HELPER FUNCTION ---
 
 
@@ -1799,20 +1964,13 @@ def calculate_portfolio_summary(
 # --- START NEW CHRONOLOGICAL NUMBA HELPER ---
 
 
-
-
 # --- Dispatcher Function ---
-
-
 
 
 # --- Helper Function for Historical Input Preparation ---
 
 
 # --- Daily Results Calculation (Keep as is) ---
-
-
-
 
 
 # --- Accumulated Gain and Resampling (Keep as is) ---
