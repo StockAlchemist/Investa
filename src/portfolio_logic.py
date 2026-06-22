@@ -153,6 +153,475 @@ from portfolio_history import (  # noqa: F401
     generate_mappings,
 )
 
+
+def get_default_metrics_dict(
+    display_curr_arg,
+    report_date_arg,
+    available_accs_list_arg,
+    is_empty_data_case=False,
+):
+    """Build the default/zeroed overall-summary metrics dict.
+
+    Values are 0.0 for the "empty but valid" case and np.nan for the
+    "no data / error" case, so a missing portfolio reads as zero while a
+    failed calculation reads as unknown.
+    """
+    metrics = {
+        "market_value": 0.0 if is_empty_data_case else np.nan,
+        "cost_basis_held": 0.0 if is_empty_data_case else np.nan,
+        "unrealized_gain": 0.0 if is_empty_data_case else np.nan,
+        "realized_gain": 0.0 if is_empty_data_case else np.nan,
+        "dividends": 0.0 if is_empty_data_case else np.nan,
+        "commissions": 0.0 if is_empty_data_case else np.nan,
+        "taxes": 0.0 if is_empty_data_case else np.nan,
+        "total_gain": 0.0 if is_empty_data_case else np.nan,
+        "total_cost_invested": 0.0 if is_empty_data_case else np.nan,
+        "total_buy_cost": 0.0 if is_empty_data_case else np.nan,
+        "portfolio_mwr": np.nan,
+        "day_change_display": 0.0 if is_empty_data_case else np.nan,
+        "day_change_percent": np.nan,
+        "report_date": report_date_arg.strftime("%Y-%m-%d"),
+        "display_currency": display_curr_arg,
+        "cumulative_investment": 0.0 if is_empty_data_case else np.nan,
+        "total_return_pct": np.nan,
+        "est_annual_income_display": (
+            0.0 if is_empty_data_case else np.nan
+        ),  # Key change here
+        "fx_gain_loss_display": 0.0 if is_empty_data_case else np.nan,
+        "fx_gain_loss_pct": np.nan,
+        "_available_accounts": available_accs_list_arg,
+    }
+    return metrics
+def _enrich_summary_rows_with_sector_geo(
+    portfolio_summary_rows,
+    market_provider,
+    manual_overrides_effective,
+    effective_user_symbol_map,
+    effective_user_excluded_symbols,
+):
+    """Attach Sector/quoteType/Country/Industry/exchange to each summary row.
+
+    Resolves each held symbol's metadata from manual overrides first, then the
+    batch-prefetched market-data metadata, falling back to per-symbol fetch.
+    Cash rows are categorized as Cash. Returns the (possibly enriched) rows;
+    the input is returned unchanged when empty or lacking a Symbol column.
+    """
+    # --- Add Sector/Geo information ---
+    # logging.info("Categorizing transactions by symbol...")
+    if portfolio_summary_rows:
+        summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
+        if "Symbol" in summary_df_unfiltered_temp.columns:
+            symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
+            sector_map, quote_type_map, country_map, industry_map, exchange_map = {}, {}, {}, {}, {}
+
+            # PERF FIX (BN-07): Batch pre-fetch metadata for ALL symbols at once.
+            # Previously, get_fundamental_data() was called per-symbol inside the loop,
+            # causing N sequential cache lookups (and potentially N subprocess calls).
+            # Now we fetch all metadata in one batch call and use the results in the loop.
+            yf_symbols_for_metadata = set()
+            internal_to_yf_for_sector = {}
+            for internal_symbol in symbols_in_summary:
+                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith("Cash ("):
+                    continue
+                yf_ticker = map_to_yf_symbol(
+                    internal_symbol,
+                    effective_user_symbol_map,
+                    effective_user_excluded_symbols,
+                )
+                if yf_ticker:
+                    yf_symbols_for_metadata.add(yf_ticker)
+                    internal_to_yf_for_sector[internal_symbol] = yf_ticker
+            
+            # Single batch fetch — returns cached metadata including sector, industry, country, quoteType
+            batch_metadata = {}
+            if yf_symbols_for_metadata and MARKET_PROVIDER_AVAILABLE and market_provider:
+                try:
+                    batch_metadata = market_provider._ensure_metadata_batch(yf_symbols_for_metadata)
+                except Exception as e_batch_meta:
+                    logging.warning(f"Batch metadata pre-fetch failed: {e_batch_meta}")
+
+            for internal_symbol in symbols_in_summary:
+                symbol_overrides = manual_overrides_effective.get(
+                    internal_symbol.upper(), {}
+                )
+                manual_asset_type = symbol_overrides.get("asset_type", "").strip()
+                manual_sector = symbol_overrides.get("sector", "").strip()
+                manual_geography = symbol_overrides.get("geography", "").strip()
+                manual_industry = symbol_overrides.get("industry", "").strip()
+                manual_exchange = symbol_overrides.get("exchange", "").strip()
+
+                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
+                    "Cash ("
+                ):
+                    sector_map[internal_symbol] = "Cash"
+                    quote_type_map[internal_symbol] = "CASH"
+                    country_map[internal_symbol] = "Cash"
+                    industry_map[internal_symbol] = "Cash"
+                    exchange_map[internal_symbol] = "Cash" # Set Market for Cash
+                    
+                    if manual_exchange:
+                         exchange_map[internal_symbol] = manual_exchange
+                    continue
+
+                if internal_symbol == "SCBRM1":
+                     logging.info(f"DEBUG_OVERRIDE_SCBRM1: ManualExchange={manual_exchange}, AllOverrides={symbol_overrides}")
+
+                yf_ticker_for_sector = internal_to_yf_for_sector.get(internal_symbol)
+                sector_map[internal_symbol] = (
+                    manual_sector if manual_sector else "N/A (No YF/Manual)"
+                )
+                quote_type_map[internal_symbol] = (
+                    manual_asset_type if manual_asset_type else "N/A (No YF/Manual)"
+                )
+                country_map[internal_symbol] = (
+                    manual_geography if manual_geography else "N/A (No YF/Manual)"
+                )
+                industry_map[internal_symbol] = (
+                    manual_industry if manual_industry else "N/A (No YF/Manual)"
+                )
+                if manual_exchange:
+                    exchange_map[internal_symbol] = manual_exchange
+
+                if yf_ticker_for_sector and (
+                    not manual_sector
+                    or not manual_asset_type
+                    or not manual_geography
+                    or not manual_industry
+                ):
+                    # PERF FIX (BN-07): Use batch-prefetched metadata instead of per-symbol fetch.
+                    # Falls back to get_fundamental_data only if metadata is missing for this symbol.
+                    fundamental_info = batch_metadata.get(yf_ticker_for_sector)
+                    if not fundamental_info and MARKET_PROVIDER_AVAILABLE and market_provider:
+                        fundamental_info = market_provider.get_fundamental_data(
+                            yf_ticker_for_sector
+                        )
+                    if fundamental_info and isinstance(fundamental_info, dict):
+                        if not manual_sector:
+                            sector_map[internal_symbol] = fundamental_info.get(
+                                "sector", "Unknown Sector"
+                            )
+                        if not manual_asset_type:
+                            quote_type_map[internal_symbol] = fundamental_info.get(
+                                "quoteType", "UNKNOWN"
+                            )
+                        if not manual_geography:
+                            country_map[internal_symbol] = fundamental_info.get(
+                                "country", "Unknown Region"
+                            ) or "Unknown Region"
+                        if not manual_industry:
+                            industry_map[internal_symbol] = fundamental_info.get(
+                                "industry", "Unknown Industry"
+                            )
+                    else:  # Fetch failed for this symbol
+                        if not manual_sector:
+                            sector_map[internal_symbol] = "N/A (Fetch Error)"
+                        if not manual_asset_type:
+                            quote_type_map[internal_symbol] = "N/A (Fetch Error)"
+                        if not manual_geography:
+                            country_map[internal_symbol] = "Unknown Region"
+                        if not manual_industry:
+                            industry_map[internal_symbol] = "N/A (Fetch Error)"
+
+            summary_df_unfiltered_temp["Sector"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(sector_map)
+                .fillna("Unknown Sector")
+            )
+            summary_df_unfiltered_temp["quoteType"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(quote_type_map)
+                .fillna("UNKNOWN")
+            )
+            summary_df_unfiltered_temp["Country"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(country_map)
+                .fillna("Unknown Region")
+            )
+            summary_df_unfiltered_temp["Industry"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(industry_map)
+                .fillna("Unknown Industry")
+            )
+            # Apply Manual Exchange Overrides
+            existing_exchange = summary_df_unfiltered_temp["exchange"] if "exchange" in summary_df_unfiltered_temp.columns else pd.Series([None] * len(summary_df_unfiltered_temp), index=summary_df_unfiltered_temp.index)
+            summary_df_unfiltered_temp["exchange"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(exchange_map)
+                .combine_first(existing_exchange)
+            )
+            portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
+                orient="records"
+            )
+    return portfolio_summary_rows
+def _prepare_historical_fx_rates(
+    transactions_df_filtered,
+    all_transactions_df_cleaned,
+    display_currency,
+    default_currency,
+    market_provider,
+    cache_file_path,
+):
+    """Build the (date, currency) -> display/local FX lookup for tx processing.
+
+    Returns (historical_fx_for_processing, historical_fx_data_usd_based,
+    fx_warning); fx_warning is True when some historical FX rates could not be
+    fetched (the caller raises has_warnings).
+    """
+    historical_fx_data_usd_based = {}
+    fx_warning = False
+    historical_fx_for_processing: Dict[Tuple[date, str], float] = {}
+    if not transactions_df_filtered.empty:
+        logging.debug(
+            "Preparing historical FX rates for transaction processing (current summary)..."
+        )
+        unique_dates = sorted(transactions_df_filtered["Date"].dt.date.unique())
+
+        # Collect all relevant currencies for historical FX fetching
+        # FIX: Use all_transactions_df_cleaned instead of transactions_df_filtered to ensure
+        # we get currencies for ALL accounts, even excluded ones (needed for FIFO calc of transfers).
+        currencies_for_hist_fx_fetch = set(
+            all_transactions_df_cleaned["Local Currency"].unique()
+        )
+        currencies_for_hist_fx_fetch.add(display_currency)
+        currencies_for_hist_fx_fetch.add(
+            default_currency
+        )  # default_currency is an arg to calculate_portfolio_summary
+
+        # Clean the collected currencies
+        cleaned_currencies_for_hist_fx = {
+            str(c).strip().upper()
+            for c in currencies_for_hist_fx_fetch
+            if pd.notna(c)
+            and isinstance(str(c).strip(), str)
+            and str(c).strip() not in ["", "<NA>", "NAN", "NONE", "N/A"]
+            and len(str(c).strip()) == 3
+        }
+
+        min_tx_date = all_transactions_df_cleaned["Date"].min().date()
+        fx_pairs_to_fetch_hist = []
+        for lc in cleaned_currencies_for_hist_fx:
+            if not lc or str(lc).strip() == "" or lc.upper() == "USD" or pd.isna(lc):
+                continue
+            curr_code = lc.upper()
+            if curr_code == "THB":
+                fx_pairs_to_fetch_hist.append("USDTHB=X")
+            else:
+                fx_pairs_to_fetch_hist.append(f"{curr_code}=X")
+
+        if market_provider:
+            market_provider_for_hist_fx = market_provider
+        else:
+            market_provider_for_hist_fx = MarketDataProvider(
+                current_cache_file=cache_file_path
+            )  # Use same cache config
+
+        # Fetch historical FX rates (local_curr vs USD)
+        # FIX: Use date.today() instead of report_date (latest trading date)
+        # The Capital Gains API uses date.today(), so if we use an earlier date (e.g. Friday),
+        # recent weekend transactions (crypto) or today's transactions will fail FX lookup
+        # and result in NaN gain (0 assumed), causing the Dashboard to be lower.
+        fx_fetch_end_date = date.today()
+
+        historical_fx_data_usd_based, fx_fetch_err_hist = (
+            market_provider_for_hist_fx.get_historical_fx_rates(
+                fx_pairs_yf=list(set(fx_pairs_to_fetch_hist)),
+                start_date=min_tx_date,
+                end_date=fx_fetch_end_date,
+                use_cache=True,
+                # Use stable cache key (no dates) to allow incremental updates
+                # The market_data provider will handle date range checks
+                cache_key=f"PROC_FX_HIST_{'_'.join(sorted(list(set(fx_pairs_to_fetch_hist))))}",
+            )
+        )
+        if fx_fetch_err_hist:
+            logging.warning(
+                "Failed to fetch some historical FX rates needed for precise FX G/L calculation in current summary. FX G/L might be inaccurate."
+            )
+            fx_warning = True
+
+        # --- OPTIMIZED: Vectorized FX Rate Calculation ---
+        # Instead of iterating dates and currencies, we build a master DataFrame.
+        
+        fx_series_list = []
+        if historical_fx_data_usd_based:
+            for pair, df in historical_fx_data_usd_based.items():
+                if df is None or df.empty:
+                    continue
+                curr_code = pair.replace("=X", "")
+                # Ensure index is datetime/date
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+                
+                # Just take the price column (prefer 'Close' from Yahoo, fallback to 'price' if internal mock)
+                if 'Close' in df.columns:
+                    series = df['Close'].rename(curr_code)
+                elif 'price' in df.columns:
+                    series = df['price'].rename(curr_code)
+                else:
+                    logging.warning(f"Warning: neither 'Close' nor 'price' column found in historical FX for {pair}. Columns: {df.columns}")
+                    continue
+                # Ensure index is date (not datetime with time)
+                series.index = series.index.date
+                # Remove duplicates in index if any
+                series = series[~series.index.duplicated(keep='last')]
+                fx_series_list.append(series)
+
+        if fx_series_list:
+            # Concat into a wide DataFrame
+            master_fx_df = pd.concat(fx_series_list, axis=1)
+            # --- IMPROVE: Handle NaNs in FX data (holidays, weekends) ---
+            master_fx_df.sort_index(inplace=True)
+            master_fx_df = master_fx_df.ffill().bfill()
+
+            
+            # --- ADDED: Normalize column names (e.g. USDTHB=X -> THB) ---
+            # This ensures that 'THB' is found in master_fx_df.columns later.
+            rename_map = {}
+            for col in master_fx_df.columns:
+                # 1. Strip =X suffix if present
+                clean_name = col.replace("=X", "").upper()
+                
+                # 2. Extract local currency if it's a USD pair (e.g. USDTHB or EURUSD)
+                if len(clean_name) == 6:
+                    if clean_name.startswith("USD"):
+                        final_code = clean_name[3:]
+                    elif clean_name.endswith("USD"):
+                        final_code = clean_name[:3]
+                    else:
+                        final_code = clean_name
+                else:
+                    final_code = clean_name
+                
+                if final_code != col:
+                    rename_map[col] = final_code
+
+            
+            if rename_map:
+                master_fx_df.rename(columns=rename_map, inplace=True)
+                logging.debug(f"Normalized FX columns: {rename_map}")
+
+            # 2. Reindex to cover all transaction dates (ffill AND bfill)
+            # We need the union of existing FX dates and transaction dates
+            all_needed_dates = sorted(list(set(master_fx_df.index) | set(unique_dates)))
+            # ADDED: bfill() to handle cases where transactions start before FX history
+            master_fx_df = master_fx_df.reindex(all_needed_dates).ffill().bfill()
+            
+            # --- ADDED: Fallback for completely missing currencies ---
+            # If a currency was requested but is not in master_fx_df (e.g. history fetch failed completely),
+            # we try to fetch the CURRENT rate and use it as a constant fallback.
+            existing_cols = set(master_fx_df.columns)
+            missing_currencies = [
+                c for c in cleaned_currencies_for_hist_fx 
+                if c and c.upper() != "USD" and c not in existing_cols
+            ]
+            
+            if missing_currencies:
+                logging.warning(f"Historical FX missing for {missing_currencies}. Attempting to fetch current rates as fallback.")
+                missing_pairs = [f"{c.upper()}=X" for c in missing_currencies]
+                try:
+                    # Fetch current quotes for missing pairs
+                    _, current_fx_rates, _, _, _ = market_provider_for_hist_fx.get_current_quotes(
+                        internal_stock_symbols=[],
+                        required_currencies=set(missing_pairs),
+                        user_symbol_map={},
+                        user_excluded_symbols=set()
+                    )
+                    
+                    for curr in missing_currencies:
+                        curr_upper = curr.upper()
+                        if curr_upper in current_fx_rates and pd.notna(current_fx_rates[curr_upper]):
+                            rate = current_fx_rates[curr_upper]
+                            logging.info(f"Using current FX rate {rate} for {curr} as historical fallback (constant).")
+                            master_fx_df[curr] = rate
+                        else:
+                            logging.error(f"Could not get even current FX rate for {curr}. FX conversion will fail/default.")
+                            
+                except Exception as e_fallback:
+                    logging.error(f"Error fetching current FX fallback: {e_fallback}")
+
+            # 3. Add USD column (always 1.0)
+            master_fx_df['USD'] = 1.0
+            
+            # 4. Calculate Cross Rates (Display / Local)
+            display_curr_col = display_currency.upper()
+            if display_curr_col not in master_fx_df.columns:
+                if display_curr_col == 'USD':
+                     master_fx_df[display_curr_col] = 1.0
+                else:
+                     logging.warning(f"Display currency {display_curr_col} not found in FX data. FX conversion may fail.")
+            
+            if display_curr_col in master_fx_df.columns:
+                display_rates = master_fx_df[display_curr_col]
+                
+                # Iterate over all available currencies to calculate cross rates
+                for curr_col in master_fx_df.columns:
+                    try:
+                        # Calculate cross rate vector: Rate = Display / Local
+                        # --- MODIFIED: Robust Cross Rate Calculation ---
+                        # master_fx_df[curr_col] is the rate fetched from YF.
+                        # YF is inconsistent: 
+                        # - USDTHB=X (~35) is THB/USD (Local/USD)
+                        # - EURUSD=X (~1.08) is USD/EUR (USD/Local)
+                        # We want all rates in 'master_fx_df' to effectively be 'Local / USD' (units per 1 USD)
+                        # so that: Display/Local = (Display/USD) / (Local/USD)
+                        
+                        raw_rate = master_fx_df[curr_col]
+                        
+                        # Heuristic: Determine if rate is Local/USD or USD/Local.
+                        # YF symbols like EUR=X, GBP=X usually return Local/USD (~0.9, ~0.8).
+                        # But explicit pairs like EURUSD=X return USD/Local (~1.08).
+                        # We want all rates to be Local / USD for the divisor logic.
+                        
+                        rate_to_use = raw_rate
+                        
+                        # --- IMPROVED HEURISTIC ---
+                        # Standardize all rates to "Local per 1 USD" (e.g. THB=35, JPY=150, EUR=0.92)
+                        # so that: Rate_to_Target = Target_per_USD / Local_per_USD
+                        
+                        avg_rate = raw_rate.mean()
+                        is_major = curr_col in ["EUR", "GBP", "AUD", "NZD"]
+                        
+                        # 1. If it's a major currency and > 1.0 (e.g. 1.08), it's USD/Local. Invert to get Local/USD (~0.92).
+                        if is_major and avg_rate > 1.0:
+                            rate_to_use = 1.0 / raw_rate
+                            logging.debug(f"Vectorized FX: Inverting major {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
+                        # 2. If it's THB and < 1.0 (e.g. 0.028), it's USD/THB. Invert to get THB/USD (~35.0).
+                        elif curr_col == "THB" and avg_rate < 1.0:
+                            rate_to_use = 1.0 / raw_rate
+                            logging.debug(f"Vectorized FX: Inverting {curr_col} (Avg={avg_rate:.4f}) to THB/USD.")
+                        # 3. General catch-all: if rate is extremely small (< 0.1), it's likely USD/Local
+                        elif avg_rate < 0.1:
+                            rate_to_use = 1.0 / raw_rate
+                            logging.debug(f"Vectorized FX: Inverting low-rate {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
+                        else:
+                            rate_to_use = raw_rate
+
+                        
+                        cross_rates = display_rates / rate_to_use
+                        
+                        # Filter for relevant dates and update dict
+                        relevant_rates = cross_rates.loc[cross_rates.index.isin(unique_dates)]
+                        
+                        # Update the dictionary
+                        for d, r in relevant_rates.items():
+                            if pd.notna(r):
+                                historical_fx_for_processing[(d, curr_col)] = float(r)
+                                
+                    except Exception as e:
+                        logging.warning(f"Error calculating vectorized FX for {curr_col}: {e}")
+        
+        # Fallback/Fill for USD if not present
+        for d in unique_dates:
+            if (d, 'USD') not in historical_fx_for_processing:
+                historical_fx_for_processing[(d, 'USD')] = 1.0
+
+    return historical_fx_for_processing, historical_fx_data_usd_based, fx_warning
+
+
+
+
+
+
 # --- Main Calculation Function (Current Portfolio Summary) ---
 # @profile
 def calculate_portfolio_summary(
@@ -237,41 +706,7 @@ def calculate_portfolio_summary(
     # Use the passed-in ignored data from the initial load
     report_date = get_latest_trading_date()  # Defined early for use in default metrics
 
-    # --- Define default metrics structures ---
-    def get_default_metrics_dict(
-        display_curr_arg,
-        report_date_arg,
-        available_accs_list_arg,
-        is_empty_data_case=False,
-    ):
-        metrics = {
-            "market_value": 0.0 if is_empty_data_case else np.nan,
-            "cost_basis_held": 0.0 if is_empty_data_case else np.nan,
-            "unrealized_gain": 0.0 if is_empty_data_case else np.nan,
-            "realized_gain": 0.0 if is_empty_data_case else np.nan,
-            "dividends": 0.0 if is_empty_data_case else np.nan,
-            "commissions": 0.0 if is_empty_data_case else np.nan,
-            "taxes": 0.0 if is_empty_data_case else np.nan,
-            "total_gain": 0.0 if is_empty_data_case else np.nan,
-            "total_cost_invested": 0.0 if is_empty_data_case else np.nan,
-            "total_buy_cost": 0.0 if is_empty_data_case else np.nan,
-            "portfolio_mwr": np.nan,
-            "day_change_display": 0.0 if is_empty_data_case else np.nan,
-            "day_change_percent": np.nan,
-            "report_date": report_date_arg.strftime("%Y-%m-%d"),
-            "display_currency": display_curr_arg,
-            "cumulative_investment": 0.0 if is_empty_data_case else np.nan,
-            "total_return_pct": np.nan,
-            "est_annual_income_display": (
-                0.0 if is_empty_data_case else np.nan
-            ),  # Key change here
-            "fx_gain_loss_display": 0.0 if is_empty_data_case else np.nan,
-            "fx_gain_loss_pct": np.nan,
-            "_available_accounts": available_accs_list_arg,
-        }
-        return metrics
-
-    # --- End Define default metrics ---
+    # Default/zeroed metrics are built by the module-level get_default_metrics_dict().
 
     combined_ignored_indices = (
         ignored_indices_from_load.copy() if ignored_indices_from_load else set()
@@ -488,254 +923,19 @@ def calculate_portfolio_summary(
         # Proceed, might result in empty summary, which is valid.
         # status_parts.append("No Tx Post-Filter") # Optional status part
 
-    # --- ADDED: Prepare historical FX rates for _process_transactions_to_holdings ---
-    historical_fx_for_processing: Dict[Tuple[date, str], float] = {}
-    if not transactions_df_filtered.empty:
-        logging.debug(
-            "Preparing historical FX rates for transaction processing (current summary)..."
+    # --- Prepare historical FX rates for transaction processing ---
+    historical_fx_for_processing, historical_fx_data_usd_based, _fx_warn = (
+        _prepare_historical_fx_rates(
+            transactions_df_filtered,
+            all_transactions_df_cleaned,
+            display_currency,
+            default_currency,
+            market_provider,
+            cache_file_path,
         )
-        unique_dates = sorted(transactions_df_filtered["Date"].dt.date.unique())
-
-        # Collect all relevant currencies for historical FX fetching
-        # FIX: Use all_transactions_df_cleaned instead of transactions_df_filtered to ensure
-        # we get currencies for ALL accounts, even excluded ones (needed for FIFO calc of transfers).
-        currencies_for_hist_fx_fetch = set(
-            all_transactions_df_cleaned["Local Currency"].unique()
-        )
-        currencies_for_hist_fx_fetch.add(display_currency)
-        currencies_for_hist_fx_fetch.add(
-            default_currency
-        )  # default_currency is an arg to calculate_portfolio_summary
-
-        # Clean the collected currencies
-        cleaned_currencies_for_hist_fx = {
-            str(c).strip().upper()
-            for c in currencies_for_hist_fx_fetch
-            if pd.notna(c)
-            and isinstance(str(c).strip(), str)
-            and str(c).strip() not in ["", "<NA>", "NAN", "NONE", "N/A"]
-            and len(str(c).strip()) == 3
-        }
-
-        min_tx_date = all_transactions_df_cleaned["Date"].min().date()
-        fx_pairs_to_fetch_hist = []
-        for lc in cleaned_currencies_for_hist_fx:
-            if not lc or str(lc).strip() == "" or lc.upper() == "USD" or pd.isna(lc):
-                continue
-            curr_code = lc.upper()
-            if curr_code == "THB":
-                fx_pairs_to_fetch_hist.append("USDTHB=X")
-            else:
-                fx_pairs_to_fetch_hist.append(f"{curr_code}=X")
-
-        if market_provider:
-            market_provider_for_hist_fx = market_provider
-        else:
-            market_provider_for_hist_fx = MarketDataProvider(
-                current_cache_file=cache_file_path
-            )  # Use same cache config
-
-        # Fetch historical FX rates (local_curr vs USD)
-        # FIX: Use date.today() instead of report_date (latest trading date)
-        # The Capital Gains API uses date.today(), so if we use an earlier date (e.g. Friday),
-        # recent weekend transactions (crypto) or today's transactions will fail FX lookup
-        # and result in NaN gain (0 assumed), causing the Dashboard to be lower.
-        fx_fetch_end_date = date.today()
-
-        historical_fx_data_usd_based, fx_fetch_err_hist = (
-            market_provider_for_hist_fx.get_historical_fx_rates(
-                fx_pairs_yf=list(set(fx_pairs_to_fetch_hist)),
-                start_date=min_tx_date,
-                end_date=fx_fetch_end_date,
-                use_cache=True,
-                # Use stable cache key (no dates) to allow incremental updates
-                # The market_data provider will handle date range checks
-                cache_key=f"PROC_FX_HIST_{'_'.join(sorted(list(set(fx_pairs_to_fetch_hist))))}",
-            )
-        )
-        if fx_fetch_err_hist:
-            logging.warning(
-                "Failed to fetch some historical FX rates needed for precise FX G/L calculation in current summary. FX G/L might be inaccurate."
-            )
-            has_warnings = True
-
-        # --- OPTIMIZED: Vectorized FX Rate Calculation ---
-        # Instead of iterating dates and currencies, we build a master DataFrame.
-        
-        fx_series_list = []
-        if historical_fx_data_usd_based:
-            for pair, df in historical_fx_data_usd_based.items():
-                if df is None or df.empty:
-                    continue
-                curr_code = pair.replace("=X", "")
-                # Ensure index is datetime/date
-                if not isinstance(df.index, pd.DatetimeIndex):
-                    df.index = pd.to_datetime(df.index)
-                
-                # Just take the price column (prefer 'Close' from Yahoo, fallback to 'price' if internal mock)
-                if 'Close' in df.columns:
-                    series = df['Close'].rename(curr_code)
-                elif 'price' in df.columns:
-                    series = df['price'].rename(curr_code)
-                else:
-                    logging.warning(f"Warning: neither 'Close' nor 'price' column found in historical FX for {pair}. Columns: {df.columns}")
-                    continue
-                # Ensure index is date (not datetime with time)
-                series.index = series.index.date
-                # Remove duplicates in index if any
-                series = series[~series.index.duplicated(keep='last')]
-                fx_series_list.append(series)
-
-        if fx_series_list:
-            # Concat into a wide DataFrame
-            master_fx_df = pd.concat(fx_series_list, axis=1)
-            # --- IMPROVE: Handle NaNs in FX data (holidays, weekends) ---
-            master_fx_df.sort_index(inplace=True)
-            master_fx_df = master_fx_df.ffill().bfill()
-
-            
-            # --- ADDED: Normalize column names (e.g. USDTHB=X -> THB) ---
-            # This ensures that 'THB' is found in master_fx_df.columns later.
-            rename_map = {}
-            for col in master_fx_df.columns:
-                # 1. Strip =X suffix if present
-                clean_name = col.replace("=X", "").upper()
-                
-                # 2. Extract local currency if it's a USD pair (e.g. USDTHB or EURUSD)
-                if len(clean_name) == 6:
-                    if clean_name.startswith("USD"):
-                        final_code = clean_name[3:]
-                    elif clean_name.endswith("USD"):
-                        final_code = clean_name[:3]
-                    else:
-                        final_code = clean_name
-                else:
-                    final_code = clean_name
-                
-                if final_code != col:
-                    rename_map[col] = final_code
-
-            
-            if rename_map:
-                master_fx_df.rename(columns=rename_map, inplace=True)
-                logging.debug(f"Normalized FX columns: {rename_map}")
-
-            # 2. Reindex to cover all transaction dates (ffill AND bfill)
-            # We need the union of existing FX dates and transaction dates
-            all_needed_dates = sorted(list(set(master_fx_df.index) | set(unique_dates)))
-            # ADDED: bfill() to handle cases where transactions start before FX history
-            master_fx_df = master_fx_df.reindex(all_needed_dates).ffill().bfill()
-            
-            # --- ADDED: Fallback for completely missing currencies ---
-            # If a currency was requested but is not in master_fx_df (e.g. history fetch failed completely),
-            # we try to fetch the CURRENT rate and use it as a constant fallback.
-            existing_cols = set(master_fx_df.columns)
-            missing_currencies = [
-                c for c in cleaned_currencies_for_hist_fx 
-                if c and c.upper() != "USD" and c not in existing_cols
-            ]
-            
-            if missing_currencies:
-                logging.warning(f"Historical FX missing for {missing_currencies}. Attempting to fetch current rates as fallback.")
-                missing_pairs = [f"{c.upper()}=X" for c in missing_currencies]
-                try:
-                    # Fetch current quotes for missing pairs
-                    _, current_fx_rates, _, _, _ = market_provider_for_hist_fx.get_current_quotes(
-                        internal_stock_symbols=[],
-                        required_currencies=set(missing_pairs),
-                        user_symbol_map={},
-                        user_excluded_symbols=set()
-                    )
-                    
-                    for curr in missing_currencies:
-                        curr_upper = curr.upper()
-                        if curr_upper in current_fx_rates and pd.notna(current_fx_rates[curr_upper]):
-                            rate = current_fx_rates[curr_upper]
-                            logging.info(f"Using current FX rate {rate} for {curr} as historical fallback (constant).")
-                            master_fx_df[curr] = rate
-                        else:
-                            logging.error(f"Could not get even current FX rate for {curr}. FX conversion will fail/default.")
-                            
-                except Exception as e_fallback:
-                    logging.error(f"Error fetching current FX fallback: {e_fallback}")
-
-            # 3. Add USD column (always 1.0)
-            master_fx_df['USD'] = 1.0
-            
-            # 4. Calculate Cross Rates (Display / Local)
-            display_curr_col = display_currency.upper()
-            if display_curr_col not in master_fx_df.columns:
-                if display_curr_col == 'USD':
-                     master_fx_df[display_curr_col] = 1.0
-                else:
-                     logging.warning(f"Display currency {display_curr_col} not found in FX data. FX conversion may fail.")
-            
-            if display_curr_col in master_fx_df.columns:
-                display_rates = master_fx_df[display_curr_col]
-                
-                # Iterate over all available currencies to calculate cross rates
-                for curr_col in master_fx_df.columns:
-                    try:
-                        # Calculate cross rate vector: Rate = Display / Local
-                        # --- MODIFIED: Robust Cross Rate Calculation ---
-                        # master_fx_df[curr_col] is the rate fetched from YF.
-                        # YF is inconsistent: 
-                        # - USDTHB=X (~35) is THB/USD (Local/USD)
-                        # - EURUSD=X (~1.08) is USD/EUR (USD/Local)
-                        # We want all rates in 'master_fx_df' to effectively be 'Local / USD' (units per 1 USD)
-                        # so that: Display/Local = (Display/USD) / (Local/USD)
-                        
-                        raw_rate = master_fx_df[curr_col]
-                        
-                        # Heuristic: Determine if rate is Local/USD or USD/Local.
-                        # YF symbols like EUR=X, GBP=X usually return Local/USD (~0.9, ~0.8).
-                        # But explicit pairs like EURUSD=X return USD/Local (~1.08).
-                        # We want all rates to be Local / USD for the divisor logic.
-                        
-                        rate_to_use = raw_rate
-                        
-                        # --- IMPROVED HEURISTIC ---
-                        # Standardize all rates to "Local per 1 USD" (e.g. THB=35, JPY=150, EUR=0.92)
-                        # so that: Rate_to_Target = Target_per_USD / Local_per_USD
-                        
-                        avg_rate = raw_rate.mean()
-                        is_major = curr_col in ["EUR", "GBP", "AUD", "NZD"]
-                        
-                        # 1. If it's a major currency and > 1.0 (e.g. 1.08), it's USD/Local. Invert to get Local/USD (~0.92).
-                        if is_major and avg_rate > 1.0:
-                            rate_to_use = 1.0 / raw_rate
-                            logging.debug(f"Vectorized FX: Inverting major {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
-                        # 2. If it's THB and < 1.0 (e.g. 0.028), it's USD/THB. Invert to get THB/USD (~35.0).
-                        elif curr_col == "THB" and avg_rate < 1.0:
-                            rate_to_use = 1.0 / raw_rate
-                            logging.debug(f"Vectorized FX: Inverting {curr_col} (Avg={avg_rate:.4f}) to THB/USD.")
-                        # 3. General catch-all: if rate is extremely small (< 0.1), it's likely USD/Local
-                        elif avg_rate < 0.1:
-                            rate_to_use = 1.0 / raw_rate
-                            logging.debug(f"Vectorized FX: Inverting low-rate {curr_col} (Avg={avg_rate:.4f}) to Local/USD.")
-                        else:
-                            rate_to_use = raw_rate
-
-                        
-                        cross_rates = display_rates / rate_to_use
-                        
-                        # Filter for relevant dates and update dict
-                        relevant_rates = cross_rates.loc[cross_rates.index.isin(unique_dates)]
-                        
-                        # Update the dictionary
-                        for d, r in relevant_rates.items():
-                            if pd.notna(r):
-                                historical_fx_for_processing[(d, curr_col)] = float(r)
-                                
-                    except Exception as e:
-                        logging.warning(f"Error calculating vectorized FX for {curr_col}: {e}")
-        
-        # Fallback/Fill for USD if not present
-        for d in unique_dates:
-            if (d, 'USD') not in historical_fx_for_processing:
-                historical_fx_for_processing[(d, 'USD')] = 1.0
-
-    # --- END ADDED ---
+    )
+    if _fx_warn:
+        has_warnings = True
 
     # --- 3. Process Stock/ETF Transactions ---
     holdings, _, _, _, taxes_local, ignored_indices_proc, ignored_reasons_proc, transfer_costs, warn_proc = (
@@ -1133,151 +1333,13 @@ def calculate_portfolio_summary(
                     holdings[original_key]["Market Value"] = row.get(f"Market Value ({display_currency})", 0)
 
     # --- Add Sector/Geo information ---
-    # logging.info("Categorizing transactions by symbol...")
-    if portfolio_summary_rows:
-        summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
-        if "Symbol" in summary_df_unfiltered_temp.columns:
-            symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
-            sector_map, quote_type_map, country_map, industry_map, exchange_map = {}, {}, {}, {}, {}
-
-            # PERF FIX (BN-07): Batch pre-fetch metadata for ALL symbols at once.
-            # Previously, get_fundamental_data() was called per-symbol inside the loop,
-            # causing N sequential cache lookups (and potentially N subprocess calls).
-            # Now we fetch all metadata in one batch call and use the results in the loop.
-            yf_symbols_for_metadata = set()
-            internal_to_yf_for_sector = {}
-            for internal_symbol in symbols_in_summary:
-                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith("Cash ("):
-                    continue
-                yf_ticker = map_to_yf_symbol(
-                    internal_symbol,
-                    effective_user_symbol_map,
-                    effective_user_excluded_symbols,
-                )
-                if yf_ticker:
-                    yf_symbols_for_metadata.add(yf_ticker)
-                    internal_to_yf_for_sector[internal_symbol] = yf_ticker
-            
-            # Single batch fetch — returns cached metadata including sector, industry, country, quoteType
-            batch_metadata = {}
-            if yf_symbols_for_metadata and MARKET_PROVIDER_AVAILABLE and market_provider:
-                try:
-                    batch_metadata = market_provider._ensure_metadata_batch(yf_symbols_for_metadata)
-                except Exception as e_batch_meta:
-                    logging.warning(f"Batch metadata pre-fetch failed: {e_batch_meta}")
-
-            for internal_symbol in symbols_in_summary:
-                symbol_overrides = manual_overrides_effective.get(
-                    internal_symbol.upper(), {}
-                )
-                manual_asset_type = symbol_overrides.get("asset_type", "").strip()
-                manual_sector = symbol_overrides.get("sector", "").strip()
-                manual_geography = symbol_overrides.get("geography", "").strip()
-                manual_industry = symbol_overrides.get("industry", "").strip()
-                manual_exchange = symbol_overrides.get("exchange", "").strip()
-
-                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
-                    "Cash ("
-                ):
-                    sector_map[internal_symbol] = "Cash"
-                    quote_type_map[internal_symbol] = "CASH"
-                    country_map[internal_symbol] = "Cash"
-                    industry_map[internal_symbol] = "Cash"
-                    exchange_map[internal_symbol] = "Cash" # Set Market for Cash
-                    
-                    if manual_exchange:
-                         exchange_map[internal_symbol] = manual_exchange
-                    continue
-
-                if internal_symbol == "SCBRM1":
-                     logging.info(f"DEBUG_OVERRIDE_SCBRM1: ManualExchange={manual_exchange}, AllOverrides={symbol_overrides}")
-
-                yf_ticker_for_sector = internal_to_yf_for_sector.get(internal_symbol)
-                sector_map[internal_symbol] = (
-                    manual_sector if manual_sector else "N/A (No YF/Manual)"
-                )
-                quote_type_map[internal_symbol] = (
-                    manual_asset_type if manual_asset_type else "N/A (No YF/Manual)"
-                )
-                country_map[internal_symbol] = (
-                    manual_geography if manual_geography else "N/A (No YF/Manual)"
-                )
-                industry_map[internal_symbol] = (
-                    manual_industry if manual_industry else "N/A (No YF/Manual)"
-                )
-                if manual_exchange:
-                    exchange_map[internal_symbol] = manual_exchange
-
-                if yf_ticker_for_sector and (
-                    not manual_sector
-                    or not manual_asset_type
-                    or not manual_geography
-                    or not manual_industry
-                ):
-                    # PERF FIX (BN-07): Use batch-prefetched metadata instead of per-symbol fetch.
-                    # Falls back to get_fundamental_data only if metadata is missing for this symbol.
-                    fundamental_info = batch_metadata.get(yf_ticker_for_sector)
-                    if not fundamental_info and MARKET_PROVIDER_AVAILABLE and market_provider:
-                        fundamental_info = market_provider.get_fundamental_data(
-                            yf_ticker_for_sector
-                        )
-                    if fundamental_info and isinstance(fundamental_info, dict):
-                        if not manual_sector:
-                            sector_map[internal_symbol] = fundamental_info.get(
-                                "sector", "Unknown Sector"
-                            )
-                        if not manual_asset_type:
-                            quote_type_map[internal_symbol] = fundamental_info.get(
-                                "quoteType", "UNKNOWN"
-                            )
-                        if not manual_geography:
-                            country_map[internal_symbol] = fundamental_info.get(
-                                "country", "Unknown Region"
-                            ) or "Unknown Region"
-                        if not manual_industry:
-                            industry_map[internal_symbol] = fundamental_info.get(
-                                "industry", "Unknown Industry"
-                            )
-                    else:  # Fetch failed for this symbol
-                        if not manual_sector:
-                            sector_map[internal_symbol] = "N/A (Fetch Error)"
-                        if not manual_asset_type:
-                            quote_type_map[internal_symbol] = "N/A (Fetch Error)"
-                        if not manual_geography:
-                            country_map[internal_symbol] = "Unknown Region"
-                        if not manual_industry:
-                            industry_map[internal_symbol] = "N/A (Fetch Error)"
-
-            summary_df_unfiltered_temp["Sector"] = (
-                summary_df_unfiltered_temp["Symbol"]
-                .map(sector_map)
-                .fillna("Unknown Sector")
-            )
-            summary_df_unfiltered_temp["quoteType"] = (
-                summary_df_unfiltered_temp["Symbol"]
-                .map(quote_type_map)
-                .fillna("UNKNOWN")
-            )
-            summary_df_unfiltered_temp["Country"] = (
-                summary_df_unfiltered_temp["Symbol"]
-                .map(country_map)
-                .fillna("Unknown Region")
-            )
-            summary_df_unfiltered_temp["Industry"] = (
-                summary_df_unfiltered_temp["Symbol"]
-                .map(industry_map)
-                .fillna("Unknown Industry")
-            )
-            # Apply Manual Exchange Overrides
-            existing_exchange = summary_df_unfiltered_temp["exchange"] if "exchange" in summary_df_unfiltered_temp.columns else pd.Series([None] * len(summary_df_unfiltered_temp), index=summary_df_unfiltered_temp.index)
-            summary_df_unfiltered_temp["exchange"] = (
-                summary_df_unfiltered_temp["Symbol"]
-                .map(exchange_map)
-                .combine_first(existing_exchange)
-            )
-            portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
-                orient="records"
-            )
+    portfolio_summary_rows = _enrich_summary_rows_with_sector_geo(
+        portfolio_summary_rows,
+        market_provider,
+        manual_overrides_effective,
+        effective_user_symbol_map,
+        effective_user_excluded_symbols,
+    )
 
     # --- 7. Create DataFrame & Calculate Aggregates ---
     summary_df_unfiltered = pd.DataFrame()
