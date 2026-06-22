@@ -2,6 +2,8 @@ import logging
 import requests
 from typing import List, Dict, Any
 
+import pandas as pd
+
 import config
 from server.dependencies import get_transaction_data, get_config_manager
 from market_data import get_shared_mdp
@@ -37,7 +39,8 @@ def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
         interest_free_thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
 
         mdp = get_shared_mdp()
-        
+
+        display_currency = "USD"
         (
             overall_metrics,
             summary_df,
@@ -51,7 +54,7 @@ def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
             original_transactions_df_for_ignored=df,
             ignored_indices_from_load=set(),
             ignored_reasons_from_load={},
-            display_currency="USD",
+            display_currency=display_currency,
             account_currency_map=account_currency_map,
             default_currency=config.DEFAULT_CURRENCY,
             market_provider=mdp,
@@ -62,20 +65,42 @@ def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
             user_excluded_symbols=user_excluded_symbols
         )
 
-        # Simplify holdings for AI readability
+        # Build the holdings list from summary_df, whose per-holding columns are
+        # already converted to the display currency. The raw holdings_dict only
+        # carries native/local fields — reading display keys off it returned
+        # None for every value, which forced the model to reconstruct figures
+        # from unconverted native prices (e.g. ranking a THB fund as the largest
+        # position). Sort by display-currency market value so the top-20 cap
+        # keeps the most material holdings rather than whatever cash rows sort first.
+        mv_col = f"Market Value ({display_currency})"
+        gain_col = f"Total Gain ({display_currency})"
+
+        def _num(v):
+            return None if v is None or pd.isna(v) else round(float(v), 2)
+
         holdings = []
-        for (sym, acc), data in holdings_dict.items():
-            if abs(data.get('qty', 0)) > 0.001:
+        if summary_df is not None and not summary_df.empty:
+            rows = summary_df
+            if "Symbol" in rows.columns:
+                rows = rows[rows["Symbol"] != "Total"]
+            if mv_col in rows.columns:
+                rows = rows.sort_values(mv_col, ascending=False, na_position="last")
+            for _, r in rows.iterrows():
+                qty = r.get("Quantity")
+                if pd.isna(qty) or abs(qty) <= 0.001:
+                    continue
                 holdings.append({
-                    "symbol": sym,
-                    "account": acc,
-                    "qty": data.get('qty'),
-                    "market_value": data.get('market_value_display'),
-                    "profit": data.get('total_gain_display'),
-                    "return_pct": data.get('total_return_pct')
+                    "symbol": r.get("Symbol"),
+                    "account": r.get("Account"),
+                    "qty": _num(qty),
+                    "market_value": _num(r.get(mv_col)),
+                    "currency": display_currency,
+                    "profit": _num(r.get(gain_col)),
+                    "return_pct": _num(r.get("Total Return %")),
                 })
 
         return {
+            "currency": display_currency,
             "overall_metrics": {
                 "total_value": overall_metrics.get("market_value"),
                 "total_gain": overall_metrics.get("total_gain"),
