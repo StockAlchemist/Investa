@@ -66,25 +66,87 @@ final class AIChatViewModel: ObservableObject {
 }
 
 /// Floating launcher button + presented chat panel, overlaid on the app shell.
+/// The bubble is draggable — press and drag to reposition it anywhere over the
+/// app, and the spot is remembered across launches. A plain tap opens the chat.
 struct AIChatLauncher: View {
     @StateObject private var vm = AIChatViewModel()
     @State private var showChat = false
 
+    /// Persisted bubble center, in container points. NaN until the user first
+    /// drags it, which is the signal to fall back to the bottom-trailing corner.
+    @AppStorage("investa.chatLauncher.x") private var savedX = Double.nan
+    @AppStorage("investa.chatLauncher.y") private var savedY = Double.nan
+    @State private var drag: CGSize = .zero
+
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    #endif
+
+    private let diameter: CGFloat = 56
+    private let margin: CGFloat = 20
+
     var body: some View {
-        Button { showChat = true } label: {
-            Image(systemName: "sparkles")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 56, height: 56)
-                .background(
-                    LinearGradient(colors: [Color(hex: 0x4f46e5), Color(hex: 0x9333ea)],
-                                   startPoint: .topTrailing, endPoint: .bottomLeading),
-                    in: Circle())
-                .shadow(color: Color(hex: 0x6366f1).opacity(0.4), radius: 12, y: 4)
+        GeometryReader { geo in
+            let resting = anchor(in: geo.size)
+            let live = clamped(CGPoint(x: resting.x + drag.width, y: resting.y + drag.height), in: geo.size)
+            bubble
+                .position(live)
+                .gesture(
+                    DragGesture(minimumDistance: 6)
+                        .onChanged { drag = $0.translation }
+                        .onEnded { value in
+                            let end = clamped(CGPoint(x: resting.x + value.translation.width,
+                                                      y: resting.y + value.translation.height),
+                                              in: geo.size)
+                            savedX = end.x
+                            savedY = end.y
+                            drag = .zero
+                        }
+                )
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Open Investa AI Chat")
         .sheet(isPresented: $showChat) { AIChatView(vm: vm) }
+    }
+
+    private var bubble: some View {
+        Image(systemName: "sparkles")
+            .font(.title2.weight(.semibold))
+            .foregroundStyle(.white)
+            .frame(width: diameter, height: diameter)
+            .background(
+                LinearGradient(colors: [Color(hex: 0x4f46e5), Color(hex: 0x9333ea)],
+                               startPoint: .topTrailing, endPoint: .bottomLeading),
+                in: Circle())
+            .shadow(color: Color(hex: 0x6366f1).opacity(0.4), radius: 12, y: 4)
+            .contentShape(Circle())
+            .onTapGesture { showChat = true }
+            .accessibilityLabel("Open Investa AI Chat")
+            .accessibilityHint("Drag to reposition")
+    }
+
+    /// The bubble's resting center: the saved spot once set, else the default
+    /// bottom-trailing corner.
+    private func anchor(in size: CGSize) -> CGPoint {
+        if savedX.isFinite, savedY.isFinite {
+            return clamped(CGPoint(x: savedX, y: savedY), in: size)
+        }
+        let r = diameter / 2
+        return CGPoint(x: size.width - margin - r, y: size.height - bottomInset - r)
+    }
+
+    /// Extra bottom clearance so the default corner clears the iPhone tab bar.
+    private var bottomInset: CGFloat {
+        #if os(iOS)
+        return hSize == .compact ? 70 : margin
+        #else
+        return margin
+        #endif
+    }
+
+    /// Keep the whole bubble on-screen with an 8pt edge gutter.
+    private func clamped(_ p: CGPoint, in size: CGSize) -> CGPoint {
+        let r = diameter / 2 + 8
+        return CGPoint(x: min(max(p.x, r), max(r, size.width - r)),
+                       y: min(max(p.y, r), max(r, size.height - r)))
     }
 }
 
@@ -118,7 +180,7 @@ struct AIChatView: View {
                 HStack(spacing: 5) {
                     Circle().fill(.green).frame(width: 6, height: 6)
                     Text(vm.messages.isEmpty ? "ONLINE" : "MEMORY ACTIVE")
-                        .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                        .font(.system(size: 10, weight: .bold)).tracking(0.8)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -176,7 +238,7 @@ struct AIChatView: View {
                         isUser ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.background.secondary),
                         in: RoundedRectangle(cornerRadius: 14))
                 Text(isUser ? "You" : "Investa AI")
-                    .font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
             }
             if !isUser { Spacer(minLength: 40) }
         }

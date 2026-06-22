@@ -310,7 +310,7 @@ struct TodayStripCard: View {
                 ForEach(rows, id: \.symbol) { r in
                     Button { onSelectSymbol(r.symbol) } label: {
                         HStack(spacing: 6) {
-                            StockIcon(symbol: r.symbol, size: 14)
+                            StockIcon(symbol: r.symbol, size: 16)
                             Text(r.symbol).fontWeight(.bold).lineLimit(1)
                             Spacer(minLength: 6)
                             Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))")
@@ -383,7 +383,7 @@ struct UpcomingEventsCard: View {
     private var confirmedButton: some View {
         Button { showConfirmed = true } label: {
             Text("Confirmed (\(confirmedCount)) →")
-                .font(.system(size: 10, weight: .semibold)).textCase(.uppercase).tracking(0.5)
+                .font(.system(size: 11, weight: .semibold)).textCase(.uppercase).tracking(0.5)
                 .foregroundStyle(confirmedCount == 0 ? Color.secondary : Theme.brand)
         }
         .buttonStyle(.plain).disabled(confirmedCount == 0)
@@ -444,7 +444,7 @@ struct ActionableInsightsCard: View {
         let hasAny = !summaries.isEmpty
         return Card(title: "Actionable Insights", icon: "lightbulb",
                     accessory: AnyView(Text("\(summaries.count) item\(summaries.count == 1 ? "" : "s")")
-                        .font(.system(size: 10, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary))) {
+                        .font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary))) {
             if !hasAny {
                 VStack(spacing: 4) {
                     Image(systemName: "sparkles").font(.title3).foregroundStyle(.tertiary)
@@ -664,9 +664,9 @@ private struct SingleDonut: View {
             ForEach(labeled, id: \.slice.id) { item in
                 let theta = item.mid * 2 * .pi
                 HStack(spacing: 3) {
-                    StockIcon(symbol: item.slice.name, size: 16)
+                    StockIcon(symbol: item.slice.name, size: 18)
                     Text(item.slice.name)
-                        .font(.system(size: 9, weight: .bold)).foregroundStyle(.primary).lineLimit(1)
+                        .font(.system(size: 10, weight: .bold)).foregroundStyle(.primary).lineLimit(1)
                 }
                 .padding(.horizontal, 4).padding(.vertical, 2)
                 .background(.background, in: Capsule())
@@ -684,27 +684,27 @@ private struct SingleDonut: View {
             let holeWidth = min(geo.size.width, geo.size.height) * 0.30
             VStack(spacing: 2) {
                 if let a = active {
-                    StockIcon(symbol: a.name, size: 24)
-                    Text(a.name).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
-                    Text(value(of: a)).font(.system(size: 16, weight: .bold)).foregroundStyle(tint(of: a))
+                    StockIcon(symbol: a.name, size: 27)
+                    Text(a.name).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(value(of: a)).font(.system(size: 18, weight: .bold)).foregroundStyle(tint(of: a))
                         .lineLimit(1).minimumScaleFactor(0.4)
-                    Text(subtitle(of: a)).font(.system(size: 12, weight: .bold)).foregroundStyle(subtitleTint(of: a))
+                    Text(subtitle(of: a)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: a))
                         .lineLimit(1).minimumScaleFactor(0.4)
                 } else {
                     Menu {
                         ForEach(CompositionMetric.allCases) { m in Button(m.label) { metric = m } }
                     } label: {
                         HStack(spacing: 3) {
-                            Text(metric.label).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                            Image(systemName: "chevron.down").font(.system(size: 8)).foregroundStyle(.secondary)
+                            Text(metric.label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                            Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(.background.tertiary, in: Capsule())
                         .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
                     }.borderlessMenu().fixedSize()
-                    Text(value(of: nil)).font(.system(size: 16, weight: .bold)).foregroundStyle(tint(of: nil))
+                    Text(value(of: nil)).font(.system(size: 18, weight: .bold)).foregroundStyle(tint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.4)
-                    Text(subtitle(of: nil)).font(.system(size: 12, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
+                    Text(subtitle(of: nil)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.4)
                 }
             }
@@ -820,7 +820,7 @@ struct RiskMetricsCard: View {
 
     private func cell(_ t: String, _ v: String, _ tint: Color) -> some View {
         VStack(spacing: 4) {
-            Text(t).font(.system(size: 9, weight: .bold)).textCase(.uppercase).tracking(0.5)
+            Text(t).font(.system(size: 10, weight: .bold)).textCase(.uppercase).tracking(0.5)
                 .foregroundStyle(.secondary).lineLimit(1)
             Text(v).font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(tint)
                 .lineLimit(1).minimumScaleFactor(0.6)
@@ -904,7 +904,7 @@ struct TopContributorsCard: View {
                 }
                 Divider().padding(.top, 4)
                 Button { showAll = true } label: {
-                    Text("View All Contributors").font(.system(size: 10, weight: .bold)).textCase(.uppercase).tracking(1.5)
+                    Text("View All Contributors").font(.system(size: 11, weight: .bold)).textCase(.uppercase).tracking(1.5)
                         .frame(maxWidth: .infinity).padding(.vertical, 6).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
             }
@@ -935,7 +935,7 @@ private struct ContributorRow: View {
                     HStack(spacing: 4) {
                         Text(stock.symbol).font((large ? Font.body : Font.callout).weight(.bold)).lineLimit(1)
                         if stock.value > 0 {
-                            Text("HELD").font(.system(size: 8, weight: .bold))
+                            Text("HELD").font(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 4).padding(.vertical, 1)
                                 .background(Color.up.opacity(0.12), in: Capsule()).foregroundStyle(Color.up)
                         }
@@ -946,11 +946,11 @@ private struct ContributorRow: View {
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 1) {
                     HStack(spacing: 3) {
-                        Image(systemName: stock.gain >= 0 ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9))
+                        Image(systemName: stock.gain >= 0 ? "arrow.up.right" : "arrow.down.right").font(.system(size: 10))
                         Text("\(attrCurrency(stock.gain, currency)) (\(attrPct(stock.contribution)))")
                             .font((large ? Font.callout : Font.caption).weight(.bold)).monospacedDigit()
                     }.foregroundStyle(tone)
-                    Text(stock.sector).font(.system(size: 9)).foregroundStyle(Color(hex: 0x06b6d4)).textCase(.uppercase).lineLimit(1)
+                    Text(stock.sector).font(.system(size: 10)).foregroundStyle(Color(hex: 0x06b6d4)).textCase(.uppercase).lineLimit(1)
                 }
             }
             .padding(.vertical, large ? 8 : 4).padding(.horizontal, large ? 12 : 4)

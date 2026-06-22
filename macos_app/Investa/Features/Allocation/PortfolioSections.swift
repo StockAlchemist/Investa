@@ -377,7 +377,7 @@ struct PortfolioTreemapView: View {
                 }
                 .frame(height: 320)
                 Text("\(items.count) holdings · \(Fmt.compact(total, code: currency)) · click a tile for detail")
-                    .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                    .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
             }
         }
     }
@@ -404,9 +404,9 @@ struct PortfolioTreemapView: View {
                 RoundedRectangle(cornerRadius: 3).fill(leaf.color)
                 if showLabel {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(leaf.symbol).font(.system(size: 11, weight: .bold)).foregroundStyle(.white).lineLimit(1)
+                        Text(leaf.symbol).font(.system(size: 13, weight: .bold)).foregroundStyle(.white).lineLimit(1)
                         if showPct {
-                            Text(String(format: "%.1f%%", leaf.pct)).font(.system(size: 10))
+                            Text(String(format: "%.1f%%", leaf.pct)).font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.8)).monospacedDigit()
                         }
                     }
@@ -511,8 +511,8 @@ struct AllocationDonutChart: View {
 
     private var clickHint: some View {
         HStack(spacing: 3) {
-            Image(systemName: "cursorarrow.click").font(.system(size: 9))
-            Text("Click slice").font(.system(size: 10))
+            Image(systemName: "cursorarrow.click").font(.system(size: 10))
+            Text("Click slice").font(.system(size: 11))
         }.foregroundStyle(.secondary)
     }
 
@@ -604,19 +604,19 @@ struct AllocationDonutChart: View {
         return VStack(alignment: .leading, spacing: 8) {
             Divider().padding(.top, 4)
             HStack(spacing: 6) {
-                Text("Holdings in").font(.system(size: 10, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
+                Text("Holdings in").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
                 Text(slice.name).font(.caption.bold()).lineLimit(1)
-                Text("· \(rows.count) \(rows.count == 1 ? "stock" : "stocks")").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("· \(rows.count) \(rows.count == 1 ? "stock" : "stocks")").font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button("Close") { selectedBucket = nil }
-                    .font(.system(size: 10, weight: .semibold)).textCase(.uppercase).buttonStyle(.plain).foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .semibold)).textCase(.uppercase).buttonStyle(.plain).foregroundStyle(.secondary)
             }
             if rows.isEmpty {
                 Text("No matching holdings.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(rows.prefix(12)) { drillRowView($0) }
                 if rows.count > 12 {
-                    Text("+ \(rows.count - 12) more").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("+ \(rows.count - 12) more").font(.system(size: 11)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -628,7 +628,7 @@ struct AllocationDonutChart: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(r.symbol).font(.caption.bold()).lineLimit(1)
-                    if !r.name.isEmpty { Text(r.name).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1) }
+                    if !r.name.isEmpty { Text(r.name).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -640,7 +640,7 @@ struct AllocationDonutChart: View {
             VStack(alignment: .trailing, spacing: 1) {
                 Text(String(format: "%.1f%%", r.pctOfBucket)).font(.caption.bold()).monospacedDigit()
                 Text("\(String(format: "%.1f%%", r.pctOfPortfolio)) of total")
-                    .font(.system(size: 9)).foregroundStyle(.secondary).monospacedDigit()
+                    .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
             }
         }
     }

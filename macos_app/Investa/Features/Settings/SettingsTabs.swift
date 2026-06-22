@@ -170,7 +170,7 @@ struct AccountsSettings: View {
                             if isClosed {
                                 Text(acc).font(.headline).strikethrough().foregroundStyle(.secondary)
                                 Text("CLOSED")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.system(size: 11, weight: .bold))
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(Color.secondary.opacity(0.2))
                                     .cornerRadius(4)

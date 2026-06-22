@@ -155,7 +155,7 @@ struct ProjectionCardView: View {
                     Text("Range (10–90%)").frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .font(.system(size: 10, weight: .bold)).textCase(.uppercase).tracking(0.5)
+            .font(.system(size: 11, weight: .bold)).textCase(.uppercase).tracking(0.5)
             .foregroundStyle(.secondary)
             .padding(.bottom, 6)
 

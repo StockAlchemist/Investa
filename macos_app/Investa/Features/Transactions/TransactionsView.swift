@@ -356,7 +356,7 @@ struct TransactionsView: View {
                                         .fontWeight(.bold).textCase(.uppercase)
                                     if isDuplicate {
                                         Label("Duplicate", systemImage: "exclamationmark.triangle.fill")
-                                            .font(.system(size: 9, weight: .bold))
+                                            .font(.system(size: 10, weight: .bold))
                                             .foregroundStyle(.orange)
                                             .padding(.horizontal, 5).padding(.vertical, 2)
                                             .background(.orange.opacity(0.15), in: Capsule())
@@ -430,7 +430,7 @@ struct TransactionsView: View {
                                         .fontWeight(.medium).textCase(.uppercase)
                                     if isDuplicate {
                                         Image(systemName: "exclamationmark.triangle.fill")
-                                            .font(.system(size: 9))
+                                            .font(.system(size: 10))
                                             .foregroundStyle(.orange)
                                             .help("This transaction already exists in your table")
                                     }
@@ -715,7 +715,7 @@ struct TransactionsView: View {
                         .lineLimit(1)
                     if !tx.symbol.isEmpty {
                         Text(tx.type.uppercased())
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .lineLimit(1)
                             .padding(.horizontal, 6).padding(.vertical, 3)
                             .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
@@ -760,7 +760,7 @@ struct TransactionsView: View {
                         Button(role: .destructive) { pendingDelete = tx } label: { Label("Delete", systemImage: "trash") }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 18))
                             .foregroundStyle(.tertiary)
                     }
                 }

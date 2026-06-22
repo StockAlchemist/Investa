@@ -273,7 +273,7 @@ struct InsightsDetailSheet: View {
                     Text("Unrealized").frame(width: 90, alignment: .trailing)
                     Text("Days Left").frame(width: 70, alignment: .trailing)
                 }
-                .font(.system(size: 10, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
                 ForEach(details.ripening) { lot in
                     HStack {
@@ -307,7 +307,7 @@ struct InsightsDetailSheet: View {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(d.bucket).font(.callout.bold())
-                            Text(d.dim).font(.system(size: 10, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
+                            Text(d.dim).font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text("\(overweight ? "+" : "")\(String(format: "%.1f", d.drift))%")
@@ -342,7 +342,7 @@ struct InsightsDetailSheet: View {
                     Text("Position").frame(width: 100, alignment: .trailing)
                     Text("Margin of Safety").frame(width: 120, alignment: .trailing)
                 }
-                .font(.system(size: 10, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
                 ForEach(details.undervalued) { u in
                     HStack {
@@ -454,12 +454,12 @@ struct HealthAnalysisSheet: View {
                             weightCell("40%", "Efficiency", .up)
                             weightCell("20%", "Stability", Theme.brand)
                         }
-                        Text("Score Legend").font(.system(size: 10, weight: .bold)).textCase(.uppercase)
+                        Text("Score Legend").font(.system(size: 11, weight: .bold)).textCase(.uppercase)
                             .foregroundStyle(.secondary).tracking(1).padding(.top, 4)
                         HStack(spacing: 14) {
                             legendDot(.red, "0-39 Critical"); legendDot(.yellow, "40-59 Fair")
                             legendDot(.up, "60-79 Good"); legendDot(Theme.brand, "80-100 Excellent")
-                        }.font(.system(size: 10))
+                        }.font(.system(size: 11))
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
@@ -487,7 +487,7 @@ struct HealthAnalysisSheet: View {
     private func weightCell(_ pct: String, _ label: String, _ tint: Color) -> some View {
         VStack(spacing: 3) {
             Text(pct).font(.callout.bold()).foregroundStyle(tint)
-            Text(label).font(.system(size: 10)).textCase(.uppercase).foregroundStyle(.secondary)
+            Text(label).font(.system(size: 11)).textCase(.uppercase).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 8)
         .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
@@ -515,7 +515,7 @@ struct HealthAnalysisSheet: View {
                 + Text("\(Int(comp.score))").fontWeight(.bold) + Text("/100").foregroundStyle(.secondary))
                 .font(.caption)
             Text(desc).font(.caption).foregroundStyle(.secondary)
-            Text(range).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(range).font(.system(size: 11)).foregroundStyle(.secondary)
                 .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
         }
@@ -576,7 +576,7 @@ struct MetricExplanationSheet: View {
                         block("Interpretation", e.interpretation)
                         if let formula = e.formula {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Approx. Formula").font(.system(size: 10, weight: .bold)).textCase(.uppercase)
+                                Text("Approx. Formula").font(.system(size: 11, weight: .bold)).textCase(.uppercase)
                                     .foregroundStyle(.secondary).tracking(1)
                                 Text(formula).font(.callout.monospaced()).foregroundStyle(Theme.brand)
                                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
@@ -597,7 +597,7 @@ struct MetricExplanationSheet: View {
 
     private func block(_ heading: String, _ body: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(heading).font(.system(size: 10, weight: .bold)).textCase(.uppercase)
+            Text(heading).font(.system(size: 11, weight: .bold)).textCase(.uppercase)
                 .foregroundStyle(.secondary).tracking(1)
             Text(body).font(.callout).foregroundStyle(.primary.opacity(0.9))
         }

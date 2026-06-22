@@ -57,10 +57,10 @@ struct MainView: View {
 
     var body: some View {
         shell
-            .overlay(alignment: .bottomTrailing) {
+            .overlay {
+                // Draggable floating bubble; it manages its own position and
+                // edge clearance, so no alignment/padding is needed here.
                 AIChatLauncher()
-                    .padding(.trailing, 20)
-                    .padding(.bottom, chatLauncherBottomPadding)
             }
             .preferredColorScheme(appearanceSet ? (forceDark ? .dark : .light) : nil)
             .sheet(isPresented: $showingSettings) {
@@ -79,15 +79,6 @@ struct MainView: View {
             .onChange(of: scenePhase, initial: true) { _, phase in
                 appState.setAutoRefresh(phase == .active)
             }
-    }
-
-    /// Keep the floating AI launcher clear of the iPhone tab bar.
-    private var chatLauncherBottomPadding: CGFloat {
-        #if os(iOS)
-        return hSize == .compact ? 70 : 24
-        #else
-        return 24
-        #endif
     }
 
     @ViewBuilder private var shell: some View {
@@ -343,7 +334,7 @@ struct IndexStrip: View {
                         Text("(")
                             .font(.caption.monospacedDigit())
                         Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 9))
                         Text(String(format: "%.2f%%)", abs(index.changesPercentage ?? 0)))
                             .font(.caption.monospacedDigit())
                     }
@@ -372,7 +363,7 @@ struct IndexStrip: View {
                     
                     HStack(spacing: 0) {
                         Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 9))
                         Text(String(format: "%.2f%%", abs(index.changesPercentage ?? 0)))
                             .font(.caption.monospacedDigit())
                     }

@@ -157,7 +157,7 @@ struct StockSearchBar: View {
     @ViewBuilder private func typeBadge(_ type: String) -> some View {
         if !type.isEmpty {
             Text(typeLabel(type))
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 10, weight: .bold))
                 .textCase(.uppercase)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(typeColor(type).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))

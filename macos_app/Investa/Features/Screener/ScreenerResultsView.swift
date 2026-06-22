@@ -198,7 +198,7 @@ struct ScreenerResultsView: View {
         } label: {
             HStack(spacing: 2) {
                 Text(label).font(.caption2.weight(.semibold))
-                if sortKey == key { Image(systemName: sortAsc ? "chevron.up" : "chevron.down").font(.system(size: 8)) }
+                if sortKey == key { Image(systemName: sortAsc ? "chevron.up" : "chevron.down").font(.system(size: 9)) }
             }
             .foregroundStyle(sortKey == key ? Color.accentColor : .secondary)
         }
@@ -281,7 +281,7 @@ struct ScreenerResultsView: View {
         if let mos {
             let tone: Color = mos > 15 ? .green : (mos > 0 ? .cyan : .red)
             HStack(spacing: 2) {
-                Image(systemName: mos > 0 ? "arrow.up.right" : "arrow.down.right").font(.system(size: 9))
+                Image(systemName: mos > 0 ? "arrow.up.right" : "arrow.down.right").font(.system(size: 10))
                 Text(String(format: "%.1f%%", mos)).monospacedDigit()
             }.foregroundStyle(tone).fontWeight(.bold)
         } else { Text("N/A").foregroundStyle(.secondary.opacity(0.5)).font(.caption) }

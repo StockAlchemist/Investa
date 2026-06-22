@@ -238,8 +238,8 @@ private struct IndexCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(index.name ?? "Index").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase).tracking(1).lineLimit(1)
-                        Text(priceText).font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        Text(index.name ?? "Index").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase).tracking(1).lineLimit(1)
+                        Text(priceText).font(.system(size: 32, weight: .bold)).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.4)
                     }
                     Spacer(minLength: 6)
@@ -266,7 +266,7 @@ private struct IndexCard: View {
             } else {
                 Spacer().frame(height: 16)
             }
-            Text("7D Trend").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
+            Text("7D Trend").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
                 .padding(.horizontal, 16).padding(.bottom, 10).padding(.top, 6)
         }
         .background(.background.secondary)

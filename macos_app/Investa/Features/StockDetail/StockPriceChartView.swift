@@ -336,10 +336,10 @@ struct StockPriceChartView: View {
 
     private var customDateRow: some View {
         HStack(spacing: 8) {
-            Text("FROM").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            Text("FROM").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customFrom, in: ...customTo, displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
-            Text("TO").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            Text("TO").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customTo, in: customFrom...Date(), displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
             Spacer()
@@ -404,7 +404,7 @@ struct StockPriceChartView: View {
 
     private var overlayRow: some View {
         HStack(spacing: 8) {
-            Text("OVERLAYS").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            Text("OVERLAYS").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             // Scrolls so the pills keep their natural width instead of being
             // squeezed (which wrapped "Dividends"/"Earnings" onto two lines).
             ScrollView(.horizontal, showsIndicators: false) {
@@ -420,7 +420,7 @@ struct StockPriceChartView: View {
 
     private var benchmarkRow: some View {
         HStack(spacing: 8) {
-            Text("BENCHMARKS").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            Text("BENCHMARKS").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(benchmarks, id: \.key) { b in
@@ -436,7 +436,7 @@ struct StockPriceChartView: View {
 
     private func toggleChip(_ label: String, _ on: Bool, _ color: Color, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label).font(.system(size: 10, weight: .bold))
+            Text(label).font(.system(size: 11, weight: .bold))
                 .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(on ? color : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
@@ -447,7 +447,7 @@ struct StockPriceChartView: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Circle().fill(on ? .white : color).frame(width: 7, height: 7)
-                Text(label).font(.system(size: 10, weight: .bold))
+                Text(label).font(.system(size: 11, weight: .bold))
                     .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 9).padding(.vertical, 4)
@@ -537,14 +537,14 @@ struct StockPriceChartView: View {
                         .foregroundStyle(Color(hex: 0x64748b)).lineStyle(.init(lineWidth: 1.5, dash: [5, 5]))
                         .annotation(position: .top, alignment: .trailing) {
                             Text("AVG COST: \(Fmt.currency(a, code: currency))")
-                                .font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hex: 0x64748b))
+                                .font(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: 0x64748b))
                         }
                 }
                 ForEach(eventMarks) { m in
                     PointMark(x: .value("Date", m.date), y: .value("y", m.y))
                         .symbolSize(150).foregroundStyle(m.kind.color)
                         .annotation(position: .overlay) {
-                            Text(m.kind.letter).font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                            Text(m.kind.letter).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
                         }
                 }
             } else {

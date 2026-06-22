@@ -49,10 +49,10 @@ struct GlobalControlBar<Trailing: View>: View {
         if let open = appState.marketIsOpen {
             HStack(spacing: 5) {
                 Image(systemName: "circle.fill")
-                    .font(.system(size: 6))
+                    .font(.system(size: 7))
                     .symbolEffect(.pulse, options: .repeating, isActive: open)
                 Text(open ? "LIVE" : "CLOSED")
-                    .font(.system(size: 10, weight: .bold)).tracking(0.5)
+                    .font(.system(size: 11, weight: .bold)).tracking(0.5)
             }
             .foregroundStyle(open ? Color.green : .secondary)
             .padding(.horizontal, 8).padding(.vertical, 3)
@@ -64,7 +64,7 @@ struct GlobalControlBar<Trailing: View>: View {
     @ViewBuilder private var lastUpdatedLabel: some View {
         if let ts = appState.lastUpdated {
             Text(ts.formatted(date: .omitted, time: .shortened))
-                .font(.system(size: 10, weight: .medium)).monospacedDigit()
+                .font(.system(size: 11, weight: .medium)).monospacedDigit()
                 .foregroundStyle(.secondary)
         }
     }
@@ -76,12 +76,12 @@ struct GlobalControlBar<Trailing: View>: View {
         if let open = appState.marketIsOpen {
             HStack(spacing: 4) {
                 Image(systemName: "circle.fill")
-                    .font(.system(size: 6))
+                    .font(.system(size: 7))
                     .symbolEffect(.pulse, options: .repeating, isActive: open)
                     .foregroundStyle(open ? Color.green : .secondary)
                 if let ts = appState.lastUpdated {
                     Text(ts.formatted(date: .omitted, time: .shortened))
-                        .font(.system(size: 10, weight: .medium)).monospacedDigit()
+                        .font(.system(size: 11, weight: .medium)).monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
             }
@@ -331,7 +331,7 @@ struct GlobalControlBar<Trailing: View>: View {
                 HStack(spacing: 4) {
                     Text(appState.displayCurrency)
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 14))
+                        .font(.system(size: 16))
                 }
             }
             .borderlessMenu().fixedSize()
@@ -416,7 +416,7 @@ private struct AccountMenuRow: View {
                     Text("Closed").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                 }
             }
-            .font(.system(size: 13))
+            .font(.system(size: 15))
             .padding(.horizontal, 12).padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())

@@ -19,6 +19,11 @@ struct RootView: View {
                     .environmentObject(appState)
             }
         }
+        // App-wide typography bump: the UI is caption-heavy and runs small, and
+        // there's room to spare, so lift every semantic font one Dynamic Type
+        // step (≈ +13%). Fixed `.system(size:)` accents are scaled to match in
+        // their call sites so badges keep pace with the body text.
+        .dynamicTypeSize(.xLarge)
         .task {
             await auth.restoreSession()
         }

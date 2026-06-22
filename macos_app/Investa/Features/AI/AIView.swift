@@ -86,7 +86,7 @@ struct AIView: View {
             }
             if let o = overall {
                 HStack(spacing: 8) {
-                    Text(o.grade).font(.system(size: 30, weight: .black)).foregroundStyle(tone(o.avg))
+                    Text(o.grade).font(.system(size: 34, weight: .black)).foregroundStyle(tone(o.avg))
                     VStack(alignment: .leading) {
                         Text("Overall").font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
                         Text("\(String(format: "%.1f", o.avg))/10").font(.caption.bold()).foregroundStyle(tone(o.avg))
@@ -118,7 +118,7 @@ struct AIView: View {
             Spacer()
             if let o = overall {
                 HStack(spacing: 8) {
-                    Text(o.grade).font(.system(size: 30, weight: .black)).foregroundStyle(tone(o.avg))
+                    Text(o.grade).font(.system(size: 34, weight: .black)).foregroundStyle(tone(o.avg))
                     VStack(alignment: .leading) {
                         Text("Overall").font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
                         Text("\(String(format: "%.1f", o.avg))/10").font(.caption.bold()).foregroundStyle(tone(o.avg))

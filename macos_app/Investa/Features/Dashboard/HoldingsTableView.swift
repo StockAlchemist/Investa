@@ -345,7 +345,7 @@ struct HoldingsTableView: View {
             Text("Holdings").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase).foregroundStyle(.secondary)
             #endif
             Text(groupBy != nil ? "\(baseRows.count) items · \(groups.count) groups" : "\(baseRows.count)")
-                .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 2)
                 .background(.background.tertiary, in: Capsule())
             Spacer()
@@ -413,7 +413,7 @@ struct HoldingsTableView: View {
             HStack(spacing: 5) {
                 Image(systemName: "slider.horizontal.3").font(.caption)
                 Text("Columns").font(.subheadline.weight(.medium))
-                Text("\(visibleColumns.count)").font(.system(size: 10, weight: .bold))
+                Text("\(visibleColumns.count)").font(.system(size: 11, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.brand.opacity(0.15), in: Capsule()).foregroundStyle(Theme.brand)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -437,7 +437,7 @@ struct HoldingsTableView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(columnPickerGroups, id: \.label) { group in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(group.label).font(.system(size: 9, weight: .bold)).tracking(1.5).textCase(.uppercase).foregroundStyle(.secondary)
+                            Text(group.label).font(.system(size: 10, weight: .bold)).tracking(1.5).textCase(.uppercase).foregroundStyle(.secondary)
                             LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 3) {
                                 ForEach(group.cols, id: \.self) { col in
                                     let on = visibleColumns.contains(col)
@@ -580,7 +580,7 @@ struct HoldingsTableView: View {
     }
 
     @ViewBuilder private func sortArrow(_ h: String) -> some View {
-        if sortKey == h { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.brand) }
+        if sortKey == h { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.brand) }
     }
 
     // MARK: Bodies
@@ -705,7 +705,7 @@ struct HoldingsTableView: View {
     private func iosHoldingRow(_ r: HRow) -> some View {
         VStack(spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                StockIcon(symbol: r.symbol, size: 40)
+                StockIcon(symbol: r.symbol, size: 45)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(r.symbol).font(.headline.weight(.bold))
                     Text("\(Fmt.number(r.num["Quantity"])) shs")
@@ -735,7 +735,7 @@ struct HoldingsTableView: View {
                     
                     if let dayChgPct = r.num["Day Chg %"] {
                         Text(pctString(dayChgPct))
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .padding(.horizontal, 4).padding(.vertical, 2)
                             .background(heatmapColor(dayChgPct).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                             .foregroundStyle(heatmapColor(dayChgPct))
@@ -775,7 +775,7 @@ struct HoldingsTableView: View {
             LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 10) {
                 ForEach(extras, id: \.self) { h in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(shortColumnName(h)).font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase).lineLimit(1)
+                        Text(shortColumnName(h)).font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase).lineLimit(1)
                         iosExtraCell(h, r)
                     }
                 }
@@ -863,14 +863,14 @@ struct HoldingsTableView: View {
                     if !r.lots.isEmpty {
                         Button { toggleLot(r.symbol) } label: {
                             Image(systemName: expandedLots.contains(r.symbol) ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 9)).foregroundStyle(expandedLots.contains(r.symbol) ? Theme.brand : .secondary)
+                                .font(.system(size: 10)).foregroundStyle(expandedLots.contains(r.symbol) ? Theme.brand : .secondary)
                         }.buttonStyle(.plain)
                     }
                 }
                 if !r.lots.isEmpty {
                     HStack(spacing: 2) {
-                        Image(systemName: "square.stack.3d.up").font(.system(size: 8))
-                        Text("\(r.lots.count) Lots").font(.system(size: 9))
+                        Image(systemName: "square.stack.3d.up").font(.system(size: 9))
+                        Text("\(r.lots.count) Lots").font(.system(size: 10))
                     }.foregroundStyle(.secondary)
                 }
             }
@@ -888,7 +888,7 @@ struct HoldingsTableView: View {
             .chartYScale(domain: chartDomain(r.sparkline)).chartXAxis(.hidden).chartYAxis(.hidden)
             .frame(height: 28).clipped()
         } else {
-            Text("no data").font(.system(size: 9)).foregroundStyle(.tertiary)
+            Text("no data").font(.system(size: 10)).foregroundStyle(.tertiary)
         }
     }
 
@@ -908,7 +908,7 @@ struct HoldingsTableView: View {
 
     @ViewBuilder private func aiScoreCell(_ v: Double?) -> some View {
         if let v, v > 0 {
-            Text(String(format: "%.1f", v)).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+            Text(String(format: "%.1f", v)).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(v >= 8 ? Color.up : (v >= 6 ? .orange : Color.down), in: RoundedRectangle(cornerRadius: 4))
         } else { Text("—").foregroundStyle(.tertiary) }
@@ -927,7 +927,7 @@ struct HoldingsTableView: View {
             VStack(alignment: align, spacing: 3) {
                 HStack(spacing: 4) {
                     Text(Fmt.currency(iv, code: currency)).foregroundStyle(tone)
-                    if let m = r.mos { Text("(\(String(format: "%.1f", abs(m)))%)").font(.system(size: 9)).foregroundStyle(.secondary) }
+                    if let m = r.mos { Text("(\(String(format: "%.1f", abs(m)))%)").font(.system(size: 10)).foregroundStyle(.secondary) }
                 }
                 .monospacedDigit()
                 .lineLimit(1)
@@ -960,7 +960,7 @@ struct HoldingsTableView: View {
         } label: {
             HStack(spacing: 4) {
                 tagsCell(r.tags)
-                Image(systemName: "pencil").font(.system(size: 8)).foregroundStyle(.tertiary)
+                Image(systemName: "pencil").font(.system(size: 9)).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -973,7 +973,7 @@ struct HoldingsTableView: View {
         else {
             HStack(spacing: 3) {
                 ForEach(tags.prefix(3), id: \.self) { t in
-                    Text(t.uppercased()).font(.system(size: 9, weight: .bold)).tracking(0.5)
+                    Text(t.uppercased()).font(.system(size: 10, weight: .bold)).tracking(0.5)
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(badgeColor(t).opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
                         .foregroundStyle(badgeColor(t))
@@ -992,7 +992,7 @@ struct HoldingsTableView: View {
                 Group {
                     if h == "Symbol" {
                         HStack(spacing: 3) {
-                            Text("↳").font(.system(size: 9)).foregroundStyle(.tertiary)
+                            Text("↳").font(.system(size: 10)).foregroundStyle(.tertiary)
                             Text("Lot: \(lot["Date"]?.stringValue?.prefix(10) ?? "")").italic().lineLimit(1).fixedSize()
                         }
                     } else {

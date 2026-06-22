@@ -286,7 +286,7 @@ struct WatchlistView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Button { detail = SymbolID(id: item.symbol) } label: {
-                    HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 24); Text(item.symbol).font(.headline).fontWeight(.bold) }
+                    HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 27); Text(item.symbol).font(.headline).fontWeight(.bold) }
                 }.buttonStyle(.plain)
                 Spacer()
                 Text(item.price.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").font(.headline).monospacedDigit()
@@ -355,7 +355,7 @@ struct WatchlistView: View {
         Button { if sortKey == key { sortAsc.toggle() } else { sortKey = key; sortAsc = true } } label: {
             HStack(spacing: 2) {
                 Text(label).font(.caption2.weight(.semibold))
-                if sortKey == key { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").font(.system(size: 8)) }
+                if sortKey == key { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").font(.system(size: 9)) }
             }.foregroundStyle(sortKey == key ? Color.accentColor : .secondary)
         }
         .buttonStyle(.plain)
@@ -365,7 +365,7 @@ struct WatchlistView: View {
     private func rowView(_ item: WatchlistItem) -> some View {
         GridRow {
             Button { detail = SymbolID(id: item.symbol) } label: {
-                HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 16); Text(item.symbol).fontWeight(.bold) }
+                HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 18); Text(item.symbol).fontWeight(.bold) }
             }
             .buttonStyle(.plain).gridColumnAlignment(.leading)
             Text(item.name ?? "-").foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 160, alignment: .leading).gridColumnAlignment(.leading)
