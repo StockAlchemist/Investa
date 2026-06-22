@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from dataclasses import dataclass, field
 from typing import Iterator, Optional, Tuple, Set, Dict, Any
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from server.auth import User, decode_access_token
 from db_utils import get_db_connection
@@ -23,7 +23,9 @@ import config  # noqa: E402
 
 
 # --- Auth Dependency ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# auto_error=False so a missing Authorization header doesn't 401 outright — we
+# fall back to the httpOnly auth cookie (web app) before deciding.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 def get_global_db_connection() -> Iterator[sqlite3.Connection]:
     """Dependency for Global DB Connection (Auth)."""
@@ -38,7 +40,8 @@ def get_global_db_connection() -> Iterator[sqlite3.Connection]:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
     conn: sqlite3.Connection = Depends(get_global_db_connection)
 ) -> User:
     credentials_exception = HTTPException(
@@ -46,7 +49,11 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    token_data = decode_access_token(token)
+    # The Authorization: Bearer header (native apps) takes precedence; fall back
+    # to the httpOnly cookie set for the web app at login.
+    if not token:
+        token = request.cookies.get(config.AUTH_COOKIE_NAME)
+    token_data = decode_access_token(token) if token else None
     if token_data is None:
         raise credentials_exception
 

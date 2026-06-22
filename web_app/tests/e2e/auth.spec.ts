@@ -15,6 +15,9 @@ const FAKE_USER = {
 };
 
 async function mockApi(page: Page) {
+    // Auth now lives in an httpOnly cookie, so the mock is stateful: /auth/me is
+    // 401 (logged out) until /auth/login succeeds, mirroring the real cookie.
+    let loggedIn = false;
     // Catch-all FIRST (Playwright matches the most recently registered route
     // first, so specific mocks below take precedence).
     await page.route('**/api/**', async (route) => {
@@ -25,8 +28,16 @@ async function mockApi(page: Page) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     });
     await page.route('**/api/auth/me', (route) =>
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAKE_USER) }),
+        loggedIn
+            ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAKE_USER) })
+            : route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Could not validate credentials' }) }),
     );
+    // Default login succeeds and "sets the cookie" (flips the flag). Tests that
+    // need a failed/rate-limited login override this route after mockApi().
+    await page.route('**/api/auth/login', (route) => {
+        loggedIn = true;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access_token: FAKE_TOKEN, token_type: 'bearer' }) });
+    });
 }
 
 test.describe('Authentication', () => {
@@ -76,27 +87,24 @@ test.describe('Authentication', () => {
     });
 
     test('successful login lands on the dashboard', async ({ page }) => {
-        await mockApi(page);
-        await page.route('**/api/auth/login', (route) =>
-            route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({ access_token: FAKE_TOKEN, token_type: 'bearer' }),
-            }),
-        );
+        await mockApi(page); // default login mock succeeds and flips the session on
 
         await page.goto('/login');
         await page.getByLabel('Username').fill(FAKE_USER.username);
         await page.getByLabel('Password').fill('correct-password');
         await page.getByRole('button', { name: /sign in|log ?in/i }).click();
 
-        // Login stores the token and navigates to the dashboard
+        // Auth now lives in an httpOnly cookie (not JS-readable), so success is:
+        // we leave the login page and the user profile is loaded/cached...
         await page.waitForURL((url) => !url.pathname.includes('login'));
+        const cachedUser = await page.evaluate(() => localStorage.getItem('investa_user'));
+        expect(cachedUser).toContain(FAKE_USER.username);
+        // ...and the token is NOT persisted to localStorage anymore.
         const storedToken = await page.evaluate(() => localStorage.getItem('access_token'));
-        expect(storedToken).toBe(FAKE_TOKEN);
+        expect(storedToken).toBeNull();
     });
 
-    test('expired token on a return visit logs out quietly to /login', async ({ page }) => {
+    test('an invalid session on a return visit logs out quietly to /login', async ({ page }) => {
         await mockApi(page);
         await page.route('**/api/auth/me', (route) =>
             route.fulfill({
@@ -106,10 +114,11 @@ test.describe('Authentication', () => {
             }),
         );
 
-        // Seed a stale token before the app boots
-        await page.addInitScript(() => {
-            localStorage.setItem('access_token', 'stale-token');
-        });
+        // Simulate a return visit: a cached profile is present (optimistic
+        // restore), but the cookie is invalid (mocked /auth/me returns 401).
+        await page.addInitScript((user) => {
+            localStorage.setItem('investa_user', JSON.stringify(user));
+        }, FAKE_USER);
 
         const errors: string[] = [];
         page.on('console', (msg) => {
@@ -119,8 +128,8 @@ test.describe('Authentication', () => {
         await page.goto('/');
         await page.waitForURL('**/login');
 
-        // The stale token must be cleared, and the 401 handled without console.error
-        const remaining = await page.evaluate(() => localStorage.getItem('access_token'));
+        // The cached profile must be cleared, and the 401 handled without console.error
+        const remaining = await page.evaluate(() => localStorage.getItem('investa_user'));
         expect(remaining).toBeNull();
         expect(errors.filter((e) => e.includes('Failed to fetch user'))).toHaveLength(0);
     });

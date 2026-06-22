@@ -30,6 +30,7 @@ export default function LoginPage() {
             const res = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: "POST",
                 body: formData,
+                credentials: "include", // store the httpOnly auth cookie
             });
 
             if (!res.ok) {
@@ -37,8 +38,8 @@ export default function LoginPage() {
                 throw new Error(data.detail || "Login failed");
             }
 
-            const data = await res.json();
-            login(data.access_token);
+            // The cookie is now set; the token in the body is unused by the web app.
+            await login();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Login failed");
         } finally {

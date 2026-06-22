@@ -43,6 +43,14 @@ IBKR_QUERY_ID = os.getenv("IBKR_QUERY_ID")
 AUTH_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 30 days
 
+# httpOnly auth cookie for the web app (keeps the token out of JS-readable
+# localStorage, hardening against XSS token theft). The native macOS/iOS apps
+# keep using the Authorization: Bearer header. Secure is OFF by default so plain
+# HTTP LAN/Tailscale access still works; set AUTH_COOKIE_SECURE=1 behind HTTPS.
+AUTH_COOKIE_NAME = "access_token"
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "0") == "1"
+AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "lax")
+
 # --- Cache Configuration ---
 HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted_v2"
 DAILY_RESULTS_CACHE_PATH_PREFIX = (

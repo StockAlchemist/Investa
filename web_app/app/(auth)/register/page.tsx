@@ -51,11 +51,12 @@ export default function RegisterPage() {
             const loginRes = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: "POST",
                 body: formData,
+                credentials: "include", // store the httpOnly auth cookie
             });
 
             if (loginRes.ok) {
-                const data = await loginRes.json();
-                login(data.access_token);
+                // The cookie is now set; the token in the body is unused by the web app.
+                await login();
             } else {
                 // Fallback to login page if auto-login fails
                 if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
