@@ -203,11 +203,13 @@ private struct SheetHeader: View {
 
 struct InsightsDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var hSize
     let scope: InsightScope
     let details: InsightDetails
     let summaries: [InsightSummary]
     let currency: String
 
+    private var isPhone: Bool { hSize == .compact }
     private var isAll: Bool { if case .all = scope { return true }; return false }
     private func shows(_ k: InsightKind) -> Bool { if case .kind(let kk) = scope { return kk == k }; return true }
 
@@ -265,34 +267,69 @@ struct InsightsDetailSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("hourglass", .warn, "Lots Ripening to Long-Term",
                           "Selling these lots after the date below qualifies for the long-term capital gains rate.")
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Symbol").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Acquired").frame(width: 90, alignment: .leading)
-                    Text("Qty").frame(width: 60, alignment: .trailing)
-                    Text("Unrealized").frame(width: 90, alignment: .trailing)
-                    Text("Days Left").frame(width: 70, alignment: .trailing)
+            if isPhone {
+                VStack(spacing: 8) {
+                    ForEach(details.ripening) { lot in ripeningCard(lot) }
                 }
-                .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
-                ForEach(details.ripening) { lot in
+            } else {
+                VStack(spacing: 0) {
                     HStack {
-                        HStack(spacing: 5) {
-                            Text(lot.symbol).fontWeight(.semibold)
-                            if let a = lot.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                        Text(displayDate(lot.date)).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
-                        Text(Fmt.number(lot.quantity, fractionDigits: 0)).frame(width: 60, alignment: .trailing)
-                        Text("+\(Fmt.currency(lot.gain, code: currency))").foregroundStyle(Color.up).fontWeight(.semibold)
-                            .frame(width: 90, alignment: .trailing)
-                        Text("\(lot.daysRemaining)d").fontWeight(.bold).foregroundStyle(.orange).frame(width: 70, alignment: .trailing)
+                        Text("Symbol").frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Acquired").frame(width: 90, alignment: .leading)
+                        Text("Qty").frame(width: 60, alignment: .trailing)
+                        Text("Unrealized").frame(width: 90, alignment: .trailing)
+                        Text("Days Left").frame(width: 70, alignment: .trailing)
                     }
-                    .font(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
-                    Divider()
+                    .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
+                    ForEach(details.ripening) { lot in
+                        HStack {
+                            HStack(spacing: 5) {
+                                Text(lot.symbol).fontWeight(.semibold)
+                                if let a = lot.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Text(displayDate(lot.date)).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                            Text(Fmt.number(lot.quantity, fractionDigits: 0)).frame(width: 60, alignment: .trailing)
+                            Text("+\(Fmt.currency(lot.gain, code: currency))").foregroundStyle(Color.up).fontWeight(.semibold)
+                                .frame(width: 90, alignment: .trailing)
+                            Text("\(lot.daysRemaining)d").fontWeight(.bold).foregroundStyle(.orange).frame(width: 70, alignment: .trailing)
+                        }
+                        .font(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
+                        Divider()
+                    }
                 }
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func ripeningCard(_ lot: RipeningLot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(lot.symbol).font(.callout.bold())
+                if let a = lot.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                Spacer()
+                Text("\(lot.daysRemaining)d left").font(.caption.bold()).foregroundStyle(.orange)
+            }
+            HStack(alignment: .top) {
+                cardMetric("Acquired", displayDate(lot.date), align: .leading)
+                Spacer()
+                cardMetric("Qty", Fmt.number(lot.quantity, fractionDigits: 0), align: .trailing)
+                Spacer()
+                cardMetric("Unrealized", "+\(Fmt.currency(lot.gain, code: currency))",
+                           tint: Color.up, align: .trailing)
+            }
+        }
+        .padding(12)
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
+    }
+
+    private func cardMetric(_ label: String, _ value: String, tint: Color = .primary,
+                            align: HorizontalAlignment) -> some View {
+        VStack(alignment: align, spacing: 2) {
+            Text(label).font(.system(size: 10, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+            Text(value).font(.caption).fontWeight(.semibold).foregroundStyle(tint).monospacedDigit()
         }
     }
 
@@ -335,35 +372,61 @@ struct InsightsDetailSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("diamond", .pos, "Trading Below Fair Value",
                           "Holdings with a margin of safety greater than 10% on the latest screen.")
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Symbol").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Intrinsic").frame(width: 100, alignment: .trailing)
-                    Text("Position").frame(width: 100, alignment: .trailing)
-                    Text("Margin of Safety").frame(width: 120, alignment: .trailing)
+            if isPhone {
+                VStack(spacing: 8) {
+                    ForEach(details.undervalued) { u in undervaluedCard(u) }
                 }
-                .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
-                ForEach(details.undervalued) { u in
+            } else {
+                VStack(spacing: 0) {
                     HStack {
-                        HStack(spacing: 5) {
-                            Text(u.symbol).fontWeight(.semibold)
-                            if let a = u.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                        Text(u.intrinsic.map { Fmt.currency($0, code: currency) } ?? "—").foregroundStyle(.secondary)
-                            .frame(width: 100, alignment: .trailing)
-                        Text(u.marketValue.map { Fmt.currency($0, code: currency) } ?? "—").foregroundStyle(.secondary)
-                            .frame(width: 100, alignment: .trailing)
-                        Text(String(format: "%.1f%%", u.mos)).fontWeight(.bold).foregroundStyle(Color.up)
-                            .frame(width: 120, alignment: .trailing)
+                        Text("Symbol").frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Intrinsic").frame(width: 100, alignment: .trailing)
+                        Text("Position").frame(width: 100, alignment: .trailing)
+                        Text("Margin of Safety").frame(width: 120, alignment: .trailing)
                     }
-                    .font(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
-                    Divider()
+                    .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
+                    ForEach(details.undervalued) { u in
+                        HStack {
+                            HStack(spacing: 5) {
+                                Text(u.symbol).fontWeight(.semibold)
+                                if let a = u.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Text(u.intrinsic.map { Fmt.currency($0, code: currency) } ?? "—").foregroundStyle(.secondary)
+                                .frame(width: 100, alignment: .trailing)
+                            Text(u.marketValue.map { Fmt.currency($0, code: currency) } ?? "—").foregroundStyle(.secondary)
+                                .frame(width: 100, alignment: .trailing)
+                            Text(String(format: "%.1f%%", u.mos)).fontWeight(.bold).foregroundStyle(Color.up)
+                                .frame(width: 120, alignment: .trailing)
+                        }
+                        .font(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
+                        Divider()
+                    }
                 }
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
+    }
+
+    private func undervaluedCard(_ u: UndervaluedHolding) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(u.symbol).font(.callout.bold())
+                if let a = u.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                Spacer()
+                Text(String(format: "%.1f%% MOS", u.mos)).font(.caption.bold()).foregroundStyle(Color.up)
+            }
+            HStack(alignment: .top) {
+                cardMetric("Intrinsic", u.intrinsic.map { Fmt.currency($0, code: currency) } ?? "—",
+                           align: .leading)
+                Spacer()
+                cardMetric("Position", u.marketValue.map { Fmt.currency($0, code: currency) } ?? "—",
+                           align: .trailing)
+            }
+        }
+        .padding(12)
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
     }
 
     private func displayDate(_ iso: String) -> String {
