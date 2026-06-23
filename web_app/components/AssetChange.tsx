@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useState } from 'react';
-import { AssetChangeData, PortfolioSummary, RiskMetrics, PerformanceData, AttributionData } from '../lib/api';
+import { AssetChangeData, PortfolioSummary, RiskMetrics, PerformanceData, AttributionData, BenchmarkStat } from '../lib/api';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 import KpiStrip from './performance/KpiStrip';
 import ReturnsChart from './performance/ReturnsChart';
@@ -17,6 +17,8 @@ interface AssetChangeProps {
     riskMetrics?: RiskMetrics | null;
     history?: PerformanceData[] | null;
     historyLoading?: boolean;
+    benchmarkScoreboard?: BenchmarkStat[] | null;
+    scoreboardLoading?: boolean;
     attribution?: AttributionData | null;
     attributionLoading?: boolean;
     attributionRefreshing?: boolean;
@@ -32,6 +34,8 @@ export default function AssetChange({
     riskMetrics = null,
     history = null,
     historyLoading = false,
+    benchmarkScoreboard = null,
+    scoreboardLoading = false,
     attribution = null,
     attributionLoading = false,
     attributionRefreshing = false,
@@ -71,7 +75,7 @@ export default function AssetChange({
             {(show('drawdownTimeline') || show('benchmarkScoreboard')) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {show('drawdownTimeline') && <DrawdownTimeline history={history} isLoading={historyLoading} />}
-                    {show('benchmarkScoreboard') && <BenchmarkScoreboard history={history} isLoading={historyLoading} />}
+                    {show('benchmarkScoreboard') && <BenchmarkScoreboard data={benchmarkScoreboard} isLoading={scoreboardLoading} />}
                 </div>
             )}
 

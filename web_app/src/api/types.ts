@@ -879,6 +879,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/benchmark_scoreboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Benchmark Scoreboard
+         * @description Per-benchmark active-management stats — alpha, beta, R², tracking error,
+         *     information ratio, and cumulative excess return — computed server-side so the
+         *     web and native clients share one correctly-annualized source.
+         */
+        get: operations["get_benchmark_scoreboard_api_benchmark_scoreboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/attribution": {
         parameters: {
             query?: never;
@@ -2062,6 +2084,28 @@ export interface paths {
          *     (drift) and volatility. Returns the median plus percentile bands per horizon.
          */
         get: operations["get_projection_projection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/benchmark_scoreboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Benchmark Scoreboard
+         * @description Per-benchmark active-management stats — alpha, beta, R², tracking error,
+         *     information ratio, and cumulative excess return — computed server-side so the
+         *     web and native clients share one correctly-annualized source.
+         */
+        get: operations["get_benchmark_scoreboard_benchmark_scoreboard_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4060,6 +4104,39 @@ export interface operations {
             };
         };
     };
+    get_benchmark_scoreboard_api_benchmark_scoreboard_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                benchmarks?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_attribution_api_attribution_get: {
         parameters: {
             query?: {
@@ -5915,6 +5992,39 @@ export interface operations {
             query?: {
                 currency?: string;
                 accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_benchmark_scoreboard_benchmark_scoreboard_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+                benchmarks?: string[] | null;
             };
             header?: never;
             path?: never;

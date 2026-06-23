@@ -584,6 +584,27 @@ export async function fetchRiskMetrics(currency: string = 'USD', accounts?: stri
     return data as unknown as RiskMetrics;
 }
 
+export interface BenchmarkStat {
+    name: string;
+    alpha: number;            // annualized %
+    beta: number;
+    r2: number;               // 0-1
+    tracking_error: number;   // annualized %
+    information_ratio: number;
+    excess_return: number;    // cumulative %
+}
+
+export async function fetchBenchmarkScoreboard(currency: string = 'USD', accounts?: string[], benchmarks?: string[], signal?: AbortSignal): Promise<BenchmarkStat[]> {
+    const { data, error } = await apiClient.GET("/api/benchmark_scoreboard", {
+        params: {
+            query: { currency, accounts: accounts || undefined, benchmarks: benchmarks || undefined }
+        },
+        signal
+    });
+    if (error) throw new Error('Failed to fetch benchmark scoreboard');
+    return ((data as { scoreboard?: BenchmarkStat[] })?.scoreboard) ?? [];
+}
+
 export interface ProjectionHorizon {
     years: number;
     median_value: number;

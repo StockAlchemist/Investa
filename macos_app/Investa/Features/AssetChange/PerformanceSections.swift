@@ -318,57 +318,35 @@ struct DrawdownTimeline: View {
 
 // MARK: - Benchmark scoreboard (mirrors performance/BenchmarkScoreboard.tsx)
 
+/// One benchmark's active-management stats, computed server-side
+/// (/benchmark_scoreboard) so web and native share one correctly-annualized source.
+struct BenchmarkStat: Decodable, Identifiable {
+    let name: String
+    let alpha: Double
+    let beta: Double
+    let r2: Double
+    let trackingError: Double
+    let informationRatio: Double
+    let excessReturn: Double
+    var id: String { name }
+    enum CodingKeys: String, CodingKey {
+        case name, alpha, beta, r2
+        case trackingError = "tracking_error"
+        case informationRatio = "information_ratio"
+        case excessReturn = "excess_return"
+    }
+}
+
+struct BenchmarkScoreboardResponse: Decodable {
+    let scoreboard: [BenchmarkStat]
+}
+
 struct BenchmarkScoreboard: View {
-    let history: [PerformancePoint]
-    private static let periodsPerYear = 252.0
-    private static let reserved: Set<String> = ["date","timestamp","value","twr","drawdown","fx_rate","abs_gain","abs_roi","cum_flow","is_baseline"]
-
-    private struct Stat: Identifiable { let name: String; let alpha: Double; let beta: Double; let r2: Double; let te: Double; let ir: Double; let excess: Double; var id: String { name } }
-
-    private func twrToReturns(_ cum: [Double?]) -> [Double?] {
-        var out: [Double?] = []
-        for i in 1..<max(cum.count, 1) {
-            guard let prev = cum[i-1], let cur = cum[i] else { out.append(nil); continue }
-            let fp = 1 + prev/100, fc = 1 + cur/100
-            out.append(fp != 0 ? fc/fp - 1 : nil)
-        }
-        return out
-    }
-    private func mean(_ xs: [Double]) -> Double { xs.isEmpty ? 0 : xs.reduce(0,+)/Double(xs.count) }
-
-    private var rows: [Stat] {
-        guard history.count >= 20, let first = history.first else { return [] }
-        let benchKeys = first.raw.keys.filter { !Self.reserved.contains($0) }.sorted()
-        let portReturns = twrToReturns(history.map { $0.twr })
-        var results: [Stat] = []
-        for key in benchKeys {
-            let benchReturns = twrToReturns(history.map { $0.benchmark(key) })
-            var rp: [Double] = []; var rb: [Double] = []
-            for i in 0..<min(portReturns.count, benchReturns.count) {
-                if let a = portReturns[i], let b = benchReturns[i] { rp.append(a); rb.append(b) }
-            }
-            guard rp.count >= 20 else { continue }
-            let mp = mean(rp), mb = mean(rb)
-            var cov = 0.0, varB = 0.0, varP = 0.0
-            for i in 0..<rp.count { cov += (rp[i]-mp)*(rb[i]-mb); varB += pow(rb[i]-mb,2); varP += pow(rp[i]-mp,2) }
-            cov /= Double(rp.count); varB /= Double(rp.count); varP /= Double(rp.count)
-            let beta = varB > 0 ? cov/varB : 0
-            let alpha = (mp - beta*mb) * Self.periodsPerYear * 100
-            let corr = (varP > 0 && varB > 0) ? cov/sqrt(varP*varB) : 0
-            let diffs = zip(rp, rb).map { $0 - $1 }
-            let mDiff = mean(diffs)
-            let teDaily = sqrt(mean(diffs.map { pow($0 - mDiff, 2) }))
-            let te = teDaily * sqrt(Self.periodsPerYear) * 100
-            let ir = teDaily > 0 ? (mDiff * Self.periodsPerYear) / (teDaily * sqrt(Self.periodsPerYear)) : 0
-            let excess = (history.last?.twr ?? 0) - (history.last?.benchmark(key) ?? 0)
-            results.append(Stat(name: key, alpha: alpha, beta: beta, r2: corr*corr, te: te, ir: ir, excess: excess))
-        }
-        return results
-    }
+    let stats: [BenchmarkStat]
 
     var body: some View {
         PSection(title: "Vs Benchmark") {
-            let data = rows
+            let data = stats
             if data.isEmpty {
                 Text("Not enough history to compute risk-adjusted stats.").foregroundStyle(.secondary)
             } else {
@@ -389,9 +367,9 @@ struct BenchmarkScoreboard: View {
                             Text(signed(r.alpha) + "%").foregroundStyle(Fmt.tint(for: r.alpha)).lineLimit(1).minimumScaleFactor(0.8)
                             Text(String(format: "%.2f", r.beta)).lineLimit(1).minimumScaleFactor(0.8)
                             Text(String(format: "%.2f", r.r2)).lineLimit(1).minimumScaleFactor(0.8)
-                            Text(String(format: "%.1f%%", r.te)).lineLimit(1).minimumScaleFactor(0.8)
-                            Text(String(format: "%.2f", r.ir)).lineLimit(1).minimumScaleFactor(0.8)
-                            Text(signed(r.excess) + "%").foregroundStyle(Fmt.tint(for: r.excess)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.1f%%", r.trackingError)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.2f", r.informationRatio)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(signed(r.excessReturn) + "%").foregroundStyle(Fmt.tint(for: r.excessReturn)).lineLimit(1).minimumScaleFactor(0.8)
                         }.font(.caption).monospacedDigit()
                     }
                 }

@@ -1,99 +1,18 @@
 'use client';
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Scale } from 'lucide-react';
-import { PerformanceData } from '../../lib/api';
+import { BenchmarkStat } from '../../lib/api';
 import { cn } from '../../lib/utils';
 
 interface BenchmarkScoreboardProps {
-    history: PerformanceData[] | null;
+    // alpha/beta/R²/TE/IR/excess are computed server-side (/benchmark_scoreboard)
+    // so the web and native clients share one correctly-annualized source.
+    data: BenchmarkStat[] | null;
     isLoading?: boolean;
 }
 
-const RESERVED_KEYS = new Set(['date', 'timestamp', 'value', 'twr', 'drawdown', 'fx_rate', 'abs_gain', 'abs_roi', 'cum_flow', 'is_baseline']);
-const PERIODS_PER_YEAR = 252; // daily series
-
-interface BenchStats {
-    name: string;
-    alpha: number;   // annualized %
-    beta: number;
-    r2: number;      // 0-1
-    te: number;      // annualized tracking error %
-    ir: number;      // information ratio
-    excess: number;  // cumulative excess return over the window, %
-}
-
-// Convert a cumulative-TWR series (percent) into period simple returns.
-function twrToReturns(cumTwr: (number | undefined)[]): (number | null)[] {
-    const out: (number | null)[] = [];
-    for (let i = 1; i < cumTwr.length; i++) {
-        const prev = cumTwr[i - 1];
-        const cur = cumTwr[i];
-        if (typeof prev !== 'number' || typeof cur !== 'number') { out.push(null); continue; }
-        const fPrev = 1 + prev / 100;
-        const fCur = 1 + cur / 100;
-        out.push(fPrev !== 0 ? fCur / fPrev - 1 : null);
-    }
-    return out;
-}
-
-function mean(xs: number[]): number {
-    return xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : 0;
-}
-
-export default function BenchmarkScoreboard({ history, isLoading }: BenchmarkScoreboardProps) {
-    const rows = useMemo<BenchStats[]>(() => {
-        const data = history ?? [];
-        if (data.length < 20) return [];
-
-        const benchKeys = Object.keys(data[0]).filter(k => !RESERVED_KEYS.has(k));
-        const portReturns = twrToReturns(data.map(d => d.twr));
-
-        const results: BenchStats[] = [];
-        for (const key of benchKeys) {
-            const benchReturns = twrToReturns(data.map(d => d[key] as number | undefined));
-
-            // Align pairs where both returns exist.
-            const rp: number[] = [];
-            const rb: number[] = [];
-            for (let i = 0; i < portReturns.length; i++) {
-                const a = portReturns[i];
-                const b = benchReturns[i];
-                if (a != null && b != null) { rp.push(a); rb.push(b); }
-            }
-            if (rp.length < 20) continue;
-
-            const mp = mean(rp);
-            const mb = mean(rb);
-            let cov = 0, varB = 0, varP = 0;
-            for (let i = 0; i < rp.length; i++) {
-                cov += (rp[i] - mp) * (rb[i] - mb);
-                varB += (rb[i] - mb) ** 2;
-                varP += (rp[i] - mp) ** 2;
-            }
-            cov /= rp.length; varB /= rp.length; varP /= rp.length;
-
-            const beta = varB > 0 ? cov / varB : 0;
-            const alphaDaily = mp - beta * mb;
-            const alpha = alphaDaily * PERIODS_PER_YEAR * 100;
-            const corr = (varP > 0 && varB > 0) ? cov / Math.sqrt(varP * varB) : 0;
-            const r2 = corr * corr;
-
-            const diffs = rp.map((v, i) => v - rb[i]);
-            const mDiff = mean(diffs);
-            const teDaily = Math.sqrt(mean(diffs.map(d => (d - mDiff) ** 2)));
-            const te = teDaily * Math.sqrt(PERIODS_PER_YEAR) * 100;
-            const ir = teDaily > 0 ? (mDiff * PERIODS_PER_YEAR) / (teDaily * Math.sqrt(PERIODS_PER_YEAR)) : 0;
-
-            // Cumulative excess over the window from the final cumulative TWRs.
-            const lastPort = data[data.length - 1].twr;
-            const lastBench = data[data.length - 1][key] as number | undefined;
-            const excess = (typeof lastPort === 'number' && typeof lastBench === 'number') ? lastPort - lastBench : 0;
-
-            results.push({ name: key, alpha, beta, r2, te, ir, excess });
-        }
-        return results;
-    }, [history]);
-
+export default function BenchmarkScoreboard({ data, isLoading }: BenchmarkScoreboardProps) {
+    const rows = data ?? [];
     const num = (v: number, digits = 2) => `${v >= 0 ? '+' : ''}${v.toFixed(digits)}`;
     const tone = (v: number) => v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
 
@@ -102,7 +21,7 @@ export default function BenchmarkScoreboard({ history, isLoading }: BenchmarkSco
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500 opacity-80" />
             <div className="flex items-center gap-2 mb-4">
                 <Scale className="w-3.5 h-3.5 text-cyan-500" />
-                <h3 className="section-label">Vs Benchmark (1Y)</h3>
+                <h3 className="section-label">Vs Benchmark</h3>
             </div>
 
             {isLoading ? (
@@ -122,7 +41,7 @@ export default function BenchmarkScoreboard({ history, isLoading }: BenchmarkSco
                                 <th className="py-1.5 px-2 text-right font-semibold" title="R-squared (fit)">R²</th>
                                 <th className="py-1.5 px-2 text-right font-semibold" title="Annualized tracking error">TE</th>
                                 <th className="py-1.5 px-2 text-right font-semibold" title="Information ratio">IR</th>
-                                <th className="py-1.5 pl-2 text-right font-semibold" title="Cumulative excess return over 1Y">Excess</th>
+                                <th className="py-1.5 pl-2 text-right font-semibold" title="Cumulative excess return">Excess</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -132,9 +51,9 @@ export default function BenchmarkScoreboard({ history, isLoading }: BenchmarkSco
                                     <td className={cn('py-2 px-2 text-right tabular-nums font-semibold', tone(r.alpha))}>{num(r.alpha)}%</td>
                                     <td className="py-2 px-2 text-right tabular-nums text-foreground">{r.beta.toFixed(2)}</td>
                                     <td className="py-2 px-2 text-right tabular-nums text-muted-foreground">{r.r2.toFixed(2)}</td>
-                                    <td className="py-2 px-2 text-right tabular-nums text-muted-foreground">{r.te.toFixed(1)}%</td>
-                                    <td className={cn('py-2 px-2 text-right tabular-nums font-semibold', tone(r.ir))}>{num(r.ir)}</td>
-                                    <td className={cn('py-2 pl-2 text-right tabular-nums font-semibold', tone(r.excess))}>{num(r.excess, 1)}%</td>
+                                    <td className="py-2 px-2 text-right tabular-nums text-muted-foreground">{r.tracking_error.toFixed(1)}%</td>
+                                    <td className={cn('py-2 px-2 text-right tabular-nums font-semibold', tone(r.information_ratio))}>{num(r.information_ratio)}</td>
+                                    <td className={cn('py-2 pl-2 text-right tabular-nums font-semibold', tone(r.excess_return))}>{num(r.excess_return, 1)}%</td>
                                 </tr>
                             ))}
                         </tbody>
