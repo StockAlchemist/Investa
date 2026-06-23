@@ -14,7 +14,6 @@ import {
   fetchRiskMetrics,
   fetchProjection,
   fetchAttribution,
-  fetchBenchmarkScoreboard,
   fetchDividendCalendar,
   fetchHistory,
   fetchWatchlist,
@@ -366,14 +365,6 @@ export default function Home() {
     enabled: !!user && (activeTab === 'performance' || activeTab === 'asset_change' || backgroundFetchLevel >= 1),
   });
 
-  const benchmarkScoreboardQuery = useQuery({
-    queryKey: ['benchmarkScoreboard', user?.username, currency, selectedAccounts, benchmarks, showClosed],
-    queryFn: ({ signal }) => fetchBenchmarkScoreboard(currency, selectedAccounts, benchmarks, signal),
-    staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || activeTab === 'asset_change' || backgroundFetchLevel >= 1),
-  });
-
   const dividendCalendarQuery = useQuery({
     queryKey: ['dividendCalendar', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchDividendCalendar(currency, selectedAccounts, signal),
@@ -642,8 +633,9 @@ export default function Home() {
           riskMetrics={riskMetricsQuery.data ?? null}
           history={perfHistoryQuery.data ?? null}
           historyLoading={perfHistoryQuery.isPending && !perfHistoryQuery.data}
-          benchmarkScoreboard={benchmarkScoreboardQuery.data ?? null}
-          scoreboardLoading={benchmarkScoreboardQuery.isPending && !benchmarkScoreboardQuery.data}
+          availableAccounts={availableAccounts}
+          accountGroups={settingsQuery.data?.account_groups}
+          closedAccounts={closedAccounts}
           attribution={attributionQuery.data ?? null}
           attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
           attributionRefreshing={attributionQuery.isFetching}

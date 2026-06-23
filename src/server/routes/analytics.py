@@ -672,15 +672,22 @@ async def get_benchmark_scoreboard(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
     benchmarks: Optional[List[str]] = Query(None),
+    period: str = "all",
     data: tuple = Depends(get_transaction_data),
 ):
     """Per-benchmark active-management stats — alpha, beta, R², tracking error,
     information ratio, and cumulative excess return — computed server-side so the
     web and native clients share one correctly-annualized source.
+
+    ``period`` (1y/3y/5y/10y/all) windows the history the stats are measured over.
     """
     df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, db_mtime = data
     if df.empty or not benchmarks:
         return {"scoreboard": []}
+
+    # Window the history. "all" goes back to inception (capped at 2000).
+    _years = {"1y": 1, "3y": 3, "5y": 5, "10y": 10}.get(period.lower())
+    start = date(2000, 1, 1) if _years is None else max(date(2000, 1, 1), date.today() - timedelta(days=round(_years * 365.25)))
 
     try:
         # Map display names -> tickers (daily_df columns are ticker-based).
@@ -697,7 +704,7 @@ async def get_benchmark_scoreboard(
             user_excluded_symbols=user_excluded_symbols,
             account_currency_map=account_currency_map,
             original_csv_file_path=original_csv_path,
-            start_date=date(2000, 1, 1),
+            start_date=start,
             end_date=date.today(),
             display_currency=currency,
             include_accounts=accounts,

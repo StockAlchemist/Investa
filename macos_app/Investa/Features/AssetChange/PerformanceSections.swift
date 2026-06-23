@@ -342,12 +342,21 @@ struct BenchmarkScoreboardResponse: Decodable {
 }
 
 struct BenchmarkScoreboard: View {
-    let stats: [BenchmarkStat]
+    @EnvironmentObject private var appState: AppState
+    @State private var stats: [BenchmarkStat] = []
+    @State private var period = "all"            // 1y / 3y / 5y / all
+    @State private var accounts: Set<String> = [] // empty = all accounts
+    @State private var loading = false
+    private let api = APIClient.shared
+    private let periodOptions = [("1Y", "1y"), ("3Y", "3y"), ("5Y", "5y"), ("All", "all")]
 
     var body: some View {
         PSection(title: "Vs Benchmark") {
+            controls
             let data = stats
-            if data.isEmpty {
+            if loading && data.isEmpty {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+            } else if data.isEmpty {
                 Text("Not enough history to compute risk-adjusted stats.").foregroundStyle(.secondary)
             } else {
                 Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 6) {
@@ -377,6 +386,55 @@ struct BenchmarkScoreboard: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
+        .task(id: signature) { await load() }
     }
+
+    // Panel-local period + account scope (independent of the global filters).
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Picker("", selection: $period) {
+                ForEach(periodOptions, id: \.1) { Text($0.0).tag($0.1) }
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            Spacer()
+            Menu {
+                Button("All Accounts") { accounts = [] }
+                if !appState.allAccounts.isEmpty { Divider() }
+                ForEach(appState.allAccounts, id: \.self) { acc in
+                    Button { toggle(acc) } label: {
+                        Label(acc, systemImage: accounts.contains(acc) ? "checkmark" : "")
+                    }
+                }
+            } label: {
+                Text(accountsLabel).font(.caption).lineLimit(1)
+            }
+            .fixedSize()
+        }
+        .padding(.bottom, 2)
+    }
+
+    private var accountsLabel: String {
+        if accounts.isEmpty { return "All Accounts" }
+        return accounts.count == 1 ? accounts.first! : "\(accounts.count) accounts"
+    }
+    private func toggle(_ a: String) {
+        if accounts.contains(a) { accounts.remove(a) } else { accounts.insert(a) }
+    }
+
+    private var signature: String {
+        "\(appState.displayCurrency)|\(period)|\(accounts.sorted().joined(separator: ","))|\(appState.benchmarks.sorted().joined(separator: ","))"
+    }
+
+    private func load() async {
+        loading = true
+        defer { loading = false }
+        let acctItems = APIClient.arrayQuery("accounts", accounts.isEmpty ? nil : Array(accounts))
+        let query = [URLQueryItem(name: "currency", value: appState.displayCurrency),
+                     URLQueryItem(name: "period", value: period)]
+            + acctItems + APIClient.arrayQuery("benchmarks", appState.benchmarks)
+        let resp: BenchmarkScoreboardResponse? = try? await api.get("/benchmark_scoreboard", query: query)
+        stats = resp?.scoreboard ?? []
+    }
+
     private func signed(_ v: Double) -> String { "\(v >= 0 ? "+" : "")\(String(format: "%.2f", v))" }
 }

@@ -594,10 +594,10 @@ export interface BenchmarkStat {
     excess_return: number;    // cumulative %
 }
 
-export async function fetchBenchmarkScoreboard(currency: string = 'USD', accounts?: string[], benchmarks?: string[], signal?: AbortSignal): Promise<BenchmarkStat[]> {
+export async function fetchBenchmarkScoreboard(currency: string = 'USD', accounts?: string[], benchmarks?: string[], period: string = 'all', signal?: AbortSignal): Promise<BenchmarkStat[]> {
     const { data, error } = await apiClient.GET("/api/benchmark_scoreboard", {
         params: {
-            query: { currency, accounts: accounts || undefined, benchmarks: benchmarks || undefined }
+            query: { currency, accounts: accounts || undefined, benchmarks: benchmarks || undefined, period }
         },
         signal
     });

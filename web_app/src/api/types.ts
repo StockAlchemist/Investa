@@ -891,6 +891,8 @@ export interface paths {
          * @description Per-benchmark active-management stats — alpha, beta, R², tracking error,
          *     information ratio, and cumulative excess return — computed server-side so the
          *     web and native clients share one correctly-annualized source.
+         *
+         *     ``period`` (1y/3y/5y/10y/all) windows the history the stats are measured over.
          */
         get: operations["get_benchmark_scoreboard_api_benchmark_scoreboard_get"];
         put?: never;
@@ -2104,6 +2106,8 @@ export interface paths {
          * @description Per-benchmark active-management stats — alpha, beta, R², tracking error,
          *     information ratio, and cumulative excess return — computed server-side so the
          *     web and native clients share one correctly-annualized source.
+         *
+         *     ``period`` (1y/3y/5y/10y/all) windows the history the stats are measured over.
          */
         get: operations["get_benchmark_scoreboard_benchmark_scoreboard_get"];
         put?: never;
@@ -4110,6 +4114,7 @@ export interface operations {
                 currency?: string;
                 accounts?: string[] | null;
                 benchmarks?: string[] | null;
+                period?: string;
             };
             header?: never;
             path?: never;
@@ -6025,6 +6030,7 @@ export interface operations {
                 currency?: string;
                 accounts?: string[] | null;
                 benchmarks?: string[] | null;
+                period?: string;
             };
             header?: never;
             path?: never;

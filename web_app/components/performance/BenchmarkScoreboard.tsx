@@ -1,17 +1,36 @@
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { Scale } from 'lucide-react';
-import { BenchmarkStat } from '../../lib/api';
+import { fetchBenchmarkScoreboard } from '../../lib/api';
+import AccountSelector from '../AccountSelector';
 import { cn } from '../../lib/utils';
 
+// α/β/R²/TE/IR/excess are computed server-side (/benchmark_scoreboard); this
+// panel owns its own period + account scope, independent of the global filters.
+const PERIODS = ['1Y', '3Y', '5Y', 'All'] as const;
+type Period = typeof PERIODS[number];
+const PERIOD_PARAM: Record<Period, string> = { '1Y': '1y', '3Y': '3y', '5Y': '5y', 'All': 'all' };
+
 interface BenchmarkScoreboardProps {
-    // alpha/beta/R²/TE/IR/excess are computed server-side (/benchmark_scoreboard)
-    // so the web and native clients share one correctly-annualized source.
-    data: BenchmarkStat[] | null;
-    isLoading?: boolean;
+    currency: string;
+    benchmarks: string[];
+    availableAccounts: string[];
+    accountGroups?: Record<string, string[]>;
+    closedAccounts?: string[];
 }
 
-export default function BenchmarkScoreboard({ data, isLoading }: BenchmarkScoreboardProps) {
+export default function BenchmarkScoreboard({ currency, benchmarks, availableAccounts, accountGroups = {}, closedAccounts = [] }: BenchmarkScoreboardProps) {
+    const [period, setPeriod] = useState<Period>('All');
+    const [accounts, setAccounts] = useState<string[]>([]); // [] = all accounts
+
+    const { data, isLoading } = useQuery({
+        queryKey: ['benchmarkScoreboard', currency, accounts, benchmarks, period],
+        queryFn: ({ signal }) => fetchBenchmarkScoreboard(currency, accounts, benchmarks, PERIOD_PARAM[period], signal),
+        staleTime: 5 * 60 * 1000,
+        placeholderData: keepPreviousData,
+        enabled: benchmarks.length > 0,
+    });
     const rows = data ?? [];
     const num = (v: number, digits = 2) => `${v >= 0 ? '+' : ''}${v.toFixed(digits)}`;
     const tone = (v: number) => v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
@@ -19,9 +38,36 @@ export default function BenchmarkScoreboard({ data, isLoading }: BenchmarkScoreb
     return (
         <div className="metric-card p-5 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500 opacity-80" />
-            <div className="flex items-center gap-2 mb-4">
-                <Scale className="w-3.5 h-3.5 text-cyan-500" />
-                <h3 className="section-label">Vs Benchmark</h3>
+            <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                    <Scale className="w-3.5 h-3.5 text-cyan-500" />
+                    <h3 className="section-label">Vs Benchmark</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="flex rounded-md border border-border/60 overflow-hidden">
+                        {PERIODS.map(p => (
+                            <button
+                                key={p}
+                                onClick={() => setPeriod(p)}
+                                className={cn(
+                                    'px-2 py-0.5 text-[11px] font-medium transition-colors',
+                                    period === p ? 'bg-cyan-500 text-white' : 'text-muted-foreground hover:bg-muted/50'
+                                )}
+                            >
+                                {p}
+                            </button>
+                        ))}
+                    </div>
+                    <AccountSelector
+                        availableAccounts={availableAccounts}
+                        selectedAccounts={accounts}
+                        onChange={setAccounts}
+                        accountGroups={accountGroups}
+                        closedAccounts={closedAccounts}
+                        variant="ghost"
+                        align="right"
+                    />
+                </div>
             </div>
 
             {isLoading ? (

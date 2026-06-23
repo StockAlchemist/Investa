@@ -8,7 +8,6 @@ final class AssetChangeViewModel: ObservableObject {
     @Published var risk: RiskMetrics?
     @Published var attribution: Attribution?
     @Published var history: [PerformancePoint] = []
-    @Published var scoreboard: [BenchmarkStat] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -37,14 +36,12 @@ final class AssetChangeViewModel: ObservableObject {
         async let summaryR: SummaryResponse = api.get("/summary", query: [curItem, closedItem] + accountItems)
         async let riskR: RiskMetrics = api.get("/risk_metrics", query: [curItem, closedItem] + accountItems)
         async let attrR: Attribution = api.get("/attribution", query: [curItem, closedItem] + accountItems)
-        // Drawdown uses the daily history; α/β/R²/TE/IR are computed server-side
-        // (one correctly-annualized source shared with the web app).
+        // Drawdown uses the daily history. The benchmark scoreboard (α/β/R²/TE/IR)
+        // is fetched by its own panel, which owns its period + account scope.
         async let histR: [PerformancePoint] = api.get(
             "/history",
             query: [curItem, URLQueryItem(name: "period", value: "1y"), URLQueryItem(name: "interval", value: "1d")]
                 + accountItems + APIClient.arrayQuery("benchmarks", benchmarks))
-        async let scoreR: BenchmarkScoreboardResponse = api.get(
-            "/benchmark_scoreboard", query: [curItem] + accountItems + APIClient.arrayQuery("benchmarks", benchmarks))
 
         do {
             data = try await dataR
@@ -57,7 +54,6 @@ final class AssetChangeViewModel: ObservableObject {
         risk = try? await riskR
         attribution = try? await attrR
         history = (try? await histR) ?? []
-        scoreboard = (try? await scoreR)?.scoreboard ?? []
     }
 }
 
@@ -111,9 +107,9 @@ struct AssetChangeView: View {
     @ViewBuilder private var drawdownBenchmarkRow: some View {
         let dd = vis("drawdownTimeline"); let bs = vis("benchmarkScoreboard")
         if dd && bs {
-            twoColumn(DrawdownTimeline(history: viewModel.history), BenchmarkScoreboard(stats: viewModel.scoreboard))
+            twoColumn(DrawdownTimeline(history: viewModel.history), BenchmarkScoreboard())
         } else if dd { DrawdownTimeline(history: viewModel.history) }
-        else if bs { BenchmarkScoreboard(stats: viewModel.scoreboard) }
+        else if bs { BenchmarkScoreboard() }
     }
 
     @ViewBuilder private var attributionRow: some View {
