@@ -399,10 +399,19 @@ struct BenchmarkScoreboard: View {
             Spacer()
             Menu {
                 Button("All Accounts") { accounts = [] }
-                if !appState.allAccounts.isEmpty { Divider() }
-                ForEach(appState.allAccounts, id: \.self) { acc in
-                    Button { toggle(acc) } label: {
-                        Label(acc, systemImage: accounts.contains(acc) ? "checkmark" : "")
+                let groups = orderedGroups
+                if !groups.isEmpty {
+                    Section("Groups") {
+                        ForEach(groups, id: \.name) { g in
+                            Button(g.name) { accounts = Set(g.accounts) }
+                        }
+                    }
+                }
+                Section("Accounts") {
+                    ForEach(individualAccounts, id: \.self) { acc in
+                        Button { toggle(acc) } label: {
+                            Label(acc, systemImage: accounts.contains(acc) ? "checkmark" : "")
+                        }
                     }
                 }
             } label: {
@@ -419,6 +428,12 @@ struct BenchmarkScoreboard: View {
     }
     private func toggle(_ a: String) {
         if accounts.contains(a) { accounts.remove(a) } else { accounts.insert(a) }
+    }
+    private var individualAccounts: [String] { appState.allAccounts.filter { $0 != "All Accounts" } }
+    private var orderedGroups: [(name: String, accounts: [String])] {
+        let g = appState.accountGroups
+        let order = appState.accountGroupOrder.isEmpty ? Array(g.keys).sorted() : appState.accountGroupOrder
+        return order.compactMap { name in g[name].map { (name, $0) } }
     }
 
     private var signature: String {

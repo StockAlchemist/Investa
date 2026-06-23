@@ -36,8 +36,9 @@ export default function BenchmarkScoreboard({ currency, benchmarks, availableAcc
     const tone = (v: number) => v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
 
     return (
-        <div className="metric-card p-5 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500 opacity-80" />
+        <div className="metric-card p-5 relative">
+            {/* No overflow-hidden: it would clip the account dropdown. */}
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500 opacity-80 rounded-t-xl" />
             <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
                 <div className="flex items-center gap-2">
                     <Scale className="w-3.5 h-3.5 text-cyan-500" />
