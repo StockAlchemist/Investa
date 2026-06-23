@@ -689,6 +689,23 @@ async def get_benchmark_scoreboard(
     _years = {"1y": 1, "3y": 3, "5y": 5, "10y": 10}.get(period.lower())
     start = date(2000, 1, 1) if _years is None else max(date(2000, 1, 1), date.today() - timedelta(days=round(_years * 365.25)))
 
+    # Clamp to the FIRST transaction of the SELECTED accounts: measuring stats
+    # over a window that predates the portfolio drags in flat pre-inception
+    # returns and distorts alpha/beta/TE/IR. (The selected accounts can start
+    # later than the portfolio overall, so this depends on the account filter.)
+    if accounts:
+        acc_set = set(accounts)
+        mask = df["Account"].isin(acc_set)
+        if "To Account" in df.columns:
+            mask = mask | df["To Account"].isin(acc_set)
+        tx_dates = df.loc[mask, "Date"]
+    else:
+        tx_dates = df["Date"]
+    if not tx_dates.empty:
+        first_tx = pd.to_datetime(tx_dates, errors="coerce").min()
+        if pd.notna(first_tx):
+            start = max(start, first_tx.date())
+
     try:
         # Map display names -> tickers (daily_df columns are ticker-based).
         mapped, name_by_ticker = [], {}
