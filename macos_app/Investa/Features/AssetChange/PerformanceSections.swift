@@ -10,6 +10,7 @@ private struct PSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Text(title).font(.headline); Spacer(); if let trailing { trailing } }
             content
+            Spacer(minLength: 0)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
