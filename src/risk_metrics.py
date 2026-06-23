@@ -17,6 +17,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Optional
 
+from finutils import infer_periods_per_year
+
 def calculate_drawdown_series(series: pd.Series) -> pd.Series:
     """
     Calculates the drawdown series (percentage decline from peak) for a value series.
@@ -214,9 +216,9 @@ def calculate_alpha(
     return float(alpha)
 
 def calculate_all_risk_metrics(
-    portfolio_values: pd.Series, 
+    portfolio_values: pd.Series,
     risk_free_rate: float = 0.02,
-    periods_per_year: int = 252,
+    periods_per_year: Optional[int] = None,
     benchmark_values: Optional[pd.Series] = None
 ) -> Dict[str, float]:
     """
@@ -261,9 +263,15 @@ def calculate_all_risk_metrics(
             "insufficient_data": True
         }
 
-    vol = calculate_volatility(returns, periods_per_year)
-    sharpe = calculate_sharpe_ratio(returns, risk_free_rate, periods_per_year)
-    sortino = calculate_sortino_ratio(returns, risk_free_rate, periods_per_year)
+    # Calendar-daily portfolio series have ~365 obs/yr, not 252 — infer from the
+    # dates so vol/Sharpe/Sortino/Alpha aren't under-annualized by ~365/252
+    # (keeps the risk card consistent with the projection model). An explicit
+    # periods_per_year still overrides.
+    ppy = periods_per_year if periods_per_year is not None else infer_periods_per_year(returns.index)
+
+    vol = calculate_volatility(returns, ppy)
+    sharpe = calculate_sharpe_ratio(returns, risk_free_rate, ppy)
+    sortino = calculate_sortino_ratio(returns, risk_free_rate, ppy)
     
     metrics = {
         "Max Drawdown": mdd,
@@ -279,8 +287,8 @@ def calculate_all_risk_metrics(
             beta = calculate_beta(returns, bench_returns)
             
             # Annualized returns for Alpha
-            port_ann_ret = returns.mean() * periods_per_year
-            bench_ann_ret = bench_returns.mean() * periods_per_year
+            port_ann_ret = returns.mean() * ppy
+            bench_ann_ret = bench_returns.mean() * ppy
             
             alpha = calculate_alpha(port_ann_ret, bench_ann_ret, beta, risk_free_rate)
             
@@ -288,4 +296,69 @@ def calculate_all_risk_metrics(
             metrics["Alpha"] = alpha
             
     return metrics
+
+
+def calculate_benchmark_scoreboard(
+    portfolio_values: pd.Series,
+    benchmark_values: Dict[str, pd.Series],
+) -> list:
+    """Per-benchmark active-management stats: alpha, beta, R², tracking error,
+    information ratio, and cumulative excess return.
+
+    Single source of truth for the "Benchmark Scoreboard" shown on web + native.
+    Uses population moments and infers the period from the dates (the calendar-
+    daily TWR series is ~365/yr, not 252), so alpha/TE/IR are correctly annualized
+    and identical across clients. ``benchmark_values`` maps a display name to that
+    benchmark's accumulated-value (wealth) series.
+    """
+    out = []
+    if portfolio_values is None or portfolio_values.empty:
+        return out
+
+    def _returns(s: pd.Series) -> pd.Series:
+        return (
+            s.pct_change(fill_method=None)
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .clip(lower=-0.90, upper=1.0)
+        )
+
+    port_ret = _returns(portfolio_values)
+    if len(port_ret) < 20:
+        return out
+    ppy = infer_periods_per_year(port_ret.index)
+    sqrt_ppy = np.sqrt(ppy)
+
+    for name, bvals in benchmark_values.items():
+        if bvals is None or bvals.empty:
+            continue
+        aligned = pd.concat([port_ret, _returns(bvals)], axis=1, join="inner").dropna()
+        if len(aligned) < 20:
+            continue
+        rp = aligned.iloc[:, 0].to_numpy()
+        rb = aligned.iloc[:, 1].to_numpy()
+        mp, mb = rp.mean(), rb.mean()
+        cov = ((rp - mp) * (rb - mb)).mean()
+        var_b = ((rb - mb) ** 2).mean()
+        var_p = ((rp - mp) ** 2).mean()
+        beta = cov / var_b if var_b > 0 else 0.0
+        alpha = (mp - beta * mb) * ppy * 100.0
+        corr = cov / np.sqrt(var_p * var_b) if var_p > 0 and var_b > 0 else 0.0
+        diffs = rp - rb
+        m_diff = diffs.mean()
+        te_daily = np.sqrt(((diffs - m_diff) ** 2).mean())
+        te = te_daily * sqrt_ppy * 100.0
+        ir = (m_diff * ppy) / (te_daily * sqrt_ppy) if te_daily > 0 else 0.0
+        port_total = (float(portfolio_values.iloc[-1]) / float(portfolio_values.iloc[0]) - 1.0) * 100.0
+        bench_total = (float(bvals.iloc[-1]) / float(bvals.iloc[0]) - 1.0) * 100.0
+        out.append({
+            "name": name,
+            "alpha": float(alpha),
+            "beta": float(beta),
+            "r2": float(corr * corr),
+            "tracking_error": float(te),
+            "information_ratio": float(ir),
+            "excess_return": float(port_total - bench_total),
+        })
+    return out
 

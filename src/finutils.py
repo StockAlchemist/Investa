@@ -45,6 +45,22 @@ except ImportError:
     CURRENCY_SYMBOLS = {"USD": "$"}
 
 
+def infer_periods_per_year(index, default: float = 252.0) -> float:
+    """Observations per year for a time series, inferred from its date index.
+
+    The portfolio TWR series is calendar-daily (forward-filled over weekends/
+    holidays, ~365/yr); raw market data is trading-daily (~252/yr). Annualizing
+    returns/volatility with the wrong constant skews them by ~365/252 ≈ 1.45x, so
+    both the projection model and the risk metrics infer the spacing from the
+    actual dates. Returns ``default`` when the index isn't a usable DatetimeIndex.
+    """
+    if isinstance(index, pd.DatetimeIndex) and len(index) > 1:
+        span_years = (index[-1] - index[0]).days / 365.25
+        if span_years > 0:
+            return len(index) / span_years
+    return float(default)
+
+
 # --- Constants for _get_file_hash ---
 HASH_CHUNK_SIZE = 8192
 HASH_ERROR_NOT_FOUND = "FILE_NOT_FOUND"

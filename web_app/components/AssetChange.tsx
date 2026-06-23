@@ -17,6 +17,9 @@ interface AssetChangeProps {
     riskMetrics?: RiskMetrics | null;
     history?: PerformanceData[] | null;
     historyLoading?: boolean;
+    availableAccounts?: string[];
+    accountGroups?: Record<string, string[]>;
+    closedAccounts?: string[];
     attribution?: AttributionData | null;
     attributionLoading?: boolean;
     attributionRefreshing?: boolean;
@@ -32,6 +35,9 @@ export default function AssetChange({
     riskMetrics = null,
     history = null,
     historyLoading = false,
+    availableAccounts = [],
+    accountGroups = {},
+    closedAccounts = [],
     attribution = null,
     attributionLoading = false,
     attributionRefreshing = false,
@@ -71,7 +77,7 @@ export default function AssetChange({
             {(show('drawdownTimeline') || show('benchmarkScoreboard')) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {show('drawdownTimeline') && <DrawdownTimeline history={history} isLoading={historyLoading} />}
-                    {show('benchmarkScoreboard') && <BenchmarkScoreboard history={history} isLoading={historyLoading} />}
+                    {show('benchmarkScoreboard') && <BenchmarkScoreboard currency={currency} benchmarks={benchmarks} availableAccounts={availableAccounts} accountGroups={accountGroups} closedAccounts={closedAccounts} />}
                 </div>
             )}
 

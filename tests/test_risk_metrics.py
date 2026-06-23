@@ -9,13 +9,57 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sr
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+import pytest
+
 from risk_metrics import (
     calculate_max_drawdown,
     calculate_volatility,
     calculate_sharpe_ratio,
     calculate_sortino_ratio,
-    calculate_all_risk_metrics
+    calculate_all_risk_metrics,
+    calculate_benchmark_scoreboard,
 )
+
+
+def _wealth(daily_returns, start="2002-01-01", freq="D"):
+    idx = pd.date_range(start, periods=len(daily_returns) + 1, freq=freq)
+    vals = np.concatenate([[100.0], 100.0 * np.cumprod(1.0 + np.asarray(daily_returns))])
+    return pd.Series(vals, index=idx)
+
+
+def test_scoreboard_identical_series_is_neutral():
+    rng = np.random.default_rng(0)
+    r = rng.normal(0.0004, 0.01, 1500)
+    bench = _wealth(r)
+    rows = calculate_benchmark_scoreboard(bench, {"S&P 500": bench.copy()})
+    assert len(rows) == 1
+    s = rows[0]
+    assert s["beta"] == pytest.approx(1.0, abs=1e-6)
+    assert s["r2"] == pytest.approx(1.0, abs=1e-6)
+    assert s["alpha"] == pytest.approx(0.0, abs=1e-6)
+    assert s["tracking_error"] == pytest.approx(0.0, abs=1e-6)
+    assert s["excess_return"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_scoreboard_recovers_known_beta():
+    rng = np.random.default_rng(1)
+    rb = rng.normal(0.0003, 0.01, 1500)
+    rp = 2.0 * rb  # portfolio is a 2x-levered version of the benchmark
+    rows = calculate_benchmark_scoreboard(_wealth(rp), {"B": _wealth(rb)})
+    assert rows[0]["beta"] == pytest.approx(2.0, rel=1e-3)
+    assert rows[0]["r2"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_scoreboard_annualization_uses_inferred_period():
+    # Same daily outperformance, sampled calendar-daily (~365/yr) vs business-daily
+    # (~252/yr): alpha must scale with the inferred period, not a hardcoded 252.
+    rng = np.random.default_rng(2)
+    rb = rng.normal(0.0003, 0.008, 2000)
+    rp = rb + 0.0002  # constant daily active return
+    a_cal = calculate_benchmark_scoreboard(_wealth(rp, freq="D"), {"B": _wealth(rb, freq="D")})[0]["alpha"]
+    a_biz = calculate_benchmark_scoreboard(_wealth(rp, freq="B"), {"B": _wealth(rb, freq="B")})[0]["alpha"]
+    # Calendar-daily annualizes by ~365 vs ~252 -> ~45% larger alpha.
+    assert a_cal > a_biz * 1.3
 
 def test_max_drawdown():
     # Case 1: Simple drawdown

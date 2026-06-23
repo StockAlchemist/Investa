@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
 interface AccountSelectorProps {
@@ -14,14 +15,42 @@ interface AccountSelectorProps {
 export default function AccountSelector({ availableAccounts, selectedAccounts, onChange, accountGroups = {}, closedAccounts = [], variant = 'default', align = 'right' }: AccountSelectorProps) {
     const closedSet = new Set(closedAccounts);
     const [isOpen, setIsOpen] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    // The menu is rendered in a portal (fixed-positioned) so it can't be clipped
+    // or occluded by sibling cards when the selector is embedded mid-page.
+    const [coords, setCoords] = useState<{ top: number; left?: number; right?: number }>({ top: 0 });
 
-    // Close dropdown when clicking outside
+    const updateCoords = useCallback(() => {
+        const el = triggerRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (align === 'left') {
+            setCoords({ top: r.bottom + 8, left: r.left });
+        } else {
+            setCoords({ top: r.bottom + 8, right: window.innerWidth - r.right });
+        }
+    }, [align]);
+
+    // Reposition while open (the page can scroll/resize under the fixed menu).
+    useEffect(() => {
+        if (!isOpen) return;
+        updateCoords();
+        window.addEventListener("scroll", updateCoords, true);
+        window.addEventListener("resize", updateCoords);
+        return () => {
+            window.removeEventListener("scroll", updateCoords, true);
+            window.removeEventListener("resize", updateCoords);
+        };
+    }, [isOpen, updateCoords]);
+
+    // Close dropdown when clicking outside (trigger and portal menu are separate trees).
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
+            const target = event.target as Node;
+            if (triggerRef.current?.contains(target)) return;
+            if (menuRef.current?.contains(target)) return;
+            setIsOpen(false);
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => {
@@ -74,7 +103,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
     const hasGroups = Object.keys(accountGroups).length > 0;
 
     return (
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative" ref={triggerRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
@@ -92,12 +121,19 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                 </div>
             </button>
 
-            {isOpen && (
+            {isOpen && typeof document !== 'undefined' && createPortal(
                 <div
-                    style={{ backgroundColor: 'var(--menu-solid)' }}
+                    ref={menuRef}
+                    style={{
+                        backgroundColor: 'var(--menu-solid)',
+                        position: 'fixed',
+                        top: coords.top,
+                        left: coords.left,
+                        right: coords.right,
+                    }}
                     className={cn(
-                        "absolute top-full mt-2 min-w-[200px] w-max origin-top border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden",
-                        align === 'left' ? "left-0 origin-top-left" : "right-0 origin-top-right"
+                        "min-w-[200px] w-max border border-border rounded-xl shadow-xl outline-none z-[100] overflow-hidden",
+                        align === 'left' ? "origin-top-left" : "origin-top-right"
                     )}
                 >
                     <div className="py-1 max-h-[80vh] overflow-y-auto">
@@ -191,7 +227,8 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                 );
                             })}
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

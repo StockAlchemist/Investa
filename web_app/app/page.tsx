@@ -633,6 +633,9 @@ export default function Home() {
           riskMetrics={riskMetricsQuery.data ?? null}
           history={perfHistoryQuery.data ?? null}
           historyLoading={perfHistoryQuery.isPending && !perfHistoryQuery.data}
+          availableAccounts={availableAccounts}
+          accountGroups={settingsQuery.data?.account_groups}
+          closedAccounts={closedAccounts}
           attribution={attributionQuery.data ?? null}
           attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
           attributionRefreshing={attributionQuery.isFetching}

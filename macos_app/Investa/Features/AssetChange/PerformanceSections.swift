@@ -10,6 +10,7 @@ private struct PSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Text(title).font(.headline); Spacer(); if let trailing { trailing } }
             content
+            Spacer(minLength: 0)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
@@ -318,58 +319,45 @@ struct DrawdownTimeline: View {
 
 // MARK: - Benchmark scoreboard (mirrors performance/BenchmarkScoreboard.tsx)
 
+/// One benchmark's active-management stats, computed server-side
+/// (/benchmark_scoreboard) so web and native share one correctly-annualized source.
+struct BenchmarkStat: Decodable, Identifiable {
+    let name: String
+    let alpha: Double
+    let beta: Double
+    let r2: Double
+    let trackingError: Double
+    let informationRatio: Double
+    let excessReturn: Double
+    var id: String { name }
+    enum CodingKeys: String, CodingKey {
+        case name, alpha, beta, r2
+        case trackingError = "tracking_error"
+        case informationRatio = "information_ratio"
+        case excessReturn = "excess_return"
+    }
+}
+
+struct BenchmarkScoreboardResponse: Decodable {
+    let scoreboard: [BenchmarkStat]
+}
+
 struct BenchmarkScoreboard: View {
-    let history: [PerformancePoint]
-    private static let periodsPerYear = 252.0
-    private static let reserved: Set<String> = ["date","timestamp","value","twr","drawdown","fx_rate","abs_gain","abs_roi","cum_flow","is_baseline"]
-
-    private struct Stat: Identifiable { let name: String; let alpha: Double; let beta: Double; let r2: Double; let te: Double; let ir: Double; let excess: Double; var id: String { name } }
-
-    private func twrToReturns(_ cum: [Double?]) -> [Double?] {
-        var out: [Double?] = []
-        for i in 1..<max(cum.count, 1) {
-            guard let prev = cum[i-1], let cur = cum[i] else { out.append(nil); continue }
-            let fp = 1 + prev/100, fc = 1 + cur/100
-            out.append(fp != 0 ? fc/fp - 1 : nil)
-        }
-        return out
-    }
-    private func mean(_ xs: [Double]) -> Double { xs.isEmpty ? 0 : xs.reduce(0,+)/Double(xs.count) }
-
-    private var rows: [Stat] {
-        guard history.count >= 20, let first = history.first else { return [] }
-        let benchKeys = first.raw.keys.filter { !Self.reserved.contains($0) }.sorted()
-        let portReturns = twrToReturns(history.map { $0.twr })
-        var results: [Stat] = []
-        for key in benchKeys {
-            let benchReturns = twrToReturns(history.map { $0.benchmark(key) })
-            var rp: [Double] = []; var rb: [Double] = []
-            for i in 0..<min(portReturns.count, benchReturns.count) {
-                if let a = portReturns[i], let b = benchReturns[i] { rp.append(a); rb.append(b) }
-            }
-            guard rp.count >= 20 else { continue }
-            let mp = mean(rp), mb = mean(rb)
-            var cov = 0.0, varB = 0.0, varP = 0.0
-            for i in 0..<rp.count { cov += (rp[i]-mp)*(rb[i]-mb); varB += pow(rb[i]-mb,2); varP += pow(rp[i]-mp,2) }
-            cov /= Double(rp.count); varB /= Double(rp.count); varP /= Double(rp.count)
-            let beta = varB > 0 ? cov/varB : 0
-            let alpha = (mp - beta*mb) * Self.periodsPerYear * 100
-            let corr = (varP > 0 && varB > 0) ? cov/sqrt(varP*varB) : 0
-            let diffs = zip(rp, rb).map { $0 - $1 }
-            let mDiff = mean(diffs)
-            let teDaily = sqrt(mean(diffs.map { pow($0 - mDiff, 2) }))
-            let te = teDaily * sqrt(Self.periodsPerYear) * 100
-            let ir = teDaily > 0 ? (mDiff * Self.periodsPerYear) / (teDaily * sqrt(Self.periodsPerYear)) : 0
-            let excess = (history.last?.twr ?? 0) - (history.last?.benchmark(key) ?? 0)
-            results.append(Stat(name: key, alpha: alpha, beta: beta, r2: corr*corr, te: te, ir: ir, excess: excess))
-        }
-        return results
-    }
+    @EnvironmentObject private var appState: AppState
+    @State private var stats: [BenchmarkStat] = []
+    @State private var period = "all"            // 1y / 3y / 5y / all
+    @State private var accounts: Set<String> = [] // empty = all accounts
+    @State private var loading = false
+    private let api = APIClient.shared
+    private let periodOptions = [("1Y", "1y"), ("3Y", "3y"), ("5Y", "5y"), ("All", "all")]
 
     var body: some View {
         PSection(title: "Vs Benchmark") {
-            let data = rows
-            if data.isEmpty {
+            controls
+            let data = stats
+            if loading && data.isEmpty {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+            } else if data.isEmpty {
                 Text("Not enough history to compute risk-adjusted stats.").foregroundStyle(.secondary)
             } else {
                 Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 6) {
@@ -389,9 +377,9 @@ struct BenchmarkScoreboard: View {
                             Text(signed(r.alpha) + "%").foregroundStyle(Fmt.tint(for: r.alpha)).lineLimit(1).minimumScaleFactor(0.8)
                             Text(String(format: "%.2f", r.beta)).lineLimit(1).minimumScaleFactor(0.8)
                             Text(String(format: "%.2f", r.r2)).lineLimit(1).minimumScaleFactor(0.8)
-                            Text(String(format: "%.1f%%", r.te)).lineLimit(1).minimumScaleFactor(0.8)
-                            Text(String(format: "%.2f", r.ir)).lineLimit(1).minimumScaleFactor(0.8)
-                            Text(signed(r.excess) + "%").foregroundStyle(Fmt.tint(for: r.excess)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.1f%%", r.trackingError)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(String(format: "%.2f", r.informationRatio)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(signed(r.excessReturn) + "%").foregroundStyle(Fmt.tint(for: r.excessReturn)).lineLimit(1).minimumScaleFactor(0.8)
                         }.font(.caption).monospacedDigit()
                     }
                 }
@@ -399,6 +387,70 @@ struct BenchmarkScoreboard: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
+        .task(id: signature) { await load() }
     }
+
+    // Panel-local period + account scope (independent of the global filters).
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Picker("", selection: $period) {
+                ForEach(periodOptions, id: \.1) { Text($0.0).tag($0.1) }
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            Spacer()
+            Menu {
+                Button("All Accounts") { accounts = [] }
+                let groups = orderedGroups
+                if !groups.isEmpty {
+                    Section("Groups") {
+                        ForEach(groups, id: \.name) { g in
+                            Button(g.name) { accounts = Set(g.accounts) }
+                        }
+                    }
+                }
+                Section("Accounts") {
+                    ForEach(individualAccounts, id: \.self) { acc in
+                        Button { toggle(acc) } label: {
+                            Label(acc, systemImage: accounts.contains(acc) ? "checkmark" : "")
+                        }
+                    }
+                }
+            } label: {
+                Text(accountsLabel).font(.caption).lineLimit(1)
+            }
+            .fixedSize()
+        }
+        .padding(.bottom, 2)
+    }
+
+    private var accountsLabel: String {
+        if accounts.isEmpty { return "All Accounts" }
+        return accounts.count == 1 ? accounts.first! : "\(accounts.count) accounts"
+    }
+    private func toggle(_ a: String) {
+        if accounts.contains(a) { accounts.remove(a) } else { accounts.insert(a) }
+    }
+    private var individualAccounts: [String] { appState.allAccounts.filter { $0 != "All Accounts" } }
+    private var orderedGroups: [(name: String, accounts: [String])] {
+        let g = appState.accountGroups
+        let order = appState.accountGroupOrder.isEmpty ? Array(g.keys).sorted() : appState.accountGroupOrder
+        return order.compactMap { name in g[name].map { (name, $0) } }
+    }
+
+    private var signature: String {
+        "\(appState.displayCurrency)|\(period)|\(accounts.sorted().joined(separator: ","))|\(appState.benchmarks.sorted().joined(separator: ","))"
+    }
+
+    private func load() async {
+        loading = true
+        defer { loading = false }
+        let acctItems = APIClient.arrayQuery("accounts", accounts.isEmpty ? nil : Array(accounts))
+        let query = [URLQueryItem(name: "currency", value: appState.displayCurrency),
+                     URLQueryItem(name: "period", value: period)]
+            + acctItems + APIClient.arrayQuery("benchmarks", appState.benchmarks)
+        let resp: BenchmarkScoreboardResponse? = try? await api.get("/benchmark_scoreboard", query: query)
+        stats = resp?.scoreboard ?? []
+    }
+
     private func signed(_ v: Double) -> String { "\(v >= 0 ? "+" : "")\(String(format: "%.2f", v))" }
 }

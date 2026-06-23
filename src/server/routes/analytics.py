@@ -2,6 +2,7 @@
 
 # ruff: noqa: E402
 import logging
+import math
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Set
@@ -18,7 +19,7 @@ from portfolio_analyzer import (
     generate_cash_interest_events,
 )
 from projections import compute_projection
-from risk_metrics import calculate_all_risk_metrics
+from risk_metrics import calculate_all_risk_metrics, calculate_benchmark_scoreboard
 from server.auth import User
 from server.dependencies import get_config_manager, get_current_user, get_transaction_data
 from server.portfolio_service import (
@@ -639,7 +640,20 @@ async def get_projection(
         current_value = (summary.get("metrics") or {}).get("market_value")
 
         twr_series = daily_df["Portfolio Accumulated Gain"].dropna()
-        result = compute_projection(twr_series, current_value)
+
+        # Benchmark (S&P 500) trailing annual log-return over the same window —
+        # the drift-shrinkage prior, so an idiosyncratic run isn't extrapolated forever.
+        bench_log_return = None
+        bench_col = next(
+            (c for c in ("^GSPC Accumulated Gain", "^GSPC Price") if c in daily_df.columns),
+            None,
+        )
+        if bench_col:
+            bench = daily_df[bench_col].dropna()
+            if len(bench) > 252 and float(bench.iloc[0]) > 0 and float(bench.iloc[-1]) > 0:
+                bench_log_return = math.log(float(bench.iloc[-1]) / float(bench.iloc[0])) / (len(bench) / 252.0)
+
+        result = compute_projection(twr_series, current_value, benchmark_log_return=bench_log_return)
         result["currency"] = currency
         if not result.get("available"):
             logging.warning(
@@ -651,6 +665,86 @@ async def get_projection(
     except Exception as e:
         logging.error(f"Error calculating projection: {e}", exc_info=True)
         return {"available": False, "error": str(e)}
+
+
+@router.get("/benchmark_scoreboard")
+async def get_benchmark_scoreboard(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    benchmarks: Optional[List[str]] = Query(None),
+    period: str = "all",
+    data: tuple = Depends(get_transaction_data),
+):
+    """Per-benchmark active-management stats — alpha, beta, R², tracking error,
+    information ratio, and cumulative excess return — computed server-side so the
+    web and native clients share one correctly-annualized source.
+
+    ``period`` (1y/3y/5y/10y/all) windows the history the stats are measured over.
+    """
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, account_cash_mode_map, original_csv_path, db_mtime = data
+    if df.empty or not benchmarks:
+        return {"scoreboard": []}
+
+    # Window the history. "all" goes back to inception (capped at 2000).
+    _years = {"1y": 1, "3y": 3, "5y": 5, "10y": 10}.get(period.lower())
+    start = date(2000, 1, 1) if _years is None else max(date(2000, 1, 1), date.today() - timedelta(days=round(_years * 365.25)))
+
+    # Clamp to the FIRST transaction of the SELECTED accounts: measuring stats
+    # over a window that predates the portfolio drags in flat pre-inception
+    # returns and distorts alpha/beta/TE/IR. (The selected accounts can start
+    # later than the portfolio overall, so this depends on the account filter.)
+    if accounts:
+        acc_set = set(accounts)
+        mask = df["Account"].isin(acc_set)
+        if "To Account" in df.columns:
+            mask = mask | df["To Account"].isin(acc_set)
+        tx_dates = df.loc[mask, "Date"]
+    else:
+        tx_dates = df["Date"]
+    if not tx_dates.empty:
+        first_tx = pd.to_datetime(tx_dates, errors="coerce").min()
+        if pd.notna(first_tx):
+            start = max(start, first_tx.date())
+
+    try:
+        # Map display names -> tickers (daily_df columns are ticker-based).
+        mapped, name_by_ticker = [], {}
+        for b in benchmarks:
+            tk = config.BENCHMARK_MAPPING.get(b, b)
+            mapped.append(tk)
+            name_by_ticker[tk] = b
+
+        daily_df, _, _, _ = await _get_historical_performance_cached(
+            df=df,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
+            start_date=start,
+            end_date=date.today(),
+            display_currency=currency,
+            include_accounts=accounts,
+            benchmark_symbols_yf=mapped,
+            interval="D",
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=db_mtime,
+        )
+        if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
+            return {"scoreboard": []}
+
+        port = daily_df["Portfolio Accumulated Gain"].dropna()
+        bench_values = {
+            name_by_ticker.get(tk, tk): daily_df[f"{tk} Accumulated Gain"].dropna()
+            for tk in mapped
+            if f"{tk} Accumulated Gain" in daily_df.columns
+        }
+        rows = calculate_benchmark_scoreboard(port, bench_values)
+        return clean_nans({"scoreboard": rows})
+
+    except Exception as e:
+        logging.error(f"Error calculating benchmark scoreboard: {e}", exc_info=True)
+        return {"scoreboard": []}
 
 
 @router.get("/attribution")
