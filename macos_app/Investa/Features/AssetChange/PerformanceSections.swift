@@ -203,26 +203,59 @@ struct ReturnsChart: View {
     }
 
     private var controls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Picker("", selection: $period) { ForEach(periods, id: \.key) { Text($0.label).tag($0.key) } }
-                    .pickerStyle(.menu).fixedSize()
-                Stepper("Show \(count)", value: $count, in: 1...200).fixedSize()
-                Picker("", selection: $valueMode) { Text("%").tag(false); Text(currency).tag(true) }
-                    .pickerStyle(.segmented).fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Picker("", selection: $period) { ForEach(periods, id: \.key) { Text($0.label).tag($0.key) } }
-                        .pickerStyle(.menu).fixedSize()
-                    Spacer()
-                    Picker("", selection: $valueMode) { Text("%").tag(false); Text(currency).tag(true) }
-                        .pickerStyle(.segmented).frame(width: 120)
+        HStack(spacing: 6) {
+            // Period toggle – segmented pills
+            Picker("", selection: $period) {
+                ForEach(periods, id: \.key) { p in
+                    Text(periodLabel(p)).tag(p.key)
                 }
-                Stepper("Show \(count)", value: $count, in: 1...200)
             }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+
+            Spacer(minLength: 0)
+
+            // Period count stepper – custom compact [– N +]
+            HStack(spacing: 0) {
+                Button { count = max(1, count - 1) } label: {
+                    Image(systemName: "minus")
+                        .font(.caption2.weight(.medium))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
+                Text("\(count)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .frame(minWidth: 24)
+                    .lineLimit(1)
+
+                Button { count = min(200, count + 1) } label: {
+                    Image(systemName: "plus")
+                        .font(.caption2.weight(.medium))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+
+            // View mode toggle – %/currency
+            Picker("", selection: $valueMode) { Text("%").tag(false); Text(currency).tag(true) }
+                .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 90)
         }
         .onChange(of: period) { _, new in count = periods.first { $0.key == new }?.def ?? 12 }
+    }
+
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    #endif
+
+    /// Short label on compact iPhones, full label otherwise.
+    private func periodLabel(_ p: (key: String, label: String, def: Int)) -> String {
+        #if os(iOS)
+        if hSizeClass == .compact { return p.key }
+        #endif
+        return p.label
     }
 }
 
@@ -301,7 +334,9 @@ struct MonthlyHeatmap: View {
             }
             ForEach(g.years, id: \.self) { y in
                 GridRow {
-                    Text(String(y)).font(.caption.weight(.bold)).gridColumnAlignment(.leading)
+                    Text(String(y)).font(.caption.weight(.bold))
+                        .lineLimit(1).fixedSize()
+                        .gridColumnAlignment(.leading)
                     ForEach(0..<12, id: \.self) { mi in
                         let v = g.values[y]?[mi] ?? nil
                         Text(v.map { String(format: "%.1f", $0) } ?? "")
@@ -312,6 +347,7 @@ struct MonthlyHeatmap: View {
                     }
                     Text(g.totals[y].map { "\($0 > 0 ? "+" : "")\(String(format: "%.1f%%", $0))" } ?? "—")
                         .font(.caption.weight(.bold)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.7)
                         .foregroundStyle(Fmt.tint(for: g.totals[y]))
                 }
             }
@@ -330,6 +366,7 @@ struct MonthlyHeatmap: View {
                 let overall = avgs.compactMap { $0 }
                 Text(overall.isEmpty ? "—" : "\(overall.reduce(0, +) / Double(overall.count) > 0 ? "+" : "")\(String(format: "%.1f%%", overall.reduce(0, +) / Double(overall.count)))")
                     .font(.caption.weight(.bold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.7)
                     .foregroundStyle(Fmt.tint(for: overall.isEmpty ? nil : overall.reduce(0, +) / Double(overall.count)))
             }
         }

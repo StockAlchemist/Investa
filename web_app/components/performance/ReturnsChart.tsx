@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import { Minus, Plus } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
@@ -72,45 +73,57 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
         <div className="metric-card p-5 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-violet-500 opacity-80" />
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div className="flex items-center gap-3">
-                    <h3 className="section-label">Returns</h3>
+            <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+                <h3 className="section-label shrink-0">Returns</h3>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Period toggle */}
                     <div className="inline-flex rounded-lg bg-secondary p-0.5">
                         {PERIODS.map(p => (
                             <button
                                 key={p.key}
                                 onClick={() => handlePeriodChange(p.key)}
                                 className={cn(
-                                    'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
+                                    'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
                                     period === p.key
-                                        ? 'bg-[#0097b2] text-white'
+                                        ? 'bg-[#0097b2] text-white shadow-sm'
                                         : 'text-muted-foreground hover:text-foreground',
                                 )}
                             >
-                                {p.label}
+                                <span className="sm:hidden">{p.key}</span>
+                                <span className="hidden sm:inline">{p.label}</span>
                             </button>
                         ))}
                     </div>
-                </div>
 
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-muted-foreground uppercase tracking-wider">Show</label>
-                        <input
-                            type="number"
-                            min={1}
-                            max={200}
-                            value={numPeriods}
-                            onChange={e => setNumPeriods(Math.max(1, parseInt(e.target.value) || 1))}
-                            className="w-14 px-2 py-0.5 text-xs bg-secondary rounded text-foreground focus:outline-none focus:ring-1 focus:ring-violet-500 tabular-nums"
-                        />
+                    {/* Period count stepper */}
+                    <div className="inline-flex items-center rounded-lg bg-secondary p-0.5 gap-0">
+                        <button
+                            onClick={() => setNumPeriods(n => Math.max(1, n - 1))}
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
+                            aria-label="Decrease periods"
+                        >
+                            <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-7 text-center text-xs font-semibold tabular-nums text-foreground select-none">
+                            {numPeriods}
+                        </span>
+                        <button
+                            onClick={() => setNumPeriods(n => Math.min(200, n + 1))}
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
+                            aria-label="Increase periods"
+                        >
+                            <Plus className="w-3 h-3" />
+                        </button>
                     </div>
+
+                    {/* View mode toggle */}
                     <div className="inline-flex rounded-lg bg-secondary p-0.5">
                         <button
                             onClick={() => setViewMode('percent')}
                             className={cn(
-                                'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                                viewMode === 'percent' ? 'bg-[#0097b2] text-white' : 'text-muted-foreground hover:text-foreground',
+                                'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
+                                viewMode === 'percent' ? 'bg-[#0097b2] text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             %
@@ -118,8 +131,8 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                         <button
                             onClick={() => setViewMode('value')}
                             className={cn(
-                                'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                                viewMode === 'value' ? 'bg-[#0097b2] text-white' : 'text-muted-foreground hover:text-foreground',
+                                'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
+                                viewMode === 'value' ? 'bg-[#0097b2] text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             {currency}
