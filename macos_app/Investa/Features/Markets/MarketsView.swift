@@ -457,10 +457,10 @@ private struct YourMoversSection: View {
             ForEach(rows, id: \.symbol) { r in
                 Button { onPick(r.symbol) } label: {
                     HStack {
-                        Text(r.symbol).fontWeight(.bold)
-                        Spacer()
-                        if let p = r.price { Text(Fmt.currency(p, code: currency)).font(.caption).foregroundStyle(.secondary) }
-                        Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))").fontWeight(.bold).foregroundStyle(positive ? .green : .red)
+                        Text(r.symbol).fontWeight(.bold).lineLimit(1)
+                        Spacer(minLength: 6)
+                        if let p = r.price { Text(Fmt.currency(p, code: currency)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                        Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))").fontWeight(.bold).foregroundStyle(positive ? .green : .red).lineLimit(1)
                     }.font(.caption)
                 }.buttonStyle(.plain)
             }

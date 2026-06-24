@@ -115,7 +115,7 @@ struct UnrealizedTaxSection: View {
             }
             Text(sub).font(.caption2).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(12).background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
     }
@@ -146,15 +146,19 @@ struct UnrealizedTaxSection: View {
                                 Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.red).font(.caption.weight(.bold))
                             }
                             Divider()
-                            HStack {
-                                Text("Qty").font(.caption).foregroundStyle(.secondary)
-                                Text(Fmt.number(c.qty)).font(.caption.bold())
-                                Spacer()
-                                Text("Cost").font(.caption).foregroundStyle(.secondary)
-                                Text(Fmt.currency(c.cost, code: currency)).font(.caption.bold()).foregroundStyle(.secondary)
-                                Spacer()
-                                Text("Value").font(.caption).foregroundStyle(.secondary)
-                                Text(Fmt.currency(c.value, code: currency)).font(.caption.bold())
+                            HStack(spacing: 0) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Qty").font(.caption).foregroundStyle(.secondary)
+                                    Text(Fmt.number(c.qty)).font(.caption.bold()).lineLimit(1)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Cost").font(.caption).foregroundStyle(.secondary)
+                                    Text(Fmt.currency(c.cost, code: currency)).font(.caption.bold()).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Value").font(.caption).foregroundStyle(.secondary)
+                                    Text(Fmt.currency(c.value, code: currency)).font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.75)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                         .padding(12)
@@ -234,7 +238,7 @@ struct CapitalGainsKpiStrip: View {
         let winRate: Double? = decided > 0 ? Double(wins) / Double(decided) * 100 : nil
         let returnPct: Double? = cost != 0 ? totalGain / cost * 100 : nil
         return VStack(spacing: 12) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
+            KpiRow(count: 7, minTileWidth: 140) {
                 tile("Total Realized", cgCompact(totalGain, currency),
                      returnPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% on cost" } ?? "on cost basis",
                      totalGain >= 0 ? .green : .red)
@@ -424,15 +428,19 @@ struct RealizedGainsTable: View {
                 Text(r.account).font(.caption2).foregroundStyle(.tertiary)
             }
             Divider()
-            HStack {
-                Text("Proceeds").font(.caption).foregroundStyle(.secondary)
-                Text(Fmt.currency(r.proceeds, code: currency)).font(.caption.bold()).monospacedDigit()
-                Spacer()
-                Text("Cost").font(.caption).foregroundStyle(.secondary)
-                Text(Fmt.currency(r.cost, code: currency)).font(.caption.bold()).monospacedDigit()
-                Spacer()
-                Text("Gain").font(.caption).foregroundStyle(.secondary)
-                Text(Fmt.percent(r.gainPct)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct))
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Proceeds").font(.caption).foregroundStyle(.secondary)
+                    Text(Fmt.currency(r.proceeds, code: currency)).font(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Cost").font(.caption).foregroundStyle(.secondary)
+                    Text(Fmt.currency(r.cost, code: currency)).font(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Gain").font(.caption).foregroundStyle(.secondary)
+                    Text(Fmt.percent(r.gainPct)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct)).lineLimit(1)
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(14)

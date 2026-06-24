@@ -37,6 +37,7 @@ struct MetricCardView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text(card.value)
                     .font(.title2.weight(.semibold))
                     .monospacedDigit()

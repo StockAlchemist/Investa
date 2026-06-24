@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react';
 import WatchlistStar from './WatchlistStar';
 import { Input } from "@/components/ui/input";
@@ -46,8 +47,9 @@ interface SortConfig {
 }
 
 const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, reviewingSymbol, currency }) => {
-    const [expandedReview, setExpandedReview] = useState<string | null>(null);
     const [reviews, setReviews] = useState<Record<string, ScreenReview>>({});
+    const [reviewModal, setReviewModal] = useState<{ symbol: string; review: ScreenReview } | null>(null);
+    const [reviewModalLoading, setReviewModalLoading] = useState<string | null>(null);
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'margin_of_safety', direction: 'desc' });
     const { openStockDetail } = useStockModal();
 
@@ -166,21 +168,27 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
 
     const handleReviewClick = async (symbol: string) => {
         if (reviews[symbol]) {
-            setExpandedReview(expandedReview === symbol ? null : symbol);
+            setReviewModal({ symbol, review: reviews[symbol] });
             return;
         }
-
+        setReviewModalLoading(symbol);
+        setReviewModal({ symbol, review: {} });
         const data = await onReview(symbol);
+        setReviewModalLoading(null);
         if (data) {
-            setReviews(prev => ({ ...prev, [symbol]: data }));
-            setExpandedReview(symbol);
+            const updated = { ...reviews, [symbol]: data };
+            setReviews(updated);
+            setReviewModal({ symbol, review: data });
         }
     };
 
     const handleRegenerate = async (symbol: string) => {
+        setReviewModalLoading(symbol);
         const data = await onReview(symbol, true);
+        setReviewModalLoading(null);
         if (data) {
             setReviews(prev => ({ ...prev, [symbol]: data }));
+            setReviewModal({ symbol, review: data });
         }
     };
 
@@ -209,6 +217,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     if (!results || results.length === 0) return null;
 
     return (
+        <>
         <div className="metric-card card-shine relative overflow-hidden transition-all">
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-teal-500 opacity-80" />
 
@@ -509,67 +518,6 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                             </button>
                                         </td>
                                     </tr>
-                                    {expandedReview === row.symbol && reviews[row.symbol] && (
-                                        <tr className="bg-secondary/5">
-                                            <td colSpan={6} className="p-0">
-                                                <div className="p-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <div className="bg-background/80 backdrop-blur-md rounded-2xl p-6 space-y-6">
-                                                        <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
-                                                                    <Sparkles className="w-5 h-5" />
-                                                                </div>
-                                                                <div className="flex flex-col">
-                                                                    <h3 className="text-lg font-bold text-foreground">AI Technical & Fundamental Audit</h3>
-                                                                    <button
-                                                                        onClick={() => handleRegenerate(row.symbol)}
-                                                                        disabled={reviewingSymbol === row.symbol}
-                                                                        className="flex items-center gap-1.5 text-[10px] font-bold text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors uppercase tracking-wider mt-0.5"
-                                                                    >
-                                                                        {reviewingSymbol === row.symbol ? (
-                                                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                                                        ) : (
-                                                                            <RotateCcw className="w-3 h-3" />
-                                                                        )}
-                                                                        Regenerate Analysis
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex flex-wrap gap-3">
-                                                                {Object.entries(reviews[row.symbol].scorecard || {}).map(([k, v]) => (
-                                                                    <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 flex items-center gap-2">
-                                                                        <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
-                                                                        <span className={cn(
-                                                                            "text-xs font-bold",
-                                                                            v >= 8 ? 'text-emerald-500' : v >= 6 ? 'text-cyan-500' : 'text-amber-500'
-                                                                        )}>{v}/10</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="p-4 rounded-xl bg-muted/30">
-                                                            <p className="text-sm text-foreground/90 leading-relaxed font-semibold italic">
-                                                                &quot;{reviews[row.symbol].summary}&quot;
-                                                            </p>
-                                                        </div>
-
-                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                            {Object.entries(reviews[row.symbol].analysis || {}).map(([k, v]) => (
-                                                                <div key={k} className="space-y-1.5">
-                                                                    <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                                                                        <ChevronRight className="w-3 h-3 text-purple-500" />
-                                                                        {k.replace('_', ' ')}
-                                                                    </h4>
-                                                                    <p className="text-foreground/80 text-xs font-medium leading-relaxed">{v}</p>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
                                 </React.Fragment>
                             ))}
                         </tbody>
@@ -586,6 +534,91 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                 </div>
             </div>
         </div>
+
+        {/* AI Review Modal */}
+        {reviewModal && typeof document !== 'undefined' && createPortal((
+            <div
+                className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={(e) => { if (e.target === e.currentTarget) setReviewModal(null); }}
+            >
+                <div className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl border border-border/40 animate-in zoom-in-95 duration-200">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-border/40 shrink-0">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
+                                <Sparkles className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-foreground">{reviewModal.symbol} · AI Audit</h3>
+                                <button
+                                    onClick={() => handleRegenerate(reviewModal.symbol)}
+                                    disabled={reviewModalLoading === reviewModal.symbol}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-purple-500 hover:text-purple-400 uppercase tracking-wider transition-colors mt-0.5"
+                                >
+                                    {reviewModalLoading === reviewModal.symbol
+                                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                                        : <RotateCcw className="w-3 h-3" />}
+                                    Regenerate
+                                </button>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setReviewModal(null)}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    {/* Body */}
+                    <div className="overflow-y-auto p-6 space-y-6">
+                        {reviewModalLoading === reviewModal.symbol && !reviewModal.review.summary ? (
+                            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+                                <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+                                <p className="text-sm">Generating AI audit…</p>
+                            </div>
+                        ) : (
+                            <>
+                                {reviewModal.review.scorecard && Object.keys(reviewModal.review.scorecard).length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                        {Object.entries(reviewModal.review.scorecard).map(([k, v]) => (
+                                            <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 flex items-center gap-2">
+                                                <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
+                                                <span className={cn(
+                                                    "text-xs font-bold",
+                                                    v >= 8 ? 'text-emerald-500' : v >= 6 ? 'text-cyan-500' : 'text-amber-500'
+                                                )}>{v}/10</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {reviewModal.review.summary && (
+                                    <div className="p-4 rounded-xl bg-muted/30">
+                                        <p className="text-sm text-foreground/90 leading-relaxed font-semibold italic">
+                                            &quot;{reviewModal.review.summary}&quot;
+                                        </p>
+                                    </div>
+                                )}
+                                {reviewModal.review.analysis && Object.keys(reviewModal.review.analysis).length > 0 && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                        {Object.entries(reviewModal.review.analysis).map(([k, v]) => (
+                                            <div key={k} className="space-y-1.5">
+                                                <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                                    <ChevronRight className="w-3 h-3 text-purple-500" />
+                                                    {k.replace('_', ' ')}
+                                                </h4>
+                                                <p className="text-foreground/80 text-xs font-medium leading-relaxed">{v}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        ), document.body)}
+        </>
     );
 };
 

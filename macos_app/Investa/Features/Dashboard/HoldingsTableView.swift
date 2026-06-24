@@ -385,27 +385,27 @@ struct HoldingsTableView: View {
     }
 
     private var groupMenu: some View {
-        Menu {
-            Button { groupBy = nil } label: { Label("Do not group", systemImage: groupBy == nil ? "checkmark" : "") }
-            Divider()
+        PopoverMenu(minWidth: 200) {
+            MenuToggleRow(title: "Do not group", isOn: groupBy == nil, dismissOnTap: true) { groupBy = nil }
+            MenuDivider()
             ForEach(groupingOptions, id: \.key) { opt in
-                Button { groupBy = opt.key } label: { Label(opt.label, systemImage: groupBy == opt.key ? "checkmark" : "") }
+                MenuToggleRow(title: opt.label, isOn: groupBy == opt.key, dismissOnTap: true) { groupBy = opt.key }
             }
         } label: {
             toolLabel("line.3.horizontal.decrease", groupBy.map { k in "By \(groupingOptions.first { $0.key == k }?.label ?? k)" } ?? "Group", active: groupBy != nil)
-        }.borderlessMenu().fixedSize()
+        }.fixedSize()
     }
 
     private var accountMenu: some View {
-        Menu {
-            Button("Clear Filter") { selectedAccounts = [] }
-            Divider()
+        PopoverMenu(minWidth: 200) {
+            MenuRow(title: "Clear Filter") { selectedAccounts = [] }
+            MenuDivider()
             ForEach(uniqueAccounts, id: \.self) { acc in
-                Button { toggleAccount(acc) } label: { Label(acc, systemImage: selectedAccounts.contains(acc) ? "checkmark" : "") }
+                MenuToggleRow(title: acc, isOn: selectedAccounts.contains(acc)) { toggleAccount(acc) }
             }
         } label: {
             toolLabel("person.crop.circle", selectedAccounts.isEmpty ? "Account" : "Account (\(selectedAccounts.count))", active: !selectedAccounts.isEmpty)
-        }.borderlessMenu().fixedSize()
+        }.fixedSize()
     }
 
     private var columnsButton: some View {
@@ -421,7 +421,7 @@ struct HoldingsTableView: View {
             .overlay(Capsule().strokeBorder(.quaternary, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showColumns, arrowEdge: .bottom) { columnsPanel }
+        .popover(isPresented: $showColumns) { columnsPanel }
     }
 
     private var columnsPanel: some View {

@@ -85,6 +85,22 @@ extension View {
     func gregorianCalendar() -> some View {
         environment(\.calendar, Calendar(identifier: .gregorian))
     }
+
+    /// Shrinks all semantic text on iPhone only. iPhone screens are narrow, so
+    /// the macOS/iPad-tuned font sizes read too large there; setting a smaller
+    /// Dynamic Type size scales every `.title`, `.headline`, `.caption`, etc.
+    /// down proportionally. No effect on iPad or macOS.
+    @ViewBuilder func iPhoneTextScale() -> some View {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            self.dynamicTypeSize(.small)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
 }
 
 // MARK: - File export (save panel on macOS, share sheet on iOS)

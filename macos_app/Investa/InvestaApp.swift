@@ -13,6 +13,8 @@ struct InvestaApp: App {
                 // rendering) don't show the Buddhist era under a Thai locale.
                 // Financial dates are stored as ISO yyyy-MM-dd.
                 .gregorianCalendar()
+                // iPhone-only: shrink semantic text one notch (iPad/macOS unchanged).
+                .iPhoneTextScale()
                 .macMinSize(width: 900, height: 600)
         }
         #if os(macOS)

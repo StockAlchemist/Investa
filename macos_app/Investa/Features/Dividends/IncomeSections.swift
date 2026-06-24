@@ -68,8 +68,9 @@ struct IncomeKpiStrip: View {
         let mt = m
         let yoyPct: Double? = mt.priorYtd > 0 ? (mt.ytd - mt.priorYtd) / mt.priorYtd * 100 : nil
         let taxEff: Double? = mt.trailing12m > 0 ? (mt.trailing12m - mt.trailing12mTax) / mt.trailing12m * 100 : nil
+        let tileCount = 3 + (expectedDividends != nil ? 1 : 0) + (dividendYield != nil ? 1 : 0) + (taxEff != nil ? 1 : 0)
         return ISection(title: "Income") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+            KpiRow(count: tileCount, minTileWidth: 150) {
                 tile("YTD Received", compactCurrency(mt.ytd, currency),
                      yoyPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% YoY" } ?? "vs prior YTD",
                      yoyPct.map { $0 >= 0 ? Color.green : .red } ?? .secondary)
@@ -110,6 +111,19 @@ struct IncomeProjectorCard: View {
         return out
     }
 
+    /// 3-letter month labels with `.fixedSize()` so the band-scale axis doesn't
+    /// clip "Jun 2026" down to "J…".
+    private var monthAxis: some AxisContent {
+        AxisMarks { value in
+            AxisGridLine()
+            AxisValueLabel {
+                if let s = value.as(String.self) {
+                    Text(String(s.prefix(3))).font(.caption2).fixedSize()
+                }
+            }
+        }
+    }
+
     var body: some View {
         ISection(title: "Projected 12M Income") {
             if income.isEmpty {
@@ -117,6 +131,7 @@ struct IncomeProjectorCard: View {
             } else if segs.isEmpty {
                 // No per-symbol breakdown — fall back to the monthly total.
                 Chart(income) { BarMark(x: .value("Month", $0.month), y: .value("Income", $0.value)).foregroundStyle(.green) }
+                    .chartXAxis { monthAxis }
                     .chartHoverTooltip(income.map(\.month)) { i in
                         ChartTooltipContent(title: income[i].month,
                                             rows: [ChartTooltipRow(color: .green, label: "Income",
@@ -128,6 +143,7 @@ struct IncomeProjectorCard: View {
                     BarMark(x: .value("Month", s.month), y: .value("Income", s.amount))
                         .foregroundStyle(by: .value("Symbol", s.symbol))
                 }
+                .chartXAxis { monthAxis }
                 .chartLegend(.visible)
                 .chartHoverTooltip(projectorMonths) { i in
                     let month = projectorMonths[i]
@@ -182,7 +198,8 @@ struct DividendCalendarSection: View {
                                 Text("Pay \(ev.dividendDate)").font(.caption2).foregroundStyle(.secondary)
                             }
                             Text(Fmt.currency(ev.amount, code: currency)).fontWeight(.bold).foregroundStyle(.green)
-                                .frame(width: 90, alignment: .trailing)
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .frame(minWidth: 90, alignment: .trailing)
                         }
                     }.buttonStyle(.plain)
                     Divider()
@@ -308,8 +325,22 @@ struct AnnualDividendsCard: View {
         }
     }
 
+    /// ~6 evenly-spaced years to label (anchored to the latest), so labels don't
+    /// crowd into "2(2(2…". `.fixedSize()` on each then prevents the band-scale
+    /// axis from clipping "'01" down to "'0".
+    private func axisYears(_ data: [Row], target: Int = 6) -> [String] {
+        guard data.count > target else { return data.map(\.year) }
+        let step = max(1, Int((Double(data.count) / Double(target)).rounded()))
+        return data.enumerated().compactMap { i, r in
+            (data.count - 1 - i) % step == 0 ? r.year : nil
+        }
+    }
+
     var body: some View {
         let data = rows
+        // The per-bar YoY% labels overlap once there are many bars — only show
+        // them when there's room; the value is always available via the tooltip.
+        let showYoY = data.count <= 12
         ISection(title: "Annual Dividends") {
             if data.isEmpty {
                 Text("No dividends.").foregroundStyle(.secondary)
@@ -318,11 +349,22 @@ struct AnnualDividendsCard: View {
                     BarMark(x: .value("Year", row.year), y: .value("Amount", row.amount))
                         .foregroundStyle(.green)
                         .annotation(position: .top) {
-                            if let y = row.yoy {
+                            if showYoY, let y = row.yoy {
                                 Text("\(y > 0 ? "+" : "")\(String(format: "%.0f", y))%")
                                     .font(.caption2.bold()).foregroundStyle(y >= 0 ? .green : .red)
                             }
                         }
+                }
+                .chartXAxis {
+                    AxisMarks(values: axisYears(data)) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel {
+                            if let s = value.as(String.self) {
+                                Text("'\(s.suffix(2))").font(.caption2).fixedSize()
+                            }
+                        }
+                    }
                 }
                 .chartHoverTooltip(data.map(\.year)) { i in
                     var rows = [ChartTooltipRow(color: .green, label: "Dividends",

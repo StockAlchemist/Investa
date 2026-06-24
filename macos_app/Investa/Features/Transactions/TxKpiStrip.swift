@@ -70,18 +70,23 @@ struct TxKpiStrip: View {
         return VStack(alignment: .leading, spacing: 14) {
             // Activity counts
             #if os(iOS)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    Text("Activity").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                    activity("\(c.counts.total)", "transactions")
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Activity").font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                
+                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 16) {
+                    kpiStat("Transactions", "\(c.counts.total)")
                     if c.counts.buy + c.counts.sell > 0 {
-                        HStack(spacing: 4) { activity("\(c.counts.buy)", "buys"); Text("/").foregroundStyle(.secondary); activity("\(c.counts.sell)", "sells") }
+                        kpiStat("Buys / Sells", "\(c.counts.buy) / \(c.counts.sell)")
                     }
-                    if c.counts.dividend + c.counts.interest > 0 {
-                        activity("\(c.counts.dividend)", "div", tint: .green)
-                        if c.counts.interest > 0 { activity("\(c.counts.interest)", "int", tint: .green) }
+                    if c.counts.dividend > 0 {
+                        kpiStat("Dividends", "\(c.counts.dividend)", valueColor: .green)
                     }
-                    if c.counts.deposit + c.counts.withdrawal > 0 { activity("\(c.counts.deposit + c.counts.withdrawal)", "cash flows") }
+                    if c.counts.interest > 0 {
+                        kpiStat("Interest", "\(c.counts.interest)", valueColor: .green)
+                    }
+                    if c.counts.deposit + c.counts.withdrawal > 0 {
+                        kpiStat("Cash Flows", "\(c.counts.deposit + c.counts.withdrawal)")
+                    }
                 }
             }
             #else
@@ -100,7 +105,7 @@ struct TxKpiStrip: View {
             }
             #endif
             if !c.rows.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 12)], spacing: 12) {
+                KpiRow(count: c.rows.count, minTileWidth: 240) {
                     ForEach(c.rows) { row in currencyCard(row) }
                 }
             }
@@ -115,6 +120,14 @@ struct TxKpiStrip: View {
         HStack(spacing: 4) {
             Text(value).font(.callout.bold()).foregroundStyle(tint).monospacedDigit()
             Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func kpiStat(_ label: String, _ value: String, valueColor: Color = .primary) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(value).font(.headline).foregroundStyle(valueColor).monospacedDigit()
         }
     }
 
@@ -144,6 +157,7 @@ struct TxKpiStrip: View {
             }
         }
         .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
     }
 

@@ -12,6 +12,8 @@ final class DashboardViewModel: ObservableObject {
     /// 1-year daily history used by the hero card's WTD/MTD/YTD/1Y selector,
     /// independent of the global period that drives the performance graph.
     @Published var heroHistory: [PerformancePoint] = []
+    @Published var heroIntraday: [PerformancePoint] = []
+    @Published var heroWTD: [PerformancePoint] = []
     @Published var risk: RiskMetrics?
     @Published var projection: Projection?
     @Published var health: PortfolioHealth?
@@ -113,9 +115,12 @@ final class DashboardViewModel: ObservableObject {
         }
 
         // Hero long-history (1y) for the WTD/MTD/YTD/1Y period selector.
-        heroHistory = (try? await api.get(
-            "/history",
-            query: [curItem, URLQueryItem(name: "period", value: "1y"),
-                    URLQueryItem(name: "interval", value: "1d")] + accountItems)) ?? []
+        async let hero1YResult: [PerformancePoint]? = try? api.get("/history", query: [curItem, URLQueryItem(name: "period", value: "1y"), URLQueryItem(name: "interval", value: "1d")] + accountItems)
+        async let hero1DResult: [PerformancePoint]? = try? api.get("/history", query: [curItem, URLQueryItem(name: "period", value: "1d"), URLQueryItem(name: "interval", value: "2m")] + accountItems)
+        async let heroWTDResult: [PerformancePoint]? = try? api.get("/history", query: [curItem, URLQueryItem(name: "period", value: "5d"), URLQueryItem(name: "interval", value: "15m")] + accountItems)
+        
+        heroHistory = (await hero1YResult) ?? []
+        heroIntraday = (await hero1DResult) ?? []
+        heroWTD = (await heroWTDResult) ?? []
     }
 }

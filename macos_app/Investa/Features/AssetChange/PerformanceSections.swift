@@ -78,7 +78,7 @@ struct PerfKpiStrip: View {
     var body: some View {
         let mt = m
         PSection(title: "Performance KPIs") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12)], spacing: 12) {
+            KpiRow(count: benchmarks.first != nil ? 7 : 6, minTileWidth: 150) {
                 tile("YTD", pct(mt.ytd), nil, Fmt.tint(for: mt.ytd))
                 tile("1Y", pct(mt.oneYear), nil, Fmt.tint(for: mt.oneYear))
                 tile("Win Rate", mt.winRate.map { String(format: "%.0f%%", $0) } ?? "–", "of months", (mt.winRate ?? 0) >= 50 ? .green : .orange)
@@ -129,13 +129,33 @@ struct ReturnsChart: View {
         var out: [Bar] = []
         for row in rows {
             guard let date = row["Date"]?.stringValue else { continue }
+            let dateStr = String(date.prefix(10))
+            let sDate = shortDate(dateStr, period: period)
             for k in keys {
                 if let v = row[k]?.doubleValue {
-                    out.append(Bar(date: String(date.prefix(10)), series: k.replacingOccurrences(of: " \(suffix)", with: ""), value: v))
+                    out.append(Bar(date: sDate, series: k.replacingOccurrences(of: " \(suffix)", with: ""), value: v))
                 }
             }
         }
         return out
+    }
+    
+    private func shortDate(_ d: String, period: String) -> String {
+        guard d.count >= 10 else { return d }
+        let y = d.prefix(4)
+        let m = d.dropFirst(5).prefix(2)
+        let day = d.dropFirst(8).prefix(2)
+        switch period {
+        case "Y": return String(y)
+        case "M":
+            let mInt = Int(m) ?? 1
+            let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            let mStr = months[max(0, min(11, mInt - 1))]
+            return "\(mStr) '\(y.suffix(2))"
+        case "W", "D":
+            return "\(m)/\(day)"
+        default: return String(d.prefix(10))
+        }
     }
 
     private var distinctDates: [String] {
@@ -146,9 +166,8 @@ struct ReturnsChart: View {
 
     var body: some View {
         PSection(title: "Returns") {
-            ScrollView(.horizontal, showsIndicators: false) {
-                controls.padding(.bottom, 8)
-            }
+            controls.padding(.bottom, 8)
+
             if bars.isEmpty {
                 Text("No return data.").foregroundStyle(.secondary).frame(height: 240)
             } else {
@@ -184,14 +203,26 @@ struct ReturnsChart: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 8) {
-            Picker("", selection: $period) { ForEach(periods, id: \.key) { Text($0.label).tag($0.key) } }
-                .pickerStyle(.menu).fixedSize()
-                .onChange(of: period) { _, new in count = periods.first { $0.key == new }?.def ?? 12 }
-            Stepper("Show \(count)", value: $count, in: 1...200).fixedSize()
-            Picker("", selection: $valueMode) { Text("%").tag(false); Text(currency).tag(true) }
-                .pickerStyle(.segmented).fixedSize()
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Picker("", selection: $period) { ForEach(periods, id: \.key) { Text($0.label).tag($0.key) } }
+                    .pickerStyle(.menu).fixedSize()
+                Stepper("Show \(count)", value: $count, in: 1...200).fixedSize()
+                Picker("", selection: $valueMode) { Text("%").tag(false); Text(currency).tag(true) }
+                    .pickerStyle(.segmented).fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Picker("", selection: $period) { ForEach(periods, id: \.key) { Text($0.label).tag($0.key) } }
+                        .pickerStyle(.menu).fixedSize()
+                    Spacer()
+                    Picker("", selection: $valueMode) { Text("%").tag(false); Text(currency).tag(true) }
+                        .pickerStyle(.segmented).frame(width: 120)
+                }
+                Stepper("Show \(count)", value: $count, in: 1...200)
+            }
         }
+        .onChange(of: period) { _, new in count = periods.first { $0.key == new }?.def ?? 12 }
     }
 }
 
@@ -200,6 +231,20 @@ struct ReturnsChart: View {
 struct MonthlyHeatmap: View {
     let data: [String: [[String: JSONValue]]]
     private let months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    #endif
+
+    /// Full-width flexible cells when there's room (macOS, iPad); a scrollable
+    /// fixed-width grid only on the narrow iPhone, where 12 columns can't fit.
+    private var flexible: Bool {
+        #if os(iOS)
+        return hSize != .compact
+        #else
+        return true
+        #endif
+    }
 
     private var grid: (years: [Int], values: [Int: [Double?]], totals: [Int: Double]) {
         var byYear: [Int: [Double?]] = [:]
@@ -234,32 +279,68 @@ struct MonthlyHeatmap: View {
         PSection(title: "Monthly Returns") {
             if g.years.isEmpty {
                 Text("No monthly data.").foregroundStyle(.secondary)
+            } else if flexible {
+                // Span the full panel width: cells flex to share the available space.
+                heatGrid(g, flexible: true)
             } else {
-                ScrollView(.horizontal, showsIndicators: true) {
-                    Grid(alignment: .center, horizontalSpacing: 3, verticalSpacing: 3) {
-                        GridRow {
-                            Text("Year").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
-                            ForEach(months, id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
-                            Text("Total").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                        }
-                        ForEach(g.years, id: \.self) { y in
-                            GridRow {
-                                Text(String(y)).font(.caption.weight(.bold)).gridColumnAlignment(.leading)
-                                ForEach(0..<12, id: \.self) { mi in
-                                    let v = g.values[y]?[mi] ?? nil
-                                    Text(v.map { String(format: "%.1f", $0) } ?? "")
-                                        .font(.caption2).monospacedDigit()
-                                        .frame(width: 40, height: 24)
-                                        .background(cellColor(v), in: RoundedRectangle(cornerRadius: 4))
-                                }
-                                Text(g.totals[y].map { "\($0 > 0 ? "+" : "")\(String(format: "%.1f%%", $0))" } ?? "—")
-                                    .font(.caption.weight(.bold)).monospacedDigit()
-                                    .foregroundStyle(Fmt.tint(for: g.totals[y]))
-                            }
-                        }
+                // iPhone can't fit 12 columns at a readable size — keep it scrollable.
+                ScrollView(.horizontal, showsIndicators: true) { heatGrid(g, flexible: false) }
+            }
+        }
+    }
+
+    @ViewBuilder private func heatGrid(_ g: (years: [Int], values: [Int: [Double?]], totals: [Int: Double]), flexible: Bool) -> some View {
+        Grid(alignment: .center, horizontalSpacing: 3, verticalSpacing: 3) {
+            GridRow {
+                Text("Year").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+                ForEach(months, id: \.self) {
+                    Text($0).font(.caption2).foregroundStyle(.secondary)
+                        .frame(maxWidth: flexible ? .infinity : nil)
+                }
+                Text("Total").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            ForEach(g.years, id: \.self) { y in
+                GridRow {
+                    Text(String(y)).font(.caption.weight(.bold)).gridColumnAlignment(.leading)
+                    ForEach(0..<12, id: \.self) { mi in
+                        let v = g.values[y]?[mi] ?? nil
+                        Text(v.map { String(format: "%.1f", $0) } ?? "")
+                            .font(.caption2).monospacedDigit()
+                            .frame(width: flexible ? nil : 40, height: 24)
+                            .frame(maxWidth: flexible ? .infinity : nil, maxHeight: 24)
+                            .background(cellColor(v), in: RoundedRectangle(cornerRadius: 4))
                     }
+                    Text(g.totals[y].map { "\($0 > 0 ? "+" : "")\(String(format: "%.1f%%", $0))" } ?? "—")
+                        .font(.caption.weight(.bold)).monospacedDigit()
+                        .foregroundStyle(Fmt.tint(for: g.totals[y]))
                 }
             }
+            Divider().gridCellColumns(14)
+            let avgs = monthlyAverages(g)
+            GridRow {
+                Text("Avg").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+                ForEach(0..<12, id: \.self) { mi in
+                    let a = avgs[mi]
+                    Text(a.map { String(format: "%.1f", $0) } ?? "")
+                        .font(.caption2.weight(.bold)).monospacedDigit()
+                        .frame(width: flexible ? nil : 40, height: 24)
+                        .frame(maxWidth: flexible ? .infinity : nil, maxHeight: 24)
+                        .background(cellColor(a), in: RoundedRectangle(cornerRadius: 4))
+                }
+                let overall = avgs.compactMap { $0 }
+                Text(overall.isEmpty ? "—" : "\(overall.reduce(0, +) / Double(overall.count) > 0 ? "+" : "")\(String(format: "%.1f%%", overall.reduce(0, +) / Double(overall.count)))")
+                    .font(.caption.weight(.bold)).monospacedDigit()
+                    .foregroundStyle(Fmt.tint(for: overall.isEmpty ? nil : overall.reduce(0, +) / Double(overall.count)))
+            }
+        }
+        .frame(maxWidth: flexible ? .infinity : nil)
+    }
+
+    /// Average return for each month index (0=Jan … 11=Dec) across all years; nil if no data.
+    private func monthlyAverages(_ g: (years: [Int], values: [Int: [Double?]], totals: [Int: Double])) -> [Double?] {
+        (0..<12).map { mi in
+            let vals = g.years.compactMap { g.values[$0]?[mi] ?? nil }
+            return vals.isEmpty ? nil : vals.reduce(0, +) / Double(vals.count)
         }
     }
 }
@@ -398,22 +479,18 @@ struct BenchmarkScoreboard: View {
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
             Spacer()
-            Menu {
-                Button("All Accounts") { accounts = [] }
+            PopoverMenu(minWidth: 200) {
+                MenuRow(title: "All Accounts") { accounts = [] }
                 let groups = orderedGroups
                 if !groups.isEmpty {
-                    Section("Groups") {
-                        ForEach(groups, id: \.name) { g in
-                            Button(g.name) { accounts = Set(g.accounts) }
-                        }
+                    MenuSectionHeader("Groups")
+                    ForEach(groups, id: \.name) { g in
+                        MenuRow(title: g.name) { accounts = Set(g.accounts) }
                     }
                 }
-                Section("Accounts") {
-                    ForEach(individualAccounts, id: \.self) { acc in
-                        Button { toggle(acc) } label: {
-                            Label(acc, systemImage: accounts.contains(acc) ? "checkmark" : "")
-                        }
-                    }
+                MenuSectionHeader("Accounts")
+                ForEach(individualAccounts, id: \.self) { acc in
+                    MenuToggleRow(title: acc, isOn: accounts.contains(acc)) { toggle(acc) }
                 }
             } label: {
                 Text(accountsLabel).font(.caption).lineLimit(1)

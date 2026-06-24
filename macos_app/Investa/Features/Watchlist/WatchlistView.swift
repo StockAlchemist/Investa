@@ -431,41 +431,17 @@ struct WatchlistKpiStrip: View {
         let best = items.compactMap { i in i.dayChangePct.map { (i.symbol, $0) } }.max { $0.1 < $1.1 }
         let worst = items.compactMap { i in i.dayChangePct.map { (i.symbol, $0) } }.min { $0.1 < $1.1 }
         let opportunities = items.filter { ($0.marginOfSafety ?? 0) > 0 }.count
-        #if os(iOS)
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                tile("Symbols", "\(items.count)", "tracked", .primary)
-                Divider().frame(height: 36)
-                tile("Avg Day Change", avg.map { Fmt.percent($0) } ?? "–", nil, Fmt.tint(for: avg))
-                Divider().frame(height: 36)
-                tile("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
-                Divider().frame(height: 36)
-                tile("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
-                Divider().frame(height: 36)
-                tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? .green : .primary)
-                Spacer()
-            }
-            .padding(16)
-        }
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-        #else
-        return HStack(spacing: 0) {
+        return KpiRow(count: 5, minTileWidth: 140) {
             tile("Symbols", "\(items.count)", "tracked", .primary)
-            Divider().frame(height: 36)
             tile("Avg Day Change", avg.map { Fmt.percent($0) } ?? "–", nil, Fmt.tint(for: avg))
-            Divider().frame(height: 36)
             tile("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
-            Divider().frame(height: 36)
             tile("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
-            Divider().frame(height: 36)
             tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? .green : .primary)
-            Spacer()
         }
         .padding(16)
+        .frame(maxWidth: .infinity)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-        #endif
     }
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {

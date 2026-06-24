@@ -114,7 +114,7 @@ struct ConcentrationKpiStrip: View {
         let largestTone: Color = (mt.largestPct ?? 0) >= 25 ? .orange : ((mt.largestPct ?? 0) >= 15 ? .primary : .up)
         let effTone: Color = (mt.effectiveN ?? 0) >= 10 ? .up : ((mt.effectiveN ?? 0) >= 5 ? .primary : .orange)
         return Section_(title: "Concentration", icon: "scope") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
+            KpiRow(count: 6, minTileWidth: 140) {
                 tile("Holdings", "\(mt.stockCount)", mt.cashCount > 0 ? "+ \(mt.cashCount) cash" : "stocks & funds", .primary)
                 tile("Largest", mt.largestSymbol ?? "–", mt.largestPct.map { String(format: "%.1f%%", $0) }, largestTone)
                 tile("Top 5", mt.top5.map { String(format: "%.1f%%", $0) } ?? "–", "of portfolio", .primary)

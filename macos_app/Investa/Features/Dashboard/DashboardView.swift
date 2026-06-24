@@ -8,7 +8,6 @@ struct DashboardView: View {
     @State private var detail: SymbolID?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
-    @Environment(\.verticalSizeClass) private var vSize
     private var isPhone: Bool { hSize == .compact }
     #else
     private var isPhone: Bool { false }
@@ -26,7 +25,7 @@ struct DashboardView: View {
 
                     // Overview
                     if vis("portfolioHero") {
-                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory)
+                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD)
                     }
                     if vis("todayStrip") {
                         TodayStripCard(holdings: viewModel.holdings, currency: cur,
@@ -100,16 +99,8 @@ struct DashboardView: View {
         .padding(.top, 4)
     }
 
-    @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
-        #if os(iOS)
-        if hSize == .compact && vSize == .regular {
-            VStack(spacing: 16) { left; right }
-        } else {
-            HStack(alignment: .top, spacing: 16) { left; right }
-        }
-        #else
-        HStack(alignment: .top, spacing: 16) { left; right }
-        #endif
+    private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
+        AdaptiveTwoColumn(left: left, right: right, spacing: 16)
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.performance, id) }
@@ -191,11 +182,15 @@ struct DashboardView: View {
             "taxes": MetricCard(title: "Taxes", value: Fmt.currency(m?.taxes, code: cur), tint: .down),
         ]
         let cards = metricOrder.filter { vis($0) }.compactMap { byId[$0] }
-        // macOS: a fixed 6-column grid (the 12 metric cards land in two rows of 6);
-        // iPhone: adaptive so cards stay legible on the narrow width.
-        let columns: [GridItem] = isPhone
-            ? [GridItem(.adaptive(minimum: 150), spacing: 12)]
-            : Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
+        // macOS: a fixed 6-column grid (the 12 metric cards land in two rows of 6)
+        // since the window is always wide. iOS (iPhone *and* iPad): adaptive, so
+        // cards stay wide enough to show full labels/values — an iPad with the
+        // sidebar open has a narrow detail area that can't fit 6 legible columns.
+        #if os(macOS)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
+        #else
+        let columns = [GridItem(.adaptive(minimum: 170), spacing: 12)]
+        #endif
         return LazyVGrid(columns: columns, spacing: 12) {
             ForEach(cards) { MetricCardView(card: $0) }
         }

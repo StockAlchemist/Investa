@@ -1,6 +1,7 @@
 import SwiftUI
 
 private enum ScreenSortKey: String { case symbol, price, intrinsic, mos, pe, aiScore }
+private struct ReviewSheetItem: Identifiable { let id: String }
 
 struct ScreenerResultsView: View {
     @ObservedObject var viewModel: ScreenerViewModel
@@ -16,6 +17,7 @@ struct ScreenerResultsView: View {
     @State private var sortAsc = false
     @State private var expanded: String?
     @State private var detail: SymbolID?
+    @State private var reviewSheetItem: ReviewSheetItem?
 
     private let capOptions: [(key: String, label: String)] = [
         ("all", "All"), ("mega", "Mega ≥ $200B"), ("large", "Large $10–200B"),
@@ -88,7 +90,6 @@ struct ScreenerResultsView: View {
                 Divider()
                 ForEach(sorted) { row in
                     resultRow(row)
-                    if expanded == row.symbol, let rev = viewModel.reviews[row.symbol] { reviewPanel(row.symbol, rev) }
                     Divider()
                 }
             }
@@ -96,10 +97,51 @@ struct ScreenerResultsView: View {
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
             .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
+            .sheet(item: $reviewSheetItem) { item in
+                NavigationStack {
+                    ScrollView {
+                        Group {
+                            if viewModel.reviewingSymbol == item.id, viewModel.reviews[item.id] == nil {
+                                VStack(spacing: 16) {
+                                    ProgressView()
+                                    Text("Generating AI audit…").font(.callout).foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity).padding(40)
+                            } else if let rev = viewModel.reviews[item.id] {
+                                reviewPanel(item.id, rev).padding(16)
+                            } else {
+                                Text("No review available.").foregroundStyle(.secondary).padding(40)
+                            }
+                        }
+                    }
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
+                    .navigationTitle("\(item.id) · AI Audit")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { reviewSheetItem = nil }
+                        }
+                    }
+                }
+            }
         }
     }
 
     private var headerRow: some View {
+        #if os(iOS)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Scan Results", systemImage: "target").font(.headline)
+                Text("\(filtered.count) of \(viewModel.results.count)").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                TextField("Search…", text: $search).textFieldStyle(.roundedBorder)
+                Button { showFilters.toggle() } label: { Image(systemName: "slider.horizontal.3") }
+                    .buttonStyle(.bordered).tint(showFilters ? .accentColor : nil)
+            }
+        }
+        #else
         HStack {
             Label("Scan Results", systemImage: "target").font(.headline)
             Text("\(filtered.count) of \(viewModel.results.count)").font(.caption).foregroundStyle(.secondary)
@@ -108,6 +150,7 @@ struct ScreenerResultsView: View {
             Button { showFilters.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                 .buttonStyle(.bordered).tint(showFilters ? .accentColor : nil)
         }
+        #endif
     }
 
     private var summaryRow: some View {
@@ -296,8 +339,10 @@ struct ScreenerResultsView: View {
 
     private func auditButton(_ row: ScreenerResult) -> some View {
         Button {
-            if viewModel.reviews[row.symbol] != nil { expanded = expanded == row.symbol ? nil : row.symbol }
-            else { Task { await viewModel.review(row.symbol); expanded = row.symbol } }
+            reviewSheetItem = ReviewSheetItem(id: row.symbol)
+            if viewModel.reviews[row.symbol] == nil {
+                Task { await viewModel.review(row.symbol) }
+            }
         } label: {
             if viewModel.reviewingSymbol == row.symbol {
                 HStack(spacing: 4) { ProgressView().controlSize(.small); Text("Analyzing") }

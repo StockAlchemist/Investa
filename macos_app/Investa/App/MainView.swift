@@ -167,15 +167,20 @@ struct MainView: View {
                     appearanceSet = true
                     forceDark.toggle()
                 }
-                Menu {
-                    if let user = auth.currentUser { Text("Signed in as \(user.displayName)"); Divider() }
-                    Button("Refresh") { NotificationCenter.default.post(name: .refreshRequested, object: nil) }
-                    Button("Log Out") { auth.logout() }
+                PopoverMenu {
+                    MenuRow(title: "Refresh", systemImage: "arrow.clockwise") {
+                        NotificationCenter.default.post(name: .refreshRequested, object: nil)
+                    }
+                    MenuDivider()
+                    if let user = auth.currentUser {
+                        MenuSectionHeader("Signed in as \(user.displayName)")
+                    }
+                    MenuRow(title: "Log Out", systemImage: "rectangle.portrait.and.arrow.right",
+                            role: .destructive) { auth.logout() }
                 } label: {
                     Label(auth.currentUser?.displayName ?? "Account", systemImage: "person.crop.circle")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .borderlessMenu()
                 .padding(.horizontal, 8).padding(.vertical, 6)
             }
             .padding(.vertical, 6)
@@ -223,20 +228,20 @@ struct MainView: View {
                 // menu, so the phone bar no longer needs standalone refresh/profile
                 // icons.
                 GlobalControlBar(section: section) {
-                    Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
+                    MenuRow(title: "Refresh", systemImage: "arrow.clockwise") {
+                        NotificationCenter.default.post(name: .refreshRequested, object: nil)
                     }
-                    Button { showingSettings = true } label: {
-                        Label("Settings", systemImage: "gearshape")
+                    MenuRow(title: "Settings", systemImage: "gearshape") { showingSettings = true }
+                    MenuRow(title: forceDark ? "Light Mode" : "Dark Mode",
+                            systemImage: forceDark ? "sun.max" : "moon") {
+                        appearanceSet = true; forceDark.toggle()
                     }
-                    Button { appearanceSet = true; forceDark.toggle() } label: {
-                        Label(forceDark ? "Light Mode" : "Dark Mode", systemImage: forceDark ? "sun.max" : "moon")
+                    MenuDivider()
+                    if let user = auth.currentUser {
+                        MenuSectionHeader("Signed in as \(user.displayName)")
                     }
-                    Divider()
-                    if let user = auth.currentUser { Text("Signed in as \(user.displayName)") }
-                    Button(role: .destructive) { auth.logout() } label: {
-                        Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
+                    MenuRow(title: "Log Out", systemImage: "rectangle.portrait.and.arrow.right",
+                            role: .destructive) { auth.logout() }
                 }
                 Divider()
                 sectionView(section)

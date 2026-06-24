@@ -27,7 +27,7 @@ function bucketClass(v: number | null): string {
 }
 
 export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
-    const { grid, years, yearTotals } = useMemo(() => {
+    const { grid, years, yearTotals, monthAverages } = useMemo(() => {
         const monthly = data?.M ?? [];
         // year -> [12] of returns (null if missing)
         const byYear = new Map<number, (number | null)[]>();
@@ -50,7 +50,14 @@ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
                 .reduce((acc, v) => acc * (1 + v / 100), 1);
             totals.set(y, (compounded - 1) * 100);
         }
-        return { grid: byYear, years: yrs, yearTotals: totals };
+        // Average return per month index across all years (null if no data).
+        const monthAverages: (number | null)[] = Array.from({ length: 12 }, (_, m) => {
+            const vals = yrs
+                .map(y => byYear.get(y)![m])
+                .filter((v): v is number => typeof v === 'number');
+            return vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null;
+        });
+        return { grid: byYear, years: yrs, yearTotals: totals, monthAverages };
     }, [data]);
 
     if (years.length === 0) {
@@ -121,6 +128,37 @@ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
                             );
                         })}
                     </tbody>
+                    <tfoot>
+                        <tr>
+                            <td className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider pr-2 pt-1 border-t border-border/50">Avg</td>
+                            {monthAverages.map((v, i) => (
+                                <td
+                                    key={i}
+                                    className={cn(
+                                        'text-center font-bold rounded h-7 min-w-[2.5rem] border-t border-border/50',
+                                        bucketClass(v),
+                                    )}
+                                    title={v != null ? `${MONTH_LABELS[i]} average: ${v.toFixed(2)}%` : `${MONTH_LABELS[i]} average: —`}
+                                >
+                                    {v != null ? v.toFixed(1) : ''}
+                                </td>
+                            ))}
+                            {(() => {
+                                const vals = monthAverages.filter((v): v is number => typeof v === 'number');
+                                const avg = vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null;
+                                return (
+                                    <td className={cn(
+                                        'text-right font-bold pl-2 pt-1 border-t border-border/50',
+                                        avg == null ? 'text-muted-foreground' :
+                                        avg >= 0 ? 'text-emerald-600 dark:text-emerald-400'
+                                                 : 'text-red-600 dark:text-red-400',
+                                    )}>
+                                        {avg != null ? `${avg > 0 ? '+' : ''}${avg.toFixed(1)}%` : '—'}
+                                    </td>
+                                );
+                            })()}
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>

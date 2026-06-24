@@ -381,6 +381,14 @@ export default function Home() {
     enabled: !!user && backgroundFetchLevel >= 1,
   });
 
+  const historyWTDQuery = useQuery({
+    queryKey: ['history', user?.username, currency, selectedAccounts, 'wtd'],
+    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '5d', [], '15m', undefined, undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
+    enabled: !!user && backgroundFetchLevel >= 1,
+  });
+
   const graphInterval = useMemo(() => {
     if (graphPeriod === '1d') return '2m';
     if (graphPeriod === '5d') return '15m';
@@ -501,8 +509,9 @@ export default function Home() {
               summary={effectiveSummary || { metrics: null, account_metrics: null }}
               currency={currency}
               history={historySparklineQuery.data || []}
+              wtdHistory={historyWTDQuery.data || []}
               isLoading={cardLoading}
-              isRefreshing={cardRefreshing || historySparklineQuery.isFetching}
+              isRefreshing={cardRefreshing || historySparklineQuery.isFetching || historyWTDQuery.isFetching}
               riskMetrics={riskMetricsQuery.data || {}}
               riskMetricsLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
               portfolioHealth={portfolioHealthQuery.data || null}

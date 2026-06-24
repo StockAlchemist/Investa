@@ -131,6 +131,16 @@ struct TransactionsView: View {
         }
     }
 
+    /// Row title: the ticker for stock rows, a short "Cash" for cash-flow rows
+    /// (whose raw symbol is a long "CASH (account)" string that truncates to "…"),
+    /// and the type itself when there's no symbol at all.
+    private static func rowTitle(_ tx: Transaction) -> String {
+        if tx.symbol.isEmpty { return tx.type }
+        let s = tx.symbol.trimmingCharacters(in: .whitespaces).uppercased()
+        if s == "$CASH" || s == "CASH" || s.hasPrefix("CASH (") { return "Cash" }
+        return tx.symbol
+    }
+
     private func iconForType(_ type: String) -> String {
         switch type.uppercased() {
         case "BUY": return "bag.fill"
@@ -257,26 +267,31 @@ struct TransactionsView: View {
     // MARK: - Import (PDF/IBKR document parsing)
 
     private var importControl: some View {
-        Menu {
-            Picker("Import to account", selection: $importAccount) {
-                Text("Default").tag("")
-                ForEach(appState.allAccounts, id: \.self) { Text($0).tag($0) }
+        PopoverMenu(minWidth: 220) {
+            MenuSectionHeader("Import to account")
+            MenuToggleRow(title: "Default", isOn: importAccount == "") { setImportAccount("") }
+            ForEach(appState.allAccounts, id: \.self) { acc in
+                MenuToggleRow(title: acc, isOn: importAccount == acc) { setImportAccount(acc) }
             }
-            .onChange(of: importAccount) { _, _ in
-                if isImportAccountAutoCash { autoAddCash = false }
+            MenuDivider()
+            MenuToggleRow(title: "Auto-add cash", isOn: autoAddCash) {
+                if !isImportAccountAutoCash { autoAddCash.toggle() }
             }
-            Toggle("Auto-add cash", isOn: $autoAddCash)
-                .disabled(isImportAccountAutoCash)
-            Divider()
-            Button("Choose PDF / Image…") { showImporter = true }
+            MenuDivider()
+            MenuRow(title: "Choose PDF / Image…", systemImage: "doc") { showImporter = true }
         } label: {
             if viewModel.isImporting { ProgressView().controlSize(.small) }
             else { Label("Import", systemImage: "doc.badge.plus") }
         }
-        .borderlessMenu().fixedSize()
+        .fixedSize()
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.pdf, .image]) { result in
             if case .success(let url) = result { openImportFile(url) }
         }
+    }
+
+    private func setImportAccount(_ acc: String) {
+        importAccount = acc
+        if isImportAccountAutoCash { autoAddCash = false }
     }
 
     private static let outflowTypes: Set<String> = [
@@ -702,62 +717,63 @@ struct TransactionsView: View {
     }
 
     private func iosTransactionRow(_ tx: Transaction) -> some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: 12) {
             // Icon
-            StockIcon(symbol: tx.symbol.isEmpty ? "CASH" : tx.symbol, size: 42)
-                .frame(width: 48, height: 48)
+            StockIcon(symbol: tx.symbol.isEmpty ? "CASH" : tx.symbol, size: 40)
+                .frame(width: 44, height: 44)
 
-            // Middle: Symbol, Type, Date
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text(tx.symbol.isEmpty ? tx.type : tx.symbol)
-                        .font(.headline.weight(.bold))
+            VStack(spacing: 6) {
+                // Row 1: Symbol & Total Amount
+                HStack(alignment: .center, spacing: 6) {
+                    Text(Self.rowTitle(tx))
+                        .font(.subheadline.weight(.bold))
                         .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency))
+                        .font(.subheadline.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Fmt.tint(for: tx.totalAmount))
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                // Row 2: Type & Qty/Price
+                HStack(alignment: .center, spacing: 6) {
                     if !tx.symbol.isEmpty {
                         Text(tx.type.uppercased())
-                            .font(.system(size: 10, weight: .bold))
-                            .lineLimit(1)
-                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4).padding(.vertical, 2)
                             .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
                             .foregroundStyle(Self.typeColor(tx.type))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    Spacer(minLength: 4)
+                    if tx.quantity != 0 {
+                        Text("\(Fmt.number(tx.quantity)) @ \(Fmt.number(tx.pricePerShare))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                     }
                 }
-                
-                HStack(spacing: 4) {
+
+                // Row 3: Date, Account, Menu
+                HStack(spacing: 8) {
                     Text(tx.displayDate)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    if tx.quantity != 0 {
-                        Text("•")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        Text("\(Fmt.number(tx.quantity)) @ \(Fmt.number(tx.pricePerShare))")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            // Right: Amount, Account, Menu
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency))
-                    .font(.subheadline.weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(Fmt.tint(for: tx.totalAmount))
-                
-                HStack(spacing: 8) {
+                        .fixedSize(horizontal: true, vertical: false)
+                    
+                    Spacer(minLength: 4)
+                    
                     Text(tx.account)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                     
-                    Menu {
-                        Button { editing = tx } label: { Label("Edit", systemImage: "pencil") }
-                        Button(role: .destructive) { pendingDelete = tx } label: { Label("Delete", systemImage: "trash") }
+                    PopoverMenu(minWidth: 160) {
+                        MenuRow(title: "Edit", systemImage: "pencil") { editing = tx }
+                        MenuRow(title: "Delete", systemImage: "trash", role: .destructive) { pendingDelete = tx }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
                             .font(.system(size: 18))

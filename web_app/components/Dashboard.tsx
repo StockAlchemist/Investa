@@ -30,6 +30,7 @@ interface DashboardProps {
     summary: PortfolioSummary;
     currency: string;
     history?: PerformanceData[];
+    wtdHistory?: PerformanceData[];
     isLoading?: boolean;
     isRefreshing?: boolean;
     isError?: boolean;
@@ -103,6 +104,7 @@ interface HeroCardProps {
     isRefreshing: boolean;
     themeColor: string;
     history?: PerformanceData[];      // intraday (1d / 5m)
+    wtdHistory?: PerformanceData[];   // intraday (5d / 15m)
     longHistory?: PerformanceData[];  // 1y / daily
 }
 
@@ -206,7 +208,7 @@ function StatPill({
 
 function PortfolioHeroCard({
     marketValue, dayGL, dayGLPct, cumTWR, annTWR, irr,
-    currency, isLoading, isRefreshing, themeColor, history, longHistory,
+    currency, isLoading, isRefreshing, themeColor, history, wtdHistory, longHistory,
 }: HeroCardProps) {
     const animatedValue  = useAnimatedNumber(marketValue ?? 0);
     const animatedDayGL  = useAnimatedNumber(dayGL ?? 0);
@@ -225,7 +227,8 @@ function PortfolioHeroCard({
             const series = (history ?? []).filter(d => typeof d.value === 'number').map(d => ({ value: d.value as number }));
             return { series, pct: dayGLPct ?? null, abs: dayGL ?? null };
         }
-        const longRows = (longHistory ?? []).filter(d => typeof d.value === 'number' && d.date);
+        const historyToUse = heroPeriod === 'wtd' ? wtdHistory : longHistory;
+        const longRows = (historyToUse ?? []).filter(d => typeof d.value === 'number' && d.date);
         if (longRows.length === 0) return { series: [], pct: null, abs: null };
         const cutoff = periodCutoff(heroPeriod, new Date(now));
         const cutoffMs = cutoff.getTime();
@@ -377,6 +380,7 @@ function DashboardInner({
     summary,
     currency,
     history = [],
+    wtdHistory = [],
     isLoading = false,
     isRefreshing = false,
     isError = false,
@@ -605,6 +609,7 @@ function DashboardInner({
                     isRefreshing={isRefreshing}
                     themeColor={themeColor}
                     history={history}
+                    wtdHistory={wtdHistory}
                     longHistory={longHistory}
                 />
             )}

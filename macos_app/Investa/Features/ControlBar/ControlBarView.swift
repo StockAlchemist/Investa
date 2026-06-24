@@ -22,24 +22,19 @@ struct ControlBarView: View {
     }
 
     private var accountPicker: some View {
-        Menu {
-            Button {
+        PopoverMenu(minWidth: 200) {
+            MenuToggleRow(title: "All Accounts", isOn: appState.selectedAccounts.isEmpty, dismissOnTap: true) {
                 appState.selectedAccounts = []
-            } label: {
-                Label("All Accounts", systemImage: appState.selectedAccounts.isEmpty ? "checkmark" : "")
             }
-            Divider()
+            MenuDivider()
             ForEach(appState.allAccounts, id: \.self) { account in
-                Button {
+                MenuToggleRow(title: account, isOn: appState.selectedAccounts.contains(account)) {
                     toggle(account)
-                } label: {
-                    Label(account, systemImage: appState.selectedAccounts.contains(account) ? "checkmark" : "")
                 }
             }
         } label: {
             Label(accountSummary, systemImage: "building.columns")
         }
-        .borderlessMenu()
         .fixedSize()
     }
 
@@ -54,14 +49,15 @@ struct ControlBarView: View {
     // MARK: - Currency
 
     private var currencyPicker: some View {
-        Menu {
+        PopoverMenu(minWidth: 100) {
             ForEach(appState.availableCurrencies, id: \.self) { code in
-                Button(code) { appState.displayCurrency = code }
+                MenuToggleRow(title: code, isOn: code == appState.displayCurrency, dismissOnTap: true) {
+                    appState.displayCurrency = code
+                }
             }
         } label: {
             Text(appState.displayCurrency)
         }
-        .borderlessMenu()
         .fixedSize()
     }
 

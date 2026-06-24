@@ -1,0 +1,1327 @@
+diff --git a/data b/data
+--- a/data
++++ b/data
+@@ -1 +1 @@
+-Subproject commit aa73550b43be43994518d84be5d4c601d6cc910c
++Subproject commit aa73550b43be43994518d84be5d4c601d6cc910c-dirty
+diff --git a/macos_app/Investa/App/GlobalControlBar.swift b/macos_app/Investa/App/GlobalControlBar.swift
+index 5cd6c28..d7e42e5 100644
+--- a/macos_app/Investa/App/GlobalControlBar.swift
++++ b/macos_app/Investa/App/GlobalControlBar.swift
+@@ -109,13 +109,9 @@ struct GlobalControlBar<Trailing: View>: View {
+                     .font(.body)
+                     .padding(.leading, 12)
+                 if TabLayout.hasLayout(section) {
+-                    Menu {
+-                        layoutMenuContent
+-                    } label: {
+-                        Label("Customize Layout", systemImage: "slider.horizontal.3")
++                    PopoverMenu { layoutMenuContent } label: {
++                        Image(systemName: "slider.horizontal.3").font(.body)
+                     }
+-                    .labelStyle(.iconOnly)
+-                    .font(.body)
+                 }
+                 Spacer(minLength: 8)
+                 marketStatusCompact
+@@ -144,14 +140,14 @@ struct GlobalControlBar<Trailing: View>: View {
+     /// account menu.) The host-supplied `trailing` (refresh / settings / account)
+     /// is appended below a divider.
+     private var overflowMenu: some View {
+-        Menu {
+-            Button { showBenchmarks = true } label: {
+-                Label("Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line")
++        PopoverMenu {
++            MenuRow(title: "Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line") {
++                showBenchmarks = true
+             }
+-            Toggle(isOn: $appState.showClosed) {
+-                Label("Show Closed", systemImage: "eye.slash")
++            MenuToggleRow(title: "Show Closed", systemImage: "eye.slash", isOn: appState.showClosed) {
++                appState.showClosed.toggle()
+             }
+-            Divider()
++            MenuDivider()
+             trailing
+         } label: {
+             Image(systemName: "ellipsis.circle")
+@@ -323,9 +319,11 @@ struct GlobalControlBar<Trailing: View>: View {
+                     .lineLimit(1)
+                     .fixedSize(horizontal: true, vertical: false)
+             }
+-            Menu {
++            PopoverMenu(minWidth: 130) {
+                 ForEach(appState.availableCurrencies, id: \.self) { cur in
+-                    Button(cur) { appState.displayCurrency = cur }
++                    MenuToggleRow(title: cur, isOn: cur == appState.displayCurrency, dismissOnTap: true) {
++                        appState.displayCurrency = cur
++                    }
+                 }
+             } label: {
+                 HStack(spacing: 4) {
+@@ -334,7 +332,7 @@ struct GlobalControlBar<Trailing: View>: View {
+                         .font(.system(size: 16))
+                 }
+             }
+-            .borderlessMenu().fixedSize()
++            .fixedSize()
+             .interactiveGlass()
+         }
+         .onChange(of: appState.displayCurrency) {
+@@ -353,32 +351,24 @@ struct GlobalControlBar<Trailing: View>: View {
+     // MARK: - Layout configurator
+ 
+     private var layoutMenu: some View {
+-        Menu {
+-            layoutMenuContent
+-        } label: {
++        PopoverMenu { layoutMenuContent } label: {
+             Label("Layout", systemImage: "slider.horizontal.3")
+         }
+-        .borderlessMenu().fixedSize()
++        .fixedSize()
+         .interactiveGlass()
+     }
+ 
+     /// The per-tab visible-section toggles, reusable both as the macOS bar's
+-    /// Layout menu and as a submenu inside the compact overflow menu.
++    /// Layout menu and inside the compact overflow menu.
+     @ViewBuilder private var layoutMenuContent: some View {
+-        Text(TabLayout.sectionTitle(for: section))
+-        Divider()
++        MenuSectionHeader(TabLayout.sectionTitle(for: section))
+         let items = TabLayout.items(for: section)
+-        // Render grouped (group header as a disabled label) preserving order.
+         ForEach(Array(groupedItems(items).enumerated()), id: \.offset) { _, group in
+-            if let label = group.label { Section(label) { itemButtons(group.items) } }
+-            else { itemButtons(group.items) }
+-        }
+-    }
+-
+-    private func itemButtons(_ items: [LayoutItem]) -> some View {
+-        ForEach(items) { item in
+-            Button { appState.toggle(section, item.id) } label: {
+-                Label(item.title, systemImage: appState.isVisible(section, item.id) ? "checkmark" : "")
++            if let label = group.label { MenuSectionHeader(label) }
++            ForEach(group.items) { item in
++                MenuToggleRow(title: item.title, isOn: appState.isVisible(section, item.id)) {
++                    appState.toggle(section, item.id)
++                }
+             }
+         }
+     }
+diff --git a/macos_app/Investa/App/MainView.swift b/macos_app/Investa/App/MainView.swift
+index 874515a..2e99fca 100644
+--- a/macos_app/Investa/App/MainView.swift
++++ b/macos_app/Investa/App/MainView.swift
+@@ -167,15 +167,20 @@ struct MainView: View {
+                     appearanceSet = true
+                     forceDark.toggle()
+                 }
+-                Menu {
+-                    if let user = auth.currentUser { Text("Signed in as \(user.displayName)"); Divider() }
+-                    Button("Refresh") { NotificationCenter.default.post(name: .refreshRequested, object: nil) }
+-                    Button("Log Out") { auth.logout() }
++                PopoverMenu {
++                    MenuRow(title: "Refresh", systemImage: "arrow.clockwise") {
++                        NotificationCenter.default.post(name: .refreshRequested, object: nil)
++                    }
++                    MenuDivider()
++                    if let user = auth.currentUser {
++                        MenuSectionHeader("Signed in as \(user.displayName)")
++                    }
++                    MenuRow(title: "Log Out", systemImage: "rectangle.portrait.and.arrow.right",
++                            role: .destructive) { auth.logout() }
+                 } label: {
+                     Label(auth.currentUser?.displayName ?? "Account", systemImage: "person.crop.circle")
+                         .frame(maxWidth: .infinity, alignment: .leading)
+                 }
+-                .borderlessMenu()
+                 .padding(.horizontal, 8).padding(.vertical, 6)
+             }
+             .padding(.vertical, 6)
+@@ -223,20 +228,20 @@ struct MainView: View {
+                 // menu, so the phone bar no longer needs standalone refresh/profile
+                 // icons.
+                 GlobalControlBar(section: section) {
+-                    Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
+-                        Label("Refresh", systemImage: "arrow.clockwise")
+-                    }
+-                    Button { showingSettings = true } label: {
+-                        Label("Settings", systemImage: "gearshape")
++                    MenuRow(title: "Refresh", systemImage: "arrow.clockwise") {
++                        NotificationCenter.default.post(name: .refreshRequested, object: nil)
+                     }
+-                    Button { appearanceSet = true; forceDark.toggle() } label: {
+-                        Label(forceDark ? "Light Mode" : "Dark Mode", systemImage: forceDark ? "sun.max" : "moon")
++                    MenuRow(title: "Settings", systemImage: "gearshape") { showingSettings = true }
++                    MenuRow(title: forceDark ? "Light Mode" : "Dark Mode",
++                            systemImage: forceDark ? "sun.max" : "moon") {
++                        appearanceSet = true; forceDark.toggle()
+                     }
+-                    Divider()
+-                    if let user = auth.currentUser { Text("Signed in as \(user.displayName)") }
+-                    Button(role: .destructive) { auth.logout() } label: {
+-                        Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
++                    MenuDivider()
++                    if let user = auth.currentUser {
++                        MenuSectionHeader("Signed in as \(user.displayName)")
+                     }
++                    MenuRow(title: "Log Out", systemImage: "rectangle.portrait.and.arrow.right",
++                            role: .destructive) { auth.logout() }
+                 }
+                 Divider()
+                 sectionView(section)
+diff --git a/macos_app/Investa/App/Platform.swift b/macos_app/Investa/App/Platform.swift
+index 7cc8f52..ba04fdc 100644
+--- a/macos_app/Investa/App/Platform.swift
++++ b/macos_app/Investa/App/Platform.swift
+@@ -85,6 +85,22 @@ extension View {
+     func gregorianCalendar() -> some View {
+         environment(\.calendar, Calendar(identifier: .gregorian))
+     }
++
++    /// Shrinks all semantic text on iPhone only. iPhone screens are narrow, so
++    /// the macOS/iPad-tuned font sizes read too large there; setting a smaller
++    /// Dynamic Type size scales every `.title`, `.headline`, `.caption`, etc.
++    /// down proportionally. No effect on iPad or macOS.
++    @ViewBuilder func iPhoneTextScale() -> some View {
++        #if os(iOS)
++        if UIDevice.current.userInterfaceIdiom == .phone {
++            self.dynamicTypeSize(.small)
++        } else {
++            self
++        }
++        #else
++        self
++        #endif
++    }
+ }
+ 
+ // MARK: - File export (save panel on macOS, share sheet on iOS)
+diff --git a/macos_app/Investa/Features/Allocation/PortfolioSections.swift b/macos_app/Investa/Features/Allocation/PortfolioSections.swift
+index f214ab5..fa5f759 100644
+--- a/macos_app/Investa/Features/Allocation/PortfolioSections.swift
++++ b/macos_app/Investa/Features/Allocation/PortfolioSections.swift
+@@ -114,7 +114,7 @@ struct ConcentrationKpiStrip: View {
+         let largestTone: Color = (mt.largestPct ?? 0) >= 25 ? .orange : ((mt.largestPct ?? 0) >= 15 ? .primary : .up)
+         let effTone: Color = (mt.effectiveN ?? 0) >= 10 ? .up : ((mt.effectiveN ?? 0) >= 5 ? .primary : .orange)
+         return Section_(title: "Concentration", icon: "scope") {
+-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
++            KpiRow(count: 6, minTileWidth: 140) {
+                 tile("Holdings", "\(mt.stockCount)", mt.cashCount > 0 ? "+ \(mt.cashCount) cash" : "stocks & funds", .primary)
+                 tile("Largest", mt.largestSymbol ?? "–", mt.largestPct.map { String(format: "%.1f%%", $0) }, largestTone)
+                 tile("Top 5", mt.top5.map { String(format: "%.1f%%", $0) } ?? "–", "of portfolio", .primary)
+diff --git a/macos_app/Investa/Features/AssetChange/AssetChangeView.swift b/macos_app/Investa/Features/AssetChange/AssetChangeView.swift
+index 03dde94..0f78de7 100644
+--- a/macos_app/Investa/Features/AssetChange/AssetChangeView.swift
++++ b/macos_app/Investa/Features/AssetChange/AssetChangeView.swift
+@@ -63,10 +63,6 @@ struct AssetChangeView: View {
+     @EnvironmentObject private var appState: AppState
+     @StateObject private var viewModel = AssetChangeViewModel()
+     @State private var detail: SymbolID?
+-    #if os(iOS)
+-    @Environment(\.horizontalSizeClass) private var hSize
+-    @Environment(\.verticalSizeClass) private var vSize
+-    #endif
+ 
+     private var cur: String { appState.displayCurrency }
+ 
+@@ -128,16 +124,8 @@ struct AssetChangeView: View {
+                             onSelectSymbol: { detail = SymbolID(id: $0) })
+     }
+ 
+-    @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
+-        #if os(iOS)
+-        if hSize == .compact && vSize == .regular {
+-            VStack(spacing: 20) { left; right }
+-        } else {
+-            HStack(alignment: .top, spacing: 20) { left; right }
+-        }
+-        #else
+-        HStack(alignment: .top, spacing: 20) { left; right }
+-        #endif
++    private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
++        AdaptiveTwoColumn(left: left, right: right)
+     }
+ 
+     private var signature: String {
+diff --git a/macos_app/Investa/Features/AssetChange/PerformanceSections.swift b/macos_app/Investa/Features/AssetChange/PerformanceSections.swift
+index da8358b..e70ffb5 100644
+--- a/macos_app/Investa/Features/AssetChange/PerformanceSections.swift
++++ b/macos_app/Investa/Features/AssetChange/PerformanceSections.swift
+@@ -78,7 +78,7 @@ struct PerfKpiStrip: View {
+     var body: some View {
+         let mt = m
+         PSection(title: "Performance KPIs") {
+-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12)], spacing: 12) {
++            KpiRow(count: benchmarks.first != nil ? 7 : 6, minTileWidth: 150) {
+                 tile("YTD", pct(mt.ytd), nil, Fmt.tint(for: mt.ytd))
+                 tile("1Y", pct(mt.oneYear), nil, Fmt.tint(for: mt.oneYear))
+                 tile("Win Rate", mt.winRate.map { String(format: "%.0f%%", $0) } ?? "–", "of months", (mt.winRate ?? 0) >= 50 ? .green : .orange)
+@@ -201,6 +201,20 @@ struct MonthlyHeatmap: View {
+     let data: [String: [[String: JSONValue]]]
+     private let months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+ 
++    #if os(iOS)
++    @Environment(\.horizontalSizeClass) private var hSize
++    #endif
++
++    /// Full-width flexible cells when there's room (macOS, iPad); a scrollable
++    /// fixed-width grid only on the narrow iPhone, where 12 columns can't fit.
++    private var flexible: Bool {
++        #if os(iOS)
++        return hSize != .compact
++        #else
++        return true
++        #endif
++    }
++
+     private var grid: (years: [Int], values: [Int: [Double?]], totals: [Int: Double]) {
+         var byYear: [Int: [Double?]] = [:]
+         for row in data["M"] ?? [] {
+@@ -234,33 +248,69 @@ struct MonthlyHeatmap: View {
+         PSection(title: "Monthly Returns") {
+             if g.years.isEmpty {
+                 Text("No monthly data.").foregroundStyle(.secondary)
++            } else if flexible {
++                // Span the full panel width: cells flex to share the available space.
++                heatGrid(g, flexible: true)
+             } else {
+-                ScrollView(.horizontal, showsIndicators: true) {
+-                    Grid(alignment: .center, horizontalSpacing: 3, verticalSpacing: 3) {
+-                        GridRow {
+-                            Text("Year").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+-                            ForEach(months, id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
+-                            Text("Total").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+-                        }
+-                        ForEach(g.years, id: \.self) { y in
+-                            GridRow {
+-                                Text(String(y)).font(.caption.weight(.bold)).gridColumnAlignment(.leading)
+-                                ForEach(0..<12, id: \.self) { mi in
+-                                    let v = g.values[y]?[mi] ?? nil
+-                                    Text(v.map { String(format: "%.1f", $0) } ?? "")
+-                                        .font(.caption2).monospacedDigit()
+-                                        .frame(width: 40, height: 24)
+-                                        .background(cellColor(v), in: RoundedRectangle(cornerRadius: 4))
+-                                }
+-                                Text(g.totals[y].map { "\($0 > 0 ? "+" : "")\(String(format: "%.1f%%", $0))" } ?? "—")
+-                                    .font(.caption.weight(.bold)).monospacedDigit()
+-                                    .foregroundStyle(Fmt.tint(for: g.totals[y]))
+-                            }
+-                        }
++                // iPhone can't fit 12 columns at a readable size — keep it scrollable.
++                ScrollView(.horizontal, showsIndicators: true) { heatGrid(g, flexible: false) }
++            }
++        }
++    }
++
++    @ViewBuilder private func heatGrid(_ g: (years: [Int], values: [Int: [Double?]], totals: [Int: Double]), flexible: Bool) -> some View {
++        Grid(alignment: .center, horizontalSpacing: 3, verticalSpacing: 3) {
++            GridRow {
++                Text("Year").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
++                ForEach(months, id: \.self) {
++                    Text($0).font(.caption2).foregroundStyle(.secondary)
++                        .frame(maxWidth: flexible ? .infinity : nil)
++                }
++                Text("Total").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
++            }
++            ForEach(g.years, id: \.self) { y in
++                GridRow {
++                    Text(String(y)).font(.caption.weight(.bold)).gridColumnAlignment(.leading)
++                    ForEach(0..<12, id: \.self) { mi in
++                        let v = g.values[y]?[mi] ?? nil
++                        Text(v.map { String(format: "%.1f", $0) } ?? "")
++                            .font(.caption2).monospacedDigit()
++                            .frame(width: flexible ? nil : 40, height: 24)
++                            .frame(maxWidth: flexible ? .infinity : nil, maxHeight: 24)
++                            .background(cellColor(v), in: RoundedRectangle(cornerRadius: 4))
+                     }
++                    Text(g.totals[y].map { "\($0 > 0 ? "+" : "")\(String(format: "%.1f%%", $0))" } ?? "—")
++                        .font(.caption.weight(.bold)).monospacedDigit()
++                        .foregroundStyle(Fmt.tint(for: g.totals[y]))
++                }
++            }
++            Divider().gridCellColumns(14)
++            let avgs = monthlyAverages(g)
++            GridRow {
++                Text("Avg").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
++                ForEach(0..<12, id: \.self) { mi in
++                    let a = avgs[mi]
++                    Text(a.map { String(format: "%.1f", $0) } ?? "")
++                        .font(.caption2.weight(.bold)).monospacedDigit()
++                        .frame(width: flexible ? nil : 40, height: 24)
++                        .frame(maxWidth: flexible ? .infinity : nil, maxHeight: 24)
++                        .background(cellColor(a), in: RoundedRectangle(cornerRadius: 4))
+                 }
++                let overall = avgs.compactMap { $0 }
++                Text(overall.isEmpty ? "—" : "\(overall.reduce(0, +) / Double(overall.count) > 0 ? "+" : "")\(String(format: "%.1f%%", overall.reduce(0, +) / Double(overall.count)))")
++                    .font(.caption.weight(.bold)).monospacedDigit()
++                    .foregroundStyle(Fmt.tint(for: overall.isEmpty ? nil : overall.reduce(0, +) / Double(overall.count)))
+             }
+         }
++        .frame(maxWidth: flexible ? .infinity : nil)
++    }
++
++    /// Average return for each month index (0=Jan … 11=Dec) across all years; nil if no data.
++    private func monthlyAverages(_ g: (years: [Int], values: [Int: [Double?]], totals: [Int: Double])) -> [Double?] {
++        (0..<12).map { mi in
++            let vals = g.years.compactMap { g.values[$0]?[mi] ?? nil }
++            return vals.isEmpty ? nil : vals.reduce(0, +) / Double(vals.count)
++        }
+     }
+ }
+ 
+diff --git a/macos_app/Investa/Features/CapitalGains/CapitalGainsSections.swift b/macos_app/Investa/Features/CapitalGains/CapitalGainsSections.swift
+index 56426af..7947842 100644
+--- a/macos_app/Investa/Features/CapitalGains/CapitalGainsSections.swift
++++ b/macos_app/Investa/Features/CapitalGains/CapitalGainsSections.swift
+@@ -115,7 +115,7 @@ struct UnrealizedTaxSection: View {
+             }
+             Text(sub).font(.caption2).foregroundStyle(.secondary)
+         }
+-        .frame(maxWidth: .infinity, alignment: .leading)
++        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+         .padding(12).background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
+     }
+@@ -146,15 +146,19 @@ struct UnrealizedTaxSection: View {
+                                 Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.red).font(.caption.weight(.bold))
+                             }
+                             Divider()
+-                            HStack {
+-                                Text("Qty").font(.caption).foregroundStyle(.secondary)
+-                                Text(Fmt.number(c.qty)).font(.caption.bold())
+-                                Spacer()
+-                                Text("Cost").font(.caption).foregroundStyle(.secondary)
+-                                Text(Fmt.currency(c.cost, code: currency)).font(.caption.bold()).foregroundStyle(.secondary)
+-                                Spacer()
+-                                Text("Value").font(.caption).foregroundStyle(.secondary)
+-                                Text(Fmt.currency(c.value, code: currency)).font(.caption.bold())
++                            HStack(spacing: 0) {
++                                VStack(alignment: .leading, spacing: 1) {
++                                    Text("Qty").font(.caption).foregroundStyle(.secondary)
++                                    Text(Fmt.number(c.qty)).font(.caption.bold()).lineLimit(1)
++                                }.frame(maxWidth: .infinity, alignment: .leading)
++                                VStack(alignment: .leading, spacing: 1) {
++                                    Text("Cost").font(.caption).foregroundStyle(.secondary)
++                                    Text(Fmt.currency(c.cost, code: currency)).font(.caption.bold()).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
++                                }.frame(maxWidth: .infinity, alignment: .leading)
++                                VStack(alignment: .leading, spacing: 1) {
++                                    Text("Value").font(.caption).foregroundStyle(.secondary)
++                                    Text(Fmt.currency(c.value, code: currency)).font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.75)
++                                }.frame(maxWidth: .infinity, alignment: .leading)
+                             }
+                         }
+                         .padding(12)
+@@ -234,7 +238,7 @@ struct CapitalGainsKpiStrip: View {
+         let winRate: Double? = decided > 0 ? Double(wins) / Double(decided) * 100 : nil
+         let returnPct: Double? = cost != 0 ? totalGain / cost * 100 : nil
+         return VStack(spacing: 12) {
+-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
++            KpiRow(count: 7, minTileWidth: 140) {
+                 tile("Total Realized", cgCompact(totalGain, currency),
+                      returnPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% on cost" } ?? "on cost basis",
+                      totalGain >= 0 ? .green : .red)
+@@ -424,15 +428,19 @@ struct RealizedGainsTable: View {
+                 Text(r.account).font(.caption2).foregroundStyle(.tertiary)
+             }
+             Divider()
+-            HStack {
+-                Text("Proceeds").font(.caption).foregroundStyle(.secondary)
+-                Text(Fmt.currency(r.proceeds, code: currency)).font(.caption.bold()).monospacedDigit()
+-                Spacer()
+-                Text("Cost").font(.caption).foregroundStyle(.secondary)
+-                Text(Fmt.currency(r.cost, code: currency)).font(.caption.bold()).monospacedDigit()
+-                Spacer()
+-                Text("Gain").font(.caption).foregroundStyle(.secondary)
+-                Text(Fmt.percent(r.gainPct)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct))
++            HStack(spacing: 0) {
++                VStack(alignment: .leading, spacing: 1) {
++                    Text("Proceeds").font(.caption).foregroundStyle(.secondary)
++                    Text(Fmt.currency(r.proceeds, code: currency)).font(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
++                }.frame(maxWidth: .infinity, alignment: .leading)
++                VStack(alignment: .leading, spacing: 1) {
++                    Text("Cost").font(.caption).foregroundStyle(.secondary)
++                    Text(Fmt.currency(r.cost, code: currency)).font(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
++                }.frame(maxWidth: .infinity, alignment: .leading)
++                VStack(alignment: .leading, spacing: 1) {
++                    Text("Gain").font(.caption).foregroundStyle(.secondary)
++                    Text(Fmt.percent(r.gainPct)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct)).lineLimit(1)
++                }.frame(maxWidth: .infinity, alignment: .leading)
+             }
+         }
+         .padding(14)
+diff --git a/macos_app/Investa/Features/Dashboard/DashboardView.swift b/macos_app/Investa/Features/Dashboard/DashboardView.swift
+index 341c0ed..9e90b8e 100644
+--- a/macos_app/Investa/Features/Dashboard/DashboardView.swift
++++ b/macos_app/Investa/Features/Dashboard/DashboardView.swift
+@@ -8,7 +8,6 @@ struct DashboardView: View {
+     @State private var detail: SymbolID?
+     #if os(iOS)
+     @Environment(\.horizontalSizeClass) private var hSize
+-    @Environment(\.verticalSizeClass) private var vSize
+     private var isPhone: Bool { hSize == .compact }
+     #else
+     private var isPhone: Bool { false }
+@@ -100,16 +99,8 @@ struct DashboardView: View {
+         .padding(.top, 4)
+     }
+ 
+-    @ViewBuilder private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
+-        #if os(iOS)
+-        if hSize == .compact && vSize == .regular {
+-            VStack(spacing: 16) { left; right }
+-        } else {
+-            HStack(alignment: .top, spacing: 16) { left; right }
+-        }
+-        #else
+-        HStack(alignment: .top, spacing: 16) { left; right }
+-        #endif
++    private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
++        AdaptiveTwoColumn(left: left, right: right, spacing: 16)
+     }
+ 
+     private func vis(_ id: String) -> Bool { appState.isVisible(.performance, id) }
+@@ -191,11 +182,15 @@ struct DashboardView: View {
+             "taxes": MetricCard(title: "Taxes", value: Fmt.currency(m?.taxes, code: cur), tint: .down),
+         ]
+         let cards = metricOrder.filter { vis($0) }.compactMap { byId[$0] }
+-        // macOS: a fixed 6-column grid (the 12 metric cards land in two rows of 6);
+-        // iPhone: adaptive so cards stay legible on the narrow width.
+-        let columns: [GridItem] = isPhone
+-            ? [GridItem(.adaptive(minimum: 150), spacing: 12)]
+-            : Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
++        // macOS: a fixed 6-column grid (the 12 metric cards land in two rows of 6)
++        // since the window is always wide. iOS (iPhone *and* iPad): adaptive, so
++        // cards stay wide enough to show full labels/values — an iPad with the
++        // sidebar open has a narrow detail area that can't fit 6 legible columns.
++        #if os(macOS)
++        let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
++        #else
++        let columns = [GridItem(.adaptive(minimum: 170), spacing: 12)]
++        #endif
+         return LazyVGrid(columns: columns, spacing: 12) {
+             ForEach(cards) { MetricCardView(card: $0) }
+         }
+diff --git a/macos_app/Investa/Features/Dashboard/DashboardWidgets.swift b/macos_app/Investa/Features/Dashboard/DashboardWidgets.swift
+index 7926cc3..9325733 100644
+--- a/macos_app/Investa/Features/Dashboard/DashboardWidgets.swift
++++ b/macos_app/Investa/Features/Dashboard/DashboardWidgets.swift
+@@ -319,7 +319,8 @@ struct TodayStripCard: View {
+                             Text(compactChange(r.contribution))
+                                 .font(.caption2).monospacedDigit()
+                                 .foregroundStyle((positive ? Color.up : Color.down).opacity(0.8))
+-                                .frame(width: 52, alignment: .trailing)
++                                .lineLimit(1).minimumScaleFactor(0.7)
++                                .frame(width: 66, alignment: .trailing)
+                         }
+                         .font(.caption)
+                         .padding(.horizontal, 6).padding(.vertical, 3)
+@@ -399,7 +400,7 @@ struct UpcomingEventsCard: View {
+                 ForEach(upcoming) { ev in
+                     Button { onSelectSymbol(ev.symbol) } label: {
+                         HStack {
+-                            Text(ev.symbol).fontWeight(.bold)
++                            Text(ev.symbol).font(.callout.weight(.bold))
+                             if ev.status == "estimated" {
+                                 Label("est.", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
+                             } else {
+@@ -408,8 +409,9 @@ struct UpcomingEventsCard: View {
+                             Spacer()
+                             Text(relativeDay(ev.dividendDate)).font(.caption).textCase(.uppercase)
+                                 .foregroundStyle(isSoon(ev.dividendDate) ? Color.up : .secondary)
+-                            Text(Fmt.currency(ev.amount, code: currency)).fontWeight(.bold).foregroundStyle(Color.up)
+-                                .frame(width: 80, alignment: .trailing)
++                            Text(Fmt.currency(ev.amount, code: currency)).font(.callout.weight(.bold)).foregroundStyle(Color.up)
++                                .lineLimit(1).minimumScaleFactor(0.7)
++                                .frame(minWidth: 80, alignment: .trailing)
+                         }
+                         .padding(.horizontal, 6).padding(.vertical, 4)
+                         .contentShape(Rectangle())
+@@ -692,8 +694,10 @@ private struct SingleDonut: View {
+                     Text(subtitle(of: a)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: a))
+                         .lineLimit(1).minimumScaleFactor(0.4)
+                 } else {
+-                    Menu {
+-                        ForEach(CompositionMetric.allCases) { m in Button(m.label) { metric = m } }
++                    PopoverMenu(minWidth: 180) {
++                        ForEach(CompositionMetric.allCases) { m in
++                            MenuToggleRow(title: m.label, isOn: m == metric, dismissOnTap: true) { metric = m }
++                        }
+                     } label: {
+                         HStack(spacing: 3) {
+                             Text(metric.label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+@@ -702,7 +706,7 @@ private struct SingleDonut: View {
+                         .padding(.horizontal, 8).padding(.vertical, 3)
+                         .background(.background.tertiary, in: Capsule())
+                         .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
+-                    }.borderlessMenu().fixedSize()
++                    }.fixedSize()
+                     Text(value(of: nil)).font(.system(size: 18, weight: .bold)).foregroundStyle(tint(of: nil))
+                         .lineLimit(1).minimumScaleFactor(0.4)
+                     Text(subtitle(of: nil)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
+diff --git a/macos_app/Investa/Features/Dashboard/HoldingsTableView.swift b/macos_app/Investa/Features/Dashboard/HoldingsTableView.swift
+index 37f16b9..5b2aec1 100644
+--- a/macos_app/Investa/Features/Dashboard/HoldingsTableView.swift
++++ b/macos_app/Investa/Features/Dashboard/HoldingsTableView.swift
+@@ -385,27 +385,27 @@ struct HoldingsTableView: View {
+     }
+ 
+     private var groupMenu: some View {
+-        Menu {
+-            Button { groupBy = nil } label: { Label("Do not group", systemImage: groupBy == nil ? "checkmark" : "") }
+-            Divider()
++        PopoverMenu(minWidth: 200) {
++            MenuToggleRow(title: "Do not group", isOn: groupBy == nil, dismissOnTap: true) { groupBy = nil }
++            MenuDivider()
+             ForEach(groupingOptions, id: \.key) { opt in
+-                Button { groupBy = opt.key } label: { Label(opt.label, systemImage: groupBy == opt.key ? "checkmark" : "") }
++                MenuToggleRow(title: opt.label, isOn: groupBy == opt.key, dismissOnTap: true) { groupBy = opt.key }
+             }
+         } label: {
+             toolLabel("line.3.horizontal.decrease", groupBy.map { k in "By \(groupingOptions.first { $0.key == k }?.label ?? k)" } ?? "Group", active: groupBy != nil)
+-        }.borderlessMenu().fixedSize()
++        }.fixedSize()
+     }
+ 
+     private var accountMenu: some View {
+-        Menu {
+-            Button("Clear Filter") { selectedAccounts = [] }
+-            Divider()
++        PopoverMenu(minWidth: 200) {
++            MenuRow(title: "Clear Filter") { selectedAccounts = [] }
++            MenuDivider()
+             ForEach(uniqueAccounts, id: \.self) { acc in
+-                Button { toggleAccount(acc) } label: { Label(acc, systemImage: selectedAccounts.contains(acc) ? "checkmark" : "") }
++                MenuToggleRow(title: acc, isOn: selectedAccounts.contains(acc)) { toggleAccount(acc) }
+             }
+         } label: {
+             toolLabel("person.crop.circle", selectedAccounts.isEmpty ? "Account" : "Account (\(selectedAccounts.count))", active: !selectedAccounts.isEmpty)
+-        }.borderlessMenu().fixedSize()
++        }.fixedSize()
+     }
+ 
+     private var columnsButton: some View {
+diff --git a/macos_app/Investa/Features/Dashboard/MetricCardView.swift b/macos_app/Investa/Features/Dashboard/MetricCardView.swift
+index b2e8119..1d060a9 100644
+--- a/macos_app/Investa/Features/Dashboard/MetricCardView.swift
++++ b/macos_app/Investa/Features/Dashboard/MetricCardView.swift
+@@ -37,6 +37,7 @@ struct MetricCardView: View {
+                     .foregroundStyle(.secondary)
+                     .textCase(.uppercase)
+                     .lineLimit(1)
++                    .minimumScaleFactor(0.75)
+                 Text(card.value)
+                     .font(.title2.weight(.semibold))
+                     .monospacedDigit()
+diff --git a/macos_app/Investa/Features/Dividends/IncomeSections.swift b/macos_app/Investa/Features/Dividends/IncomeSections.swift
+index c0b4ee8..fd40c80 100644
+--- a/macos_app/Investa/Features/Dividends/IncomeSections.swift
++++ b/macos_app/Investa/Features/Dividends/IncomeSections.swift
+@@ -68,8 +68,9 @@ struct IncomeKpiStrip: View {
+         let mt = m
+         let yoyPct: Double? = mt.priorYtd > 0 ? (mt.ytd - mt.priorYtd) / mt.priorYtd * 100 : nil
+         let taxEff: Double? = mt.trailing12m > 0 ? (mt.trailing12m - mt.trailing12mTax) / mt.trailing12m * 100 : nil
++        let tileCount = 3 + (expectedDividends != nil ? 1 : 0) + (dividendYield != nil ? 1 : 0) + (taxEff != nil ? 1 : 0)
+         return ISection(title: "Income") {
+-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
++            KpiRow(count: tileCount, minTileWidth: 150) {
+                 tile("YTD Received", compactCurrency(mt.ytd, currency),
+                      yoyPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% YoY" } ?? "vs prior YTD",
+                      yoyPct.map { $0 >= 0 ? Color.green : .red } ?? .secondary)
+@@ -110,6 +111,19 @@ struct IncomeProjectorCard: View {
+         return out
+     }
+ 
++    /// 3-letter month labels with `.fixedSize()` so the band-scale axis doesn't
++    /// clip "Jun 2026" down to "J…".
++    private var monthAxis: some AxisContent {
++        AxisMarks { value in
++            AxisGridLine()
++            AxisValueLabel {
++                if let s = value.as(String.self) {
++                    Text(String(s.prefix(3))).font(.caption2).fixedSize()
++                }
++            }
++        }
++    }
++
+     var body: some View {
+         ISection(title: "Projected 12M Income") {
+             if income.isEmpty {
+@@ -117,6 +131,7 @@ struct IncomeProjectorCard: View {
+             } else if segs.isEmpty {
+                 // No per-symbol breakdown — fall back to the monthly total.
+                 Chart(income) { BarMark(x: .value("Month", $0.month), y: .value("Income", $0.value)).foregroundStyle(.green) }
++                    .chartXAxis { monthAxis }
+                     .chartHoverTooltip(income.map(\.month)) { i in
+                         ChartTooltipContent(title: income[i].month,
+                                             rows: [ChartTooltipRow(color: .green, label: "Income",
+@@ -128,6 +143,7 @@ struct IncomeProjectorCard: View {
+                     BarMark(x: .value("Month", s.month), y: .value("Income", s.amount))
+                         .foregroundStyle(by: .value("Symbol", s.symbol))
+                 }
++                .chartXAxis { monthAxis }
+                 .chartLegend(.visible)
+                 .chartHoverTooltip(projectorMonths) { i in
+                     let month = projectorMonths[i]
+@@ -182,7 +198,8 @@ struct DividendCalendarSection: View {
+                                 Text("Pay \(ev.dividendDate)").font(.caption2).foregroundStyle(.secondary)
+                             }
+                             Text(Fmt.currency(ev.amount, code: currency)).fontWeight(.bold).foregroundStyle(.green)
+-                                .frame(width: 90, alignment: .trailing)
++                                .lineLimit(1).minimumScaleFactor(0.7)
++                                .frame(minWidth: 90, alignment: .trailing)
+                         }
+                     }.buttonStyle(.plain)
+                     Divider()
+@@ -308,8 +325,22 @@ struct AnnualDividendsCard: View {
+         }
+     }
+ 
++    /// ~6 evenly-spaced years to label (anchored to the latest), so labels don't
++    /// crowd into "2(2(2…". `.fixedSize()` on each then prevents the band-scale
++    /// axis from clipping "'01" down to "'0".
++    private func axisYears(_ data: [Row], target: Int = 6) -> [String] {
++        guard data.count > target else { return data.map(\.year) }
++        let step = max(1, Int((Double(data.count) / Double(target)).rounded()))
++        return data.enumerated().compactMap { i, r in
++            (data.count - 1 - i) % step == 0 ? r.year : nil
++        }
++    }
++
+     var body: some View {
+         let data = rows
++        // The per-bar YoY% labels overlap once there are many bars — only show
++        // them when there's room; the value is always available via the tooltip.
++        let showYoY = data.count <= 12
+         ISection(title: "Annual Dividends") {
+             if data.isEmpty {
+                 Text("No dividends.").foregroundStyle(.secondary)
+@@ -318,12 +349,23 @@ struct AnnualDividendsCard: View {
+                     BarMark(x: .value("Year", row.year), y: .value("Amount", row.amount))
+                         .foregroundStyle(.green)
+                         .annotation(position: .top) {
+-                            if let y = row.yoy {
++                            if showYoY, let y = row.yoy {
+                                 Text("\(y > 0 ? "+" : "")\(String(format: "%.0f", y))%")
+                                     .font(.caption2.bold()).foregroundStyle(y >= 0 ? .green : .red)
+                             }
+                         }
+                 }
++                .chartXAxis {
++                    AxisMarks(values: axisYears(data)) { value in
++                        AxisGridLine()
++                        AxisTick()
++                        AxisValueLabel {
++                            if let s = value.as(String.self) {
++                                Text("'\(s.suffix(2))").font(.caption2).fixedSize()
++                            }
++                        }
++                    }
++                }
+                 .chartHoverTooltip(data.map(\.year)) { i in
+                     var rows = [ChartTooltipRow(color: .green, label: "Dividends",
+                                                value: Fmt.currency(data[i].amount, code: currency))]
+diff --git a/macos_app/Investa/Features/Markets/MarketsView.swift b/macos_app/Investa/Features/Markets/MarketsView.swift
+index a89b48b..366558b 100644
+--- a/macos_app/Investa/Features/Markets/MarketsView.swift
++++ b/macos_app/Investa/Features/Markets/MarketsView.swift
+@@ -457,10 +457,10 @@ private struct YourMoversSection: View {
+             ForEach(rows, id: \.symbol) { r in
+                 Button { onPick(r.symbol) } label: {
+                     HStack {
+-                        Text(r.symbol).fontWeight(.bold)
+-                        Spacer()
+-                        if let p = r.price { Text(Fmt.currency(p, code: currency)).font(.caption).foregroundStyle(.secondary) }
+-                        Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))").fontWeight(.bold).foregroundStyle(positive ? .green : .red)
++                        Text(r.symbol).fontWeight(.bold).lineLimit(1)
++                        Spacer(minLength: 6)
++                        if let p = r.price { Text(Fmt.currency(p, code: currency)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
++                        Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))").fontWeight(.bold).foregroundStyle(positive ? .green : .red).lineLimit(1)
+                     }.font(.caption)
+                 }.buttonStyle(.plain)
+             }
+diff --git a/macos_app/Investa/Features/Screener/ScreenerResultsView.swift b/macos_app/Investa/Features/Screener/ScreenerResultsView.swift
+index daec5dc..65a349e 100644
+--- a/macos_app/Investa/Features/Screener/ScreenerResultsView.swift
++++ b/macos_app/Investa/Features/Screener/ScreenerResultsView.swift
+@@ -1,6 +1,7 @@
+ import SwiftUI
+ 
+ private enum ScreenSortKey: String { case symbol, price, intrinsic, mos, pe, aiScore }
++private struct ReviewSheetItem: Identifiable { let id: String }
+ 
+ struct ScreenerResultsView: View {
+     @ObservedObject var viewModel: ScreenerViewModel
+@@ -16,6 +17,7 @@ struct ScreenerResultsView: View {
+     @State private var sortAsc = false
+     @State private var expanded: String?
+     @State private var detail: SymbolID?
++    @State private var reviewSheetItem: ReviewSheetItem?
+ 
+     private let capOptions: [(key: String, label: String)] = [
+         ("all", "All"), ("mega", "Mega ≥ $200B"), ("large", "Large $10–200B"),
+@@ -88,7 +90,6 @@ struct ScreenerResultsView: View {
+                 Divider()
+                 ForEach(sorted) { row in
+                     resultRow(row)
+-                    if expanded == row.symbol, let rev = viewModel.reviews[row.symbol] { reviewPanel(row.symbol, rev) }
+                     Divider()
+                 }
+             }
+@@ -96,10 +97,51 @@ struct ScreenerResultsView: View {
+             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+             .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
++            .sheet(item: $reviewSheetItem) { item in
++                NavigationStack {
++                    ScrollView {
++                        Group {
++                            if viewModel.reviewingSymbol == item.id, viewModel.reviews[item.id] == nil {
++                                VStack(spacing: 16) {
++                                    ProgressView()
++                                    Text("Generating AI audit…").font(.callout).foregroundStyle(.secondary)
++                                }
++                                .frame(maxWidth: .infinity).padding(40)
++                            } else if let rev = viewModel.reviews[item.id] {
++                                reviewPanel(item.id, rev).padding(16)
++                            } else {
++                                Text("No review available.").foregroundStyle(.secondary).padding(40)
++                            }
++                        }
++                    }
++                    #if os(iOS)
++                    .navigationBarTitleDisplayMode(.inline)
++                    #endif
++                    .navigationTitle("\(item.id) · AI Audit")
++                    .toolbar {
++                        ToolbarItem(placement: .confirmationAction) {
++                            Button("Done") { reviewSheetItem = nil }
++                        }
++                    }
++                }
++            }
+         }
+     }
+ 
+     private var headerRow: some View {
++        #if os(iOS)
++        VStack(alignment: .leading, spacing: 8) {
++            HStack {
++                Label("Scan Results", systemImage: "target").font(.headline)
++                Text("\(filtered.count) of \(viewModel.results.count)").font(.caption).foregroundStyle(.secondary)
++            }
++            HStack {
++                TextField("Search…", text: $search).textFieldStyle(.roundedBorder)
++                Button { showFilters.toggle() } label: { Image(systemName: "slider.horizontal.3") }
++                    .buttonStyle(.bordered).tint(showFilters ? .accentColor : nil)
++            }
++        }
++        #else
+         HStack {
+             Label("Scan Results", systemImage: "target").font(.headline)
+             Text("\(filtered.count) of \(viewModel.results.count)").font(.caption).foregroundStyle(.secondary)
+@@ -108,6 +150,7 @@ struct ScreenerResultsView: View {
+             Button { showFilters.toggle() } label: { Image(systemName: "slider.horizontal.3") }
+                 .buttonStyle(.bordered).tint(showFilters ? .accentColor : nil)
+         }
++        #endif
+     }
+ 
+     private var summaryRow: some View {
+@@ -296,8 +339,10 @@ struct ScreenerResultsView: View {
+ 
+     private func auditButton(_ row: ScreenerResult) -> some View {
+         Button {
+-            if viewModel.reviews[row.symbol] != nil { expanded = expanded == row.symbol ? nil : row.symbol }
+-            else { Task { await viewModel.review(row.symbol); expanded = row.symbol } }
++            reviewSheetItem = ReviewSheetItem(id: row.symbol)
++            if viewModel.reviews[row.symbol] == nil {
++                Task { await viewModel.review(row.symbol) }
++            }
+         } label: {
+             if viewModel.reviewingSymbol == row.symbol {
+                 HStack(spacing: 4) { ProgressView().controlSize(.small); Text("Analyzing") }
+diff --git a/macos_app/Investa/Features/Transactions/TransactionsView.swift b/macos_app/Investa/Features/Transactions/TransactionsView.swift
+index 099a7cb..6b48241 100644
+--- a/macos_app/Investa/Features/Transactions/TransactionsView.swift
++++ b/macos_app/Investa/Features/Transactions/TransactionsView.swift
+@@ -131,6 +131,16 @@ struct TransactionsView: View {
+         }
+     }
+ 
++    /// Row title: the ticker for stock rows, a short "Cash" for cash-flow rows
++    /// (whose raw symbol is a long "CASH (account)" string that truncates to "…"),
++    /// and the type itself when there's no symbol at all.
++    private static func rowTitle(_ tx: Transaction) -> String {
++        if tx.symbol.isEmpty { return tx.type }
++        let s = tx.symbol.trimmingCharacters(in: .whitespaces).uppercased()
++        if s == "$CASH" || s == "CASH" || s.hasPrefix("CASH (") { return "Cash" }
++        return tx.symbol
++    }
++
+     private func iconForType(_ type: String) -> String {
+         switch type.uppercased() {
+         case "BUY": return "bag.fill"
+@@ -257,28 +267,33 @@ struct TransactionsView: View {
+     // MARK: - Import (PDF/IBKR document parsing)
+ 
+     private var importControl: some View {
+-        Menu {
+-            Picker("Import to account", selection: $importAccount) {
+-                Text("Default").tag("")
+-                ForEach(appState.allAccounts, id: \.self) { Text($0).tag($0) }
++        PopoverMenu(minWidth: 220) {
++            MenuSectionHeader("Import to account")
++            MenuToggleRow(title: "Default", isOn: importAccount == "") { setImportAccount("") }
++            ForEach(appState.allAccounts, id: \.self) { acc in
++                MenuToggleRow(title: acc, isOn: importAccount == acc) { setImportAccount(acc) }
+             }
+-            .onChange(of: importAccount) { _, _ in
+-                if isImportAccountAutoCash { autoAddCash = false }
++            MenuDivider()
++            MenuToggleRow(title: "Auto-add cash", isOn: autoAddCash) {
++                if !isImportAccountAutoCash { autoAddCash.toggle() }
+             }
+-            Toggle("Auto-add cash", isOn: $autoAddCash)
+-                .disabled(isImportAccountAutoCash)
+-            Divider()
+-            Button("Choose PDF / Image…") { showImporter = true }
++            MenuDivider()
++            MenuRow(title: "Choose PDF / Image…", systemImage: "doc") { showImporter = true }
+         } label: {
+             if viewModel.isImporting { ProgressView().controlSize(.small) }
+             else { Label("Import", systemImage: "doc.badge.plus") }
+         }
+-        .borderlessMenu().fixedSize()
++        .fixedSize()
+         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.pdf, .image]) { result in
+             if case .success(let url) = result { openImportFile(url) }
+         }
+     }
+ 
++    private func setImportAccount(_ acc: String) {
++        importAccount = acc
++        if isImportAccountAutoCash { autoAddCash = false }
++    }
++
+     private static let outflowTypes: Set<String> = [
+         "buy", "withdrawal", "fees", "fee", "tax", "withholding tax",
+         "split", "stock split", "buy to cover"
+@@ -710,9 +725,10 @@ struct TransactionsView: View {
+             // Middle: Symbol, Type, Date
+             VStack(alignment: .leading, spacing: 6) {
+                 HStack(spacing: 6) {
+-                    Text(tx.symbol.isEmpty ? tx.type : tx.symbol)
++                    Text(Self.rowTitle(tx))
+                         .font(.headline.weight(.bold))
+                         .lineLimit(1)
++                        .layoutPriority(1)
+                     if !tx.symbol.isEmpty {
+                         Text(tx.type.uppercased())
+                             .font(.system(size: 10, weight: .bold))
+@@ -720,14 +736,15 @@ struct TransactionsView: View {
+                             .padding(.horizontal, 6).padding(.vertical, 3)
+                             .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
+                             .foregroundStyle(Self.typeColor(tx.type))
+-                            .fixedSize(horizontal: true, vertical: false)
+                     }
+                 }
+-                
++
+                 HStack(spacing: 4) {
+                     Text(tx.displayDate)
+                         .font(.caption2)
+                         .foregroundStyle(.secondary)
++                        .lineLimit(1)
++                        .fixedSize(horizontal: true, vertical: false)
+                     if tx.quantity != 0 {
+                         Text("•")
+                             .font(.caption2)
+@@ -755,9 +772,9 @@ struct TransactionsView: View {
+                         .foregroundStyle(.tertiary)
+                         .lineLimit(1)
+                     
+-                    Menu {
+-                        Button { editing = tx } label: { Label("Edit", systemImage: "pencil") }
+-                        Button(role: .destructive) { pendingDelete = tx } label: { Label("Delete", systemImage: "trash") }
++                    PopoverMenu(minWidth: 160) {
++                        MenuRow(title: "Edit", systemImage: "pencil") { editing = tx }
++                        MenuRow(title: "Delete", systemImage: "trash", role: .destructive) { pendingDelete = tx }
+                     } label: {
+                         Image(systemName: "ellipsis.circle.fill")
+                             .font(.system(size: 18))
+diff --git a/macos_app/Investa/Features/Transactions/TxKpiStrip.swift b/macos_app/Investa/Features/Transactions/TxKpiStrip.swift
+index 6aece48..12fde8a 100644
+--- a/macos_app/Investa/Features/Transactions/TxKpiStrip.swift
++++ b/macos_app/Investa/Features/Transactions/TxKpiStrip.swift
+@@ -100,7 +100,7 @@ struct TxKpiStrip: View {
+             }
+             #endif
+             if !c.rows.isEmpty {
+-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 12)], spacing: 12) {
++                KpiRow(count: c.rows.count, minTileWidth: 240) {
+                     ForEach(c.rows) { row in currencyCard(row) }
+                 }
+             }
+@@ -144,6 +144,7 @@ struct TxKpiStrip: View {
+             }
+         }
+         .padding(12)
++        .frame(maxWidth: .infinity, alignment: .leading)
+         .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
+     }
+ 
+diff --git a/macos_app/Investa/Features/Watchlist/WatchlistView.swift b/macos_app/Investa/Features/Watchlist/WatchlistView.swift
+index c1d30f0..06ec5c8 100644
+--- a/macos_app/Investa/Features/Watchlist/WatchlistView.swift
++++ b/macos_app/Investa/Features/Watchlist/WatchlistView.swift
+@@ -431,41 +431,17 @@ struct WatchlistKpiStrip: View {
+         let best = items.compactMap { i in i.dayChangePct.map { (i.symbol, $0) } }.max { $0.1 < $1.1 }
+         let worst = items.compactMap { i in i.dayChangePct.map { (i.symbol, $0) } }.min { $0.1 < $1.1 }
+         let opportunities = items.filter { ($0.marginOfSafety ?? 0) > 0 }.count
+-        #if os(iOS)
+-        return ScrollView(.horizontal, showsIndicators: false) {
+-            HStack(spacing: 0) {
+-                tile("Symbols", "\(items.count)", "tracked", .primary)
+-                Divider().frame(height: 36)
+-                tile("Avg Day Change", avg.map { Fmt.percent($0) } ?? "–", nil, Fmt.tint(for: avg))
+-                Divider().frame(height: 36)
+-                tile("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
+-                Divider().frame(height: 36)
+-                tile("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
+-                Divider().frame(height: 36)
+-                tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? .green : .primary)
+-                Spacer()
+-            }
+-            .padding(16)
+-        }
+-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+-        #else
+-        return HStack(spacing: 0) {
++        return KpiRow(count: 5, minTileWidth: 140) {
+             tile("Symbols", "\(items.count)", "tracked", .primary)
+-            Divider().frame(height: 36)
+             tile("Avg Day Change", avg.map { Fmt.percent($0) } ?? "–", nil, Fmt.tint(for: avg))
+-            Divider().frame(height: 36)
+             tile("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
+-            Divider().frame(height: 36)
+             tile("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
+-            Divider().frame(height: 36)
+             tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? .green : .primary)
+-            Spacer()
+         }
+         .padding(16)
++        .frame(maxWidth: .infinity)
+         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+-        #endif
+     }
+     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
+         VStack(alignment: .leading, spacing: 3) {
+diff --git a/macos_app/Investa/InvestaApp.swift b/macos_app/Investa/InvestaApp.swift
+index e225a3c..58df9c9 100644
+--- a/macos_app/Investa/InvestaApp.swift
++++ b/macos_app/Investa/InvestaApp.swift
+@@ -13,6 +13,8 @@ struct InvestaApp: App {
+                 // rendering) don't show the Buddhist era under a Thai locale.
+                 // Financial dates are stored as ISO yyyy-MM-dd.
+                 .gregorianCalendar()
++                // iPhone-only: shrink semantic text one notch (iPad/macOS unchanged).
++                .iPhoneTextScale()
+                 .macMinSize(width: 900, height: 600)
+         }
+         #if os(macOS)
+diff --git a/web_app/components/ScreenerResults.tsx b/web_app/components/ScreenerResults.tsx
+index b331b9b..f4b590f 100644
+--- a/web_app/components/ScreenerResults.tsx
++++ b/web_app/components/ScreenerResults.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import React, { useState, useMemo, useEffect } from 'react';
++import { createPortal } from 'react-dom';
+ import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react';
+ import WatchlistStar from './WatchlistStar';
+ import { Input } from "@/components/ui/input";
+@@ -46,8 +47,9 @@ interface SortConfig {
+ }
+ 
+ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, reviewingSymbol, currency }) => {
+-    const [expandedReview, setExpandedReview] = useState<string | null>(null);
+     const [reviews, setReviews] = useState<Record<string, ScreenReview>>({});
++    const [reviewModal, setReviewModal] = useState<{ symbol: string; review: ScreenReview } | null>(null);
++    const [reviewModalLoading, setReviewModalLoading] = useState<string | null>(null);
+     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'margin_of_safety', direction: 'desc' });
+     const { openStockDetail } = useStockModal();
+ 
+@@ -166,21 +168,27 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
+ 
+     const handleReviewClick = async (symbol: string) => {
+         if (reviews[symbol]) {
+-            setExpandedReview(expandedReview === symbol ? null : symbol);
++            setReviewModal({ symbol, review: reviews[symbol] });
+             return;
+         }
+-
++        setReviewModalLoading(symbol);
++        setReviewModal({ symbol, review: {} });
+         const data = await onReview(symbol);
++        setReviewModalLoading(null);
+         if (data) {
+-            setReviews(prev => ({ ...prev, [symbol]: data }));
+-            setExpandedReview(symbol);
++            const updated = { ...reviews, [symbol]: data };
++            setReviews(updated);
++            setReviewModal({ symbol, review: data });
+         }
+     };
+ 
+     const handleRegenerate = async (symbol: string) => {
++        setReviewModalLoading(symbol);
+         const data = await onReview(symbol, true);
++        setReviewModalLoading(null);
+         if (data) {
+             setReviews(prev => ({ ...prev, [symbol]: data }));
++            setReviewModal({ symbol, review: data });
+         }
+     };
+ 
+@@ -209,6 +217,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
+     if (!results || results.length === 0) return null;
+ 
+     return (
++        <>
+         <div className="metric-card card-shine relative overflow-hidden transition-all">
+             <div className="absolute top-0 left-0 right-0 h-[2px] bg-teal-500 opacity-80" />
+ 
+@@ -509,67 +518,6 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
+                                             </button>
+                                         </td>
+                                     </tr>
+-                                    {expandedReview === row.symbol && reviews[row.symbol] && (
+-                                        <tr className="bg-secondary/5">
+-                                            <td colSpan={6} className="p-0">
+-                                                <div className="p-6 animate-in fade-in slide-in-from-top-2 duration-300">
+-                                                    <div className="bg-background/80 backdrop-blur-md rounded-2xl p-6 space-y-6">
+-                                                        <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+-                                                            <div className="flex items-center gap-3">
+-                                                                <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
+-                                                                    <Sparkles className="w-5 h-5" />
+-                                                                </div>
+-                                                                <div className="flex flex-col">
+-                                                                    <h3 className="text-lg font-bold text-foreground">AI Technical & Fundamental Audit</h3>
+-                                                                    <button
+-                                                                        onClick={() => handleRegenerate(row.symbol)}
+-                                                                        disabled={reviewingSymbol === row.symbol}
+-                                                                        className="flex items-center gap-1.5 text-[10px] font-bold text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors uppercase tracking-wider mt-0.5"
+-                                                                    >
+-                                                                        {reviewingSymbol === row.symbol ? (
+-                                                                            <Loader2 className="w-3 h-3 animate-spin" />
+-                                                                        ) : (
+-                                                                            <RotateCcw className="w-3 h-3" />
+-                                                                        )}
+-                                                                        Regenerate Analysis
+-                                                                    </button>
+-                                                                </div>
+-                                                            </div>
+-                                                            <div className="flex flex-wrap gap-3">
+-                                                                {Object.entries(reviews[row.symbol].scorecard || {}).map(([k, v]) => (
+-                                                                    <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 flex items-center gap-2">
+-                                                                        <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
+-                                                                        <span className={cn(
+-                                                                            "text-xs font-bold",
+-                                                                            v >= 8 ? 'text-emerald-500' : v >= 6 ? 'text-cyan-500' : 'text-amber-500'
+-                                                                        )}>{v}/10</span>
+-                                                                    </div>
+-                                                                ))}
+-                                                            </div>
+-                                                        </div>
+-
+-                                                        <div className="p-4 rounded-xl bg-muted/30">
+-                                                            <p className="text-sm text-foreground/90 leading-relaxed font-semibold italic">
+-                                                                &quot;{reviews[row.symbol].summary}&quot;
+-                                                            </p>
+-                                                        </div>
+-
+-                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+-                                                            {Object.entries(reviews[row.symbol].analysis || {}).map(([k, v]) => (
+-                                                                <div key={k} className="space-y-1.5">
+-                                                                    <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+-                                                                        <ChevronRight className="w-3 h-3 text-purple-500" />
+-                                                                        {k.replace('_', ' ')}
+-                                                                    </h4>
+-                                                                    <p className="text-foreground/80 text-xs font-medium leading-relaxed">{v}</p>
+-                                                                </div>
+-                                                            ))}
+-                                                        </div>
+-                                                    </div>
+-                                                </div>
+-                                            </td>
+-                                        </tr>
+-                                    )}
+                                 </React.Fragment>
+                             ))}
+                         </tbody>
+@@ -586,6 +534,91 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
+                 </div>
+             </div>
+         </div>
++
++        {/* AI Review Modal */}
++        {reviewModal && typeof document !== 'undefined' && createPortal((
++            <div
++                className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
++                onClick={(e) => { if (e.target === e.currentTarget) setReviewModal(null); }}
++            >
++                <div className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl border border-border/40 animate-in zoom-in-95 duration-200">
++                    {/* Header */}
++                    <div className="flex items-center justify-between px-6 py-4 border-b border-border/40 shrink-0">
++                        <div className="flex items-center gap-3">
++                            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
++                                <Sparkles className="w-4 h-4" />
++                            </div>
++                            <div>
++                                <h3 className="font-bold text-foreground">{reviewModal.symbol} · AI Audit</h3>
++                                <button
++                                    onClick={() => handleRegenerate(reviewModal.symbol)}
++                                    disabled={reviewModalLoading === reviewModal.symbol}
++                                    className="flex items-center gap-1 text-[10px] font-bold text-purple-500 hover:text-purple-400 uppercase tracking-wider transition-colors mt-0.5"
++                                >
++                                    {reviewModalLoading === reviewModal.symbol
++                                        ? <Loader2 className="w-3 h-3 animate-spin" />
++                                        : <RotateCcw className="w-3 h-3" />}
++                                    Regenerate
++                                </button>
++                            </div>
++                        </div>
++                        <button
++                            onClick={() => setReviewModal(null)}
++                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
++                        >
++                            <X className="w-4 h-4" />
++                        </button>
++                    </div>
++
++                    {/* Body */}
++                    <div className="overflow-y-auto p-6 space-y-6">
++                        {reviewModalLoading === reviewModal.symbol && !reviewModal.review.summary ? (
++                            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
++                                <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
++                                <p className="text-sm">Generating AI audit…</p>
++                            </div>
++                        ) : (
++                            <>
++                                {reviewModal.review.scorecard && Object.keys(reviewModal.review.scorecard).length > 0 && (
++                                    <div className="flex flex-wrap gap-2">
++                                        {Object.entries(reviewModal.review.scorecard).map(([k, v]) => (
++                                            <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 flex items-center gap-2">
++                                                <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
++                                                <span className={cn(
++                                                    "text-xs font-bold",
++                                                    v >= 8 ? 'text-emerald-500' : v >= 6 ? 'text-cyan-500' : 'text-amber-500'
++                                                )}>{v}/10</span>
++                                            </div>
++                                        ))}
++                                    </div>
++                                )}
++                                {reviewModal.review.summary && (
++                                    <div className="p-4 rounded-xl bg-muted/30">
++                                        <p className="text-sm text-foreground/90 leading-relaxed font-semibold italic">
++                                            &quot;{reviewModal.review.summary}&quot;
++                                        </p>
++                                    </div>
++                                )}
++                                {reviewModal.review.analysis && Object.keys(reviewModal.review.analysis).length > 0 && (
++                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
++                                        {Object.entries(reviewModal.review.analysis).map(([k, v]) => (
++                                            <div key={k} className="space-y-1.5">
++                                                <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
++                                                    <ChevronRight className="w-3 h-3 text-purple-500" />
++                                                    {k.replace('_', ' ')}
++                                                </h4>
++                                                <p className="text-foreground/80 text-xs font-medium leading-relaxed">{v}</p>
++                                            </div>
++                                        ))}
++                                    </div>
++                                )}
++                            </>
++                        )}
++                    </div>
++                </div>
++            </div>
++        ), document.body)}
++        </>
+     );
+ };
+ 
+diff --git a/web_app/components/performance/MonthlyHeatmap.tsx b/web_app/components/performance/MonthlyHeatmap.tsx
+index 13a19e7..e68a4e5 100644
+--- a/web_app/components/performance/MonthlyHeatmap.tsx
++++ b/web_app/components/performance/MonthlyHeatmap.tsx
+@@ -27,7 +27,7 @@ function bucketClass(v: number | null): string {
+ }
+ 
+ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
+-    const { grid, years, yearTotals } = useMemo(() => {
++    const { grid, years, yearTotals, monthAverages } = useMemo(() => {
+         const monthly = data?.M ?? [];
+         // year -> [12] of returns (null if missing)
+         const byYear = new Map<number, (number | null)[]>();
+@@ -50,7 +50,14 @@ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
+                 .reduce((acc, v) => acc * (1 + v / 100), 1);
+             totals.set(y, (compounded - 1) * 100);
+         }
+-        return { grid: byYear, years: yrs, yearTotals: totals };
++        // Average return per month index across all years (null if no data).
++        const monthAverages: (number | null)[] = Array.from({ length: 12 }, (_, m) => {
++            const vals = yrs
++                .map(y => byYear.get(y)![m])
++                .filter((v): v is number => typeof v === 'number');
++            return vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null;
++        });
++        return { grid: byYear, years: yrs, yearTotals: totals, monthAverages };
+     }, [data]);
+ 
+     if (years.length === 0) {
+@@ -121,6 +128,37 @@ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
+                             );
+                         })}
+                     </tbody>
++                    <tfoot>
++                        <tr>
++                            <td className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider pr-2 pt-1 border-t border-border/50">Avg</td>
++                            {monthAverages.map((v, i) => (
++                                <td
++                                    key={i}
++                                    className={cn(
++                                        'text-center font-bold rounded h-7 min-w-[2.5rem] border-t border-border/50',
++                                        bucketClass(v),
++                                    )}
++                                    title={v != null ? `${MONTH_LABELS[i]} average: ${v.toFixed(2)}%` : `${MONTH_LABELS[i]} average: —`}
++                                >
++                                    {v != null ? v.toFixed(1) : ''}
++                                </td>
++                            ))}
++                            {(() => {
++                                const vals = monthAverages.filter((v): v is number => typeof v === 'number');
++                                const avg = vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null;
++                                return (
++                                    <td className={cn(
++                                        'text-right font-bold pl-2 pt-1 border-t border-border/50',
++                                        avg == null ? 'text-muted-foreground' :
++                                        avg >= 0 ? 'text-emerald-600 dark:text-emerald-400'
++                                                 : 'text-red-600 dark:text-red-400',
++                                    )}>
++                                        {avg != null ? `${avg > 0 ? '+' : ''}${avg.toFixed(1)}%` : '—'}
++                                    </td>
++                                );
++                            })()}
++                        </tr>
++                    </tfoot>
+                 </table>
+             </div>
+         </div>

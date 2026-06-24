@@ -41,6 +41,8 @@ struct PortfolioHeroCard: View {
     let metrics: Metrics?
     let currency: String
     let longHistory: [PerformancePoint]
+    var intradayHistory: [PerformancePoint] = []
+    var wtdHistory: [PerformancePoint] = []
     @State private var period: HeroPeriod = .day
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
@@ -53,8 +55,12 @@ struct PortfolioHeroCard: View {
     private var dayGLPct: Double? { metrics?.dayChangePercent }
 
     private var periodView: (series: [Double], pct: Double?, abs: Double?) {
-        if period == .day { return ([], dayGLPct, dayGL) }
-        let rows = longHistory.compactMap { p -> (Date, Double)? in
+        if period == .day {
+            let series = intradayHistory.map { $0.value }
+            return (series, dayGLPct, dayGL)
+        }
+        let historyToUse = period == .wtd ? wtdHistory : longHistory
+        let rows = historyToUse.compactMap { p -> (Date, Double)? in
             guard let d = p.parsedDate else { return nil }; return (d, p.value)
         }
         guard !rows.isEmpty else { return ([], nil, nil) }
@@ -319,7 +325,8 @@ struct TodayStripCard: View {
                             Text(compactChange(r.contribution))
                                 .font(.caption2).monospacedDigit()
                                 .foregroundStyle((positive ? Color.up : Color.down).opacity(0.8))
-                                .frame(width: 52, alignment: .trailing)
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .frame(width: 66, alignment: .trailing)
                         }
                         .font(.caption)
                         .padding(.horizontal, 6).padding(.vertical, 3)
@@ -399,7 +406,7 @@ struct UpcomingEventsCard: View {
                 ForEach(upcoming) { ev in
                     Button { onSelectSymbol(ev.symbol) } label: {
                         HStack {
-                            Text(ev.symbol).fontWeight(.bold)
+                            Text(ev.symbol).font(.callout.weight(.bold))
                             if ev.status == "estimated" {
                                 Label("est.", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
                             } else {
@@ -408,8 +415,9 @@ struct UpcomingEventsCard: View {
                             Spacer()
                             Text(relativeDay(ev.dividendDate)).font(.caption).textCase(.uppercase)
                                 .foregroundStyle(isSoon(ev.dividendDate) ? Color.up : .secondary)
-                            Text(Fmt.currency(ev.amount, code: currency)).fontWeight(.bold).foregroundStyle(Color.up)
-                                .frame(width: 80, alignment: .trailing)
+                            Text(Fmt.currency(ev.amount, code: currency)).font(.callout.weight(.bold)).foregroundStyle(Color.up)
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .frame(minWidth: 80, alignment: .trailing)
                         }
                         .padding(.horizontal, 6).padding(.vertical, 4)
                         .contentShape(Rectangle())
@@ -692,8 +700,10 @@ private struct SingleDonut: View {
                     Text(subtitle(of: a)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: a))
                         .lineLimit(1).minimumScaleFactor(0.4)
                 } else {
-                    Menu {
-                        ForEach(CompositionMetric.allCases) { m in Button(m.label) { metric = m } }
+                    PopoverMenu(minWidth: 180) {
+                        ForEach(CompositionMetric.allCases) { m in
+                            MenuToggleRow(title: m.label, isOn: m == metric, dismissOnTap: true) { metric = m }
+                        }
                     } label: {
                         HStack(spacing: 3) {
                             Text(metric.label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
@@ -702,7 +712,7 @@ private struct SingleDonut: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(.background.tertiary, in: Capsule())
                         .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
-                    }.borderlessMenu().fixedSize()
+                    }.fixedSize()
                     Text(value(of: nil)).font(.system(size: 18, weight: .bold)).foregroundStyle(tint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.4)
                     Text(subtitle(of: nil)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: nil))

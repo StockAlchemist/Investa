@@ -109,14 +109,18 @@ struct GlobalControlBar<Trailing: View>: View {
                     .font(.body)
                     .padding(.leading, 12)
                 if TabLayout.hasLayout(section) {
-                    Menu {
-                        layoutMenuContent
-                    } label: {
-                        Label("Customize Layout", systemImage: "slider.horizontal.3")
+                    PopoverMenu { layoutMenuContent } label: {
+                        Image(systemName: "slider.horizontal.3").font(.body)
                     }
+                }
+                benchmarkButton
                     .labelStyle(.iconOnly)
                     .font(.body)
+                Button { appState.showClosed.toggle() } label: {
+                    Image(systemName: appState.showClosed ? "eye" : "eye.slash").font(.body)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(appState.showClosed ? .primary : .secondary)
                 Spacer(minLength: 8)
                 marketStatusCompact
             }
@@ -131,7 +135,9 @@ struct GlobalControlBar<Trailing: View>: View {
                 .padding(.leading, searchActive ? 12 : 0)
             if !searchActive {
                 currencyMenu
-                overflowMenu
+                if Trailing.self != EmptyView.self {
+                    overflowMenu
+                }
             }
         }
         .padding(.trailing, 12)
@@ -144,14 +150,7 @@ struct GlobalControlBar<Trailing: View>: View {
     /// account menu.) The host-supplied `trailing` (refresh / settings / account)
     /// is appended below a divider.
     private var overflowMenu: some View {
-        Menu {
-            Button { showBenchmarks = true } label: {
-                Label("Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line")
-            }
-            Toggle(isOn: $appState.showClosed) {
-                Label("Show Closed", systemImage: "eye.slash")
-            }
-            Divider()
+        PopoverMenu {
             trailing
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -160,7 +159,6 @@ struct GlobalControlBar<Trailing: View>: View {
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
-        .sheet(isPresented: $showBenchmarks) { benchmarkPopover }
     }
 
     // MARK: - Benchmarks
@@ -176,9 +174,9 @@ struct GlobalControlBar<Trailing: View>: View {
         Button { showBenchmarks.toggle() } label: {
             Label("Benchmarks (\(appState.benchmarks.count))", systemImage: "chart.xyaxis.line")
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .interactiveGlass()
-        .popover(isPresented: $showBenchmarks, arrowEdge: .bottom) { benchmarkPopover }
+        .popover(isPresented: $showBenchmarks) { benchmarkPopover }
     }
 
     private var benchmarkPopover: some View {
@@ -242,58 +240,33 @@ struct GlobalControlBar<Trailing: View>: View {
         return order.compactMap { name in g[name].map { (name, $0) } }
     }
 
-    @State private var showAccounts = false
-
     private var accountMenu: some View {
-        Button { showAccounts.toggle() } label: {
-            Label(accountSummary, systemImage: "building.columns")
-        }
-        .buttonStyle(.borderless)
-        .interactiveGlass()
-        .popover(isPresented: $showAccounts, arrowEdge: .bottom) { accountPopover }
-    }
-
-    private var accountPopover: some View {
-        let individuals = appState.allAccounts.filter { $0 != "All Accounts" }
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                AccountMenuRow(title: "All Accounts", checked: appState.selectedAccounts.isEmpty) {
-                    appState.selectedAccounts = []
-                }
-                if !orderedGroups.isEmpty {
-                    accountSectionHeader("Groups")
-                    ForEach(orderedGroups, id: \.name) { group in
-                        let selected = !appState.selectedAccounts.isEmpty && appState.selectedAccounts == Set(group.accounts)
-                        AccountMenuRow(title: group.name, checked: selected) {
-                            appState.selectedAccounts = Set(group.accounts); showAccounts = false
-                        }
+        PopoverMenu(minWidth: 220, maxHeight: 440) {
+            let individuals = appState.allAccounts.filter { $0 != "All Accounts" }
+            MenuToggleRow(title: "All Accounts", isOn: appState.selectedAccounts.isEmpty, dismissOnTap: true) {
+                appState.selectedAccounts = []
+            }
+            if !orderedGroups.isEmpty {
+                MenuSectionHeader("Groups")
+                ForEach(orderedGroups, id: \.name) { group in
+                    let selected = !appState.selectedAccounts.isEmpty && appState.selectedAccounts == Set(group.accounts)
+                    MenuToggleRow(title: group.name, isOn: selected, dismissOnTap: true) {
+                        appState.selectedAccounts = Set(group.accounts)
                     }
-                    accountSectionHeader("Individual")
                 }
-                ForEach(individuals, id: \.self) { account in
-                    AccountMenuRow(title: account,
-                                   checked: appState.selectedAccounts.contains(account),
-                                   closed: appState.closedAccounts.contains(account)) {
-                        toggle(account)
-                    }
+                MenuSectionHeader("Individual")
+            }
+            ForEach(individuals, id: \.self) { account in
+                MenuToggleRow(title: account,
+                              isOn: appState.selectedAccounts.contains(account),
+                              trailing: appState.closedAccounts.contains(account) ? "Closed" : nil) {
+                    toggle(account)
                 }
             }
-            .padding(.vertical, 4)
+        } label: {
+            Label(accountSummary, systemImage: "building.columns")
         }
-        #if os(iOS)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        #else
-        .frame(minWidth: 220, maxHeight: 440)
-        #endif
-    }
-
-    private func accountSectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        .interactiveGlass()
     }
 
     private func toggle(_ account: String) {
@@ -323,9 +296,11 @@ struct GlobalControlBar<Trailing: View>: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            Menu {
+            PopoverMenu(minWidth: 130) {
                 ForEach(appState.availableCurrencies, id: \.self) { cur in
-                    Button(cur) { appState.displayCurrency = cur }
+                    MenuToggleRow(title: cur, isOn: cur == appState.displayCurrency, dismissOnTap: true) {
+                        appState.displayCurrency = cur
+                    }
                 }
             } label: {
                 HStack(spacing: 4) {
@@ -334,7 +309,7 @@ struct GlobalControlBar<Trailing: View>: View {
                         .font(.system(size: 16))
                 }
             }
-            .borderlessMenu().fixedSize()
+            .fixedSize()
             .interactiveGlass()
         }
         .onChange(of: appState.displayCurrency) {
@@ -353,32 +328,24 @@ struct GlobalControlBar<Trailing: View>: View {
     // MARK: - Layout configurator
 
     private var layoutMenu: some View {
-        Menu {
-            layoutMenuContent
-        } label: {
+        PopoverMenu { layoutMenuContent } label: {
             Label("Layout", systemImage: "slider.horizontal.3")
         }
-        .borderlessMenu().fixedSize()
+        .fixedSize()
         .interactiveGlass()
     }
 
     /// The per-tab visible-section toggles, reusable both as the macOS bar's
-    /// Layout menu and as a submenu inside the compact overflow menu.
+    /// Layout menu and inside the compact overflow menu.
     @ViewBuilder private var layoutMenuContent: some View {
-        Text(TabLayout.sectionTitle(for: section))
-        Divider()
+        MenuSectionHeader(TabLayout.sectionTitle(for: section))
         let items = TabLayout.items(for: section)
-        // Render grouped (group header as a disabled label) preserving order.
         ForEach(Array(groupedItems(items).enumerated()), id: \.offset) { _, group in
-            if let label = group.label { Section(label) { itemButtons(group.items) } }
-            else { itemButtons(group.items) }
-        }
-    }
-
-    private func itemButtons(_ items: [LayoutItem]) -> some View {
-        ForEach(items) { item in
-            Button { appState.toggle(section, item.id) } label: {
-                Label(item.title, systemImage: appState.isVisible(section, item.id) ? "checkmark" : "")
+            if let label = group.label { MenuSectionHeader(label) }
+            ForEach(group.items) { item in
+                MenuToggleRow(title: item.title, isOn: appState.isVisible(section, item.id)) {
+                    appState.toggle(section, item.id)
+                }
             }
         }
     }
@@ -393,36 +360,5 @@ struct GlobalControlBar<Trailing: View>: View {
             else { indexByLabel[key] = groups.count; groups.append((label, [item])) }
         }
         return groups
-    }
-}
-
-/// A plain menu-style account row that can show a right-adjusted "Closed" tag
-/// (a native `Menu` can't render trailing accessories, so the dropdown is drawn
-/// as a lightweight popover instead).
-private struct AccountMenuRow: View {
-    let title: String
-    let checked: Bool
-    var closed: Bool = false
-    let action: () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark").font(.caption.weight(.bold)).opacity(checked ? 1 : 0)
-                Text(title).lineLimit(1)
-                Spacer(minLength: 16)
-                if closed {
-                    Text("Closed").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                }
-            }
-            .font(.system(size: 15))
-            .padding(.horizontal, 12).padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(hovered ? Color.accentColor.opacity(0.15) : Color.clear)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 }
     }
 }
