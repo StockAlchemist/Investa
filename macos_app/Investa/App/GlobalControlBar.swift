@@ -121,6 +121,11 @@ struct GlobalControlBar<Trailing: View>: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(appState.showClosed ? .primary : .secondary)
+                Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
+                    Image(systemName: "arrow.clockwise").font(.body)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
                 Spacer(minLength: 8)
                 marketStatusCompact
             }

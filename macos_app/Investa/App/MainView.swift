@@ -228,9 +228,6 @@ struct MainView: View {
                 // menu, so the phone bar no longer needs standalone refresh/profile
                 // icons.
                 GlobalControlBar(section: section) {
-                    MenuRow(title: "Refresh", systemImage: "arrow.clockwise") {
-                        NotificationCenter.default.post(name: .refreshRequested, object: nil)
-                    }
                     MenuRow(title: "Settings", systemImage: "gearshape") { showingSettings = true }
                     MenuRow(title: forceDark ? "Light Mode" : "Dark Mode",
                             systemImage: forceDark ? "sun.max" : "moon") {
@@ -251,10 +248,11 @@ struct MainView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 6) {
-                        Image("AppLogo")
+                        appIcon
                             .resizable()
                             .scaledToFit()
-                            .frame(height: 24)
+                            .frame(height: 34)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         
                         if geo.size.width > 450 {
                             Text("Investa")
@@ -263,8 +261,6 @@ struct MainView: View {
                         }
                     }
                     .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !appState.indices.isEmpty {
@@ -273,6 +269,17 @@ struct MainView: View {
                 }
             }
         }
+    }
+
+    private var appIcon: Image {
+        if let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String],
+           let name = files.last,
+           let uiImage = UIImage(named: name) {
+            return Image(uiImage: uiImage)
+        }
+        return Image("AppLogo")
     }
 
     #endif
