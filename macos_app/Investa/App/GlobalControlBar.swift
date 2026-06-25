@@ -35,6 +35,17 @@ struct GlobalControlBar<Trailing: View>: View {
             Spacer()
             marketStatusBadge
             lastUpdatedLabel
+            
+            Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
+                if appState.isRefreshing {
+                    ProgressView().controlSize(.small).frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "arrow.clockwise").font(.body)
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+
             StockSearchBar(currency: appState.displayCurrency)
             currencyMenu
             trailing
@@ -123,14 +134,22 @@ struct GlobalControlBar<Trailing: View>: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(appState.showClosed ? .primary : .secondary)
-                        Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                            Image(systemName: "arrow.clockwise").font(.body)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.primary)
-                        marketStatusCompact
                     }
                 }
+                
+                Spacer(minLength: 8)
+                
+                Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
+                    if appState.isRefreshing {
+                        ProgressView().controlSize(.small).frame(width: 16, height: 16)
+                    } else {
+                        Image(systemName: "arrow.clockwise").font(.body)
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                
+                marketStatusCompact
             }
             // Single instance kept across the active/inactive switch so focus and
             // typed text survive when the sibling controls show/hide.

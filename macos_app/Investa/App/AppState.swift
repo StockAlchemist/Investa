@@ -85,6 +85,7 @@ final class AppState: ObservableObject {
     @Published var marketIsOpen: Bool? = nil
     /// When the global market data (indices / market status) was last fetched.
     @Published var lastUpdated: Date? = nil
+    @Published var isRefreshing: Bool = false
 
     private let api: APIClient
     private let visibleDefaultsKey = "investa.tabVisible"

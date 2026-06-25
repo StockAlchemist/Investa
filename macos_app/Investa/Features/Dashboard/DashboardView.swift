@@ -74,6 +74,7 @@ struct DashboardView: View {
         }
         .onChange(of: selectionSignature) { _, _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
         .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
     }
@@ -81,10 +82,7 @@ struct DashboardView: View {
     private var header: some View {
         HStack {
             Text("Dashboard").font(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
-            Button { reload() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                .buttonStyle(.borderless)
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
     }
