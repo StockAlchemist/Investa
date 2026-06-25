@@ -70,6 +70,17 @@ final class StockChartModel: ObservableObject {
             if period == "custom" {
                 if let lo = lowerTs, t < lo { continue }
                 if let hi = upperTs, t > hi { continue }
+            } else if period == "1d" {
+                var cal = Calendar(identifier: .gregorian)
+                if let tz = TimeZone(identifier: "America/New_York") {
+                    cal.timeZone = tz
+                    let comps = cal.dateComponents([.year, .month, .day], from: pts.last!.date)
+                    if let start = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 9, minute: 30))?.timeIntervalSince1970,
+                       let end = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 16, minute: 0))?.timeIntervalSince1970 {
+                        // Skip if it's off-hour today (t is outside 9:30-16:00 NY time).
+                        if t < start || t > end { continue }
+                    }
+                }
             } else if period != "all" && period != "max" && t < cut { continue }
             out.append(ChartPoint(date: p.date, value: p.value, returnPct: p.ret, volume: p.volume,
                                   sma50: sma50[i], sma200: sma200[i], bench: p.bench))

@@ -41,6 +41,20 @@ struct PerformanceChartView: View {
                 out.append(SeriesPoint(date: d, value: p.drawdown ?? 0, series: "Portfolio"))
             }
         }
+        
+        if period == .oneDay, let lastD = out.last?.date {
+            var cal = Calendar(identifier: .gregorian)
+            if let tz = TimeZone(identifier: "America/New_York") {
+                cal.timeZone = tz
+                let comps = cal.dateComponents([.year, .month, .day], from: lastD)
+                if let start = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 9, minute: 30)),
+                   let end = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 16, minute: 0)) {
+                    let startOfToday = cal.startOfDay(for: lastD)
+                    out = out.filter { $0.date < startOfToday || ($0.date >= start && $0.date <= end) }
+                }
+            }
+        }
+        
         return out
     }
 
@@ -151,10 +165,9 @@ struct PerformanceChartView: View {
         }
         .padding(.vertical, 2)
     }
-
     @ViewBuilder private var chart: some View {
         let domain = chartDomain(seriesData.map(\.value))
-        Chart(seriesData) { item in
+        let baseChart = Chart(seriesData) { item in
             if view == .value {
                 // Bound the fill to the visible domain; an implicit 0 baseline
                 // sits far below the domain min and spills below the x-axis.
@@ -197,7 +210,8 @@ struct PerformanceChartView: View {
                                                       : String(format: "%.2f%%", $0.value))
             })
         }
-        .frame(height: 260)
+        
+        baseChart.frame(height: 260)
     }
 
     /// Y-axis label for the Value view: in millions, with just enough decimals
