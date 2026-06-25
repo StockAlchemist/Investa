@@ -588,14 +588,8 @@ struct AdvancedSettings: View {
                     ForEach(appState.availableCurrencies, id: \.self) { Text($0).tag($0) }
                 }
                 Toggle("Include closed accounts", isOn: $appState.showClosed)
-                HStack {
-                    TextField("Benchmarks (e.g. SPY, QQQ)", text: $benchmarksText).textFieldStyle(.roundedBorder)
-                    Button("Save") {
-                        let list = benchmarksText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).uppercased() }.filter { !$0.isEmpty }
-                        Task { await vm.update("benchmarks", list) }
-                    }
-                }
             }
+            benchmarksCard
             SettingsCard(title: "Available Currencies") {
                 let currencies = (settings?.availableCurrencies ?? []).sorted()
                 FlowChipsRemovable(items: currencies) { remove($0, currencies) }
@@ -628,12 +622,54 @@ struct AdvancedSettings: View {
         }
         .onAppear {
             ibkrToken = settings?.ibkrToken ?? ""; ibkrQuery = settings?.ibkrQueryId ?? ""
-            benchmarksText = (settings?.benchmarks ?? []).joined(separator: ", ")
         }
         .onChange(of: settings?.ibkrToken) { _, new in ibkrToken = new ?? ibkrToken }
     }
     private func setCurrencies(_ list: [String]) { Task { await vm.update("available_currencies", list) } }
     private func remove(_ c: String, _ list: [String]) { setCurrencies(list.filter { $0 != c }) }
+
+    private let presetBenchmarks = [
+        "S&P 500", "Dow Jones", "NASDAQ", "Russell 2000",
+        "SPY (S&P 500 ETF)", "QQQ (Nasdaq 100 ETF)", "DIA (Dow Jones ETF)", "S&P 500 Total Return",
+    ]
+
+    private var benchmarksCard: some View {
+        SettingsCard(title: "Benchmarks (\(appState.benchmarks.count))") {
+            ForEach(presetBenchmarks, id: \.self) { b in
+                let on = appState.benchmarks.contains(b)
+                Button { toggleBenchmark(b) } label: {
+                    HStack {
+                        Image(systemName: on ? "checkmark.square.fill" : "square").foregroundStyle(on ? Color.accentColor : .secondary)
+                        Text(b); Spacer()
+                    }
+                }.buttonStyle(.plain)
+            }
+            
+            let custom = appState.benchmarks.filter { !presetBenchmarks.contains($0) }
+            if !custom.isEmpty {
+                Divider()
+                ForEach(custom, id: \.self) { c in
+                    HStack { Text(c).fontWeight(.medium); Spacer()
+                        Button { toggleBenchmark(c) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Divider()
+            HStack {
+                TextField("Custom ticker", text: $benchmarksText).textFieldStyle(.roundedBorder).frame(maxWidth: 160)
+                Button("Add") {
+                    let t = benchmarksText.trimmingCharacters(in: .whitespaces).uppercased()
+                    guard !t.isEmpty, !appState.benchmarks.contains(t) else { return }
+                    benchmarksText = ""; appState.setBenchmarks(appState.benchmarks + [t])
+                }.buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func toggleBenchmark(_ b: String) {
+        if appState.benchmarks.contains(b) { appState.setBenchmarks(appState.benchmarks.filter { $0 != b }) }
+        else { appState.setBenchmarks(appState.benchmarks + [b]) }
+    }
 }
 
 private struct FlowChipsRemovable: View {
