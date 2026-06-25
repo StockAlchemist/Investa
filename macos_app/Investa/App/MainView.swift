@@ -279,7 +279,7 @@ struct MainView: View {
            let uiImage = UIImage(named: name) {
             return Image(uiImage: uiImage)
         }
-        return Image("AppLogo")
+        return Image("AppLogoNoText")
     }
 
     #endif
