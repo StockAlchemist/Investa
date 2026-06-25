@@ -705,6 +705,8 @@ export default function Home() {
             availableAccounts={availableAccounts}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             initialTab={settingsInitialTab as any}
+            benchmarks={benchmarks}
+            onBenchmarksChange={setBenchmarks}
           />
         );
 

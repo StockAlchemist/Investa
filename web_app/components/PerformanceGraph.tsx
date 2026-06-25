@@ -16,7 +16,7 @@ import {
     ReferenceLine
 } from 'recharts';
 import PeriodSelector from './PeriodSelector';
-import BenchmarkSelector from './BenchmarkSelector';
+
 import { PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 
@@ -607,9 +607,7 @@ export default function PerformanceGraph({
                     </div>
 
                     <div className="flex items-center gap-2 w-full sm:w-auto pb-1">
-                        {view === 'return' && (
-                            <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
-                        )}
+
                         <div className="inline-flex items-center gap-0.5 bg-muted/60 border border-border/60 rounded-lg p-0.5 shrink-0">
                             {([
                                 { value: 'return',   label: 'Return %' },

@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { 
     Pencil, Trash2, Loader2, Users, Sliders, Map as MapIcon, XCircle, 
     DollarSign, Activity, Settings as SettingsIcon, 
-    UserCircle, LogOut, Save, ArrowRight, ShieldAlert, Smartphone, CheckCircle, AlertCircle, Info
+    UserCircle, LogOut, Save, ArrowRight, ShieldAlert, Smartphone, CheckCircle, AlertCircle, Info, LineChart, Plus
 } from 'lucide-react';
 import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, syncIbkr, updateUserProfile, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -49,11 +49,24 @@ const SECTORS = [
     "Exchange-Traded Fund",
 ];
 
+const PRESET_BENCHMARKS = [
+    "S&P 500",
+    "Dow Jones",
+    "NASDAQ",
+    "Russell 2000",
+    "SPY (S&P 500 ETF)",
+    "QQQ (Nasdaq 100 ETF)",
+    "DIA (Dow Jones ETF)",
+    "S&P 500 Total Return",
+];
+
 interface SettingsProps {
     settings: SettingsType | null;
     holdings: Holding[];
     availableAccounts: string[];
     initialTab?: Tab;
+    benchmarks: string[];
+    onBenchmarksChange: (benchmarks: string[]) => void;
 }
 
 const TABS: { id: Tab, label: string, description: string, icon: React.ElementType, color: string }[] = [
@@ -64,7 +77,7 @@ const TABS: { id: Tab, label: string, description: string, icon: React.ElementTy
     { id: 'account', label: 'Profile & Security', description: 'Manage your user profile, password, and login.', icon: UserCircle, color: 'text-cyan-500 dark:text-cyan-400' },
 ];
 
-export default function Settings({ settings, holdings, availableAccounts, initialTab }: SettingsProps) {
+export default function Settings({ settings, holdings, availableAccounts, initialTab, benchmarks, onBenchmarksChange }: SettingsProps) {
     const queryClient = useQueryClient();
     const { logout, user, refreshUser } = useAuth();
 
@@ -90,6 +103,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
     const [excludeSymbol, setExcludeSymbol] = useState('');
     const [newCurrency, setNewCurrency] = useState('');
+    const [customBenchmark, setCustomBenchmark] = useState('');
 
     // Password State
     const [currentPassword, setCurrentPassword] = useState('');
@@ -1245,6 +1259,105 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             {/* Advanced Settings Tab */}
                             {activeTab === 'advanced' && (
                                 <div className="space-y-8 max-w-4xl">
+                                    {/* Benchmarks Section */}
+                                    <div className={`${cardClassName} border-l-4 border-l-purple-500`}>
+                                        <div className="mb-4">
+                                            <h3 className={sectionTitleClassName}>
+                                                <LineChart className="w-5 h-5 text-purple-500" />
+                                                Benchmarks
+                                            </h3>
+                                            <p className="text-sm text-muted-foreground mt-1">
+                                                Select indices and specific symbols to compare your portfolio performance against.
+                                            </p>
+                                        </div>
+                                        
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                                {PRESET_BENCHMARKS.map(benchmark => (
+                                                    <label
+                                                        key={benchmark}
+                                                        className={cn(
+                                                            "flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all",
+                                                            benchmarks.includes(benchmark)
+                                                                ? "bg-purple-500/10 border-purple-500/50 text-foreground"
+                                                                : "bg-black/5 dark:bg-white/5 border-transparent text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10"
+                                                        )}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={benchmarks.includes(benchmark)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    onBenchmarksChange([...benchmarks, benchmark]);
+                                                                } else {
+                                                                    onBenchmarksChange(benchmarks.filter(b => b !== benchmark));
+                                                                }
+                                                            }}
+                                                            className="rounded border-none bg-secondary text-purple-500 focus:ring-purple-500"
+                                                        />
+                                                        <span className="text-sm font-medium">{benchmark}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+
+                                            <div className="pt-4 border-t border-black/5 dark:border-white/5">
+                                                <label className={labelClassName}>Custom Ticker</label>
+                                                <div className="flex flex-wrap gap-3">
+                                                    <div className="flex flex-1 sm:flex-none gap-2 min-w-[200px] max-w-xs">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="e.g. AAPL"
+                                                            value={customBenchmark}
+                                                            onChange={(e) => setCustomBenchmark(e.target.value.toUpperCase())}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    if (customBenchmark && !benchmarks.includes(customBenchmark)) {
+                                                                        onBenchmarksChange([...benchmarks, customBenchmark]);
+                                                                        setCustomBenchmark('');
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className={inputClassName}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (customBenchmark && !benchmarks.includes(customBenchmark)) {
+                                                                    onBenchmarksChange([...benchmarks, customBenchmark]);
+                                                                    setCustomBenchmark('');
+                                                                }
+                                                            }}
+                                                            className="p-2.5 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 rounded-xl transition-colors text-foreground"
+                                                        >
+                                                            <Plus className="w-5 h-5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {benchmarks.filter(b => !PRESET_BENCHMARKS.includes(b)).length > 0 && (
+                                                <div className="flex flex-wrap gap-2 pt-2">
+                                                    {benchmarks.filter(b => !PRESET_BENCHMARKS.includes(b)).map(b => (
+                                                        <span
+                                                            key={b}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-lg text-sm font-medium"
+                                                        >
+                                                            {b}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onBenchmarksChange(benchmarks.filter(item => item !== b))}
+                                                                className="hover:bg-purple-500/20 p-0.5 rounded-md transition-colors"
+                                                            >
+                                                                <XCircle className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     {/* Webhook Connection */}
                                     <div className={`${cardClassName} border-l-4 border-l-cyan-500`}>
                                         <div className="mb-2">

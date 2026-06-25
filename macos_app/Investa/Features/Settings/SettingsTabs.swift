@@ -19,6 +19,8 @@ struct AccountsSettings: View {
 
     @State private var isCreatingGroup = false
     @State private var editingGroupAccounts: Set<String> = []
+    
+    @State private var newCurrency = ""
 
     private var groups: [(name: String, accounts: [String])] {
         let g = settings?.accountGroups ?? [:]
@@ -31,6 +33,7 @@ struct AccountsSettings: View {
             groupsCard
             perAccountCard
             cashYieldCard
+            availableCurrenciesCard
         }
         .onAppear {
             seed()
@@ -54,6 +57,21 @@ struct AccountsSettings: View {
             }
         }
     }
+
+    private var availableCurrenciesCard: some View {
+        SettingsCard(title: "Available Currencies") {
+            let currencies = (settings?.availableCurrencies ?? []).sorted()
+            FlowChipsRemovable(items: currencies) { remove($0, currencies) }
+            HStack {
+                TextField("Add currency (e.g. SGD)", text: $newCurrency).textFieldStyle(.roundedBorder).frame(width: 160)
+                Button("Add") { let c = newCurrency.uppercased(); guard !c.isEmpty else { return }; newCurrency = ""; setCurrencies(Array(Set(currencies + [c]))) }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func setCurrencies(_ currs: [String]) { Task { await vm.update("available_currencies", currs) } }
+    private func remove(_ c: String, _ all: [String]) { let rest = all.filter { $0 != c }; setCurrencies(rest) }
 
     private var groupsCard: some View {
         SettingsCard(title: "Custom Account Groups") {
@@ -575,7 +593,6 @@ struct AdvancedSettings: View {
     @ObservedObject var vm: SettingsViewModel
     let settings: AppSettings?
     @EnvironmentObject private var appState: AppState
-    @State private var newCurrency = ""
     @State private var ibkrToken = ""; @State private var ibkrQuery = ""
     @State private var refreshSecret = ""
     @State private var serverURL = APIConfig.baseURL
@@ -583,22 +600,8 @@ struct AdvancedSettings: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            SettingsCard(title: "Display") {
-                Picker("Display Currency", selection: $appState.displayCurrency) {
-                    ForEach(appState.availableCurrencies, id: \.self) { Text($0).tag($0) }
-                }
-                Toggle("Include closed accounts", isOn: $appState.showClosed)
-            }
+
             benchmarksCard
-            SettingsCard(title: "Available Currencies") {
-                let currencies = (settings?.availableCurrencies ?? []).sorted()
-                FlowChipsRemovable(items: currencies) { remove($0, currencies) }
-                HStack {
-                    TextField("Add currency (e.g. SGD)", text: $newCurrency).textFieldStyle(.roundedBorder).frame(width: 160)
-                    Button("Add") { let c = newCurrency.uppercased(); guard !c.isEmpty else { return }; newCurrency = ""; setCurrencies(Array(Set(currencies + [c]))) }
-                        .buttonStyle(.borderedProminent)
-                }
-            }
             SettingsCard(title: "Interactive Brokers") {
                 TextField("Flex Token", text: $ibkrToken).textFieldStyle(.roundedBorder)
                 TextField("Query ID", text: $ibkrQuery).textFieldStyle(.roundedBorder)
@@ -625,8 +628,6 @@ struct AdvancedSettings: View {
         }
         .onChange(of: settings?.ibkrToken) { _, new in ibkrToken = new ?? ibkrToken }
     }
-    private func setCurrencies(_ list: [String]) { Task { await vm.update("available_currencies", list) } }
-    private func remove(_ c: String, _ list: [String]) { setCurrencies(list.filter { $0 != c }) }
 
     private let presetBenchmarks = [
         "S&P 500", "Dow Jones", "NASDAQ", "Russell 2000",
