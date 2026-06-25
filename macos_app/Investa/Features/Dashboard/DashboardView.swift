@@ -25,7 +25,7 @@ struct DashboardView: View {
 
                     // Overview
                     if vis("portfolioHero") {
-                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD)
+                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD, isLoading: viewModel.isLoading)
                     }
                     if vis("todayStrip") {
                         TodayStripCard(holdings: viewModel.holdings, currency: cur,

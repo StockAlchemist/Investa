@@ -43,6 +43,7 @@ struct PortfolioHeroCard: View {
     let longHistory: [PerformancePoint]
     var intradayHistory: [PerformancePoint] = []
     var wtdHistory: [PerformancePoint] = []
+    var isLoading: Bool = false
     @State private var period: HeroPeriod = .day
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
@@ -149,8 +150,13 @@ struct PortfolioHeroCard: View {
     private var valueBlock: some View {
         let positive = (dayGL ?? 0) >= 0
         return VStack(alignment: .leading, spacing: compact ? 4 : 6) {
-            Label("Total Portfolio Value", systemImage: "wallet.pass")
-                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Label("Total Portfolio Value", systemImage: "wallet.pass")
+                    .font(.caption).foregroundStyle(.secondary)
+                if compact && isLoading {
+                    ProgressView().controlSize(.small)
+                }
+            }
             // The day-change sits beside the value when wide, below it on phone
             // (so the big value never gets squeezed/truncated).
             if compact {
