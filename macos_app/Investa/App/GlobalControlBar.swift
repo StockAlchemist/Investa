@@ -104,30 +104,33 @@ struct GlobalControlBar<Trailing: View>: View {
     private var compactBar: some View {
         HStack(spacing: 10) {
             if !searchActive {
-                accountMenu
-                    .labelStyle(.iconOnly)
-                    .font(.body)
-                    .padding(.leading, 12)
-                if TabLayout.hasLayout(section) {
-                    PopoverMenu { layoutMenuContent } label: {
-                        Image(systemName: "slider.horizontal.3").font(.body)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        accountMenu
+                            .labelStyle(.iconOnly)
+                            .font(.body)
+                            .padding(.leading, 12)
+                        if TabLayout.hasLayout(section) {
+                            PopoverMenu { layoutMenuContent } label: {
+                                Image(systemName: "slider.horizontal.3").font(.body)
+                            }
+                        }
+                        benchmarkButton
+                            .labelStyle(.iconOnly)
+                            .font(.body)
+                        Button { appState.showClosed.toggle() } label: {
+                            Image(systemName: appState.showClosed ? "eye" : "eye.slash").font(.body)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(appState.showClosed ? .primary : .secondary)
+                        Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
+                            Image(systemName: "arrow.clockwise").font(.body)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                        marketStatusCompact
                     }
                 }
-                benchmarkButton
-                    .labelStyle(.iconOnly)
-                    .font(.body)
-                Button { appState.showClosed.toggle() } label: {
-                    Image(systemName: appState.showClosed ? "eye" : "eye.slash").font(.body)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(appState.showClosed ? .primary : .secondary)
-                Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                    Image(systemName: "arrow.clockwise").font(.body)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                marketStatusCompact
             }
             // Single instance kept across the active/inactive switch so focus and
             // typed text survive when the sibling controls show/hide.
