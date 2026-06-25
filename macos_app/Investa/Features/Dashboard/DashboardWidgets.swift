@@ -118,12 +118,17 @@ struct PortfolioHeroCard: View {
                 }
                 if periodView.series.count > 1 {
                     let up = (periodView.pct ?? 0) >= 0
+                    let domain = chartDomain(periodView.series)
                     Chart(Array(periodView.series.enumerated()), id: \.offset) { i, v in
-                        AreaMark(x: .value("i", i), y: .value("v", v))
+                        AreaMark(
+                            x: .value("i", i),
+                            yStart: .value("Min", domain.lowerBound),
+                            yEnd: .value("v", v)
+                        )
                             .foregroundStyle((up ? Color.up : .down).opacity(0.18))
                         LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(up ? Color.up : Color.down)
                     }
-                    .chartYScale(domain: chartDomain(periodView.series))
+                    .chartYScale(domain: domain)
                     .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 48)
                 }
             }
@@ -883,6 +888,7 @@ struct SectorAttributionCard: View {
                 Spacer()
                 Text("\(attrCurrency(s.gain, currency)) (\(attrPct(s.contribution)))")
                     .font(.caption.bold()).foregroundStyle(tone).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -960,6 +966,7 @@ private struct ContributorRow: View {
                         Image(systemName: stock.gain >= 0 ? "arrow.up.right" : "arrow.down.right").font(.system(size: 10))
                         Text("\(attrCurrency(stock.gain, currency)) (\(attrPct(stock.contribution)))")
                             .font((large ? Font.callout : Font.caption).weight(.bold)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.7)
                     }.foregroundStyle(tone)
                     Text(stock.sector).font(.system(size: 10)).foregroundStyle(Color(hex: 0x06b6d4)).textCase(.uppercase).lineLimit(1)
                 }
