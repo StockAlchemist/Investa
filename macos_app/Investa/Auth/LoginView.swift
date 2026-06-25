@@ -16,7 +16,7 @@ struct LoginView: View {
                 Image("AppLogoNoText")
                     .resizable()
                     .scaledToFit()
-                    .frame(height: 44)
+                    .frame(height: 88)
                 Text("Investa")
                     .font(.largeTitle.bold())
                 Text(isRegistering ? "Create an account" : "Sign in to your portfolio")
