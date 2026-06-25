@@ -648,7 +648,7 @@ struct HoldingsTableView: View {
                     }.padding(.trailing, 8)
                 }
             }
-            .font(.callout)
+            .font(.subheadline)
             .padding(.horizontal, 8).padding(.vertical, 9)
             .frame(width: width, alignment: .leading)
             .background(.background.secondary.opacity(0.6))
@@ -849,9 +849,12 @@ struct HoldingsTableView: View {
         case "Tags": tagsCellEditable(r)
         case "Account", "Sector", "Industry":
             Text(textValue(r, h).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
+                .font(.footnote)
                 .foregroundStyle(h == "Account" ? .primary : .secondary).lineLimit(1)
         default:
-            Text(format(r.num[h], h)).monospacedDigit().foregroundStyle(cellColor(h, r.num[h])).lineLimit(1)
+            Text(format(r.num[h], h))
+                .font(.footnote).monospacedDigit()
+                .foregroundStyle(cellColor(h, r.num[h])).lineLimit(1)
         }
     }
 
@@ -860,7 +863,7 @@ struct HoldingsTableView: View {
             StockIcon(symbol: r.symbol, size: 15)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Button { detail = SymbolID(id: r.symbol) } label: { Text(r.symbol).fontWeight(.bold).lineLimit(1).fixedSize() }.buttonStyle(.plain)
+                    Button { detail = SymbolID(id: r.symbol) } label: { Text(r.symbol).font(.footnote.weight(.bold)).lineLimit(1).fixedSize() }.buttonStyle(.plain)
                     if !r.lots.isEmpty {
                         Button { toggleLot(r.symbol) } label: {
                             Image(systemName: expandedLots.contains(r.symbol) ? "chevron.down" : "chevron.right")
@@ -927,7 +930,9 @@ struct HoldingsTableView: View {
             
             VStack(alignment: align, spacing: 3) {
                 HStack(spacing: 4) {
-                    Text(Fmt.currency(iv, code: currency)).foregroundStyle(tone)
+                    Text(Fmt.currency(iv, code: currency))
+                        .font(.footnote)
+                        .foregroundStyle(tone)
                     if let m = r.mos { Text("(\(String(format: "%.1f", abs(m)))%)").font(.system(size: 10)).foregroundStyle(.secondary) }
                 }
                 .monospacedDigit()

@@ -446,6 +446,7 @@ struct WatchlistKpiStrip: View {
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(value).font(.title3.bold()).foregroundStyle(tone)
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
         }

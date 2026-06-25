@@ -55,6 +55,9 @@ struct MarketsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = MarketsViewModel()
     @Environment(\.openURL) private var openURL
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    #endif
     @State private var newsQuery = ""
     @State private var indexDetail: IndexQuote?
     @State private var stockDetail: SymbolID?
@@ -99,39 +102,39 @@ struct MarketsView: View {
 
     // MARK: - Summary bar
 
-    private var summaryBar: some View {
+    @ViewBuilder private var summaryBar: some View {
         let list = viewModel.indices
         let up = list.filter { ($0.changesPercentage ?? 0) >= 0 }.count
         let down = list.count - up
         let best = list.max { ($0.changesPercentage ?? 0) < ($1.changesPercentage ?? 0) }
         let worst = list.min { ($0.changesPercentage ?? 0) < ($1.changesPercentage ?? 0) }
-        #if os(iOS)
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                tile("Breadth", "\(up) ▲ / \(down) ▼", "\(list.count) indices", up >= down ? .green : .red)
-                Divider().frame(height: 36)
-                tile("Best", best.map { Fmt.percent($0.changesPercentage) } ?? "–", best?.name, .green)
-                Divider().frame(height: 36)
-                tile("Worst", worst.map { Fmt.percent($0.changesPercentage) } ?? "–", worst?.name, .red)
-                Spacer()
-            }
-            .padding(16)
-        }
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-        #else
-        return HStack(spacing: 0) {
+        
+        let content = HStack(spacing: 0) {
             tile("Breadth", "\(up) ▲ / \(down) ▼", "\(list.count) indices", up >= down ? .green : .red)
             Divider().frame(height: 36)
             tile("Best", best.map { Fmt.percent($0.changesPercentage) } ?? "–", best?.name, .green)
             Divider().frame(height: 36)
             tile("Worst", worst.map { Fmt.percent($0.changesPercentage) } ?? "–", worst?.name, .red)
-            Spacer()
         }
         .padding(16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-        #endif
+
+        let isCompact: Bool = {
+            #if os(iOS)
+            return hSize == .compact
+            #else
+            return false
+            #endif
+        }()
+
+        if isCompact {
+            ScrollView(.horizontal, showsIndicators: false) { content }
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        } else {
+            content
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        }
     }
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -154,19 +157,21 @@ struct MarketsView: View {
                     Text("No market data available.").font(.callout).foregroundStyle(.secondary)
                 }
             } else {
-                #if os(iOS)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
+                let isCompact: Bool = {
+                    #if os(iOS)
+                    return hSize == .compact
+                    #else
+                    return false
+                    #endif
+                }()
+                let cols = isCompact
+                    ? [GridItem(.flexible(), spacing: 16)]
+                    : Array(repeating: GridItem(.flexible(minimum: 200, maximum: .infinity), spacing: 16), count: max(1, viewModel.indices.count))
+                LazyVGrid(columns: cols, spacing: 16) {
                     ForEach(viewModel.indices) { idx in
                         Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
                     }
                 }
-                #else
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 16)], spacing: 16) {
-                    ForEach(viewModel.indices) { idx in
-                        Button { indexDetail = idx } label: { IndexCard(index: idx) }.buttonStyle(.plain)
-                    }
-                }
-                #endif
             }
         }
     }
@@ -245,7 +250,9 @@ private struct IndexCard: View {
                     Spacer(minLength: 6)
                     HStack(spacing: 3) {
                         Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right").font(.caption2)
-                        Text("\(isUp ? "+" : "")\(String(format: "%.2f%%", index.changesPercentage ?? 0))").fontWeight(.bold).monospacedDigit()
+                        Text("\(isUp ? "+" : "")\(String(format: "%.2f%%", index.changesPercentage ?? 0))")
+                            .fontWeight(.bold).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.5).fixedSize(horizontal: true, vertical: false)
                     }
                     .font(.caption).foregroundStyle(isUp ? .green : .red)
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -269,6 +276,7 @@ private struct IndexCard: View {
             Text("7D Trend").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
                 .padding(.horizontal, 16).padding(.bottom, 10).padding(.top, 6)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.secondary)
         .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 4) }
         .clipShape(RoundedRectangle(cornerRadius: 14))
