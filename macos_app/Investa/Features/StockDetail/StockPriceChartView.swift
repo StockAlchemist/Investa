@@ -514,10 +514,14 @@ struct StockPriceChartView: View {
         let lo = yDomain.lowerBound, hi = yDomain.upperBound
         let volMax = max(pts.map(\.volume).max() ?? 1, 1)
         let off = gradientOffset
+        let isContinuous = period == "1d"
+        let pIndices: [Date: Int] = Dictionary(uniqueKeysWithValues: pts.enumerated().map { ($0.element.date, $0.offset) })
+        func xVal(for d: Date) -> Double { isContinuous ? d.timeIntervalSince1970 : Double(pIndices[d] ?? 0) }
+
         return Chart {
             // Volume bars anchored at the domain floor.
             ForEach(pts) { p in
-                BarMark(x: .value("Date", p.date),
+                BarMark(x: .value("X", xVal(for: p.date)),
                         yStart: .value("v0", lo),
                         yEnd: .value("v1", lo + (p.volume / volMax) * (hi - lo) * 0.18),
                         width: intraday ? .automatic : .fixed(3))
@@ -525,64 +529,9 @@ struct StockPriceChartView: View {
             }
 
             if view == .price {
-                ForEach(pts) { p in
-                    AreaMark(x: .value("Date", p.date), y: .value("Price", p.value))
-                        .foregroundStyle(.linearGradient(colors: [Color(hex: 0x2563eb).opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
-                    LineMark(x: .value("Date", p.date), y: .value("Price", p.value))
-                        .foregroundStyle(Color(hex: 0x2563eb)).lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)
-                }
-                if showSMA50 {
-                    ForEach(pts.filter { $0.sma50 != nil }) { p in
-                        LineMark(x: .value("Date", p.date), y: .value("SMA50", p.sma50!), series: .value("s", "sma50"))
-                            .foregroundStyle(Color(hex: 0xf97316)).lineStyle(.init(lineWidth: 1.5))
-                    }
-                }
-                if showSMA200 {
-                    ForEach(pts.filter { $0.sma200 != nil }) { p in
-                        LineMark(x: .value("Date", p.date), y: .value("SMA200", p.sma200!), series: .value("s", "sma200"))
-                            .foregroundStyle(Color(hex: 0x9333ea)).lineStyle(.init(lineWidth: 1.5))
-                    }
-                }
-                if let a = avgCost, a > 0 {
-                    RuleMark(y: .value("Avg Cost", a))
-                        .foregroundStyle(Color(hex: 0x64748b)).lineStyle(.init(lineWidth: 1.5, dash: [5, 5]))
-                        .annotation(position: .top, alignment: .trailing) {
-                            Text("AVG COST: \(Fmt.currency(a, code: currency))")
-                                .font(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: 0x64748b))
-                        }
-                }
-                ForEach(eventMarks) { m in
-                    PointMark(x: .value("Date", m.date), y: .value("y", m.y))
-                        .symbolSize(150).foregroundStyle(m.kind.color)
-                        .annotation(position: .overlay) {
-                            Text(m.kind.letter).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                        }
-                }
+                priceChartMarks(xVal: xVal)
             } else {
-                ForEach(pts) { p in
-                    AreaMark(x: .value("Date", p.date), y: .value("Return", p.returnPct))
-                        .foregroundStyle(.linearGradient(stops: [
-                            .init(color: Color(hex: 0x10b981).opacity(0.15), location: 0),
-                            .init(color: Color(hex: 0x10b981).opacity(0.15), location: off),
-                            .init(color: Color(hex: 0xef4444).opacity(0.15), location: off),
-                            .init(color: Color(hex: 0xef4444).opacity(0.15), location: 1),
-                        ], startPoint: .top, endPoint: .bottom))
-                    LineMark(x: .value("Date", p.date), y: .value("Return", p.returnPct))
-                        .foregroundStyle(.linearGradient(stops: [
-                            .init(color: Color(hex: 0x10b981), location: 0),
-                            .init(color: Color(hex: 0x10b981), location: off),
-                            .init(color: Color(hex: 0xef4444), location: off),
-                            .init(color: Color(hex: 0xef4444), location: 1),
-                        ], startPoint: .top, endPoint: .bottom))
-                        .lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)
-                }
-                ForEach(benchmarks.filter { selectedBenchmarks.contains($0.name) }, id: \.key) { b in
-                    ForEach(pts.filter { $0.bench[b.key] != nil }) { p in
-                        LineMark(x: .value("Date", p.date), y: .value(b.name, p.bench[b.key]!), series: .value("b", b.key))
-                            .foregroundStyle(b.color).lineStyle(.init(lineWidth: 1.5))
-                    }
-                }
-                RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.5)).lineStyle(.init(lineWidth: 1, dash: [3, 3]))
+                returnChartMarks(xVal: xVal, off: off)
             }
         }
         .chartYScale(domain: yDomain)
@@ -598,14 +547,96 @@ struct StockPriceChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks { value in
+            AxisMarks(values: .automatic(desiredCount: 5)) { v in
                 AxisGridLine()
-                AxisValueLabel {
-                    if let d = value.as(Date.self) { Text(xLabel(d)) }
+                if let dbl = v.as(Double.self) {
+                    AxisValueLabel {
+                        if isContinuous {
+                            Text(xLabel(Date(timeIntervalSince1970: dbl)))
+                        } else {
+                            let idx = Int(round(dbl))
+                            if idx >= 0 && idx < pts.count {
+                                Text(xLabel(pts[idx].date))
+                            }
+                        }
+                    }
                 }
             }
         }
-        .chartHoverTooltip(pts.map(\.date)) { i in tooltip(pts[i]) }
+        .chartXScale(domain: isContinuous ? [pts.first?.date.timeIntervalSince1970 ?? 0, pts.last?.date.timeIntervalSince1970 ?? 0] : [0, Double(max(0, pts.count - 1))])
+        .chartHoverTooltip(isContinuous ? pts.map(\.date.timeIntervalSince1970) : Array(pts.indices.map(Double.init))) { i in
+            tooltip(pts[i])
+        }
+    }
+
+    @ChartContentBuilder private func priceChartMarks(xVal: @escaping (Date) -> Double) -> some ChartContent {
+        ForEach(pts) { p in
+            let x = xVal(p.date)
+            AreaMark(x: .value("X", x), y: .value("Price", p.value))
+                .foregroundStyle(.linearGradient(colors: [Color(hex: 0x2563eb).opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
+            LineMark(x: .value("X", x), y: .value("Price", p.value))
+                .foregroundStyle(Color(hex: 0x2563eb)).lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)
+        }
+        if showSMA50 {
+            ForEach(pts.filter { $0.sma50 != nil }) { p in
+                let x = xVal(p.date)
+                LineMark(x: .value("X", x), y: .value("SMA50", p.sma50!), series: .value("s", "sma50"))
+                    .foregroundStyle(Color(hex: 0xf97316)).lineStyle(.init(lineWidth: 1.5))
+            }
+        }
+        if showSMA200 {
+            ForEach(pts.filter { $0.sma200 != nil }) { p in
+                let x = xVal(p.date)
+                LineMark(x: .value("X", x), y: .value("SMA200", p.sma200!), series: .value("s", "sma200"))
+                    .foregroundStyle(Color(hex: 0x9333ea)).lineStyle(.init(lineWidth: 1.5))
+            }
+        }
+        if let a = avgCost, a > 0 {
+            RuleMark(y: .value("Avg Cost", a))
+                .foregroundStyle(Color(hex: 0x64748b)).lineStyle(.init(lineWidth: 1.5, dash: [5, 5]))
+                .annotation(position: .top, alignment: .trailing) {
+                    Text("AVG COST: \(Fmt.currency(a, code: currency))")
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: 0x64748b))
+                }
+        }
+        ForEach(eventMarks) { m in
+            let x = xVal(m.date)
+            PointMark(x: .value("X", x), y: .value("y", m.y))
+                .symbolSize(150).foregroundStyle(m.kind.color)
+                .annotation(position: .overlay) {
+                    Text(m.kind.letter).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                }
+        }
+    }
+
+    @ChartContentBuilder private func returnChartMarks(xVal: @escaping (Date) -> Double, off: CGFloat) -> some ChartContent {
+        ForEach(pts) { p in
+            let x = xVal(p.date)
+            AreaMark(x: .value("X", x), y: .value("Return", p.returnPct))
+                .foregroundStyle(.linearGradient(stops: [
+                    .init(color: Color(hex: 0x10b981).opacity(0.15), location: 0),
+                    .init(color: Color(hex: 0x10b981).opacity(0.15), location: off),
+                    .init(color: Color(hex: 0xef4444).opacity(0.15), location: off),
+                    .init(color: Color(hex: 0xef4444).opacity(0.15), location: 1),
+                ], startPoint: .top, endPoint: .bottom))
+            LineMark(x: .value("X", x), y: .value("Return", p.returnPct))
+                .foregroundStyle(.linearGradient(stops: [
+                    .init(color: Color(hex: 0x10b981), location: 0),
+                    .init(color: Color(hex: 0x10b981), location: off),
+                    .init(color: Color(hex: 0xef4444), location: off),
+                    .init(color: Color(hex: 0xef4444), location: 1),
+                ], startPoint: .top, endPoint: .bottom))
+                .lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)
+        }
+        ForEach(benchmarks.filter { selectedBenchmarks.contains($0.name) }, id: \.key) { b in
+            ForEach(pts.filter { $0.bench[b.key] != nil }) { p in
+                let x = xVal(p.date)
+                let y = p.bench[b.key]!
+                LineMark(x: .value("X", x), y: .value(b.name, y), series: .value("b", b.key))
+                    .foregroundStyle(b.color).lineStyle(.init(lineWidth: 1.5))
+            }
+        }
+        RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.5)).lineStyle(.init(lineWidth: 1, dash: [3, 3]))
     }
 
     private func xLabel(_ d: Date) -> String {

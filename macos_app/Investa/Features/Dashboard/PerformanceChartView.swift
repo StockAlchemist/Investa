@@ -226,6 +226,7 @@ struct PerformanceChartView: View {
                         }
                     }
                 }
+                .chartXScale(domain: 0...max(0, dates.count - 1))
                 .chartHoverTooltip(Array(dates.indices)) { i in
                     let date = dates[i]
                     let entries = seriesData.filter { $0.date == date }
