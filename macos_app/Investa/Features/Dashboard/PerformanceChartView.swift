@@ -164,27 +164,78 @@ struct PerformanceChartView: View {
         }
         .padding(.vertical, 2)
     }
+    private var dateIndices: [Date: Int] {
+        var dict: [Date: Int] = [:]
+        for (i, d) in distinctDates.enumerated() { dict[d] = i }
+        return dict
+    }
+
     @ViewBuilder private var chart: some View {
         let domain = chartDomain(seriesData.map(\.value))
-        let baseChart = Chart(seriesData) { item in
-            if view == .value {
-                // Bound the fill to the visible domain; an implicit 0 baseline
-                // sits far below the domain min and spills below the x-axis.
-                AreaMark(x: .value("Date", item.date),
-                         yStart: .value("Min", domain.lowerBound),
-                         yEnd: .value("Value", item.value))
-                    .foregroundStyle(
-                        .linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)],
-                                        startPoint: .top, endPoint: .bottom))
-            } else if view == .drawdown {
-                AreaMark(x: .value("Date", item.date), y: .value("Value", item.value))
-                    .foregroundStyle(
-                        .linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)],
-                                        startPoint: .top, endPoint: .bottom))
+        let dates = distinctDates
+        let dIndices = dateIndices
+
+        Group {
+            if period == .oneDay {
+                Chart(seriesData) { item in
+                    if view == .value {
+                        AreaMark(x: .value("Date", item.date), yStart: .value("Min", domain.lowerBound), yEnd: .value("Value", item.value))
+                            .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    } else if view == .drawdown {
+                        AreaMark(x: .value("Date", item.date), y: .value("Value", item.value))
+                            .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    }
+                    LineMark(x: .value("Date", item.date), y: .value("Value", item.value))
+                        .foregroundStyle(by: .value("Series", item.series))
+                        .interpolationMethod(.monotone)
+                }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                        if let date = value.as(Date.self) {
+                            AxisValueLabel { Text(xAxisLabel(for: date, period: period)) }
+                        }
+                    }
+                }
+                .chartHoverTooltip(dates) { i in
+                    let date = dates[i]
+                    let entries = seriesData.filter { $0.date == date }
+                    guard !entries.isEmpty else { return nil }
+                    return ChartTooltipContent(title: tooltipString(date), rows: entries.map {
+                        ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
+                                        value: view == .value ? Fmt.currency($0.value, code: currency) : String(format: "%.2f%%", $0.value))
+                    })
+                }
+            } else {
+                Chart(seriesData) { item in
+                    let xIdx = dIndices[item.date] ?? 0
+                    if view == .value {
+                        AreaMark(x: .value("Index", xIdx), yStart: .value("Min", domain.lowerBound), yEnd: .value("Value", item.value))
+                            .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    } else if view == .drawdown {
+                        AreaMark(x: .value("Index", xIdx), y: .value("Value", item.value))
+                            .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    }
+                    LineMark(x: .value("Index", xIdx), y: .value("Value", item.value))
+                        .foregroundStyle(by: .value("Series", item.series))
+                        .interpolationMethod(.monotone)
+                }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                        if let idx = value.as(Int.self), idx >= 0, idx < dates.count {
+                            AxisValueLabel { Text(xAxisLabel(for: dates[idx], period: period)) }
+                        }
+                    }
+                }
+                .chartHoverTooltip(Array(dates.indices)) { i in
+                    let date = dates[i]
+                    let entries = seriesData.filter { $0.date == date }
+                    guard !entries.isEmpty else { return nil }
+                    return ChartTooltipContent(title: tooltipString(date), rows: entries.map {
+                        ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
+                                        value: view == .value ? Fmt.currency($0.value, code: currency) : String(format: "%.2f%%", $0.value))
+                    })
+                }
             }
-            LineMark(x: .value("Date", item.date), y: .value("Value", item.value))
-                .foregroundStyle(by: .value("Series", item.series))
-                .interpolationMethod(.monotone)
         }
         .chartForegroundStyleScale(range: seriesColors)
         .chartYScale(domain: domain)
@@ -199,18 +250,7 @@ struct PerformanceChartView: View {
                 }
             }
         }
-        .chartHoverTooltip(distinctDates) { i in
-            let date = distinctDates[i]
-            let entries = seriesData.filter { $0.date == date }
-            guard !entries.isEmpty else { return nil }
-            return ChartTooltipContent(title: tooltipString(date), rows: entries.map {
-                ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
-                                value: view == .value ? Fmt.currency($0.value, code: currency)
-                                                      : String(format: "%.2f%%", $0.value))
-            })
-        }
-        
-        baseChart.frame(height: 260)
+        .frame(height: 260)
     }
 
     /// Y-axis label for the Value view: in millions, with just enough decimals
