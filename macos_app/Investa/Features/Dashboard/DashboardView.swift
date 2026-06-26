@@ -50,7 +50,8 @@ struct DashboardView: View {
                     if vis("performanceGraph") {
                         PerformanceChartView(points: viewModel.history, currency: cur,
                                              benchmarks: appState.benchmarks, period: $appState.period,
-                                             customFrom: $appState.customFrom, customTo: $appState.customTo)
+                                             customFrom: $appState.customFrom, customTo: $appState.customTo,
+                                             isLoading: viewModel.isLoading)
                     }
                     if vis("projection") {
                         ProjectionCardView(projection: viewModel.projection, currency: cur)

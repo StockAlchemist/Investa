@@ -8,6 +8,7 @@ struct PerformanceChartView: View {
     @Binding var period: Period
     @Binding var customFrom: Date
     @Binding var customTo: Date
+    var isLoading: Bool = false
 
     @State private var view: PerformanceView = .value
 
@@ -100,6 +101,9 @@ struct PerformanceChartView: View {
                     Image(systemName: "chart.xyaxis.line").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
                     Text("Performance").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
                         .foregroundStyle(.secondary)
+                    if isLoading {
+                        ProgressView().controlSize(.small)
+                    }
                     Spacer()
                 }
                 if let stats = periodStats {
@@ -125,7 +129,11 @@ struct PerformanceChartView: View {
             periodRow
             if period == .custom { customDateRow }
 
-            if seriesData.isEmpty {
+            if isLoading && seriesData.isEmpty {
+                ProgressView()
+                    .frame(height: 240)
+                    .frame(maxWidth: .infinity)
+            } else if seriesData.isEmpty {
                 ContentUnavailableView("No history", systemImage: "chart.xyaxis.line")
                     .frame(height: 240)
             } else {
