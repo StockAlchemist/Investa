@@ -286,6 +286,25 @@ struct PerformanceChartView: View {
         return f.string(from: d)
     }
 
+    private func xAxisLabel(for d: Date, period: Period) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        if period == .oneDay {
+            f.timeZone = TimeZone(identifier: "America/New_York")
+            f.dateFormat = "h:mm a"
+        } else if period == .fiveDays {
+            f.timeZone = TimeZone(identifier: "America/New_York")
+            f.dateFormat = "E"
+        } else if period == .oneMonth {
+            f.dateFormat = "MMM d"
+        } else if period == .oneYear || period == .ytd {
+            f.dateFormat = "MMM"
+        } else {
+            f.dateFormat = "yyyy"
+        }
+        return f.string(from: d)
+    }
+
     private var seriesColors: [Color] {
         let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
         switch view {
