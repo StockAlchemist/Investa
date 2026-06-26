@@ -49,8 +49,7 @@ struct PerformanceChartView: View {
                 let comps = cal.dateComponents([.year, .month, .day], from: lastD)
                 if let start = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 9, minute: 30)),
                    let end = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 16, minute: 0)) {
-                    let startOfToday = cal.startOfDay(for: lastD)
-                    out = out.filter { $0.date < startOfToday || ($0.date >= start && $0.date <= end) }
+                    out = out.filter { $0.date >= start && $0.date <= end }
                 }
             }
         }
