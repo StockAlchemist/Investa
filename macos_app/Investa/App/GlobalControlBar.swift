@@ -35,15 +35,15 @@ struct GlobalControlBar<Trailing: View>: View {
             marketStatusBadge
             lastUpdatedLabel
             
-            Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                if appState.isRefreshing {
-                    ProgressView().controlSize(.small).frame(width: 16, height: 16)
-                } else {
+            if appState.isRefreshing {
+                ProgressView().controlSize(.small).frame(width: 16, height: 16)
+            } else {
+                Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
                     Image(systemName: "arrow.clockwise").font(.body)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.primary)
 
             StockSearchBar(currency: appState.displayCurrency)
             currencyMenu
@@ -135,17 +135,17 @@ struct GlobalControlBar<Trailing: View>: View {
                 
                 Spacer(minLength: 8)
                 
-                Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                    if appState.isRefreshing {
-                        ProgressView().controlSize(.small).frame(width: 16, height: 16)
-                    } else {
+                marketStatusCompact
+                
+                if appState.isRefreshing {
+                    ProgressView().controlSize(.small).frame(width: 16, height: 16)
+                } else {
+                    Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
                         Image(systemName: "arrow.clockwise").font(.body)
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                
-                marketStatusCompact
             }
             // Single instance kept across the active/inactive switch so focus and
             // typed text survive when the sibling controls show/hide.

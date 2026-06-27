@@ -153,9 +153,6 @@ struct PortfolioHeroCard: View {
             HStack(spacing: 8) {
                 Label("Total Portfolio Value", systemImage: "wallet.pass")
                     .font(.caption).foregroundStyle(.secondary)
-                if compact && isLoading {
-                    ProgressView().controlSize(.small)
-                }
             }
             // The day-change sits beside the value when wide, below it on phone
             // (so the big value never gets squeezed/truncated).
@@ -779,25 +776,55 @@ struct PortfolioHealthCard: View {
     let health: PortfolioHealth
     @State private var showAnalysis = false
     var body: some View {
-        Card(title: "Portfolio Health", icon: "heart.text.square",
+        Card(title: "Portfolio Health", icon: "waveform.path.ecg",
              accessory: AnyView(Image(systemName: "info.circle").font(.caption).foregroundStyle(.secondary))) {
-            HStack {
-                Text(health.rating).foregroundStyle(.secondary)
-                Spacer()
-                Text(String(format: "%.0f", health.overallScore))
-                    .font(.title.bold()).foregroundStyle(color(health.overallScore))
-            }
-            ForEach([
-                ("Diversification", health.components.diversification),
-                ("Efficiency", health.components.efficiency),
-                ("Stability", health.components.stability),
-            ], id: \.0) { name, comp in
-                HStack {
-                    Text(name).frame(width: 130, alignment: .leading)
-                    ProgressView(value: max(0, min(comp.score, 100)), total: 100).tint(color(comp.score))
-                    Text(String(format: "%.0f", comp.score)).monospacedDigit().frame(width: 36, alignment: .trailing)
+            HStack(spacing: 24) {
+                // Left side: Circular Progress
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .stroke(color(health.overallScore).opacity(0.15), lineWidth: 8)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(health.overallScore / 100.0))
+                            .stroke(color(health.overallScore), style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                        
+                        Text(String(format: "%g", health.overallScore))
+                            .font(.title2.bold())
+                            .foregroundStyle(color(health.overallScore))
+                    }
+                    .frame(width: 80, height: 80)
+                    
+                    Text(health.rating)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(color(health.overallScore))
+                }
+                .padding(.leading, 8)
+                
+                // Right side: Metrics
+                VStack(spacing: 16) {
+                    ForEach([
+                        ("chart.pie", "Diversification", health.components.diversification),
+                        ("arrow.up.forward", "Efficiency", health.components.efficiency),
+                        ("checkmark.shield", "Stability", health.components.stability),
+                    ], id: \.1) { icon, name, comp in
+                        HStack(spacing: 12) {
+                            Image(systemName: icon)
+                                .font(.body.weight(.medium))
+                            Text(name.uppercased())
+                                .font(.caption.weight(.bold))
+                                .tracking(0.5)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            Spacer()
+                            Text(String(format: "%g", comp.score))
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(color(comp.score))
+                        }
+                    }
                 }
             }
+            .padding(.vertical, 8)
         }
         .contentShape(Rectangle())
         .onTapGesture { showAnalysis = true }

@@ -130,6 +130,13 @@ struct MainView: View {
         }
         #if os(macOS)
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Image("AppLogoNoText")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+            }
             ToolbarItem(placement: .primaryAction) {
                 if !appState.indices.isEmpty {
                     IndexStrip(indices: appState.indices)

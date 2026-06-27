@@ -30,6 +30,7 @@ struct StockDetailView: View {
     @State private var tab: DetailTab = .overview
     @State private var finType = "income"
     @State private var detail: SymbolID?
+    @State private var showGrahamExplanation = false
 
     init(symbol: String, currency: String = "USD") {
         _viewModel = StateObject(wrappedValue: StockDetailViewModel(symbol: symbol, currency: currency))
@@ -766,7 +767,7 @@ struct StockDetailView: View {
                                     value: Fmt.currency(iv.currentPrice, code: nativeCur),
                                     valueColor: .primary) { EmptyView() }
         let safety = valuationCard(label: "Margin of Safety",
-                                   value: "\(mos >= 0 ? "+" : "")\(Fmt.percent(mos))",
+                                   value: Fmt.percent(mos),
                                    valueColor: mos >= 0 ? .green : .red,
                                    tint: mos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1)) { EmptyView() }
 
@@ -857,7 +858,10 @@ struct StockDetailView: View {
                 Text(e).font(.callout).foregroundStyle(.red)
             } else {
                 if let p = m.parameters {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 24)], spacing: 24) {
+                    let columns = hSizeClass == .compact 
+                        ? [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)] 
+                        : [GridItem(.adaptive(minimum: 150), spacing: 24)]
+                    LazyVGrid(columns: columns, spacing: 24) {
                         if let v = p["discount_rate"]?.doubleValue { paramRow("Discount Rate (WACC)", Fmt.percent(v)) }
                         if let v = p["growth_rate"]?.doubleValue { paramRow("Growth Rate", Fmt.percent(v)) }
                         if let v = p["applied_growth"]?.doubleValue { paramRow("Applied Growth", Fmt.percent(v)) }
@@ -890,38 +894,96 @@ struct StockDetailView: View {
 
     private func grahamMathBlock(_ p: [String: JSONValue]?) -> some View {
         let y = p?["bond_yield_proxy"]?.doubleValue ?? 4.5
-        return VStack {
-            HStack(alignment: .center, spacing: 12) {
-                VStack {
-                    Text("V").font(.title2.weight(.bold))
-                    Text("Intrinsic Value").font(.system(size: 9)).foregroundStyle(.secondary)
+        return Button {
+            showGrahamExplanation = true
+        } label: {
+            VStack(spacing: 16) {
+                // Formula
+                HStack(spacing: 8) {
+                    Text("V").fontWeight(.bold)
+                    Text("=").opacity(0.5)
+                    Text("EPS").fontWeight(.bold)
+                    Text("×").opacity(0.5)
+                    Text("8.5 + 2G").fontWeight(.bold)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.secondary.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
+                    Text("×").opacity(0.5)
+                    Text("4.4").fontWeight(.bold)
+                    Text("/").opacity(0.5)
+                    Text("Y").fontWeight(.bold)
                 }
-                Text("=").font(.title2).opacity(0.3)
-                HStack(spacing: 6) {
-                    VStack {
-                        Text("EPS").font(.subheadline.weight(.bold))
-                        Text("Trailing 12-Month").font(.system(size: 9)).foregroundStyle(.secondary)
-                    }
-                    Text("×").font(.caption).opacity(0.4)
-                    VStack {
-                        Text("8.5 + 2G").font(.caption.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.secondary.opacity(0.3), in: RoundedRectangle(cornerRadius: 4))
-                        Text("Growth Multiplier").font(.system(size: 9)).foregroundStyle(.secondary)
-                    }
-                    Text("×").font(.caption).opacity(0.4)
-                    VStack {
-                        Text("4.4").font(.subheadline.weight(.bold))
-                        Text("Historic Yield").font(.system(size: 9)).foregroundStyle(.secondary)
-                    }
-                    Text("/").font(.caption).opacity(0.4)
-                    VStack {
-                        Text("Y").font(.subheadline.weight(.bold))
-                        Text("Current Yield (\(Fmt.number(y, fractionDigits: 1))%)").font(.system(size: 9)).foregroundStyle(.secondary)
-                    }
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // Legend
+                VStack(alignment: .leading, spacing: 8) {
+                    grahamLegend("V", "Intrinsic Value")
+                    grahamLegend("EPS", "Trailing 12-Month Earnings")
+                    grahamLegend("8.5 + 2G", "Growth Multiplier")
+                    grahamLegend("4.4", "Historic Corporate Bond Yield")
+                    grahamLegend("Y", "Current Yield (\(Fmt.number(y, fractionDigits: 1))%)")
                 }
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(16)
-            .background(.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
-        }.frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showGrahamExplanation) {
+            grahamExplanationView(y: y)
+        }
+    }
+
+    private func grahamExplanationView(y: Double) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Graham's Intrinsic Value Formula")
+                    .font(.headline)
+                Text("This is Benjamin Graham's revised formula for calculating the intrinsic value of a stock, adapted for modern markets.")
+                    .font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    explanationRow("V", "Intrinsic Value", "The estimated true value of the stock.")
+                    explanationRow("EPS", "Earnings Per Share", "Trailing 12-month earnings per share.")
+                    explanationRow("8.5", "Base P/E", "The price-to-earnings ratio of a no-growth company.")
+                    explanationRow("2G", "Growth Multiplier", "G is the expected long-term earnings growth rate. Graham multiplied it by 2.")
+                    explanationRow("4.4", "Historic Yield", "The historic average yield of high-grade corporate bonds.")
+                    explanationRow("Y", "Current Yield", "The current yield of AAA-rated corporate bonds (\(Fmt.number(y, fractionDigits: 1))%).")
+                }
+                .font(.caption)
+            }
+            .padding(24)
+        }
+        .frame(width: 320)
+    }
+
+    private func explanationRow(_ symbol: String, _ title: String, _ desc: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(symbol).fontWeight(.bold)
+                Text("-").opacity(0.5)
+                Text(title).fontWeight(.semibold)
+            }
+            Text(desc).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func grahamLegend(_ symbol: String, _ desc: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(symbol)
+                .font(.caption.weight(.bold))
+                .frame(width: 70, alignment: .trailing)
+            Text(desc)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func grahamCard(_ title: String, _ icon: String, _ color: Color, _ m: IntrinsicValueResponse.Model, modelKey: String, iv: IntrinsicValueResponse) -> some View {
@@ -945,7 +1007,10 @@ struct StockDetailView: View {
                 Text(e).font(.callout).foregroundStyle(.red)
             } else {
                 if let p = m.parameters {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 24)], spacing: 24) {
+                    let columns = hSizeClass == .compact 
+                        ? [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)] 
+                        : [GridItem(.adaptive(minimum: 150), spacing: 24)]
+                    LazyVGrid(columns: columns, spacing: 24) {
                         if let v = p["eps"]?.doubleValue { paramRow("Trailing EPS", Fmt.number(v, fractionDigits: 2)) }
                         if let v = p["growth_rate_pct"]?.doubleValue { paramRow("Growth Rate (G)", "\(Fmt.number(v, fractionDigits: 2))%") }
                         if let v = p["applied_growth_pct"]?.doubleValue { paramRow("Applied Growth", "\(Fmt.number(v, fractionDigits: 2))%") }
