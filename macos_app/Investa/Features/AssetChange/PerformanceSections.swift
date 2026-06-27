@@ -112,6 +112,13 @@ struct ReturnsChart: View {
     @State private var valueMode = false
     @State private var count = 12
 
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var compact: Bool { hSize == .compact }
+    #else
+    private var compact: Bool { false }
+    #endif
+
     private let periods: [(key: String, label: String, def: Int)] = [
         ("Y", "Annual", 10), ("M", "Monthly", 12), ("W", "Weekly", 12), ("D", "Daily", 30),
     ]
@@ -163,6 +170,29 @@ struct ReturnsChart: View {
         for b in bars where !seen.contains(b.date) { seen.insert(b.date); out.append(b.date) }
         return out
     }
+    
+    private var xAxisValues: [String] {
+        let dates = distinctDates
+        guard compact else { return dates }
+        
+        switch period {
+        case "D":
+            // 30 items -> show every 5th or 6th to prevent overlapping
+            let step = max(1, dates.count / 5)
+            return dates.enumerated().compactMap { $0.offset % step == 0 ? $0.element : nil }
+        case "W":
+            // 12 items -> show every 3rd
+            let step = max(1, dates.count / 4)
+            return dates.enumerated().compactMap { $0.offset % step == 0 ? $0.element : nil }
+        case "Y":
+            // 10 items -> show every 2nd or all if formatted short
+            // We'll format short, but let's also stride if count is large
+            let step = max(1, dates.count / 5)
+            return dates.enumerated().compactMap { $0.offset % step == 0 ? $0.element : nil }
+        default:
+            return dates
+        }
+    }
 
     var body: some View {
         PSection(title: "Returns") {
@@ -172,16 +202,35 @@ struct ReturnsChart: View {
                 Text("No return data.").foregroundStyle(.secondary).frame(height: 240)
             } else {
                 Chart(bars) { bar in
-                    BarMark(x: .value("Date", bar.date), y: .value("Return", bar.value))
-                        .foregroundStyle(by: .value("Series", bar.series))
-                        .position(by: .value("Series", bar.series))
+                    BarMark(
+                        x: .value("Date", bar.date),
+                        y: .value("Return", bar.value),
+                        width: .ratio(0.95)
+                    )
+                    .foregroundStyle(by: .value("Series", bar.series))
+                    .position(by: .value("Series", bar.series), axis: .horizontal, span: .ratio(0.9))
+                }
+                .chartXAxis {
+                    AxisMarks(values: xAxisValues) { value in
+                        if let dateStr = value.as(String.self) {
+                            AxisValueLabel {
+                                if compact && period == "M" {
+                                    Text(String(dateStr.prefix(1)))
+                                } else if compact && period == "Y" {
+                                    Text("'" + String(dateStr.suffix(2)))
+                                } else {
+                                    Text(dateStr)
+                                }
+                            }
+                        }
+                    }
                 }
                 .chartYAxis {
                     AxisMarks { v in
                         AxisGridLine()
                         AxisValueLabel {
                             if let d = v.as(Double.self) {
-                                Text(valueMode ? Fmt.number(d, fractionDigits: 0) : String(format: "%.0f%%", d))
+                                Text(formatAxis(d, isPercent: !valueMode))
                             }
                         }
                     }
@@ -199,6 +248,31 @@ struct ReturnsChart: View {
                 }
                 .frame(height: 280)
             }
+        }
+    }
+
+    private func formatAxis(_ v: Double, isPercent: Bool) -> String {
+        let absD = abs(v)
+        let divisor: Double
+        let suffix: String
+        if absD >= 1_000_000_000 {
+            divisor = 1_000_000_000
+            suffix = "B"
+        } else if absD >= 1_000_000 {
+            divisor = 1_000_000
+            suffix = "M"
+        } else if absD >= 1_000 {
+            divisor = 1_000
+            suffix = "K"
+        } else {
+            divisor = 1
+            suffix = ""
+        }
+        
+        if !isPercent {
+            return "\(Fmt.number(v / divisor, fractionDigits: divisor > 1 ? 1 : 0))\(suffix)"
+        } else {
+            return "\(String(format: divisor > 1 ? "%.1f" : "%.0f", v / divisor))\(suffix)%"
         }
     }
 

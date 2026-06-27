@@ -326,9 +326,20 @@ struct PortfolioTreemapView: View {
     @State private var dim = "Sector"
     @State private var hovered: String?
 
-    private let dims: [(key: String, label: String)] = [
-        ("Sector", "Sector"), ("quoteType", "Asset Type"), ("Country", "Country"),
-    ]
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var compact: Bool { hSize == .compact }
+    #else
+    private let compact = false
+    #endif
+
+    private var dims: [(key: String, label: String)] {
+        [
+            ("Sector", "Sector"), 
+            ("quoteType", compact ? "Type" : "Asset Type"), 
+            ("Country", "Country"),
+        ]
+    }
 
     private struct Leaf: Identifiable {
         let symbol: String; let size: Double; let group: String; let color: Color; let pct: Double
@@ -387,6 +398,7 @@ struct PortfolioTreemapView: View {
             ForEach(dims, id: \.key) { d in
                 Button { dim = d.key } label: {
                     Text(d.label).font(.caption.weight(.semibold))
+                        .lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(dim == d.key ? Theme.brand : Color.clear, in: RoundedRectangle(cornerRadius: 6))
                         .foregroundStyle(dim == d.key ? .white : .secondary)

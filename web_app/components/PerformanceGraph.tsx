@@ -219,14 +219,27 @@ export default function PerformanceGraph({
         return part?.value ?? '';
     }, [currency]);
 
+    const maxMagnitude = useMemo(() => {
+        const vals = chartedData.map(d => d.value).filter((v): v is number => typeof v === 'number');
+        if (vals.length === 0) return 1;
+        return Math.max(...vals.map(Math.abs));
+    }, [chartedData]);
+
+    const { divisor, suffix } = useMemo(() => {
+        if (maxMagnitude >= 1e9) return { divisor: 1e9, suffix: 'B' };
+        if (maxMagnitude >= 1e6) return { divisor: 1e6, suffix: 'M' };
+        if (maxMagnitude >= 1e3) return { divisor: 1e3, suffix: 'K' };
+        return { divisor: 1, suffix: '' };
+    }, [maxMagnitude]);
+
     // Enough decimals that adjacent value ticks read differently (from the range).
     const valueDecimals = useMemo(() => {
         const vals = chartedData.map(d => d.value).filter((v): v is number => typeof v === 'number');
         if (vals.length < 2) return 2;
         const range = Math.max(...vals) - Math.min(...vals);
-        const stepM = Math.max((range / 1e6) / 5, 1e-9);   // ~5 ticks
-        return Math.min(3, Math.max(0, Math.ceil(-Math.log10(stepM))));
-    }, [chartedData]);
+        const step = Math.max((range / divisor) / 5, 1e-9);   // ~5 ticks
+        return Math.min(3, Math.max(0, Math.ceil(-Math.log10(step))));
+    }, [chartedData, divisor]);
 
     const xDomain = useMemo(() => {
         if (period === '1d' && chartedData.length > 0) {
@@ -405,8 +418,8 @@ export default function PerformanceGraph({
         if (view === 'return' || view === 'drawdown') {
             return `${tickItem.toFixed(1)}%`;
         }
-        // Value view: label in millions, with just enough decimals to distinguish ticks.
-        return `${currencySymbol}${(tickItem / 1e6).toFixed(valueDecimals)}M`;
+        // Value view: dynamic label
+        return `${currencySymbol}${(tickItem / divisor).toFixed(valueDecimals)}${suffix}`;
     };
 
 

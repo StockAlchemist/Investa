@@ -157,11 +157,16 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                             axisLine={{ stroke: 'hsl(var(--border))' }}
                         />
                         <YAxis
-                            tickFormatter={(val) =>
-                                viewMode === 'percent'
-                                    ? `${val.toFixed(0)}%`
-                                    : new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short' }).format(val)
-                            }
+                            tickFormatter={(val) => {
+                                if (viewMode !== 'percent') {
+                                    return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short' }).format(val);
+                                }
+                                const absVal = Math.abs(val);
+                                if (absVal >= 1e9) return `${(val / 1e9).toFixed(1)}B%`;
+                                if (absVal >= 1e6) return `${(val / 1e6).toFixed(1)}M%`;
+                                if (absVal >= 1e3) return `${(val / 1e3).toFixed(1)}K%`;
+                                return `${val.toFixed(0)}%`;
+                            }}
                             domain={['auto', 'auto']}
                             tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
                             axisLine={{ stroke: 'hsl(var(--border))' }}

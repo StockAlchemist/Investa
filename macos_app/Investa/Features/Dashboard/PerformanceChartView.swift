@@ -254,7 +254,7 @@ struct PerformanceChartView: View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
-                        Text(view == .value ? valueAxisLabel(v, domain) : String(format: "%.0f%%", v))
+                        Text(formatAxis(v, domain: domain, isPercent: view != .value))
                     }
                 }
             }
@@ -262,13 +262,36 @@ struct PerformanceChartView: View {
         .frame(height: 260)
     }
 
-    /// Y-axis label for the Value view: in millions, with just enough decimals
-    /// that adjacent ticks read differently (derived from the visible range).
-    private func valueAxisLabel(_ v: Double, _ domain: ClosedRange<Double>) -> String {
-        let rangeM = (domain.upperBound - domain.lowerBound) / 1_000_000
-        let stepM = max(rangeM / 5, 1e-9)   // ~5 ticks
-        let decimals = min(3, max(0, Int(ceil(-log10(stepM)))))
-        return "\(Fmt.symbol(currency))\(String(format: "%.\(decimals)f", v / 1_000_000))M"
+    /// Y-axis label: dynamically formats K, M, B for both value and percent
+    private func formatAxis(_ v: Double, domain: ClosedRange<Double>, isPercent: Bool) -> String {
+        let maxMagnitude = max(abs(domain.upperBound), abs(domain.lowerBound))
+        let divisor: Double
+        let suffix: String
+        
+        if maxMagnitude >= 1_000_000_000 {
+            divisor = 1_000_000_000
+            suffix = "B"
+        } else if maxMagnitude >= 1_000_000 {
+            divisor = 1_000_000
+            suffix = "M"
+        } else if maxMagnitude >= 1_000 {
+            divisor = 1_000
+            suffix = "K"
+        } else {
+            divisor = 1
+            suffix = ""
+        }
+        
+        let range = (domain.upperBound - domain.lowerBound) / divisor
+        let step = max(range / 5, 1e-9)   // ~5 ticks
+        let decimals = min(3, max(0, Int(ceil(-log10(step)))))
+        
+        let formattedValue = String(format: "%.\(decimals)f", v / divisor)
+        if isPercent {
+            return "\(formattedValue)\(suffix)%"
+        } else {
+            return "\(Fmt.symbol(currency))\(formattedValue)\(suffix)"
+        }
     }
 
     private var distinctDates: [Date] {
