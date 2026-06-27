@@ -41,18 +41,6 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
         setSaveStatus(null);
     };
 
-    const handleThresholdChange = (account: string, value: string) => {
-        // Strip non-digits
-        const cleanValue = value.replace(/\D/g, '');
-        const numVal = cleanValue === '' ? 0 : parseInt(cleanValue, 10);
-
-        setLocalThresholds(prev => ({
-            ...prev,
-            [account]: numVal
-        }));
-        setSaveStatus(null);
-    };
-
     const handleSave = async () => {
         setIsSaving(true);
         setSaveStatus(null);

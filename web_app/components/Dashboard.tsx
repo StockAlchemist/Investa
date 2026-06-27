@@ -246,7 +246,7 @@ function PortfolioHeroCard({
         const abs = endVal - startVal;
         const pct = (abs / startVal) * 100;
         return { series, pct, abs };
-    }, [heroPeriod, history, longHistory, dayGL, dayGLPct, now]);
+    }, [heroPeriod, history, longHistory, wtdHistory, dayGL, dayGLPct, now]);
 
     const periodPositive = (periodView.pct ?? 0) >= 0;
     const sparklinePositive = heroPeriod === 'day' ? positive : periodPositive;

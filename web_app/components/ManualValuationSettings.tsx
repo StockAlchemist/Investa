@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Trash2, Info, HelpCircle, Loader2, Edit2, Save } from 'lucide-react';
+import { Trash2, Info, HelpCircle, Loader2, Edit2, Save, Plus } from 'lucide-react';
 import { updateSettings, Settings as SettingsType, fetchIntrinsicValue } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
