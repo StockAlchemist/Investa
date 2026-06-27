@@ -302,7 +302,7 @@ private struct SettingsSheet: View {
             SettingsView()
         }
         #if os(macOS)
-        .frame(width: 720, height: 640)
+        .frame(width: 900, height: 720)
         #endif
     }
 }

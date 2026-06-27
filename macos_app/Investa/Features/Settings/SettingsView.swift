@@ -71,6 +71,15 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .advanced: return "gearshape.2"; case .account: return "person.crop.circle"
         }
     }
+    var color: Color {
+        switch self {
+        case .accounts: return .indigo
+        case .symbols: return .blue
+        case .overrides: return .green
+        case .advanced: return .gray
+        case .account: return .cyan
+        }
+    }
     var description: String {
         switch self {
         case .accounts: return "Account groups, per-account currency/cash/closure settings, and cash-yield assumptions."
@@ -82,35 +91,144 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
+struct SettingsSidebarItem: View {
+    let tab: SettingsTab
+    let isActive: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 18))
+                    .foregroundStyle(isActive ? tab.color : .secondary)
+                
+                Text(tab.rawValue)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(isActive ? .primary : .secondary)
+                
+                Spacer()
+                
+                if isActive {
+                    Circle()
+                        .fill(Color.cyan)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: .cyan.opacity(0.8), radius: 4, x: 0, y: 0)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isActive ? Color.primary.opacity(0.05) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isActive ? Color.primary.opacity(0.1) : Color.clear, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var auth: AuthViewModel
     @StateObject private var viewModel = SettingsViewModel()
     @State private var tab: SettingsTab = .overrides
+    
+    #if !os(macOS)
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+    #endif
+
+    private var isCompact: Bool {
+        #if os(macOS)
+        return false
+        #else
+        return hSizeClass == .compact
+        #endif
+    }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Settings")
+                        .font(.system(size: 32, weight: .heavy, design: .default))
+                        .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
+                    
+                    if viewModel.isLoading { ProgressView().controlSize(.small).padding(.leading, 8) }
+                    Spacer()
+                    if let s = viewModel.status { Text(s).font(.caption).foregroundStyle(.secondary) }
+                }
+                
+                Text("Manage application settings, preferences, and account configurations.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 24)
+            
+            if isCompact {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(SettingsTab.allCases) { t in
+                            SettingsSidebarItem(tab: t, isActive: tab == t) { tab = t }
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
+                }
+                mainContentArea
+            } else {
+                HStack(alignment: .top, spacing: 24) {
+                    VStack(spacing: 8) {
+                        ForEach(SettingsTab.allCases) { t in
+                            SettingsSidebarItem(tab: t, isActive: tab == t) { tab = t }
+                        }
+                    }
+                    .frame(width: 200)
+                    
+                    mainContentArea
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+        }
+        .task { await viewModel.load() }
+    }
+    
+    private var mainContentArea: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Settings").font(.title2.bold())
-                    .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
-                if viewModel.isLoading { ProgressView().controlSize(.small) }
+            // Active Tab Header
+            HStack(alignment: .top, spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(0.05))
+                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                    
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 24))
+                        .foregroundStyle(tab.color)
+                }
+                .frame(width: 48, height: 48)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tab.rawValue)
+                        .font(.title3.bold())
+                    Text(tab.description)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
-                if let s = viewModel.status { Text(s).font(.caption).foregroundStyle(.secondary) }
             }
-            .padding(.horizontal, 20).padding(.vertical, 12)
-            Picker("Settings Tab", selection: $tab) {
-                ForEach(SettingsTab.allCases) { Label($0.rawValue, systemImage: $0.icon).tag($0) }
-            }
-            #if os(macOS)
-            .pickerStyle(.segmented)
-            #else
-            .pickerStyle(.menu)
-            #endif
-            .labelsHidden().padding(.horizontal, 20)
-            Text(tab.description).font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.top, 6)
-            Divider().padding(.top, 8)
+            .padding(24)
+            .background(Color.primary.opacity(0.02))
+            .overlay(Rectangle().frame(height: 1).foregroundColor(Color.primary.opacity(0.05)), alignment: .bottom)
+            
             ScrollView {
                 Group {
                     switch tab {
@@ -121,10 +239,17 @@ struct SettingsView: View {
                     case .account: AccountSecuritySettings(vm: viewModel).environmentObject(auth)
                     }
                 }
-                .padding(20)
+                .padding(24)
             }
         }
-        .task { await viewModel.load() }
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.primary.opacity(0.02))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
@@ -132,15 +257,31 @@ struct SettingsView: View {
 
 struct SettingsCard<Content: View>: View {
     let title: String
+    var icon: String? = nil
+    var iconColor: Color? = nil
     @ViewBuilder var content: Content
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.headline)
+            HStack(spacing: 8) {
+                if let icon = icon {
+                    Image(systemName: icon)
+                        .foregroundStyle(iconColor ?? .primary)
+                }
+                Text(title).font(.headline)
+            }
             content
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.02), radius: 8, x: 0, y: 4)
     }
 }
 

@@ -75,6 +75,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
     const [formData, setFormData] = useState<Record<string, string>>({});
     const [liveDefaults, setLiveDefaults] = useState<Record<string, number>>({});
     const [isLoadingDefaults, setIsLoadingDefaults] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
 
     useEffect(() => {
         if (!symbol || symbol.length < 1) {
@@ -179,13 +180,20 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
             setSymbol('');
             setFormData({});
         } catch {
-            alert("Failed to save valuation override");
+            alert("Failed to save parameters");
         }
     };
 
-    const handleRemoveOverride = async (sym: string) => {
+    const handleCancel = () => {
+        setIsEditing(false);
+        setSymbol('');
+        setFormData({});
+        setLiveDefaults({});
+    };
+
+    const handleRemoveOverride = async (symbolToRemove: string) => {
         const currentOverrides = { ...valuationOverrides };
-        delete currentOverrides[sym];
+        delete currentOverrides[symbolToRemove];
 
         try {
             await updateSettings({ valuation_overrides: currentOverrides });
@@ -202,13 +210,14 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
 
     return (
         <div className="space-y-8 max-w-6xl">
-            <div className={cardClassName}>
-                <h3 className="text-xl font-bold mb-6 text-foreground flex items-center gap-2">
-                    <Edit2 className="w-5 h-5 text-purple-500" />
-                    Customize Valuation Parameters
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {isEditing ? (
+                <div className={cardClassName}>
+                    <h3 className="text-xl font-bold mb-6 text-foreground flex items-center gap-2">
+                        <Edit2 className="w-5 h-5 text-purple-500" />
+                        {symbol && valuationOverrides[symbol.toUpperCase()] ? 'Edit Valuation' : 'Customize Valuation'}
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="md:col-span-4 lg:col-span-1">
                         <label className={labelClassName}>Symbol</label>
                         <div className="relative">
@@ -218,6 +227,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                 onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                                 placeholder="e.g. AAPL"
                                 className={cn(inputClassName, isLoadingDefaults && "pr-10")}
+                                disabled={symbol !== '' && valuationOverrides.hasOwnProperty(symbol.toUpperCase())}
                             />
                             {isLoadingDefaults && (
                                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -341,18 +351,39 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                             </div>
                         </div>
                     </div>
+                    </div>
+                    <div className="flex justify-between items-center mt-8 pt-6 border-t border-black/5 dark:border-white/5">
+                        <button
+                            onClick={handleCancel}
+                            className="px-6 py-2.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-foreground rounded-xl font-medium shadow-sm transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => { handleAddOverride(); setIsEditing(false); }}
+                            disabled={!symbol || Object.keys(formData).length === 0}
+                            className={primaryButtonClassName}
+                        >
+                            <Save className="w-5 h-5" />
+                            Save Parameters
+                        </button>
+                    </div>
                 </div>
-                <div className="flex justify-end mt-8 pt-6 border-t border-black/5 dark:border-white/5">
+            ) : (
+                <div className="flex justify-end">
                     <button
-                        onClick={handleAddOverride}
-                        disabled={!symbol || Object.keys(formData).length === 0}
-                        className={primaryButtonClassName}
+                        type="button"
+                        onClick={() => {
+                            setSymbol(''); setFormData({}); setLiveDefaults({});
+                            setIsEditing(true);
+                        }}
+                        className="px-6 py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2"
                     >
-                        <Save className="w-5 h-5" />
-                        Save Parameters
+                        <Plus className="w-4 h-4" />
+                        Add Valuation Override
                     </button>
                 </div>
-            </div>
+            )}
 
             {Object.entries(valuationOverrides).length === 0 ? (
                 <div className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 shadow-lg py-16 px-6 text-center text-muted-foreground">
@@ -371,6 +402,7 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                                     <button
                                         onClick={() => {
                                             setSymbol(sym);
+                                            setIsEditing(true);
                                             window.scrollTo({ top: 0, behavior: 'smooth' });
                                         }}
                                         className="p-2.5 bg-white dark:bg-white/5 shadow-sm border border-black/5 dark:border-white/5 text-muted-foreground hover:text-purple-500 hover:border-purple-500/30 rounded-xl transition-all"

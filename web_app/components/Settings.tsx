@@ -101,6 +101,8 @@ export default function Settings({ settings, holdings, availableAccounts, initia
     const [mapFrom, setMapFrom] = useState('');
     const [mapTo, setMapTo] = useState('');
 
+    const [isEditingOverrides, setIsEditingOverrides] = useState(false);
+    
     const [excludeSymbol, setExcludeSymbol] = useState('');
     const [newCurrency, setNewCurrency] = useState('');
     const [customBenchmark, setCustomBenchmark] = useState('');
@@ -141,23 +143,22 @@ export default function Settings({ settings, holdings, availableAccounts, initia
 
     const handleEdit = (symbol: string, data: ManualOverride) => {
         setOverrideSymbol(symbol);
-
-        if (typeof data === 'number') {
+        if (typeof data === 'object' && data !== null && 'price' in data) {
+            setOverridePrice(data.price !== undefined ? data.price.toString() : '');
+            setOverrideAssetType(data.asset_type || '');
+            setOverrideSector(data.sector || '');
+            setOverrideGeo(data.geography || '');
+            setOverrideIndustry(data.industry || '');
+            setOverrideExchange(data.exchange || '');
+        } else {
             setOverridePrice(data.toString());
             setOverrideAssetType('');
             setOverrideSector('');
             setOverrideGeo('');
             setOverrideIndustry('');
             setOverrideExchange('');
-        } else {
-            setOverridePrice(data.price ? data.price.toString() : '');
-            setOverrideAssetType(data.asset_type || '');
-            setOverrideSector(data.sector || '');
-            setOverrideGeo(data.geography || '');
-            setOverrideIndustry(data.industry || '');
-            setOverrideExchange(data.exchange || '');
         }
-
+        setIsEditingOverrides(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -226,6 +227,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
             setOverrideGeo('');
             setOverrideIndustry('');
             setOverrideExchange('');
+            setIsEditingOverrides(false);
         } catch {
             alert('Failed to save override');
         }
@@ -718,108 +720,135 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             {/* Manual Price Overrides Tab */}
                             {activeTab === 'overrides' && (
                                 <div className="space-y-8">
-                                    <div className={cardClassName}>
-                                        <div className="mb-2">
-                                            <h3 className={sectionTitleClassName}>
-                                                <Sliders className="w-5 h-5 text-emerald-500" />
-                                                Add / Edit Override
-                                            </h3>
-                                        </div>
-                                        <p className="text-sm text-muted-foreground mb-5">Set a manual price, asset type, or any metadata field for a symbol.</p>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                                            <div className="space-y-1.5">
-                                                <label className={labelClassName}>Symbol</label>
-                                                <input
-                                                    type="text"
-                                                    value={overrideSymbol}
-                                                    onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase())}
-                                                    placeholder="AAPL"
-                                                    className={inputClassName}
-                                                />
+                                    {isEditingOverrides ? (
+                                        <div className={cardClassName}>
+                                            <div className="mb-2">
+                                                <h3 className={sectionTitleClassName}>
+                                                    <Sliders className="w-5 h-5 text-emerald-500" />
+                                                    {overrideSymbol ? 'Edit Override' : 'Add Override'}
+                                                </h3>
                                             </div>
-                                            <div className="space-y-1.5">
-                                                <label className={labelClassName}>Price</label>
-                                                <input
-                                                    type="number"
-                                                    step="0.0001"
-                                                    value={overridePrice}
-                                                    onChange={(e) => setOverridePrice(e.target.value)}
-                                                    placeholder="0.00"
-                                                    className={inputClassName}
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className={labelClassName}>Asset Type</label>
-                                                <select
-                                                    value={overrideAssetType}
-                                                    onChange={(e) => setOverrideAssetType(e.target.value)}
-                                                    className={inputClassName}
-                                                >
-                                                    {ASSET_TYPES.map(t => <option key={t} value={t} className="bg-background text-foreground">{t || "Select..."}</option>)}
-                                                </select>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className={labelClassName}>Sector</label>
-                                                <select
-                                                    value={overrideSector}
-                                                    onChange={(e) => setOverrideSector(e.target.value)}
-                                                    className={inputClassName}
-                                                >
-                                                    {SECTORS.map(s => <option key={s} value={s} className="bg-background text-foreground">{s || "Select..."}</option>)}
-                                                </select>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className={labelClassName}>Country</label>
-                                                <select
-                                                    value={overrideGeo}
-                                                    onChange={(e) => setOverrideGeo(e.target.value)}
-                                                    className={inputClassName}
-                                                >
-                                                    <option value="" className="bg-background text-foreground">Select...</option>
-                                                    {portfolioCountries.length > 0 && (
-                                                        <optgroup label="In Portfolio" className="bg-muted text-foreground">
-                                                            {portfolioCountries.map(c => <option key={c} value={c} className="bg-background">{c}</option>)}
+                                            <p className="text-sm text-muted-foreground mb-5">Set a manual price, asset type, or any metadata field for a symbol.</p>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                                                <div className="space-y-1.5">
+                                                    <label className={labelClassName}>Symbol</label>
+                                                    <input
+                                                        type="text"
+                                                        value={overrideSymbol}
+                                                        onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase())}
+                                                        placeholder="AAPL"
+                                                        className={inputClassName}
+                                                        disabled={overrideSymbol !== '' && overrides.hasOwnProperty(overrideSymbol)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={labelClassName}>Price</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.0001"
+                                                        value={overridePrice}
+                                                        onChange={(e) => setOverridePrice(e.target.value)}
+                                                        placeholder="0.00"
+                                                        className={inputClassName}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={labelClassName}>Asset Type</label>
+                                                    <select
+                                                        value={overrideAssetType}
+                                                        onChange={(e) => setOverrideAssetType(e.target.value)}
+                                                        className={inputClassName}
+                                                    >
+                                                        {ASSET_TYPES.map(t => <option key={t} value={t} className="bg-background text-foreground">{t || "Select..."}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={labelClassName}>Sector</label>
+                                                    <select
+                                                        value={overrideSector}
+                                                        onChange={(e) => setOverrideSector(e.target.value)}
+                                                        className={inputClassName}
+                                                    >
+                                                        {SECTORS.map(s => <option key={s} value={s} className="bg-background text-foreground">{s || "Select..."}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={labelClassName}>Country</label>
+                                                    <select
+                                                        value={overrideGeo}
+                                                        onChange={(e) => setOverrideGeo(e.target.value)}
+                                                        className={inputClassName}
+                                                    >
+                                                        <option value="" className="bg-background text-foreground">Select...</option>
+                                                        {portfolioCountries.length > 0 && (
+                                                            <optgroup label="In Portfolio" className="bg-muted text-foreground">
+                                                                {portfolioCountries.map(c => <option key={c} value={c} className="bg-background">{c}</option>)}
+                                                            </optgroup>
+                                                        )}
+                                                        <optgroup label="All Countries" className="bg-muted text-foreground">
+                                                            {availableCountries.map(c => <option key={c} value={c} className="bg-background">{c}</option>)}
                                                         </optgroup>
-                                                    )}
-                                                    <optgroup label="All Countries" className="bg-muted text-foreground">
-                                                        {availableCountries.map(c => <option key={c} value={c} className="bg-background">{c}</option>)}
-                                                    </optgroup>
-                                                </select>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={labelClassName}>Industry</label>
+                                                    <select
+                                                        value={overrideIndustry}
+                                                        onChange={(e) => setOverrideIndustry(e.target.value)}
+                                                        className={inputClassName}
+                                                    >
+                                                        <option value="" className="bg-background text-foreground">Select...</option>
+                                                        {ALL_INDUSTRIES.map(i => <option key={i} value={i} className="bg-background text-foreground">{i}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={labelClassName}>Market</label>
+                                                    <input
+                                                        type="text"
+                                                        value={overrideExchange}
+                                                        onChange={(e) => setOverrideExchange(e.target.value)}
+                                                        placeholder="NASDAQ"
+                                                        className={inputClassName}
+                                                    />
+                                                </div>
                                             </div>
-                                            <div className="space-y-1.5">
-                                                <label className={labelClassName}>Industry</label>
-                                                <select
-                                                    value={overrideIndustry}
-                                                    onChange={(e) => setOverrideIndustry(e.target.value)}
-                                                    className={inputClassName}
+                                            <div className="flex justify-between items-center mt-6">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setIsEditingOverrides(false);
+                                                        setOverrideSymbol(''); setOverridePrice(''); setOverrideAssetType(''); setOverrideSector(''); setOverrideGeo(''); setOverrideIndustry(''); setOverrideExchange('');
+                                                    }}
+                                                    className="px-6 py-2.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-foreground rounded-xl font-medium shadow-sm transition-colors"
                                                 >
-                                                    <option value="" className="bg-background text-foreground">Select...</option>
-                                                    {ALL_INDUSTRIES.map(i => <option key={i} value={i} className="bg-background text-foreground">{i}</option>)}
-                                                </select>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className={labelClassName}>Market</label>
-                                                <input
-                                                    type="text"
-                                                    value={overrideExchange}
-                                                    onChange={(e) => setOverrideExchange(e.target.value)}
-                                                    placeholder="NASDAQ"
-                                                    className={inputClassName}
-                                                />
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={addOverride}
+                                                    disabled={!overrideSymbol || (!overridePrice && !overrideAssetType && !overrideSector && !overrideGeo && !overrideIndustry && !overrideExchange)}
+                                                    className={primaryButtonClassName}
+                                                >
+                                                    <Save className="w-4 h-4" />
+                                                    Save Override
+                                                </button>
                                             </div>
                                         </div>
-                                        <div className="flex justify-end mt-6">
+                                    ) : (
+                                        <div className="flex justify-end">
                                             <button
                                                 type="button"
-                                                onClick={addOverride}
-                                                disabled={!overrideSymbol || (!overridePrice && !overrideAssetType && !overrideSector && !overrideGeo && !overrideIndustry && !overrideExchange)}
-                                                className={primaryButtonClassName}
+                                                onClick={() => {
+                                                    setOverrideSymbol(''); setOverridePrice(''); setOverrideAssetType(''); setOverrideSector(''); setOverrideGeo(''); setOverrideIndustry(''); setOverrideExchange('');
+                                                    setIsEditingOverrides(true);
+                                                }}
+                                                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2"
                                             >
-                                                <Save className="w-4 h-4" />
-                                                Save Override
+                                                <Plus className="w-4 h-4" />
+                                                Add New Override
                                             </button>
                                         </div>
-                                    </div>
+                                    )}
 
                                     <div className={`${cardClassName} !p-0`}>
                                         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
