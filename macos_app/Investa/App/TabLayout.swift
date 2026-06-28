@@ -51,6 +51,7 @@ enum TabLayout {
         LayoutItem("stockDrift", "Stock Drift"),
         LayoutItem("rebalanceHelper", "Rebalance Helper"),
         LayoutItem("treemap", "Treemap"),
+        LayoutItem("holdingsHeatmap", "Performance Heatmap"),
         LayoutItem("donutCharts", "Donut Charts"),
     ]
     static let assetChangeItems: [LayoutItem] = [

@@ -21,6 +21,7 @@ const ALLOCATION_ITEMS: LayoutItem[] = [
     { id: 'stockDrift',       title: 'Stock Drift' },
     { id: 'rebalanceHelper',  title: 'Rebalance Helper' },
     { id: 'treemap',          title: 'Treemap' },
+    { id: 'holdingsHeatmap',  title: 'Performance Heatmap' },
     { id: 'donutCharts',      title: 'Donut Charts' },
 ];
 
