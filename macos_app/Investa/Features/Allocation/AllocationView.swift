@@ -3,6 +3,9 @@ import SwiftUI
 @MainActor
 final class AllocationViewModel: ObservableObject {
     @Published var holdings: [Holding] = []
+    /// Per-holding period price returns (%): symbol → period ("1m"/"3m"/…) → value.
+    /// Powers the performance heatmap; null backend values are dropped.
+    @Published var holdingReturns: [String: [String: Double]] = [:]
     /// bucket → name → target %.
     @Published var targets: [String: [String: Double]] = [:]
     // Starts true so the first render shows a loading state, not an empty one,
@@ -37,6 +40,22 @@ final class AllocationViewModel: ObservableObject {
             errorMessage = error.errorDescription
         } catch { errorMessage = error.localizedDescription }
         if let s = try? await settingsR { targets = s.targetAllocation ?? [:] }
+        await loadReturns()
+    }
+
+    /// Fetch period price returns for the current holdings (best-effort; the
+    /// heatmap degrades gracefully when this is empty).
+    private func loadReturns() async {
+        let syms = Array(Set(holdings.map(\.symbol))).sorted()
+        guard !syms.isEmpty else { holdingReturns = [:]; return }
+        let resp: [String: [String: JSONValue]]? = try? await api.get(
+            "/holdings/returns", query: APIClient.arrayQuery("symbols", syms))
+        guard let resp else { return }
+        var out: [String: [String: Double]] = [:]
+        for (sym, periods) in resp {
+            out[sym] = periods.compactMapValues { $0.doubleValue }
+        }
+        holdingReturns = out
     }
 
     /// Persist edited targets for one bucket, merging with the rest.
@@ -128,6 +147,11 @@ struct AllocationView: View {
                         if vis("rebalanceHelper") { RebalanceHelperCard(holdings: viewModel.holdings, currency: cur, vm: viewModel) }
                         if vis("treemap") { PortfolioTreemapView(holdings: viewModel.holdings, currency: cur,
                                                                   onSelectSymbol: { detail = SymbolID(id: $0) }) }
+                        if vis("holdingsHeatmap") {
+                            HoldingsHeatmapView(holdings: viewModel.holdings, currency: cur,
+                                                returns: viewModel.holdingReturns,
+                                                onSelectSymbol: { detail = SymbolID(id: $0) })
+                        }
 
                         // Donut charts — grid-cols-1 md:grid-cols-2 (exactly 2-up).
                         if vis("donutCharts") {

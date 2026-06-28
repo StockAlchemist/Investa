@@ -3,6 +3,7 @@ import { Holding } from '../lib/api';
 import AllocationDrift from './AllocationDrift';
 import AllocationPieChart, { AggregatedSlice, PieBucketKey } from './portfolio/AllocationPieChart';
 import ConcentrationKpiStrip from './portfolio/ConcentrationKpiStrip';
+import HoldingsHeatmap from './HoldingsHeatmap';
 import PortfolioTreemap from './portfolio/PortfolioTreemap';
 import RebalanceHelper from './portfolio/RebalanceHelper';
 
@@ -128,6 +129,11 @@ export default function Allocation({ holdings, currency, visibleSections = [] }:
             {/* Treemap — spatial view of concentration */}
             {visibleSections.includes('treemap') && (
                 <PortfolioTreemap holdings={holdings} currency={currency} />
+            )}
+
+            {/* Performance heatmap — tiles colored by period return (Finviz-style) */}
+            {visibleSections.includes('holdingsHeatmap') && (
+                <HoldingsHeatmap holdings={holdings} currency={currency} />
             )}
 
             {/* Donut charts with click drill-down */}

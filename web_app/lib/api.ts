@@ -229,6 +229,25 @@ export async function fetchHoldings(currency: string = 'USD', accounts?: string[
     return data as unknown as Holding[];
 }
 
+export type HoldingReturnPeriod = '1m' | '3m' | '6m' | '1y' | 'ytd';
+// Map of holding symbol -> per-period price return (%), e.g. { AAPL: { '1m': 5.2, ... } }.
+// Values may be null when there isn't enough price history for a window.
+export type HoldingReturns = Record<string, Partial<Record<HoldingReturnPeriod, number | null>>>;
+
+// Per-holding price returns over fixed windows, used by the performance heatmap.
+// Uses authFetch (not the typed apiClient) because this endpoint isn't part of
+// the generated openapi schema. Passing `symbols` limits compute to the current
+// holdings; extra/missing symbols in the response are simply ignored by callers.
+export async function fetchHoldingReturns(symbols?: string[], signal?: AbortSignal): Promise<HoldingReturns> {
+    const params = new URLSearchParams();
+    (symbols || []).forEach((s) => params.append('symbols', s));
+    const qs = params.toString();
+    const url = `${API_BASE_URL}/holdings/returns${qs ? `?${qs}` : ''}`;
+    const response = await authFetch(url, { signal });
+    if (!response.ok) throw new Error('Failed to fetch holding returns');
+    return (await response.json()) as HoldingReturns;
+}
+
 export interface PerformanceData {
     date: string;
     value: number;

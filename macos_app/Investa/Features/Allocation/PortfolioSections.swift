@@ -456,6 +456,295 @@ struct PortfolioTreemapView: View {
     }
 }
 
+// MARK: - Performance heatmap (mirrors web HoldingsHeatmap.tsx)
+// Finviz-style map of holdings: tiles sized by position value, colored by the
+// selected period return, grouped by sector/account/country.
+
+struct HoldingsHeatmapView: View {
+    let holdings: [Holding]
+    let currency: String
+    let returns: [String: [String: Double]]
+    var onSelectSymbol: (String) -> Void = { _ in }
+
+    @State private var metricKey = "day"
+    @State private var group = "Sector"
+    @State private var sizeMode = "value"   // "value" | "equal"
+    @State private var hovered: String?     // symbol under cursor/finger
+
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var compact: Bool { hSize == .compact }
+    #else
+    private let compact = false
+    #endif
+
+    private enum Src { case holding, spark, returnsKey }
+    private struct Metric { let key: String; let label: String; let src: Src; let field: String; let period: String; let clamp: Double }
+    private let metrics: [Metric] = [
+        .init(key: "day",    label: "1D",      src: .holding,    field: "Day Change %",     period: "",    clamp: 3),
+        .init(key: "7d",     label: "7D",      src: .spark,      field: "",                 period: "",    clamp: 5),
+        .init(key: "1m",     label: "1M",      src: .returnsKey, field: "",                 period: "1m",  clamp: 8),
+        .init(key: "3m",     label: "3M",      src: .returnsKey, field: "",                 period: "3m",  clamp: 15),
+        .init(key: "6m",     label: "6M",      src: .returnsKey, field: "",                 period: "6m",  clamp: 25),
+        .init(key: "ytd",    label: "YTD",     src: .returnsKey, field: "",                 period: "ytd", clamp: 25),
+        .init(key: "1y",     label: "1Y",      src: .returnsKey, field: "",                 period: "1y",  clamp: 40),
+        .init(key: "unreal", label: "Unreal.", src: .holding,    field: "Unreal. Gain %",   period: "",    clamp: 40),
+        .init(key: "total",  label: "Total",   src: .holding,    field: "Total Return %",   period: "",    clamp: 50),
+        .init(key: "irr",    label: "IRR",     src: .holding,    field: "IRR (%)",          period: "",    clamp: 40),
+    ]
+    private var metric: Metric { metrics.first { $0.key == metricKey } ?? metrics[0] }
+
+    private let groups: [(key: String, label: String)] = [
+        ("Sector", "Sector"), ("Account", "Account"), ("Country", "Country"), ("None", "Flat"),
+    ]
+
+    private struct Leaf: Identifiable {
+        let symbol: String; var size: Double; var value: Double; let metricVal: Double?; let color: Color; let group: String
+        var id: String { symbol }
+    }
+    private struct GroupBlock: Identifiable {
+        let name: String; let leaves: [Leaf]; let weight: Double; let totalValue: Double
+        var id: String { name }
+    }
+
+    // MARK: derived
+
+    private func metricValue(_ h: Holding) -> Double? {
+        switch metric.src {
+        case .holding:
+            return h.double(metric.field)
+        case .spark:
+            guard let arr = h.raw["sparkline_7d"]?.arrayValue, arr.count >= 2,
+                  let first = arr.first?.doubleValue, let last = arr.last?.doubleValue, first != 0 else { return nil }
+            return (last / first - 1) * 100
+        case .returnsKey:
+            return returns[h.symbol]?[metric.period]
+        }
+    }
+
+    /// Diverging red→neutral→green; bright, vivid tiles (Finviz-style) — extremes
+    /// are a bright red / bright green, easing toward neutral grey near 0%.
+    private func heat(_ v: Double?) -> Color {
+        guard let v, v.isFinite else { return Color(hue: 0.61, saturation: 0.05, brightness: 0.46) }
+        let t = max(-1, min(1, v / metric.clamp))
+        let mag = abs(t)
+        let hue = (t >= 0 ? 145.0 : 2.0) / 360.0
+        return Color(hue: hue, saturation: 0.45 + 0.45 * mag, brightness: 0.66 + 0.20 * mag)
+    }
+
+    private var blocks: [GroupBlock] {
+        var byGroup: [String: [String: Leaf]] = [:]
+        for h in holdings {
+            let v = max(0, h.marketValue(currency: currency) ?? 0)
+            guard v > 0 else { continue }
+            let g = group == "None" ? "All" : PortfolioBucket.value(h, key: group)
+            if var existing = byGroup[g]?[h.symbol] {
+                existing.value += v
+                byGroup[g]?[h.symbol] = existing
+            } else {
+                let mv = metricValue(h)
+                byGroup[g, default: [:]][h.symbol] = Leaf(symbol: h.symbol, size: 0, value: v,
+                                                          metricVal: mv, color: heat(mv), group: g)
+            }
+        }
+        let equal = sizeMode == "equal"
+        let result = byGroup.map { (name, leafMap) -> GroupBlock in
+            var leaves = Array(leafMap.values)
+            for i in leaves.indices { leaves[i].size = equal ? 1 : leaves[i].value }
+            leaves.sort { $0.size > $1.size }
+            let totalValue = leaves.reduce(0) { $0 + $1.value }
+            let weight = equal ? Double(leaves.count) : totalValue
+            return GroupBlock(name: name, leaves: leaves, weight: weight, totalValue: totalValue)
+        }
+        return result.sorted { $0.weight > $1.weight }
+    }
+
+    private var totalValue: Double { blocks.reduce(0) { $0 + $1.totalValue } }
+    private var holdingCount: Int { blocks.reduce(0) { $0 + $1.leaves.count } }
+
+    // MARK: body
+
+    var body: some View {
+        let bs = blocks
+        Section_(title: "Performance Heatmap", icon: "square.grid.3x3.fill") {
+            controls
+            if holdingCount == 0 {
+                EmptyHint(text: "No holdings to map.", systemImage: "square.grid.3x3")
+            } else if group == "None" {
+                // Match PortfolioTreemapView's height (320) so the squarified layout
+                // — which depends on the area's aspect ratio — is identical.
+                blockTreemap(bs.first?.leaves ?? [], showLabel: false, name: "")
+                    .frame(height: 320)
+            } else {
+                let totalW = max(bs.reduce(0) { $0 + $1.weight }, 0.0001)
+                VStack(spacing: 6) {
+                    ForEach(bs) { b in
+                        blockTreemap(b.leaves, showLabel: true, name: b.name)
+                            .frame(height: max(58, 540 * b.weight / totalW))
+                    }
+                }
+            }
+            legend
+        }
+    }
+
+    private var metricPicker: some View {
+        Picker("", selection: $metricKey) {
+            ForEach(metrics, id: \.key) { Text($0.label).tag($0.key) }
+        }
+        .labelsHidden().pickerStyle(.menu).fixedSize()
+    }
+    private var groupToggle: some View {
+        segmented(options: groups.map { ($0.key, $0.label) }, selection: $group, brand: true, fill: compact)
+    }
+    private var sizeToggle: some View {
+        segmented(options: [("value", "Value"), ("equal", "Equal")], selection: $sizeMode, brand: false)
+    }
+
+    @ViewBuilder private var controls: some View {
+        if compact {
+            // The four group labels won't fit beside everything else on a phone,
+            // so stack into two rows and let the group toggle span the width.
+            VStack(spacing: 8) {
+                HStack(spacing: 8) { metricPicker; Spacer(minLength: 0); sizeToggle }
+                groupToggle
+            }
+        } else {
+            HStack(spacing: 8) { metricPicker; Spacer(minLength: 0); groupToggle; sizeToggle }
+        }
+    }
+
+    private func segmented(options: [(String, String)], selection: Binding<String>, brand: Bool, fill: Bool = false) -> some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.0) { opt in
+                Button { selection.wrappedValue = opt.0 } label: {
+                    Text(opt.1).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(maxWidth: fill ? .infinity : nil)
+                        .padding(.horizontal, fill ? 4 : 8).padding(.vertical, 4)
+                        .background(selection.wrappedValue == opt.0 ? (brand ? Theme.brand : Color.accentColor) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .foregroundStyle(selection.wrappedValue == opt.0 ? .white : .secondary)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(2).frame(maxWidth: fill ? .infinity : nil).background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func blockTreemap(_ leaves: [Leaf], showLabel: Bool, name: String) -> some View {
+        GeometryReader { geo in
+            let rects = squarifiedTreemap(leaves.map(\.size), in: CGRect(origin: .zero, size: geo.size))
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(leaves.enumerated()), id: \.element.id) { idx, leaf in
+                    tile(leaf, rects[idx])
+                }
+                if showLabel {
+                    HStack(spacing: 5) {
+                        Text(name.uppercased()).font(.system(size: 10, weight: .bold)).tracking(0.4)
+                        Text(String(format: "%.0f%%", totalValue > 0 ? leaves.reduce(0) { $0 + $1.value } / totalValue * 100 : 0))
+                            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.6)).monospacedDigit()
+                    }
+                    .foregroundStyle(.white.opacity(0.95))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 4))
+                    .padding(4).allowsHitTesting(false)
+                }
+                // Floating info card for the hovered/pressed tile in this block.
+                if let h = hovered, let idx = leaves.firstIndex(where: { $0.symbol == h }) {
+                    tooltip(leaves[idx]).position(tooltipPoint(rects[idx], in: geo.size))
+                }
+            }
+        }
+    }
+
+    private func tile(_ leaf: Leaf, _ rect: CGRect) -> some View {
+        let showLabel = rect.width > 40 && rect.height > 22
+        let showPct = rect.width > 52 && rect.height > 36
+        let pctText = leaf.metricVal.map { String(format: "%@%.1f%%", $0 >= 0 ? "+" : "", $0) }
+        // Attach interaction to the frame-sized content, BEFORE .position. A
+        // positioned view expands to fill its parent, so hover/tap modifiers added
+        // after .position would fire across the whole block and the top-most (last)
+        // tile would capture every event — making the tooltip show the wrong stock.
+        let content = ZStack {
+            RoundedRectangle(cornerRadius: 2).fill(leaf.color)
+            if showLabel {
+                VStack(spacing: 1) {
+                    Text(leaf.symbol).font(.system(size: 11, weight: .heavy)).foregroundStyle(.white).lineLimit(1)
+                    if showPct, let pctText {
+                        Text(pctText).font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.92)).monospacedDigit()
+                    }
+                }
+            }
+        }
+        .frame(width: max(0, rect.width - 2), height: max(0, rect.height - 2))
+        .contentShape(Rectangle())
+        .onTapGesture { onSelectSymbol(leaf.symbol) }
+
+        return hoverable(content, symbol: leaf.symbol)
+            .position(x: rect.midX, y: rect.midY)
+    }
+
+    /// Hover (macOS) / press-and-hold (iOS) reveals the info card, mirroring the
+    /// web app's hover tooltip. Applied to the tile's own frame so the active
+    /// region matches the tile (see note in `tile`).
+    @ViewBuilder private func hoverable(_ content: some View, symbol: String) -> some View {
+        #if os(macOS)
+        content.onHover { inside in
+            if inside { hovered = symbol }
+            else if hovered == symbol { hovered = nil }
+        }
+        #else
+        content.onLongPressGesture(minimumDuration: 0.18, maximumDistance: 40, pressing: { pressing in
+            if pressing { hovered = symbol }
+            else if hovered == symbol { hovered = nil }
+        }, perform: {})
+        #endif
+    }
+
+    /// Floating info card (mirrors web HeatTooltip). Solid background so the bright
+    /// tile underneath never bleeds through and washes out the text.
+    private func tooltip(_ leaf: Leaf) -> some View {
+        let perf = leaf.metricVal.map { String(format: "%@%.2f%%", $0 >= 0 ? "+" : "", $0) } ?? "n/a"
+        let perfColor: Color = leaf.metricVal == nil ? .secondary : (leaf.metricVal! >= 0 ? .green : .red)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                RoundedRectangle(cornerRadius: 2).fill(leaf.color).frame(width: 9, height: 9)
+                Text(leaf.symbol).font(.caption.bold())
+                // In flat ("None") mode the bucket is the synthetic "All" — omit it.
+                if group != "None" { Text(leaf.group).font(.caption2).foregroundStyle(.secondary) }
+            }
+            HStack(spacing: 5) {
+                Text(Fmt.compact(leaf.value, code: currency)).fontWeight(.medium)
+                Text("·").foregroundStyle(.secondary)
+                Text(metric.label).foregroundStyle(.secondary)
+                Text(perf).fontWeight(.bold).foregroundStyle(perfColor)
+            }.font(.caption2).monospacedDigit()
+        }
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(.background, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary, lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
+        .fixedSize().allowsHitTesting(false)
+    }
+
+    private func tooltipPoint(_ rect: CGRect, in size: CGSize) -> CGPoint {
+        CGPoint(x: min(max(rect.midX, 80), max(80, size.width - 80)), y: max(rect.minY - 4, 22))
+    }
+
+    private var legend: some View {
+        HStack {
+            Text("−\(Int(metric.clamp))%").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+            LinearGradient(colors: [-1.0, -0.5, 0, 0.5, 1.0].map { heat($0 * metric.clamp) },
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(width: 150, height: 10).clipShape(Capsule())
+            Text("+\(Int(metric.clamp))%").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+            Spacer()
+            Text("\(holdingCount) holdings · \(Fmt.compact(totalValue, code: currency))")
+                .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+        }
+    }
+}
+
 // MARK: - Drill-down donut (mirrors portfolio/AllocationPieChart.tsx)
 
 struct AllocationDonutChart: View {

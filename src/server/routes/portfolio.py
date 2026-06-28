@@ -1,6 +1,7 @@
 """Portfolio routes: summary, holdings, history, asset change, health, AI review."""
 
 # ruff: noqa: E402
+import asyncio
 import logging
 import sqlite3
 import time
@@ -12,6 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 import config
 from db_utils import get_cached_screener_results
+from finutils import is_cash_symbol
+from market_data import map_to_yf_symbol
 from portfolio_analyzer import calculate_periodic_returns
 from risk_metrics import calculate_all_risk_metrics
 from server.auth import User
@@ -622,6 +625,93 @@ async def get_holdings(
     except Exception as e:
         logging.error(f"Error getting holdings: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Period windows (in calendar days) for the holdings performance heatmap.
+# "ytd" is handled separately (anchored to Jan 1 of the current year).
+_HEATMAP_PERIOD_DAYS = {"1m": 30, "3m": 91, "6m": 182, "1y": 365}
+
+
+def _period_pct_return(price: pd.Series, start: date) -> Optional[float]:
+    """Price-only percent return between the close on/before ``start`` and the
+    latest close. Returns None when there's no usable data. Falls back to the
+    earliest available price when the series doesn't reach back to ``start``
+    (e.g. a recently opened position), so newer holdings still render."""
+    if price is None or price.empty:
+        return None
+    s = price.dropna()
+    if s.empty:
+        return None
+    if not isinstance(s.index, pd.DatetimeIndex):
+        s.index = pd.to_datetime(s.index)
+    last = s.iloc[-1]
+    prior = s.loc[s.index <= pd.Timestamp(start)]
+    base = prior.iloc[-1] if not prior.empty else s.iloc[0]
+    if pd.isna(base) or pd.isna(last) or base == 0:
+        return None
+    return (last / base - 1.0) * 100.0
+
+
+@router.get("/holdings/returns")
+async def get_holdings_returns(
+    symbols: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user),
+):
+    """Period price returns (%) per holding symbol for the performance heatmap.
+
+    Returns ``{symbol: {"1m","3m","6m","1y","ytd"}}`` percent price returns
+    (dividends excluded, matching a Finviz-style performance map). The client
+    passes its current holding symbols via ``symbols``; if omitted, every
+    non-cash symbol in the transaction history is used.
+    """
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, *_ = data
+    if df.empty:
+        return {}
+
+    universe = symbols if symbols else df["Symbol"].dropna().unique().tolist()
+    # Map each user-facing symbol to its yfinance ticker, skipping cash and
+    # anything unmappable/excluded.
+    yf_map: Dict[str, str] = {}
+    for sym in universe:
+        if not sym or is_cash_symbol(sym):
+            continue
+        yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols)
+        if yf_sym:
+            yf_map[sym] = yf_sym
+    if not yf_map:
+        return {}
+
+    today = date.today()
+    period_starts: Dict[str, date] = {
+        label: today - timedelta(days=days) for label, days in _HEATMAP_PERIOD_DAYS.items()
+    }
+    period_starts["ytd"] = date(today.year, 1, 1)
+    # One fetch covering the longest window (+buffer for the as-of lookup).
+    fetch_start = min(period_starts.values()) - timedelta(days=7)
+
+    provider = get_mdp()
+    yf_symbols = sorted(set(yf_map.values()))
+    try:
+        # get_historical_data is sync (DB + possible network); keep the event loop free.
+        hist, _ = await asyncio.to_thread(
+            provider.get_historical_data, yf_symbols, fetch_start, today
+        )
+    except Exception as e:
+        logging.error(f"holdings/returns: historical fetch failed: {e}")
+        return {}
+
+    result: Dict[str, Dict[str, Optional[float]]] = {}
+    for sym, yf_sym in yf_map.items():
+        df_sym = hist.get(yf_sym)
+        if df_sym is None or df_sym.empty or "price" not in df_sym.columns:
+            continue
+        price = df_sym["price"]
+        result[sym] = {
+            label: _period_pct_return(price, start) for label, start in period_starts.items()
+        }
+
+    return clean_nans(result)
 
 
 @router.get("/history")

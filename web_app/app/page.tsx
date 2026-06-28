@@ -160,6 +160,12 @@ export default function Home() {
                 const idx = arr.indexOf('allocationCharts');
                 arr.splice(idx, 1, 'concentrationKpis', 'categoryDrift', 'stockDrift', 'rebalanceHelper', 'treemap', 'donutCharts');
               }
+              // Migration: default the new performance heatmap ON for existing
+              // users, placed right after the treemap.
+              if (tabId === 'allocation' && !arr.includes('holdingsHeatmap')) {
+                const tIdx = arr.indexOf('treemap');
+                arr.splice(tIdx >= 0 ? tIdx + 1 : arr.length, 0, 'holdingsHeatmap');
+              }
               if (tabId === 'dividend' && arr.includes('annualDividends') && !arr.includes('incomeKpis')) {
                 arr.unshift('incomeKpis', 'topPayers', 'byAccount');
               }
