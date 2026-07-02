@@ -33,6 +33,11 @@ struct PerformancePoint: Codable, Sendable, Identifiable {
 
     func benchmark(_ key: String) -> Double? { raw[key]?.doubleValue }
 
+    /// Historical FX multiplier (local default currency -> display currency) for
+    /// this point. Present only when the display currency differs from the
+    /// portfolio's base currency; drives the FX overlay on the performance graph.
+    var fxRate: Double? { raw["fx_rate"]?.doubleValue }
+
     var id: String { date }
 
     /// Parsed `Date` for charting; backend dates are `yyyy-MM-dd` (daily) or a
