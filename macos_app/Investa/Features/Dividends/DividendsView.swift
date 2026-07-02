@@ -47,12 +47,21 @@ struct DividendsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = DividendsViewModel()
     @State private var detail: SymbolID?
+    /// Year selected by tapping a bar in the Annual Dividends chart; filters the
+    /// transactions table below (mirrors the Capital Gains tab).
+    @State private var selectedYear: String?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.verticalSizeClass) private var vSize
     #endif
 
     private var cur: String { appState.displayCurrency }
+
+    /// Dividends limited to the year tapped in the Annual Dividends chart.
+    private var filteredDividends: [Dividend] {
+        guard let y = selectedYear else { return viewModel.dividends }
+        return viewModel.dividends.filter { $0.date.hasPrefix(y) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -82,8 +91,8 @@ struct DividendsView: View {
                         DividendCalendarSection(events: viewModel.calendar, currency: cur, onSelect: { detail = SymbolID(id: $0) })
                     }
                     payersRow
-                    if vis("annualDividends") { AnnualDividendsCard(dividends: viewModel.dividends, currency: cur) }
-                    if vis("dividendTransactions") { DividendTransactionsCard(dividends: viewModel.dividends, currency: cur) }
+                    if vis("annualDividends") { AnnualDividendsCard(dividends: viewModel.dividends, currency: cur, selectedYear: $selectedYear) }
+                    if vis("dividendTransactions") { DividendTransactionsCard(dividends: filteredDividends, currency: cur) }
                 }
                 .padding(20)
             }

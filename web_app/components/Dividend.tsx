@@ -2,13 +2,13 @@ import React, { useState, useMemo } from 'react';
 
 import type { Dividend } from '../lib/api';
 import { formatCurrency, formatCompactNumber, cn } from '../lib/utils';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts';
 
 import dynamic from 'next/dynamic';
 const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
-import { Search, X, ChevronDown, ChevronUp, CircleDollarSign } from 'lucide-react';
+import { Search, X, ChevronDown, ChevronUp, CircleDollarSign, Calendar } from 'lucide-react';
 import IncomeKpiStrip from './income/IncomeKpiStrip';
 import TopPayers from './income/TopPayers';
 import ByAccount from './income/ByAccount';
@@ -41,6 +41,7 @@ export default function Dividend({
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedYear, setSelectedYear] = useState<string | null>(null);
 
     const show = (id: string) => !visibleSections || visibleSections.includes(id);
 
@@ -63,15 +64,16 @@ export default function Dividend({
         }));
     }, [data]);
 
-    // Filter + sort for the transactions table.
+    // Filter + sort for the transactions table (by clicked chart year + search).
     const filteredData = useMemo(() => {
         const list = data ?? [];
         const q = searchQuery.trim().toLowerCase();
-        if (!q) return list;
-        return list.filter(d =>
-            d.Symbol?.toLowerCase().includes(q) || d.Account?.toLowerCase().includes(q),
-        );
-    }, [data, searchQuery]);
+        return list.filter(d => {
+            const yearMatch = !selectedYear || (d.Date ?? '').startsWith(selectedYear);
+            const searchMatch = !q || d.Symbol?.toLowerCase().includes(q) || d.Account?.toLowerCase().includes(q);
+            return yearMatch && searchMatch;
+        });
+    }, [data, selectedYear, searchQuery]);
 
     const sortedData = useMemo(() => {
         const arr = [...filteredData];
@@ -116,6 +118,20 @@ export default function Dividend({
             key,
             direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc',
         }));
+    };
+
+    // Click a year's bar to filter the transactions table to that year (toggle off
+    // by clicking it again) — mirrors the Capital Gains tab.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recharts Bar onClick payload shape is not cleanly typed
+    const handleBarClick = (entry: any) => {
+        if (entry && entry.year) {
+            if (selectedYear === entry.year) {
+                setSelectedYear(null);
+            } else {
+                setSelectedYear(entry.year);
+                setVisibleRows(10); // reset pagination on filter change
+            }
+        }
     };
 
     const sortableHeader = (label: string, fieldKey: SortableKey, align: 'left' | 'right' = 'left') => (
@@ -176,7 +192,13 @@ export default function Dividend({
                                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                                 width={35}
                             />
-                            <Bar dataKey="amount" fill="#10b981" name="Dividend Amount" radius={[4, 4, 0, 0]}>
+                            <Bar dataKey="amount" fill="#10b981" name="Dividend Amount" radius={[4, 4, 0, 0]} onClick={handleBarClick} cursor="pointer">
+                                {dividendsByYear.map((entry, index) => {
+                                    const isSelected = selectedYear === entry.year;
+                                    const isFaded = selectedYear != null && !isSelected;
+                                    const fill = isFaded ? 'var(--glass-hover)' : (isSelected ? '#059669' : '#10b981');
+                                    return <Cell key={`cell-${index}`} fill={fill} cursor="pointer" />;
+                                })}
                                 <LabelList
                                     dataKey="yoyPct"
                                     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recharts LabelList content render-prop shape is not cleanly typed
@@ -250,6 +272,19 @@ export default function Dividend({
                         <span className="text-[10px] font-medium text-muted-foreground/60 px-2 py-0.5 rounded bg-secondary/50">
                             {visibleData.length} / {sortedData.length}
                         </span>
+                        {selectedYear && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                                <Calendar className="w-3 h-3" />
+                                <span className="font-bold">{selectedYear}</span>
+                                <button
+                                    onClick={() => setSelectedYear(null)}
+                                    className="ml-0.5 hover:text-foreground"
+                                    title="Clear year filter"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </span>
+                        )}
                     </div>
                     <div className="relative max-w-xs w-full sm:w-auto">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
@@ -290,8 +325,10 @@ export default function Dividend({
                                 <tr>
                                     <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
                                         {searchQuery
-                                            ? `No dividends match "${searchQuery}".`
-                                            : 'No dividend history found for the selected criteria.'}
+                                            ? `No dividends match "${searchQuery}"${selectedYear ? ` in ${selectedYear}` : ''}.`
+                                            : selectedYear
+                                                ? `No dividends in ${selectedYear}.`
+                                                : 'No dividend history found for the selected criteria.'}
                                     </td>
                                 </tr>
                             ) : (
@@ -328,7 +365,11 @@ export default function Dividend({
                 <div className="block md:hidden space-y-4 p-4">
                     {visibleData.length === 0 ? (
                         <p className="text-center text-sm text-muted-foreground py-8">
-                            {searchQuery ? `No dividends match "${searchQuery}".` : 'No dividend history.'}
+                            {searchQuery
+                                ? `No dividends match "${searchQuery}"${selectedYear ? ` in ${selectedYear}` : ''}.`
+                                : selectedYear
+                                    ? `No dividends in ${selectedYear}.`
+                                    : 'No dividend history.'}
                         </p>
                     ) : visibleData.map((item, index) => (
                         <div key={`mobile-div-${index}`} className="bg-muted/20 dark:bg-white/[0.03] backdrop-blur-md rounded-2xl p-4 border border-border/40 dark:border-white/[0.05]">
