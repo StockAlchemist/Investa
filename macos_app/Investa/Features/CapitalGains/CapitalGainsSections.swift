@@ -84,15 +84,14 @@ struct UnrealizedTaxSection: View {
         let ripening = all.filter { !$0.isLT && $0.daysToLong > 0 && $0.daysToLong <= 30 && $0.gain > 0 }.sorted { $0.daysToLong < $1.daysToLong }
         return VStack(spacing: 12) {
             #if os(iOS)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    summaryTile("Short-term", st, "Taxed as ordinary income if sold today").frame(width: 240)
-                    summaryTile("Long-term", lt, "Taxed at LTCG rate if sold today").frame(width: 240)
-                    summaryTile("Total unrealized", st + lt, "\(all.count) tax lots").frame(width: 240)
-                }
-                .padding(.horizontal, 20)
+            // Stack full-width on iPhone so all three tiles are fully visible
+            // (matches the web's `grid-cols-1` on small screens); the large,
+            // multi-digit currency values don't fit three-across on a phone.
+            VStack(spacing: 12) {
+                summaryTile("Short-term", st, "Taxed as ordinary income if sold today")
+                summaryTile("Long-term", lt, "Taxed at LTCG rate if sold today")
+                summaryTile("Total unrealized", st + lt, "\(all.count) tax lots")
             }
-            .padding(.horizontal, -20)
             #else
             HStack(spacing: 12) {
                 summaryTile("Short-term", st, "Taxed as ordinary income if sold today")
@@ -222,6 +221,9 @@ struct UnrealizedTaxSection: View {
 struct CapitalGainsKpiStrip: View {
     let gains: [CapitalGain]
     let currency: String
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    #endif
 
     var body: some View {
         var totalGain = 0.0, proceeds = 0.0, cost = 0.0, winSum = 0.0, lossSum = 0.0
@@ -237,19 +239,41 @@ struct CapitalGainsKpiStrip: View {
         let decided = wins + losses
         let winRate: Double? = decided > 0 ? Double(wins) / Double(decided) * 100 : nil
         let returnPct: Double? = cost != 0 ? totalGain / cost * 100 : nil
+        let returnSub = returnPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% on cost" } ?? "on cost basis"
+        let totalTone: Color = totalGain >= 0 ? .green : .red
+        // Reused for iPad (regular width) and macOS — Total Realized stays inside
+        // the balanced grid with the compact 1.10M value.
+        let sevenTileRow = KpiRow(count: 7, minTileWidth: 140) {
+            tile("Total Realized", cgCompact(totalGain, currency), returnSub, totalTone)
+            tile("Win Rate", winRate.map { String(format: "%.0f%%", $0) } ?? "–",
+                 "\(wins) W · \(losses) L\(flat > 0 ? " · \(flat) flat" : "")", (winRate ?? 0) >= 50 ? .green : .orange)
+            tile("Avg Win", wins > 0 ? cgCompact(winSum / Double(wins), currency) : "–", "per winning sale", .green)
+            tile("Avg Loss", losses > 0 ? cgCompact(lossSum / Double(losses), currency) : "–", "per losing sale", .red)
+            tile("Sales", "\(gains.count)", "closing lots", .primary)
+            tile("Proceeds", cgCompact(proceeds, currency), "gross sold", .primary)
+            tile("Cost Basis", cgCompact(cost, currency), "of sold lots", .primary)
+        }
         return VStack(spacing: 12) {
-            KpiRow(count: 7, minTileWidth: 140) {
-                tile("Total Realized", cgCompact(totalGain, currency),
-                     returnPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% on cost" } ?? "on cost basis",
-                     totalGain >= 0 ? .green : .red)
-                tile("Win Rate", winRate.map { String(format: "%.0f%%", $0) } ?? "–",
-                     "\(wins) W · \(losses) L\(flat > 0 ? " · \(flat) flat" : "")", (winRate ?? 0) >= 50 ? .green : .orange)
-                tile("Avg Win", wins > 0 ? cgCompact(winSum / Double(wins), currency) : "–", "per winning sale", .green)
-                tile("Avg Loss", losses > 0 ? cgCompact(lossSum / Double(losses), currency) : "–", "per losing sale", .red)
-                tile("Sales", "\(gains.count)", "closing lots", .primary)
-                tile("Proceeds", cgCompact(proceeds, currency), "gross sold", .primary)
-                tile("Cost Basis", cgCompact(cost, currency), "of sold lots", .primary)
+            #if os(iOS)
+            if hSize == .compact {
+                // iPhone: Total Realized spans the full width and shows the exact
+                // amount (two decimals) rather than the compact 1.10M form.
+                tile("Total Realized", Fmt.currency(totalGain, code: currency), returnSub, totalTone)
+                KpiRow(count: 6, minTileWidth: 140) {
+                    tile("Win Rate", winRate.map { String(format: "%.0f%%", $0) } ?? "–",
+                         "\(wins) W · \(losses) L\(flat > 0 ? " · \(flat) flat" : "")", (winRate ?? 0) >= 50 ? .green : .orange)
+                    tile("Avg Win", wins > 0 ? cgCompact(winSum / Double(wins), currency) : "–", "per winning sale", .green)
+                    tile("Avg Loss", losses > 0 ? cgCompact(lossSum / Double(losses), currency) : "–", "per losing sale", .red)
+                    tile("Sales", "\(gains.count)", "closing lots", .primary)
+                    tile("Proceeds", cgCompact(proceeds, currency), "gross sold", .primary)
+                    tile("Cost Basis", cgCompact(cost, currency), "of sold lots", .primary)
+                }
+            } else {
+                sevenTileRow
             }
+            #else
+            sevenTileRow
+            #endif
             if biggestWin != nil || biggestLoss != nil {
                 #if os(iOS)
                 VStack(spacing: 12) {
@@ -306,52 +330,100 @@ struct AnnualRealizedGainsCard: View {
 
     var body: some View {
         CGSection(title: "Annual Realized Gains",
-                  subtitle: selectedYear.map { "Filtered to \($0) — tap the year again to clear" }) {
+                  subtitle: selectedYear.map { "Filtered to \($0) — tap the year again to clear" }
+                            ?? "Tap a year to filter the transactions below") {
             let data = rows
             if data.isEmpty {
                 Text("No realized gains.").foregroundStyle(.secondary)
             } else {
-                Chart(data, id: \.year) { row in
-                    BarMark(x: .value("Year", row.year), y: .value("Gain", row.gain))
-                        .foregroundStyle(row.gain >= 0 ? Color.green : .red)
-                        .opacity(selectedYear == nil || selectedYear == row.year ? 1 : 0.4)
+                Chart {
+                    // Clean zero baseline (mirrors the web CartesianGrid's 0 line).
+                    RuleMark(y: .value("Zero", 0))
+                        .foregroundStyle(Color.secondary.opacity(0.35))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                    ForEach(data, id: \.year) { row in
+                        BarMark(x: .value("Year", row.year), y: .value("Gain", row.gain))
+                            .foregroundStyle(barColor(row.year, row.gain))
+                            .cornerRadius(4)
+                    }
                 }
                 .frame(height: 240)
+                .chartYScale(domain: yDomain(data))
+                // Year labels on the x-axis (thinned when crowded), no vertical grid.
+                .chartXAxis {
+                    AxisMarks(preset: .aligned, values: labeledYears(data.map(\.year))) { value in
+                        AxisValueLabel {
+                            if let y = value.as(String.self) {
+                                Text(y).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                // Horizontal dashed gridlines + compact currency labels, like the web.
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.2))
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text(cgAxis(v)).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
                 .chartHoverTooltip(data.map(\.year),
                                    onTap: { i in let y = data[i].year; selectedYear = (selectedYear == y) ? nil : y }) { i in
                     ChartTooltipContent(title: data[i].year,
                                         rows: [ChartTooltipRow(color: data[i].gain >= 0 ? .green : .red,
                                                                label: "Realized Gain",
-                                                               value: Fmt.currency(data[i].gain, code: currency))])
+                                                               value: Fmt.currency(data[i].gain, code: currency)),
+                                               ChartTooltipRow(label: "Tap to filter transactions", value: "")])
                 }
-                // Year chips as an explicit fallback for selecting.
-                #if os(iOS)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(data, id: \.year) { row in
-                            Button { selectedYear = selectedYear == row.year ? nil : row.year } label: {
-                                Text(row.year).font(.caption.weight(.medium))
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(selectedYear == row.year ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
-                                    .foregroundStyle(selectedYear == row.year ? Color.accentColor : Color.gray)
-                            }.buttonStyle(.plain)
-                        }
-                    }
-                }
-                #else
-                HStack {
-                    ForEach(data, id: \.year) { row in
-                        Button { selectedYear = selectedYear == row.year ? nil : row.year } label: {
-                            Text(row.year).font(.caption.weight(.medium))
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(selectedYear == row.year ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
-                                .foregroundStyle(selectedYear == row.year ? Color.accentColor : Color.gray)
-                        }.buttonStyle(.plain)
-                    }
-                }
-                #endif
             }
         }
+    }
+
+    /// Bar color matching the web: emerald for gains / red for losses, a darker
+    /// shade for the selected year, and a muted fill for the faded (unselected)
+    /// years when a filter is active.
+    private func barColor(_ year: String, _ gain: Double) -> Color {
+        let selected = selectedYear == year
+        if selectedYear != nil && !selected { return Color.secondary.opacity(0.25) }
+        if gain >= 0 { return selected ? Color(hex: 0x059669) : Color(hex: 0x10B981) }
+        return selected ? Color(hex: 0xDC2626) : Color(hex: 0xEF4444)
+    }
+
+    /// Compact currency axis label: 1M / 500K / 0 / -500K (matches the web's
+    /// `Intl.NumberFormat` compact notation).
+    private func cgAxis(_ v: Double) -> String {
+        let a = abs(v), sign = v < 0 ? "-" : ""
+        func trim(_ x: Double) -> String {
+            let s = String(format: "%.1f", x)
+            return s.hasSuffix(".0") ? String(s.dropLast(2)) : s
+        }
+        if a >= 1_000_000 { return "\(sign)\(trim(a / 1_000_000))M" }
+        if a >= 1_000 { return "\(sign)\(trim(a / 1_000))K" }
+        return "\(sign)\(Int(a))"
+    }
+
+    /// Fit the y-axis to the data while always anchoring at 0, so bars use the
+    /// full height instead of floating in symmetric empty space.
+    private func yDomain(_ data: [(year: String, gain: Double)]) -> ClosedRange<Double> {
+        let vals = data.map(\.gain)
+        let lo = min(0, vals.min() ?? 0)
+        let hi = max(0, vals.max() ?? 0)
+        guard hi > lo else { return -1...1 }
+        let pad = (hi - lo) * 0.08
+        return (lo < 0 ? lo - pad : 0)...(hi > 0 ? hi + pad : 0)
+    }
+
+    /// Thin x-axis year labels so they don't overlap on narrow (iPhone) widths;
+    /// always keeps the most recent year.
+    private func labeledYears(_ years: [String]) -> [String] {
+        guard years.count > 8 else { return years }
+        let step = Int(ceil(Double(years.count) / 8))
+        var out = years.enumerated().filter { $0.offset % step == 0 }.map(\.element)
+        if let last = years.last, out.last != last { out.append(last) }
+        return out
     }
 }
 

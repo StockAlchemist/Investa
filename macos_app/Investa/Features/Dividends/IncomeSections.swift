@@ -15,6 +15,7 @@ private func compactCurrency(_ v: Double, _ code: String) -> String {
 
 private struct ISection<Content: View>: View {
     let title: String
+    var subtitle: String? = nil
     var trailing: AnyView? = nil
     @ViewBuilder var content: Content
     var body: some View {
@@ -22,10 +23,17 @@ private struct ISection<Content: View>: View {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).font(.headline)
+                if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
                 if let trailing { trailing }
             }
             #else
-            HStack { Text(title).font(.headline); Spacer(); if let trailing { trailing } }
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline)
+                    if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
+                }
+                Spacer(); if let trailing { trailing }
+            }
             #endif
             content
             Spacer(minLength: 0)
@@ -313,6 +321,7 @@ struct ByAccountCard: View {
 struct AnnualDividendsCard: View {
     let dividends: [Dividend]
     let currency: String
+    @Binding var selectedYear: String?
 
     private struct Row: Identifiable { let year: String; let amount: Double; let yoy: Double?; var id: String { year } }
     private var rows: [Row] {
@@ -341,13 +350,16 @@ struct AnnualDividendsCard: View {
         // The per-bar YoY% labels overlap once there are many bars — only show
         // them when there's room; the value is always available via the tooltip.
         let showYoY = data.count <= 12
-        ISection(title: "Annual Dividends") {
+        ISection(title: "Annual Dividends",
+                 subtitle: selectedYear.map { "Filtered to \($0) — tap the year again to clear" }
+                           ?? "Tap a year to filter the transactions below") {
             if data.isEmpty {
                 Text("No dividends.").foregroundStyle(.secondary)
             } else {
                 Chart(data) { row in
                     BarMark(x: .value("Year", row.year), y: .value("Amount", row.amount))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(barColor(row.year))
+                        .cornerRadius(4)
                         .annotation(position: .top) {
                             if showYoY, let y = row.yoy {
                                 Text("\(y > 0 ? "+" : "")\(String(format: "%.0f", y))%")
@@ -366,17 +378,26 @@ struct AnnualDividendsCard: View {
                         }
                     }
                 }
-                .chartHoverTooltip(data.map(\.year)) { i in
+                .chartHoverTooltip(data.map(\.year),
+                                   onTap: { i in let y = data[i].year; selectedYear = (selectedYear == y) ? nil : y }) { i in
                     var rows = [ChartTooltipRow(color: .green, label: "Dividends",
                                                value: Fmt.currency(data[i].amount, code: currency))]
                     if let y = data[i].yoy {
                         rows.append(ChartTooltipRow(label: "YoY", value: "\(y > 0 ? "+" : "")\(String(format: "%.1f", y))%"))
                     }
+                    rows.append(ChartTooltipRow(label: "Tap to filter transactions", value: ""))
                     return ChartTooltipContent(title: data[i].year, rows: rows)
                 }
                 .frame(height: 260)
             }
         }
+    }
+
+    /// Emerald for dividends, a darker shade for the selected year, and a muted
+    /// fill for the other years when a year filter is active — mirrors the web.
+    private func barColor(_ year: String) -> Color {
+        if selectedYear != nil && selectedYear != year { return Color.secondary.opacity(0.25) }
+        return selectedYear == year ? Color(hex: 0x059669) : Color(hex: 0x10B981)
     }
 }
 
