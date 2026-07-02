@@ -13,49 +13,147 @@ struct PerformanceChartView: View {
     @State private var view: PerformanceView = .value
 
     private struct SeriesPoint: Identifiable {
-        let id = UUID()
         let date: Date
         let value: Double
         let series: String
+        // Stable identity (vs. a fresh UUID each rebuild) so Swift Charts can diff
+        // points across renders instead of tearing down and re-animating the whole
+        // chart on every currency/view change.
+        var id: String { "\(series)@\(date.timeIntervalSinceReferenceDate)" }
     }
 
-    private var seriesData: [SeriesPoint] {
-        var out: [SeriesPoint] = []
-        // Normalize TWR relative to the first point in the period (mirrors the
-        // web PerformanceGraph), so the line starts at 0 and its end equals the
-        // period TWR shown in the header.
+    /// All chart-derived data, computed in a single pass per render. Building this
+    /// once (rather than via several interdependent computed properties that each
+    /// re-loop `points` and re-parse dates) is what keeps redraws — especially the
+    /// currency switch — cheap.
+    private struct ChartModel {
+        let series: [SeriesPoint]
+        let dates: [Date]
+        let dIndices: [Date: Int]
+        let domain: ClosedRange<Double>
+        let fxPoints: [FXPoint]
+        let fxDomain: ClosedRange<Double>
+        let showFX: Bool
+        let fxSeriesName: String
+        var isEmpty: Bool { series.isEmpty }
+    }
+
+    private func buildModel() -> ChartModel {
+        let fxName = "FX (\(currency)/USD)"
+        let startFX = points.first(where: { $0.fxRate != nil })?.fxRate
+        let showFX = currency.uppercased() != "USD" && startFX != nil
+
+        // Series points (single pass). Normalize TWR relative to the first point
+        // in the period (mirrors the web PerformanceGraph), so the line starts at
+        // 0 and its end equals the period TWR shown in the header.
         let baseFactor = 1 + (points.first(where: { $0.twr != nil })?.twr ?? 0) / 100
+        var series: [SeriesPoint] = []
         for p in points {
             guard let d = p.parsedDate else { continue }
             switch view {
             case .value:
-                out.append(SeriesPoint(date: d, value: p.value, series: "Portfolio"))
+                series.append(SeriesPoint(date: d, value: p.value, series: "Portfolio"))
             case .twr:
                 if let t = p.twr {
                     let adj = baseFactor != 0 ? ((1 + t / 100) / baseFactor - 1) * 100 : t
-                    out.append(SeriesPoint(date: d, value: adj, series: "Portfolio"))
+                    series.append(SeriesPoint(date: d, value: adj, series: "Portfolio"))
                 }
                 for b in benchmarks {
-                    if let v = p.benchmark(b) { out.append(SeriesPoint(date: d, value: v, series: b)) }
+                    if let v = p.benchmark(b) { series.append(SeriesPoint(date: d, value: v, series: b)) }
+                }
+                // FX overlay (return view): the FX rate's % change from the period
+                // start, on the shared percentage axis, as a dashed line.
+                if showFX, let r = p.fxRate, let s = startFX, s != 0 {
+                    series.append(SeriesPoint(date: d, value: (r / s - 1) * 100, series: fxName))
                 }
             case .drawdown:
-                out.append(SeriesPoint(date: d, value: p.drawdown ?? 0, series: "Portfolio"))
+                series.append(SeriesPoint(date: d, value: p.drawdown ?? 0, series: "Portfolio"))
             }
         }
-        
-        if period == .oneDay, let lastD = out.last?.date {
-            var cal = Calendar(identifier: .gregorian)
-            if let tz = TimeZone(identifier: "America/New_York") {
-                cal.timeZone = tz
-                let comps = cal.dateComponents([.year, .month, .day], from: lastD)
-                if let start = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 9, minute: 30)),
-                   let end = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 16, minute: 0)) {
-                    out = out.filter { $0.date >= start && $0.date <= end }
-                }
+        series = filterMarketHours(series) { $0.date }
+
+        // Distinct x-values and their category indices, derived from `series`.
+        var seen = Set<Date>(); var dates: [Date] = []
+        for s in series where !seen.contains(s.date) { seen.insert(s.date); dates.append(s.date) }
+        var dIndices: [Date: Int] = [:]
+        for (i, d) in dates.enumerated() { dIndices[d] = i }
+
+        // FX overlay points (single pass) for the value chart + tooltips.
+        var fxPoints: [FXPoint] = []
+        if showFX, let s = startFX, s != 0 {
+            for p in points {
+                guard let d = p.parsedDate, let r = p.fxRate else { continue }
+                fxPoints.append(FXPoint(date: d, rate: r, ret: (r / s - 1) * 100))
             }
+            fxPoints = filterMarketHours(fxPoints) { $0.date }
         }
-        
-        return out
+
+        return ChartModel(
+            series: series,
+            dates: dates,
+            dIndices: dIndices,
+            domain: chartDomain(series.map(\.value)),
+            fxPoints: fxPoints,
+            fxDomain: chartDomain(fxPoints.map(\.rate), pad: 0.05),
+            showFX: showFX,
+            fxSeriesName: fxName
+        )
+    }
+
+    /// The 1D chart only spans US market hours (9:30–16:00 ET); trim any points
+    /// outside that window. Shared by every series (portfolio, benchmarks, FX).
+    private func filterMarketHours<T>(_ items: [T], date: (T) -> Date) -> [T] {
+        guard period == .oneDay, let lastD = items.last.map(date),
+              let tz = TimeZone(identifier: "America/New_York") else { return items }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        let comps = cal.dateComponents([.year, .month, .day], from: lastD)
+        guard let start = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 9, minute: 30)),
+              let end = cal.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: 16, minute: 0)) else { return items }
+        return items.filter { date($0) >= start && date($0) <= end }
+    }
+
+    // MARK: - FX overlay
+
+    /// The FX line's series name / legend label, e.g. "FX (THB/USD)". Cheap
+    /// (O(1)) — safe to reference from per-point styling closures.
+    private var fxSeriesName: String { "FX (\(currency)/USD)" }
+
+    /// FX multiplier at the first point that carries one — the FX-return baseline.
+    private var startFX: Double? { points.first(where: { $0.fxRate != nil })?.fxRate }
+
+    /// Show the FX overlay only when the display currency isn't USD and the
+    /// backend actually returned historical FX rates. Referenced O(1) times per
+    /// render (legend, colors, view guards) — never inside a per-point loop.
+    private var showFX: Bool { currency.uppercased() != "USD" && startFX != nil }
+
+    private struct FXPoint: Identifiable {
+        let date: Date
+        let rate: Double
+        let ret: Double
+        var id: TimeInterval { date.timeIntervalSinceReferenceDate }
+    }
+
+    /// Map an FX rate into the primary (value) axis coordinate space so the FX
+    /// line can share the value chart, and its inverse for the right-axis labels.
+    /// Both take the precomputed domains — never recompute them here (hot path).
+    private func fxToValueY(_ rate: Double, valueDomain: ClosedRange<Double>, fxDomain: ClosedRange<Double>) -> Double {
+        guard fxDomain.upperBound > fxDomain.lowerBound else { return valueDomain.lowerBound }
+        let t = (rate - fxDomain.lowerBound) / (fxDomain.upperBound - fxDomain.lowerBound)
+        return valueDomain.lowerBound + t * (valueDomain.upperBound - valueDomain.lowerBound)
+    }
+    private func valueYToFX(_ y: Double, valueDomain: ClosedRange<Double>, fxDomain: ClosedRange<Double>) -> Double {
+        guard valueDomain.upperBound > valueDomain.lowerBound else { return fxDomain.lowerBound }
+        let t = (y - valueDomain.lowerBound) / (valueDomain.upperBound - valueDomain.lowerBound)
+        return fxDomain.lowerBound + t * (fxDomain.upperBound - fxDomain.lowerBound)
+    }
+    /// Value-axis positions for the five evenly spaced FX ticks on the right axis.
+    private func fxAxisPositions(valueDomain: ClosedRange<Double>, fxDomain: ClosedRange<Double>) -> [Double] {
+        let n = 5
+        return (0..<n).map { i in
+            let rate = fxDomain.lowerBound + Double(i) / Double(n - 1) * (fxDomain.upperBound - fxDomain.lowerBound)
+            return fxToValueY(rate, valueDomain: valueDomain, fxDomain: fxDomain)
+        }
     }
 
     /// Headline stats for the selected period, matching the web PerformanceGraph:
@@ -95,7 +193,8 @@ struct PerformanceChartView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let model = buildModel()
+        return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 7) {
                     Image(systemName: "chart.xyaxis.line").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
@@ -129,15 +228,15 @@ struct PerformanceChartView: View {
             periodRow
             if period == .custom { customDateRow }
 
-            if isLoading && seriesData.isEmpty {
+            if isLoading && model.isEmpty {
                 ProgressView()
                     .frame(height: 240)
                     .frame(maxWidth: .infinity)
-            } else if seriesData.isEmpty {
+            } else if model.isEmpty {
                 ContentUnavailableView("No history", systemImage: "chart.xyaxis.line")
                     .frame(height: 240)
             } else {
-                chart
+                chart(model)
             }
         }
         .padding(16)
@@ -172,30 +271,36 @@ struct PerformanceChartView: View {
         }
         .padding(.vertical, 2)
     }
-    private var dateIndices: [Date: Int] {
-        var dict: [Date: Int] = [:]
-        for (i, d) in distinctDates.enumerated() { dict[d] = i }
-        return dict
-    }
-
-    @ViewBuilder private var chart: some View {
-        let domain = chartDomain(seriesData.map(\.value))
-        let dates = distinctDates
-        let dIndices = dateIndices
+    @ViewBuilder private func chart(_ model: ChartModel) -> some View {
+        let domain = model.domain
+        let dates = model.dates
+        let dIndices = model.dIndices
+        let fxDomain = model.fxDomain
 
         Group {
             if period == .oneDay {
-                Chart(seriesData) { item in
-                    if view == .value {
-                        AreaMark(x: .value("Date", item.date), yStart: .value("Min", domain.lowerBound), yEnd: .value("Value", item.value))
-                            .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                    } else if view == .drawdown {
-                        AreaMark(x: .value("Date", item.date), y: .value("Value", item.value))
-                            .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                Chart {
+                    ForEach(model.series) { item in
+                        if view == .value {
+                            AreaMark(x: .value("Date", item.date), yStart: .value("Min", domain.lowerBound), yEnd: .value("Value", item.value))
+                                .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                        } else if view == .drawdown {
+                            AreaMark(x: .value("Date", item.date), y: .value("Value", item.value))
+                                .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                        }
+                        LineMark(x: .value("Date", item.date), y: .value("Value", item.value))
+                            .foregroundStyle(by: .value("Series", item.series))
+                            .lineStyle(seriesStroke(item.series))
+                            .interpolationMethod(.monotone)
                     }
-                    LineMark(x: .value("Date", item.date), y: .value("Value", item.value))
-                        .foregroundStyle(by: .value("Series", item.series))
-                        .interpolationMethod(.monotone)
+                    if view == .value, model.showFX {
+                        ForEach(model.fxPoints) { fp in
+                            LineMark(x: .value("Date", fp.date), y: .value("FX", fxToValueY(fp.rate, valueDomain: domain, fxDomain: fxDomain)))
+                                .foregroundStyle(Theme.fx)
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+                                .interpolationMethod(.monotone)
+                        }
+                    }
                 }
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 5)) { value in
@@ -204,28 +309,31 @@ struct PerformanceChartView: View {
                         }
                     }
                 }
-                .chartHoverTooltip(dates) { i in
-                    let date = dates[i]
-                    let entries = seriesData.filter { $0.date == date }
-                    guard !entries.isEmpty else { return nil }
-                    return ChartTooltipContent(title: tooltipString(date), rows: entries.map {
-                        ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
-                                        value: view == .value ? Fmt.currency($0.value, code: currency) : String(format: "%.2f%%", $0.value))
-                    })
-                }
+                .chartHoverTooltip(dates) { i in tooltipContent(for: dates[i], model: model) }
             } else {
-                Chart(seriesData) { item in
-                    let xIdx = dIndices[item.date] ?? 0
-                    if view == .value {
-                        AreaMark(x: .value("Index", xIdx), yStart: .value("Min", domain.lowerBound), yEnd: .value("Value", item.value))
-                            .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                    } else if view == .drawdown {
-                        AreaMark(x: .value("Index", xIdx), y: .value("Value", item.value))
-                            .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                Chart {
+                    ForEach(model.series) { item in
+                        let xIdx = dIndices[item.date] ?? 0
+                        if view == .value {
+                            AreaMark(x: .value("Index", xIdx), yStart: .value("Min", domain.lowerBound), yEnd: .value("Value", item.value))
+                                .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                        } else if view == .drawdown {
+                            AreaMark(x: .value("Index", xIdx), y: .value("Value", item.value))
+                                .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                        }
+                        LineMark(x: .value("Index", xIdx), y: .value("Value", item.value))
+                            .foregroundStyle(by: .value("Series", item.series))
+                            .lineStyle(seriesStroke(item.series))
+                            .interpolationMethod(.monotone)
                     }
-                    LineMark(x: .value("Index", xIdx), y: .value("Value", item.value))
-                        .foregroundStyle(by: .value("Series", item.series))
-                        .interpolationMethod(.monotone)
+                    if view == .value, model.showFX {
+                        ForEach(model.fxPoints) { fp in
+                            LineMark(x: .value("Index", dIndices[fp.date] ?? 0), y: .value("FX", fxToValueY(fp.rate, valueDomain: domain, fxDomain: fxDomain)))
+                                .foregroundStyle(Theme.fx)
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+                                .interpolationMethod(.monotone)
+                        }
+                    }
                 }
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 5)) { value in
@@ -235,20 +343,12 @@ struct PerformanceChartView: View {
                     }
                 }
                 .chartXScale(domain: 0...max(0, dates.count - 1))
-                .chartHoverTooltip(Array(dates.indices)) { i in
-                    let date = dates[i]
-                    let entries = seriesData.filter { $0.date == date }
-                    guard !entries.isEmpty else { return nil }
-                    return ChartTooltipContent(title: tooltipString(date), rows: entries.map {
-                        ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
-                                        value: view == .value ? Fmt.currency($0.value, code: currency) : String(format: "%.2f%%", $0.value))
-                    })
-                }
+                .chartHoverTooltip(Array(dates.indices)) { i in tooltipContent(for: dates[i], model: model) }
             }
         }
         .chartForegroundStyleScale(range: seriesColors)
         .chartYScale(domain: domain)
-        .chartLegend(view == .twr && !benchmarks.isEmpty ? .visible : .hidden)
+        .chartLegend(view == .twr && (!benchmarks.isEmpty || showFX) ? .visible : .hidden)
         .chartYAxis {
             AxisMarks { value in
                 AxisGridLine()
@@ -258,8 +358,40 @@ struct PerformanceChartView: View {
                     }
                 }
             }
+            // Secondary (right) FX-rate axis for the value view, matching the web.
+            if view == .value, model.showFX {
+                AxisMarks(position: .trailing, values: fxAxisPositions(valueDomain: domain, fxDomain: fxDomain)) { value in
+                    if let y = value.as(Double.self) {
+                        AxisValueLabel {
+                            Text(String(format: "%.2f", valueYToFX(y, valueDomain: domain, fxDomain: fxDomain)))
+                                .foregroundStyle(Theme.fx)
+                        }
+                    }
+                }
+            }
         }
         .frame(height: 260)
+    }
+
+    /// Dash the FX line; every other series stays solid.
+    private func seriesStroke(_ series: String) -> StrokeStyle {
+        series == fxSeriesName ? StrokeStyle(lineWidth: 1.5, dash: [5, 5]) : StrokeStyle(lineWidth: 2)
+    }
+
+    /// Tooltip card for the hovered date: portfolio/benchmark rows plus the FX
+    /// rate and its period return, mirroring the web PerformanceGraph tooltip.
+    private func tooltipContent(for date: Date, model: ChartModel) -> ChartTooltipContent? {
+        let entries = model.series.filter { $0.date == date && $0.series != model.fxSeriesName }
+        var rows = entries.map {
+            ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
+                            value: view == .value ? Fmt.currency($0.value, code: currency) : String(format: "%.2f%%", $0.value))
+        }
+        if model.showFX, let fp = model.fxPoints.first(where: { $0.date == date }) {
+            rows.append(ChartTooltipRow(color: Theme.fx, label: "FX Rate", value: String(format: "%.4f", fp.rate)))
+            rows.append(ChartTooltipRow(color: Theme.fx, label: "FX Ret", value: String(format: "%.2f%%", fp.ret)))
+        }
+        guard !rows.isEmpty else { return nil }
+        return ChartTooltipContent(title: tooltipString(date), rows: rows)
     }
 
     /// Y-axis label: dynamically formats K, M, B for both value and percent
@@ -294,14 +426,9 @@ struct PerformanceChartView: View {
         }
     }
 
-    private var distinctDates: [Date] {
-        var seen = Set<Date>(); var out: [Date] = []
-        for p in seriesData where !seen.contains(p.date) { seen.insert(p.date); out.append(p.date) }
-        return out
-    }
-
     private func seriesColor(_ name: String) -> Color {
         if name == "Portfolio" { return view == .drawdown ? .red : .accentColor }
+        if name == fxSeriesName { return Theme.fx }
         let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
         if let idx = benchmarks.firstIndex(of: name) { return palette[idx % palette.count] }
         return .secondary
@@ -343,7 +470,9 @@ struct PerformanceChartView: View {
         case .value: return [.accentColor]
         case .drawdown: return [.red]
         case .twr:
-            return [.accentColor] + Array(palette.prefix(benchmarks.count))
+            // Order must match series first-appearance in seriesData: Portfolio,
+            // benchmarks, then the FX return line.
+            return [.accentColor] + Array(palette.prefix(benchmarks.count)) + (showFX ? [Theme.fx] : [])
         }
     }
 }

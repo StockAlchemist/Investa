@@ -20,6 +20,9 @@ enum Theme {
     /// Brand accent (the teal already used as the first donut-palette color).
     static let brand = Color(hex: 0x0097b2)
 
+    /// FX overlay accent (amber-500), matching the web performance graph's FX line.
+    static let fx = Color(hex: 0xf59e0b)
+
     static let cardRadius: CGFloat = 14
     static let heroRadius: CGFloat = 16
     static let gutter: CGFloat = 16
