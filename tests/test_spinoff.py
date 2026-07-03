@@ -171,6 +171,85 @@ def test_importer_ignores_non_spinoff_rows():
     assert _ibkr_corporate_action_txns(total, "A", 1, {}) == []
 
 
+# ---------- holdings summary (Cost Basis / Total Buy Cost) ----------
+
+def _spinoff_holdings():
+    import pandas as pd
+    from datetime import date
+    from portfolio_analyzer import _process_transactions_to_holdings
+
+    rows = [
+        # Original SPGI position: 105 sh, total basis 50,466.21.
+        {"Type": "Buy", "Symbol": "SPGI", "Quantity": 105.0, "Price/Share": 50466.21 / 105.0,
+         "Total Amount": 50466.21, "Date": "2025-01-02"},
+        # Spin-off child receipt: 105 MBGL at allocated basis 2,451.80.
+        {"Type": "Spin-off", "Symbol": "MBGL", "Quantity": 105.0, "Price/Share": 2451.80 / 105.0,
+         "Total Amount": 2451.80, "Date": "2026-06-30"},
+        # Spin-off parent basis reduction: SPGI, qty 0, 2,451.80.
+        {"Type": "Spin-off", "Symbol": "SPGI", "Quantity": 0.0, "Price/Share": 0.0,
+         "Total Amount": 2451.80, "Date": "2026-06-30"},
+    ]
+    for i, r in enumerate(rows):
+        r.update({"Commission": 0.0, "Account": "IBKR", "Local Currency": "USD",
+                  "To Account": "", "Split Ratio": 0.0, "original_index": i})
+    df = pd.DataFrame(rows)
+    df["Date"] = pd.to_datetime(df["Date"])
+    holdings, *_ = _process_transactions_to_holdings(
+        df, default_currency="USD", shortable_symbols=set(),
+        historical_fx_lookup={}, display_currency_for_hist_fx="USD",
+        report_date=date(2026, 7, 1),
+    )
+    return holdings
+
+
+def test_spin_off_reallocates_cost_basis_in_holdings_summary():
+    holdings = _spinoff_holdings()
+    spgi = holdings[("SPGI", "IBKR")]
+    mbgl = holdings[("MBGL", "IBKR")]
+
+    # Parent: share count intact, Cost Basis and Total Buy Cost both cut by the
+    # allocated amount (was 50,466.21).
+    assert round(spgi["qty"], 6) == 105.0
+    assert round(spgi["total_cost_local"], 2) == 48014.41
+    assert round(spgi["total_buy_cost_local"], 2) == 48014.41
+    # Child: created with the allocated basis.
+    assert round(mbgl["qty"], 6) == 105.0
+    assert round(mbgl["total_cost_local"], 2) == 2451.80
+    # Total basis conserved across the two symbols.
+    assert round(spgi["total_cost_local"] + mbgl["total_cost_local"], 2) == 50466.21
+
+
+def test_spin_off_reallocates_cost_basis_in_fifo_lots():
+    import pandas as pd
+    from portfolio_analyzer import calculate_fifo_lots_and_gains
+
+    rows = [
+        {"Type": "Buy", "Symbol": "SPGI", "Quantity": 105.0, "Price/Share": 50466.21 / 105.0,
+         "Total Amount": 50466.21, "Date": "2025-01-02"},
+        {"Type": "Spin-off", "Symbol": "MBGL", "Quantity": 105.0, "Price/Share": 2451.80 / 105.0,
+         "Total Amount": 2451.80, "Date": "2026-06-30"},
+        {"Type": "Spin-off", "Symbol": "SPGI", "Quantity": 0.0, "Price/Share": 0.0,
+         "Total Amount": 2451.80, "Date": "2026-06-30"},
+    ]
+    for i, r in enumerate(rows):
+        r.update({"Commission": 0.0, "Account": "IBKR", "Local Currency": "USD",
+                  "To Account": "", "Split Ratio": 0.0, "original_index": i})
+    df = pd.DataFrame(rows)
+    df["Date"] = pd.to_datetime(df["Date"])
+
+    _, open_lots = calculate_fifo_lots_and_gains(
+        df, display_currency="USD", historical_fx_yf={},
+        default_currency="USD", shortable_symbols=set(),
+    )
+
+    def basis(lots):
+        return sum(l["qty"] * l["cost_per_share_local_net"] for l in lots)
+
+    # Parent lots reduced; child lot opened at the allocated basis.
+    assert round(basis(open_lots[("SPGI", "IBKR")]), 2) == 48014.41
+    assert round(basis(open_lots[("MBGL", "IBKR")]), 2) == 2451.80
+
+
 # ---------- Open Positions basis harvest (split-table regression) ----------
 
 _OP_HEADER = ["Symbol", "Quantity", "Mult", "Cost Price", "Cost Basis", "Close Price", "Value", "Unrealized P/L", "Code"]

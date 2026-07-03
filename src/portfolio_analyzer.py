@@ -101,6 +101,7 @@ TYPE_SHORT_SELL = 8
 TYPE_BUY_TO_COVER = 9
 TYPE_TAX = 10
 TYPE_INTEREST = 11
+TYPE_SPIN_OFF = 12
 TYPE_UNKNOWN = -1
 
 # --- Helper to map string types to ints ---
@@ -130,6 +131,8 @@ def get_type_id(t):
         return TYPE_TAX
     if t == 'interest':
         return TYPE_INTEREST
+    if t in ['spin off', 'spin-off', 'spinoff']:
+        return TYPE_SPIN_OFF
     return TYPE_UNKNOWN
 
 @jit(nopython=True, cache=True)
@@ -329,6 +332,35 @@ def _process_numba_core(
                         to_state[9] += buy_cost_transferred
 
                         transfer_costs[i] = cost_transferred / qty
+            continue
+
+        # --- SPIN-OFF ---
+        # Cash-neutral basis reallocation, imported as two legs sharing a date
+        # (see corporate_actions.apply_spin_off). The child receipt (qty > 0)
+        # creates the new position at its allocated basis; the parent leg
+        # (qty == 0) removes that same basis from the parent. Total cost basis is
+        # conserved across the two symbols, mirroring a cross-account transfer.
+        if typ == TYPE_SPIN_OFF:
+            amt = abs(total)
+            if abs(qty) > 1e-9:
+                # Child receipt — acquire shares at the allocated cost basis.
+                current_state[0] += abs(qty)
+                current_state[1] += amt
+                current_state[7] += amt
+                current_state[8] += amt
+                current_state[9] += amt
+                current_state[10] += amt * fx_rate
+            else:
+                # Parent basis reduction — clamp so basis can't go negative, and
+                # shrink the historical-FX basis proportionally to stay FX-consistent.
+                base = current_state[1]
+                red = amt if amt < base else base
+                proportion = (red / base) if base > 1e-9 else 0.0
+                current_state[1] -= red
+                current_state[7] -= red
+                current_state[8] -= red
+                current_state[9] -= red
+                current_state[10] -= current_state[10] * proportion
             continue
 
 
@@ -697,7 +729,8 @@ def _process_transactions_to_holdings(
         'fee': TYPE_FEES, 'fees': TYPE_FEES,
         'split': TYPE_SPLIT, 'stock split': TYPE_SPLIT, 'transfer': TYPE_TRANSFER,
         'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER,
-        'tax': TYPE_TAX, 'withholding tax': TYPE_TAX, 'interest': TYPE_INTEREST
+        'tax': TYPE_TAX, 'withholding tax': TYPE_TAX, 'interest': TYPE_INTEREST,
+        'spin off': TYPE_SPIN_OFF, 'spin-off': TYPE_SPIN_OFF, 'spinoff': TYPE_SPIN_OFF,
     }
     type_ids = df['Type'].str.lower().str.strip().map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
     
@@ -3075,6 +3108,39 @@ def calculate_fifo_lots_and_gains(
                                 else:
                                     lot["cost_per_share_local_net"] = 0.0
                     processed_splits.add(split_event)
+            continue
+
+        # --- Spin-off (cash-neutral basis reallocation, two legs by qty) ---
+        if tx_type in ["spin off", "spin-off", "spinoff"]:
+            total_amt_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+            total_amt = abs(float(total_amt_raw)) if pd.notna(total_amt_raw) else 0.0
+            if pd.notna(qty) and qty > 1e-9:
+                # Child receipt: open a lot at the allocated per-share basis.
+                cps = total_amt / qty if qty > 1e-9 else 0.0
+                fx_child = get_historical_rate_via_usd_bridge(
+                    local_curr, display_currency, tx_date, historical_fx_yf
+                )
+                holdings_long[holding_key].append(
+                    {
+                        "qty": qty,
+                        "cost_per_share_local_net": cps,
+                        "purchase_date": tx_date,
+                        "purchase_fx_to_display": fx_child,
+                        "original_tx_id": original_tx_id_current_row,
+                    }
+                )
+            else:
+                # Parent basis reduction: scale each remaining lot's per-share
+                # cost so the total basis drops by `total_amt` (clamped >= 0).
+                lots = holdings_long.get(holding_key, [])
+                current_basis = 0.0
+                for lot in lots:
+                    current_basis += lot["qty"] * lot["cost_per_share_local_net"]
+                if current_basis > 1e-9:
+                    reduce_amt = total_amt if total_amt < current_basis else current_basis
+                    factor = 1.0 - (reduce_amt / current_basis)
+                    for lot in lots:
+                        lot["cost_per_share_local_net"] *= factor
             continue
 
         if pd.isna(qty) or qty <= 1e-9:
