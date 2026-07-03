@@ -94,6 +94,19 @@ extension Transaction {
         } ?? raw
     }
 
+    /// Web-parity Qty-column text: a real zero reads "0" (e.g. a spin-off's
+    /// parent-basis leg, or a tax row), while a value that simply doesn't apply
+    /// — a dividend carrying no share count — reads "-". Mirrors the web
+    /// TransactionsTable rule (only dividend + qty 0 dashes out).
+    var quantityDisplay: String {
+        (type.lowercased() == "dividend" && quantity == 0) ? "-" : Fmt.number(quantity)
+    }
+
+    /// Web-parity Price-column text, same "-" rule as `quantityDisplay`.
+    var priceDisplay: String {
+        (type.lowercased() == "dividend" && pricePerShare == 0) ? "-" : Fmt.number(pricePerShare)
+    }
+
     /// Types whose signed Total Amount represents a cash *outflow* (negative).
     private static let outflowTypes: Set<String> = [
         "Buy", "Withdrawal", "Fees", "Tax", "Split", "Buy To Cover",

@@ -695,9 +695,9 @@ struct TransactionsView: View {
             .width(min: 80, ideal: 100)
             TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
                 .width(min: 70, ideal: 90)
-            TableColumn("Qty", value: \.quantity) { Text($0.quantity == 0 ? "-" : Fmt.number($0.quantity)).monospacedDigit() }
+            TableColumn("Qty", value: \.quantity) { Text($0.quantityDisplay).monospacedDigit() }
                 .width(min: 60, ideal: 80)
-            TableColumn("Price", value: \.pricePerShare) { Text($0.pricePerShare == 0 ? "-" : Fmt.number($0.pricePerShare)).monospacedDigit() }
+            TableColumn("Price", value: \.pricePerShare) { Text($0.priceDisplay).monospacedDigit() }
                 .width(min: 64, ideal: 84)
             TableColumn("Total", value: \.totalAmount) { tx in
                 Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).fontWeight(.bold).monospacedDigit()
@@ -750,8 +750,12 @@ struct TransactionsView: View {
                             .fixedSize()
                     }
                     Spacer(minLength: 4)
-                    if tx.quantity != 0 {
-                        Text("\(Fmt.number(tx.quantity)) @ \(Fmt.number(tx.pricePerShare))")
+                    // Show the qty/price detail for trades and corporate actions
+                    // (a spin-off's parent leg is a meaningful "0"), but keep pure
+                    // cash rows uncluttered. A real zero reads "0"; only price-
+                    // bearing rows append "@ price".
+                    if tx.quantity != 0 || ["spin off", "split", "stock split"].contains(tx.type.lowercased()) {
+                        Text(tx.pricePerShare != 0 ? "\(tx.quantityDisplay) @ \(tx.priceDisplay)" : tx.quantityDisplay)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
