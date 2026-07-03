@@ -559,6 +559,9 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         if (['DIVIDEND', 'INTEREST'].includes(t)) {
             return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400';
         }
+        if (['SPLIT', 'SPIN-OFF'].includes(t)) {
+            return 'bg-violet-500/10 text-violet-600 dark:text-violet-400';
+        }
         return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
     };
 
@@ -659,6 +662,7 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                                 <option value="Deposit">DEPOSIT</option>
                                                 <option value="Withdrawal">WITHDRAWAL</option>
                                                 <option value="Split">SPLIT</option>
+                                                <option value="Spin-off">SPIN-OFF</option>
                                                 <option value="Short Sell">SHORT SELL</option>
                                                 <option value="Buy To Cover">BUY TO COVER</option>
                                             </select>
