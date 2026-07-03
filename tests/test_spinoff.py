@@ -243,11 +243,57 @@ def test_spin_off_reallocates_cost_basis_in_fifo_lots():
     )
 
     def basis(lots):
-        return sum(l["qty"] * l["cost_per_share_local_net"] for l in lots)
+        return sum(lot["qty"] * lot["cost_per_share_local_net"] for lot in lots)
 
     # Parent lots reduced; child lot opened at the allocated basis.
     assert round(basis(open_lots[("SPGI", "IBKR")]), 2) == 48014.41
     assert round(basis(open_lots[("MBGL", "IBKR")]), 2) == 2451.80
+
+
+# ---------- pure-Python valuation fallback ----------
+
+def test_spin_off_child_valued_in_python_fallback():
+    import pandas as pd
+    from datetime import date
+    from portfolio_valuation_kernels import _calculate_portfolio_value_at_date_unadjusted_python
+
+    rows = [
+        {"Type": "Buy", "Symbol": "SPGI", "Quantity": 105.0, "Price/Share": 480.63,
+         "Total Amount": 50466.21, "Date": "2025-01-02"},
+        {"Type": "Spin-off", "Symbol": "MBGL", "Quantity": 105.0, "Price/Share": 23.35,
+         "Total Amount": 2451.80, "Date": "2026-06-30"},
+        {"Type": "Spin-off", "Symbol": "SPGI", "Quantity": 0.0, "Price/Share": 0.0,
+         "Total Amount": 2451.80, "Date": "2026-06-30"},
+    ]
+    for i, r in enumerate(rows):
+        r.update({"Commission": 0.0, "Account": "IBKR", "Local Currency": "USD",
+                  "To Account": "", "Split Ratio": 0.0, "original_index": i})
+    df = pd.DataFrame(rows)
+    df["Date"] = pd.to_datetime(df["Date"])
+
+    idx = pd.DatetimeIndex([pd.Timestamp("2026-06-30")])
+    prices = {
+        "SPGI": pd.DataFrame({"price": [414.97]}, index=idx),  # 105 -> 43,571.85
+        "MBGL": pd.DataFrame({"price": [21.19]}, index=idx),   # 105 ->  2,224.95
+    }
+
+    value, had_nan = _calculate_portfolio_value_at_date_unadjusted_python(
+        target_date=date(2026, 7, 1),
+        transactions_df=df,
+        historical_prices_yf_unadjusted=prices,
+        historical_fx_yf={},
+        target_currency="USD",
+        internal_to_yf_map={"SPGI": "SPGI", "MBGL": "MBGL"},
+        account_currency_map={"IBKR": "USD"},
+        default_currency="USD",
+        manual_overrides_dict=None,
+        processed_warnings=set(),
+    )
+
+    assert not had_nan
+    # Without the spin-off branch MBGL's 105 shares are dropped and the total is
+    # only SPGI's 43,571.85; the child must contribute its 2,224.95.
+    assert round(value, 2) == 45796.80
 
 
 # ---------- Open Positions basis harvest (split-table regression) ----------
