@@ -80,6 +80,20 @@ extension Transaction {
         "Deposit", "Withdrawal", "Spin-off", "Split", "Short Sell", "Buy To Cover",
     ]
 
+    /// Resolve a stored/raw Type string to the exact `allTypes` entry so a Picker
+    /// shows it selected (an unmatched selection renders blank in SwiftUI).
+    /// Ignores case AND hyphen/space differences, since the same action can
+    /// arrive as "Spin-off" (option), "Spin-Off" (DB, title-cased) or
+    /// "spin off" (engine canonical). Falls back to the raw string.
+    static func canonicalType(_ raw: String) -> String {
+        let key = raw.lowercased().replacingOccurrences(
+            of: "[\\s-]+", with: "", options: .regularExpression)
+        return allTypes.first {
+            $0.lowercased().replacingOccurrences(
+                of: "[\\s-]+", with: "", options: .regularExpression) == key
+        } ?? raw
+    }
+
     /// Types whose signed Total Amount represents a cash *outflow* (negative).
     private static let outflowTypes: Set<String> = [
         "Buy", "Withdrawal", "Fees", "Tax", "Split", "Buy To Cover",

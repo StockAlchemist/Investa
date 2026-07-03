@@ -330,9 +330,7 @@ struct TransactionEditView: View {
             account = appState.selectedAccounts.first ?? ""
         }
         guard let tx = existing else { return }
-        let rawType = tx.type
-        let matched = Transaction.allTypes.first { $0.lowercased() == rawType.lowercased() }
-        type = matched ?? rawType
+        type = Transaction.canonicalType(tx.type)
         symbol = tx.symbol
         account = tx.account
         toAccount = tx.toAccount ?? ""

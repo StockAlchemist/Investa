@@ -359,8 +359,10 @@ struct TransactionsView: View {
                     VStack(spacing: 0) {
                         ForEach(Array(reviewTransactions.enumerated()), id: \.offset) { i, tx in
                             let isDuplicate = existingTxKeys.contains(importMatchKey(tx))
-                            // Normalize stored type casing to match allTypes tags for Picker selection.
-                            let normalizedType = Transaction.allTypes.first { $0.lowercased() == tx.type.lowercased() } ?? tx.type
+                            // Normalize stored type to the exact allTypes tag so the
+                            // Picker shows it selected (blank otherwise). Tolerates
+                            // case + hyphen/space variants (e.g. "Spin-Off").
+                            let normalizedType = Transaction.canonicalType(tx.type)
                             #if os(iOS)
                             VStack(spacing: 6) {
                                 // Row 1: Symbol (editable) + duplicate badge | Total (editable)
