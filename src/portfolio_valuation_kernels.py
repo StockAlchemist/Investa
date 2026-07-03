@@ -128,7 +128,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         # per-share dividend or fee amount in that column, which would poison
         # the last-known-price fallback and create huge phantom valuation jumps
         # on days where yfinance returns NaN for that symbol.
-        if tx_type in ("buy", "sell", "short sell", "buy to cover", "transfer"):
+        if tx_type in ("buy", "sell", "short sell", "buy to cover", "transfer", "spin off", "spin-off", "spinoff"):
             try:
                 tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
                 if pd.notna(tx_price) and tx_price > 1e-9:
@@ -205,6 +205,13 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     qty_being_covered = min(qty_abs, current_short_qty_abs)
                     holding_to_update["qty"] += qty_being_covered
             elif tx_type == "buy" or tx_type == "deposit":
+                if pd.notna(qty) and qty > 0:
+                    holding_to_update["qty"] += qty
+            elif tx_type in ("spin off", "spin-off", "spinoff"):
+                # Child receipt (qty > 0) adds the new position; the parent
+                # basis-reduction leg (qty == 0) is a no-op for market value.
+                # This function tracks quantity only — cost-basis reallocation
+                # lives in _calculate_holdings_numba / the analyzer.
                 if pd.notna(qty) and qty > 0:
                     holding_to_update["qty"] += qty
             elif tx_type == "sell" or tx_type == "withdrawal":
