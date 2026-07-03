@@ -113,6 +113,11 @@ struct HoldingsTableView: View {
     struct TagEdit: Identifiable { let id = UUID(); let symbol: String; let accounts: [String]; let tags: [String] }
 
     private let rowHeight: CGFloat = 46
+    // Lot rows need a fixed height too: the pinned Symbol column and the
+    // scrollable columns render lots independently, so a content-sized height
+    // (italic date text vs. monospaced numbers) diverges and drifts the two
+    // panels out of vertical alignment. A shared fixed height keeps them locked.
+    private let lotRowHeight: CGFloat = 26
 
     private let numericHeaders: Set<String> = ["Quantity", "Day Chg", "Day Chg %", "Avg Cost", "Price", "Cost Basis", "Mkt Val", "% of Total", "Unreal. G/L", "Unreal. G/L %", "Real. G/L", "Divs", "Fees", "Total G/L", "Total Ret %", "IRR (%)", "Total Buy Cost", "Yield (Cost) %", "Yield (Mkt) %", "FX G/L %", "Est. Income", "Contribution %", "AI Score", "Intrinsic Value"]
 
@@ -296,7 +301,11 @@ struct HoldingsTableView: View {
     }
 
     private var macBody: some View {
-        HStack(spacing: 0) {
+        // `.top` alignment is essential: the scrollable side is a horizontal
+        // ScrollView that expands to fill the card's height, while the pinned
+        // first column is sized to its content. Without `.top` the HStack
+        // centers the shorter pinned column, offsetting it from the rows beside it.
+        HStack(alignment: .top, spacing: 0) {
             if let firstCol = visibleColumns.first {
                 let pinnedCols = [firstCol]
                 let scrollCols = Array(visibleColumns.dropFirst())
@@ -591,7 +600,12 @@ struct HoldingsTableView: View {
     private func flatBody(columns: [String]) -> some View {
         let rows = sortedRows(baseRows)
         let shown = Array(rows.prefix(visibleRows))
-        return LazyVStack(spacing: 0) {
+        // Plain VStack, not LazyVStack: this body is nested inside the horizontal
+        // ScrollView of the split layout, where a LazyVStack mis-detects row
+        // visibility against the outer vertical scroll and leaves expanded lot
+        // rows blank (space reserved, content never rendered). The row count is
+        // already bounded by pagination, so eager rendering is cheap.
+        return VStack(spacing: 0) {
             ForEach(shown) { r in rowAndLots(r, columns: columns) }
         }
     }
@@ -605,7 +619,10 @@ struct HoldingsTableView: View {
     @ViewBuilder private var groupedBody: some View { groupedBody(columns: visibleColumns, width: totalWidth) }
 
     @ViewBuilder private func groupedBody(columns: [String], width: CGFloat, part: GroupHeaderPart = .full) -> some View {
-        LazyVStack(spacing: 0) {
+        // Plain VStack, not LazyVStack — see the note in `flatBody`: a lazy stack
+        // nested in the split layout's horizontal ScrollView leaves expanded lot
+        // rows blank.
+        VStack(spacing: 0) {
             ForEach(groups) { g in
                 groupHeaderRow(g, columns: columns, width: width, part: part)
                 if expandedGroups.contains(g.key) {
@@ -1007,9 +1024,11 @@ struct HoldingsTableView: View {
                 }
                 // Pad inside the frame (matching `cell`) so each lot cell is exactly
                 // columnWidth wide and stays aligned with the header/data columns.
+                // A fixed height (matching `cell`) keeps the pinned Symbol column
+                // and the scrollable columns aligned — they lay out lots separately.
                 .padding(.horizontal, 8)
-                .frame(width: columnWidth(h), alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
-                .padding(.vertical, 4)
+                .frame(width: columnWidth(h), height: lotRowHeight, alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
+                .clipped()
                 .foregroundStyle(.secondary)
             }
         }
