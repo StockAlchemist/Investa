@@ -80,6 +80,33 @@ extension Transaction {
         "Deposit", "Withdrawal", "Spin-off", "Split", "Short Sell", "Buy To Cover",
     ]
 
+    /// Resolve a stored/raw Type string to the exact `allTypes` entry so a Picker
+    /// shows it selected (an unmatched selection renders blank in SwiftUI).
+    /// Ignores case AND hyphen/space differences, since the same action can
+    /// arrive as "Spin-off" (option), "Spin-Off" (DB, title-cased) or
+    /// "spin off" (engine canonical). Falls back to the raw string.
+    static func canonicalType(_ raw: String) -> String {
+        let key = raw.lowercased().replacingOccurrences(
+            of: "[\\s-]+", with: "", options: .regularExpression)
+        return allTypes.first {
+            $0.lowercased().replacingOccurrences(
+                of: "[\\s-]+", with: "", options: .regularExpression) == key
+        } ?? raw
+    }
+
+    /// Web-parity Qty-column text: a real zero reads "0" (e.g. a spin-off's
+    /// parent-basis leg, or a tax row), while a value that simply doesn't apply
+    /// — a dividend carrying no share count — reads "-". Mirrors the web
+    /// TransactionsTable rule (only dividend + qty 0 dashes out).
+    var quantityDisplay: String {
+        (type.lowercased() == "dividend" && quantity == 0) ? "-" : Fmt.number(quantity)
+    }
+
+    /// Web-parity Price-column text, same "-" rule as `quantityDisplay`.
+    var priceDisplay: String {
+        (type.lowercased() == "dividend" && pricePerShare == 0) ? "-" : Fmt.number(pricePerShare)
+    }
+
     /// Types whose signed Total Amount represents a cash *outflow* (negative).
     private static let outflowTypes: Set<String> = [
         "Buy", "Withdrawal", "Fees", "Tax", "Split", "Buy To Cover",

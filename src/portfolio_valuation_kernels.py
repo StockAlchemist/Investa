@@ -128,7 +128,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         # per-share dividend or fee amount in that column, which would poison
         # the last-known-price fallback and create huge phantom valuation jumps
         # on days where yfinance returns NaN for that symbol.
-        if tx_type in ("buy", "sell", "short sell", "buy to cover", "transfer"):
+        if tx_type in ("buy", "sell", "short sell", "buy to cover", "transfer", "spin off", "spin-off", "spinoff"):
             try:
                 tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
                 if pd.notna(tx_price) and tx_price > 1e-9:
@@ -205,6 +205,13 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     qty_being_covered = min(qty_abs, current_short_qty_abs)
                     holding_to_update["qty"] += qty_being_covered
             elif tx_type == "buy" or tx_type == "deposit":
+                if pd.notna(qty) and qty > 0:
+                    holding_to_update["qty"] += qty
+            elif tx_type in ("spin off", "spin-off", "spinoff"):
+                # Child receipt (qty > 0) adds the new position; the parent
+                # basis-reduction leg (qty == 0) is a no-op for market value.
+                # This function tracks quantity only — cost-basis reallocation
+                # lives in _calculate_holdings_numba / the analyzer.
                 if pd.notna(qty) and qty > 0:
                     holding_to_update["qty"] += qty
             elif tx_type == "sell" or tx_type == "withdrawal":
@@ -526,6 +533,7 @@ def _calculate_holdings_numba(
     short_sell_type_id,
     buy_to_cover_type_id,  # type: ignore
     transfer_type_id,  # NEW argument
+    spin_off_type_id,   # SPIN-OFF: parent basis reduction + child receipt
     fees_type_id,
     dividend_type_id,
     interest_type_id,
@@ -606,8 +614,29 @@ def _calculate_holdings_numba(
             or type_id == short_sell_type_id
             or type_id == buy_to_cover_type_id
             or type_id == transfer_type_id
+            or type_id == spin_off_type_id
         ):
             last_prices_np[symbol_id, account_id] = price
+
+        # --- SPIN-OFF LOGIC ---
+        # Cash-neutral corporate action, imported as two legs sharing a date:
+        #   - child receipt (qty > 0): create the new position at its allocated
+        #     cost basis (Total Amount, or qty * per-share allocated price).
+        #   - parent basis reduction (qty == 0): reduce the parent symbol's cost
+        #     basis by the amount allocated to the child (Total Amount).
+        # See corporate_actions.apply_spin_off for the reference arithmetic.
+        if type_id == spin_off_type_id:
+            if qty > 1e-9:
+                cost = abs(total_amount) if abs(total_amount) > 1e-9 else (qty * price)
+                holdings_qty_np[symbol_id, account_id] += qty
+                holdings_cost_np[symbol_id, account_id] += cost
+            else:
+                moved = abs(total_amount)
+                current_cost = holdings_cost_np[symbol_id, account_id]
+                if moved > current_cost:
+                    moved = current_cost
+                holdings_cost_np[symbol_id, account_id] = current_cost - moved
+            continue
 
         # --- STOCK TRANSFER LOGIC ---
         if type_id == transfer_type_id:
@@ -808,6 +837,7 @@ def _calculate_daily_holdings_chronological_numba(
     short_sell_type_id,
     buy_to_cover_type_id,
     transfer_type_id,  # NEW argument
+    spin_off_type_id,   # SPIN-OFF: child share receipt (qty-only here)
     dividend_type_id,   # AUTO CASH
     interest_type_id,   # AUTO CASH
     fees_type_id,       # AUTO CASH
@@ -895,6 +925,7 @@ def _calculate_daily_holdings_chronological_numba(
                     or type_id == short_sell_type_id
                     or type_id == buy_to_cover_type_id
                     or type_id == transfer_type_id
+                    or type_id == spin_off_type_id
                 ):
                     current_last_prices[symbol_id, account_id] = price
 
@@ -937,6 +968,13 @@ def _calculate_daily_holdings_chronological_numba(
 
                         # Note: This function only tracks quantity, not cost basis.
                         # The cost basis transfer is handled in _calculate_holdings_numba.
+
+                elif type_id == spin_off_type_id:
+                    # Only the child-receipt leg (qty > 0) changes share counts;
+                    # the parent basis-reduction leg (qty == 0) is a no-op here.
+                    # Cost basis is handled in _calculate_holdings_numba.
+                    if qty > 1e-9:
+                        current_holdings_qty[symbol_id, account_id] += qty
                 else:
                     is_shortable = False
                     for short_id in shortable_symbol_ids:
@@ -1195,6 +1233,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         short_sell_type_id = type_to_id.get("short sell", -1)
         buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
         transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
+        spin_off_type_id = type_to_id.get("spin off", -1)  # SPIN-OFF
         fees_type_id = type_to_id.get("fees", -1)
         dividend_type_id = type_to_id.get("dividend", -1)
         interest_type_id = type_to_id.get("interest", -1)
@@ -1257,6 +1296,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             short_sell_type_id,
             buy_to_cover_type_id,
             transfer_type_id,  # Pass to Numba function
+            spin_off_type_id,  # SPIN-OFF
             fees_type_id,
             dividend_type_id,
             interest_type_id,

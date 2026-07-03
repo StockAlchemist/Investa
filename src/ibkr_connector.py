@@ -150,6 +150,23 @@ class IBKRConnector:
                     if tx:
                         transactions.append(tx)
 
+                # 3. Parse Corporate Actions (spin-offs). The child's allocated
+                #    cost basis lives in OpenPositions (costBasisMoney), exactly
+                #    like the PDF's Open Positions table — harvest it first.
+                basis_map: Dict[str, float] = {}
+                for op in statement.findall(".//OpenPosition"):
+                    sym = op.get("symbol")
+                    cb = op.get("costBasisMoney")
+                    if sym and cb:
+                        try:
+                            basis_map[sym] = abs(float(cb))
+                        except (ValueError, TypeError):
+                            continue
+                for ca in statement.findall(".//CorporateAction"):
+                    transactions.extend(
+                        self._map_corporate_action_to_internal(ca, basis_map)
+                    )
+
         except Exception as e:
             self.logger.error(f"Error parsing IBKR Activity Flex XML: {e}")
             
@@ -246,6 +263,61 @@ class IBKRConnector:
         except Exception as e:
             self.logger.warning(f"Failed to map IBKR cash transaction: {e}")
             return None
+
+    def _map_corporate_action_to_internal(
+        self, ca_elem: ET.Element, basis_map: Dict[str, float]
+    ) -> List[Dict[str, Any]]:
+        """Maps a <CorporateAction> element to the spin-off legs the engine
+        applies. Only spin-offs are handled today; other actions return [].
+        Shares description parsing / row construction with the PDF importer
+        (corporate_actions.parse_spinoff_description / build_spinoff_legs)."""
+        try:
+            from corporate_actions import build_spinoff_legs, parse_spinoff_description
+
+            description = ca_elem.get("description", "")
+            parsed = parse_spinoff_description(description)
+            if not parsed:
+                return []
+            parent, child, ratio = parsed
+
+            # IBKR emits one CorporateAction per affected symbol. Act only on the
+            # element that delivers the child shares so a parent-side twin can't
+            # double-count the event.
+            symbol = ca_elem.get("symbol")
+            if symbol and symbol != child:
+                return []
+
+            qty = abs(float(ca_elem.get("quantity", 0) or 0))
+            if qty <= 1e-9:
+                return []
+
+            dt_str = ca_elem.get("dateTime") or ca_elem.get("reportDate") or ""
+            try:
+                dt = datetime.strptime(dt_str.split(";")[0][:8], "%Y%m%d")
+                date_str = dt.strftime("%Y-%m-%d")
+            except Exception:
+                date_str = datetime.now().strftime("%Y-%m-%d")
+
+            currency = ca_elem.get("currency") or "USD"
+            legs = build_spinoff_legs(
+                parent, child, qty, date_str, "IBKR", user_id=0,
+                allocated_basis=basis_map.get(child, 0.0), ratio=ratio,
+                currency=currency,
+            )
+            # Match the connector's row conventions (no user_id; carry Source /
+            # ExternalID so re-syncs dedupe).
+            action_id = ca_elem.get("actionID") or ca_elem.get("transactionID")
+            for i, leg in enumerate(legs):
+                leg.pop("user_id", None)
+                leg["Account"] = "IBKR"
+                leg["Source"] = "IBKR_API"
+                leg["ExternalID"] = (
+                    f"IBKR_CA_{action_id}_{i}" if action_id else None
+                )
+            return legs
+        except Exception as e:
+            self.logger.warning(f"Failed to map IBKR corporate action: {e}")
+            return []
 
     def sync(self) -> List[Dict[str, Any]]:
         """Execute the full sync flow."""

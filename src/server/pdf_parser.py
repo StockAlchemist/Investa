@@ -19,6 +19,8 @@ _INLINE_SECTION_HEADERS = {
     "deposits & withdrawals": "Cash",
     "other fees": "Fees",
     "interest": "Interest",
+    "corporate actions": "CorporateActions",
+    "corporate actions | glossary": "CorporateActions",
     "change in dividend accruals": "SKIP",
     "change in interest accruals": "SKIP",
     "financial instrument information": "SKIP",
@@ -129,11 +131,131 @@ def _ibkr_trade_from_row(
     }
 
 
+# A spin-off leaves the parent's share count untouched but reallocates part of
+# its cost basis to the newly distributed child shares. The Activity Statement
+# reports the child's *allocated* basis only in the "Open Positions" table
+# (Proceeds in the Corporate Actions row is 0.00), so we harvest a
+# {symbol: cost_basis} map first and look the child up when emitting the event.
+def _ibkr_open_positions_basis(pdf) -> Dict[str, float]:
+    """Scan every table for the IBKR "Open Positions" section and return a
+    {symbol: cost_basis} map.
+
+    pdfplumber often splits a long Open Positions table across pages: the first
+    chunk carries the "Symbol | ... | Cost Basis | ..." column header, while the
+    continuation chunk repeats only the "Open Positions" title and no header. So
+    the column map persists across tables once seen, but rows are consumed ONLY
+    from tables titled "Open Positions" — otherwise a same-shaped neighbour like
+    "Net Stock Position Summary" (ticker in col 0, "0" in the Cost-Basis column)
+    would clobber good basis figures with zeros."""
+    basis: Dict[str, float] = {}
+    colmap: Optional[Dict[str, int]] = None
+    for page in pdf.pages:
+        for table in page.extract_tables() or []:
+            if not table:
+                continue
+            title = " ".join(str(c).lower() for c in (table[0] or []) if c)
+            in_open_positions = "open positions" in title
+            for raw in table:
+                if not raw:
+                    continue
+                row = [str(x).replace("\n", " ").strip() if x is not None else "" for x in raw]
+                low = [c.lower() for c in row]
+                # The column header uniquely identifies Open Positions and
+                # (re)builds the persistent map — its presence also confirms the
+                # table even when the title row didn't survive extraction.
+                if "symbol" in low and "cost basis" in low:
+                    colmap = {}
+                    for i, c in enumerate(low):
+                        if c == "symbol":
+                            colmap.setdefault("sym", i)
+                        elif c == "cost basis":
+                            colmap.setdefault("basis", i)
+                    in_open_positions = True
+                    continue
+                if not in_open_positions or not colmap:
+                    continue
+                si, bi = colmap["sym"], colmap["basis"]
+                if si >= len(row) or bi >= len(row):
+                    continue
+                sym = row[si].strip()
+                if not re.fullmatch(r"[A-Z0-9.]{1,6}", sym):
+                    continue  # 'Stocks' / 'USD' / 'Total' / blank
+                try:
+                    basis[sym] = _to_float(row[bi])
+                except (ValueError, IndexError):
+                    continue
+    return basis
+
+
+def _ibkr_corporate_action_txns(
+    row: List[str],
+    account_name: str,
+    user_id: int,
+    basis_map: Dict[str, float],
+) -> List[Dict[str, Any]]:
+    """Convert one IBKR Corporate Actions data row into transactions. Only
+    spin-offs are handled today; other actions return []. Description parsing
+    and row construction are shared with the Flex-XML connector via
+    corporate_actions (parse_spinoff_description / build_spinoff_legs)."""
+    from corporate_actions import build_spinoff_legs, parse_spinoff_description
+
+    desc = next(
+        (c for c in row if "spin" in c.lower() and "off" in c.lower().replace("-", " ")),
+        None,
+    )
+    if not desc:
+        return []
+    parsed = parse_spinoff_description(desc)
+    if not parsed:
+        return []
+    parent, child, ratio = parsed
+
+    # Event date: the last YYYY-MM-DD in the row (Date/Time event date) if
+    # present, else the first (Report Date). Either resolves to the same
+    # holdings result — they differ by at most the settlement day.
+    dates = [c[:10] for c in row if re.match(r"^\d{4}-\d{2}-\d{2}", c.strip())]
+    if not dates:
+        return []
+    date_str = dates[-1]
+
+    # Quantity received: the first positive numeric after the description
+    # (Proceeds / Value / Realized are 0.00 for a spin-off).
+    qty = 0.0
+    desc_seen = False
+    for c in row:
+        if c == desc:
+            desc_seen = True
+            continue
+        if not desc_seen:
+            continue
+        s = c.replace(",", "").strip()
+        if not s or re.match(r"^\d{4}-\d{2}-\d{2}", c.strip()):
+            continue
+        try:
+            val = float(s)
+        except ValueError:
+            continue
+        if val > 1e-9:
+            qty = val
+            break
+    if qty <= 1e-9:
+        return []
+
+    return build_spinoff_legs(
+        parent, child, qty, date_str, account_name, user_id,
+        allocated_basis=basis_map.get(child, 0.0), ratio=ratio,
+    )
+
+
 def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
     transactions = []
     account_name = account_override or "IBKR Account"
     try:
         with pdfplumber.open(file_path) as pdf:
+            # Harvest the child cost-basis allocations before the row loop so a
+            # Corporate Actions spin-off (which reports Proceeds 0.00) can look
+            # up the basis IBKR moved to the new symbol. See helper for details.
+            open_positions_basis = _ibkr_open_positions_basis(pdf)
             for page in pdf.pages:
                 tables = page.extract_tables()
                 if not tables:
@@ -159,6 +281,8 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                         section = "Fees"
                     elif "Interest" in header_text:
                         section = "Interest"
+                    elif "Corporate Action" in header_text:
+                        section = "CorporateActions"
 
                     if not section:
                         continue
@@ -402,6 +526,17 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                     "Account": account, "Note": desc[:100],
                                     "Local Currency": "USD", "user_id": user_id
                                 })
+
+                            elif section == "CorporateActions":
+                                # Spin-offs (and future multi-symbol actions).
+                                # The helper filters header/label/total rows and
+                                # non-spin-off actions itself, returning [].
+                                acct = row[0] if _ACCOUNT_ID_RE.match(row[0]) else account_name
+                                transactions.extend(
+                                    _ibkr_corporate_action_txns(
+                                        row, acct, user_id, open_positions_basis
+                                    )
+                                )
                         except (ValueError, IndexError) as e:
                             logging.debug(f"IBKR parser skipped {section} row {row!r}: {e}")
                             continue
