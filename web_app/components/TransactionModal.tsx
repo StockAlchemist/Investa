@@ -64,9 +64,15 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 const fromAcc = initialData.Account || '';
                 const toAcc = initialData["To Account"] || '';
 
-                // Normalize Type casing to match the select options (e.g. 'buy' -> 'Buy')
+                // Normalize the stored Type to the exact select-option string so
+                // the dropdown shows it selected (an unmatched value silently
+                // falls back to the first option, "Buy"). Ignore case AND
+                // hyphen/space differences: the same corporate action can arrive
+                // as 'Spin-off' (parser/option), 'Spin-Off' (DB, via .title()),
+                // or 'spin off' (engine canonical form) — all must map here.
                 let initType = initialData.Type || 'Buy';
-                const matchedType = TRANSACTION_TYPES.find(t => t.toLowerCase() === initType.toLowerCase());
+                const canon = (s: string) => s.toLowerCase().replace(/[\s-]+/g, '');
+                const matchedType = TRANSACTION_TYPES.find(t => canon(t) === canon(initType));
                 if (matchedType) {
                     initType = matchedType;
                 }
