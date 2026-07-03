@@ -100,7 +100,11 @@ def test_supported_and_reserved_types_dont_overlap():
 def test_known_corporate_action_types_present():
     assert "return of capital" in RESERVED_CORPORATE_ACTION_TYPES
     assert "stock dividend" in RESERVED_CORPORATE_ACTION_TYPES
-    assert "spin off" in RESERVED_CORPORATE_ACTION_TYPES
+    assert "merger" in RESERVED_CORPORATE_ACTION_TYPES
+    # Spin-off is now applied end-to-end by the JIT dispatchers, so it graduated
+    # from reserved to supported. See tests/test_spinoff.py.
+    assert "spin off" in SUPPORTED_TYPES
+    assert "spin off" not in RESERVED_CORPORATE_ACTION_TYPES
 
 
 # ---------- split dedup (regression guard for the function moved in #4) ----------

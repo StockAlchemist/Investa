@@ -1671,6 +1671,7 @@ def _load_or_calculate_daily_results(
                 short_sell_type_id = type_to_id.get("short sell", -1)
                 buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
                 transfer_type_id = type_to_id.get("transfer", -1)
+                spin_off_type_id = type_to_id.get("spin off", -1)  # SPIN-OFF
                 cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
                 shortable_symbol_ids = np.array([symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id], dtype=np.int64)
@@ -1715,6 +1716,7 @@ def _load_or_calculate_daily_results(
                     short_sell_type_id,
                     buy_to_cover_type_id,
                     transfer_type_id,
+                    spin_off_type_id,  # SPIN-OFF
                     dividend_type_id,
                     interest_type_id,
                     fees_type_id,
@@ -2394,6 +2396,7 @@ def _get_or_calculate_all_daily_holdings(
     short_sell_type_id = type_to_id.get("short sell", -1)
     buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
     transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
+    spin_off_type_id = type_to_id.get("spin off", -1)  # SPIN-OFF
     dividend_type_id = type_to_id.get("dividend", -1)    # AUTO CASH
     interest_type_id = type_to_id.get("interest", -1)    # AUTO CASH
     fees_type_id = type_to_id.get("fees", -1)            # AUTO CASH
@@ -2440,6 +2443,7 @@ def _get_or_calculate_all_daily_holdings(
             short_sell_type_id,
             buy_to_cover_type_id,
             transfer_type_id,
+            spin_off_type_id,  # SPIN-OFF
             dividend_type_id,
             interest_type_id,
             fees_type_id,

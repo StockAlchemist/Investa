@@ -47,6 +47,7 @@ class TestAutoCashDeltaAlignment:
             "transfer": 4, "split": 5, "stock split": 6,
             "deposit": 7, "withdrawal": 8, "short sell": 9,
             "buy to cover": 10, "interest": 11, "tax": 12,
+            "spin off": 13,
         }
         return {
             "func": _calculate_daily_holdings_chronological_numba,
@@ -89,6 +90,7 @@ class TestAutoCashDeltaAlignment:
             t2id["split"], t2id["stock split"],
             t2id["buy"], t2id["deposit"], t2id["sell"], t2id["withdrawal"],
             t2id["short sell"], t2id["buy to cover"], t2id["transfer"],
+            t2id["spin off"],
             t2id["dividend"], t2id["interest"], t2id["fees"], t2id["tax"],
             s2id["$CASH"], 1e-6, shortable_ids, acc_cash_modes,
         )
@@ -451,6 +453,7 @@ class TestAutoCashParity:
             "transfer": 4, "split": 5, "stock split": 6,
             "deposit": 7, "withdrawal": 8, "short sell": 9,
             "buy to cover": 10, "interest": 11, "tax": 12,
+            "spin off": 13,
         }
 
         _, cash_balances, _ = _calculate_daily_holdings_chronological_numba(
@@ -468,6 +471,7 @@ class TestAutoCashParity:
             t2id["split"], t2id["stock split"],
             t2id["buy"], t2id["deposit"], t2id["sell"], t2id["withdrawal"],
             t2id["short sell"], t2id["buy to cover"], t2id["transfer"],
+            t2id["spin off"],
             t2id["dividend"], t2id["interest"], t2id["fees"], t2id["tax"],
             s2id["$CASH"], 1e-6, np.array([], dtype=np.int64),
             np.array([1], dtype=np.int64),

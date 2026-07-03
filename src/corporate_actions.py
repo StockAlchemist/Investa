@@ -12,7 +12,8 @@ them straightforward to unit-test in isolation.
 """
 from __future__ import annotations
 
-from typing import Tuple
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -30,6 +31,13 @@ SUPPORTED_TYPES = frozenset({
     "split", "stock split",
     "short sell", "buy to cover",
     "transfer",
+    # Spin-off is applied end-to-end by the JIT holdings dispatchers. It is
+    # imported as two "spin off" legs sharing a date (see apply_spin_off):
+    #   - child receipt  (Quantity > 0): adds the new symbol at its allocated
+    #     cost basis, cash-neutral.
+    #   - parent basis reduction (Quantity == 0): reduces the parent symbol's
+    #     cost basis by the amount allocated to the child, cash-neutral.
+    "spin off",
 })
 
 # Types the engine recognises as valid corporate actions but does NOT yet
@@ -40,8 +48,7 @@ SUPPORTED_TYPES = frozenset({
 RESERVED_CORPORATE_ACTION_TYPES = frozenset({
     "return of capital",   # apply_return_of_capital
     "stock dividend",      # apply_stock_dividend
-    # Multi-symbol actions deferred (need a separate transaction shape):
-    "spin off",
+    # Multi-symbol action still deferred (needs a separate transaction shape):
     "merger",
 })
 
@@ -98,6 +105,148 @@ def apply_stock_dividend(
     if current_qty <= 1e-9 or shares_received <= 1e-9:
         return current_qty, current_cost
     return current_qty + shares_received, current_cost
+
+
+def apply_spin_off(
+    parent_qty: float,
+    parent_cost: float,
+    child_qty: float,
+    allocated_basis: float,
+) -> Tuple[float, float, float, float]:
+    """
+    A spin-off distributes shares of a newly independent company to the holders
+    of the parent. It is economically cash-neutral: no money changes hands, and
+    the parent's cost basis is split between the parent and the child according
+    to their relative fair-market values (the broker performs this allocation —
+    e.g. IBKR reports the child's allocated basis in its Open Positions table).
+
+    The parent keeps its share count; only its cost basis is reduced by the
+    amount allocated to the child. The child position is created with that same
+    amount as its cost basis. Total basis across the two symbols is preserved.
+
+    ``allocated_basis`` is clamped to the parent's remaining basis so a stale or
+    over-large allocation can never drive the parent basis negative (the excess
+    is simply not moved).
+
+    Returns: (new_parent_qty, new_parent_cost, new_child_qty, new_child_cost).
+    """
+    moved = allocated_basis
+    if moved < 0.0:
+        moved = 0.0
+    if moved > parent_cost:
+        moved = parent_cost
+    return parent_qty, parent_cost - moved, child_qty, moved
+
+
+# ---------------------------------------------------------------------------
+# Shared spin-off parsing / row construction.
+#
+# Both IBKR import paths (the Activity-Statement PDF parser and the Flex-XML
+# connector) describe a spin-off with the same free-text description, e.g.
+#   "SPGI(US78409V1044) Spinoff 1 for 1 (MBGL, MOBILITY GLOBAL INC, US60744M1062)"
+# Centralising the description parsing and the two-leg row construction here
+# keeps the importers in lock-step and unit-testable without a broker fixture.
+# ---------------------------------------------------------------------------
+
+_SPINOFF_PARENT_RE = re.compile(r"^\s*([A-Z0-9.]{1,6})\s*\(")
+_SPINOFF_PAREN_GROUP_RE = re.compile(r"\(([^)]*)\)")
+_SPINOFF_RATIO_RE = re.compile(r"(\d+\s+for\s+\d+)", re.IGNORECASE)
+
+
+def parse_spinoff_description(desc: str) -> Optional[Tuple[str, str, str]]:
+    """Extract (parent_symbol, child_symbol, ratio) from an IBKR spin-off
+    description, or None if it isn't a spin-off / can't be parsed.
+
+    The child symbol is the first token of the final "(TICKER, NAME, ISIN)"
+    group; the parent is the leading token before its CUSIP parenthesis.
+    """
+    if not desc:
+        return None
+    low = desc.lower().replace("-", " ")
+    if "spin" not in low or "off" not in low:
+        return None
+
+    m_parent = _SPINOFF_PARENT_RE.match(desc)
+    if not m_parent:
+        return None
+    parent = m_parent.group(1)
+
+    child = None
+    for group in reversed(_SPINOFF_PAREN_GROUP_RE.findall(desc)):
+        first = group.split(",")[0].strip()
+        if re.fullmatch(r"[A-Z0-9.]{1,6}", first):
+            child = first
+            break
+    if not child or child == parent:
+        return None
+
+    ratio_m = _SPINOFF_RATIO_RE.search(desc)
+    ratio = ratio_m.group(1) if ratio_m else "spin-off"
+    return parent, child, ratio
+
+
+def build_spinoff_legs(
+    parent: str,
+    child: str,
+    child_qty: float,
+    date_str: str,
+    account: str,
+    user_id: int,
+    allocated_basis: float,
+    ratio: str = "spin-off",
+    currency: str = "USD",
+) -> List[Dict[str, Any]]:
+    """Build the transaction rows a spin-off decomposes into for the engine:
+
+      1. child receipt        (Quantity > 0): creates the new position at its
+         allocated cost basis, cash-neutral.
+      2. parent basis cut      (Quantity == 0): reduces the parent's cost basis
+         by the amount moved to the child. Emitted only when the allocation is
+         known (> 0) — a zero reduction is a no-op and just adds ledger noise.
+
+    The JIT holdings dispatchers distinguish the two legs by Quantity. If the
+    allocation is unknown (0), only the child receipt is emitted so the received
+    shares are never silently dropped.
+    """
+    if child_qty <= 1e-9:
+        return []
+    allocated = float(allocated_basis or 0.0)
+    if allocated < 0.0:
+        allocated = 0.0
+    per_share = (allocated / child_qty) if child_qty > 1e-9 else 0.0
+
+    legs: List[Dict[str, Any]] = [
+        {
+            "Date": date_str,
+            "Type": "Spin-off",
+            "Symbol": child,
+            "Quantity": child_qty,
+            "Price/Share": per_share,
+            "Total Amount": allocated,
+            "Commission": 0.0,
+            "Account": account,
+            "Note": f"Spinoff {ratio} from {parent}"[:100],
+            "Local Currency": currency,
+            "user_id": user_id,
+        }
+    ]
+    if allocated > 1e-9:
+        legs.append(
+            {
+                "Date": date_str,
+                "Type": "Spin-off",
+                "Symbol": parent,
+                "Quantity": 0.0,
+                "Price/Share": 0.0,
+                "Total Amount": allocated,
+                "Commission": 0.0,
+                "Account": account,
+                "Note": f"Spinoff basis reallocation to {child}"[:100],
+                "Local Currency": currency,
+                "user_id": user_id,
+            }
+        )
+    return legs
 
 
 def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:

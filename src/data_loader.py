@@ -615,6 +615,14 @@ def load_and_clean_transactions(
             .str.lower()
         )
 
+        # Canonicalize corporate-action spelling variants to the single key the
+        # engine dispatches on. The three clients label spin-offs "Spin-off"
+        # (-> 'spin-off') while the IBKR importer emits "Spin Off" (-> 'spin
+        # off'); both must resolve to the "spin off" the JIT kernels key on.
+        df["Type"] = df["Type"].replace(
+            {"spin-off": "spin off", "spinoff": "spin off"}
+        )
+
         # Surface corporate-action types the engine recognises but does NOT
         # yet apply. The rows are kept (won't be filtered) but the user
         # should know their numbers won't reflect these events until the
