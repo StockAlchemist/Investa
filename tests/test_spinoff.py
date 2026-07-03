@@ -15,7 +15,20 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from corporate_actions import apply_spin_off, SUPPORTED_TYPES, RESERVED_CORPORATE_ACTION_TYPES  # noqa: E402
 from portfolio_valuation_kernels import _calculate_holdings_numba  # noqa: E402
-from server.pdf_parser import _ibkr_corporate_action_txns  # noqa: E402
+from server.pdf_parser import _ibkr_corporate_action_txns, _ibkr_open_positions_basis  # noqa: E402
+
+
+class _FakePage:
+    def __init__(self, tables):
+        self._tables = tables
+
+    def extract_tables(self):
+        return self._tables
+
+
+class _FakePDF:
+    def __init__(self, pages):
+        self.pages = pages
 
 
 # ---------- pure arithmetic ----------
@@ -156,6 +169,44 @@ def test_importer_ignores_non_spinoff_rows():
     assert _ibkr_corporate_action_txns(header, "A", 1, {}) == []
     total = ["", "", "Total", "", "0.00", "0.00", "0.00", ""]
     assert _ibkr_corporate_action_txns(total, "A", 1, {}) == []
+
+
+# ---------- Open Positions basis harvest (split-table regression) ----------
+
+_OP_HEADER = ["Symbol", "Quantity", "Mult", "Cost Price", "Cost Basis", "Close Price", "Value", "Unrealized P/L", "Code"]
+
+
+def test_open_positions_basis_spans_split_tables():
+    # Mirrors the real IBKR statement: the Open Positions table is split across
+    # pages — the first chunk has the column header + AAPL, the continuation
+    # repeats only the "Open Positions" title (no header) and holds MBGL. A
+    # same-shaped "Net Stock Position Summary" sits between them and must NOT
+    # clobber the persisted Cost-Basis column (its col 4 is "Shares Lent" = 0).
+    page1 = _FakePage([[
+        ["Open Positions"] + [None] * 8,
+        _OP_HEADER,
+        ["Stocks"] + [None] * 8,
+        ["AAPL", "190", "1", "202.30", "38,437.06", "294.38", "55,932.20", "17,495.14", ""],
+    ]])
+    page2 = _FakePage([
+        [  # continuation of Open Positions — title only, NO column header
+            ["Open Positions"] + [None] * 8,
+            ["ASML", "72", "1", "705.81", "50,819.00", "1,843.04", "132,698.88", "81,879.88", ""],
+            ["MBGL", "105", "1", "23.350517724", "2,451.80", "21.19", "2,224.95", "-226.85", ""],
+        ],
+        [  # neighbouring table with a ticker in col 0 and "0" in col 4
+            ["Net Stock Position Summary"] + [None] * 5,
+            ["Symbol", "Description", "Shares at IB", "Shares Borrowed", "Shares Lent", "Net Shares"],
+            ["MBGL", "MOBILITY GLOBAL INC", "105", "0", "0", "105"],
+        ],
+    ])
+    basis = _ibkr_open_positions_basis(_FakePDF([page1, page2]))
+    assert round(basis["AAPL"], 2) == 38437.06
+    assert round(basis["ASML"], 2) == 50819.00
+    # The continuation row is captured despite the missing header...
+    assert round(basis["MBGL"], 2) == 2451.80
+    # ...and the Net Stock Position Summary did not overwrite it with 0.
+    assert basis["MBGL"] != 0.0
 
 
 # ---------- IBKR Flex-XML connector ----------

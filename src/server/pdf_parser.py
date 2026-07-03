@@ -138,17 +138,31 @@ def _ibkr_trade_from_row(
 # {symbol: cost_basis} map first and look the child up when emitting the event.
 def _ibkr_open_positions_basis(pdf) -> Dict[str, float]:
     """Scan every table for the IBKR "Open Positions" section and return a
-    {symbol: cost_basis} map. Header-driven so it survives pdfplumber column
-    shifts; non-ticker / subtotal rows are skipped."""
+    {symbol: cost_basis} map.
+
+    pdfplumber often splits a long Open Positions table across pages: the first
+    chunk carries the "Symbol | ... | Cost Basis | ..." column header, while the
+    continuation chunk repeats only the "Open Positions" title and no header. So
+    the column map persists across tables once seen, but rows are consumed ONLY
+    from tables titled "Open Positions" — otherwise a same-shaped neighbour like
+    "Net Stock Position Summary" (ticker in col 0, "0" in the Cost-Basis column)
+    would clobber good basis figures with zeros."""
     basis: Dict[str, float] = {}
+    colmap: Optional[Dict[str, int]] = None
     for page in pdf.pages:
         for table in page.extract_tables() or []:
-            colmap: Optional[Dict[str, int]] = None
+            if not table:
+                continue
+            title = " ".join(str(c).lower() for c in (table[0] or []) if c)
+            in_open_positions = "open positions" in title
             for raw in table:
                 if not raw:
                     continue
                 row = [str(x).replace("\n", " ").strip() if x is not None else "" for x in raw]
                 low = [c.lower() for c in row]
+                # The column header uniquely identifies Open Positions and
+                # (re)builds the persistent map — its presence also confirms the
+                # table even when the title row didn't survive extraction.
                 if "symbol" in low and "cost basis" in low:
                     colmap = {}
                     for i, c in enumerate(low):
@@ -156,8 +170,9 @@ def _ibkr_open_positions_basis(pdf) -> Dict[str, float]:
                             colmap.setdefault("sym", i)
                         elif c == "cost basis":
                             colmap.setdefault("basis", i)
+                    in_open_positions = True
                     continue
-                if colmap is None or "sym" not in colmap or "basis" not in colmap:
+                if not in_open_positions or not colmap:
                     continue
                 si, bi = colmap["sym"], colmap["basis"]
                 if si >= len(row) or bi >= len(row):
