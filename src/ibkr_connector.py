@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import re
 import requests
 import xml.etree.ElementTree as ET
 import time
@@ -250,8 +251,7 @@ class IBKRConnector:
             tx_price = amount
             
             if internal_type == "DIVIDEND":
-                import re
-                match = re.search(r"([\d\.]+)\s*per Share", description, re.IGNORECASE)
+                match = re.search(r"(\d+(?:\.\d+)?)\s*per Share", description, re.IGNORECASE)
                 if match:
                     try:
                         div_per_share = float(match.group(1))

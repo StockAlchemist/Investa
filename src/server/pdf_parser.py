@@ -519,18 +519,22 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                     
                                     # Extract exact dividend per share and quantity from description
                                     if t_type == "Dividend":
-                                        import logging
-                                        logging.info(f"PDF Dividend Parser: desc='{desc}'")
-                                        # Try "0.22 per Share" first, fallback to "Dividend USD 0.22"
-                                        match = re.search(r"([\d\.]+)\s*per Share", desc, re.IGNORECASE)
+                                        # Try "0.22 per Share" first, fallback to "Dividend USD 0.22".
+                                        # The fallback number may be the total (not a rate), so only
+                                        # trust it when it divides the amount into >= 1 share; the
+                                        # "per Share" form is explicit and needs no such guard.
+                                        match = re.search(r"(\d+(?:\.\d+)?)\s*per Share", desc, re.IGNORECASE)
+                                        is_fallback = False
                                         if not match:
-                                            match = re.search(r"Dividend\s+(?:USD\s*)?([\d\.]+)", desc, re.IGNORECASE)
-                                            
+                                            match = re.search(r"Dividend\s+(?:USD\s*)?(\d+(?:\.\d+)?)", desc, re.IGNORECASE)
+                                            is_fallback = True
+
                                         if match:
                                             try:
-                                                tx_price = float(match.group(1))
-                                                if tx_price > 0:
-                                                    tx_qty = round(abs_amt / tx_price, 4)
+                                                rate = float(match.group(1))
+                                                if rate > 0 and not (is_fallback and rate > abs_amt):
+                                                    tx_price = rate
+                                                    tx_qty = round(abs_amt / rate, 4)
                                             except ValueError:
                                                 pass
 

@@ -2,7 +2,9 @@ import Foundation
 
 @MainActor
 final class TransactionsViewModel: ObservableObject {
-    @Published var transactions: [Transaction] = []
+    @Published var transactions: [Transaction] = [] {
+        didSet { dripBuyKeysCache = nil }
+    }
     @Published var pendingIbkr: [Transaction] = []
     @Published var isLoading = false
     @Published var isImporting = false
@@ -11,6 +13,29 @@ final class TransactionsViewModel: ObservableObject {
 
     private let api: APIClient
     private var loadTask: Task<Void, Never>?
+    private var dripBuyKeysCache: Set<String>?
+
+    /// Date|symbol|qty|price key for DRIP matching. Rounding to 3dp stands in
+    /// for the ±0.001 tolerance of a pairwise comparison; mirrors the web
+    /// TransactionsTable dripBuyKeys memo.
+    static func dripKey(_ tx: Transaction) -> String {
+        "\(tx.date)|\(tx.symbol)|\(String(format: "%.3f", tx.quantity))|\(String(format: "%.3f", tx.pricePerShare))"
+    }
+
+    /// Keys of Buy/Reinvest rows, used to spot the cash leg of a DRIP
+    /// (a dividend with an identical same-day buy). Cached per transactions load.
+    var dripBuyKeys: Set<String> {
+        if let cached = dripBuyKeysCache { return cached }
+        var keys = Set<String>()
+        for tx in transactions {
+            let t = tx.type.lowercased().trimmingCharacters(in: .whitespaces)
+            guard ["buy", "buy to cover", "reinvest"].contains(t) else { continue }
+            guard tx.quantity != 0, tx.pricePerShare != 0 else { continue }
+            keys.insert(Self.dripKey(tx))
+        }
+        dripBuyKeysCache = keys
+        return keys
+    }
 
     init(api: APIClient = .shared) {
         self.api = api

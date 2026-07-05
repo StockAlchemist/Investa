@@ -56,27 +56,26 @@ struct TransactionsView: View {
         "\(tx.symbol)|\(tx.date.prefix(10))|\(tx.type)|\(abs(tx.quantity))|\(tx.totalAmount)|\(tx.account)|\(tx.note ?? "")"
     }
 
+    // Mirrors web app importMatchKey: SYMBOL|date|type[|qty] — symbol uppercased,
+    // qty absolute; dividend/tax omit qty to handle parser qty=0 cases.
     private func importMatchKey(_ tx: Transaction) -> String {
+        let date = String(tx.date.prefix(10))
+        let sym = tx.symbol.uppercased()
         let ty = tx.type.lowercased()
-        let qStr = ["dividend", "tax", "withholding tax"].contains(ty) ? "" : "|\(tx.quantity)"
-        return "\(tx.symbol)|\(tx.date.prefix(10))|\(ty)\(qStr)"
+        if ["dividend", "tax", "withholding tax"].contains(ty) {
+            return "\(sym)|\(date)|\(ty)"
+        }
+        return "\(sym)|\(date)|\(ty)|\(abs(tx.quantity))"
     }
 
     private func shouldHideQtyAndPrice(for tx: Transaction) -> Bool {
         if tx.shouldHideQtyAndPrice { return true }
-        
+
+        // A dividend with an identical same-day Buy/Reinvest is the cash leg
+        // of a DRIP — hide its qty/price to avoid double-reading the shares.
         let t = tx.type.lowercased().trimmingCharacters(in: .whitespaces)
         if t == "dividend" && tx.quantity > 0 {
-            let hasMatchingBuy = viewModel.transactions.contains { other in
-                if other.id == tx.id || other.date != tx.date || other.symbol != tx.symbol { return false }
-                
-                let ot = other.type.lowercased().trimmingCharacters(in: .whitespaces)
-                if !["buy", "buy to cover", "reinvest"].contains(ot) { return false }
-                
-                return abs(other.quantity - tx.quantity) < 0.001 &&
-                       abs(other.pricePerShare - tx.pricePerShare) < 0.001
-            }
-            if hasMatchingBuy { return true }
+            return viewModel.dripBuyKeys.contains(TransactionsViewModel.dripKey(tx))
         }
         return false
     }
@@ -775,10 +774,10 @@ struct TransactionsView: View {
                             .fixedSize()
                     }
                     Spacer(minLength: 4)
-                    // Show the qty/price detail for trades and corporate actions
-                    // (a spin-off's parent leg is a meaningful "0"), but keep pure
-                    // cash rows uncluttered. A real zero reads "0"; only price-
-                    // bearing rows append "@ price".
+                    // Show the qty/price detail for trades and corporate actions,
+                    // but keep pure cash rows uncluttered. Dummy or inapplicable
+                    // values (qty 0, broker qty=1 placeholders, DRIP cash legs)
+                    // read "-"; only price-bearing rows append "@ price".
                     if tx.quantity != 0 || ["spin off", "split", "stock split"].contains(tx.type.lowercased()) {
                         let qDisp = displayQty(for: tx)
                         let pDisp = displayPrice(for: tx)

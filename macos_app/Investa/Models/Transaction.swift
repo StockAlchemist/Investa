@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// A transaction record. Maps to the backend's `TransactionInput`
 /// (`src/server/routes/transactions.py`) — the JSON keys are the human-readable
@@ -72,8 +73,6 @@ struct Transaction: Codable, Sendable, Identifiable {
         self.toAccount = toAccount; self.autoAddCash = autoAddCash
     }
 }
-
-import SwiftUI
 
 extension Transaction {
     /// Categorises how a transaction type affects the $CASH balance.
