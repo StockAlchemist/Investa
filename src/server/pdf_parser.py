@@ -516,6 +516,23 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 else:
                                     tx_qty = 0.0
                                     tx_price = 0.0
+                                    
+                                    # Extract exact dividend per share and quantity from description
+                                    if t_type == "Dividend":
+                                        import logging
+                                        logging.info(f"PDF Dividend Parser: desc='{desc}'")
+                                        # Try "0.22 per Share" first, fallback to "Dividend USD 0.22"
+                                        match = re.search(r"([\d\.]+)\s*per Share", desc, re.IGNORECASE)
+                                        if not match:
+                                            match = re.search(r"Dividend\s+(?:USD\s*)?([\d\.]+)", desc, re.IGNORECASE)
+                                            
+                                        if match:
+                                            try:
+                                                tx_price = float(match.group(1))
+                                                if tx_price > 0:
+                                                    tx_qty = round(abs_amt / tx_price, 4)
+                                            except ValueError:
+                                                pass
 
                                 transactions.append({
                                     "Date": date_str, "Type": t_type, "Symbol": sym,

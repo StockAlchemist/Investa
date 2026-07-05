@@ -246,12 +246,27 @@ class IBKRConnector:
             except Exception:
                 dt = datetime.now()
 
+            tx_qty = 1.0
+            tx_price = amount
+            
+            if internal_type == "DIVIDEND":
+                import re
+                match = re.search(r"([\d\.]+)\s*per Share", description, re.IGNORECASE)
+                if match:
+                    try:
+                        div_per_share = float(match.group(1))
+                        if div_per_share > 0:
+                            tx_price = div_per_share
+                            tx_qty = round(abs(amount) / div_per_share, 4)
+                    except ValueError:
+                        pass
+
             return {
                 "Date": dt.strftime("%Y-%m-%d"),
                 "Type": internal_type,
                 "Symbol": symbol if symbol and symbol != "None" else "$CASH",
-                "Quantity": 1.0,
-                "Price/Share": amount,
+                "Quantity": tx_qty,
+                "Price/Share": tx_price,
                 "Commission": 0.0,
                 "Total Amount": amount,
                 "Local Currency": currency,

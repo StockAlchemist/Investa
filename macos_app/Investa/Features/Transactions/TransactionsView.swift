@@ -56,16 +56,40 @@ struct TransactionsView: View {
         "\(tx.symbol)|\(tx.date.prefix(10))|\(tx.type)|\(abs(tx.quantity))|\(tx.totalAmount)|\(tx.account)|\(tx.note ?? "")"
     }
 
-    // Mirrors web app importMatchKey: symbol|date|type (dividend/tax omit qty to handle parser qty=0 cases)
     private func importMatchKey(_ tx: Transaction) -> String {
-        let date = String(tx.date.prefix(10))
-        let sym = tx.symbol.uppercased()
-        let type = tx.type.lowercased()
-        if type == "dividend" || type == "tax" {
-            return "\(sym)|\(date)|\(type)"
-        }
-        return "\(sym)|\(date)|\(type)|\(abs(tx.quantity))"
+        let ty = tx.type.lowercased()
+        let qStr = ["dividend", "tax", "withholding tax"].contains(ty) ? "" : "|\(tx.quantity)"
+        return "\(tx.symbol)|\(tx.date.prefix(10))|\(ty)\(qStr)"
     }
+
+    private func shouldHideQtyAndPrice(for tx: Transaction) -> Bool {
+        if tx.shouldHideQtyAndPrice { return true }
+        
+        let t = tx.type.lowercased().trimmingCharacters(in: .whitespaces)
+        if t == "dividend" && tx.quantity > 0 {
+            let hasMatchingBuy = viewModel.transactions.contains { other in
+                if other.id == tx.id || other.date != tx.date || other.symbol != tx.symbol { return false }
+                
+                let ot = other.type.lowercased().trimmingCharacters(in: .whitespaces)
+                if !["buy", "buy to cover", "reinvest"].contains(ot) { return false }
+                
+                return abs(other.quantity - tx.quantity) < 0.001 &&
+                       abs(other.pricePerShare - tx.pricePerShare) < 0.001
+            }
+            if hasMatchingBuy { return true }
+        }
+        return false
+    }
+
+    private func displayQty(for tx: Transaction) -> String {
+        shouldHideQtyAndPrice(for: tx) ? "-" : Fmt.number(tx.quantity)
+    }
+
+    private func displayPrice(for tx: Transaction) -> String {
+        shouldHideQtyAndPrice(for: tx) ? "-" : Fmt.number(tx.pricePerShare)
+    }
+
+    // MARK: - Filter logic
 
     private var existingTxKeys: Set<String> {
         Set(viewModel.transactions.map { importMatchKey($0) })
@@ -127,7 +151,8 @@ struct TransactionsView: View {
         case "BUY", "DEPOSIT", "BUY TO COVER": return .green
         case "SELL", "WITHDRAWAL", "SHORT SELL": return .red
         case "DIVIDEND", "INTEREST": return .indigo
-        default: return .gray
+        case "FEES", "FEE", "TAX", "WITHHOLDING TAX": return .orange
+        default: return .purple  // Split, Spin-off, Transfer — distinct from unselected grey
         }
     }
 
@@ -695,13 +720,13 @@ struct TransactionsView: View {
             .width(min: 80, ideal: 100)
             TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
                 .width(min: 70, ideal: 90)
-            TableColumn("Qty", value: \.quantity) { Text($0.quantityDisplay).monospacedDigit() }
+            TableColumn("Qty", value: \.quantity) { tx in Text(displayQty(for: tx)).monospacedDigit() }
                 .width(min: 60, ideal: 80)
-            TableColumn("Price", value: \.pricePerShare) { Text($0.priceDisplay).monospacedDigit() }
+            TableColumn("Price", value: \.pricePerShare) { tx in Text(displayPrice(for: tx)).monospacedDigit() }
                 .width(min: 64, ideal: 84)
             TableColumn("Total", value: \.totalAmount) { tx in
-                Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).fontWeight(.bold).monospacedDigit()
-                    .foregroundStyle(Fmt.tint(for: tx.totalAmount))
+                Text(Fmt.currency(tx.displayTotalAmount, code: tx.localCurrency)).fontWeight(.bold).monospacedDigit()
+                    .foregroundStyle(tx.totalAmountColor)
             }
             .width(min: 90, ideal: 120)
             TableColumn("Account", value: \.account) { Text($0.account).font(.caption).foregroundStyle(.secondary) }
@@ -731,10 +756,10 @@ struct TransactionsView: View {
                         .font(.subheadline.weight(.bold))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency))
+                    Text(Fmt.currency(tx.displayTotalAmount, code: tx.localCurrency))
                         .font(.subheadline.weight(.bold))
                         .monospacedDigit()
-                        .foregroundStyle(Fmt.tint(for: tx.totalAmount))
+                        .foregroundStyle(tx.totalAmountColor)
                         .fixedSize(horizontal: true, vertical: false)
                 }
 
@@ -755,7 +780,9 @@ struct TransactionsView: View {
                     // cash rows uncluttered. A real zero reads "0"; only price-
                     // bearing rows append "@ price".
                     if tx.quantity != 0 || ["spin off", "split", "stock split"].contains(tx.type.lowercased()) {
-                        Text(tx.pricePerShare != 0 ? "\(tx.quantityDisplay) @ \(tx.priceDisplay)" : tx.quantityDisplay)
+                        let qDisp = displayQty(for: tx)
+                        let pDisp = displayPrice(for: tx)
+                        Text(tx.pricePerShare != 0 && pDisp != "-" ? "\(qDisp) @ \(pDisp)" : qDisp)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

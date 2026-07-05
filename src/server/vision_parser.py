@@ -64,6 +64,10 @@ def parse_document_with_ai(file_path: str, mime_type: str) -> List[Dict[str, Any
            The system will handle the sign based on the Type.
         5. 'Total Amount' is the absolute gross amount (Quantity * Price) before any commission/fees.
            Commission/fees go in the 'Commission' field only. The system will add/subtract commission automatically.
+        6. VERY IMPORTANT for Dividends: If the statement lists a dividend but only provides the Total Amount in the columns, read the description carefully. Often, the description contains the dividend rate (e.g., "Cash Dividend USD 0.22 per Share"). 
+           - You MUST extract this rate and put it in "Price/Share".
+           - You MUST calculate the "Quantity" of shares held by dividing the Total Amount by the Price/Share (Quantity = Total Amount / Price/Share).
+           - Do not leave Quantity and Price/Share as 0 for dividends if the rate is mentioned anywhere!
         
         Also, extract the following summary information:
         - Statement Period (Start Date and End Date)

@@ -73,7 +73,51 @@ struct Transaction: Codable, Sendable, Identifiable {
     }
 }
 
+import SwiftUI
+
 extension Transaction {
+    /// Categorises how a transaction type affects the $CASH balance.
+    enum CashImpact {
+        /// Reduces cash (Buy, Withdrawal, Fees, Tax, Buy To Cover).
+        case outflow
+        /// Adds cash (Sell, Deposit, Dividend, Interest, Short Sell).
+        case inflow
+        /// No cash change (Transfer, Split, Spin-off, …).
+        case neutral
+    }
+
+    /// Determine whether this transaction adds, reduces, or leaves $CASH unchanged.
+    var cashImpact: CashImpact {
+        switch type.lowercased().trimmingCharacters(in: .whitespaces) {
+        case "buy", "withdrawal", "fees", "fee", "tax", "withholding tax", "buy to cover":
+            return .outflow
+        case "sell", "deposit", "dividend", "interest", "short sell":
+            return .inflow
+        default: // transfer, split, stock split, spin-off, spin off, …
+            return .neutral
+        }
+    }
+
+    /// Semantic color for the Total Amount column based on the transaction's
+    /// cash impact rather than the raw sign of the stored value.
+    var totalAmountColor: Color {
+        switch cashImpact {
+        case .outflow: return .down   // red
+        case .inflow:  return .up     // green
+        case .neutral: return .gray
+        }
+    }
+
+    /// Total amount formatted for display: negative for outflows, positive
+    /// (absolute value) for inflows and neutral types.
+    var displayTotalAmount: Double {
+        let mag = abs(totalAmount)
+        switch cashImpact {
+        case .outflow:          return -mag
+        case .inflow, .neutral: return mag
+        }
+    }
+
     /// The transaction types the backend accepts (mirrors web TransactionModal).
     static let allTypes = [
         "Buy", "Sell", "Dividend", "Transfer", "Interest", "Fees", "Tax",
@@ -94,17 +138,35 @@ extension Transaction {
         } ?? raw
     }
 
-    /// Web-parity Qty-column text: a real zero reads "0" (e.g. a spin-off's
-    /// parent-basis leg, or a tax row), while a value that simply doesn't apply
-    /// — a dividend carrying no share count — reads "-". Mirrors the web
-    /// TransactionsTable rule (only dividend + qty 0 dashes out).
-    var quantityDisplay: String {
-        (type.lowercased() == "dividend" && quantity == 0) ? "-" : Fmt.number(quantity)
+    var shouldHideQtyAndPrice: Bool {
+        if quantity == 0 { return true }
+        
+        let sym = symbol.uppercased()
+        if sym == "$CASH" || sym == "CASH" {
+            return true
+        }
+
+        let t = type.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        if quantity == 1 {
+            let cashTypes: Set<String> = [
+                "dividend", "interest", "fees", "fee", "tax", "withholding tax", "deposit", "withdrawal", "transfer"
+            ]
+            if cashTypes.contains(t) {
+                if abs(pricePerShare - abs(totalAmount)) < 0.01 {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
-    /// Web-parity Price-column text, same "-" rule as `quantityDisplay`.
+    var quantityDisplay: String {
+        shouldHideQtyAndPrice ? "-" : Fmt.number(quantity)
+    }
+
     var priceDisplay: String {
-        (type.lowercased() == "dividend" && pricePerShare == 0) ? "-" : Fmt.number(pricePerShare)
+        shouldHideQtyAndPrice ? "-" : Fmt.number(pricePerShare)
     }
 
     /// Types whose signed Total Amount represents a cash *outflow* (negative).

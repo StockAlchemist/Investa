@@ -401,11 +401,22 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         return type.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
     };
 
-    const uniqueTypes = new Set<string>([
-        'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Tax', 'Deposit', 'Withdrawal', 'Spin-off', 'Split', 'Short Sell', 'Buy To Cover'
-    ]);
+    // Canonical type labels — mirrors Swift Transaction.canonicalType.
+    // Collapses case + hyphen/space variants so "spin off", "Spin-Off", "SPIN OFF"
+    // all map to one label and don't create duplicate filter chips.
+    const CANONICAL_TYPES = [
+        'Buy', 'Sell', 'Dividend', 'Transfer', 'Interest', 'Fees', 'Tax',
+        'Deposit', 'Withdrawal', 'Spin-off', 'Split', 'Short Sell', 'Buy To Cover',
+    ];
+    const canonicalType = (raw: string): string => {
+        const key = raw.toLowerCase().replace(/[\s-]+/g, '');
+        return CANONICAL_TYPES.find(t => t.toLowerCase().replace(/[\s-]+/g, '') === key)
+            ?? formatTransactionType(raw);
+    };
+
+    const uniqueTypes = new Set<string>(CANONICAL_TYPES);
     (transactions || []).forEach(tx => {
-        if (tx.Type) uniqueTypes.add(formatTransactionType(tx.Type));
+        if (tx.Type) uniqueTypes.add(canonicalType(tx.Type));
     });
     const existingTypes = Array.from(uniqueTypes).sort();
 
@@ -425,11 +436,11 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         return { duplicateCount: dupes, dupeKeys: keys };
     }, [transactions]);
 
-    const filterTypesLower = filterTypes.map(t => t.toLowerCase());
+    const filterTypesNorm = filterTypes.map(t => t.toLowerCase().replace(/[\s-]+/g, ''));
     const filteredTransactions = (transactions || []).filter(tx => {
         const symbolMatch = tx.Symbol.toLowerCase().includes(symbolFilter.toLowerCase());
         const accountMatch = tx.Account.toLowerCase().includes(accountFilter.toLowerCase());
-        const typeMatch = filterTypesLower.length === 0 || filterTypesLower.includes(tx.Type.toLowerCase());
+        const typeMatch = filterTypesNorm.length === 0 || filterTypesNorm.includes(tx.Type.toLowerCase().replace(/[\s-]+/g, ''));
         const txDate = tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '';
         const dateMatch =
             (!dateRange.from || txDate >= dateRange.from) &&
@@ -559,10 +570,82 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
         if (['DIVIDEND', 'INTEREST'].includes(t)) {
             return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400';
         }
-        if (['SPLIT', 'SPIN-OFF'].includes(t)) {
+        if (['FEES', 'FEE', 'TAX', 'WITHHOLDING TAX'].includes(t)) {
+            return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
+        }
+        if (['SPLIT', 'STOCK SPLIT', 'SPIN-OFF', 'SPIN OFF', 'TRANSFER'].includes(t)) {
             return 'bg-violet-500/10 text-violet-600 dark:text-violet-400';
         }
-        return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
+        return 'bg-violet-500/10 text-violet-600 dark:text-violet-400';
+    };
+
+    // Cash-impact styling for the Total Amount column:
+    // outflow (reduces $CASH) → red/negative, inflow (adds $CASH) → green/positive,
+    // neutral (no cash change) → grey/positive.
+    const OUTFLOW_TYPES = new Set(['buy', 'withdrawal', 'fees', 'fee', 'tax', 'withholding tax', 'buy to cover']);
+    const INFLOW_TYPES  = new Set(['sell', 'deposit', 'dividend', 'interest', 'short sell']);
+
+    const shouldHideQtyAndPrice = (tx: Transaction) => {
+        if (!tx.Quantity || tx.Quantity === 0) return true;
+        
+        // If it's a pure cash entity, per-share breakdown doesn't make sense
+        if (tx.Symbol?.toUpperCase() === '$CASH' || tx.Symbol?.toUpperCase() === 'CASH') {
+            return true;
+        }
+
+        const t = (tx.Type || '').toLowerCase().trim();
+        
+        // If broker provided a dummy Qty=1 and the price exactly matches the total amount
+        if (tx.Quantity === 1) {
+            if (['dividend', 'interest', 'fees', 'fee', 'tax', 'withholding tax', 'deposit', 'withdrawal', 'transfer'].includes(t)) {
+                if (tx["Price/Share"] && tx["Total Amount"]) {
+                    if (Math.abs(tx["Price/Share"] - Math.abs(tx["Total Amount"])) < 0.01) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // For dividends, if there is a Buy/Reinvest transaction on the exact same date, 
+        // same symbol, with the exact same Qty and Price, then this is the cash leg of a DRIP 
+        // and the Qty/Price should be hidden here to avoid confusion.
+        if (t === 'dividend' && tx.Quantity > 0 && tx["Price/Share"] !== undefined) {
+            const hasMatchingBuy = (transactions || []).some(other => {
+                if (other === tx || other.id === tx.id) return false;
+                if (other.Date !== tx.Date || other.Symbol !== tx.Symbol) return false;
+                
+                const otherT = (other.Type || '').toLowerCase().trim();
+                if (!['buy', 'buy to cover', 'reinvest'].includes(otherT)) return false;
+                
+                // Compare Qty and Price (allow tiny float differences)
+                if (!other.Quantity || !other["Price/Share"]) return false;
+                if (Math.abs(other.Quantity - tx.Quantity) > 0.001) return false;
+                if (Math.abs(other["Price/Share"] - tx["Price/Share"]) > 0.001) return false;
+                
+                return true;
+            });
+            if (hasMatchingBuy) {
+                return true;
+            }
+        }
+        
+        return false;
+    };
+
+    const getTotalAmountStyle = (tx: Transaction): { style: React.CSSProperties; display: string } => {
+        const total = tx['Total Amount'];
+        if (!total) return { style: { opacity: 0.3 }, display: '-' };
+        const mag = Math.abs(total);
+        const formatted = mag.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const txType = (tx.Type || '').toLowerCase().trim();
+        if (OUTFLOW_TYPES.has(txType)) {
+            return { style: { color: '#dc2626' }, display: `-${formatted}` };  // red
+        }
+        if (INFLOW_TYPES.has(txType)) {
+            return { style: { color: '#16a34a' }, display: formatted };         // green
+        }
+        // neutral: Transfer, Split, Spin-off, etc.
+        return { style: { opacity: 0.6 }, display: formatted };                 // grey
     };
 
     return (
@@ -1280,13 +1363,16 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                                 <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
                                             </td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                                {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? <span className="text-muted-foreground/30">-</span> : tx.Quantity}
+                                                {shouldHideQtyAndPrice(tx) ? <span className="text-muted-foreground/30">-</span> : tx.Quantity}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                                {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? <span className="text-muted-foreground/30">-</span> : tx["Price/Share"]?.toFixed(2)}
+                                                {shouldHideQtyAndPrice(tx) ? <span className="text-muted-foreground/30">-</span> : tx["Price/Share"]?.toFixed(2)}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
-                                                {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-muted-foreground/30">-</span>}
+                                            <td className="px-4 py-3 text-sm text-right font-medium tabular-nums">
+                                                {(() => {
+                                                    const s = getTotalAmountStyle(tx);
+                                                    return <span style={s.style}>{s.display}</span>;
+                                                })()}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
                                                 {tx.Commission ? tx.Commission.toFixed(2) : <span className="text-muted-foreground/30">-</span>}
@@ -1373,8 +1459,11 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                 </div>
 
                                 <div className="text-muted-foreground">Amount</div>
-                                <div className="text-right font-bold text-foreground">
-                                    {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'} {tx["Local Currency"]}
+                                <div className="text-right font-bold">
+                                    {(() => {
+                                        const s = getTotalAmountStyle(tx);
+                                        return <span style={s.style}>{s.display}</span>;
+                                    })()} {tx["Local Currency"]}
                                 </div>
 
                                 {tx.Commission > 0 && (
