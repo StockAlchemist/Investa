@@ -86,10 +86,25 @@ function canonicalType(raw: string): string {
 const OUTFLOW_TYPES = new Set(['buy', 'withdrawal', 'fees', 'fee', 'tax', 'withholding tax', 'buy to cover']);
 const INFLOW_TYPES = new Set(['sell', 'deposit', 'dividend', 'interest', 'short sell']);
 
+function isCashSymbol(symbol: string | undefined): boolean {
+    const s = (symbol || '').toUpperCase();
+    return s === '$CASH' || s === 'CASH' || s.startsWith('CASH (');
+}
+
+// The magnitude shown in the Total column. Transfers are stored with
+// Total Amount = 0 (they're cash-neutral across the whole portfolio), so the
+// moved value has to be reconstructed: cash rows carry it in Quantity, stock
+// rows in Quantity × Price. Non-zero Total Amount is always authoritative.
+function displayAmount(tx: Transaction): number {
+    const total = Math.abs(Number(tx['Total Amount']) || 0);
+    if (total > 1e-9) return total;
+    if (isCashSymbol(tx.Symbol)) return Math.abs(Number(tx.Quantity) || 0);
+    return Math.abs((Number(tx.Quantity) || 0) * (Number(tx['Price/Share']) || 0));
+}
+
 function getTotalAmountStyle(tx: Transaction): { className: string; display: string } {
-    const total = tx['Total Amount'];
-    if (!total) return { className: 'text-muted-foreground/30', display: '-' };
-    const mag = Math.abs(total);
+    const mag = displayAmount(tx);
+    if (mag < 1e-9) return { className: 'text-muted-foreground/30', display: '-' };
     const formatted = mag.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const txType = (tx.Type || '').toLowerCase().trim();
     if (OUTFLOW_TYPES.has(txType)) {

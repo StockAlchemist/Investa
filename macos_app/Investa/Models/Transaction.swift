@@ -107,10 +107,21 @@ extension Transaction {
         }
     }
 
+    /// The magnitude shown in the Total column. Transfers are stored with
+    /// Total Amount = 0 (they're cash-neutral across the whole portfolio), so
+    /// the moved value has to be reconstructed: cash rows carry it in Quantity,
+    /// stock rows in Quantity × Price. A non-zero Total Amount is authoritative.
+    var displayAmountMagnitude: Double {
+        let total = abs(totalAmount)
+        if total > 1e-9 { return total }
+        if Self.isCashSymbol(symbol) { return abs(quantity) }
+        return abs(quantity * pricePerShare)
+    }
+
     /// Total amount formatted for display: negative for outflows, positive
     /// (absolute value) for inflows and neutral types.
     var displayTotalAmount: Double {
-        let mag = abs(totalAmount)
+        let mag = displayAmountMagnitude
         switch cashImpact {
         case .outflow:          return -mag
         case .inflow, .neutral: return mag
@@ -139,9 +150,8 @@ extension Transaction {
 
     var shouldHideQtyAndPrice: Bool {
         if quantity == 0 { return true }
-        
-        let sym = symbol.uppercased()
-        if sym == "$CASH" || sym == "CASH" {
+
+        if Self.isCashSymbol(symbol) {
             return true
         }
 
