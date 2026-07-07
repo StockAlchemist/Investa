@@ -98,27 +98,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         );
     }
 
-    if (symbol.toLowerCase().startsWith('scb')) {
-        const effectiveSize = typeof size === 'number' ? size : 24;
-        return (
-            <div
-                className={cn(
-                    "overflow-hidden rounded-full bg-[#4E2A84] flex items-center justify-center",
-                    className
-                )}
-                style={{ width: effectiveSize, height: effectiveSize }}
-            >
-                <img
-                    src="scb-logo.png"
-                    alt="SCB"
-                    width={effectiveSize}
-                    height={effectiveSize}
-                    className="object-cover"
-                />
-            </div>
-        );
-    }
-    if (symbol.toLowerCase().startsWith('es')) {
+
+    if (symbol.startsWith('ES-')) {
         const effectiveSize = typeof size === 'number' ? size : 24;
         return (
             <div
@@ -281,6 +262,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         `https://financialmodelingprep.com/image-stock/${symbol}.png`,
         effectiveDomain ? `https://logo.clearbit.com/${effectiveDomain}` : null,
         effectiveDomain ? `https://www.google.com/s2/favicons?domain=${effectiveDomain}&sz=128` : null,
+        symbol.startsWith('SCB') ? 'scb-logo.png' : null,
     ].filter(Boolean) as string[];
 
     const handleError = () => {
@@ -335,9 +317,11 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
     const forcedDarkBackgrounds = ['CBOE', 'SLB', 'UBER', 'ULTA', 'WSM', 'WYNN', 'NKE', 'ORCL', 'DOCU', 'DTM'];
     const needsDarkBg = forcedDarkBackgrounds.includes(symbol);
 
-    const bgColor = isDarkIcon || needsDarkBg
-        ? 'bg-black'
-        : (isDark ? 'bg-zinc-800' : (symbol === 'V' ? 'bg-white' : 'bg-zinc-100'));
+    const bgColor = currentSource === 'scb-logo.png'
+        ? 'bg-[#4E2A84]'
+        : (isDarkIcon || needsDarkBg
+            ? 'bg-black'
+            : (isDark ? 'bg-zinc-800' : (symbol === 'V' ? 'bg-white' : 'bg-zinc-100')));
 
     return (
         <img

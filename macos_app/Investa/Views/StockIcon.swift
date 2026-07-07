@@ -92,10 +92,16 @@ struct StockIcon: View {
                 cashMonogram
             } else if let localImg = PlatformImage(named: symbol.lowercased()) {
                 logoTile(Image(platformImage: localImg))
+            } else if symbol.uppercased().hasPrefix("ES-"), let localImg = PlatformImage(named: "es-logo") {
+                logoTile(Image(platformImage: localImg), bgColor: Color(red: 237/255, green: 28/255, blue: 36/255))
             } else if let logo = loader.image {
                 logoTile(Image(platformImage: logo))
             } else if loader.resolved {
-                monogram
+                if symbol.uppercased().hasPrefix("SCB"), let localImg = PlatformImage(named: "scb-logo") {
+                    logoTile(Image(platformImage: localImg), bgColor: Color(red: 78/255, green: 42/255, blue: 132/255))
+                } else {
+                    monogram
+                }
             } else {
                 RoundedRectangle(cornerRadius: size * 0.22).fill(.gray.opacity(0.15))
             }
@@ -113,13 +119,13 @@ struct StockIcon: View {
     /// the bundled Apple mark, which touches every edge) clear of the rounded
     /// corners, so they no longer look cropped. White fills the whole frame so
     /// the corners stay clean regardless of the logo's own margins.
-    private func logoTile(_ image: Image) -> some View {
+    private func logoTile(_ image: Image, bgColor: Color = .white) -> some View {
         image
             .resizable()
             .aspectRatio(contentMode: .fit)
             .padding(size * 0.16)
             .frame(width: size, height: size)
-            .background(Color.white)
+            .background(bgColor)
     }
 
     private var monogram: some View {
