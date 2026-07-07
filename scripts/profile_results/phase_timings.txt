@@ -1,0 +1,12 @@
+Total wall-clock time: 3.13s
+Result rows: 8774
+Status: Success (All Accounts) [Inputs prepared (All Accounts); Raw adjusted data loaded/fetched; Using pre-calculated daily val...
+────────────────────────────────────────────────────────────────────────
+Phase                                                   Time (s)      %
+────────────────────────────────────────────────────────────────────────
+Phase 3: MarketDataProvider.get_historical_data             1.53  49.0%
+Phase 5: _load_or_calculate_daily_results                   0.71  22.7%
+Phase 1: _prepare_historical_inputs                         0.05   1.7%
+Phase 3b: MarketDataProvider.get_historical_fx_rates        0.05   1.6%
+Phase 7: _calculate_accumulated_gains_and_resample          0.04   1.3%
+────────────────────────────────────────────────────────────────────────

@@ -1,16 +1,35 @@
 import pandas as pd
 from datetime import date, datetime, timedelta
+import time as _time
 import pandas_market_calendars as mcal
 import logging
 
 # Cache for the NYSE calendar
 _NYSE_CAL = None
 
+# Per-process cache for calendar.schedule() results (key → (df, timestamp)).
+# Avoids recomputing the full NYSE holiday table on every call (~0.2s).
+_SCHEDULE_CACHE: dict = {}
+_SCHEDULE_CACHE_TTL = 60  # seconds
+
 def get_nyse_calendar():
     global _NYSE_CAL
     if _NYSE_CAL is None:
         _NYSE_CAL = mcal.get_calendar('NYSE')
     return _NYSE_CAL
+
+def _cached_schedule(cal, start_date, end_date):
+    """Return cal.schedule() with a short-lived per-process cache."""
+    key = (start_date, end_date)
+    now = _time.monotonic()
+    cached = _SCHEDULE_CACHE.get(key)
+    if cached is not None:
+        cached_df, ts = cached
+        if now - ts < _SCHEDULE_CACHE_TTL:
+            return cached_df
+    result = cal.schedule(start_date=start_date, end_date=end_date)
+    _SCHEDULE_CACHE[key] = (result, now)
+    return result
 
 def get_est_now() -> pd.Timestamp:
     """
@@ -44,7 +63,7 @@ def get_latest_trading_date() -> date:
     
     # Check if market is open today or has been open today
     # We look at the last 5 days to be safe (covering long weekends)
-    schedule = cal.schedule(start_date=today - timedelta(days=10), end_date=today)
+    schedule = _cached_schedule(cal, start_date=today - timedelta(days=10), end_date=today)
     
     if schedule.empty:
         # Should not happen if we look back 10 days, but safety first
@@ -84,7 +103,7 @@ def is_market_open() -> bool:
     
     # schedule covers the specific times (market_open, market_close)
     try:
-        schedule = cal.schedule(start_date=today, end_date=today)
+        schedule = _cached_schedule(cal, start_date=today, end_date=today)
         if schedule.empty:
             return False
             
@@ -115,5 +134,5 @@ def is_tradable_day(dt: date | datetime | pd.Timestamp) -> bool:
     cal = get_nyse_calendar()
     # schedule() returns a DataFrame with trading days as the index
     # We check if the specific date exists in the schedule
-    schedule = cal.schedule(start_date=check_date, end_date=check_date)
+    schedule = _cached_schedule(cal, start_date=check_date, end_date=check_date)
     return not schedule.empty

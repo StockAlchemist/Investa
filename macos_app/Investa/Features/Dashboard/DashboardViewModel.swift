@@ -61,7 +61,7 @@ final class DashboardViewModel: ObservableObject {
         } catch is CancellationError {
             return
         } catch { /* non-fatal */ }
-
+ 
         async let summaryResult: SummaryResponse = api.get(
             "/summary", query: [curItem, closedItem] + accountItems)
         async let holdingsResult: [Holding] = api.get(

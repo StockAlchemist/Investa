@@ -644,8 +644,13 @@ def _period_pct_return(price: pd.Series, start: date) -> Optional[float]:
         return None
     if not isinstance(s.index, pd.DatetimeIndex):
         s.index = pd.to_datetime(s.index)
+        
+    start_ts = pd.Timestamp(start)
+    if getattr(s.index, "tz", None) is not None:
+        start_ts = start_ts.tz_localize(s.index.tz)
+        
     last = s.iloc[-1]
-    prior = s.loc[s.index <= pd.Timestamp(start)]
+    prior = s.loc[s.index <= start_ts]
     base = prior.iloc[-1] if not prior.empty else s.iloc[0]
     if pd.isna(base) or pd.isna(last) or base == 0:
         return None

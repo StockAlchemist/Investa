@@ -3298,6 +3298,10 @@ class MarketDataProvider:
                      df_clean = price_series.to_frame(name="price")
                      if "Volume" in df_db.columns:
                          df_clean["Volume"] = df_db["Volume"]
+                     # Normalize index to UTC once at the source so downstream
+                     # code (valuation, standardization) doesn't repeat this.
+                     if not isinstance(df_clean.index, pd.DatetimeIndex) or df_clean.index.tz is None:
+                         df_clean.index = pd.to_datetime(df_clean.index, utc=True)
                      historical_prices_yf_adjusted[sym] = df_clean
                      
         # Merge static data back in

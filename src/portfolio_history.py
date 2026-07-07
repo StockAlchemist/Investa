@@ -946,10 +946,10 @@ def _value_daily_holdings_vectorized(
     # Initialize with NaNs
     daily_prices_aligned = np.full((num_days, num_symbols), np.nan, dtype=np.float64)
     
-
-    
-    # Iterate symbols to fill prices
-    # This loop is cheap (N_symbols ~ hundreds)
+    # Collect price series by sym_id for bulk reindexing (avoids per-symbol
+    # .reindex() calls that each iterate the full DatetimeIndex — the #2
+    # profiling hotspot at ~0.55s).
+    price_series_by_id: dict = {}
     for sym_id in range(num_symbols):
         symbol = id_to_symbol.get(sym_id)
         if symbol == CASH_SYMBOL_CSV:
@@ -959,9 +959,6 @@ def _value_daily_holdings_vectorized(
         if yf_symbol and yf_symbol in historical_prices_yf_unadjusted:
             price_df = historical_prices_yf_unadjusted[yf_symbol]
             if not price_df.empty:
-                # Prefer "price" (already set to raw Close by normalize_df), then
-                # raw Close, then Adj Close. Adj Close is dividend-adjusted and
-                # would deflate historical valuations.
                 col_to_use = None
                 if "price" in price_df.columns:
                     col_to_use = "price"
@@ -971,28 +968,27 @@ def _value_daily_holdings_vectorized(
                     col_to_use = "Adj Close"
                 
                 if col_to_use:
-                    # Reindex to date_range
-                    price_series = price_df[col_to_use]
-                    # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
-                    price_series.index = pd.to_datetime(price_series.index, utc=True)
-                
-                # Reindex with interpolation to smooth gaps (especially the 9:30 AM anchor gap)
-                # We use method=None in reindex to create NaNs, then interpolate them.
-                is_intra = any(x in interval for x in ["m", "h", "min"])
-                
-                if is_intra:
-                    # 1. Reindex to the full index (adds NaNs for missing minutes/hours)
-                    # 2. Interpolate linearly based on time
-                    # 3. ffill/bfill for any remaining edges
-                    aligned_series = price_series.reindex(date_range).interpolate(method='time').ffill().bfill()
-                else:
-                    # Standard daily/weekly: Use linear interpolation to smooth gaps
-                    # instead of simple ffill, which prevents "price restoration" spikes.
-                    aligned_series = price_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
+                    ps = price_df[col_to_use]
+                    # Ensure UTC (may already be done by market_data.py)
+                    if not isinstance(ps.index, pd.DatetimeIndex) or ps.index.tz is None:
+                        ps = ps.copy()
+                        ps.index = pd.to_datetime(ps.index, utc=True)
+                    price_series_by_id[sym_id] = ps
 
-                
-                daily_prices_aligned[:, sym_id] = aligned_series.values
-                
+    # Bulk reindex + interpolate in one DataFrame operation
+    if price_series_by_id:
+        is_intra = any(x in interval for x in ["m", "h", "min"])
+        interp_method = 'time' if is_intra else 'linear'
+        price_matrix = (
+            pd.DataFrame(price_series_by_id)
+            .reindex(date_range)
+            .interpolate(method=interp_method)
+            .ffill()
+            .bfill()
+        )
+        for sym_id in price_series_by_id:
+            daily_prices_aligned[:, sym_id] = price_matrix[sym_id].values
+
 
 
     # 2. Check for missing prices and fill with Last Price if valid
