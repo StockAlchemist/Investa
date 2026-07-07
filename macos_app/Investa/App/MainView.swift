@@ -74,6 +74,13 @@ struct MainView: View {
             }
             .sheet(item: $paletteStock) { StockDetailView(symbol: $0.id, currency: appState.displayCurrency) }
             .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateToSection)) { note in
+                if let section = note.object as? AppSection { selection = section }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in showingSettings = true }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleDarkMode)) { _ in
+                appearanceSet = true; forceDark.toggle()
+            }
             // Poll for fresh prices only while the app is foregrounded (the poll
             // itself no-ops unless the market is open).
             .onChange(of: scenePhase, initial: true) { _, phase in
