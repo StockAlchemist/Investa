@@ -755,8 +755,8 @@ struct HoldingsTableView: View {
                         Text(pctString(dayChgPct))
                             .font(.system(size: 11, weight: .bold))
                             .padding(.horizontal, 4).padding(.vertical, 2)
-                            .background(heatmapColor(dayChgPct).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                            .foregroundStyle(heatmapColor(dayChgPct))
+                            .background(glColor(dayChgPct).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                            .foregroundStyle(glColor(dayChgPct))
                     }
                 }
             }
@@ -833,7 +833,7 @@ struct HoldingsTableView: View {
             Spacer()
             Text("\(Fmt.number(qty)) shs").font(.caption2).foregroundStyle(.secondary)
             Spacer()
-            Text(format(g, "Unreal. G/L")).font(.caption2).monospacedDigit().foregroundStyle(heatmapColor(g))
+            Text(format(g, "Unreal. G/L")).font(.caption2).monospacedDigit().foregroundStyle(glColor(g))
         }
     }
 
