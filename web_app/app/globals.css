@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
 
+/*
+ * Numbers render in the platform system font (SF Pro on macOS/iOS) with
+ * fixed-width figures — the web equivalent of SwiftUI's .monospacedDigit()
+ * used throughout the native apps. Deliberately unlayered so it also wins
+ * over `font-mono` on elements marked `tabular-nums` (the native apps use
+ * SF Pro tabular digits, not a monospace face, in those tables).
+ */
+.tabular-nums {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
