@@ -996,6 +996,13 @@ def _value_daily_holdings_vectorized(
 
     # 3. Prepare aligned FX array (N_days, N_accounts)
     daily_fx_aligned = np.full((num_days, num_accounts), np.nan, dtype=np.float64)
+
+    # id_to_account holds normalized (uppercased/trimmed) names, but the
+    # configured map keeps display case (e.g. "Kim Eng") — normalize the keys
+    # so mixed-case accounts don't silently fall back to default_currency.
+    account_currency_map_normalized = {
+        str(k).upper().strip(): v for k, v in account_currency_map.items()
+    }
     
     # Cache FX series to avoid re-fetching for same currency
     currency_fx_series_cache = {}
@@ -1058,7 +1065,7 @@ def _value_daily_holdings_vectorized(
             continue
             
         acc_name = id_to_account.get(acc_id)
-        local_curr = account_currency_map.get(acc_name, default_currency)
+        local_curr = account_currency_map_normalized.get(acc_name, default_currency)
         local_curr_upper = local_curr.upper()
         
         if local_curr in currency_fx_series_cache:
@@ -2260,6 +2267,36 @@ def _load_or_calculate_daily_results(
     return daily_df, cache_valid_daily_results, status_update
 
 
+# Entries embed the transaction hash and an end date anchored to "today", so a
+# new entry (~10-90 MB × 3 arrays) is minted every day and on every transaction
+# edit. Without pruning the directory grows unbounded (it reached 174 GB and
+# filled the disk in July 2026).
+_HOLDINGS_CACHE_MAX_AGE_DAYS = 7
+
+
+def _prune_holdings_cache(holdings_cache_dir: str, max_age_days: int = _HOLDINGS_CACHE_MAX_AGE_DAYS):
+    """Deletes L1 holdings-cache files older than max_age_days.
+
+    Runs only on cache-miss saves (roughly once per user per day), so a full
+    directory listing is cheap.
+    """
+    try:
+        cutoff = time.time() - max_age_days * 86400
+        removed = 0
+        with os.scandir(holdings_cache_dir) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_file() and entry.stat().st_mtime < cutoff:
+                        os.remove(entry.path)
+                        removed += 1
+                except OSError:
+                    continue
+        if removed:
+            logging.info(f"L1 Cache PRUNE: removed {removed} stale cache files.")
+    except Exception as e:
+        logging.warning(f"L1 Cache PRUNE Error: {e}")
+
+
 @profile
 def _get_or_calculate_all_daily_holdings(
     all_transactions_df: pd.DataFrame,
@@ -2461,6 +2498,7 @@ def _get_or_calculate_all_daily_holdings(
             # logging.info("L1 Cache SAVE: Saved calculated daily holdings to cache.")
         except Exception as e:
             logging.error(f"L1 Cache SAVE Error: Failed to save numpy arrays: {e}")
+        _prune_holdings_cache(holdings_cache_dir)
 
     return daily_holdings_qty, daily_cash_balances, daily_last_prices
 
