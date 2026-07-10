@@ -196,7 +196,10 @@ struct GlobalControlBar<Trailing: View>: View {
 
     private var orderedGroups: [(name: String, accounts: [String])] {
         let g = appState.accountGroups
-        let order = appState.accountGroupOrder.isEmpty ? Array(g.keys).sorted() : appState.accountGroupOrder
+        var order = appState.accountGroupOrder.isEmpty ? Array(g.keys).sorted() : appState.accountGroupOrder
+        // Groups missing from the saved order (e.g. newly created) go last,
+        // matching the web selector, instead of being dropped.
+        order += g.keys.filter { !order.contains($0) }.sorted()
         return order.compactMap { name in g[name].map { (name, $0) } }
     }
 

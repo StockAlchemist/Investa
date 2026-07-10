@@ -92,10 +92,22 @@ final class AppState: ObservableObject {
     /// Background poll that keeps prices fresh while the market is open.
     private var autoRefreshTask: Task<Void, Never>?
     private let autoRefreshInterval: UInt64 = 60_000_000_000  // 60s
+    private var refreshCancellable: AnyCancellable?
 
     init(api: APIClient = .shared) {
         self.api = api
         loadVisiblePersisted()
+        // Re-sync account/group lists whenever a refresh is requested, so
+        // accounts added, renamed, or closed on the backend appear without
+        // relaunching the app. Tab data reloads are handled by each view.
+        refreshCancellable = NotificationCenter.default
+            .publisher(for: .refreshRequested)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.didLoadSettings else { return }
+                    await self.loadSettings(initial: false)
+                }
+            }
     }
 
     // MARK: - Layout configurator (per-tab visible sections)
@@ -153,20 +165,26 @@ final class AppState: ObservableObject {
     }
 
     /// Load currency options, account list, and saved defaults from the backend.
-    func loadSettings() async {
+    /// `initial: false` re-syncs the account/group lists (e.g. after accounts are
+    /// added, renamed, or closed on the backend) without clobbering in-session
+    /// UI state: display currency, show-closed, benchmarks, and the current
+    /// account selection are only applied on the first load.
+    func loadSettings(initial: Bool = true) async {
         do {
             let settings: AppSettings = try await api.get("/settings")
             availableCurrencies = settings.availableCurrencies?.isEmpty == false
                 ? settings.availableCurrencies! : ["USD"]
             accountGroups = settings.accountGroups ?? [:]
             accountGroupOrder = settings.accountGroupOrder ?? Array(accountGroups.keys).sorted()
-            if let cur = settings.displayCurrency, availableCurrencies.contains(cur) {
-                displayCurrency = cur
-            } else if !availableCurrencies.contains(displayCurrency) {
-                displayCurrency = availableCurrencies.first ?? "USD"
+            if initial {
+                if let cur = settings.displayCurrency, availableCurrencies.contains(cur) {
+                    displayCurrency = cur
+                } else if !availableCurrencies.contains(displayCurrency) {
+                    displayCurrency = availableCurrencies.first ?? "USD"
+                }
+                showClosed = settings.showClosed ?? false
+                benchmarks = settings.benchmarks ?? []
             }
-            showClosed = settings.showClosed ?? false
-            benchmarks = settings.benchmarks ?? []
             targetAllocation = settings.targetAllocation ?? [:]
             // Accounts with a closure date on/before today are "closed".
             let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
@@ -187,8 +205,13 @@ final class AppState: ObservableObject {
             allAccounts = accounts.sorted()
             accountCurrencyMap = settings.accountCurrencyMap ?? [:]
             accountCashModeMap = settings.accountCashModeMap ?? [:]
-            if let saved = settings.selectedAccounts, !saved.isEmpty {
-                selectedAccounts = Set(saved.filter { allAccounts.contains($0) })
+            if initial {
+                if let saved = settings.selectedAccounts, !saved.isEmpty {
+                    selectedAccounts = Set(saved.filter { allAccounts.contains($0) })
+                }
+            } else {
+                // Drop selections that no longer exist (renamed/split accounts).
+                selectedAccounts = selectedAccounts.filter { allAccounts.contains($0) }
             }
             await fetchFXRate()
             await fetchIndices()
@@ -196,7 +219,7 @@ final class AppState: ObservableObject {
         } catch {
             // Non-fatal: fall back to defaults so the dashboard still loads.
             didLoadSettings = true
-            await fetchIndices()
+            if initial { await fetchIndices() }
         }
     }
 

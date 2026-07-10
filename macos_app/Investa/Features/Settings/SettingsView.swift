@@ -38,6 +38,22 @@ final class SettingsViewModel: ObservableObject {
         } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
     }
 
+    /// Save account groups and their display order together (they must stay in
+    /// sync — the pickers render groups in `account_group_order`).
+    func updateGroups(_ groups: [String: [String]], order: [String]) async {
+        struct Body: Encodable {
+            let account_groups: [String: [String]]
+            let account_group_order: [String]
+        }
+        do {
+            let _: StatusResponse = try await api.send(
+                method: "POST", path: "/settings/update",
+                body: Body(account_groups: groups, account_group_order: order))
+            status = "Groups saved."
+            await load()
+        } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+
     func clearCache() async {
         do { let _: StatusResponse = try await api.send(method: "POST", path: "/clear_cache"); status = "Cache cleared." }
         catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
