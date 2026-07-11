@@ -541,6 +541,17 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     if not has_positive_flow:
         logging.debug(f"DEBUG IRR: Fail - No positive flows found: {cash_flows}")
         return np.nan
+    # Case 4: Positive flows are negligible vs. invested capital -> IRR is
+    # effectively -100% and no root exists above -1, so the solver cannot
+    # succeed. Common for pass-through cash buckets (deposits immediately
+    # spent on purchases, leaving a residual balance of a few cents).
+    sum_pos = sum(cf for cf in non_zero_cfs_list if cf > 0)
+    sum_neg = -sum(cf for cf in non_zero_cfs_list if cf < 0)
+    if sum_neg > 0 and sum_pos / sum_neg < 1e-6:
+        logging.debug(
+            f"DEBUG IRR: Effective total loss (returned {sum_pos:.4f} of {sum_neg:.2f}); skipping solver."
+        )
+        return np.nan
 
     # --- ADDED: Normalize Cash Flows ---
     # Solver can fail with very large numbers (e.g. JPY, VND).
@@ -587,19 +598,38 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         except Exception:
             pass
 
-        # 2. If Newton fails, fallback to Brentq with expanding brackets
+        # 2. If Newton fails, scan the NPV curve across the feasible rate range
+        # to bracket a root, then solve with Brentq. Unlike fixed brackets,
+        # this also finds roots where NPV has the same sign at both extremes
+        # (paired roots), and it tells us definitively when NO root exists.
+        found_bracket = False
         if np.isnan(irr_result):
-            for lb in [-0.9, -0.99, -0.999, -0.99999, -0.99999999]:
+            scan_grid = np.concatenate(
+                [
+                    -1.0 + np.logspace(-8, 0, 40),  # -0.99999999 .. 0.0
+                    np.linspace(0.1, 10.0, 34)[1:],  # 0.4 .. 10
+                    np.logspace(1.05, 5, 15),  # ~11 .. 100000
+                ]
+            )
+            prev_r = None
+            prev_npv = None
+            for r_scan in scan_grid:
                 try:
-                    upper_bound = 100000.0
-                    npv_low = calculate_npv(lb, dates, solver_flows)
-                    npv_high = calculate_npv(upper_bound, dates, solver_flows)
-                    
-                    if pd.notna(npv_low) and pd.notna(npv_high) and npv_low * npv_high < 0:
+                    npv = calculate_npv(r_scan, dates, solver_flows)
+                except Exception:
+                    npv = np.nan
+                if (
+                    prev_npv is not None
+                    and pd.notna(npv)
+                    and pd.notna(prev_npv)
+                    and npv * prev_npv < 0
+                ):
+                    found_bracket = True
+                    try:
                         res = optimize.brentq(
                             calculate_npv,
-                            a=lb,
-                            b=upper_bound,
+                            a=prev_r,
+                            b=r_scan,
                             args=(dates, solver_flows),
                             xtol=1e-6,
                             rtol=1e-6,
@@ -608,8 +638,19 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
                         if np.isfinite(res) and res > -1.0:
                             irr_result = res
                             break
-                except Exception:
-                    continue
+                    except Exception:
+                        pass
+                if pd.notna(npv):
+                    prev_r, prev_npv = r_scan, npv
+
+        # NPV never changes sign anywhere in (-1, 100000] -> no IRR exists for
+        # this flow pattern (e.g. a net-loss series whose latest flows are
+        # negative). That is a property of the flows, not a solver failure.
+        if np.isnan(irr_result) and not found_bracket:
+            logging.debug(
+                "DEBUG IRR: No root exists for these flows (NPV never crosses zero); returning NaN."
+            )
+            return np.nan
 
     # 4. Final Validation and Return
     if not (
