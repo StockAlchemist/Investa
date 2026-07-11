@@ -192,6 +192,12 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
 
                         {availableAccounts
                             .filter(account => account !== 'All Accounts')
+                            .sort((a, b) => {
+                                const aClosed = closedSet.has(a) ? 1 : 0;
+                                const bClosed = closedSet.has(b) ? 1 : 0;
+                                if (aClosed !== bClosed) return aClosed - bClosed;
+                                return a.localeCompare(b);
+                            })
                             .map((account) => {
                                 const isSelected = selectedAccounts.includes(account);
                                 const isClosed = closedSet.has(account);

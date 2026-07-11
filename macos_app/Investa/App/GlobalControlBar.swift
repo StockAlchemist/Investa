@@ -205,7 +205,15 @@ struct GlobalControlBar<Trailing: View>: View {
 
     private var accountMenu: some View {
         PopoverMenu(minWidth: 220, maxHeight: 440) {
-            let individuals = appState.allAccounts.filter { $0 != "All Accounts" }
+            // Open accounts first, then closed, each alphabetical (matches the web selector).
+            let individuals = appState.allAccounts
+                .filter { $0 != "All Accounts" }
+                .sorted { a, b in
+                    let aClosed = appState.closedAccounts.contains(a)
+                    let bClosed = appState.closedAccounts.contains(b)
+                    if aClosed != bClosed { return !aClosed }
+                    return a.localizedStandardCompare(b) == .orderedAscending
+                }
             MenuToggleRow(title: "All Accounts", isOn: appState.selectedAccounts.isEmpty, dismissOnTap: true) {
                 appState.selectedAccounts = []
             }
