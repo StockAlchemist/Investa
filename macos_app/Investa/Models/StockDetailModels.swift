@@ -47,6 +47,49 @@ struct Fundamentals: Codable, Sendable {
             v.doubleValue.map { (k, $0) }
         }.sorted { $0.1 > $1.1 }
     }
+
+    /// Next scheduled report, derived server-side (see `server/calendar_events.py`).
+    var upcomingEarnings: UpcomingEarnings? {
+        UpcomingEarnings(json: raw["upcoming_events"]?["earnings"])
+    }
+    /// Next dividend, per share and in the stock's own currency.
+    var upcomingDividend: UpcomingDividend? {
+        UpcomingDividend(json: raw["upcoming_events"]?["dividend"])
+    }
+}
+
+/// An announced or projected earnings report for one symbol.
+struct UpcomingEarnings: Sendable {
+    let date: String
+    let dateEnd: String?
+    let status: String
+    let epsEstimate: Double?
+    let epsYearAgo: Double?
+
+    init?(json: JSONValue?) {
+        guard let date = json?["earnings_date"]?.stringValue, !date.isEmpty else { return nil }
+        self.date = date
+        dateEnd = json?["earnings_date_end"]?.stringValue
+        status = json?["status"]?.stringValue ?? "estimated"
+        epsEstimate = json?["eps_estimate"]?.doubleValue
+        epsYearAgo = json?["eps_year_ago"]?.doubleValue
+    }
+}
+
+/// An announced or projected dividend payment for one symbol.
+struct UpcomingDividend: Sendable {
+    let date: String
+    let exDate: String?
+    let amountPerShare: Double?
+    let status: String
+
+    init?(json: JSONValue?) {
+        guard let date = json?["dividend_date"]?.stringValue, !date.isEmpty else { return nil }
+        self.date = date
+        exDate = json?["ex_dividend_date"]?.stringValue
+        amountPerShare = json?["amount_per_share"]?.doubleValue
+        status = json?["status"]?.stringValue ?? "estimated"
+    }
 }
 
 // MARK: - Price history (`GET /api/stock_history/{symbol}`)

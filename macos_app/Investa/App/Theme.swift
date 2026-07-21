@@ -23,6 +23,9 @@ enum Theme {
     /// FX overlay accent (amber-500), matching the web performance graph's FX line.
     static let fx = Color(hex: 0xf59e0b)
 
+    /// Earnings-event accent (violet-500), matching the web Events card.
+    static let earnings = Color(hex: 0x8b5cf6)
+
     static let cardRadius: CGFloat = 14
     static let heroRadius: CGFloat = 16
     static let gutter: CGFloat = 16

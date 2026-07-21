@@ -749,6 +749,18 @@ def get_fundamentals_endpoint(
         except Exception as e_live:
             logging.debug(f"Live price piggyback skipped for {symbol}: {e_live}")
 
+        # Next earnings report / dividend for the detail modal's Overview tab.
+        # Derived from the blob we already hold, so it costs no extra fetch and
+        # agrees with the dashboard's Upcoming Events panel.
+        try:
+            from server.calendar_events import upcoming_events
+
+            fundamental_data["upcoming_events"] = upcoming_events(
+                symbol, fundamental_data, date.today()
+            )
+        except Exception as e_events:
+            logging.debug(f"Upcoming-events derivation skipped for {symbol}: {e_events}")
+
         return clean_nans(fundamental_data)
     except Exception as e:
         logging.error(f"Error fetching fundamentals for {yf_symbol}: {e}")

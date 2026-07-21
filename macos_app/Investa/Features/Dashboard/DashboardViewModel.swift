@@ -19,6 +19,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var health: PortfolioHealth?
     @Published var attribution: Attribution?
     @Published var dividendEvents: [DividendEvent] = []
+    @Published var earningsEvents: [EarningsEvent] = []
     @Published var indices: [IndexQuote] = []
 
     @Published var isLoading = false
@@ -85,6 +86,9 @@ final class DashboardViewModel: ObservableObject {
             "/attribution", query: [curItem, closedItem] + accountItems)
         async let divCalResult: [DividendEvent] = api.get(
             "/dividend_calendar", query: [curItem] + accountItems)
+        // No amounts in the payload, so no currency query item.
+        async let earningsCalResult: [EarningsEvent] = api.get(
+            "/earnings_calendar", query: accountItems)
 
         // Core data — surface its error to the user.
         do {
@@ -108,6 +112,7 @@ final class DashboardViewModel: ObservableObject {
         health = try? await healthResult
         attribution = try? await attrResult
         dividendEvents = (try? await divCalResult) ?? []
+        earningsEvents = (try? await earningsCalResult) ?? []
 
         // Market Today index strip (independent of the selection).
         if let map: [String: IndexQuote] = try? await api.get("/indices") {

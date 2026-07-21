@@ -113,12 +113,14 @@ struct DashboardView: View {
         let events = vis("dashboardEvents")
         let insights = vis("dashboardInsights")
         if events && insights {
-            twoColumn(UpcomingEventsCard(dividends: viewModel.dividendEvents, currency: cur,
+            twoColumn(UpcomingEventsCard(dividends: viewModel.dividendEvents,
+                                         earnings: viewModel.earningsEvents, currency: cur,
                                          onSelectSymbol: { detail = SymbolID(id: $0) }),
                       ActionableInsightsCard(holdings: viewModel.holdings, currency: cur,
                                              targets: appState.targetAllocation))
         } else if events {
-            UpcomingEventsCard(dividends: viewModel.dividendEvents, currency: cur,
+            UpcomingEventsCard(dividends: viewModel.dividendEvents,
+                               earnings: viewModel.earningsEvents, currency: cur,
                                onSelectSymbol: { detail = SymbolID(id: $0) })
         } else if insights {
             ActionableInsightsCard(holdings: viewModel.holdings, currency: cur,

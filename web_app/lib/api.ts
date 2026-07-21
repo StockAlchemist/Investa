@@ -686,6 +686,8 @@ export async function fetchAttribution(currency: string = 'USD', accounts?: stri
 
 export interface DividendEvent {
     symbol: string;
+    /** Company name; absent for synthetic rows such as cash interest. */
+    name?: string | null;
     dividend_date: string;
     ex_dividend_date: string;
     amount: number;
@@ -701,6 +703,39 @@ export async function fetchDividendCalendar(currency: string = 'USD', accounts?:
     });
     if (error) throw new Error('Failed to fetch dividend calendar');
     return data as unknown as DividendEvent[];
+}
+
+export interface EarningsEvent {
+    symbol: string;
+    name?: string | null;
+    earnings_date: string;
+    /** Set only when the company announced a window rather than an exact day. */
+    earnings_date_end?: string;
+    status: 'confirmed' | 'estimated';
+    eps_estimate?: number | null;
+    eps_year_ago?: number | null;
+}
+
+/** The next dividend for a single symbol, per share (see Fundamentals.upcoming_events). */
+export interface UpcomingDividend {
+    symbol: string;
+    name?: string | null;
+    dividend_date: string;
+    ex_dividend_date?: string | null;
+    amount_per_share: number;
+    frequency_months?: number | null;
+    status: 'confirmed' | 'estimated';
+}
+
+export async function fetchEarningsCalendar(accounts?: string[], signal?: AbortSignal): Promise<EarningsEvent[]> {
+    const { data, error } = await apiClient.GET("/api/earnings_calendar", {
+        params: {
+            query: { accounts: accounts || undefined, _t: Date.now().toString() as never }
+        },
+        signal
+    });
+    if (error) throw new Error('Failed to fetch earnings calendar');
+    return data as unknown as EarningsEvent[];
 }
 
 export async function saveManualOverride(symbol: string, price: number | null): Promise<StatusResponse> {
@@ -939,6 +974,11 @@ export interface Fundamentals {
         top_holdings: { symbol: string; name: string; percent: number }[];
         sector_weightings: Record<string, number>;
         asset_classes: Record<string, number>;
+    };
+    /** Next earnings report / dividend, derived server-side from this same blob. */
+    upcoming_events?: {
+        earnings: EarningsEvent | null;
+        dividend: UpcomingDividend | null;
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
     [key: string]: any;

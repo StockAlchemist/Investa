@@ -446,6 +446,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const renderOverview = () => {
         if (!fundamentals) return null;
 
+        const upcomingEarnings = fundamentals.upcoming_events?.earnings;
+        const upcomingDividend = fundamentals.upcoming_events?.dividend;
+
         const getUpsidePercentage = (iv?: number) => {
             if (!iv || !intrinsicValue?.current_price) return null;
             return (iv / intrinsicValue.current_price) - 1;
@@ -533,6 +536,46 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         </div>
 
                         <div className="h-px bg-border/40 w-full my-1" />
+                    </div>
+                )}
+
+                {(upcomingEarnings || upcomingDividend) && (
+                    <div className="space-y-3">
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <Calendar className="w-5 h-5 text-indigo-500" />
+                            Upcoming Events
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {upcomingEarnings && (
+                                <UpcomingEventTile
+                                    icon={BarChart3}
+                                    color="bg-violet-500/10 text-violet-500"
+                                    label="Next Earnings"
+                                    status={upcomingEarnings.status}
+                                    date={upcomingEarnings.earnings_date}
+                                    dateEnd={upcomingEarnings.earnings_date_end}
+                                    detail={upcomingEarnings.eps_estimate != null
+                                        ? `Est. EPS ${upcomingEarnings.eps_estimate.toFixed(2)}${upcomingEarnings.eps_year_ago != null
+                                            ? ` vs ${upcomingEarnings.eps_year_ago.toFixed(2)} a year ago` : ''}`
+                                        : undefined}
+                                />
+                            )}
+                            {upcomingDividend && (
+                                <UpcomingEventTile
+                                    icon={DollarSign}
+                                    color="bg-emerald-500/10 text-emerald-500"
+                                    label="Next Dividend"
+                                    status={upcomingDividend.status}
+                                    date={upcomingDividend.dividend_date}
+                                    detail={[
+                                        `${formatCurrency(upcomingDividend.amount_per_share * fxRate, currency)} / share`,
+                                        upcomingDividend.ex_dividend_date
+                                            ? `ex-div ${formatEventDate(upcomingDividend.ex_dividend_date)}`
+                                            : null,
+                                    ].filter(Boolean).join(' · ')}
+                                />
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -1981,6 +2024,73 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         document.body
     );
 }
+/** "Jul 30, 2026" — the date form used by the Upcoming Events tiles. */
+function formatEventDate(iso: string): string {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** "today" / "in 8 days" / "3 days ago" for a calendar date. */
+function relativeEventDay(iso: string): string | null {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
+    const days = Math.round((d.getTime() - today.getTime()) / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return 'tomorrow';
+    if (days < 0) return `${-days} day${days === -1 ? '' : 's'} ago`;
+    return `in ${days} days`;
+}
+
+/**
+ * One upcoming corporate event (earnings report or dividend) in the Overview
+ * tab, styled to match the StatCard tiles beside it.
+ */
+function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, detail }: {
+    icon: React.ElementType;
+    color: string;
+    label: string;
+    status: 'confirmed' | 'estimated';
+    date: string;
+    dateEnd?: string | null;
+    detail?: string;
+}) {
+    const relative = relativeEventDay(date);
+    return (
+        <div className="bg-muted py-2 px-3 rounded-xl flex items-center gap-3 transition-all hover:bg-muted/50">
+            <div className={cn("p-2 rounded-lg bg-card shrink-0", color)}>
+                <Icon className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</p>
+                    <span
+                        className={cn(
+                            "text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded",
+                            status === 'confirmed'
+                                ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
+                                : "text-amber-600 dark:text-amber-400 bg-amber-500/10",
+                        )}
+                        title={status === 'confirmed'
+                            ? 'Announced by the company'
+                            : 'Projected from the past reporting/payment cadence'}
+                    >
+                        {status === 'confirmed' ? 'confirmed' : 'est.'}
+                    </span>
+                </div>
+                <p className="text-sm font-bold truncate">
+                    {formatEventDate(date)}{dateEnd ? ` – ${formatEventDate(dateEnd)}` : ''}
+                    {relative && <span className="text-muted-foreground font-medium"> · {relative}</span>}
+                </p>
+                {detail && <p className="text-[11px] text-muted-foreground truncate">{detail}</p>}
+            </div>
+        </div>
+    );
+}
+
 function StatCard({ icon: Icon, label, value, subValue, color, valueColor, subValueColor, extra, rangeMin, rangeMax, rotate }: {
     icon: React.ElementType;
     label: React.ReactNode;

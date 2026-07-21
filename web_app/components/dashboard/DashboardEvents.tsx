@@ -1,16 +1,24 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarClock, CheckCircle2, Clock, X } from 'lucide-react';
-import { DividendEvent } from '../../lib/api';
+import { BarChart3, CalendarClock, CheckCircle2, Clock, X } from 'lucide-react';
+import { DividendEvent, EarningsEvent } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
 import { useStockModal } from '@/context/StockModalContext';
+import StockIcon from '../StockIcon';
 
 interface DashboardEventsProps {
     events: DividendEvent[];
+    /** Upcoming earnings reports, interleaved with dividends by date. */
+    earnings?: EarningsEvent[];
     currency: string;
     windowDays?: number;
 }
+
+/** A dividend payment or an earnings report, normalized onto one timeline. */
+type TimelineRow =
+    | { kind: 'dividend'; date: string; symbol: string; event: DividendEvent }
+    | { kind: 'earnings'; date: string; symbol: string; event: EarningsEvent };
 
 function relativeDay(iso: string): string {
     const d = new Date(iso);
@@ -104,11 +112,21 @@ function ConfirmedDividendsModal({
                                     key={`${e.symbol}-${e.dividend_date}-${i}`}
                                     type="button"
                                     onClick={() => { onSelectSymbol(e.symbol); onClose(); }}
-                                    className="w-full grid grid-cols-[1fr_auto_auto] items-baseline gap-3 px-3 py-2 rounded-lg hover:bg-muted/40 transition-colors text-left"
+                                    className="w-full grid grid-cols-[1fr_auto_auto] items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/40 transition-colors text-left"
                                 >
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                        <span className="text-sm font-bold text-foreground truncate">{e.symbol}</span>
-                                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <StockIcon symbol={e.symbol} size={24} />
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="text-sm font-bold text-foreground truncate">{e.symbol}</span>
+                                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                            </div>
+                                            {e.name && (
+                                                <span className="block text-[10px] text-muted-foreground/70 truncate leading-tight">
+                                                    {e.name}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     <span className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
                                         {fullDate(e.dividend_date)}
@@ -127,22 +145,39 @@ function ConfirmedDividendsModal({
     );
 }
 
-export default function DashboardEvents({ events, currency, windowDays = 14 }: DashboardEventsProps) {
+export default function DashboardEvents({ events, earnings = [], currency, windowDays = 14 }: DashboardEventsProps) {
     const { openStockDetail } = useStockModal();
     const [showAll, setShowAll] = useState(false);
 
-    const upcoming = useMemo(() => {
+    const upcoming = useMemo<TimelineRow[]>(() => {
         const now = new Date();
+        const start = new Date(now.toDateString());
         const cutoff = new Date(now);
         cutoff.setDate(now.getDate() + windowDays);
-        return (events || [])
-            .filter(e => {
-                const d = new Date(e.dividend_date);
-                return !isNaN(d.getTime()) && d >= new Date(now.toDateString()) && d <= cutoff;
+
+        const inWindow = (iso: string) => {
+            const d = new Date(iso);
+            return !isNaN(d.getTime()) && d >= start && d <= cutoff;
+        };
+
+        const rows: TimelineRow[] = [];
+        for (const e of events || []) {
+            if (inWindow(e.dividend_date)) {
+                rows.push({ kind: 'dividend', date: e.dividend_date, symbol: e.symbol, event: e });
+            }
+        }
+        for (const e of earnings || []) {
+            if (inWindow(e.earnings_date)) {
+                rows.push({ kind: 'earnings', date: e.earnings_date, symbol: e.symbol, event: e });
+            }
+        }
+        return rows
+            .sort((a, b) => {
+                const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
+                return diff !== 0 ? diff : a.symbol.localeCompare(b.symbol);
             })
-            .sort((a, b) => new Date(a.dividend_date).getTime() - new Date(b.dividend_date).getTime())
             .slice(0, 8);
-    }, [events, windowDays]);
+    }, [events, earnings, windowDays]);
 
     const confirmedCount = useMemo(
         () => (events || []).filter(e => e.status === 'confirmed').length,
@@ -154,7 +189,7 @@ export default function DashboardEvents({ events, currency, windowDays = 14 }: D
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                     <CalendarClock className="w-3.5 h-3.5 text-cyan-500" />
-                    <h3 className="section-label">Upcoming Dividends</h3>
+                    <h3 className="section-label">Upcoming Events</h3>
                 </div>
                 <button
                     type="button"
@@ -169,42 +204,84 @@ export default function DashboardEvents({ events, currency, windowDays = 14 }: D
 
             {upcoming.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">
-                    No dividend events in the next {windowDays} days.
+                    No dividend or earnings events in the next {windowDays} days.
                 </p>
             ) : (
                 <div className="space-y-1.5">
-                    {upcoming.map((e, i) => (
-                        <button
-                            key={`${e.symbol}-${e.dividend_date}-${i}`}
-                            type="button"
-                            onClick={() => openStockDetail(e.symbol, currency)}
-                            className="w-full grid grid-cols-[1fr_auto_auto] items-baseline gap-3 px-2 py-1.5 -mx-2 rounded-md hover:bg-muted/40 transition-colors text-left"
-                        >
-                            <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-xs font-bold text-foreground truncate">{e.symbol}</span>
-                                {e.status === 'estimated' && (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 dark:text-amber-400">
-                                        <Clock className="w-2.5 h-2.5" />
-                                        est.
+                    {upcoming.map((row, i) => {
+                        const rel = relativeDay(row.date);
+                        const isSoon = rel === 'today' || rel === 'tomorrow';
+                        return (
+                            <button
+                                key={`${row.kind}-${row.symbol}-${row.date}-${i}`}
+                                type="button"
+                                onClick={() => openStockDetail(row.symbol, currency)}
+                                className="w-full grid grid-cols-[1fr_auto_auto] items-center gap-3 px-2 py-1.5 -mx-2 rounded-md hover:bg-muted/40 transition-colors text-left"
+                            >
+                                {/* Logo, then ticker + type marker on top with the company
+                                    name beneath, so a narrow row never has to wrap the
+                                    marker's text. */}
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <StockIcon symbol={row.symbol} size={22} />
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className="text-xs font-bold text-foreground truncate">{row.symbol}</span>
+                                            {row.kind === 'earnings' ? (
+                                                <span
+                                                    className="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-violet-600 dark:text-violet-400 shrink-0"
+                                                    title={row.event.status === 'estimated'
+                                                        ? 'Earnings date projected from past reporting cadence'
+                                                        : 'Confirmed earnings date'}
+                                                >
+                                                    <BarChart3 className="w-2.5 h-2.5" />
+                                                    earnings{row.event.status === 'estimated' ? ' est.' : ''}
+                                                </span>
+                                            ) : row.event.status === 'estimated' ? (
+                                                <span className="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-amber-600 dark:text-amber-400 shrink-0">
+                                                    <Clock className="w-2.5 h-2.5" />
+                                                    est.
+                                                </span>
+                                            ) : (
+                                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                            )}
+                                        </div>
+                                        {row.event.name && (
+                                            <span className="block text-[10px] text-muted-foreground/70 truncate leading-tight">
+                                                {row.event.name}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <span
+                                    title={row.kind === 'earnings' && row.event.earnings_date_end
+                                        ? `${fullDate(row.date)} – ${fullDate(row.event.earnings_date_end)}`
+                                        : fullDate(row.date)}
+                                    className={cn(
+                                        'text-[10px] uppercase tracking-wider tabular-nums font-semibold',
+                                        isSoon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+                                    )}
+                                >
+                                    {rel}
+                                </span>
+                                {row.kind === 'earnings' ? (
+                                    <span
+                                        className="text-xs font-bold tabular-nums text-violet-600 dark:text-violet-400 w-20 text-right"
+                                        title={row.event.eps_year_ago != null
+                                            ? `Consensus EPS estimate — ${row.event.eps_year_ago.toFixed(2)} a year ago`
+                                            : 'Consensus EPS estimate for the quarter'}
+                                    >
+                                        {row.event.eps_estimate != null
+                                            ? `${row.event.eps_estimate.toFixed(2)} EPS`
+                                            : 'Report'}
+                                    </span>
+                                ) : (
+                                    <span className="text-xs font-bold tabular-nums text-emerald-600 dark:text-emerald-400 w-20 text-right">
+                                        {formatCurrency(row.event.amount, currency)}
                                     </span>
                                 )}
-                                {e.status === 'confirmed' && (
-                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
-                                )}
-                            </div>
-                            <span className={cn(
-                                'text-[10px] uppercase tracking-wider tabular-nums font-semibold',
-                                relativeDay(e.dividend_date) === 'today' || relativeDay(e.dividend_date) === 'tomorrow'
-                                    ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-muted-foreground',
-                            )}>
-                                {relativeDay(e.dividend_date)}
-                            </span>
-                            <span className="text-xs font-bold tabular-nums text-emerald-600 dark:text-emerald-400 w-20 text-right">
-                                {formatCurrency(e.amount, currency)}
-                            </span>
-                        </button>
-                    ))}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 

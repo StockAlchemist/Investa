@@ -359,19 +359,70 @@ struct TodayStripCard: View {
     }
 }
 
-// MARK: - Upcoming dividends (mirrors dashboard/DashboardEvents.tsx)
+// MARK: - Upcoming dividends + earnings (mirrors dashboard/DashboardEvents.tsx)
+
+/// A dividend payment or an earnings report, normalized onto one timeline.
+enum TimelineEvent: Identifiable {
+    case dividend(DividendEvent)
+    case earnings(EarningsEvent)
+
+    var id: String {
+        switch self {
+        case .dividend(let d): return "div|\(d.id)"
+        case .earnings(let e): return "earn|\(e.id)"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .dividend(let d): return d.symbol
+        case .earnings(let e): return e.symbol
+        }
+    }
+    /// Company name, shown under the ticker (GOOG vs GOOGL both read "Alphabet Inc.").
+    var name: String? {
+        switch self {
+        case .dividend(let d): return d.name
+        case .earnings(let e): return e.name
+        }
+    }
+    var date: String {
+        switch self {
+        case .dividend(let d): return String(d.dividendDate.prefix(10))
+        case .earnings(let e): return String(e.earningsDate.prefix(10))
+        }
+    }
+    var status: String {
+        switch self {
+        case .dividend(let d): return d.status
+        case .earnings(let e): return e.status
+        }
+    }
+}
 
 struct UpcomingEventsCard: View {
     let dividends: [DividendEvent]
+    var earnings: [EarningsEvent] = []
     let currency: String
     var windowDays = 14
     var onSelectSymbol: (String) -> Void = { _ in }
     @State private var showConfirmed = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    private var compact: Bool { hSize == .compact }
+    #else
+    private var compact: Bool { false }
+    #endif
 
     private var confirmedCount: Int { dividends.filter { $0.status == "confirmed" }.count }
 
     private static let inFmt: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
+    }()
+
+    /// Short day label ("Jul 29") for dates past the relative-day window — the
+    /// full ISO string is too wide for a phone row.
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("MMMd"); return f
     }()
 
     private func relativeDay(_ iso: String) -> String {
@@ -383,17 +434,20 @@ struct UpcomingEventsCard: View {
         case 1: return "tomorrow"
         case ..<0: return "\(-days)d ago"
         case 1..<7: return "\(days)d"
-        default: return String(iso.prefix(10))
+        default: return Self.dayFmt.string(from: d)
         }
     }
 
-    private var upcoming: [DividendEvent] {
+    private var upcoming: [TimelineEvent] {
         let now = Calendar.current.startOfDay(for: Date())
         let cutoff = Calendar.current.date(byAdding: .day, value: windowDays, to: now) ?? now
-        return dividends.filter {
-            guard let d = Self.inFmt.date(from: String($0.dividendDate.prefix(10))) else { return false }
+        let all = dividends.map { TimelineEvent.dividend($0) } + earnings.map { TimelineEvent.earnings($0) }
+        return all.filter {
+            guard let d = Self.inFmt.date(from: $0.date) else { return false }
             return d >= now && d <= cutoff
-        }.sorted { $0.dividendDate < $1.dividendDate }.prefix(8).map { $0 }
+        }
+        .sorted { $0.date == $1.date ? $0.symbol < $1.symbol : $0.date < $1.date }
+        .prefix(8).map { $0 }
     }
 
     private var confirmedButton: some View {
@@ -407,23 +461,34 @@ struct UpcomingEventsCard: View {
     }
 
     var body: some View {
-        Card(title: "Upcoming Dividends", icon: "calendar", accessory: AnyView(confirmedButton)) {
+        Card(title: "Upcoming Events", icon: "calendar", accessory: AnyView(confirmedButton)) {
             if upcoming.isEmpty {
-                EmptyHint(text: "No dividend events in the next \(windowDays) days.", systemImage: "calendar")
+                EmptyHint(text: "No dividend or earnings events in the next \(windowDays) days.", systemImage: "calendar")
             } else {
                 ForEach(upcoming) { ev in
                     Button { onSelectSymbol(ev.symbol) } label: {
-                        HStack {
-                            Text(ev.symbol).font(.callout.weight(.bold))
-                            if ev.status == "estimated" {
-                                Label("est.", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
-                            } else {
-                                Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(Color.up)
+                        HStack(alignment: .center, spacing: 10) {
+                            // Sized to the full height of the two-line row beside it.
+                            StockIcon(symbol: ev.symbol, size: 34)
+                            // Ticker + type marker on top, company name beneath, so a
+                            // narrow (phone) row never has to wrap the marker's text.
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 6) {
+                                    // fixedSize: the ticker is the row's identity, so it
+                                    // must never be the thing that truncates.
+                                    Text(ev.symbol).font(.callout.weight(.bold)).lineLimit(1).fixedSize()
+                                    badge(ev)
+                                }
+                                if let name = ev.name, !name.isEmpty {
+                                    Text(name).font(.caption2).foregroundStyle(.secondary)
+                                        .lineLimit(1).truncationMode(.tail)
+                                }
                             }
-                            Spacer()
-                            Text(relativeDay(ev.dividendDate)).font(.caption).textCase(.uppercase)
-                                .foregroundStyle(isSoon(ev.dividendDate) ? Color.up : .secondary)
-                            Text(Fmt.currency(ev.amount, code: currency)).font(.callout.weight(.bold)).foregroundStyle(Color.up)
+                            Spacer(minLength: 6)
+                            Text(relativeDay(ev.date)).font(.caption).textCase(.uppercase)
+                                .foregroundStyle(isSoon(ev.date) ? Color.up : .secondary)
+                                .lineLimit(1).fixedSize()
+                            trailing(ev)
                                 .lineLimit(1).minimumScaleFactor(0.7)
                                 .frame(minWidth: 80, alignment: .trailing)
                         }
@@ -436,6 +501,41 @@ struct UpcomingEventsCard: View {
         }
         .sheet(isPresented: $showConfirmed) {
             ConfirmedDividendsSheet(events: dividends, currency: currency, onSelectSymbol: onSelectSymbol)
+        }
+    }
+
+    /// Event-type marker: earnings are violet, dividends keep the est./confirmed pair.
+    /// On a phone the word "earnings" is dropped — the icon and the trailing
+    /// "… EPS" already say it, and the width belongs to the ticker.
+    @ViewBuilder private func badge(_ ev: TimelineEvent) -> some View {
+        switch ev {
+        case .earnings(let e):
+            let estimated = e.status == "estimated"
+            let text = compact ? (estimated ? "est." : "") : (estimated ? "earnings est." : "earnings")
+            // fixedSize keeps the label on one line when the row is tight.
+            HStack(spacing: 3) {
+                Image(systemName: "chart.bar.fill")
+                if !text.isEmpty { Text(text) }
+            }
+            .font(.caption2).foregroundStyle(Theme.earnings)
+            .lineLimit(1).fixedSize()
+        case .dividend(let d):
+            if d.status == "estimated" {
+                Label("est.", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
+            } else {
+                Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(Color.up)
+            }
+        }
+    }
+
+    /// Dividends show the cash amount; earnings show the consensus EPS estimate.
+    @ViewBuilder private func trailing(_ ev: TimelineEvent) -> some View {
+        switch ev {
+        case .dividend(let d):
+            Text(Fmt.currency(d.amount, code: currency)).font(.callout.weight(.bold)).foregroundStyle(Color.up)
+        case .earnings(let e):
+            Text(e.epsEstimate.map { String(format: "%.2f EPS", $0) } ?? "Report")
+                .font(.callout.weight(.bold)).foregroundStyle(Theme.earnings)
         }
     }
 

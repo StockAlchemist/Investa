@@ -15,6 +15,7 @@ import {
   fetchProjection,
   fetchAttribution,
   fetchDividendCalendar,
+  fetchEarningsCalendar,
   fetchHistory,
   fetchWatchlist,
   fetchSettings,
@@ -379,6 +380,17 @@ export default function Home() {
     enabled: !!user && (activeTab === 'dividend' || activeTab === 'performance' || backgroundFetchLevel >= 2),
   });
 
+  const earningsCalendarQuery = useQuery({
+    queryKey: ['earningsCalendar', user?.username, selectedAccounts],
+    queryFn: ({ signal }) => fetchEarningsCalendar(selectedAccounts, signal),
+    // Earnings dates move rarely — cache them far longer than the price-driven queries.
+    staleTime: 30 * 60 * 1000,
+    placeholderData: keepPreviousData,
+    // Same gating as the dividend calendar: both feed the Events card on the
+    // dashboard (Performance tab).
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 2),
+  });
+
   const historySparklineQuery = useQuery({
     queryKey: ['history', user?.username, currency, selectedAccounts, 'sparkline'],
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
@@ -524,6 +536,7 @@ export default function Home() {
               attributionData={attributionQuery.data}
               attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
               dividendEvents={dividendCalendarQuery.data || []}
+              earningsEvents={earningsCalendarQuery.data || []}
               longHistory={perfHistoryQuery.data || []}
               holdings={holdings}
               indices={indices}

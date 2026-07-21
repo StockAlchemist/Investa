@@ -721,6 +721,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/holdings/returns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Holdings Returns
+         * @description Period price returns (%) per holding symbol for the performance heatmap.
+         *
+         *     Returns ``{symbol: {"1m","3m","6m","1y","ytd"}}`` percent price returns
+         *     (dividends excluded, matching a Finviz-style performance map). The client
+         *     passes its current holding symbols via ``symbols``; if omitted, every
+         *     non-cash symbol in the transaction history is used.
+         */
+        get: operations["get_holdings_returns_api_holdings_returns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history": {
         parameters: {
             query?: never;
@@ -936,6 +961,30 @@ export interface paths {
          *     with amounts converted to the requested display currency.
          */
         get: operations["get_dividend_calendar_api_dividend_calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/earnings_calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Earnings Calendar
+         * @description Returns the next scheduled earnings report for each currently-held equity
+         *     within the next `days` days, sorted by date.
+         *
+         *     Reads the fundamentals cache the rest of the dashboard already warms, so
+         *     this is cheap and adds no extra Yahoo round-trips in the common case.
+         */
+        get: operations["get_earnings_calendar_api_earnings_calendar_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1936,6 +1985,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/holdings/returns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Holdings Returns
+         * @description Period price returns (%) per holding symbol for the performance heatmap.
+         *
+         *     Returns ``{symbol: {"1m","3m","6m","1y","ytd"}}`` percent price returns
+         *     (dividends excluded, matching a Finviz-style performance map). The client
+         *     passes its current holding symbols via ``symbols``; if omitted, every
+         *     non-cash symbol in the transaction history is used.
+         */
+        get: operations["get_holdings_returns_holdings_returns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/history": {
         parameters: {
             query?: never;
@@ -2151,6 +2225,30 @@ export interface paths {
          *     with amounts converted to the requested display currency.
          */
         get: operations["get_dividend_calendar_dividend_calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earnings_calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Earnings Calendar
+         * @description Returns the next scheduled earnings report for each currently-held equity
+         *     within the next `days` days, sorted by date.
+         *
+         *     Reads the fundamentals cache the rest of the dashboard already warms, so
+         *     this is cheap and adds no extra Yahoo round-trips in the common case.
+         */
+        get: operations["get_earnings_calendar_earnings_calendar_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3875,6 +3973,37 @@ export interface operations {
             };
         };
     };
+    get_holdings_returns_api_holdings_returns_get: {
+        parameters: {
+            query?: {
+                symbols?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_history_api_history_get: {
         parameters: {
             query?: {
@@ -4181,6 +4310,38 @@ export interface operations {
             query?: {
                 currency?: string;
                 accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_earnings_calendar_api_earnings_calendar_get: {
+        parameters: {
+            query?: {
+                accounts?: string[] | null;
+                days?: number;
             };
             header?: never;
             path?: never;
@@ -5791,6 +5952,37 @@ export interface operations {
             };
         };
     };
+    get_holdings_returns_holdings_returns_get: {
+        parameters: {
+            query?: {
+                symbols?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_history_history_get: {
         parameters: {
             query?: {
@@ -6097,6 +6289,38 @@ export interface operations {
             query?: {
                 currency?: string;
                 accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_earnings_calendar_earnings_calendar_get: {
+        parameters: {
+            query?: {
+                accounts?: string[] | null;
+                days?: number;
             };
             header?: never;
             path?: never;

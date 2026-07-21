@@ -462,9 +462,15 @@ struct ConfirmedDividendsSheet: View {
                         ForEach(Array(confirmed.enumerated()), id: \.offset) { _, ev in
                             Button { onSelectSymbol(ev.symbol); dismiss() } label: {
                                 HStack {
-                                    HStack(spacing: 5) {
-                                        Text(ev.symbol).fontWeight(.bold)
-                                        Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(Color.up)
+                                    StockIcon(symbol: ev.symbol, size: 24)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        HStack(spacing: 5) {
+                                            Text(ev.symbol).fontWeight(.bold)
+                                            Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(Color.up)
+                                        }
+                                        if let name = ev.name, !name.isEmpty {
+                                            Text(name).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                        }
                                     }
                                     Spacer()
                                     Text(displayDate(ev.dividendDate)).font(.caption).foregroundStyle(.secondary).monospacedDigit()

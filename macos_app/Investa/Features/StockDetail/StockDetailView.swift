@@ -273,11 +273,102 @@ struct StockDetailView: View {
                 positionSection(pos)
             }
             
+            upcomingEventsSection
             marketOverviewHeader
             intrinsicValueSection
             marketStatsSection
             businessSummarySection
         }
+    }
+
+    /// Next earnings report / dividend, when the backend could derive either.
+    @ViewBuilder private var upcomingEventsSection: some View {
+        let earnings = f?.upcomingEarnings
+        let dividend = f?.upcomingDividend
+        if earnings != nil || dividend != nil {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Upcoming Events", systemImage: "calendar").font(.headline)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
+                                         count: hSizeClass == .regular ? 2 : 1), spacing: 12) {
+                    if let e = earnings {
+                        eventCard(
+                            "Next Earnings", icon: "chart.bar.fill", tint: Theme.earnings,
+                            date: e.date, dateEnd: e.dateEnd, status: e.status,
+                            detail: e.epsEstimate.map { est in
+                                let base = "Est. EPS \(String(format: "%.2f", est))"
+                                guard let ago = e.epsYearAgo else { return base }
+                                return base + " vs \(String(format: "%.2f", ago)) a year ago"
+                            })
+                    }
+                    if let d = dividend {
+                        eventCard(
+                            "Next Dividend", icon: "dollarsign.circle.fill", tint: Color.up,
+                            date: d.date, dateEnd: nil, status: d.status,
+                            detail: [
+                                d.amountPerShare.map { "\(Fmt.currency($0, code: nativeCur)) / share" },
+                                d.exDate.map { "ex-div \(Self.eventDate($0))" },
+                            ].compactMap { $0 }.joined(separator: " · "))
+                    }
+                }
+            }
+        }
+    }
+
+    /// "Jul 30, 2026" — the date form used by the Upcoming Events cards.
+    private static func eventDate(_ iso: String) -> String {
+        let inFmt = DateFormatter()
+        inFmt.locale = Locale(identifier: "en_US_POSIX"); inFmt.dateFormat = "yyyy-MM-dd"
+        guard let d = inFmt.date(from: String(iso.prefix(10))) else { return iso }
+        let out = DateFormatter(); out.dateStyle = .medium; out.timeStyle = .none
+        return out.string(from: d)
+    }
+
+    /// "today" / "in 8 days" / "3 days ago" for a calendar date.
+    private static func relativeEventDay(_ iso: String) -> String? {
+        let inFmt = DateFormatter()
+        inFmt.locale = Locale(identifier: "en_US_POSIX"); inFmt.dateFormat = "yyyy-MM-dd"
+        guard let d = inFmt.date(from: String(iso.prefix(10))) else { return nil }
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()),
+                                      to: cal.startOfDay(for: d)).day ?? 0
+        switch days {
+        case 0: return "today"
+        case 1: return "tomorrow"
+        case ..<0: return "\(-days) day\(days == -1 ? "" : "s") ago"
+        default: return "in \(days) days"
+        }
+    }
+
+    private func eventCard(_ label: String, icon: String, tint: Color, date: String,
+                           dateEnd: String?, status: String, detail: String?) -> some View {
+        let confirmed = status == "confirmed"
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).foregroundStyle(tint).font(.system(size: 16))
+                Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text(confirmed ? "confirmed" : "est.")
+                    .font(.system(size: 9, weight: .bold)).textCase(.uppercase)
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background((confirmed ? Color.up : .orange).opacity(0.12),
+                                in: RoundedRectangle(cornerRadius: 4))
+                    .foregroundStyle(confirmed ? Color.up : .orange)
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(Self.eventDate(date) + (dateEnd.map { " – " + Self.eventDate($0) } ?? ""))
+                        .font(.callout.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
+                    if let rel = Self.relativeEventDay(date) {
+                        Text("· \(rel)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                if let detail, !detail.isEmpty {
+                    Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+        .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 
     @ViewBuilder private var marketOverviewHeader: some View {

@@ -1,5 +1,5 @@
 import { memo, lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
-import { PortfolioSummary, PerformanceData, DividendEvent } from '../lib/api';
+import { PortfolioSummary, PerformanceData, DividendEvent, EarningsEvent } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard';
 import { COMPLEX_METRIC_IDS, DEFAULT_ITEMS, TOP_SECTION_IDS } from '../lib/dashboard_constants';
@@ -54,6 +54,8 @@ interface DashboardProps {
     excludeFromAnalytics?: string[];
     /** Upcoming dividend events surfaced in the Events panel. */
     dividendEvents?: DividendEvent[];
+    /** Upcoming earnings dates surfaced alongside dividends in the Events panel. */
+    earningsEvents?: EarningsEvent[];
     /** Longer (1y/daily) history used by the hero period selector. */
     longHistory?: PerformanceData[];
     /** Header index quotes, fetched separately from /summary. Falls back to
@@ -397,6 +399,7 @@ function DashboardInner({
     showClosed = false,
     excludeFromAnalytics = [],
     dividendEvents = [],
+    earningsEvents = [],
     longHistory = [],
     indices,
 }: DashboardProps) {
@@ -627,7 +630,7 @@ function DashboardInner({
             {/* ── Upcoming events + actionable insights ── */}
             {!isLoading && holdings.length > 0 && (showEvents || showInsights) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
-                    {showEvents && <DashboardEvents events={dividendEvents} currency={currency} />}
+                    {showEvents && <DashboardEvents events={dividendEvents} earnings={earningsEvents} currency={currency} />}
                     {showInsights && <DashboardInsights holdings={holdings} currency={currency} />}
                 </div>
             )}

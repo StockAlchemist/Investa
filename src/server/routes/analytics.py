@@ -21,6 +21,7 @@ from portfolio_analyzer import (
 from projections import compute_projection
 from risk_metrics import calculate_all_risk_metrics, calculate_benchmark_scoreboard
 from server.auth import User
+from server.calendar_events import company_name, next_earnings_event
 from server.dependencies import get_config_manager, get_current_user, get_transaction_data
 from server.portfolio_service import (
     _calculate_portfolio_summary_internal,
@@ -283,6 +284,7 @@ async def _generate_dividend_events(
                     if c_date and c_date >= today:
                         local_events.append({
                             "symbol": sym,
+                            "name": company_name(info),
                             "dividend_date": str(c_date),
                             "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
                             "amount": per_period_amt * qty,
@@ -331,6 +333,7 @@ async def _generate_dividend_events(
                             est_amt = (indicated_rate / (12 // freq_months)) * qty
                             local_events.append({
                                 "symbol": sym,
+                                "name": company_name(info),
                                 "dividend_date": str(curr),
                                 "ex_dividend_date": "",
                                 "amount": est_amt,
@@ -992,4 +995,73 @@ async def get_dividend_calendar(
 
     except Exception as e:
         logging.error(f"Error getting dividend calendar: {e}", exc_info=True)
+        return []
+
+
+@router.get("/earnings_calendar")
+async def get_earnings_calendar(
+    accounts: Optional[List[str]] = Query(None),
+    days: int = 90,
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns the next scheduled earnings report for each currently-held equity
+    within the next `days` days, sorted by date.
+
+    Reads the fundamentals cache the rest of the dashboard already warms, so
+    this is cheap and adds no extra Yahoo round-trips in the common case.
+    """
+    import concurrent.futures
+
+    try:
+        summary_data = await _calculate_portfolio_summary_internal(
+            currency="USD",  # No amounts in the payload — currency is irrelevant here.
+            include_accounts=accounts,
+            show_closed_positions=False,
+            data=data,
+            current_user=current_user
+        )
+        summary_df = summary_data.get("summary_df")
+        if summary_df is None or summary_df.empty:
+            return []
+
+        symbols = set()
+        for r in summary_df.to_dict(orient="records"):
+            sym = r.get("Symbol")
+            if not sym or sym == "Total" or r.get("is_total") or is_cash_symbol(sym):
+                continue
+            if (r.get("Quantity") or 0) > 0:
+                symbols.add(sym)
+
+        if not symbols:
+            return []
+
+        _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
+        provider = get_mdp()
+        today = date.today()
+        horizon_end = today + timedelta(days=max(1, days))
+
+        def fetch_symbol_earnings(sym: str) -> Optional[dict]:
+            try:
+                yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols)
+                if not yf_sym:
+                    return None
+                info = provider.get_fundamental_data(yf_sym) or {}
+                return next_earnings_event(sym, info, today, horizon_end)
+            except Exception as e:
+                logging.warning(f"Error fetching earnings date for {sym}: {e}")
+                return None
+
+        events = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            for event in executor.map(fetch_symbol_earnings, sorted(symbols)):
+                if event:
+                    events.append(event)
+
+        events.sort(key=lambda e: (e["earnings_date"], e["symbol"]))
+        return clean_nans(events)
+
+    except Exception as e:
+        logging.error(f"Error getting earnings calendar: {e}", exc_info=True)
         return []
