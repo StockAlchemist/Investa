@@ -302,7 +302,7 @@ struct TransactionEditView: View {
             overrideTotal = ""
             commission = ""
         }
-        if !canAutoAddCash { autoAddCash = false }
+        if !canAutoAddCash || isAccountAutoCash { autoAddCash = false }
         recomputeTotal()
     }
 
@@ -319,6 +319,11 @@ struct TransactionEditView: View {
         if let mapped = appState.accountCurrencyMap[newAccount], !mapped.isEmpty {
             currency = mapped
         }
+        // Auto-mode accounts have the engine derive cash deltas from the trade
+        // row itself, so explicit legs double-count. The toggle is disabled for
+        // them, but switching *into* one must also clear an already-set true —
+        // disabling a control does not reset its value. Mirrors the web form.
+        if isAccountAutoCash { autoAddCash = false }
     }
 
     // MARK: - Populate from existing

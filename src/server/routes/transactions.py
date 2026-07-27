@@ -119,9 +119,18 @@ class TransactionBatchInput(BaseModel):
     auto_add_cash: bool = False
 
 
-def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, Any]):
+def _handle_auto_cash_generation(
+    conn: sqlite3.Connection,
+    tx_data: Dict[str, Any],
+    account_cash_mode_map: Optional[Dict[str, str]] = None,
+):
     """
     Automatically creates associated $CASH transactions for a stock Buy or Sell.
+
+    Posts the trade principal (gross, commission excluded) as one leg and the
+    commission, when there is one, as a separate fee leg. Accounts in *Auto*
+    cash mode are skipped: the valuation engine already derives cash deltas
+    from the trade rows themselves there, so explicit legs double-count.
     """
     tx_type = tx_data.get("Type", "").strip().lower()
     if tx_type not in ["buy", "sell"]:
@@ -132,79 +141,63 @@ def _handle_auto_cash_generation(conn: sqlite3.Connection, tx_data: Dict[str, An
         return
 
     account = tx_data.get("Account", "")
+    # Gated here rather than at the call sites so every route is covered. The
+    # clients hide the option for Auto accounts, but a stale client or a direct
+    # API call must not be able to corrupt an Auto account's cash balance.
+    acc_mode = str((account_cash_mode_map or {}).get(account, "Manual")).strip().lower()
+    if acc_mode == "auto":
+        logging.info(f"Skipping auto-cash generation for '{account}': account is in Auto cash mode.")
+        return
+
     date_str = tx_data.get("Date")
     local_currency = tx_data.get("Local Currency", "USD")
-    
-    qty = float(tx_data.get("Quantity", 0))
-    price = float(tx_data.get("Price/Share", 0))
-    commission = float(tx_data.get("Commission", 0))
-    
-    principal = abs(tx_data.get("Total Amount")) if tx_data.get("Total Amount") is not None and not pd.isna(tx_data.get("Total Amount")) else qty * price
     user_id = tx_data.get("user_id")
 
-    if tx_type == "buy":
-        # Funding the buy: Sell $CASH for the principal amount
-        cash_tx_principal = {
+    qty = abs(float(tx_data.get("Quantity") or 0))
+    price = float(tx_data.get("Price/Share") or 0)
+    commission = float(tx_data.get("Commission") or 0)
+
+    # Gross principal, commission excluded — the commission is posted as its own
+    # leg below. "Total Amount" cannot be used here: the web and SwiftUI forms
+    # and ibkr_connector all fold commission into it, while imported and legacy
+    # rows store it net of commission, so reading it charges the commission
+    # twice for the former. qty * price is unambiguous under either convention.
+    # Fall back to "Total Amount" only when the price is missing (batch/PDF
+    # imports default Price/Share to 0), backing the commission out by direction.
+    principal = qty * price
+    if principal <= 1e-9:
+        total_amt = tx_data.get("Total Amount")
+        if total_amt is not None and pd.notna(total_amt):
+            settled = abs(float(total_amt))
+            principal = settled - commission if tx_type == "buy" else settled + commission
+
+    if principal <= 1e-9:
+        logging.warning(
+            f"Auto-cash: no usable principal for {tx_type} {symbol} in '{account}'; skipping cash legs."
+        )
+        return
+
+    def post_leg(leg_type: str, amount: float, note: str):
+        """Post one $CASH leg. 'Total Amount' is stored signed, matching the
+        convention the clients write: Buy/Withdrawal negative, Sell positive."""
+        add_transaction_to_db(conn, {
             "Date": date_str,
-            "Type": "Sell",
+            "Type": leg_type,
             "Symbol": "$CASH",
-            "Quantity": principal,
+            "Quantity": abs(amount),
             "Price/Share": 1.0,
-            "Total Amount": principal,
+            "Total Amount": -abs(amount) if leg_type in ("Buy", "Withdrawal") else abs(amount),
             "Account": account,
             "Local Currency": local_currency,
-            "Note": f"Auto-cash for Buy {symbol}",
-            "user_id": user_id
-        }
-        add_transaction_to_db(conn, cash_tx_principal)
-        
-        # Pay commission: Withdrawal $CASH
-        if commission > 0:
-            cash_tx_comm = {
-                "Date": date_str,
-                "Type": "Withdrawal",
-                "Symbol": "$CASH",
-                "Quantity": commission,
-                "Price/Share": 1.0,
-                "Total Amount": commission,
-                "Account": account,
-                "Local Currency": local_currency,
-                "Note": f"Auto-cash Fee for Buy {symbol}",
-                "user_id": user_id
-            }
-            add_transaction_to_db(conn, cash_tx_comm)
+            "Note": note,
+            "user_id": user_id,
+        })
 
-    elif tx_type == "sell":
-        # Proceeds from sell: Buy $CASH for the principal amount
-        cash_tx_principal = {
-            "Date": date_str,
-            "Type": "Buy",
-            "Symbol": "$CASH",
-            "Quantity": principal,
-            "Price/Share": 1.0,
-            "Total Amount": -principal,
-            "Account": account,
-            "Local Currency": local_currency,
-            "Note": f"Auto-cash for Sell {symbol}",
-            "user_id": user_id
-        }
-        add_transaction_to_db(conn, cash_tx_principal)
-
-        if commission > 0:
-            # Paying commission: Sell $CASH for commission
-            cash_tx_comm = {
-                "Date": date_str,
-                "Type": "Withdrawal",
-                "Symbol": "$CASH",
-                "Quantity": commission,
-                "Price/Share": 1.0,
-                "Total Amount": commission,
-                "Account": account,
-                "Local Currency": local_currency,
-                "Note": f"Auto-cash Fee for Sell {symbol}",
-                "user_id": user_id
-            }
-            add_transaction_to_db(conn, cash_tx_comm)
+    # Funding a buy sells $CASH; proceeds from a sell buy $CASH.
+    verb = "Buy" if tx_type == "buy" else "Sell"
+    post_leg("Sell" if tx_type == "buy" else "Buy", principal, f"Auto-cash for {verb} {symbol}")
+    if commission > 0:
+        post_leg("Withdrawal", commission, f"Auto-cash Fee for {verb} {symbol}")
 
 
 @router.post("/transactions")
@@ -224,19 +217,19 @@ def create_transaction(
         Dict: Status message and the new transaction ID.
     """
     try:
-        _, _, _, _, _, _, db_path, _ = data
+        _, _, _, _, _, account_cash_mode_map, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
-            
+
         # Convert Pydantic model to dict with correct keys for DB
         tx_data = transaction.dict(by_alias=True)
         tx_data["user_id"] = current_user.id
 
         success, new_id = add_transaction_to_db(conn, tx_data)
-        
+
         if success and tx_data.get("Auto-add Cash"):
-            _handle_auto_cash_generation(conn, tx_data)
+            _handle_auto_cash_generation(conn, tx_data, account_cash_mode_map)
 
         conn.close()
         
@@ -319,7 +312,8 @@ def add_transactions_batch(
     engine generate cash deltas on the fly during valuation, so adding
     explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
     therefore acts as a user opt-in that still gets gated by the account's
-    cash mode.
+    cash mode — the gate itself lives in ``_handle_auto_cash_generation`` so
+    that the single-transaction route is covered by the same rule.
     """
     try:
         _, _, _, _, _, account_cash_mode_map, db_path, _ = data
@@ -343,12 +337,9 @@ def add_transactions_batch(
             if success:
                 imported_count += 1
                 if payload.auto_add_cash:
-                    acc = tx_data.get("Account") or ""
-                    # Default Manual if the account isn't in the user's config
-                    # yet — opt-in stays the safer choice for new accounts.
-                    acc_mode = cash_mode_map.get(acc, "Manual")
-                    if acc_mode != "Auto":
-                        _handle_auto_cash_generation(conn, tx_data)
+                    # Accounts absent from the user's config default to Manual
+                    # inside the helper — opt-in stays safer for new accounts.
+                    _handle_auto_cash_generation(conn, tx_data, cash_mode_map)
             else:
                 errors.append({"symbol": tx_input.Symbol, "error": error})
 
