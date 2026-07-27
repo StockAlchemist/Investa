@@ -1,5 +1,9 @@
 [tool.pytest.ini_options]
 addopts = "--cov=src --cov-report=term-missing"
+# Only tests/ holds tests. Without this, a bare `pytest` walks the whole repo and
+# tries to collect stray scripts that happen to be named test_*.py (e.g. one-off
+# helper scripts under macos_app/).
+testpaths = ["tests"]
 # Make `import config`, `import server.api` etc. work without per-file sys.path hacks.
 pythonpath = ["src"]
 
