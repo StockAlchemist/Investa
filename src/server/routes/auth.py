@@ -9,13 +9,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import config
 from server.auth import (
     Token, User, create_access_token, get_password_hash, verify_password
 )
-from server.dependencies import get_current_user, get_global_db_connection
+from server.dependencies import get_current_user, get_global_db_connection, user_data_dir_for
 from server.rate_limit import (
     enforce_limit, get_client_ip,
     failed_auth_limiter, login_ip_limiter, register_ip_limiter,
@@ -23,9 +23,39 @@ from server.rate_limit import (
 
 router = APIRouter()
 
+# A username is not just a label: it becomes a path segment for the user's data
+# directory (see user_data_dir_for). Unconstrained, "../../x" or an absolute
+# path escapes the users root via os.path.join, and account deletion later
+# rmtree's whatever it resolved to. Restrict it at the edge, and re-check
+# containment at both the create and delete sites for rows that predate this.
+USERNAME_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{1,30}[A-Za-z0-9])$"
+
+
+def _safe_user_data_dir(username: str) -> str:
+    """The user's data directory, verified to sit inside the users root.
+
+    Defence in depth behind USERNAME_PATTERN: rows written before that
+    constraint existed can still hold a traversing username, and this is the
+    last gate before makedirs/rmtree act on the result.
+    """
+    users_root = os.path.realpath(os.path.join(config.get_app_data_dir(), config.USERS_DIR))
+    candidate = os.path.realpath(user_data_dir_for(username))
+    if candidate != users_root and not candidate.startswith(users_root + os.sep):
+        logging.error(f"Refusing to operate on out-of-tree user directory for username {username!r}")
+        raise HTTPException(status_code=400, detail="Invalid username")
+    if candidate == users_root:
+        raise HTTPException(status_code=400, detail="Invalid username")
+    return candidate
+
 
 class UserCreate(BaseModel):
-    username: str
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=32,
+        pattern=USERNAME_PATTERN,
+        description="Letters, digits, dot, underscore and hyphen; must start and end alphanumeric.",
+    )
     password: str
 
 class UserPasswordUpdate(BaseModel):
@@ -39,6 +69,10 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
     client_ip = get_client_ip(request)
     enforce_limit(register_ip_limiter, client_ip, "registration attempts")
     register_ip_limiter.record(client_ip)
+
+    # Resolve (and contain) the data directory before writing the user row, so a
+    # rejected path never leaves an orphan account behind.
+    user_data_dir = _safe_user_data_dir(user.username)
 
     try:
         cursor = conn.cursor()
@@ -63,7 +97,6 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
 
         # --- Initialize User Isolation ---
         # Create user directory and initialize their portfolio DB
-        user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, user.username)
         try:
             os.makedirs(user_data_dir, exist_ok=True)
 
@@ -202,9 +235,19 @@ def delete_user_me(
             raise HTTPException(status_code=404, detail="User not found")
         conn.commit()
 
-        # 2. Delete user data directory
-        user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
-        if os.path.exists(user_data_dir):
+        # 2. Delete user data directory. Contained first — the username comes
+        # from a stored row, which may predate USERNAME_PATTERN, and this is an
+        # unguarded recursive delete.
+        try:
+            user_data_dir = _safe_user_data_dir(current_user.username)
+        except HTTPException:
+            logging.error(
+                f"Skipping data-directory delete for {current_user.username!r}: path escapes the users root. "
+                "The account row is already removed; clean the directory up by hand."
+            )
+            user_data_dir = None
+
+        if user_data_dir and os.path.exists(user_data_dir):
             try:
                 shutil.rmtree(user_data_dir)
                 logging.info(f"Deleted data directory for user {current_user.username}")
