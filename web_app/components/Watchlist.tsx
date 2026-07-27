@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Trash2, RefreshCw, Pencil, Check, X, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, formatCompactNumber, cn, getHeatmapClass } from "@/lib/utils";
+import { normalizeDividendYield } from "@/lib/dividend";
 import StockTicker from './StockTicker';
 import { TrendSparkline } from './ui/TrendSparkline';
 import WatchlistKpiStrip from './watchlist/WatchlistKpiStrip';
@@ -266,7 +267,15 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     case 'Day Change': return item["Day Change"] || 0;
                     case 'Mkt Cap': return item["Market Cap"] || 0;
                     case 'PE': return item["PE Ratio"] || 0;
-                    case 'Div Yield': return item["Dividend Yield"] || 0;
+                    // Normalised before comparing: the raw field mixes fraction
+                    // and percent encodings, so sorting it directly interleaves
+                    // a 6.7% yield (6.71) with a 3.3% one (0.033).
+                    case 'Div Yield': return normalizeDividendYield({
+                        rawYield: item["Dividend Yield"],
+                        dividendRate: item["Dividend Rate"],
+                        price: item.Price,
+                        trailingYield: item["Trailing Dividend Yield"],
+                    }) ?? 0;
                     case 'Intrinsic Value': return item.intrinsic_value || 0;
                     case 'AI Score': return item.ai_score || 0;
                     case 'Sentiment': return item.ai_sentiment || 0;
@@ -581,9 +590,13 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-right text-sm tabular-nums">
                                                 {(() => {
-                                                    let y = item["Dividend Yield"];
-                                                    if (y && y > 1) y = y / 100;
-                                                    return y ? formatPercent(y) : '-';
+                                                    const pct = normalizeDividendYield({
+                                                        rawYield: item["Dividend Yield"],
+                                                        dividendRate: item["Dividend Rate"],
+                                                        price: item.Price,
+                                                        trailingYield: item["Trailing Dividend Yield"],
+                                                    });
+                                                    return pct === null ? '-' : formatPercent(pct / 100);
                                                 })()}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-center text-sm">

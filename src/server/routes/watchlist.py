@@ -222,6 +222,11 @@ async def get_watchlist_endpoint(
             "Market Cap": fund.get("marketCap"),
             "PE Ratio": fund.get("trailingPE") or fund.get("forwardPE"),
             "Dividend Yield": fund.get("dividendYield"),
+            # Forwarded so the clients can settle Yahoo's fraction-vs-percent
+            # dividendYield encoding against rate/price instead of guessing from
+            # magnitude alone (the two encodings' ranges overlap).
+            "Dividend Rate": fund.get("dividendRate") or fund.get("trailingAnnualDividendRate"),
+            "Trailing Dividend Yield": fund.get("trailingAnnualDividendYield"),
             "ai_score": ai_res.get("ai_score"),
             "intrinsic_value": ai_res.get("intrinsic_value"),
             "margin_of_safety": ai_res.get("margin_of_safety"),

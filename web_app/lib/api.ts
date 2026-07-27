@@ -856,6 +856,10 @@ export interface WatchlistItem {
     "Market Cap"?: number | null;
     "PE Ratio"?: number | null;
     "Dividend Yield"?: number | null;
+    /** Forward annual dividend per share, used to settle the yield's encoding. */
+    "Dividend Rate"?: number | null;
+    /** Yahoo's trailingAnnualDividendYield — always a fraction. */
+    "Trailing Dividend Yield"?: number | null;
     ai_score?: number | null;
     intrinsic_value?: number | null;
     margin_of_safety?: number | null;
@@ -962,6 +966,13 @@ export interface Fundamentals {
     trailingPE?: number;
     forwardPE?: number;
     dividendYield?: number;
+    /** Forward annual dividend per share; pairs with a price to settle the
+     *  fraction-vs-percent encoding of `dividendYield`. */
+    dividendRate?: number;
+    trailingAnnualDividendRate?: number;
+    /** Always a fraction, unlike `dividendYield`. */
+    trailingAnnualDividendYield?: number;
+    currentPrice?: number;
     beta?: number;
     fiftyTwoWeekHigh?: number;
     fiftyTwoWeekLow?: number;

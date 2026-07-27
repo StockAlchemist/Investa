@@ -67,6 +67,7 @@ import {
     Legend
 } from 'recharts';
 import { cn, formatPercent as formatPercentShared } from "@/lib/utils";
+import { normalizeDividendYield, normalizeExpenseRatio } from "@/lib/dividend";
 import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
 import StockIcon from './StockIcon';
@@ -417,9 +418,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         return formatted;
     };
 
-    const formatPercent = (val: number | undefined) => {
+    /** For values already expressed in percentage points (15 -> "15.00%"). */
+    const formatPercentPoints = (val: number | null | undefined) => {
         if (val === undefined || val === null) return '-';
-        return formatPercentShared(val);
+        return formatPercentShared(val / 100);
     };
 
     const formatCompact = (val: number | undefined) => {
@@ -624,20 +626,39 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                     <StatCard label="Market Cap" value={formatCurrency(fundamentals.marketCap)} icon={Globe} color="text-indigo-400" />
                     <StatCard label="P/E Ratio (TTM)" value={fundamentals.trailingPE?.toFixed(2)} icon={TrendingUp} color="text-emerald-400" />
-                    <StatCard label="Dividend Yield" value={formatPercent(fundamentals.dividendYield)} icon={DollarSign} color="text-amber-400" />
+                    <StatCard
+                        label="Dividend Yield"
+                        value={formatPercentPoints(normalizeDividendYield({
+                            rawYield: fundamentals.dividendYield,
+                            dividendRate: fundamentals.dividendRate ?? fundamentals.trailingAnnualDividendRate,
+                            price: fundamentals.currentPrice ?? fundamentals.regularMarketPrice,
+                            trailingYield: fundamentals.trailingAnnualDividendYield,
+                        }))}
+                        icon={DollarSign}
+                        color="text-amber-400"
+                    />
                     <StatCard label="52W High" value={formatCurrency(fundamentals.fiftyTwoWeekHigh)} icon={TrendingUp} color="text-blue-400" />
                     <StatCard label="52W Low" value={formatCurrency(fundamentals.fiftyTwoWeekLow)} icon={TrendingUp} color="text-pink-400" className="rotate-180" />
                     {!fundamentals.etf_data && (
                         <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={LucideActivity} color="text-purple-400" />
                     )}
-                    {(fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) && (
-                        <StatCard
-                            label="Expense Ratio"
-                            value={formatPercent((fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio))}
-                            icon={Receipt}
-                            color="text-orange-400"
-                        />
-                    )}
+                    {(() => {
+                        // Resolved once: the card's visibility and its value must
+                        // agree on which of the three fields wins, and must agree
+                        // with the Swift client's ordering.
+                        const expensePct = normalizeExpenseRatio(
+                            fundamentals.netExpenseRatio || fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio
+                        );
+                        if (expensePct === null) return null;
+                        return (
+                            <StatCard
+                                label="Expense Ratio"
+                                value={formatPercentPoints(expensePct)}
+                                icon={Receipt}
+                                color="text-orange-400"
+                            />
+                        );
+                    })()}
                 </div>
 
                 <div className="bg-muted px-6 py-4">

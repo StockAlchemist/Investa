@@ -27,17 +27,25 @@ struct Fundamentals: Codable, Sendable {
     var marketCap: Double? { double("marketCap") }
     var trailingPE: Double? { double("trailingPE") }
     var forwardPE: Double? { double("forwardPE") }
+    /// Percent, e.g. 15.0 for a 15% yield. Yahoo's encoding is settled against
+    /// rate/price rather than guessed from magnitude — see `DividendYield`.
     var dividendYield: Double? {
-        guard let y = double("dividendYield") else { return nil }
-        return y < 0.12 ? y * 100.0 : y
+        DividendYield.normalize(
+            rawYield: double("dividendYield"),
+            dividendRate: double("dividendRate") ?? double("trailingAnnualDividendRate"),
+            price: double("currentPrice") ?? double("regularMarketPrice"),
+            trailingYield: double("trailingAnnualDividendYield")
+        )
     }
     var beta: Double? { double("beta") }
     var high52: Double? { double("fiftyTwoWeekHigh") }
     var low52: Double? { double("fiftyTwoWeekLow") }
     var shortName: String? { string("shortName") ?? string("longName") }
+    /// Percent, e.g. 0.55 for a 0.55% fee.
     var expenseRatio: Double? {
-        guard let e = double("netExpenseRatio") ?? double("expenseRatio") ?? double("annualReportExpenseRatio") else { return nil }
-        return e < 0.12 ? e * 100.0 : e
+        DividendYield.normalizeExpenseRatio(
+            double("netExpenseRatio") ?? double("expenseRatio") ?? double("annualReportExpenseRatio")
+        )
     }
     var isETF: Bool { raw["etf_data"]?.objectValue != nil }
 

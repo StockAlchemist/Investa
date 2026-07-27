@@ -21,9 +21,16 @@ struct WatchlistItem: Decodable, Sendable, Identifiable {
     var dayChangePct: Double? { d("Day Change %") }
     var marketCap: Double? { d("Market Cap") }
     var peRatio: Double? { d("PE Ratio") }
+    /// Percent, e.g. 15.0 for a 15% yield. The route forwards `Dividend Rate`
+    /// and `Trailing Dividend Yield` alongside the yield so the encoding can be
+    /// settled against them — see `DividendYield`.
     var dividendYield: Double? {
-        guard let y = d("Dividend Yield") else { return nil }
-        return y < 0.12 ? y * 100.0 : y
+        DividendYield.normalize(
+            rawYield: d("Dividend Yield"),
+            dividendRate: d("Dividend Rate"),
+            price: price,
+            trailingYield: d("Trailing Dividend Yield")
+        )
     }
     var aiScore: Double? { d("ai_score") }
     var intrinsicValue: Double? { d("intrinsic_value") }

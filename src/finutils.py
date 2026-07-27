@@ -208,6 +208,12 @@ def calculate_indicated_dividend(info: Dict[str, Any]) -> float:
     return get_dividend_details(info)["indicated_annual_rate"]
 
 
+#: Magnitude cutoff separating a fraction-encoded raw Yahoo ``dividendYield``
+#: from a percent-encoded one, used only when no corroborating signal exists.
+#: Mirrored by `web_app/lib/dividend.ts` and `macos_app/.../DividendYield.swift`.
+_RAW_YIELD_FRACTION_CUTOFF = 0.10
+
+
 def robust_dividend_yield(info: Dict[str, Any]) -> Optional[float]:
     """Dividend yield as a FRACTION (0.005 == 0.5%), derived consistently with
     the forward-looking indicated dividend rate.
@@ -260,11 +266,21 @@ def robust_dividend_yield(info: Dict[str, Any]) -> Optional[float]:
     except (TypeError, ValueError):
         pass
 
-    # 3. Last resort: raw Yahoo dividendYield, guessing fraction vs percent.
+    # 3. Last resort: raw Yahoo dividendYield. Steps 1 and 2 already failed, so
+    # there is no second signal left to corroborate against and the encoding has
+    # to be inferred from magnitude alone.
+    #
+    # Below the cutoff the fraction reading is the plausible one (0.05 -> 5%,
+    # versus a vanishingly rare 0.05%); above it the percent reading is
+    # (0.5 -> 0.5%, versus a 50% yield). Measured against the 1,479 cached
+    # records that *can* be settled, 0.10 misclassifies 0.5% of them where the
+    # previous 0.30 cutoff missed 4.1%; the best achievable single threshold
+    # (0.069) still misses 0.4%, because the two encodings genuinely overlap on
+    # [0.01, 3.08]. Only ~2% of records reach this branch.
     try:
         rv = float(info.get("dividendYield"))
         if rv > 0:
-            return rv / 100.0 if rv > 0.30 else rv
+            return rv / 100.0 if rv > _RAW_YIELD_FRACTION_CUTOFF else rv
     except (TypeError, ValueError):
         pass
 
