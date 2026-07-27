@@ -62,12 +62,11 @@ def _evict_user_summary_cache(username: str):
 
 
 def _evict_user_history_cache(username: str):
-    """Clear all portfolio history cache entries on a user write.
-
-    History cache keys don't include username (they use db_mtime for isolation),
-    so we conservatively clear the whole cache to avoid serving stale data.
-    """
-    _PORTFOLIO_HISTORY_CACHE.clear()
+    """Remove only the given user's entries from _PORTFOLIO_HISTORY_CACHE."""
+    user_path = _user_db_path(username)
+    _PORTFOLIO_HISTORY_CACHE.invalidate(
+        lambda k: isinstance(k, tuple) and len(k) > 0 and k[0] == user_path
+    )
 
 
 def reload_data_and_clear_cache(current_user: Optional[User] = None):
@@ -357,6 +356,7 @@ async def _get_historical_performance_cached(
     ttl_seconds = (5 * 60) if is_market_open() else (60 * 60)
 
     cache_key = (
+        original_csv_file_path,
         display_currency,
         accounts_key,
         benchmarks_key,

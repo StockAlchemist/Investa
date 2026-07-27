@@ -150,6 +150,8 @@ from portfolio_history import (  # noqa: F401
     generate_mappings,
 )
 
+_FIFO_CACHE: Dict[Tuple[Any, ...], Tuple[Any, Any]] = {}
+
 
 def get_default_metrics_dict(
     display_curr_arg,
@@ -780,6 +782,7 @@ def calculate_portfolio_summary(
                 display_currency, report_date, [], is_empty_data_case=False
             ),  # MODIFIED
             None,  # summary_df_final
+            {},  # holdings dictionary (empty)
             None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
@@ -800,6 +803,7 @@ def calculate_portfolio_summary(
                 display_currency, report_date, [], is_empty_data_case=True
             ),  # MODIFIED
             None,  # summary_df_final
+            {},  # holdings dictionary (empty)
             None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
@@ -850,6 +854,7 @@ def calculate_portfolio_summary(
                     is_empty_data_case=False,
                 ),  # MODIFIED
                 None,  # summary_df_final
+                {},  # holdings dictionary (empty)
                 None,  # account_level_metrics
                 combined_ignored_indices,
                 combined_ignored_reasons,
@@ -1151,9 +1156,6 @@ def calculate_portfolio_summary(
 
         # BN-08: Cache FIFO results keyed by db_mtime and display_currency
         global _FIFO_CACHE
-        if "_FIFO_CACHE" not in globals():
-            _FIFO_CACHE = {}
-
         fifo_cache_key = (db_mtime, display_currency)
         if db_mtime > 0 and fifo_cache_key in _FIFO_CACHE:
             logging.info("Using cached FIFO Realized Gains & Lots...")
@@ -2035,6 +2037,7 @@ if __name__ == "__main__":
         (
             summary_metrics,
             holdings_df,
+            raw_holdings,
             account_metrics,
             ignored_idx_summary,
             ignored_rsn_summary,

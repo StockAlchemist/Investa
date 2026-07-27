@@ -58,43 +58,45 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
         )
         new_user_id = cursor.lastrowid
         if new_user_id is None:
+            conn.rollback()
             raise HTTPException(status_code=500, detail="Failed to create user record")
-        conn.commit()
 
         # --- Initialize User Isolation ---
         # Create user directory and initialize their portfolio DB
         user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, user.username)
         try:
-             os.makedirs(user_data_dir, exist_ok=True)
+            os.makedirs(user_data_dir, exist_ok=True)
 
-             # Initialize Portfolio DB
-             user_db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
-             from db_utils import initialize_database
+            # Initialize Portfolio DB
+            user_db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+            from db_utils import initialize_database
 
-             # We initialize the DB (creates tables)
-             user_conn = initialize_database(user_db_path)
-             if user_conn:
-                 user_conn.close()
+            # We initialize the DB (creates tables)
+            user_conn = initialize_database(user_db_path)
+            if user_conn:
+                user_conn.close()
 
-             logging.info(f"Initialized isolated environment for user {user.username}")
+            logging.info(f"Initialized isolated environment for user {user.username}")
 
         except Exception as e:
-             # Rollback user creation if environment setup fails?
-             # Ideally yes, but global DB commit already happened.
-             # We log critical error.
-             logging.error(f"Failed to initialize user environment for {user.username}: {e}")
-             # Proceed? Or fail? The user exists but has no DB.
-             # Let's try to fail harder or just logging.
-             # Re-raising might be better so user knows it failed.
-             raise HTTPException(status_code=500, detail="Failed to initialize user data environment")
+            conn.rollback()
+            logging.error(f"Failed to initialize user environment for {user.username}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to initialize user data environment")
 
+        conn.commit()
         return User(id=new_user_id, username=user.username, is_active=True, created_at=created_at)
 
     except HTTPException:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise
     except Exception as e:
-        # conn via dependency is closed by dependency, but we can try rollback if active transaction
-        # But usually exception triggers 500.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         logging.error(f"Registration error: {e}")
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
