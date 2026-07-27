@@ -1066,14 +1066,16 @@ def get_cash_flows_for_mwr(
 
             if portfolio_basis:
                 # Portfolio-level MWR: use the centralized external-flow
-                # classifier (see is_external_flow_row above). This means:
-                #   - $CASH Deposit/Withdrawal with non-Auto-generated Note → flow
-                #   - $CASH buy/sell (kitmatan-style settlement) → 0
-                #   - $CASH Deposit/Withdrawal with Auto-generated: Note → 0
-                #     (dheematan-style synthetic per-trade entries)
+                # classifier (see is_external_flow_row above). Convention is
+                # "always external", so Note content is NOT inspected:
+                #   - $CASH Deposit/Withdrawal → flow, whatever the Note
+                #     (including "Auto-generated:" synthetic per-trade entries)
+                #   - $CASH buy/sell (settlement-style bookkeeping) → 0
                 #   - $CASH dividend/interest → 0 (internal income)
+                # Filtering the synthetic rows out inflates early-year returns;
+                # see tests/test_external_flow_classifier.py for the rationale.
                 # Same definition as the TWR engine — see
-                # _calculate_daily_net_cash_flow_vectorized in portfolio_logic.py.
+                # _calculate_daily_net_cash_flow_vectorized in portfolio_cashflows.py.
                 if is_external_flow_row(symbol, tx_type, row.get("Note", "")):
                     if tx_type == "deposit":
                         cash_flow_local = -(cash_amt + commission_local)

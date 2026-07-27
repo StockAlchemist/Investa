@@ -73,13 +73,21 @@ def _calculate_daily_net_cash_flow_vectorized(
         included_set = {str(a).upper().strip() for a in included_accounts}
     
     # --- 1. CASH SYMBOL FLOWS (Deposits/Withdrawals) ---
-    # Use the centralized bookkeeping-mode-independent classifier from
-    # finutils. This collapses three previously divergent rules across the TWR
-    # engine, the IRR engine, and ad-hoc checks into one definition: an
-    # external flow is a $CASH Deposit/Withdrawal whose Note does NOT begin
-    # with "Auto-generated:" (the import tool's marker for per-trade synthetic
-    # entries). $CASH buy/sell, $CASH dividend/interest, and stock-symbol
-    # buy/sell are all internal under this classifier.
+    # Use the centralized bookkeeping-mode-independent classifier from finutils.
+    # It collapses three previously divergent rules (TWR engine, IRR engine,
+    # ad-hoc checks) into one definition. The convention is "always external"
+    # (trading-account view): a flow is external iff Symbol is $CASH and Type is
+    # Deposit/Withdrawal. Note content is NOT inspected. $CASH buy/sell, $CASH
+    # dividend/interest, and stock-symbol buy/sell are all internal.
+    #
+    # Do NOT reintroduce the "Auto-generated:"-Note exclusion an earlier revision
+    # used. Real capital arriving and synthetic per-trade settlement entries
+    # share that prefix and cannot be separated by Note — in the 2003 inception
+    # data a single row is legitimately both. Filtering them strips the flow term
+    # that cancels the deposit's NAV jump, so the daily-return formula books the
+    # funding as performance: dheematan's inception quarter went 0% -> ~292%.
+    # See commit d5ec410e and tests/test_external_flow_classifier.py, which locks
+    # this in with explicit "Auto-generated:" cases.
     from finutils import compute_external_flow_mask
     cash_mask = compute_external_flow_mask(df_period)
     df_cash = df_period[cash_mask].copy()

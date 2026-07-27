@@ -2,7 +2,7 @@
 
 The classifier is the single source of truth for what counts as an external
 portfolio flow in both the TWR engine
-(`_calculate_daily_net_cash_flow_vectorized` in portfolio_logic.py) and the
+(`_calculate_daily_net_cash_flow_vectorized` in portfolio_cashflows.py) and the
 IRR/MWR engine (`get_cash_flows_for_mwr` in finutils.py under
 `flow_basis="portfolio"`).
 
