@@ -553,9 +553,6 @@ export default function Home() {
             {visibleItems.includes('performanceGraph') && (
               <PerformanceGraph
                 currency={currency}
-                accounts={selectedAccounts}
-                benchmarks={benchmarks}
-                onBenchmarksChange={setBenchmarks}
                 period={graphPeriod}
                 onPeriodChange={setGraphPeriod}
                 view={graphView}

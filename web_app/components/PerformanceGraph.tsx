@@ -43,9 +43,6 @@ type PerfPoint = PerformanceData & {
 
 interface PerformanceGraphProps {
     currency: string;
-    accounts?: string[];
-    benchmarks: string[];
-    onBenchmarksChange: (benchmarks: string[]) => void;
     period: string;
     onPeriodChange: (period: string) => void;
     view: 'return' | 'value' | 'drawdown';
