@@ -69,8 +69,6 @@ const COLORS = [
 
 export default function PerformanceGraph({
     currency,
-    benchmarks,
-    onBenchmarksChange,
     period,
     onPeriodChange,
     view,
