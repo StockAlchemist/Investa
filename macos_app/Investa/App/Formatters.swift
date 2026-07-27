@@ -81,9 +81,10 @@ enum Fmt {
     }
 
     /// `value` is treated as an already-scaled percentage (e.g. 12.3 → "12.30%").
-    static func percent(_ value: Double?, fractionDigits: Int = 2) -> String {
+    static func percent(_ value: Double?, fractionDigits: Int = 2, includeSign: Bool = false) -> String {
         guard let value else { return "—" }
-        return String(format: "%+.\(fractionDigits)f%%", value)
+        let fmt = includeSign ? "%+.\(fractionDigits)f%%" : "%.\(fractionDigits)f%%"
+        return String(format: fmt, value)
     }
 
     /// Color for a gain/loss figure: green positive, red negative, secondary zero/nil.

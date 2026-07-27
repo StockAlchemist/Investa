@@ -206,7 +206,7 @@ struct PortfolioHeroCard: View {
             Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
                 .lineLimit(1).minimumScaleFactor(0.7)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(Fmt.percent(value)).font(.title3.bold()).foregroundStyle(Fmt.tint(for: value))
+                Text(Fmt.percent(value, includeSign: true)).font(.title3.bold()).foregroundStyle(Fmt.tint(for: value))
                     .lineLimit(1).minimumScaleFactor(0.5)
                 if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
             }
@@ -947,7 +947,7 @@ struct RiskMetricsCard: View {
             ("Volatility", "Volatility", Fmt.percent(risk?.volatilityAnn), .primary),
             ("Max Drawdown", "Max Drawdown", Fmt.percent(risk?.maxDrawdown), .down),
             ("Beta", "Beta", Fmt.number(risk?.beta), (risk?.beta ?? 0) > 1.2 ? .orange : .primary),
-            ("Alpha", "Alpha", Fmt.percent(risk?.alpha),
+            ("Alpha", "Alpha", Fmt.percent(risk?.alpha, includeSign: true),
              (risk?.alpha ?? 0) > 0 ? .up : ((risk?.alpha ?? 0) < 0 ? .down : .primary)),
         ]
     }

@@ -477,7 +477,7 @@ struct RealizedGainsTable: View {
                         Text(Fmt.currency(r.gain, code: currency)).fontWeight(.medium).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gain))
                     }
                     TableColumn("Gain %", value: \.gainPct) { r in
-                        Text(Fmt.percent(r.gainPct)).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct))
+                        Text(Fmt.percent(r.gainPct, includeSign: true)).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct))
                     }
                 }
                 .frame(minHeight: 340)
@@ -511,7 +511,7 @@ struct RealizedGainsTable: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Gain").font(.caption).foregroundStyle(.secondary)
-                    Text(Fmt.percent(r.gainPct)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct)).lineLimit(1)
+                    Text(Fmt.percent(r.gainPct, includeSign: true)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct)).lineLimit(1)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
         }

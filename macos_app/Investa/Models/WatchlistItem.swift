@@ -21,7 +21,10 @@ struct WatchlistItem: Decodable, Sendable, Identifiable {
     var dayChangePct: Double? { d("Day Change %") }
     var marketCap: Double? { d("Market Cap") }
     var peRatio: Double? { d("PE Ratio") }
-    var dividendYield: Double? { d("Dividend Yield") }
+    var dividendYield: Double? {
+        guard let y = d("Dividend Yield") else { return nil }
+        return y < 0.12 ? y * 100.0 : y
+    }
     var aiScore: Double? { d("ai_score") }
     var intrinsicValue: Double? { d("intrinsic_value") }
     var marginOfSafety: Double? { d("margin_of_safety") }

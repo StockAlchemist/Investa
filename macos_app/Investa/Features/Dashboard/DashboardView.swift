@@ -154,7 +154,7 @@ struct DashboardView: View {
     // Compact metric grid: the web's 12 scalar cards, filtered by Layout visibility, in order.
     private var metricGrid: some View {
         let m = viewModel.metrics
-        func pct(_ v: Double?) -> String? { v == nil ? nil : Fmt.percent(v) }
+        func pct(_ v: Double?) -> String? { v == nil ? nil : Fmt.percent(v, includeSign: true) }
         // YTD Return: prefer the risk-metrics value (a fraction), fall back to the
         // summary metric (already a percent) — mirrors the web Dashboard.
         let ytdReturn: Double? = viewModel.risk?.ytdReturn.map { $0 * 100 } ?? m?.ytdReturn
@@ -165,16 +165,16 @@ struct DashboardView: View {
                        tint: Fmt.tint(for: m?.unrealizedGain)),
             "realizedGain": MetricCard(title: "Realized Gain", value: Fmt.currency(m?.realizedGain, code: cur),
                        tint: Fmt.tint(for: m?.realizedGain)),
-            "annualTWR": MetricCard(title: "Total TWR", value: Fmt.percent(m?.cumulativeTWR),
-                       subtitle: m?.annualizedTWR != nil ? "\(Fmt.percent(m?.annualizedTWR)) p.a." : nil,
+            "annualTWR": MetricCard(title: "Total TWR", value: Fmt.percent(m?.cumulativeTWR, includeSign: true),
+                       subtitle: m?.annualizedTWR != nil ? "\(Fmt.percent(m?.annualizedTWR, includeSign: true)) p.a." : nil,
                        tint: Fmt.tint(for: m?.cumulativeTWR)),
-            "mwr": MetricCard(title: "IRR (MWR)", value: Fmt.percent(m?.portfolioMWR), subtitle: "p.a.",
+            "mwr": MetricCard(title: "IRR (MWR)", value: Fmt.percent(m?.portfolioMWR, includeSign: true), subtitle: "p.a.",
                        tint: Fmt.tint(for: m?.portfolioMWR)),
             "ytdDividends": MetricCard(title: "Total Dividends", value: Fmt.currency(m?.dividends, code: cur), tint: .up),
             "dividendYield": MetricCard(title: "Dividend Yield", value: Fmt.percent(m?.dividendReturnCumulative),
                        subtitle: m?.dividendReturnAnnualized != nil ? "\(Fmt.percent(m?.dividendReturnAnnualized)) p.a." : nil,
                        accent: Theme.brand),
-            "ytdReturn": MetricCard(title: "YTD Return", value: Fmt.percent(ytdReturn), tint: Fmt.tint(for: ytdReturn)),
+            "ytdReturn": MetricCard(title: "YTD Return", value: Fmt.percent(ytdReturn, includeSign: true), tint: Fmt.tint(for: ytdReturn)),
             "cashBalance": MetricCard(title: "Cash Balance", value: Fmt.currency(m?.cashBalance, code: cur),
                        accent: Theme.brand),
             "fxGL": MetricCard(title: "FX Gain/Loss", value: Fmt.currency(m?.fxGainLossDisplay, code: cur),

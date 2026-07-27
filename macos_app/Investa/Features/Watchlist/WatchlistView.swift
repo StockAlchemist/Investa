@@ -294,7 +294,7 @@ struct WatchlistView: View {
             HStack {
                 Text(item.name ?? "-").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Text(Fmt.percent(item.dayChangePct)).font(.subheadline.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))
+                Text(Fmt.percent(item.dayChangePct, includeSign: true)).font(.subheadline.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))
             }
             Divider()
             HStack {
@@ -370,7 +370,7 @@ struct WatchlistView: View {
             .buttonStyle(.plain).gridColumnAlignment(.leading)
             Text(item.name ?? "-").foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 160, alignment: .leading).gridColumnAlignment(.leading)
             Text(item.price.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").monospacedDigit()
-            Text(Fmt.percent(item.dayChangePct)).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))
+            Text(Fmt.percent(item.dayChangePct, includeSign: true)).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))
             Text(item.marketCap.map { Fmt.number($0, fractionDigits: 0) } ?? "-").monospacedDigit().foregroundStyle(.secondary)
             Text(item.peRatio.map { String(format: "%.1f", $0) } ?? "-").monospacedDigit().foregroundStyle(.secondary)
             Text(Fmt.percent(item.dividendYield)).monospacedDigit().foregroundStyle(.secondary)

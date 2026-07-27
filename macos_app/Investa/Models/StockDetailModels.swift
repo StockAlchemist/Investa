@@ -27,12 +27,18 @@ struct Fundamentals: Codable, Sendable {
     var marketCap: Double? { double("marketCap") }
     var trailingPE: Double? { double("trailingPE") }
     var forwardPE: Double? { double("forwardPE") }
-    var dividendYield: Double? { double("dividendYield") }
+    var dividendYield: Double? {
+        guard let y = double("dividendYield") else { return nil }
+        return y < 0.12 ? y * 100.0 : y
+    }
     var beta: Double? { double("beta") }
     var high52: Double? { double("fiftyTwoWeekHigh") }
     var low52: Double? { double("fiftyTwoWeekLow") }
     var shortName: String? { string("shortName") ?? string("longName") }
-    var expenseRatio: Double? { double("netExpenseRatio") ?? double("expenseRatio") ?? double("annualReportExpenseRatio") }
+    var expenseRatio: Double? {
+        guard let e = double("netExpenseRatio") ?? double("expenseRatio") ?? double("annualReportExpenseRatio") else { return nil }
+        return e < 0.12 ? e * 100.0 : e
+    }
     var isETF: Bool { raw["etf_data"]?.objectValue != nil }
 
     /// ETF top holdings (symbol, name, percent).

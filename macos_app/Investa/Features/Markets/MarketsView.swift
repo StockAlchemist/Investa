@@ -112,9 +112,9 @@ struct MarketsView: View {
         let content = HStack(spacing: 0) {
             tile("Breadth", "\(up) ▲ / \(down) ▼", "\(list.count) indices", up >= down ? .green : .red)
             Divider().frame(height: 36)
-            tile("Best", best.map { Fmt.percent($0.changesPercentage) } ?? "–", best?.name, .green)
+            tile("Best", best.map { Fmt.percent($0.changesPercentage, includeSign: true) } ?? "–", best?.name, .green)
             Divider().frame(height: 36)
-            tile("Worst", worst.map { Fmt.percent($0.changesPercentage) } ?? "–", worst?.name, .red)
+            tile("Worst", worst.map { Fmt.percent($0.changesPercentage, includeSign: true) } ?? "–", worst?.name, .red)
         }
         .padding(16)
 
@@ -347,7 +347,7 @@ private struct IndexGraphSheet: View {
                     Text(index.name ?? "Index").font(.title2.bold())
                     HStack(spacing: 10) {
                         Text(Fmt.number(index.price)).font(.title3).monospacedDigit()
-                        Text("\(isUp ? "+" : "")\(Fmt.number(index.change)) (\(Fmt.percent(index.changesPercentage)))")
+                        Text("\(isUp ? "+" : "")\(Fmt.number(index.change)) (\(Fmt.percent(index.changesPercentage, includeSign: true)))")
                             .foregroundStyle(isUp ? .green : .red).fontWeight(.semibold)
                     }
                 }

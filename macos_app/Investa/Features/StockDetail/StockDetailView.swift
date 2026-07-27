@@ -441,7 +441,7 @@ struct StockDetailView: View {
                 
                 let urGain = pos.currencyValue("Unreal. Gain", currency: cur)
                 statCard("Unrealized G/L", Fmt.currency(urGain, code: cur),
-                         sub: pos.unrealizedGainPct == .infinity ? "∞" : Fmt.percent(pos.unrealizedGainPct),
+                         sub: pos.unrealizedGainPct == .infinity ? "∞" : Fmt.percent(pos.unrealizedGainPct, includeSign: true),
                          icon: "bolt.heart",
                          iconTint: (urGain ?? 0) >= 0 ? .green : .red,
                          subTint: (urGain ?? 0) >= 0 ? .green : .red,
@@ -449,13 +449,13 @@ struct StockDetailView: View {
                 
                 let tGain = pos.currencyValue("Total Gain", currency: cur)
                 statCard("Total Return", Fmt.currency(tGain, code: cur),
-                         sub: pos.totalReturnPct == .infinity ? "∞" : Fmt.percent(pos.totalReturnPct),
+                         sub: pos.totalReturnPct == .infinity ? "∞" : Fmt.percent(pos.totalReturnPct, includeSign: true),
                          icon: "chart.line.uptrend.xyaxis",
                          iconTint: (tGain ?? 0) >= 0 ? .green : .red,
                          subTint: (tGain ?? 0) >= 0 ? .green : .red,
                          bgTint: ((tGain ?? 0) >= 0 ? Color.green : Color.red).opacity(0.1))
                 
-                statCard("IRR %", pos.irrPct == .infinity ? "∞" : Fmt.percent(pos.irrPct),
+                statCard("IRR %", pos.irrPct == .infinity ? "∞" : Fmt.percent(pos.irrPct, includeSign: true),
                          icon: "chart.xyaxis.line",
                          iconTint: (pos.irrPct ?? 0) >= 0 ? .green : .red,
                          bgTint: ((pos.irrPct ?? 0) >= 0 ? Color.green : Color.red).opacity(0.1))
@@ -478,7 +478,7 @@ struct StockDetailView: View {
             HStack(alignment: .bottom) {
                 Text(Fmt.currency(value, code: nativeCur)).font(.title3.weight(.bold)).foregroundStyle(.primary)
                 Spacer()
-                if let u = upside { Text(Fmt.percent(u)).font(.caption2.weight(.bold)).foregroundStyle(Fmt.tint(for: u)) }
+                if let u = upside { Text(Fmt.percent(u, includeSign: true)).font(.caption2.weight(.bold)).foregroundStyle(Fmt.tint(for: u)) }
             }
             if let r = range, let bear = r.bear, let bull = r.bull {
                 Text("Range: \(Fmt.currency(bear, code: nativeCur)) – \(Fmt.currency(bull, code: nativeCur))")
@@ -858,7 +858,7 @@ struct StockDetailView: View {
                                     value: Fmt.currency(iv.currentPrice, code: nativeCur),
                                     valueColor: .primary) { EmptyView() }
         let safety = valuationCard(label: "Margin of Safety",
-                                   value: Fmt.percent(mos),
+                                   value: Fmt.percent(mos, includeSign: true),
                                    valueColor: mos >= 0 ? .green : .red,
                                    tint: mos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1)) { EmptyView() }
 

@@ -137,7 +137,7 @@ struct ProjectionCardView: View {
                 ChartTooltipRow(color: Theme.brand, label: "Median",
                                 value: Fmt.currency(h.medianValue, code: cur)),
                 ChartTooltipRow(label: "Expected", value: Fmt.currency(h.expectedValue, code: cur)),
-                ChartTooltipRow(label: "Return", value: Fmt.percent(h.medianReturnPct)),
+                ChartTooltipRow(label: "Return", value: Fmt.percent(h.medianReturnPct, includeSign: true)),
                 ChartTooltipRow(label: "10–90%",
                                 value: "\(Fmt.compact(h.p10, code: cur)) – \(Fmt.compact(h.p90, code: cur))"),
             ])
@@ -168,7 +168,7 @@ struct ProjectionCardView: View {
                     Text(Fmt.currency(h.medianValue, code: cur))
                         .fontWeight(.bold).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                    Text(Fmt.percent(h.medianReturnPct))  // Fmt.percent already prefixes +/-
+                    Text(Fmt.percent(h.medianReturnPct, includeSign: true))  // Fmt.percent already prefixes +/-
                         .fontWeight(.semibold).monospacedDigit()
                         .foregroundStyle(h.medianReturnPct >= 0 ? Color.green : .red)
                         .frame(maxWidth: .infinity, alignment: .trailing)

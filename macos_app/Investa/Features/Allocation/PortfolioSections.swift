@@ -17,8 +17,10 @@ private struct Section_<Content: View>: View {
             }
             Divider()
             content
+            Spacer(minLength: 0)
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .card(.standard)
     }
 }

@@ -125,16 +125,60 @@ struct AllocationView: View {
 
                         // Category drift — grid-cols-1 md:grid-cols-2 xl:grid-cols-3 (up to 3-up).
                         if vis("categoryDrift") {
-                            LazyVGrid(columns: flexColumns(count: geo.size.width >= 1100 ? 3 : (geo.size.width >= 720 ? 2 : 1)), spacing: 24) {
-                                AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
-                                                    bucketKey: "quoteType", settingsBucket: "quoteType",
-                                                    title: "Asset Type — drift vs target", vm: viewModel)
-                                AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
-                                                    bucketKey: "Sector", settingsBucket: "sector",
-                                                    title: "Sector — drift vs target", vm: viewModel)
-                                AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
-                                                    bucketKey: "Country", settingsBucket: "country",
-                                                    title: "Country — drift vs target", vm: viewModel)
+                            let count = geo.size.width >= 1100 ? 3 : (geo.size.width >= 720 ? 2 : 1)
+                            Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 24) {
+                                if count == 3 {
+                                    GridRow {
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "quoteType", settingsBucket: "quoteType",
+                                                            title: "Asset Type — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "Sector", settingsBucket: "sector",
+                                                            title: "Sector — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "Country", settingsBucket: "country",
+                                                            title: "Country — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                } else if count == 2 {
+                                    GridRow {
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "quoteType", settingsBucket: "quoteType",
+                                                            title: "Asset Type — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "Sector", settingsBucket: "sector",
+                                                            title: "Sector — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                    GridRow {
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "Country", settingsBucket: "country",
+                                                            title: "Country — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                } else {
+                                    GridRow {
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "quoteType", settingsBucket: "quoteType",
+                                                            title: "Asset Type — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                    GridRow {
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "Sector", settingsBucket: "sector",
+                                                            title: "Sector — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                    GridRow {
+                                        AllocationDriftCard(holdings: viewModel.holdings, currency: cur,
+                                                            bucketKey: "Country", settingsBucket: "country",
+                                                            title: "Country — drift vs target", vm: viewModel)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                }
                             }
                         }
 
@@ -155,11 +199,27 @@ struct AllocationView: View {
 
                         // Donut charts — grid-cols-1 md:grid-cols-2 (exactly 2-up).
                         if vis("donutCharts") {
-                            LazyVGrid(columns: flexColumns(count: geo.size.width >= 720 ? 2 : 1), spacing: 24) {
-                                AllocationDonutChart(title: "By Asset Type", holdings: viewModel.holdings, currency: cur, bucketKey: "quoteType")
-                                AllocationDonutChart(title: "By Sector", holdings: viewModel.holdings, currency: cur, bucketKey: "Sector")
-                                AllocationDonutChart(title: "By Industry", holdings: viewModel.holdings, currency: cur, bucketKey: "Industry")
-                                AllocationDonutChart(title: "By Country", holdings: viewModel.holdings, currency: cur, bucketKey: "Country")
+                            let count = geo.size.width >= 720 ? 2 : 1
+                            Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 24) {
+                                if count == 2 {
+                                    GridRow {
+                                        AllocationDonutChart(title: "By Asset Type", holdings: viewModel.holdings, currency: cur, bucketKey: "quoteType")
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                        AllocationDonutChart(title: "By Sector", holdings: viewModel.holdings, currency: cur, bucketKey: "Sector")
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                    GridRow {
+                                        AllocationDonutChart(title: "By Industry", holdings: viewModel.holdings, currency: cur, bucketKey: "Industry")
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                        AllocationDonutChart(title: "By Country", holdings: viewModel.holdings, currency: cur, bucketKey: "Country")
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    }
+                                } else {
+                                    GridRow { AllocationDonutChart(title: "By Asset Type", holdings: viewModel.holdings, currency: cur, bucketKey: "quoteType").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
+                                    GridRow { AllocationDonutChart(title: "By Sector", holdings: viewModel.holdings, currency: cur, bucketKey: "Sector").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
+                                    GridRow { AllocationDonutChart(title: "By Industry", holdings: viewModel.holdings, currency: cur, bucketKey: "Industry").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
+                                    GridRow { AllocationDonutChart(title: "By Country", holdings: viewModel.holdings, currency: cur, bucketKey: "Country").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
+                                }
                             }
                         }
                     }

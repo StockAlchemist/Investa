@@ -22,7 +22,12 @@ struct AdaptiveTwoColumn<L: View, R: View>: View {
     var body: some View {
         Group {
             if sideBySide {
-                HStack(alignment: .top, spacing: spacing) { left; right }
+                Grid(alignment: .topLeading, horizontalSpacing: spacing, verticalSpacing: spacing) {
+                    GridRow {
+                        left.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        right.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
+                }
             } else {
                 VStack(spacing: spacing) { left; right }
             }
