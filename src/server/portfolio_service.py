@@ -28,7 +28,7 @@ from portfolio_logic import (
     calculate_portfolio_summary,
 )
 from server.auth import User
-from server.dependencies import get_config_manager, reload_data
+from server.dependencies import get_config_manager, reload_data, resolve_user_db_path
 from server.route_utils import SWRCache, _lru_get, _lru_put, clean_nans, get_mdp
 from server.routes.market import clear_market_history_cache
 from utils_time import get_est_today, get_latest_trading_date, is_market_open
@@ -44,28 +44,34 @@ _RAW_CALC_CACHE = SWRCache()
 _PORTFOLIO_HISTORY_CACHE = SWRCache()
 
 
-def _user_db_path(username: str) -> str:
-    """Reconstruct the per-user SQLite path from a username."""
-    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
-    return os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
-
-
 def _evict_user_summary_cache(username: str):
     """Remove only the given user's entries from _PORTFOLIO_SUMMARY_CACHE.
 
     The summary cache key has db_path at index 2, which is unique per user.
     """
-    user_path = _user_db_path(username)
-    stale = [k for k in _PORTFOLIO_SUMMARY_CACHE if k[2] == user_path]
+    user_path = resolve_user_db_path(username)
+    stale = [k for k in _PORTFOLIO_SUMMARY_CACHE if len(k) > 2 and k[2] == user_path]
     for k in stale:
         del _PORTFOLIO_SUMMARY_CACHE[k]
 
 
 def _evict_user_history_cache(username: str):
     """Remove only the given user's entries from _PORTFOLIO_HISTORY_CACHE."""
-    user_path = _user_db_path(username)
+    user_path = resolve_user_db_path(username)
     _PORTFOLIO_HISTORY_CACHE.invalidate(
         lambda k: isinstance(k, tuple) and len(k) > 0 and k[0] == user_path
+    )
+
+
+def _evict_user_raw_cache(username: str):
+    """Remove only the given user's entries from _RAW_CALC_CACHE.
+
+    The raw key is (currency, accounts_key, db_path, db_mtime) — db_path at
+    index 2, as in the summary cache.
+    """
+    user_path = resolve_user_db_path(username)
+    _RAW_CALC_CACHE.invalidate(
+        lambda k: isinstance(k, tuple) and len(k) > 2 and k[2] == user_path
     )
 
 
@@ -76,23 +82,34 @@ def reload_data_and_clear_cache(current_user: Optional[User] = None):
     if username:
         _evict_user_summary_cache(username)
         _evict_user_history_cache(username)
+        _evict_user_raw_cache(username)
         # Market history is shared benchmark data — safe to clear entirely on a write
         clear_market_history_cache()
     else:
         _PORTFOLIO_SUMMARY_CACHE.clear()
         clear_market_history_cache()
         _PORTFOLIO_HISTORY_CACHE.clear()
+        _RAW_CALC_CACHE.clear()
     logging.info(f"Caches cleared for user '{username or 'all'}'.")
     if current_user:
         trigger_background_precalculation(current_user)
 
 
 def clear_portfolio_caches():
-    """Clears calculated caches (Summary, History) without wiping the transaction dataframe cache."""
+    """Clears calculated caches (Summary, Raw, History) without wiping the transaction dataframe cache.
+
+    _RAW_CALC_CACHE must be included: its key is
+    (currency, accounts_key, db_path, db_mtime), which carries no fingerprint of
+    manual overrides, the symbol map, excluded symbols, or interest-rate
+    settings. A settings write leaves db_mtime untouched, so without an explicit
+    clear the recompute triggered here reads pre-change numbers straight back
+    out of the raw layer for the rest of the TTL (60s open / 300s closed).
+    """
     _PORTFOLIO_SUMMARY_CACHE.clear()
     clear_market_history_cache()
     _PORTFOLIO_HISTORY_CACHE.clear()
-    logging.info("Portfolio Summary, Market History, and Portfolio History caches cleared (Transaction cache retained).")
+    _RAW_CALC_CACHE.clear()
+    logging.info("Portfolio Summary, Raw, Market History, and Portfolio History caches cleared (Transaction cache retained).")
 
 
 def trigger_background_precalculation(current_user: User):

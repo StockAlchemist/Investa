@@ -110,6 +110,45 @@ TransactionData = Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], 
 _EMPTY_RESULT: TransactionData = (pd.DataFrame(), {}, {}, set(), {}, {}, "", 0.0)
 
 
+def user_data_dir_for(username: str) -> str:
+    """The per-user data directory. Does not create it."""
+    return os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
+
+
+def read_gui_config(config_dir: str) -> Dict[str, Any]:
+    """Load gui_config.json from a user's config dir, or {} if absent/corrupt."""
+    gui_config_path = os.path.join(config_dir, config.GUI_CONFIG_FILENAME)
+    if os.path.exists(gui_config_path):
+        try:
+            with open(gui_config_path, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _db_path_from(user_data_dir: str, gui_config: Dict[str, Any]) -> str:
+    """The effective portfolio DB path: the default unless `transactions_file`
+    names an existing file."""
+    override = gui_config.get("transactions_file")
+    if override and os.path.exists(override):
+        return override
+    return os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+
+
+def resolve_user_db_path(username: str) -> str:
+    """The effective DB path for `username`, honouring `transactions_file`.
+
+    Downstream cache keys embed this path, so anything that evicts by user must
+    resolve it *the same way* ``get_or_load`` does. Re-deriving the default path
+    instead makes eviction a silent no-op whenever the override points elsewhere,
+    leaving stale summaries and history served after a write.
+    """
+    user_data_dir = user_data_dir_for(username)
+    config_dir = os.path.join(user_data_dir, config.CONFIG_DIR)
+    return _db_path_from(user_data_dir, read_gui_config(config_dir))
+
+
 @dataclass
 class _UserCacheEntry:
     """Everything cached for one user. Entries are built off to the side and
@@ -160,21 +199,19 @@ class UserDataCache:
     # ---- public API ----
 
     def get_or_load(self, username: str) -> TransactionData:
-        user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
+        user_data_dir = user_data_dir_for(username)
         os.makedirs(user_data_dir, exist_ok=True)
         config_dir = os.path.join(user_data_dir, config.CONFIG_DIR)
 
         # User configuration is read fresh on every call — it determines the
         # DB path and currency mapping, which drive the reload decision.
-        gui_config = self._read_gui_config(config_dir)
+        gui_config = read_gui_config(config_dir)
 
         account_currency_map = {"SET": "THB"}
         account_currency_map.update(gui_config.get("account_currency_map", {}))
         account_cash_mode_map = dict(gui_config.get("account_cash_mode_map", {}))
 
-        db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
-        if "transactions_file" in gui_config and os.path.exists(gui_config["transactions_file"]):
-            db_path = gui_config["transactions_file"]
+        db_path = _db_path_from(user_data_dir, gui_config)
 
         db_mtime = self._effective_db_mtime(db_path)
         entry = self._entries.get(username)
@@ -224,17 +261,6 @@ class UserDataCache:
         logging.info(f"Settings cache cleared for {'user ' + str(username) if username else 'all users'}.")
 
     # ---- internals ----
-
-    @staticmethod
-    def _read_gui_config(config_dir: str) -> Dict[str, Any]:
-        gui_config_path = os.path.join(config_dir, config.GUI_CONFIG_FILENAME)
-        if os.path.exists(gui_config_path):
-            try:
-                with open(gui_config_path, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
 
     @staticmethod
     def _effective_db_mtime(db_path: str) -> float:
