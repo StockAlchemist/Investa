@@ -755,9 +755,9 @@ def get_fundamentals_endpoint(
         try:
             from server.calendar_events import upcoming_events
 
-            fundamental_data["upcoming_events"] = upcoming_events(
-                symbol, fundamental_data, date.today()
-            )
+            # No `today` argument: the horizon is reckoned on the exchange's own
+            # clock, not this server's.
+            fundamental_data["upcoming_events"] = upcoming_events(symbol, fundamental_data)
         except Exception as e_events:
             logging.debug(f"Upcoming-events derivation skipped for {symbol}: {e_events}")
 

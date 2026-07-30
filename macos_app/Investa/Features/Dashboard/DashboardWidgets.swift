@@ -397,6 +397,13 @@ enum TimelineEvent: Identifiable {
         case .earnings(let e): return e.status
         }
     }
+    /// The exchange zone `date` belongs to — every day count uses it, not the device's.
+    var marketTimezone: String? {
+        switch self {
+        case .dividend(let d): return d.marketTimezone
+        case .earnings(let e): return e.marketTimezone
+        }
+    }
 }
 
 struct UpcomingEventsCard: View {
@@ -415,36 +422,29 @@ struct UpcomingEventsCard: View {
 
     private var confirmedCount: Int { dividends.filter { $0.status == "confirmed" }.count }
 
-    private static let inFmt: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
-    }()
-
-    /// Short day label ("Jul 29") for dates past the relative-day window — the
-    /// full ISO string is too wide for a phone row.
-    private static let dayFmt: DateFormatter = {
-        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("MMMd"); return f
-    }()
-
-    private func relativeDay(_ iso: String) -> String {
-        guard let d = Self.inFmt.date(from: String(iso.prefix(10))) else { return "" }
-        let cal = Calendar.current
-        let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: cal.startOfDay(for: d)).day ?? 0
+    /// "today" / "3d" / "Jul 29" for an event date, counted in the *market's*
+    /// local time: in Bangkok the device rolls into tomorrow while New York is
+    /// still mid-afternoon, which would show a US report happening today as "1d ago".
+    /// The short day label is the fallback past the relative-day window — the full
+    /// ISO string is too wide for a phone row.
+    private func relativeDay(_ iso: String, _ timeZone: String?) -> String {
+        guard let days = MarketTime.dayDiff(iso, timeZone: timeZone) else { return "" }
         switch days {
         case 0: return "today"
         case 1: return "tomorrow"
         case ..<0: return "\(-days)d ago"
         case 1..<7: return "\(days)d"
-        default: return Self.dayFmt.string(from: d)
+        default: return MarketTime.shortDay(iso)
         }
     }
 
     private var upcoming: [TimelineEvent] {
-        let now = Calendar.current.startOfDay(for: Date())
-        let cutoff = Calendar.current.date(byAdding: .day, value: windowDays, to: now) ?? now
         let all = dividends.map { TimelineEvent.dividend($0) } + earnings.map { TimelineEvent.earnings($0) }
         return all.filter {
-            guard let d = Self.inFmt.date(from: $0.date) else { return false }
-            return d >= now && d <= cutoff
+            // The window is measured on each event's own exchange clock, so the
+            // row shown as "today" is the one the market calls today.
+            guard let days = MarketTime.dayDiff($0.date, timeZone: $0.marketTimezone) else { return false }
+            return days >= 0 && days <= windowDays
         }
         .sorted { $0.date == $1.date ? $0.symbol < $1.symbol : $0.date < $1.date }
         .prefix(8).map { $0 }
@@ -485,8 +485,8 @@ struct UpcomingEventsCard: View {
                                 }
                             }
                             Spacer(minLength: 6)
-                            Text(relativeDay(ev.date)).font(.caption).textCase(.uppercase)
-                                .foregroundStyle(isSoon(ev.date) ? Color.up : .secondary)
+                            Text(relativeDay(ev.date, ev.marketTimezone)).font(.caption).textCase(.uppercase)
+                                .foregroundStyle(isSoon(ev) ? Color.up : .secondary)
                                 .lineLimit(1).fixedSize()
                             trailing(ev)
                                 .lineLimit(1).minimumScaleFactor(0.7)
@@ -539,8 +539,9 @@ struct UpcomingEventsCard: View {
         }
     }
 
-    private func isSoon(_ iso: String) -> Bool {
-        let r = relativeDay(iso); return r == "today" || r == "tomorrow"
+    private func isSoon(_ ev: TimelineEvent) -> Bool {
+        guard let days = MarketTime.dayDiff(ev.date, timeZone: ev.marketTimezone) else { return false }
+        return days == 0 || days == 1
     }
 }
 

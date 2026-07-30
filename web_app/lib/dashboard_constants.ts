@@ -17,6 +17,7 @@ export const COMPLEX_METRIC_IDS = [
 export const TOP_SECTION_IDS = [
     'portfolioHero',
     'todayStrip',
+    'trendSignal',
     'dashboardEvents',
     'dashboardInsights',
 ];
@@ -28,6 +29,7 @@ export const DEFAULT_ITEMS = [
     // Overview (top of page)
     { id: 'portfolioHero', title: 'Portfolio Hero', group: 'Overview' },
     { id: 'todayStrip', title: 'Market Today', group: 'Overview' },
+    { id: 'trendSignal', title: 'Trend Signal', group: 'Overview' },
     // Insights & Events
     { id: 'dashboardEvents', title: 'Upcoming Events', group: 'Insights & Events' },
     { id: 'dashboardInsights', title: 'Actionable Insights', group: 'Insights & Events' },
@@ -59,6 +61,7 @@ export const DEFAULT_ITEMS = [
 export const INITIAL_VISIBLE_ITEMS = [
     'portfolioHero',
     'todayStrip',
+    'trendSignal',
     'dashboardEvents',
     'dashboardInsights',
     'totalReturn',
@@ -87,6 +90,7 @@ export const TAB_THEMES: Record<string, { color: string; glow: string; bgGlow: s
     asset_change: { color: 'violet-500', glow: 'from-violet-500/20', bgGlow: 'bg-violet-500/20', bgSolid: 'bg-violet-500', textSolid: 'text-violet-500', shadowSolid: 'shadow-violet-500/30' },
     capital_gains: { color: 'amber-500', glow: 'from-amber-500/20', bgGlow: 'bg-amber-500/20', bgSolid: 'bg-amber-500', textSolid: 'text-amber-500', shadowSolid: 'shadow-amber-500/30' },
     dividend: { color: 'emerald-500', glow: 'from-emerald-500/20', bgGlow: 'bg-emerald-500/20', bgSolid: 'bg-emerald-500', textSolid: 'text-emerald-500', shadowSolid: 'shadow-emerald-500/30' },
+    buffett_rank: { color: 'lime-500', glow: 'from-lime-500/20', bgGlow: 'bg-lime-500/20', bgSolid: 'bg-lime-500', textSolid: 'text-lime-500', shadowSolid: 'shadow-lime-500/30' },
     ai_review: { color: 'rose-500', glow: 'from-rose-500/20', bgGlow: 'bg-rose-500/20', bgSolid: 'bg-rose-500', textSolid: 'text-rose-500', shadowSolid: 'shadow-rose-500/30' },
     markets: { color: 'cyan-500', glow: 'from-cyan-500/20', bgGlow: 'bg-cyan-500/20', bgSolid: 'bg-cyan-500', textSolid: 'text-cyan-500', shadowSolid: 'shadow-cyan-500/30' },
     settings: { color: 'zinc-500', glow: 'from-zinc-500/20', bgGlow: 'bg-zinc-500/20', bgSolid: 'bg-zinc-500', textSolid: 'text-zinc-500', shadowSolid: 'shadow-zinc-500/30' },

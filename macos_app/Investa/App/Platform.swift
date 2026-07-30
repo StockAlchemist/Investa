@@ -5,6 +5,20 @@ import UIKit
 import AppKit
 #endif
 
+/// True on iPhone only — iPad and macOS report false.
+///
+/// `iPhoneTextScale()` already shrinks semantic text app-wide on phone, but
+/// dense multi-column rows need layout changes as well as smaller type: at
+/// ~390pt wide there is simply not room for six labelled columns at the
+/// spacing a Mac window affords.
+var isPhoneLayout: Bool {
+    #if os(iOS)
+    return UIDevice.current.userInterfaceIdiom == .phone
+    #else
+    return false
+    #endif
+}
+
 // MARK: - Cross-platform image
 
 #if canImport(UIKit)

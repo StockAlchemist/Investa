@@ -103,6 +103,23 @@ BACKEND_PID=$!
 # Wait a moment for backend to initialize
 sleep 2
 
+# Start the Buffett ranking worker (daily loop) in the background.
+#
+# Without it the Strategies and Rankings tabs silently freeze at whichever run
+# was last kicked off by hand: every endpoint keeps serving the last good
+# snapshot and looks perfectly healthy. A run costs about a minute, and the
+# worker backs off on its own after a failure, so a daily loop is close to
+# free. Set INVESTA_SKIP_RANKING=1 to leave it out (metered connection, CI).
+if [ "$INVESTA_SKIP_RANKING" = "1" ]; then
+    echo "Skipping ranking worker (INVESTA_SKIP_RANKING=1)"
+    RANKING_PID="(skipped)"
+else
+    mkdir -p data/logs
+    echo "Starting Buffett ranking worker (daily loop)..."
+    python3 src/buffett_rank_worker.py --loop >> data/logs/buffett_rank_worker.log 2>&1 &
+    RANKING_PID=$!
+fi
+
 # Start Frontend in background
 cd web_app
 if [ "$DEV_MODE" = "1" ]; then
@@ -134,6 +151,7 @@ FRONTEND_PID=$!
 echo "Investa is running."
 echo "Backend PID: $BACKEND_PID"
 echo "Frontend PID: $FRONTEND_PID"
+echo "Ranking worker PID: $RANKING_PID  (log: data/logs/buffett_rank_worker.log)"
 echo "Press Ctrl+C to stop both."
 
 # Wait for processes to finish

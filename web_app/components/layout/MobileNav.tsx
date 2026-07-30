@@ -6,8 +6,8 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, PieChart, TrendingUp, ArrowLeftRight,
-  DollarSign, BarChart3, Search, Star, Globe, Sparkles,
-  LogOut, X,
+  DollarSign, BarChart3, Search, Star, Globe, Sparkles, Trophy,
+  LogOut, X, Layers,
 } from 'lucide-react';
 import { StockSearchBar } from '@/components/StockSearchBar';
 
@@ -19,6 +19,8 @@ const ALL_NAV = [
   { id: 'dividend',      label: 'Income',         icon: DollarSign,      section: 'main' },
   { id: 'capital_gains', label: 'Capital Gains',  icon: BarChart3,       section: 'main' },
   { id: 'screener',      label: 'Screener',       icon: Search,          section: 'tools' },
+  { id: 'buffett_rank',  label: 'Rankings',       icon: Trophy,          section: 'tools' },
+  { id: 'strategies',    label: 'Strategies',     icon: Layers,          section: 'tools' },
   { id: 'watchlist',     label: 'Watchlist',      icon: Star,            section: 'tools' },
   { id: 'markets',       label: 'Markets',        icon: Globe,           section: 'tools' },
   { id: 'ai_review',     label: 'AI Insights',    icon: Sparkles,        section: 'tools' },

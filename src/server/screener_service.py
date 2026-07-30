@@ -27,6 +27,35 @@ import config
 SP500_CACHE_FILE = "sp500_tickers_cache.json"
 SP500_CACHE_TTL = 86400  # 24 hours
 
+# Statuses the valuation models use to say "this company cannot be valued".
+# They are settled answers for a given reporting period, not missing work.
+_TERMINAL_VALUATION_STATUSES = {"ineligible", "no_model"}
+
+
+def _has_settled_valuation(cached: Optional[Dict[str, Any]]) -> bool:
+    """True when the cache already holds a valuation *outcome* for this period.
+
+    A cached intrinsic value counts, and so does a recorded refusal. Without the
+    second case every company the models decline to value — around a third of
+    the universe, by design — would miss the cache on every single screener run
+    and pay for a full statement fetch and recompute to reach the same refusal.
+    """
+    if not cached:
+        return False
+    if cached.get("intrinsic_value") is not None:
+        return True
+
+    details = cached.get("valuation_details")
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except (ValueError, TypeError):
+            return False
+    if isinstance(details, dict):
+        return details.get("valuation_status") in _TERMINAL_VALUATION_STATUSES
+    return False
+
+
 def get_etf_holdings(product_id: str, ticker: str, filename: str) -> List[str]:
     """
     Fetches ETF holdings from iShares (BlackRock) CSV format.
@@ -491,11 +520,11 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
              
              can_use_cache = False
              if cached:
-                # Same logic as in process_symbol to determine if we need to recalculate
-                # IMPORTANT: Also check if intrinsic_value is actually present in cache
-                if (cached.get("last_fiscal_year_end") == live_fy_end and 
+                # Same logic as in process_symbol to determine if we need to recalculate.
+                # A recorded refusal counts as a result for this reporting period.
+                if (cached.get("last_fiscal_year_end") == live_fy_end and
                     cached.get("most_recent_quarter") == live_quarter and
-                    cached.get("intrinsic_value") is not None):
+                    _has_settled_valuation(cached)):
                     can_use_cache = True
              
              if not can_use_cache:
@@ -584,10 +613,10 @@ def process_screener_results(
                 # we can reuse the cached intrinsic value and AI scores.
                 # FIX: Only trust the match if identifiers are present and IV is actually cached.
                 # (None == None match is too weak and often indicates poisoned data).
-                if (live_fy_end and live_quarter and 
-                    cached.get("last_fiscal_year_end") == live_fy_end and 
-                    cached.get("most_recent_quarter") == live_quarter and 
-                    cached.get("intrinsic_value") is not None):
+                if (live_fy_end and live_quarter and
+                    cached.get("last_fiscal_year_end") == live_fy_end and
+                    cached.get("most_recent_quarter") == live_quarter and
+                    _has_settled_valuation(cached)):
                     can_use_cache = True
             
             valuation_details_json = None

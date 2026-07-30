@@ -27,6 +27,41 @@ enum Fmt {
         }
     }
 
+    /// Re-groups a typed numeric string as it is entered — "1760402" becomes
+    /// "1,760,402" (or the locale's own separator).
+    ///
+    /// Cosmetic only: `ungroup` is the exact inverse, so what is typed and what
+    /// is parsed stay the same number. Grouping is applied by hand rather than
+    /// through `NumberFormatter` so that a half-finished entry survives — a
+    /// trailing "." or an empty string has no numeric value to round-trip.
+    static func regroup(_ raw: String) -> String {
+        let cleaned = raw.filter { $0.isNumber || $0 == "." }
+        let dot = cleaned.firstIndex(of: ".")
+        let whole = cleaned[cleaned.startIndex..<(dot ?? cleaned.endIndex)]
+        let fraction = dot.map { String(cleaned[cleaned.index(after: $0)...]).filter(\.isNumber) }
+        let separator = Locale.current.groupingSeparator ?? ","
+
+        var reversed = ""
+        for (offset, digit) in whole.reversed().enumerated() {
+            if offset > 0, offset.isMultiple(of: 3) { reversed.append(contentsOf: separator.reversed()) }
+            reversed.append(digit)
+        }
+        let grouped = String(reversed.reversed())
+        return fraction.map { "\(grouped).\($0)" } ?? grouped
+    }
+
+    /// The number a grouped string stands for — the inverse of `regroup`.
+    ///
+    /// The separator is removed before anything else, so a locale that groups
+    /// with "." (de_DE) does not leave "1.760.402" to be misread as 1.76.
+    static func ungroup(_ raw: String) -> Double? {
+        var text = raw
+        if let separator = Locale.current.groupingSeparator {
+            text = text.replacingOccurrences(of: separator, with: "")
+        }
+        return Double(text.filter { $0.isNumber || $0 == "." })
+    }
+
     private static func formatter(for code: String) -> NumberFormatter {
         _lock.lock()
         defer { _lock.unlock() }

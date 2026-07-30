@@ -164,7 +164,7 @@ function HeatTooltip({ active, payload, currency, metricLabel, showGroup }: { ac
 
 export default function HoldingsHeatmap({ holdings, currency }: HoldingsHeatmapProps) {
     const [metricKey, setMetricKey] = useState('day');
-    const [group, setGroup] = useState<GroupKey>('Sector');
+    const [group, setGroup] = useState<GroupKey>('None');
     const [sizeMode, setSizeMode] = useState<SizeMode>('value');
     const { openStockDetail } = useStockModal();
 

@@ -10,9 +10,9 @@ import {
     Coins,
     Menu,
     ScanSearch,
+    Trophy,
     LogOut,
-    Sparkles
-} from 'lucide-react';
+    Sparkles, Layers } from 'lucide-react';
 import { TAB_THEMES } from '@/lib/dashboard_constants';
 
 interface TabNavigationProps {
@@ -27,6 +27,8 @@ const TABS = [
     { id: 'performance', label: 'Performance', icon: LayoutDashboard },
     { id: 'watchlist', label: 'Watchlist', icon: Eye },
     { id: 'screener', label: 'Market', icon: ScanSearch },
+    { id: 'buffett_rank', label: 'Rankings', icon: Trophy },
+    { id: 'strategies', label: 'Strategies', icon: Layers },
     { id: 'transactions', label: 'Transactions', icon: History },
     { id: 'allocation', label: 'Allocation', icon: PieChart },
     { id: 'asset_change', label: 'Asset Change', icon: TrendingUp },

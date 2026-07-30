@@ -41,12 +41,16 @@ struct DividendEvent: Codable, Sendable, Identifiable {
     let exDividendDate: String
     let amount: Double
     let status: String
+    /// IANA zone of the paying exchange — count "days from now" against this
+    /// rather than the device clock (see `MarketTime`).
+    let marketTimezone: String?
 
     enum CodingKeys: String, CodingKey {
         case symbol, name
         case dividendDate = "dividend_date"
         case exDividendDate = "ex_dividend_date"
         case amount, status
+        case marketTimezone = "market_timezone"
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +61,7 @@ struct DividendEvent: Codable, Sendable, Identifiable {
         exDividendDate = try c.decodeIfPresent(String.self, forKey: .exDividendDate) ?? ""
         amount = try c.decodeIfPresent(Double.self, forKey: .amount) ?? 0
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "estimated"
+        marketTimezone = try c.decodeIfPresent(String.self, forKey: .marketTimezone)
     }
 
     var id: String { "\(symbol)|\(exDividendDate)" }
@@ -72,6 +77,8 @@ struct EarningsEvent: Codable, Sendable, Identifiable {
     let status: String
     let epsEstimate: Double?
     let epsYearAgo: Double?
+    /// IANA zone of the reporting exchange — see `DividendEvent.marketTimezone`.
+    let marketTimezone: String?
 
     enum CodingKeys: String, CodingKey {
         case symbol, name
@@ -80,6 +87,7 @@ struct EarningsEvent: Codable, Sendable, Identifiable {
         case status
         case epsEstimate = "eps_estimate"
         case epsYearAgo = "eps_year_ago"
+        case marketTimezone = "market_timezone"
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +99,7 @@ struct EarningsEvent: Codable, Sendable, Identifiable {
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "estimated"
         epsEstimate = try c.decodeIfPresent(Double.self, forKey: .epsEstimate)
         epsYearAgo = try c.decodeIfPresent(Double.self, forKey: .epsYearAgo)
+        marketTimezone = try c.decodeIfPresent(String.self, forKey: .marketTimezone)
     }
 
     var id: String { "\(symbol)|\(earningsDate)" }

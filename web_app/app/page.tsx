@@ -60,6 +60,8 @@ const CommandPalette       = dynamic(() => import('@/components/CommandPalette')
 const Watchlist            = dynamic(() => import('@/components/Watchlist'));
 const ScreenerView         = dynamic(() => import('@/components/ScreenerView'));
 const PortfolioAIReview    = dynamic(() => import('@/components/PortfolioAIReview'));
+const BuffettRankView      = dynamic(() => import('@/components/BuffettRankView'));
+const StrategiesView       = dynamic(() => import('@/components/StrategiesView'));
 const IndexGraphModal      = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
 const MarketsTab           = dynamic(() => import('@/components/MarketsTab'), { ssr: false });
 const RiskMetrics          = dynamic(() => import('@/components/RiskMetrics'), { ssr: false });
@@ -611,6 +613,14 @@ export default function Home() {
 
       case 'screener':
         return null;
+
+      case 'buffett_rank':
+        return <BuffettRankView currency={currency} />;
+
+      case 'strategies':
+        // Sized against the portfolio's own market value, so the buy list is
+        // in the user's units rather than an arbitrary round number.
+        return <StrategiesView currency={currency} defaultCapital={summary?.metrics?.market_value ?? undefined} />;
 
       case 'ai_review':
         return <PortfolioAIReview currency={currency} accounts={selectedAccounts} />;

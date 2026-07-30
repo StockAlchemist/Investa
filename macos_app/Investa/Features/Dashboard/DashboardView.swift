@@ -103,7 +103,9 @@ struct DashboardView: View {
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.performance, id) }
-    private var anyInsightsVisible: Bool { vis("dashboardEvents") || vis("dashboardInsights") }
+    private var anyInsightsVisible: Bool {
+        vis("dashboardEvents") || vis("dashboardInsights") || vis("trendSignal")
+    }
     private var anyMetricVisible: Bool { metricOrder.contains(where: vis) }
     private var anyAnalyticsVisible: Bool {
         vis("portfolioDonut") || vis("performanceGraph") || vis("projection") || vis("riskMetrics") || vis("sectorContribution") || vis("topContributors")
@@ -111,20 +113,25 @@ struct DashboardView: View {
 
     @ViewBuilder private var eventsAndInsights: some View {
         let events = vis("dashboardEvents")
-        let insights = vis("dashboardInsights")
-        if events && insights {
+        if events {
             twoColumn(UpcomingEventsCard(dividends: viewModel.dividendEvents,
                                          earnings: viewModel.earningsEvents, currency: cur,
                                          onSelectSymbol: { detail = SymbolID(id: $0) }),
-                      ActionableInsightsCard(holdings: viewModel.holdings, currency: cur,
-                                             targets: appState.targetAllocation))
-        } else if events {
-            UpcomingEventsCard(dividends: viewModel.dividendEvents,
-                               earnings: viewModel.earningsEvents, currency: cur,
-                               onSelectSymbol: { detail = SymbolID(id: $0) })
-        } else if insights {
-            ActionableInsightsCard(holdings: viewModel.holdings, currency: cur,
-                                   targets: appState.targetAllocation)
+                      trendAndInsightsColumn)
+        } else {
+            trendAndInsightsColumn
+        }
+    }
+
+    /// The market trend indicator stacked above insights — the short panels
+    /// share one column so the long events list can fill the other.
+    @ViewBuilder private var trendAndInsightsColumn: some View {
+        VStack(spacing: 16) {
+            if vis("trendSignal") { TrendSignalCardLoader() }
+            if vis("dashboardInsights") {
+                ActionableInsightsCard(holdings: viewModel.holdings, currency: cur,
+                                       targets: appState.targetAllocation)
+            }
         }
     }
 

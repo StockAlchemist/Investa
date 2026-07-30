@@ -6,9 +6,8 @@ import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import {
   LayoutDashboard, PieChart, TrendingUp, ArrowLeftRight,
-  DollarSign, BarChart3, Search, Star, Globe, Sparkles,
-  Settings, ChevronLeft, Sun, Moon, LogOut,
-} from 'lucide-react';
+  DollarSign, BarChart3, Search, Star, Globe, Sparkles, Trophy,
+  Settings, ChevronLeft, Sun, Moon, LogOut, Layers } from 'lucide-react';
 
 const PRIMARY_NAV = [
   { id: 'performance',   label: 'Dashboard',     icon: LayoutDashboard },
@@ -21,6 +20,8 @@ const PRIMARY_NAV = [
 
 const SECONDARY_NAV = [
   { id: 'screener',   label: 'Screener',    icon: Search },
+  { id: 'buffett_rank', label: 'Rankings',  icon: Trophy },
+  { id: 'strategies', label: 'Strategies', icon: Layers },
   { id: 'watchlist',  label: 'Watchlist',   icon: Star },
   { id: 'markets',    label: 'Markets',     icon: Globe },
   { id: 'ai_review',  label: 'AI Insights', icon: Sparkles },

@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { BarChart3, CalendarClock, CheckCircle2, Clock, X } from 'lucide-react';
 import { DividendEvent, EarningsEvent } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
+import { formatCalendarDate, marketDayDiff } from '../../lib/market_time';
 import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from '../StockIcon';
 
@@ -20,25 +21,23 @@ type TimelineRow =
     | { kind: 'dividend'; date: string; symbol: string; event: DividendEvent }
     | { kind: 'earnings'; date: string; symbol: string; event: EarningsEvent };
 
-function relativeDay(iso: string): string {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(d);
-    target.setHours(0, 0, 0, 0);
-    const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
+/**
+ * "today" / "3d" / "Aug 12" for an event date, counted in the *market's* local
+ * time. Reckoning against the browser clock puts a US report a day out for a
+ * viewer in Asia, where the device has already rolled into tomorrow.
+ */
+function relativeDay(iso: string, timeZone?: string | null): string {
+    const diffDays = marketDayDiff(iso, timeZone);
+    if (diffDays === null) return '';
     if (diffDays === 0) return 'today';
     if (diffDays === 1) return 'tomorrow';
     if (diffDays < 0) return `${-diffDays}d ago`;
     if (diffDays < 7) return `${diffDays}d`;
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return formatCalendarDate(iso, { month: 'short', day: 'numeric' });
 }
 
 function fullDate(iso: string): string {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    return formatCalendarDate(iso);
 }
 
 /** Modal listing every confirmed dividend, grouped by month. */
@@ -150,24 +149,21 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
     const [showAll, setShowAll] = useState(false);
 
     const upcoming = useMemo<TimelineRow[]>(() => {
-        const now = new Date();
-        const start = new Date(now.toDateString());
-        const cutoff = new Date(now);
-        cutoff.setDate(now.getDate() + windowDays);
-
-        const inWindow = (iso: string) => {
-            const d = new Date(iso);
-            return !isNaN(d.getTime()) && d >= start && d <= cutoff;
+        // The window is measured on each event's own exchange clock, so the row
+        // shown as "today" is the one the market calls today.
+        const inWindow = (iso: string, timeZone?: string | null) => {
+            const diff = marketDayDiff(iso, timeZone);
+            return diff !== null && diff >= 0 && diff <= windowDays;
         };
 
         const rows: TimelineRow[] = [];
         for (const e of events || []) {
-            if (inWindow(e.dividend_date)) {
+            if (inWindow(e.dividend_date, e.market_timezone)) {
                 rows.push({ kind: 'dividend', date: e.dividend_date, symbol: e.symbol, event: e });
             }
         }
         for (const e of earnings || []) {
-            if (inWindow(e.earnings_date)) {
+            if (inWindow(e.earnings_date, e.market_timezone)) {
                 rows.push({ kind: 'earnings', date: e.earnings_date, symbol: e.symbol, event: e });
             }
         }
@@ -209,7 +205,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
             ) : (
                 <div className="space-y-1.5">
                     {upcoming.map((row, i) => {
-                        const rel = relativeDay(row.date);
+                        const rel = relativeDay(row.date, row.event.market_timezone);
                         const isSoon = rel === 'today' || rel === 'tomorrow';
                         return (
                             <button

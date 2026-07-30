@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:firebase.google.com)"
+      "WebFetch(domain:firebase.google.com)",
+      "Bash(xelatex -interaction=nonstopmode buffett_strategy_report.tex)",
+      "Bash(rm -f quality_strategy_report.aux quality_strategy_report.log quality_strategy_report.out quality_strategy_report.toc && python3 -c \" *)"
+    ],
+    "additionalDirectories": [
+      "/Users/kmatan/Investa/docs"
     ]
   }
 }

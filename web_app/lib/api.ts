@@ -692,6 +692,11 @@ export interface DividendEvent {
     ex_dividend_date: string;
     amount: number;
     status: 'confirmed' | 'estimated'; // Added status
+    /**
+     * IANA zone of the exchange this date belongs to — count "days from now"
+     * against this, not the browser's clock (see lib/market_time.ts).
+     */
+    market_timezone?: string | null;
 }
 
 export async function fetchDividendCalendar(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<DividendEvent[]> {
@@ -714,6 +719,8 @@ export interface EarningsEvent {
     status: 'confirmed' | 'estimated';
     eps_estimate?: number | null;
     eps_year_ago?: number | null;
+    /** IANA zone of the reporting exchange — see DividendEvent.market_timezone. */
+    market_timezone?: string | null;
 }
 
 /** The next dividend for a single symbol, per share (see Fundamentals.upcoming_events). */
@@ -725,6 +732,8 @@ export interface UpcomingDividend {
     amount_per_share: number;
     frequency_months?: number | null;
     status: 'confirmed' | 'estimated';
+    /** IANA zone of the paying exchange — see DividendEvent.market_timezone. */
+    market_timezone?: string | null;
 }
 
 export async function fetchEarningsCalendar(accounts?: string[], signal?: AbortSignal): Promise<EarningsEvent[]> {
@@ -1033,19 +1042,45 @@ export interface IntrinsicValueModel {
     };
 }
 
+/**
+ * `ok` — models agree closely enough to trust the blend.
+ * `low_confidence` — models disagree by more than the blended value.
+ * `clamped` — raw output fell outside the credible band vs price.
+ * `ineligible` — sub-$1 or micro-cap; per-share maths is dominated by noise.
+ * `no_model` — no model could value the company; `average_intrinsic_value` is null.
+ * `nav` — ETF/fund valued at net asset value.
+ */
+export type ValuationStatus =
+    | "ok"
+    | "low_confidence"
+    | "clamped"
+    | "ineligible"
+    | "no_model"
+    | "nav";
+
 export interface IntrinsicValueResponse {
     current_price: number | null;
     models: {
         dcf: IntrinsicValueModel;
         graham: IntrinsicValueModel;
+        /** Earnings Power Value — the no-growth floor. Reported, never blended. */
+        epv?: IntrinsicValueModel;
     };
-    average_intrinsic_value?: number;
+    /** Null when the backend refuses to value the company; check valuation_status. */
+    average_intrinsic_value?: number | null;
     range?: {
         bear: number;
         bull: number;
     };
     margin_of_safety_pct?: number;
     valuation_note?: string;
+    valuation_status?: ValuationStatus;
+    /** Spread between contributing models, as % of the blended value. */
+    model_spread_pct?: number | null;
+    /** Normalized weight actually applied to each contributing model. */
+    model_weights?: Record<string, number>;
+    /** Value of current earning power with zero growth. */
+    earnings_power_floor?: number;
 }
 
 export interface SymbolSearchResult {
@@ -1234,4 +1269,304 @@ export async function fetchPortfolioAIReview(currency: string = 'USD', accounts?
     });
     if (error) throw new Error('Failed to fetch portfolio AI review');
     return data;
+}
+
+// --- Buffett / value ranking -------------------------------------------------
+// Served from dated snapshots written by the batch worker, not computed per
+// request: a full ranking run takes minutes over ~5,500 filers.
+
+/** Which valuation model a company was scored under. */
+export type BuffettModel = 'generic' | 'bank' | 'insurer' | 'reit';
+
+export interface BuffettRankRow {
+    symbol: string;
+    cik: string | null;
+    name: string | null;
+    model: BuffettModel;
+    rank: number | null;
+    composite_score: number | null;
+    quality_score: number | null;
+    /** Null for banks, insurers and REITs, which are valued on multiples rather than a DCF. */
+    value_score: number | null;
+    /** Coverage-derived multiplier in [0.5, 1]; it can only ever demote. */
+    confidence: number | null;
+    coverage: number | null;
+    returns_on_capital: number | null;
+    financial_strength: number | null;
+    predictability: number | null;
+    growth: number | null;
+    capital_allocation: number | null;
+    price: number | null;
+    market_cap: number | null;
+    /** The two scored value inputs. There is no DCF-derived field any more. */
+    earnings_yield: number | null;
+    fcf_yield: number | null;
+    period_count: number | null;
+    latest_period: string | null;
+}
+
+/** A company kept out of the ranking, with the reasons it failed. */
+export interface BuffettExclusion {
+    symbol: string;
+    cik: string | null;
+    name: string | null;
+    model: BuffettModel;
+    reasons: string;
+    period_count: number | null;
+    coverage: number | null;
+}
+
+export interface BuffettRankRun {
+    run_id: number;
+    started_at: string | null;
+    finished_at: string | null;
+    universe_size: number | null;
+    ranked_count: number | null;
+    excluded_count: number | null;
+}
+
+export async function fetchBuffettRankRun(signal?: AbortSignal): Promise<BuffettRankRun | null> {
+    const { data, error, response } = await apiClient.GET("/api/buffett-rank/latest", { signal });
+    // 404 means no run has completed yet — a normal state on a fresh install,
+    // not an error the UI should shout about.
+    if (response.status === 404) return null;
+    if (error) throw new Error('Failed to fetch ranking run');
+    return data as unknown as BuffettRankRun;
+}
+
+/** One page of the ranking, plus how many rows match the active filters. */
+export interface BuffettRankPage {
+    total: number;
+    rows: BuffettRankRow[];
+}
+
+export async function fetchBuffettRankings(
+    limit: number = 100,
+    offset: number = 0,
+    model?: BuffettModel,
+    search?: string,
+    signal?: AbortSignal
+): Promise<BuffettRankPage> {
+    // `search` is applied server-side across the whole run. Filtering the
+    // returned page instead would only ever search the rows already loaded,
+    // which misses everything past rank ~100.
+    const { data, error } = await apiClient.GET("/api/buffett-rank", {
+        params: {
+            query: {
+                limit,
+                offset,
+                model: model || undefined,
+                search: search?.trim() ? search.trim() : undefined,
+            }
+        },
+        signal
+    });
+    if (error) throw new Error('Failed to fetch rankings');
+    return data as unknown as BuffettRankPage;
+}
+
+export interface BuffettExclusionPage {
+    total: number;
+    rows: BuffettExclusion[];
+}
+
+export async function fetchBuffettExclusions(
+    limit: number = 100,
+    offset: number = 0,
+    search?: string,
+    signal?: AbortSignal
+): Promise<BuffettExclusionPage> {
+    const { data, error } = await apiClient.GET("/api/buffett-rank/exclusions", {
+        params: {
+            query: {
+                limit,
+                offset,
+                search: search?.trim() ? search.trim() : undefined,
+            }
+        },
+        signal
+    });
+    if (error) throw new Error('Failed to fetch ranking exclusions');
+    return data as unknown as BuffettExclusionPage;
+}
+
+export async function fetchBuffettRankHistory(
+    symbol: string,
+    limit: number = 24,
+    signal?: AbortSignal
+): Promise<BuffettRankRow[]> {
+    const { data, error } = await apiClient.GET("/api/buffett-rank/history/{symbol}", {
+        params: { path: { symbol }, query: { limit } },
+        signal
+    });
+    if (error) throw new Error(`Failed to fetch rank history for ${symbol}`);
+    return data as unknown as BuffettRankRow[];
+}
+
+// --- Rule-based strategies --------------------------------------------------
+
+/**
+ * The market-trend indicator: one index's close against its moving average.
+ *
+ * **Advisory only** (`advisory_only` is always true). No strategy acts on it —
+ * gating a stock book with this signal was measured and rejected. It is market
+ * context, and the UI must not present it as an instruction.
+ *
+ * `state` and `provisional_state` are deliberately separate. `state` is the
+ * active reading, fixed at the last completed month-end. `provisional_state`
+ * is what the comparison would say if the month ended today — a preview of
+ * next month's reading, never the current one.
+ */
+export interface TrendSignal {
+    advisory_only: boolean;
+    signal_symbol: string;
+    state: 'in' | 'out';
+    sma_months: number;
+    /** Month-end close that set the active signal. */
+    decision_date: string;
+    decision_close: number;
+    sma: number;
+    /** The month the active signal governs, as YYYY-MM. */
+    governs_month: string;
+    provisional_state: 'in' | 'out';
+    provisional_sma: number;
+    latest_close: number;
+    latest_date: string;
+    /** Close at which the next month-end decision flips. */
+    flip_close: number;
+    /** Signed distance of the latest close from `flip_close`, in percent. */
+    distance_pct: number | null;
+    would_flip: boolean;
+    next_decision_date: string;
+    history: Array<{ date: string; close: number; sma: number | null }>;
+}
+
+export interface StrategyBacktest {
+    window?: string;
+    cagr?: number;
+    volatility?: number;
+    max_drawdown?: number;
+    sharpe?: number;
+    train_cagr?: number;
+    test_cagr?: number;
+    long_window?: string;
+    long_cagr?: number;
+}
+
+/**
+ * One entry in the strategy catalogue.
+ *
+ * There is no `trend` sleeve and no leverage field: strategies hold individual
+ * common stock only. Both omissions are enforced by the backend's tests.
+ */
+export interface StrategyDefinition {
+    id: string;
+    name: string;
+    summary: string;
+    sleeves: Record<string, number>;
+    backtest: StrategyBacktest;
+    risks: string[];
+    is_default: boolean;
+    ranking: {
+        quality_weight: number;
+        top_n: number;
+        max_per_sector: number | null;
+        sector_digits: number;
+        rebalance: string;
+    };
+}
+
+export interface StrategyPosition {
+    symbol: string;
+    name?: string | null;
+    /** Always 'stock' — no fund or cash-proxy roles exist. */
+    role: 'stock';
+    weight: number;
+    amount: number;
+    price?: number | null;
+    shares?: number | null;
+    cost?: number | null;
+    score?: number | null;
+    industry?: string | null;
+    note?: string | null;
+}
+
+export interface StrategySleeve {
+    key: string;
+    label: string;
+    weight: number;
+    amount: number;
+    /** How many names the rule asks for, against how many the ranking supplied. */
+    positions_requested?: number;
+    positions_filled?: number;
+    /** Sum of the position amounts. Below `amount` when the book is short. */
+    amount_allocated?: number;
+    positions: StrategyPosition[];
+    run_id?: number | null;
+    ranked_at?: string | null;
+    /**
+     * Where the `price` on each position came from. Membership always comes
+     * from the ranking snapshot; prices are live quotes, falling back to the
+     * snapshot's stored close when a quote is unavailable.
+     */
+    price_source?: 'live' | 'snapshot' | 'mixed';
+}
+
+export interface StrategyAllocation {
+    strategy_id: string;
+    name: string;
+    capital: number;
+    as_of: string;
+    /** Age of the ranking snapshot in whole days; null if it cannot be dated. */
+    ranking_age_days?: number | null;
+    /**
+     * True once the snapshot is old enough that the batch worker has probably
+     * stopped. The endpoints keep serving the last good run either way, so
+     * without this a dead worker is indistinguishable from a healthy one.
+     */
+    ranking_is_stale?: boolean;
+    /**
+     * True when the ranking produced fewer names than the rule calls for, so
+     * some capital is deliberately left unallocated rather than the weights
+     * being silently widened away from the backtested rule. A matching
+     * `warnings` entry says how short and by how much.
+     */
+    is_short?: boolean;
+    sleeves: StrategySleeve[];
+    warnings: string[];
+}
+
+export async function fetchStrategies(signal?: AbortSignal): Promise<{
+    strategies: StrategyDefinition[];
+    default: string;
+}> {
+    const { data, error } = await apiClient.GET("/api/strategies", { signal });
+    if (error) throw new Error('Failed to fetch strategies');
+    return data as unknown as { strategies: StrategyDefinition[]; default: string };
+}
+
+export async function fetchTrendSignal(
+    symbol: string = 'QQQ',
+    smaMonths: number = 10,
+    signal?: AbortSignal
+): Promise<TrendSignal> {
+    const { data, error } = await apiClient.GET("/api/trend-signal", {
+        params: { query: { symbol, sma_months: smaMonths } },
+        signal
+    });
+    if (error) throw new Error('Failed to fetch the trend signal');
+    return data as unknown as TrendSignal;
+}
+
+export async function fetchStrategyAllocation(
+    strategyId: string,
+    capital: number,
+    signal?: AbortSignal
+): Promise<StrategyAllocation> {
+    const { data, error } = await apiClient.GET("/api/strategies/{strategy_id}/allocation", {
+        params: { path: { strategy_id: strategyId }, query: { capital } },
+        signal
+    });
+    if (error) throw new Error('Failed to build the strategy allocation');
+    return data as unknown as StrategyAllocation;
 }

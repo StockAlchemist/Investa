@@ -178,9 +178,11 @@ struct DividendCalendarSection: View {
     @State private var horizon = "3m"
 
     private var filtered: [DividendEvent] {
-        let now = Date()
-        let cutoff = Calendar.current.date(byAdding: horizon == "3m" ? .month : .year, value: horizon == "3m" ? 3 : 1, to: now) ?? now
-        return events.filter { (parseDay($0.dividendDate) ?? .distantFuture) <= cutoff }
+        // The horizon runs from today on each payment's own exchange, not from the
+        // device clock (see `MarketTime`).
+        let months = horizon == "3m" ? 3 : 12
+        return events
+            .filter { MarketTime.isWithin($0.dividendDate, months: months, timeZone: $0.marketTimezone) }
             .sorted { $0.dividendDate < $1.dividendDate }
     }
 

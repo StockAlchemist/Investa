@@ -5,6 +5,7 @@ import { useState, useMemo } from 'react';
 import { CheckCircle2, Clock } from 'lucide-react';
 import TableSkeleton from './skeletons/TableSkeleton';
 import { formatCurrency } from '../lib/utils';
+import { isWithinMarketMonths } from '../lib/market_time';
 
 interface DividendEvent {
     symbol: string;
@@ -12,6 +13,8 @@ interface DividendEvent {
     ex_dividend_date: string;
     amount: number;
     status: 'confirmed' | 'estimated';
+    /** IANA zone of the paying exchange — see lib/api.ts DividendEvent. */
+    market_timezone?: string | null;
 }
 
 interface DividendCalendarProps {
@@ -26,18 +29,12 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
 
     const filteredEvents = useMemo(() => {
         if (!events || !Array.isArray(events)) return [];
-        const now = new Date();
-        const cutoff = new Date();
-        if (viewDuration === '3m') {
-            cutoff.setMonth(now.getMonth() + 3);
-        } else {
-            cutoff.setFullYear(now.getFullYear() + 1);
-        }
-
-        return events.filter(e => {
-            const d = new Date(e.dividend_date);
-            return d <= cutoff;
-        }).sort((a, b) => new Date(a.dividend_date).getTime() - new Date(b.dividend_date).getTime());
+        // The horizon runs from today on each payment's own exchange, not from the
+        // viewer's device clock (see lib/market_time.ts).
+        const months = viewDuration === '3m' ? 3 : 12;
+        return events
+            .filter(e => isWithinMarketMonths(e.dividend_date, months, e.market_timezone))
+            .sort((a, b) => a.dividend_date.localeCompare(b.dividend_date));
     }, [events, viewDuration]);
 
     if (isLoading) {

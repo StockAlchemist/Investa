@@ -12,6 +12,8 @@ enum AppSection: String, CaseIterable, Identifiable {
     case capitalGains = "Capital Gains"
     // Group 2
     case market = "Screener"
+    case buffettRank = "Rankings"
+    case strategies = "Strategies"
     case watchlist = "Watchlist"
     case markets = "Markets"
     case aiReview = "AI Insights"
@@ -19,7 +21,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static let group1: [AppSection] = [.performance, .allocation, .assetChange, .transactions, .dividend, .capitalGains]
-    static let group2: [AppSection] = [.market, .watchlist, .markets, .aiReview]
+    static let group2: [AppSection] = [.market, .buffettRank, .strategies, .watchlist, .markets, .aiReview]
 
     var icon: String {
         switch self {
@@ -30,6 +32,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .dividend: return "dollarsign"
         case .capitalGains: return "chart.bar"
         case .market: return "magnifyingglass"
+        case .buffettRank: return "trophy"
+        case .strategies: return "square.stack.3d.up"
         case .watchlist: return "star"
         case .markets: return "globe"
         case .aiReview: return "sparkles"
@@ -166,6 +170,8 @@ struct MainView: View {
         case .dividend: DividendsView()
         case .capitalGains: CapitalGainsView()
         case .market: ScreenerView()
+        case .buffettRank: BuffettRankView()
+        case .strategies: StrategiesView()
         case .watchlist: WatchlistView()
         case .markets: MarketsView()
         case .aiReview: AIView()

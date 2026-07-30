@@ -469,7 +469,7 @@ struct HoldingsHeatmapView: View {
     var onSelectSymbol: (String) -> Void = { _ in }
 
     @State private var metricKey = "day"
-    @State private var group = "Sector"
+    @State private var group = "None"   // "Flat" — ungrouped tiles
     @State private var sizeMode = "value"   // "value" | "equal"
     @State private var hovered: String?     // symbol under cursor/finger
 

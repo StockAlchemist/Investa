@@ -21,13 +21,19 @@ from portfolio_analyzer import (
 from projections import compute_projection
 from risk_metrics import calculate_all_risk_metrics, calculate_benchmark_scoreboard
 from server.auth import User
-from server.calendar_events import company_name, next_earnings_event
+from server.calendar_events import (
+    company_name,
+    market_timezone,
+    market_today,
+    next_earnings_event,
+)
 from server.dependencies import get_config_manager, get_current_user, get_transaction_data
 from server.portfolio_service import (
     _calculate_portfolio_summary_internal,
     _get_historical_performance_cached,
 )
 from server.route_utils import clean_nans, get_mdp
+from utils_time import get_est_today
 
 router = APIRouter()
 
@@ -232,21 +238,30 @@ async def _generate_dividend_events(
             yf_map[sym] = yf_sym
 
     calendar_events = []
-    today = date.today()
+    # Cash-interest rows belong to no exchange, so they use the app-wide market
+    # clock (US/Eastern); each holding's own rows are reckoned per-exchange below.
+    today = get_est_today()
     end_date = today + timedelta(days=365) # 1 Year Projection
-    
+
     def fetch_symbol_data(sym):
         """Helper to fetch data for a single symbol independently."""
         yf_sym = yf_map.get(sym)
         if not yf_sym:
             return []
-        
+
         local_events = []
         qty = holdings.get(sym, 0)
-        
+
         try:
             # Use MarketDataProvider cache for fundamentals (lighter and cached)
             info = provider.get_fundamental_data(yf_sym) or {}
+
+            # Reckon this symbol's dates on its own exchange's clock, so a payment
+            # happening today is never filtered out as past (or vice versa)
+            # because the server sits in a different timezone.
+            tz = market_timezone(info)
+            today = market_today(info)
+            end_date = today + timedelta(days=365)
 
             # Forward-looking dividend rate & cadence (prefers Yahoo's
             # `dividendRate`, so a just-announced increase/cut is reflected even
@@ -288,7 +303,8 @@ async def _generate_dividend_events(
                             "dividend_date": str(c_date),
                             "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
                             "amount": per_period_amt * qty,
-                            "status": "confirmed"
+                            "status": "confirmed",
+                            "market_timezone": tz,
                         })
 
             # 2. Estimated Events
@@ -337,7 +353,8 @@ async def _generate_dividend_events(
                                 "dividend_date": str(curr),
                                 "ex_dividend_date": "",
                                 "amount": est_amt,
-                                "status": "estimated"
+                                "status": "estimated",
+                                "market_timezone": tz,
                             })
                         
                         curr = (pd.Timestamp(curr) + pd.DateOffset(months=freq_months)).date()
@@ -1039,8 +1056,6 @@ async def get_earnings_calendar(
 
         _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         provider = get_mdp()
-        today = date.today()
-        horizon_end = today + timedelta(days=max(1, days))
 
         def fetch_symbol_earnings(sym: str) -> Optional[dict]:
             try:
@@ -1048,6 +1063,10 @@ async def get_earnings_calendar(
                 if not yf_sym:
                     return None
                 info = provider.get_fundamental_data(yf_sym) or {}
+                # "Today" and the horizon are per-symbol: a name on the SET rolls
+                # over hours before one on the NYSE does.
+                today = market_today(info)
+                horizon_end = today + timedelta(days=max(1, days))
                 return next_earnings_event(sym, info, today, horizon_end)
             except Exception as e:
                 logging.warning(f"Error fetching earnings date for {sym}: {e}")

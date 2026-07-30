@@ -8,17 +8,76 @@ so both surfaces answer "when does this company next report / pay?" identically.
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Optional
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+# Investa reckons every market date in the market's own local time, never the
+# server's or the viewer's — see CLAUDE.md. US-listed names are the default when
+# a blob does not name its exchange's zone.
+DEFAULT_MARKET_TIMEZONE = "America/New_York"
+
+
+def market_timezone(info: Dict) -> str:
+    """
+    IANA zone of the exchange a symbol trades on, from Yahoo's
+    `exchangeTimezoneName` (`America/New_York`, `Asia/Bangkok`, …).
+
+    Falls back to the US zone for blobs that omit it or name a zone this
+    machine's tz database does not carry.
+    """
+    tz = info.get("exchangeTimezoneName") if info else None
+    if isinstance(tz, str) and tz.strip():
+        tz = tz.strip()
+        try:
+            ZoneInfo(tz)
+        except (KeyError, ValueError):
+            logging.debug(f"Unknown exchange timezone {tz!r}; using {DEFAULT_MARKET_TIMEZONE}")
+        else:
+            return tz
+    return DEFAULT_MARKET_TIMEZONE
+
+
+def market_today(info: Dict) -> date:
+    """
+    Today's calendar date on the symbol's own exchange.
+
+    Use this rather than `date.today()` for anything a user reads as "days from
+    now": in Bangkok (UTC+7) the server rolls over to tomorrow while New York is
+    still mid-afternoon, which turns a report happening *today* into "1d ago".
+    """
+    return datetime.now(ZoneInfo(market_timezone(info))).date()
+
 
 def epoch_to_date(ts) -> Optional[date]:
-    """UTC calendar date for a Yahoo epoch-seconds timestamp, or None."""
+    """
+    UTC calendar date for a Yahoo epoch-seconds timestamp, or None.
+
+    For Yahoo's *date-only* fields (`dividendDate`, `exDividendDate`,
+    `lastDividendDate`), which encode a calendar day as midnight UTC — reading
+    those in an exchange zone west of UTC would shift them a day early.
+    """
     if not isinstance(ts, (int, float)) or isinstance(ts, bool) or ts <= 0:
         return None
     try:
         return datetime.fromtimestamp(ts, tz=timezone.utc).date()
     except (OSError, OverflowError, ValueError):
+        return None
+
+
+def epoch_to_market_date(ts, tz: str) -> Optional[date]:
+    """
+    Exchange-local calendar date for a Yahoo epoch-seconds timestamp, or None.
+
+    For fields that carry a real wall-clock moment — the earnings timestamps sit
+    at the report's actual time (08:30 or 16:00 ET), so a post-close report has
+    already tipped into the next UTC day and must be read on the market's clock.
+    """
+    if not isinstance(ts, (int, float)) or isinstance(ts, bool) or ts <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(ts, tz=ZoneInfo(tz)).date()
+    except (OSError, OverflowError, ValueError, KeyError):
         return None
 
 
@@ -35,7 +94,7 @@ def company_name(info: Dict) -> Optional[str]:
 
 
 def next_earnings_event(
-    symbol: str, info: Dict, today: date, horizon_end: date
+    symbol: str, info: Dict, today: Optional[date] = None, horizon_end: Optional[date] = None
 ) -> Optional[dict]:
     """
     Pull the next scheduled earnings report out of a cached fundamentals blob.
@@ -45,15 +104,21 @@ def next_earnings_event(
     `earningsTimestampStart`/`End` pair (the announced window, equal when the
     date is exact). Take the earliest of those that is still in the future so a
     stale `earningsTimestamp` can't mask an already-announced next date.
+
+    `today` defaults to today on the symbol's own exchange; pass it only to pin
+    the reckoning (tests, or a caller that already resolved the market date).
     """
+    tz = market_timezone(info)
+    if today is None:
+        today = market_today(info)
     ts_end = info.get("earningsTimestampEnd")
 
     upcoming = [
         d
         for d in (
-            epoch_to_date(info.get("earningsTimestampStart")),
-            epoch_to_date(info.get("earningsTimestamp")),
-            epoch_to_date(ts_end),
+            epoch_to_market_date(info.get("earningsTimestampStart"), tz),
+            epoch_to_market_date(info.get("earningsTimestamp"), tz),
+            epoch_to_market_date(ts_end, tz),
         )
         if d is not None and d >= today
     ]
@@ -61,7 +126,7 @@ def next_earnings_event(
         return None
 
     event_date = min(upcoming)
-    if event_date > horizon_end:
+    if horizon_end is not None and event_date > horizon_end:
         return None
 
     event = {
@@ -70,11 +135,14 @@ def next_earnings_event(
         "earnings_date": str(event_date),
         # Yahoo flags dates it has inferred from the historical reporting cadence.
         "status": "estimated" if info.get("isEarningsDateEstimate") else "confirmed",
+        # The zone this date is a date *in*, so clients count "days from now" the
+        # same way the backend filtered it.
+        "market_timezone": tz,
     }
 
     # An announced window (start != end) means the company has given a range
     # rather than a day — surface the far end so the UI can say "Feb 3–7".
-    window_end = epoch_to_date(ts_end)
+    window_end = epoch_to_market_date(ts_end, tz)
     if window_end and window_end > event_date:
         event["earnings_date_end"] = str(window_end)
 
@@ -89,7 +157,7 @@ def next_earnings_event(
     return event
 
 
-def next_dividend_event(symbol: str, info: Dict, today: date) -> Optional[dict]:
+def next_dividend_event(symbol: str, info: Dict, today: Optional[date] = None) -> Optional[dict]:
     """
     The next dividend for one symbol, per share (not scaled by any position).
 
@@ -97,8 +165,14 @@ def next_dividend_event(symbol: str, info: Dict, today: date) -> Optional[dict]:
     paid — Yahoo leaves `dividendDate` pointing at the last payment until the
     next is declared — so when they are in the past the next one is projected
     from the latest known payment plus the detected cadence.
+
+    `today` defaults to today on the symbol's own exchange (see `market_today`).
     """
     from finutils import get_dividend_details
+
+    tz = market_timezone(info)
+    if today is None:
+        today = market_today(info)
 
     details = get_dividend_details(info)
     annual_rate = details["indicated_annual_rate"]
@@ -119,6 +193,7 @@ def next_dividend_event(symbol: str, info: Dict, today: date) -> Optional[dict]:
             "amount_per_share": per_share,
             "frequency_months": freq_months,
             "status": status,
+            "market_timezone": tz,
         }
 
     # Announced: the declared pay date (or at least its ex-date) is still ahead.
@@ -153,10 +228,14 @@ def next_dividend_event(symbol: str, info: Dict, today: date) -> Optional[dict]:
     return _event(projected, None, "estimated")
 
 
-def upcoming_events(symbol: str, info: Dict, today: date, horizon_days: int = 365) -> dict:
+def upcoming_events(
+    symbol: str, info: Dict, today: Optional[date] = None, horizon_days: int = 365
+) -> dict:
     """Both event types for one symbol, as consumed by the stock-detail Overview tab."""
     if not info:
         return {"earnings": None, "dividend": None}
+    if today is None:
+        today = market_today(info)
     horizon_end = today + timedelta(days=horizon_days)
     return {
         "earnings": next_earnings_event(symbol, info, today, horizon_end),

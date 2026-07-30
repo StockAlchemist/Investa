@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import TodayStrip from './dashboard/TodayStrip';
 import DashboardEvents from './dashboard/DashboardEvents';
 import DashboardInsights from './dashboard/DashboardInsights';
+import TrendSignalCard from './dashboard/TrendSignalCard';
 
 const RiskMetrics       = lazy(() => import('./RiskMetrics'));
 const PortfolioDonut    = lazy(() => import('./PortfolioDonut'));
@@ -577,6 +578,7 @@ function DashboardInner({
 
     const showEvents = visibleItems.includes('dashboardEvents');
     const showInsights = visibleItems.includes('dashboardInsights');
+    const showTrendSignal = visibleItems.includes('trendSignal');
 
     return (
         <div className="mb-4 md:mb-10 space-y-4 md:space-y-5">
@@ -627,11 +629,23 @@ function DashboardInner({
                 />
             )}
 
-            {/* ── Upcoming events + actionable insights ── */}
-            {!isLoading && holdings.length > 0 && (showEvents || showInsights) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
-                    {showEvents && <DashboardEvents events={dividendEvents} earnings={earningsEvents} currency={currency} />}
-                    {showInsights && <DashboardInsights holdings={holdings} currency={currency} />}
+            {/* ── Events, with market trend + insights stacked beside them ──
+                 Events is a long list; trend and insights are short. Sharing one
+                 row with the two short panels stacked in the right column keeps
+                 the fold tight instead of leaving a band of dead space. */}
+            {(showEvents || showInsights || showTrendSignal) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5 items-start">
+                    {showEvents && !isLoading && holdings.length > 0 && (
+                        <DashboardEvents events={dividendEvents} earnings={earningsEvents} currency={currency} />
+                    )}
+                    {(showTrendSignal || showInsights) && (
+                        <div className="flex flex-col gap-4 md:gap-5">
+                            {showTrendSignal && <TrendSignalCard />}
+                            {showInsights && !isLoading && holdings.length > 0 && (
+                                <DashboardInsights holdings={holdings} currency={currency} />
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

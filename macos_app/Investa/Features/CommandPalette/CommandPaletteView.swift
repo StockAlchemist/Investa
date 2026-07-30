@@ -22,6 +22,8 @@ struct CommandPaletteView: View {
         .init(section: .dividend, label: "Income", icon: "dollarsign", group: "Portfolio", settings: false),
         .init(section: .capitalGains, label: "Capital Gains", icon: "chart.bar", group: "Portfolio", settings: false),
         .init(section: .market, label: "Screener", icon: "magnifyingglass", group: "Tools", settings: false),
+        .init(section: .buffettRank, label: "Rankings", icon: "trophy", group: "Tools", settings: false),
+        .init(section: .strategies, label: "Strategies", icon: "square.stack.3d.up", group: "Tools", settings: false),
         .init(section: .watchlist, label: "Watchlist", icon: "star", group: "Tools", settings: false),
         .init(section: .markets, label: "Markets", icon: "globe", group: "Tools", settings: false),
         .init(section: .aiReview, label: "AI Insights", icon: "sparkles", group: "Tools", settings: false),

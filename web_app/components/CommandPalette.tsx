@@ -4,8 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
     LayoutDashboard, PieChart, TrendingUp, ArrowLeftRight,
-    DollarSign, BarChart3, Search, Star, Globe, Sparkles,
-    Settings, ChevronRight, Loader2,
+    DollarSign, BarChart3, Search, Star, Globe, Sparkles, Trophy,
+    Settings, ChevronRight, Loader2, Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchSymbolSearch, type SymbolSearchResult } from '@/lib/api';
@@ -28,6 +28,8 @@ const NAV_COMMANDS = [
     { id: 'dividend',      label: 'Income',         icon: DollarSign,      section: 'Portfolio' },
     { id: 'capital_gains', label: 'Capital Gains',  icon: BarChart3,       section: 'Portfolio' },
     { id: 'screener',      label: 'Screener',       icon: Search,          section: 'Tools' },
+    { id: 'buffett_rank',  label: 'Rankings',       icon: Trophy,          section: 'Tools' },
+    { id: 'strategies',    label: 'Strategies',     icon: Layers,          section: 'Tools' },
     { id: 'watchlist',     label: 'Watchlist',      icon: Star,            section: 'Tools' },
     { id: 'markets',       label: 'Markets',        icon: Globe,           section: 'Tools' },
     { id: 'ai_review',     label: 'AI Insights',    icon: Sparkles,        section: 'Tools' },

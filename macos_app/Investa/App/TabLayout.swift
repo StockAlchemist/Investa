@@ -16,6 +16,7 @@ enum TabLayout {
     static let performanceItems: [LayoutItem] = [
         LayoutItem("portfolioHero", "Portfolio Hero", group: "Overview"),
         LayoutItem("todayStrip", "Market Today", group: "Overview"),
+        LayoutItem("trendSignal", "Market Trend", group: "Overview"),
         LayoutItem("dashboardEvents", "Upcoming Events", group: "Insights & Events"),
         LayoutItem("dashboardInsights", "Actionable Insights", group: "Insights & Events"),
         LayoutItem("totalReturn", "Total Return", group: "Returns"),
@@ -38,7 +39,7 @@ enum TabLayout {
         LayoutItem("topContributors", "Top Contributors", group: "Risk & Attribution"),
     ]
     static let performanceInitialVisible: Set<String> = [
-        "portfolioHero", "todayStrip", "dashboardEvents", "dashboardInsights",
+        "portfolioHero", "todayStrip", "trendSignal", "dashboardEvents", "dashboardInsights",
         "totalReturn", "unrealizedGL", "realizedGain", "annualTWR", "mwr",
         "ytdDividends", "dividendYield", "ytdReturn", "cashBalance", "fxGL", "fees", "taxes",
         "portfolioDonut", "performanceGraph", "projection",

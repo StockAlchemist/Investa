@@ -442,7 +442,8 @@ export interface paths {
          *     engine generate cash deltas on the fly during valuation, so adding
          *     explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
          *     therefore acts as a user opt-in that still gets gated by the account's
-         *     cash mode.
+         *     cash mode — the gate itself lives in ``_handle_auto_cash_generation`` so
+         *     that the single-transaction route is covered by the same rule.
          */
         post: operations["add_transactions_batch_api_transactions_batch_post"];
         delete?: never;
@@ -1268,6 +1269,167 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/buffett-rank/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Run
+         * @description Metadata for the most recent completed ranking run.
+         */
+        get: operations["get_latest_run_api_buffett_rank_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buffett-rank": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rankings
+         * @description The ranked list, best first.
+         *
+         *     Each row carries its pillar breakdown and confidence so a client can explain
+         *     a position without a second request. `search` is applied across the whole
+         *     run rather than the returned page, so a client never has to load the full
+         *     list to find one company.
+         */
+        get: operations["get_rankings_api_buffett_rank_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buffett-rank/exclusions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Exclusions
+         * @description Companies excluded from the ranking, each with the reasons it failed.
+         */
+        get: operations["get_exclusions_api_buffett_rank_exclusions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buffett-rank/history/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Symbol History
+         * @description One company's rank across runs — the reason snapshots are kept.
+         */
+        get: operations["get_symbol_history_api_buffett_rank_history__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Strategies
+         * @description The strategy catalogue: rules, parameters, backtested record and risks.
+         *
+         *     Static data — no market access — so a client can render the picker before
+         *     any price request resolves.
+         */
+        get: operations["list_strategies_api_strategies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/trend-signal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trend Signal
+         * @description Market-trend indicator: one index's close against its own moving average.
+         *
+         *     **Advisory only.** No strategy acts on this — gating a stock book with it
+         *     was measured and rejected. It is market context, and the payload says so
+         *     via `advisory_only`. Deliberately not under `/strategies/` for that reason.
+         *
+         *     `state` is the *active* reading, set at the last completed month-end.
+         *     `provisional_state` is what the comparison would say if the month ended
+         *     today; it previews the next month's reading and is kept a separate field so
+         *     a client cannot present a mid-month price as the current state.
+         */
+        get: operations["get_trend_signal_api_trend_signal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strategies/{strategy_id}/allocation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Allocation
+         * @description What the strategy says to hold today, sized to `capital`.
+         *
+         *     Share counts are indicative — they use the price stored with the ranking
+         *     snapshot, which is a close from the last pipeline run, not a live quote.
+         *     The weights are the part of the answer that is actually fixed.
+         */
+        get: operations["get_allocation_api_strategies__strategy_id__allocation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/register": {
         parameters: {
             query?: never;
@@ -1706,7 +1868,8 @@ export interface paths {
          *     engine generate cash deltas on the fly during valuation, so adding
          *     explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
          *     therefore acts as a user opt-in that still gets gated by the account's
-         *     cash mode.
+         *     cash mode — the gate itself lives in ``_handle_auto_cash_generation`` so
+         *     that the single-transaction route is covered by the same rule.
          */
         post: operations["add_transactions_batch_transactions_batch_post"];
         delete?: never;
@@ -2532,6 +2695,167 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/buffett-rank/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Run
+         * @description Metadata for the most recent completed ranking run.
+         */
+        get: operations["get_latest_run_buffett_rank_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buffett-rank": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rankings
+         * @description The ranked list, best first.
+         *
+         *     Each row carries its pillar breakdown and confidence so a client can explain
+         *     a position without a second request. `search` is applied across the whole
+         *     run rather than the returned page, so a client never has to load the full
+         *     list to find one company.
+         */
+        get: operations["get_rankings_buffett_rank_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buffett-rank/exclusions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Exclusions
+         * @description Companies excluded from the ranking, each with the reasons it failed.
+         */
+        get: operations["get_exclusions_buffett_rank_exclusions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/buffett-rank/history/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Symbol History
+         * @description One company's rank across runs — the reason snapshots are kept.
+         */
+        get: operations["get_symbol_history_buffett_rank_history__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Strategies
+         * @description The strategy catalogue: rules, parameters, backtested record and risks.
+         *
+         *     Static data — no market access — so a client can render the picker before
+         *     any price request resolves.
+         */
+        get: operations["list_strategies_strategies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trend-signal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trend Signal
+         * @description Market-trend indicator: one index's close against its own moving average.
+         *
+         *     **Advisory only.** No strategy acts on this — gating a stock book with it
+         *     was measured and rejected. It is market context, and the payload says so
+         *     via `advisory_only`. Deliberately not under `/strategies/` for that reason.
+         *
+         *     `state` is the *active* reading, set at the last completed month-end.
+         *     `provisional_state` is what the comparison would say if the month ended
+         *     today; it previews the next month's reading and is kept a separate field so
+         *     a client cannot present a mid-month price as the current state.
+         */
+        get: operations["get_trend_signal_trend_signal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategies/{strategy_id}/allocation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Allocation
+         * @description What the strategy says to hold today, sized to `capital`.
+         *
+         *     Share counts are indicative — they use the price stored with the ranking
+         *     snapshot, which is a close from the last pipeline run, not a live quote.
+         *     The weights are the part of the answer that is actually fixed.
+         */
+        get: operations["get_allocation_strategies__strategy_id__allocation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -2820,7 +3144,10 @@ export interface components {
         };
         /** UserCreate */
         UserCreate: {
-            /** Username */
+            /**
+             * Username
+             * @description Letters, digits, dot, underscore and hyphen; must start and end alphanumeric.
+             */
             username: string;
             /** Password */
             password: string;
@@ -4859,6 +5186,220 @@ export interface operations {
             };
         };
     };
+    get_latest_run_api_buffett_rank_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_rankings_api_buffett_rank_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description generic, bank, insurer or reit */
+                model?: string | null;
+                /** @description Match symbol or company name */
+                search?: string | null;
+                /** @description Defaults to the latest run */
+                run_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_exclusions_api_buffett_rank_exclusions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description Match symbol or company name */
+                search?: string | null;
+                run_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_symbol_history_api_buffett_rank_history__symbol__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_strategies_api_strategies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_trend_signal_api_trend_signal_get: {
+        parameters: {
+            query?: {
+                /** @description Index or ETF to read the trend of */
+                symbol?: string;
+                /** @description Moving-average length, in months */
+                sma_months?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_allocation_api_strategies__strategy_id__allocation_get: {
+        parameters: {
+            query: {
+                /** @description Amount to allocate, in USD */
+                capital: number;
+            };
+            header?: never;
+            path: {
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     register_auth_register_post: {
         parameters: {
             query?: never;
@@ -6813,6 +7354,220 @@ export interface operations {
             header?: never;
             path: {
                 symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_run_buffett_rank_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_rankings_buffett_rank_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description generic, bank, insurer or reit */
+                model?: string | null;
+                /** @description Match symbol or company name */
+                search?: string | null;
+                /** @description Defaults to the latest run */
+                run_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_exclusions_buffett_rank_exclusions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description Match symbol or company name */
+                search?: string | null;
+                run_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_symbol_history_buffett_rank_history__symbol__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_strategies_strategies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_trend_signal_trend_signal_get: {
+        parameters: {
+            query?: {
+                /** @description Index or ETF to read the trend of */
+                symbol?: string;
+                /** @description Moving-average length, in months */
+                sma_months?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_allocation_strategies__strategy_id__allocation_get: {
+        parameters: {
+            query: {
+                /** @description Amount to allocate, in USD */
+                capital: number;
+            };
+            header?: never;
+            path: {
+                strategy_id: string;
             };
             cookie?: never;
         };

@@ -2,18 +2,24 @@
 shared by the dashboard Events panel and the stock-detail Overview tab.
 
 Covers how the Yahoo timestamps are reconciled into a single "next report" and
-"next payment" per symbol.
+"next payment" per symbol, and that every date is reckoned on the exchange's own
+clock rather than the server's.
 """
 
 import os
 import sys
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+import server.calendar_events as calendar_events  # noqa: E402
 from server.calendar_events import (  # noqa: E402
+    DEFAULT_MARKET_TIMEZONE,
     company_name,
+    market_timezone,
+    market_today,
     next_dividend_event,
     next_earnings_event,
     upcoming_events,
@@ -144,3 +150,89 @@ def test_upcoming_events_bundles_both_sides():
     assert both["earnings"]["earnings_date"] == str(TODAY + timedelta(days=5))
     assert both["dividend"]["dividend_date"] == str(TODAY + timedelta(days=20))
     assert upcoming_events("X", {}, TODAY) == {"earnings": None, "dividend": None}
+
+
+# ── Market-local reckoning ───────────────────────────────────────────────────
+
+def _freeze(monkeypatch, moment: datetime) -> None:
+    """Pin `datetime.now(tz)` inside calendar_events to one instant."""
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment.astimezone(tz) if tz else moment
+
+    monkeypatch.setattr(calendar_events, "datetime", _Now)
+
+
+def test_market_timezone_comes_from_the_exchange():
+    assert market_timezone({"exchangeTimezoneName": "Asia/Bangkok"}) == "Asia/Bangkok"
+    assert market_timezone({"exchangeTimezoneName": " Europe/London "}) == "Europe/London"
+    # Absent, blank, or unknown to the tz database → the US default.
+    assert market_timezone({}) == DEFAULT_MARKET_TIMEZONE
+    assert market_timezone({"exchangeTimezoneName": "  "}) == DEFAULT_MARKET_TIMEZONE
+    assert market_timezone({"exchangeTimezoneName": "Mars/Olympus"}) == DEFAULT_MARKET_TIMEZONE
+    assert market_timezone({"exchangeTimezoneName": 1234}) == DEFAULT_MARKET_TIMEZONE
+
+
+def test_market_today_follows_the_exchange_not_the_server(monkeypatch):
+    """09:00 Bangkok on Jul 30 is still 22:00 New York on Jul 29."""
+    _freeze(monkeypatch, datetime(2026, 7, 30, 2, 0, tzinfo=timezone.utc))
+    assert market_today({}) == date(2026, 7, 29)
+    assert market_today({"exchangeTimezoneName": "America/New_York"}) == date(2026, 7, 29)
+    assert market_today({"exchangeTimezoneName": "Asia/Bangkok"}) == date(2026, 7, 30)
+
+
+def test_us_event_today_is_not_dropped_from_a_bangkok_evening(monkeypatch):
+    """The Upcoming Events regression: with the server a day ahead, a US report
+    happening on the NYSE's today must still be reported, not filtered as past."""
+    _freeze(monkeypatch, datetime(2026, 7, 30, 2, 0, tzinfo=timezone.utc))
+    info = {
+        "exchangeTimezoneName": "America/New_York",
+        # 16:00 ET on Jul 29 — after the close, so already Jul 30 in UTC.
+        "earningsTimestamp": int(
+            datetime(2026, 7, 29, 16, 0, tzinfo=ZoneInfo("America/New_York")).timestamp()
+        ),
+    }
+    event = next_earnings_event("MSFT", info)
+    assert event["earnings_date"] == "2026-07-29"
+    assert event["market_timezone"] == "America/New_York"
+
+
+def test_earnings_timestamp_is_read_on_the_market_clock():
+    """A post-close report has already tipped into the next UTC day; the date the
+    user cares about is the one on the exchange's wall clock."""
+    ts = int(datetime(2026, 8, 5, 20, 30, tzinfo=ZoneInfo("America/New_York")).timestamp())
+    info = {"exchangeTimezoneName": "America/New_York", "earningsTimestampStart": ts}
+    assert next_earnings_event("X", info, date(2026, 8, 1))["earnings_date"] == "2026-08-05"
+
+
+def test_dividend_dates_stay_utc_calendar_days():
+    """Yahoo's pay/ex dates are date-only values encoded as midnight UTC — reading
+    them on a zone west of UTC would shift every payment a day early."""
+    info = {
+        "exchangeTimezoneName": "America/New_York",
+        # Midnight UTC on Sep 15, exactly as Yahoo encodes a calendar day.
+        "exDividendDate": int(datetime(2026, 9, 15, tzinfo=timezone.utc).timestamp()),
+        "dividendDate": int(datetime(2026, 10, 1, tzinfo=timezone.utc).timestamp()),
+        "dividendRate": 2.12,
+        "lastDividendValue": 0.53,
+    }
+    event = next_dividend_event("KO", info, date(2026, 8, 1))
+    assert event["dividend_date"] == "2026-10-01"
+    assert event["ex_dividend_date"] == "2026-09-15"
+    assert event["market_timezone"] == "America/New_York"
+
+
+def test_events_carry_the_zone_they_were_reckoned_in():
+    """Clients count "days from now" in this zone, so it must always be present."""
+    info = {
+        "exchangeTimezoneName": "Asia/Bangkok",
+        "earningsTimestampStart": _ts(TODAY + timedelta(days=5)),
+        "dividendDate": _ts(TODAY + timedelta(days=20)),
+        "dividendRate": 2.0,
+        "lastDividendValue": 0.5,
+    }
+    both = upcoming_events("PTT.BK", info, TODAY)
+    assert both["earnings"]["market_timezone"] == "Asia/Bangkok"
+    assert both["dividend"]["market_timezone"] == "Asia/Bangkok"

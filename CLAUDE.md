@@ -65,6 +65,8 @@ The backend separates concerns across large modules. Key files:
 | `server/refresh_worker.py` | Background tasks (price refresh, etc.) |
 | `server/ai_analyzer.py` | Per-stock Gemini AI analysis |
 | `server/screener_service.py` | Market screener logic |
+| `buffett_pipeline.py` | Buffett/value ranking of all US listed stock (batch) |
+| `edgar_provider.py` | SEC EDGAR XBRL fundamentals (~15y history, tag fallback chains) |
 | `ibkr_connector.py` | Interactive Brokers sync |
 
 Performance-critical valuation paths use **Numba JIT** (`@jit(nopython=True)`). Avoid breaking Numba-compatible code (no Python objects, use NumPy arrays).
@@ -102,6 +104,10 @@ INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG 
 
 ## Key Conventions
 
+- **Time is always market-local (required)**: every date and time Investa computes or displays belongs to the market it describes — **never** the server's timezone and **never** the viewer's device timezone. Investa runs on a Bangkok (UTC+7) clock, which is up to a day ahead of the US markets, so `date.today()`, `new Date()`, and `Calendar.current` are all wrong for anything a user reads as a market date or as "days from now".
+  - Backend: use `utils_time.get_est_today()` / `get_est_now()` for the app-wide market clock, or `server/calendar_events.market_today(info)` / `market_timezone(info)` for a symbol's own exchange (from Yahoo's `exchangeTimezoneName`, default `America/New_York`).
+  - Any API field holding a market date should ship the zone it was reckoned in (`market_timezone`) so clients agree with the backend.
+  - Web: `lib/market_time.ts` (`marketToday`, `marketDayDiff`, `formatCalendarDate`). SwiftUI: `App/MarketTime.swift`. Date-only strings are calendar days, not instants — format them pinned to UTC so they don't slide a day for viewers west of UTC.
 - **Python**: Ruff for linting/formatting; type hints used throughout via Pydantic models.
 - **TypeScript**: Strict mode; `lib/api.ts` mirrors backend Pydantic models — keep them in sync when changing API contracts.
 - **Database migrations**: Run in isolation via scripts in `scripts/`; never modify the schema directly against a live DB.

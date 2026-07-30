@@ -493,11 +493,9 @@ struct ConfirmedDividendsSheet: View {
         #endif
     }
 
-    private func displayDate(_ iso: String) -> String {
-        let inF = DateFormatter(); inF.locale = Locale(identifier: "en_US_POSIX"); inF.dateFormat = "yyyy-MM-dd"
-        guard let d = inF.date(from: String(iso.prefix(10))) else { return iso }
-        let f = DateFormatter(); f.dateStyle = .medium; return f.string(from: d)
-    }
+    /// A pay date is a calendar day on an exchange, so it is rendered as that day
+    /// rather than re-localized into the device's zone (see `MarketTime`).
+    private func displayDate(_ iso: String) -> String { MarketTime.formatted(iso) }
 }
 
 // MARK: - Portfolio health analysis sheet

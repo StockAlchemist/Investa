@@ -15,7 +15,63 @@ SPDX-License-Identifier: MIT
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Tuple
+
+# ---------------------------------------------------------------------------
+# Valuation policy
+# ---------------------------------------------------------------------------
+# One place for every judgement call the models make, so the assumptions are
+# auditable instead of buried as literals at their point of use. Measured with
+# `scripts/intrinsic_value_lab.py` over the local fundamentals cache.
+
+# Growth. A DCF is mostly a bet on this number, so it is the number most worth
+# disciplining. Near-term analyst estimates cover 1-2 years and are extrapolated
+# here over a decade, so they are shrunk hard toward a base rate rather than
+# trusted at face value. The base rate is roughly long-run nominal GDP: the
+# rate at which a mature business grows once its niche is saturated.
+BASE_RATE_GROWTH = 0.04
+# Weight on the firm's own measured growth vs. the base rate. Empirical growth
+# persistence over 5-10y horizons is weak, hence a majority weight on the base.
+GROWTH_SHRINK_WEIGHT = 0.35
+# Hard band on the growth actually fed to a 10-year projection. 25% sustained
+# for a decade is already a 9x business; the old 40% cap implied 29x.
+MAX_PROJECTED_GROWTH = 0.25
+MIN_PROJECTED_GROWTH = -0.05
+TERMINAL_GROWTH = 0.02
+
+# Discount rate.
+RISK_FREE_RATE = 0.045
+EQUITY_MARKET_RETURN = 0.09
+MIN_DISCOUNT_RATE = 0.08
+MAX_DISCOUNT_RATE = 0.20
+MAX_COST_OF_DEBT = 0.25  # above this the "interest / debt" ratio is a data error
+# Small caps carry real financing and liquidity risk that beta does not capture.
+SIZE_PREMIUM_BANDS: List[Tuple[float, float]] = [
+    (3e8, 0.045),   # < $300M
+    (2e9, 0.025),   # < $2B
+    (1e10, 0.010),  # < $10B
+]
+
+# Eligibility. A valuation is refused rather than fabricated when the inputs
+# cannot support one — coverage is not a goal in itself, and a fabricated number
+# next to a real price is worse than a blank.
+MIN_PRICE_FOR_VALUATION = 1.0
+MIN_MARKET_CAP_FOR_VALUATION = 5e7
+# Output sanity band, as a multiple of price. Values outside it are reported as
+# clamped rather than silently dropped, so the caller can see the model failed.
+MAX_IV_TO_PRICE = 5.0
+MIN_IV_TO_PRICE = 0.1
+
+# Blend weights for the central fair-value estimate.
+#
+# EPV is deliberately absent. It is a *floor* — the value of current earning
+# power with no growth — and measured on the local cache it lands below the DCF
+# for 75% of companies (median 0.38x price vs 0.64x). Averaging a floor into a
+# central estimate does not make the estimate conservative, it makes it wrong:
+# including it at 35% weight pushed the median margin of safety to -20%, i.e.
+# the claim that the typical profitable company is a fifth overvalued. EPV is
+# computed and reported on its own, where a floor is what the reader wants.
+MODEL_BLEND_WEIGHTS = {"dcf": 0.60, "graham": 0.40}
 
 
 def _get_statement_value(
@@ -309,8 +365,8 @@ def calculate_wacc(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame] = None,
     balance_sheet_df: Optional[pd.DataFrame] = None,
-    risk_free_rate: float = 0.045,  # Default to ~4.5% if not provided
-    market_return: float = 0.09,    # Default to 9%
+    risk_free_rate: float = RISK_FREE_RATE,
+    market_return: float = EQUITY_MARKET_RETURN,
     default_tax_rate: float = 0.21
 ) -> Dict[str, Any]:
     """
@@ -322,13 +378,27 @@ def calculate_wacc(
         if beta is None or pd.isna(beta):
             beta = 1.0  # Default to market beta
             logging.debug(f"Beta missing for {ticker_info.get('symbol')}, using 1.0")
-            
+        # Yahoo betas on thin tickers run to absurd values in both directions;
+        # outside this band the number describes the data, not the risk.
+        beta = float(np.clip(beta, 0.3, 3.0))
+
         cost_of_equity = risk_free_rate + beta * (market_return - risk_free_rate)
-        
+
+        # Beta is estimated from price history, which says little about the
+        # financing and liquidity risk of a small company.
+        market_cap_for_size = ticker_info.get("marketCap")
+        size_premium = 0.0
+        if market_cap_for_size:
+            for threshold, premium in SIZE_PREMIUM_BANDS:
+                if market_cap_for_size < threshold:
+                    size_premium = premium
+                    break
+        cost_of_equity += size_premium
+
         # 2. Cost of Debt
         cost_of_debt = 0.05 # Default 5%
         tax_rate = default_tax_rate
-        
+
         total_debt = ticker_info.get("totalDebt")
         interest_expense = None
         income_tax_expense = None
@@ -341,23 +411,32 @@ def calculate_wacc(
             pretax_income = _get_statement_value(financials_df, "Pretax Income", latest_period)
             
             if interest_expense and total_debt and total_debt > 0:
-                cost_of_debt = abs(interest_expense) / total_debt
-            
+                implied = abs(interest_expense) / total_debt
+                # A tiny debt balance against a full year of interest expense
+                # yields nonsense rates; clamp rather than propagate.
+                cost_of_debt = float(np.clip(implied, 0.01, MAX_COST_OF_DEBT))
+
             if income_tax_expense and pretax_income and pretax_income > 0:
-                tax_rate = income_tax_expense / pretax_income
-        
+                tax_rate = float(np.clip(income_tax_expense / pretax_income, 0.0, 0.5))
+
         # 3. Weights
         market_cap = ticker_info.get("marketCap")
         if not market_cap:
-            return {"wacc": max(0.075, cost_of_equity), "method": "Cost of Equity (No Market Cap)"}
-            
+            return {
+                "wacc": float(np.clip(cost_of_equity, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)),
+                "cost_of_equity": cost_of_equity,
+                "beta": beta,
+                "size_premium": size_premium,
+                "method": "Cost of Equity (No Market Cap)",
+            }
+
         total_value = market_cap + (total_debt or 0)
         weight_equity = market_cap / total_value
         weight_debt = (total_debt or 0) / total_value
-        
+
         wacc = (weight_equity * cost_of_equity) + (weight_debt * cost_of_debt * (1 - tax_rate))
-        wacc = max(0.075, wacc)
-        
+        wacc = float(np.clip(wacc, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE))
+
         return {
             "wacc": wacc,
             "cost_of_equity": cost_of_equity,
@@ -366,6 +445,7 @@ def calculate_wacc(
             "weight_equity": weight_equity,
             "weight_debt": weight_debt,
             "beta": beta,
+            "size_premium": size_premium,
             "method": "WACC"
         }
     except Exception as e:
@@ -453,6 +533,129 @@ def estimate_growth_rate(
 
     # 3. Final Default
     return 0.05
+
+
+def _historical_growth_regression(
+    financials_df: Optional[pd.DataFrame],
+    item_name: str = "Net Income",
+    years: int = 5,
+) -> Optional[float]:
+    """Log-linear growth over the available history.
+
+    `estimate_growth_rate` measures endpoint-to-endpoint CAGR, which reads a
+    single depressed or inflated base year as a decade-long trend. Regressing
+    log(value) on time uses every observation instead, so one bad year moves
+    the slope a little rather than setting it.
+
+    Returns None when there are fewer than three positive observations, which
+    is the caller's signal to fall back rather than pretend to a trend.
+    """
+    if financials_df is None or financials_df.empty:
+        return None
+    try:
+        dated: List[Tuple[pd.Timestamp, float]] = []
+        for col in financials_df.columns:
+            ts = pd.to_datetime(col, errors="coerce")
+            val = _get_statement_value(financials_df, item_name, col)
+            if pd.notna(ts) and val is not None and val > 0:
+                dated.append((ts, val))
+        dated.sort(key=lambda p: p[0])
+        dated = dated[-years:]
+        if len(dated) < 3:
+            return None
+
+        t0 = dated[0][0]
+        xs = np.array([(d - t0).days / 365.25 for d, _ in dated], dtype=float)
+        ys = np.log(np.array([v for _, v in dated], dtype=float))
+        if xs[-1] - xs[0] < 1.0:
+            return None
+
+        slope = float(np.polyfit(xs, ys, 1)[0])
+        growth = float(np.expm1(slope))
+        return growth if np.isfinite(growth) else None
+    except Exception:
+        return None
+
+
+def blended_growth_estimate(
+    financials_df: Optional[pd.DataFrame],
+    ticker_info: Optional[Dict[str, Any]] = None,
+    item_name: str = "Net Income",
+) -> Dict[str, Any]:
+    """Forecast growth for the projection, shrunk toward a base rate.
+
+    Separate from `estimate_growth_rate`, which stays a pure *measurement* of
+    history. This is the *forecast*, and the difference matters: measured
+    growth is a fact about the past, while the number a ten-year DCF needs is a
+    claim about the future, and high growth mean-reverts. Feeding raw measured
+    growth into a decade of compounding is what produced valuations of 10x-40000x
+    price in the baseline.
+
+    Blends whatever evidence exists (analyst near-term, log-regression trend,
+    endpoint CAGR), then pulls the result most of the way to `BASE_RATE_GROWTH`
+    and clamps it to a band a real business could sustain.
+    """
+    signals: Dict[str, float] = {}
+
+    if ticker_info:
+        analyst_rates = []
+        for period in ("0y", "+1y"):
+            row = (ticker_info.get("_earnings_estimate") or {}).get(period)
+            if row and row.get("growth") is not None:
+                try:
+                    val = float(row["growth"])
+                    if np.isfinite(val):
+                        analyst_rates.append(val)
+                except (ValueError, TypeError):
+                    pass
+        if analyst_rates:
+            signals["analyst"] = float(np.mean(analyst_rates))
+
+    regression = _historical_growth_regression(financials_df, item_name=item_name)
+    if regression is not None:
+        signals["regression"] = regression
+
+    cagr = estimate_growth_rate(financials_df, ticker_info=None, item_name=item_name)
+    # 0.05 is the estimator's "I found nothing" default; don't treat it as evidence.
+    if cagr is not None and np.isfinite(cagr) and abs(cagr - 0.05) > 1e-9:
+        signals["cagr"] = float(cagr)
+
+    if not signals:
+        return {
+            "growth": BASE_RATE_GROWTH,
+            "raw_growth": None,
+            "signals": {},
+            "method": "base rate (no growth evidence)",
+        }
+
+    # Combine by *kind* of evidence, not by counting estimates. `regression`
+    # and `cagr` are two ways of measuring the same backward-looking quantity,
+    # so a plain median over all three signals gave history two votes to the
+    # analysts' one and the middle value was almost always historical — the
+    # forward-looking estimate was silently discarded. Collapse history to one
+    # view first, then let history and expectations weigh equally.
+    historical = [signals[k] for k in ("regression", "cagr") if k in signals]
+    views: List[float] = []
+    if historical:
+        views.append(float(np.median(historical)))
+    if "analyst" in signals:
+        views.append(signals["analyst"])
+
+    raw = float(np.mean(views))
+
+    shrunk = GROWTH_SHRINK_WEIGHT * raw + (1 - GROWTH_SHRINK_WEIGHT) * BASE_RATE_GROWTH
+    clamped = float(np.clip(shrunk, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH))
+
+    return {
+        "growth": clamped,
+        "raw_growth": raw,
+        "signals": signals,
+        "method": (
+            f"{sorted(signals)} -> {raw:.1%}, shrunk "
+            f"{GROWTH_SHRINK_WEIGHT:.0%}/{1 - GROWTH_SHRINK_WEIGHT:.0%} toward "
+            f"{BASE_RATE_GROWTH:.0%} base rate"
+        ),
+    }
 
 
 def _enrich_ticker_info(
@@ -549,20 +752,112 @@ def estimate_fcf_margin(
             
             if rev and rev > 0 and ocf is not None and capex is not None:
                 # Capex is usually negative
-                fcf = ocf + capex 
+                fcf = ocf + capex
                 margin = fcf / rev
-                # Only include reasonable positive margins (0% to 50%)
-                if 0 < margin < 0.5:
+                # Keep loss-making years. Dropping them (the old filter was
+                # 0 < margin < 0.5) meant a company that burned cash in three
+                # of five years was scored on its two good ones, which is the
+                # single most upward-biased step in the old chain. Only
+                # implausible magnitudes are excluded as data errors.
+                if -1.0 < margin < 0.6:
                     margins.append(margin)
-        
+
         if margins:
             # Use median for better robustness against outliers
             return float(np.median(margins))
-            
+
     except Exception as e:
         logging.warning(f"Failed to estimate FCF margin: {e}")
-        
+
     return 0.05  # Fallback
+
+
+def normalized_base_fcf(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame],
+    years: int = 5,
+) -> Dict[str, Any]:
+    """A starting cash flow that reflects the business, not one fiscal year.
+
+    Every dollar of the projection scales linearly off this number, so using a
+    single year's FCF hands a decade of value to whatever was unusual about
+    that year — a big working-capital swing, a factory built, a legal
+    settlement. Buffett's "owner earnings" are explicitly a normal-year figure.
+
+    Takes the median of the last `years` FCF observations, and reconciles it
+    against the latest year: when the two disagree the more conservative is
+    used, because the direction of a surprise in cash conversion is rarely
+    favourable. Returns `fcf=None` when the business has no positive
+    normalized cash flow, which is a refusal, not a fallback.
+    """
+    history: List[float] = []
+    try:
+        if cashflow_df is not None and not cashflow_df.empty:
+            cols = sorted(
+                cashflow_df.columns, key=lambda c: pd.to_datetime(c, errors="coerce")
+            )
+            for col in cols[-years:]:
+                ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", col)
+                capex = _get_statement_value(cashflow_df, "Capital Expenditure", col)
+                if ocf is not None and capex is not None:
+                    history.append(ocf + capex)
+    except Exception as exc:
+        logging.debug(f"FCF history extraction failed: {exc}")
+
+    latest_fcf = history[-1] if history else None
+    if latest_fcf is None:
+        latest_fcf = ticker_info.get("freeCashflow")
+
+    revenue = ticker_info.get("totalRevenue")
+    # A reported FCF margin above 60% is almost always a bad statement mapping
+    # rather than a spectacular business. Drop only the offending years: an
+    # earlier version discarded the whole history whenever the *latest* year
+    # looked wrong, throwing away four good observations because of one bad
+    # one — the opposite of what normalizing is for.
+    if revenue and revenue > 0:
+        plausible = [f for f in history if f / revenue <= 0.6]
+        if len(plausible) != len(history):
+            logging.debug(
+                f"Dropping {len(history) - len(plausible)} implausible FCF year(s) "
+                f"for {ticker_info.get('symbol')}"
+            )
+            history = plausible
+            latest_fcf = history[-1] if history else None
+        if latest_fcf and latest_fcf / revenue > 0.6:
+            latest_fcf = None
+
+    if len(history) >= 3:
+        median_fcf = float(np.median(history))
+        if median_fcf > 0:
+            # The median *is* the robust estimate — deliberately not
+            # min(median, latest). Taking the lower of two estimates is a
+            # haircut with no statistical basis, and such haircuts stack:
+            # combined with a shrunk growth rate and a size-premium discount
+            # rate it produced a model asserting the median profitable company
+            # was 26% overvalued. Each conservatism was defensible alone; the
+            # product of three was not.
+            return {
+                "fcf": median_fcf,
+                "method": f"median of {len(history)}y FCF",
+                "history": history,
+                "normalized": True,
+            }
+
+    if (latest_fcf or 0) > 0:
+        return {
+            "fcf": float(latest_fcf),
+            "method": "latest reported FCF (insufficient history to normalize)",
+            "history": history,
+            "normalized": False,
+        }
+
+    return {
+        "fcf": None,
+        "method": "no positive normalized free cash flow",
+        "history": history,
+        "normalized": False,
+    }
 
 def run_monte_carlo_dcf(
     ticker_info: Dict[str, Any],
@@ -580,17 +875,30 @@ def run_monte_carlo_dcf(
             return {}
 
         # 1. Generate stochastic variables
-        # Growth Rate: Normal distribution (20% relative std dev)
-        growth_samples = np.random.normal(base_growth, abs(base_growth) * 0.2, iterations)
-        # Discount Rate: Normal distribution (10% relative std dev)
-        discount_samples = np.random.normal(base_discount, abs(base_discount) * 0.1, iterations)
-        
-        # Ensure rates are sensible (floor at 7.5% for discount, 0% for growth)
-        growth_samples = np.maximum(0.0, growth_samples)
-        discount_samples = np.maximum(0.075, discount_samples)
-        
-        # Apply 40% cap to growth samples for stability
-        growth_samples = np.minimum(0.40, growth_samples)
+        #
+        # Uncertainty on growth is *absolute*, not proportional to the estimate.
+        # The old relative-20% rule gave a company forecast at 2% growth a
+        # standard deviation of 0.4pp — near-certainty about the hardest number
+        # in the model — while a 40%-growth forecast got 8pp. Nobody knows a
+        # decade of growth to within half a point. 6pp is roughly the observed
+        # cross-sectional spread of realized 5y growth around forecasts.
+        growth_sigma = max(0.06, abs(base_growth) * 0.25)
+        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
+        # Discount rate: absolute floor on the spread too, for the same reason.
+        discount_sigma = max(0.015, abs(base_discount) * 0.15)
+        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
+
+        # The band the projection is allowed to explore. Crucially the lower
+        # bound is negative: the old floor of 0.0 meant no simulated future
+        # ever had the business shrinking, so the "bear" percentile was not a
+        # bear case at all and the distribution was biased upward by
+        # construction.
+        growth_samples = np.clip(
+            growth_samples, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH
+        )
+        discount_samples = np.clip(
+            discount_samples, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE
+        )
 
         # 2. Vectorized Projections
         # Shape: (iterations, projection_years)
@@ -638,8 +946,12 @@ def run_monte_carlo_dcf(
         ]
 
         # 7. Extract Percentiles
+        # `conservative` (P25) is what the Buffett/value ranking sorts on: the
+        # mean of a DCF distribution is not a price you would pay, because being
+        # wrong on the downside costs more than being right on the upside.
         return {
             "bear": float(np.percentile(intrinsic_values, 10)),
+            "conservative": float(np.percentile(intrinsic_values, 25)),
             "base": float(np.percentile(intrinsic_values, 50)),
             "bull": float(np.percentile(intrinsic_values, 90)),
             "std_dev": float(np.std(intrinsic_values)),
@@ -687,6 +999,7 @@ def run_monte_carlo_graham(
 
         return {
             "bear": float(np.percentile(intrinsic_values, 10)),
+            "conservative": float(np.percentile(intrinsic_values, 25)),
             "base": float(np.percentile(intrinsic_values, 50)),
             "bull": float(np.percentile(intrinsic_values, 90)),
             "std_dev": float(np.std(intrinsic_values)),
@@ -716,43 +1029,51 @@ def calculate_intrinsic_value_dcf(
         current_revenue = ticker_info.get("totalRevenue")
         model_method = "DCF"
         
-        # 1. Base FCF
+        # 1. Base FCF — a normalized figure, not one fiscal year.
+        fcf_method = "caller-supplied FCF"
+        fcf_history: List[float] = []
         if fcf is None:
-            # Prioritize Cash Flow Statement for consistency and reliability
-            if cashflow_df is not None and not cashflow_df.empty:
-                latest_cf_period = cashflow_df.columns[0]
-                ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", latest_cf_period)
-                capex = _get_statement_value(cashflow_df, "Capital Expenditure", latest_cf_period)
-                if ocf is not None and capex is not None:
-                    fcf = ocf + capex # Capex is usually negative in YF
-            
-            # Fallback to TTM summary if statement data is missing
-            if fcf is None:
-                fcf = ticker_info.get("freeCashflow")
+            base_res = normalized_base_fcf(ticker_info, financials_df, cashflow_df)
+            fcf = base_res["fcf"]
+            fcf_method = base_res["method"]
+            fcf_history = base_res["history"]
 
-            # Sanity Check for TTM Summary FCF
-            if fcf and current_revenue and current_revenue > 0:
-                implied_margin = fcf / current_revenue
-                if implied_margin > 0.4: # Erroneous data protection
-                     # If the implied margin is unrealistically high (>40%), 
-                     # we suspect data error (like PSKY $15B vs $29B revenue)
-                     # and fallback to revenue-based estimation.
-                     logging.warning(f"Discarding unrealistic TTM FCF margin for {ticker_info.get('symbol')}: {implied_margin:.2f}")
-                     fcf = None 
-        
-        # Fallback for Negative FCF: Revenue-based estimation
+        # Revenue-based fallback: only when the company has a genuinely
+        # profitable cash-flow history that a single bad year has interrupted.
+        # The old code applied it to anything with revenue, which manufactured a
+        # DCF for businesses that had never converted a dollar of sales to cash
+        # (41% of all DCFs in the baseline took this path, median 0.51x price
+        # and 49 of them above 10x). A company that does not generate cash is
+        # not conservatively valued by assuming it soon will.
         used_fcf_margin = None
         if (fcf is None or fcf <= 0) and current_revenue and current_revenue > 0:
             if target_fcf_margin is None:
                 target_fcf_margin = estimate_fcf_margin(financials_df, cashflow_df)
-            
-            fcf = current_revenue * target_fcf_margin
-            model_method = "Revenue-based DCF"
-            used_fcf_margin = target_fcf_margin
+
+            positive_years = sum(1 for v in fcf_history if v > 0)
+            has_track_record = len(fcf_history) >= 3 and positive_years >= len(fcf_history) / 2
+
+            if target_fcf_margin > 0 and has_track_record:
+                fcf = current_revenue * target_fcf_margin
+                model_method = "Revenue-based DCF"
+                used_fcf_margin = target_fcf_margin
+                fcf_method = (
+                    f"revenue x normalized {target_fcf_margin:.1%} FCF margin "
+                    f"({positive_years}/{len(fcf_history)} cash-positive years)"
+                )
+            else:
+                return {
+                    "error": "No sustained positive free cash flow to value",
+                    "diagnostics": {
+                        "fcf_years": len(fcf_history),
+                        "positive_years": positive_years,
+                        "normalized_margin": target_fcf_margin,
+                    },
+                }
 
         if fcf is None or fcf <= 0:
             return {"error": "Negative or missing Free Cash Flow"}
-            
+
         # 2. Discount Rate (WACC)
         if discount_rate is None:
             wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
@@ -761,14 +1082,23 @@ def calculate_intrinsic_value_dcf(
             # Apply stability floor even to provided discount rate
             discount_rate = max(0.075, discount_rate)
             
-        # 3. Growth Rate
+        # 3. Growth Rate — shrunk toward a base rate before it is compounded.
+        growth_method = "caller-supplied growth"
+        growth_signals: Dict[str, float] = {}
         if growth_rate is None:
-            growth_rate = estimate_growth_rate(financials_df, ticker_info=ticker_info, item_name="Net Income")
-            
-        # We cap the input growth at 40% for multi-year CAGR stability.
-        # This prevents astronomical valuations that assume physical impossibilities.
-        applied_growth = min(growth_rate, 0.40)
-        
+            growth_res = blended_growth_estimate(
+                financials_df, ticker_info=ticker_info, item_name="Net Income"
+            )
+            growth_rate = growth_res["growth"]
+            growth_method = growth_res["method"]
+            growth_signals = growth_res["signals"]
+
+        # An explicit override still gets the sanity band: no projection may
+        # assume a decade at a rate no business sustains.
+        applied_growth = float(
+            np.clip(growth_rate, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH)
+        )
+
         projected_fcf = []
         pv_fcf = []
         current_fcf = fcf
@@ -800,11 +1130,25 @@ def calculate_intrinsic_value_dcf(
             return {"error": "Missing shares outstanding"}
             
         intrinsic_value = equity_value / shares_outstanding
-        
+
         # Protect against NaN in final DCF result
         if np.isnan(intrinsic_value) or np.isinf(intrinsic_value):
             return {"error": "DCF resulted in invalid NaN/Inf value"}
-            
+
+        # A DCF whose value is almost entirely terminal is a statement about
+        # the assumed perpetuity, not about the business's next decade. Surface
+        # the share so the caller can weigh it instead of taking the point
+        # estimate at face value.
+        tv_share = pv_terminal_value / enterprise_value if enterprise_value else None
+
+        # Net debt above enterprise value means the equity is a stub; the model
+        # is not built for that and would report a negative per-share value.
+        if intrinsic_value <= 0:
+            return {
+                "error": "Net debt exceeds discounted cash flows (no residual equity value)",
+                "diagnostics": {"equity_value": equity_value, "enterprise_value": enterprise_value},
+            }
+
         res = {
             "intrinsic_value": intrinsic_value,
             "model": model_method,
@@ -815,13 +1159,21 @@ def calculate_intrinsic_value_dcf(
                 "terminal_growth_rate": terminal_growth_rate,
                 "projection_years": projection_years,
                 "base_fcf": fcf,
-                "fcf_margin": used_fcf_margin
+                "fcf_margin": used_fcf_margin,
+                "fcf_method": fcf_method,
+                "growth_method": growth_method,
+                "growth_signals": growth_signals,
+                "terminal_value_share": tv_share,
             }
         }
-        if growth_rate > 0.40:
-            res["parameters"]["note"] = f"Growth capped at 40% for DCF stability; linear fade over {projection_years}y applied"
-        else:
-            res["parameters"]["note"] = f"Linear growth fade over {projection_years}y applied towards terminal rate"
+        notes = [f"Linear growth fade over {projection_years}y toward terminal rate"]
+        if growth_rate > MAX_PROJECTED_GROWTH:
+            notes.append(
+                f"growth clamped {growth_rate:.1%} -> {applied_growth:.1%}"
+            )
+        if tv_share is not None and tv_share > 0.75:
+            notes.append(f"{tv_share:.0%} of value is terminal — low confidence")
+        res["parameters"]["note"] = "; ".join(notes)
         return res
     except Exception as e:
         return {"error": f"DCF calculation failed: {str(e)}"}
@@ -846,46 +1198,57 @@ def calculate_intrinsic_value_graham(
     - Y: Current yield on AAA corporate bonds (using 10Y Treasury yield as proxy)
     """
     try:
+        growth_method = "caller-supplied growth"
         if growth_rate is None:
-            # Estimate growth pct for Graham (expecting percentage e.g. 5.0 for 5%)
-            growth_rate = estimate_growth_rate(financials_df, ticker_info=ticker_info, item_name="Net Income") * 100 
-            
-        # Risk-free rate (10Y Treasury) as proxy for Y
+            # Same shrunk forecast the DCF uses, expressed in percent. Graham's
+            # 'g' is explicitly a *long-run expected* rate, so feeding it raw
+            # trailing growth was always a misreading of the formula.
+            growth_res = blended_growth_estimate(
+                financials_df, ticker_info=ticker_info, item_name="Net Income"
+            )
+            growth_rate = growth_res["growth"] * 100
+            growth_method = growth_res["method"]
+
+        # Y is a corporate bond yield. Floored because the 4.4/Y term is a
+        # divisor: a low yield inflates every valuation without limit.
         if bond_yield is None:
-            bond_yield = 4.5 # Default 4.5%
-        
+            bond_yield = RISK_FREE_RATE * 100
+        bond_yield = max(bond_yield, 3.5)
+
         if eps is None:
             eps = ticker_info.get("trailingEps")
-            
-        # Fallback for Negative EPS: Book Value
-        if (eps is None or eps <= 0) and balance_sheet_df is not None and not balance_sheet_df.empty:
+
+        book_value = None
+        if balance_sheet_df is not None and not balance_sheet_df.empty:
             latest_bs_period = balance_sheet_df.columns[0]
             total_equity = _get_statement_value(balance_sheet_df, "Total Stockholder Equity", latest_bs_period) or \
                            _get_statement_value(balance_sheet_df, "Total Equity Gross Minority Interest", latest_bs_period)
             shares = ticker_info.get("sharesOutstanding")
-            
             if total_equity and shares and shares > 0:
                 book_value = total_equity / shares
-                if book_value > 0:
-                    logging.info(f"Graham Formula fallback to Book Value ({book_value:.2f}) for symbol due to missing/negative EPS.")
-                    return {
-                        "intrinsic_value": book_value,
-                        "model": "Book Value",
-                        "parameters": {
-                            "book_value_per_share": book_value,
-                            "note": "Used because EPS is negative/missing"
-                        }
-                    }
 
+        # No book-value substitution. This previously returned book value per
+        # share *labelled as the Graham model* for 37% of the universe, so a
+        # third of "Graham" valuations were a different model wearing its name,
+        # then averaged in with equal weight. Book value is also the weakest
+        # value signal measured on this data (see the ranking signal audit):
+        # buybacks and intangibles distort it worst for exactly the durable
+        # compounders this is meant to find. It is reported as context only.
         if eps is None or eps <= 0:
-            return {"error": "Negative or missing EPS"}
-        
-        # Graham's formula is extremely sensitive to hyper-growth.
-        # We cap the 'g' used in the FORMULA to 30% for mathematical logic,
-        # otherwise the intrinsic value becomes infinite.
-        applied_growth = min(growth_rate, 30.0)
+            return {
+                "error": "Negative or missing EPS",
+                "diagnostics": {"book_value_per_share": book_value},
+            }
+
+        # Graham's multiplier is unbounded in g and was written for a market
+        # where 'reasonably expected' growth meant single digits. At the old
+        # 30% cap the formula implied a P/E of 68 as *intrinsic* value.
+        applied_growth = float(np.clip(growth_rate, -5.0, 15.0))
         intrinsic_value = (eps * (8.5 + 2 * applied_growth) * 4.4) / bond_yield
-        
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "Graham formula produced a non-positive value"}
+
         res = {
             "intrinsic_value": intrinsic_value,
             "model": "Graham's Revised Formula",
@@ -893,15 +1256,113 @@ def calculate_intrinsic_value_graham(
                 "eps": eps,
                 "growth_rate_pct": growth_rate,
                 "applied_growth_pct": applied_growth,
-                "bond_yield_proxy": bond_yield
+                "bond_yield_proxy": bond_yield,
+                "growth_method": growth_method,
+                "book_value_per_share": book_value,
+                "implied_pe": intrinsic_value / eps if eps else None,
             }
         }
-        if growth_rate > 30.0:
-            res["parameters"]["note"] = "Growth capped at 30% for Graham formula sanity"
-            
+        if growth_rate > 15.0:
+            res["parameters"]["note"] = "Growth capped at 15% — Graham's 'g' is a long-run rate"
+
         return res
     except Exception as e:
         return {"error": f"Graham calculation failed: {str(e)}"}
+
+
+def calculate_earnings_power_value(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame],
+    balance_sheet_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame],
+    discount_rate: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Greenwald's Earnings Power Value: what the business is worth if it never grows.
+
+    EPV = normalized after-tax operating earnings / cost of capital, plus net cash.
+
+    This exists to break the DCF's dependence on a growth forecast. A DCF puts
+    most of its value in a terminal assumption, so two analysts with the same
+    facts can differ threefold; EPV asks the narrower question "what is the
+    current earning power worth in perpetuity?" and answers it from realized
+    numbers only. Where EPV sits above price, the market is charging nothing
+    for growth — the condition a value investor is actually hunting for.
+
+    Uses the median of up to five years of operating income, so a single
+    exceptional year does not become a perpetuity.
+    """
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares or shares <= 0:
+            return {"error": "Missing shares outstanding"}
+
+        # Normalized EBIT across the cycle.
+        ebit_history: List[float] = []
+        if financials_df is not None and not financials_df.empty:
+            cols = sorted(
+                financials_df.columns, key=lambda c: pd.to_datetime(c, errors="coerce")
+            )
+            for col in cols[-5:]:
+                ebit = _get_statement_value(financials_df, "Operating Income", col)
+                if ebit is None:
+                    ebit = _get_statement_value(financials_df, "EBIT", col)
+                if ebit is not None:
+                    ebit_history.append(ebit)
+
+        if not ebit_history:
+            return {"error": "No operating income history for earnings power"}
+
+        normalized_ebit = float(np.median(ebit_history))
+        if normalized_ebit <= 0:
+            return {
+                "error": "No positive normalized operating income",
+                "diagnostics": {"normalized_ebit": normalized_ebit},
+            }
+
+        # Effective tax rate from the same statements, banded to sane values.
+        tax_rate = 0.21
+        if financials_df is not None and not financials_df.empty:
+            latest = financials_df.columns[0]
+            tax = _get_statement_value(financials_df, "Tax Provision", latest)
+            pretax = _get_statement_value(financials_df, "Pretax Income", latest)
+            if tax is not None and pretax and pretax > 0:
+                tax_rate = float(np.clip(tax / pretax, 0.0, 0.5))
+
+        if discount_rate is None:
+            discount_rate = calculate_wacc(ticker_info, financials_df, balance_sheet_df)["wacc"]
+        discount_rate = float(np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE))
+
+        nopat = normalized_ebit * (1 - tax_rate)
+        enterprise_value = nopat / discount_rate
+
+        cash = ticker_info.get("totalCash") or 0
+        debt = ticker_info.get("totalDebt") or 0
+        equity_value = enterprise_value + cash - debt
+        if equity_value <= 0:
+            return {
+                "error": "Net debt exceeds earnings power value",
+                "diagnostics": {"enterprise_value": enterprise_value},
+            }
+
+        intrinsic_value = equity_value / shares
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "EPV produced an invalid value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Earnings Power Value (no growth)",
+            "parameters": {
+                "normalized_ebit": normalized_ebit,
+                "ebit_years": len(ebit_history),
+                "tax_rate": tax_rate,
+                "discount_rate": discount_rate,
+                "nopat": nopat,
+                "net_cash": cash - debt,
+                "note": "Assumes zero growth; value of current earning power only",
+            },
+        }
+    except Exception as e:
+        return {"error": f"EPV calculation failed: {str(e)}"}
 
 
 def get_comprehensive_intrinsic_value(
@@ -949,10 +1410,15 @@ def get_comprehensive_intrinsic_value(
         eps=graham_eps,
         bond_yield=graham_bond_yield
     )
-    
+
+    epv_res = calculate_earnings_power_value(
+        ticker_info, financials_df, balance_sheet_df, cashflow_df,
+        discount_rate=overrides.get("epv_discount_rate", dcf_discount),
+    )
+
     dcf_mc = None
     graham_mc = None
-    
+
     # Pass through iterations to MC simulations
     if "intrinsic_value" in dcf_res:
         params = dcf_res["parameters"]
@@ -982,9 +1448,16 @@ def get_comprehensive_intrinsic_value(
             )
             graham_res["mc"] = graham_mc
 
+    # Simulated bear/bull bounds, collected from whichever models ran.
+    bear_values: List[float] = []
+    bull_values: List[float] = []
+    for mc in (dcf_mc, graham_mc):
+        if mc and mc.get("bear") is not None and mc.get("bull") is not None:
+            bear_values.append(mc["bear"])
+            bull_values.append(mc["bull"])
+
     current_price = ticker_info.get("currentPrice") or ticker_info.get("regularMarketPrice")
 
-    
     # --- ETF Valuation Logic ---
     quote_type = ticker_info.get("quoteType", "").upper()
     if quote_type == "ETF" or quote_type == "MUTUALFUND":
@@ -999,9 +1472,11 @@ def get_comprehensive_intrinsic_value(
                 "current_price": current_price,
                 "average_intrinsic_value": nav_price,
                 "valuation_note": f"Valuation based on Net Asset Value (NAV) for {quote_type}.",
+                "valuation_status": "nav",
                 "models": {
                     "dcf": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
-                    "graham": {"model": "N/A (ETF/Fund)", "intrinsic_value": None}
+                    "graham": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "epv": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
                 }
             }
             
@@ -1013,79 +1488,134 @@ def get_comprehensive_intrinsic_value(
             
             return results
 
-    results = {
+    results: Dict[str, Any] = {
         "current_price": current_price,
         "models": {
             "dcf": dcf_res,
-            "graham": graham_res
-        }
+            "graham": graham_res,
+            "epv": epv_res,
+        },
     }
-    
-    # Calculate weighted average and range
-    valid_values = []
-    bear_values = []
-    bull_values = []
-    
-    if "intrinsic_value" in dcf_res:
-        valid_values.append(dcf_res["intrinsic_value"])
-        if dcf_mc:
-            bear_values.append(dcf_mc["bear"])
-            bull_values.append(dcf_mc["bull"])
-            
-    if "intrinsic_value" in graham_res:
-        valid_values.append(graham_res["intrinsic_value"])
-        if graham_mc:
-            bear_values.append(graham_mc["bear"])
-            bull_values.append(graham_mc["bull"])
-        
-    if valid_values:
-        avg_intrinsic = sum(valid_values) / len(valid_values)
-        
-        # BUSINESS LOGIC: If DCF and Graham differ by > 50%, prioritize the value closer to current price
-        # This fulfills the USER requirement to be "closer to zero" (closer to current price).
-        if "intrinsic_value" in dcf_res and "intrinsic_value" in graham_res and current_price:
-            dcf_val = dcf_res["intrinsic_value"]
-            graham_val = graham_res["intrinsic_value"]
-            
-            # Allow negative values by checking absolute magnitude to avoid zero division
-            if abs(dcf_val) > 0.001:
-                diff_pct = abs(dcf_val - graham_val) / abs(dcf_val)
-                if diff_pct > 0.50:
-                    dcf_dist = abs(dcf_val - current_price)
-                    graham_dist = abs(graham_val - current_price)
-                    
-                    if dcf_dist < graham_dist:
-                        avg_intrinsic = dcf_val
-                        picked = "DCF"
-                    else:
-                        avg_intrinsic = graham_val
-                        picked = "Graham"
-                        
-                    results["valuation_note"] = f"Models show a large discrepancy ({diff_pct*100:.1f}%). Priority given to {picked} Model ({avg_intrinsic:.2f}) as it is closer to current price."
-        
-        # FINAL SANITY CHECK: Replace NaN or Inf with None for JSON compatibility
-        if avg_intrinsic is not None and (np.isnan(avg_intrinsic) or np.isinf(avg_intrinsic)):
-            avg_intrinsic = None
-            
-        results["average_intrinsic_value"] = avg_intrinsic
-        
-        # Probabilistic range
-        if bear_values and bull_values:
-            results["range"] = {
-                "bear": sum(bear_values) / len(bear_values),
-                "bull": sum(bull_values) / len(bull_values)
-            }
-            # Sanitize range
-            for k, v in results["range"].items():
-                if v is not None and (np.isnan(v) or np.isinf(v)):
-                    results["range"][k] = None
-            
-        if current_price and avg_intrinsic:
-            mos = ((avg_intrinsic - current_price) / current_price) * 100
-            if mos is not None and (np.isnan(mos) or np.isinf(mos)):
-                mos = None
-            results["margin_of_safety_pct"] = mos
-            
+
+    # --- Eligibility ---------------------------------------------------------
+    # Refuse before blending when the inputs cannot support a valuation. The old
+    # code always produced a number: 99.1% "coverage", of which 15% sat above
+    # 10x or below 0.1x price. Sub-dollar and micro-cap tickers were the worst
+    # (42% absurd under $1) because per-share arithmetic on a tiny denominator
+    # amplifies every data error. A blank is a usable answer; a fabricated
+    # fair value next to a real price is not.
+    market_cap = ticker_info.get("marketCap")
+    ineligible = None
+    if current_price is not None and current_price < MIN_PRICE_FOR_VALUATION:
+        ineligible = (
+            f"Price below ${MIN_PRICE_FOR_VALUATION:.0f} — per-share valuation is "
+            "dominated by data noise"
+        )
+    elif market_cap is not None and market_cap < MIN_MARKET_CAP_FOR_VALUATION:
+        ineligible = "Market cap below $50M — fundamentals are too unreliable to value"
+
+    if ineligible:
+        results["average_intrinsic_value"] = None
+        results["valuation_status"] = "ineligible"
+        results["valuation_note"] = ineligible
+        return results
+
+    # --- Reliability-weighted blend -----------------------------------------
+    # Replaces the previous rule, which — when two models disagreed by more
+    # than 50% — discarded both and kept whichever number sat closest to the
+    # current price. That rule fired on 64% of the universe and made the output
+    # a function of price, so the margin of safety it produced could only ever
+    # be small: the estimate was anchored to the very quantity it was supposed
+    # to judge. Models are now weighted by how defensible they are, never by
+    # how flattering their answer is.
+    contributions: List[Dict[str, Any]] = []
+    for key, model_res in (("dcf", dcf_res), ("graham", graham_res)):
+        iv = model_res.get("intrinsic_value")
+        if iv is not None and np.isfinite(iv) and iv > 0:
+            contributions.append(
+                {"key": key, "value": float(iv), "weight": MODEL_BLEND_WEIGHTS[key]}
+            )
+
+    # EPV travels alongside the estimate as the no-growth floor, not inside it.
+    epv_iv = epv_res.get("intrinsic_value")
+    if epv_iv is not None and np.isfinite(epv_iv) and epv_iv > 0:
+        results["earnings_power_floor"] = float(epv_iv)
+
+    if not contributions:
+        reasons = [
+            m.get("error") for m in (dcf_res, epv_res, graham_res) if m.get("error")
+        ]
+        results["average_intrinsic_value"] = None
+        results["valuation_status"] = "no_model"
+        results["valuation_note"] = (
+            "No model could value this company: " + "; ".join(dict.fromkeys(reasons))
+            if reasons
+            else "No model could value this company."
+        )
+        return results
+
+    total_weight = sum(c["weight"] for c in contributions)
+    avg_intrinsic = sum(c["value"] * c["weight"] for c in contributions) / total_weight
+
+    results["model_weights"] = {c["key"]: c["weight"] / total_weight for c in contributions}
+
+    # Disagreement is information: report it rather than resolving it by fiat.
+    values = [c["value"] for c in contributions]
+    spread_pct = None
+    if len(values) > 1 and avg_intrinsic > 0:
+        spread_pct = (max(values) - min(values)) / avg_intrinsic * 100
+
+    # --- Output sanity band --------------------------------------------------
+    status = "ok"
+    notes: List[str] = []
+    if current_price and current_price > 0:
+        ratio = avg_intrinsic / current_price
+        if ratio > MAX_IV_TO_PRICE or ratio < MIN_IV_TO_PRICE:
+            clamped = float(
+                np.clip(avg_intrinsic, MIN_IV_TO_PRICE * current_price,
+                        MAX_IV_TO_PRICE * current_price)
+            )
+            notes.append(
+                f"Model output {ratio:.1f}x price is outside the credible band; "
+                f"clamped to {clamped / current_price:.1f}x. Treat as low confidence."
+            )
+            avg_intrinsic = clamped
+            status = "clamped"
+
+    if spread_pct is not None and spread_pct > 100:
+        detail = ", ".join("{}={:.2f}".format(c["key"], c["value"]) for c in contributions)
+        notes.append(
+            f"Models disagree by {spread_pct:.0f}% of the blended value ({detail})."
+        )
+        if status == "ok":
+            status = "low_confidence"
+
+    if not np.isfinite(avg_intrinsic):
+        avg_intrinsic = None
+        status = "no_model"
+
+    results["average_intrinsic_value"] = avg_intrinsic
+    results["valuation_status"] = status
+    results["model_spread_pct"] = spread_pct
+    if notes:
+        results["valuation_note"] = " ".join(notes)
+
+    # Probabilistic range from whichever simulations ran.
+    if bear_values and bull_values:
+        results["range"] = {
+            "bear": sum(bear_values) / len(bear_values),
+            "bull": sum(bull_values) / len(bull_values),
+        }
+        for k, v in results["range"].items():
+            if v is not None and (np.isnan(v) or np.isinf(v)):
+                results["range"][k] = None
+
+    if current_price and avg_intrinsic:
+        mos = ((avg_intrinsic - current_price) / current_price) * 100
+        if mos is not None and (np.isnan(mos) or np.isinf(mos)):
+            mos = None
+        results["margin_of_safety_pct"] = mos
+
     return results
 
 

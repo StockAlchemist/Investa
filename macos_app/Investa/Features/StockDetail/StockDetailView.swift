@@ -294,6 +294,7 @@ struct StockDetailView: View {
                         eventCard(
                             "Next Earnings", icon: "chart.bar.fill", tint: Theme.earnings,
                             date: e.date, dateEnd: e.dateEnd, status: e.status,
+                            timeZone: e.marketTimezone,
                             detail: e.epsEstimate.map { est in
                                 let base = "Est. EPS \(String(format: "%.2f", est))"
                                 guard let ago = e.epsYearAgo else { return base }
@@ -304,6 +305,7 @@ struct StockDetailView: View {
                         eventCard(
                             "Next Dividend", icon: "dollarsign.circle.fill", tint: Color.up,
                             date: d.date, dateEnd: nil, status: d.status,
+                            timeZone: d.marketTimezone,
                             detail: [
                                 d.amountPerShare.map { "\(Fmt.currency($0, code: nativeCur)) / share" },
                                 d.exDate.map { "ex-div \(Self.eventDate($0))" },
@@ -314,23 +316,15 @@ struct StockDetailView: View {
         }
     }
 
-    /// "Jul 30, 2026" — the date form used by the Upcoming Events cards.
-    private static func eventDate(_ iso: String) -> String {
-        let inFmt = DateFormatter()
-        inFmt.locale = Locale(identifier: "en_US_POSIX"); inFmt.dateFormat = "yyyy-MM-dd"
-        guard let d = inFmt.date(from: String(iso.prefix(10))) else { return iso }
-        let out = DateFormatter(); out.dateStyle = .medium; out.timeStyle = .none
-        return out.string(from: d)
-    }
+    /// "Jul 30, 2026" — the date form used by the Upcoming Events cards. The value
+    /// is a calendar day on an exchange, so it is not re-localized (see `MarketTime`).
+    private static func eventDate(_ iso: String) -> String { MarketTime.formatted(iso) }
 
-    /// "today" / "in 8 days" / "3 days ago" for a calendar date.
-    private static func relativeEventDay(_ iso: String) -> String? {
-        let inFmt = DateFormatter()
-        inFmt.locale = Locale(identifier: "en_US_POSIX"); inFmt.dateFormat = "yyyy-MM-dd"
-        guard let d = inFmt.date(from: String(iso.prefix(10))) else { return nil }
-        let cal = Calendar.current
-        let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()),
-                                      to: cal.startOfDay(for: d)).day ?? 0
+    /// "today" / "in 8 days" / "3 days ago", counted in the market's local time:
+    /// on a device whose calendar has already rolled into tomorrow (Bangkok while
+    /// New York is mid-afternoon) the device clock puts the count a day out.
+    private static func relativeEventDay(_ iso: String, _ timeZone: String?) -> String? {
+        guard let days = MarketTime.dayDiff(iso, timeZone: timeZone) else { return nil }
         switch days {
         case 0: return "today"
         case 1: return "tomorrow"
@@ -340,7 +334,8 @@ struct StockDetailView: View {
     }
 
     private func eventCard(_ label: String, icon: String, tint: Color, date: String,
-                           dateEnd: String?, status: String, detail: String?) -> some View {
+                           dateEnd: String?, status: String, timeZone: String?,
+                           detail: String?) -> some View {
         let confirmed = status == "confirmed"
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -358,7 +353,7 @@ struct StockDetailView: View {
                 HStack(spacing: 4) {
                     Text(Self.eventDate(date) + (dateEnd.map { " – " + Self.eventDate($0) } ?? ""))
                         .font(.callout.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
-                    if let rel = Self.relativeEventDay(date) {
+                    if let rel = Self.relativeEventDay(date, timeZone) {
                         Text("· \(rel)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
@@ -392,6 +387,11 @@ struct StockDetailView: View {
                 }
                 if let g = iv.models?.graham?.intrinsicValue {
                     ivCard("Graham Intrinsic Value", g, upside: upside(g, iv.currentPrice), range: iv.models?.graham?.mc, tint: .orange, icon: "scalemass")
+                }
+                // Earnings Power Value: the business valued with no growth at
+                // all. Shown beside the others as a floor, not blended in.
+                if let epv = iv.models?.epv?.intrinsicValue {
+                    ivCard("Earnings Power (no growth)", epv, upside: upside(epv, iv.currentPrice), range: nil, tint: .cyan, icon: "anchor")
                 }
             }
         }
@@ -804,18 +804,23 @@ struct StockDetailView: View {
                 valuationSummaryCards(iv)
 
                 if let note = iv.valuationNote {
+                    // A refusal is information, not a warning — tint it neutrally
+                    // so it doesn't read as an alarm about the company.
+                    let tint: Color = iv.isRefusal ? .secondary : .orange
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title3)
+                        Image(systemName: iv.isRefusal ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(tint).font(.title3)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Model Discrepancy Note").font(.caption.weight(.bold)).foregroundStyle(.orange).textCase(.uppercase)
-                            Text(note).font(.subheadline.italic()).foregroundStyle(.orange)
+                            Text(valuationNoteTitle(iv)).font(.caption.weight(.bold)).foregroundStyle(tint).textCase(.uppercase)
+                            Text(note).font(.subheadline.italic()).foregroundStyle(tint)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
-                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .background((iv.isRefusal ? Color.secondary : Color.orange).opacity(0.1),
+                                in: RoundedRectangle(cornerRadius: 12))
                 }
-                
+
                 if let models = iv.models {
                     if let dcf = models.dcf {
                         dcfCard("Discounted Cash Flow", "chart.line.uptrend.xyaxis", .green, dcf, modelKey: "dcf", iv: iv)
@@ -845,11 +850,19 @@ struct StockDetailView: View {
     /// and wrapped character-by-character.
     @ViewBuilder private func valuationSummaryCards(_ iv: IntrinsicValueResponse) -> some View {
         let mos = iv.marginOfSafetyPct ?? 0
-        let intrinsic = valuationCard(label: "Average Intrinsic Value",
-                                      value: Fmt.currency(iv.averageIntrinsicValue, code: nativeCur),
-                                      valueColor: .indigo) {
-            if let r = iv.range {
+        // The backend now declines to value companies whose fundamentals can't
+        // support one. Distinguish "no answer" from "an answer of zero".
+        let hasValue = iv.averageIntrinsicValue != nil
+        let intrinsic = valuationCard(label: iv.status == .nav ? "Net Asset Value" : "Blended Intrinsic Value",
+                                      value: hasValue ? Fmt.currency(iv.averageIntrinsicValue, code: nativeCur) : "Not valued",
+                                      valueColor: hasValue ? .indigo : .secondary) {
+            if hasValue, let r = iv.range {
                 Text("Range: \(Fmt.currency(r.bear, code: nativeCur)) - \(Fmt.currency(r.bull, code: nativeCur))")
+                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            if hasValue, let floor = iv.earningsPowerFloor {
+                Text("No-growth floor: \(Fmt.currency(floor, code: nativeCur))")
                     .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -858,14 +871,25 @@ struct StockDetailView: View {
                                     value: Fmt.currency(iv.currentPrice, code: nativeCur),
                                     valueColor: .primary) { EmptyView() }
         let safety = valuationCard(label: "Margin of Safety",
-                                   value: Fmt.percent(mos, includeSign: true),
-                                   valueColor: mos >= 0 ? .green : .red,
-                                   tint: mos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1)) { EmptyView() }
+                                   value: hasValue ? Fmt.percent(mos, includeSign: true) : "—",
+                                   valueColor: hasValue ? (mos >= 0 ? .green : .red) : .secondary,
+                                   tint: hasValue ? (mos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1)) : nil) { EmptyView() }
 
         if hSizeClass == .compact {
             VStack(spacing: 12) { intrinsic; current; safety }
         } else {
             HStack(spacing: 16) { intrinsic; current; safety }
+        }
+    }
+
+    /// Headline for the valuation note, keyed to why the backend produced it.
+    private func valuationNoteTitle(_ iv: IntrinsicValueResponse) -> String {
+        switch iv.status {
+        case .noModel:        return "Cannot be valued"
+        case .ineligible:     return "Not eligible for valuation"
+        case .clamped:        return "Output outside credible range"
+        case .lowConfidence:  return "Models disagree"
+        default:              return "Valuation note"
         }
     }
 

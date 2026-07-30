@@ -79,6 +79,9 @@ struct UpcomingEarnings: Sendable {
     let status: String
     let epsEstimate: Double?
     let epsYearAgo: Double?
+    /// IANA zone of the reporting exchange — the day count is measured against it
+    /// rather than the device clock (see `MarketTime`).
+    let marketTimezone: String?
 
     init?(json: JSONValue?) {
         guard let date = json?["earnings_date"]?.stringValue, !date.isEmpty else { return nil }
@@ -87,6 +90,7 @@ struct UpcomingEarnings: Sendable {
         status = json?["status"]?.stringValue ?? "estimated"
         epsEstimate = json?["eps_estimate"]?.doubleValue
         epsYearAgo = json?["eps_year_ago"]?.doubleValue
+        marketTimezone = json?["market_timezone"]?.stringValue
     }
 }
 
@@ -96,6 +100,8 @@ struct UpcomingDividend: Sendable {
     let exDate: String?
     let amountPerShare: Double?
     let status: String
+    /// IANA zone of the paying exchange — see `UpcomingEarnings.marketTimezone`.
+    let marketTimezone: String?
 
     init?(json: JSONValue?) {
         guard let date = json?["dividend_date"]?.stringValue, !date.isEmpty else { return nil }
@@ -103,6 +109,7 @@ struct UpcomingDividend: Sendable {
         exDate = json?["ex_dividend_date"]?.stringValue
         amountPerShare = json?["amount_per_share"]?.doubleValue
         status = json?["status"]?.stringValue ?? "estimated"
+        marketTimezone = json?["market_timezone"]?.stringValue
     }
 }
 
@@ -160,9 +167,15 @@ struct StockHistoryPoint: Codable, Sendable, Identifiable {
 
 struct IntrinsicValueResponse: Codable, Sendable {
     let currentPrice: Double?
+    /// Nil when the backend declines to value the company — check `status`.
     let averageIntrinsicValue: Double?
     let marginOfSafetyPct: Double?
     let valuationNote: String?
+    let valuationStatus: String?
+    /// Spread between contributing models, as % of the blended value.
+    let modelSpreadPct: Double?
+    /// Value of current earning power assuming zero growth.
+    let earningsPowerFloor: Double?
     let models: Models?
     let range: Range?
 
@@ -171,8 +184,23 @@ struct IntrinsicValueResponse: Codable, Sendable {
         case averageIntrinsicValue = "average_intrinsic_value"
         case marginOfSafetyPct = "margin_of_safety_pct"
         case valuationNote = "valuation_note"
+        case valuationStatus = "valuation_status"
+        case modelSpreadPct = "model_spread_pct"
+        case earningsPowerFloor = "earnings_power_floor"
         case models, range
     }
+
+    /// Why the response looks the way it does. Mirrors `ValuationStatus` in
+    /// `web_app/lib/api.ts`; keep the two in step.
+    enum Status: String, Sendable {
+        case ok, lowConfidence = "low_confidence", clamped
+        case ineligible, noModel = "no_model", nav
+    }
+
+    var status: Status? { valuationStatus.flatMap(Status.init(rawValue:)) }
+
+    /// True when the backend refused to produce a value at all.
+    var isRefusal: Bool { status == .ineligible || status == .noModel }
 
     struct Range: Codable, Sendable { let bear: Double?; let bull: Double? }
     struct HistogramPoint: Codable, Sendable { let price: Double?; let count: Double? }
@@ -191,6 +219,8 @@ struct IntrinsicValueResponse: Codable, Sendable {
     struct Models: Codable, Sendable {
         let dcf: Model?
         let graham: Model?
+        /// Earnings Power Value — the no-growth floor. Reported, never blended.
+        let epv: Model?
     }
 }
 

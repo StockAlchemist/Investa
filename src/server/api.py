@@ -34,10 +34,12 @@ from server.portfolio_service import (  # noqa: F401 (re-exported)
 from server.routes.admin import router as _admin_router
 from server.routes.analytics import router as _analytics_router
 from server.routes.auth import router as _auth_router
+from server.routes.buffett_rank import router as _buffett_rank_router
 from server.routes.market import router as _market_router
 from server.routes.portfolio import router as _portfolio_router
 from server.routes.screener import router as _screener_router
 from server.routes.settings import router as _settings_router
+from server.routes.strategies import router as _strategies_router
 from server.routes.transactions import router as _transactions_router
 from server.routes.watchlist import router as _watchlist_router
 
@@ -51,3 +53,5 @@ router.include_router(_settings_router)
 router.include_router(_admin_router)
 router.include_router(_screener_router)
 router.include_router(_watchlist_router)
+router.include_router(_buffett_rank_router)
+router.include_router(_strategies_router)

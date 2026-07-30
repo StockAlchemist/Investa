@@ -32,6 +32,7 @@ import {
     BarChart3,
     Receipt,
     Scale,
+    Anchor,
     Users,
     Wallet,
     PieChart as PieChartIcon,
@@ -67,6 +68,7 @@ import {
     Legend
 } from 'recharts';
 import { cn, formatPercent as formatPercentShared } from "@/lib/utils";
+import { formatCalendarDate, marketDayDiff } from "@/lib/market_time";
 import { normalizeDividendYield, normalizeExpenseRatio } from "@/lib/dividend";
 import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
@@ -468,6 +470,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
         const dcfUpside = getUpsidePercentage(intrinsicValue?.models?.dcf?.intrinsic_value);
         const grahamUpside = getUpsidePercentage(intrinsicValue?.models?.graham?.intrinsic_value);
+        const epvUpside = getUpsidePercentage(intrinsicValue?.models?.epv?.intrinsic_value);
 
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -556,6 +559,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     status={upcomingEarnings.status}
                                     date={upcomingEarnings.earnings_date}
                                     dateEnd={upcomingEarnings.earnings_date_end}
+                                    timeZone={upcomingEarnings.market_timezone}
                                     detail={upcomingEarnings.eps_estimate != null
                                         ? `Est. EPS ${upcomingEarnings.eps_estimate.toFixed(2)}${upcomingEarnings.eps_year_ago != null
                                             ? ` vs ${upcomingEarnings.eps_year_ago.toFixed(2)} a year ago` : ''}`
@@ -569,6 +573,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     label="Next Dividend"
                                     status={upcomingDividend.status}
                                     date={upcomingDividend.dividend_date}
+                                    timeZone={upcomingDividend.market_timezone}
                                     detail={[
                                         `${formatCurrency(upcomingDividend.amount_per_share * fxRate, currency)} / share`,
                                         upcomingDividend.ex_dividend_date
@@ -619,6 +624,18 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     rangeMax={formatCurrency((intrinsicValue.models.graham.mc?.bull ?? 0) * fxRate, currency)}
                                     icon={Scale}
                                     color="text-amber-400"
+                                />
+                            )}
+                            {/* Earnings Power Value: what the business is worth with no growth
+                                at all. Shown beside the others as a floor, not blended into them. */}
+                            {intrinsicValue?.models?.epv?.intrinsic_value && (
+                                <StatCard
+                                    label="Earnings Power (no growth)"
+                                    value={formatCurrency((intrinsicValue.models.epv.intrinsic_value ?? 0) * fxRate, currency)}
+                                    subValue={formatUpside(epvUpside)}
+                                    subValueColor={getUpsideColor(epvUpside)}
+                                    icon={Anchor}
+                                    color="text-sky-400"
                                 />
                             )}
                 </div>
@@ -1221,17 +1238,34 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const renderValuation = () => {
         if (!intrinsicValue) return null;
         const { models, average_intrinsic_value, margin_of_safety_pct, current_price } = intrinsicValue;
+        const status = intrinsicValue.valuation_status;
+        // The backend now declines to value companies whose fundamentals cannot
+        // support one, rather than emitting a fabricated number. Distinguish
+        // "no answer" from "an answer of zero".
+        const hasValue = average_intrinsic_value !== null && average_intrinsic_value !== undefined;
+        const isRefusal = status === "ineligible" || status === "no_model";
 
         return (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Summary Header */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
-                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Average Intrinsic Value</p>
-                        <p className="text-3xl font-bold text-indigo-500">{formatCurrency((average_intrinsic_value ?? 0) * fxRate, currency)}</p>
-                        {intrinsicValue?.range && (
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">
+                            {status === "nav" ? "Net Asset Value" : "Blended Intrinsic Value"}
+                        </p>
+                        {hasValue ? (
+                            <p className="text-3xl font-bold text-indigo-500">{formatCurrency((average_intrinsic_value ?? 0) * fxRate, currency)}</p>
+                        ) : (
+                            <p className="text-2xl font-bold text-muted-foreground">Not valued</p>
+                        )}
+                        {hasValue && intrinsicValue?.range && (
                             <p className="text-xs text-muted-foreground mt-2 font-medium">
                                 Range: {formatCurrency((intrinsicValue.range.bear ?? 0) * fxRate, currency)} - {formatCurrency((intrinsicValue.range.bull ?? 0) * fxRate, currency)}
+                            </p>
+                        )}
+                        {hasValue && intrinsicValue.earnings_power_floor !== undefined && (
+                            <p className="text-xs text-muted-foreground mt-2 font-medium">
+                                No-growth floor: {formatCurrency(intrinsicValue.earnings_power_floor * fxRate, currency)}
                             </p>
                         )}
                     </div>
@@ -1241,26 +1275,47 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     </div>
                     <div className={cn(
                         "p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
-                        (margin_of_safety_pct || 0) > 0
-                            ? "bg-emerald-500/10 dark:bg-emerald-500/5"
-                            : "bg-rose-500/10 dark:bg-rose-500/5"
+                        !hasValue
+                            ? "bg-muted"
+                            : (margin_of_safety_pct || 0) > 0
+                                ? "bg-emerald-500/10 dark:bg-emerald-500/5"
+                                : "bg-rose-500/10 dark:bg-rose-500/5"
                     )}>
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Margin of Safety</p>
-                        <p className={cn(
-                            "text-3xl font-bold tracking-tight",
-                            (margin_of_safety_pct || 0) > 0 ? "text-emerald-500" : "text-rose-500"
-                        )}>
-                            {(margin_of_safety_pct || 0).toFixed(2)}%
-                        </p>
+                        {hasValue ? (
+                            <p className={cn(
+                                "text-3xl font-bold tracking-tight",
+                                (margin_of_safety_pct || 0) > 0 ? "text-emerald-500" : "text-rose-500"
+                            )}>
+                                {(margin_of_safety_pct || 0).toFixed(2)}%
+                            </p>
+                        ) : (
+                            <p className="text-2xl font-bold text-muted-foreground">&mdash;</p>
+                        )}
                     </div>
                 </div>
 
                 {intrinsicValue.valuation_note && (
-                    <div className="bg-amber-500/10 p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
-                        <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className={cn(
+                        "p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-500",
+                        isRefusal ? "bg-muted" : "bg-amber-500/10"
+                    )}>
+                        <AlertCircle className={cn("w-5 h-5 shrink-0 mt-0.5", isRefusal ? "text-muted-foreground" : "text-amber-500")} />
                         <div className="flex flex-col gap-1">
-                            <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Model Discrepancy Note</p>
-                            <p className="text-sm text-amber-700 dark:text-amber-500 leading-relaxed italic">{intrinsicValue.valuation_note}</p>
+                            <p className={cn(
+                                "text-xs font-bold uppercase tracking-wider",
+                                isRefusal ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400"
+                            )}>
+                                {status === "no_model" ? "Cannot be valued"
+                                    : status === "ineligible" ? "Not eligible for valuation"
+                                        : status === "clamped" ? "Output outside credible range"
+                                            : status === "low_confidence" ? "Models disagree"
+                                                : "Valuation note"}
+                            </p>
+                            <p className={cn(
+                                "text-sm leading-relaxed italic",
+                                isRefusal ? "text-muted-foreground" : "text-amber-700 dark:text-amber-500"
+                            )}>{intrinsicValue.valuation_note}</p>
                         </div>
                     </div>
                 )}
@@ -2047,19 +2102,17 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 }
 /** "Jul 30, 2026" — the date form used by the Upcoming Events tiles. */
 function formatEventDate(iso: string): string {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    return formatCalendarDate(iso);
 }
 
-/** "today" / "in 8 days" / "3 days ago" for a calendar date. */
-function relativeEventDay(iso: string): string | null {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    d.setHours(0, 0, 0, 0);
-    const days = Math.round((d.getTime() - today.getTime()) / 86400000);
+/**
+ * "today" / "in 8 days" / "3 days ago", counted in the market's local time so a
+ * viewer whose device has already rolled into tomorrow doesn't see the count
+ * slip by a day.
+ */
+function relativeEventDay(iso: string, timeZone?: string | null): string | null {
+    const days = marketDayDiff(iso, timeZone);
+    if (days === null) return null;
     if (days === 0) return 'today';
     if (days === 1) return 'tomorrow';
     if (days < 0) return `${-days} day${days === -1 ? '' : 's'} ago`;
@@ -2070,7 +2123,7 @@ function relativeEventDay(iso: string): string | null {
  * One upcoming corporate event (earnings report or dividend) in the Overview
  * tab, styled to match the StatCard tiles beside it.
  */
-function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, detail }: {
+function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, detail, timeZone }: {
     icon: React.ElementType;
     color: string;
     label: string;
@@ -2078,8 +2131,10 @@ function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, de
     date: string;
     dateEnd?: string | null;
     detail?: string;
+    /** Exchange zone the date belongs to; the day count is measured against it. */
+    timeZone?: string | null;
 }) {
-    const relative = relativeEventDay(date);
+    const relative = relativeEventDay(date, timeZone);
     return (
         <div className="bg-muted py-2 px-3 rounded-xl flex items-center gap-3 transition-all hover:bg-muted/50">
             <div className={cn("p-2 rounded-lg bg-card shrink-0", color)}>
