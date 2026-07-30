@@ -455,6 +455,9 @@ private struct SleeveSection: View {
         HStack(spacing: SleeveColumns.spacing) {
             Text("SYMBOL")
             Spacer(minLength: 6)
+            if SleeveColumns.showsIndustry {
+                Text("INDUSTRY").frame(width: SleeveColumns.industry, alignment: .leading)
+            }
             Text(isPhoneLayout ? "WT" : "WEIGHT")
                 .frame(width: SleeveColumns.weight, alignment: .trailing)
             Text("AMOUNT").frame(width: SleeveColumns.amount, alignment: .trailing)
@@ -490,11 +493,31 @@ private enum SleeveColumns {
     static let amount: CGFloat = isPhoneLayout ? 80 : 92
     static let price: CGFloat = isPhoneLayout ? 50 : 62
     static let shares: CGFloat = isPhoneLayout ? 46 : 64
+
+    /// The industry a name was capped under — the same column the web table
+    /// shows, and hidden on the same terms: the web hides it below `md`, and a
+    /// phone has no room for a sixth column beside five that already crowd the
+    /// symbol. On a phone the industry still appears, as the row's subtitle.
+    static let industry: CGFloat = 120
+    static var showsIndustry: Bool { !isPhoneLayout }
 }
 
 private struct PositionRow: View {
     let position: StrategyPosition
     let currency: String
+
+    /// The company, under its ticker.
+    private var subtitle: String? { position.name ?? position.note }
+
+    /// The industry, where the table has no column for it.
+    ///
+    /// A phone cannot fit a sixth column — the web table hides this one below
+    /// `md` for the same reason — but the industry is the fact the
+    /// three-per-industry cap is about, so it rides under the name rather than
+    /// being dropped from the narrow layout entirely.
+    private var inlineIndustry: String? {
+        SleeveColumns.showsIndustry ? nil : position.industry
+    }
 
     var body: some View {
         HStack(spacing: SleeveColumns.spacing) {
@@ -502,11 +525,23 @@ private struct PositionRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(position.symbol).font(.caption.weight(.semibold))
                     .lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                if let subtitle = position.name ?? position.industry ?? position.note {
+                if let subtitle {
                     Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let inlineIndustry {
+                    Text(inlineIndustry).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
             Spacer(minLength: 6)
+            if SleeveColumns.showsIndustry {
+                // The industry the three-per-industry cap was applied against,
+                // so a reader can see the concentration the rule allowed rather
+                // than having to recognise it from the tickers.
+                Text(position.industry ?? "—")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .frame(width: SleeveColumns.industry, alignment: .leading)
+            }
             Text("\(String(format: "%.1f", position.weight * 100))%")
                 .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 .numericCell(width: SleeveColumns.weight)
