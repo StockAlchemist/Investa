@@ -35,6 +35,13 @@ with it at 0.46. Timing asset A with a signal about asset B is unreliable, and
 the measurement says so. The indicator is therefore market context on the
 dashboard, and no strategy acts on it.
 
+**It is read for more than one market.** `MARKET_SIGNAL_INDICES` lists what the
+dashboard panel shows — the S&P 500 and the NASDAQ 100, broadest first. One
+index alone reads like a verdict on "the market"; two that regularly disagree
+show the reader how much of the answer depends on which index was chosen. Each
+reading is computed independently by the same rule and carries its own symbol
+and display name, so the set can grow without a client changing.
+
 **Its timing is still easy to misread**, which is why the payload keeps two
 fields apart. The rule compares *month-end* closes with the average of the last
 *N* month-ends, so on any day inside a month there are two different facts:
@@ -57,6 +64,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
+from utils_time import get_est_today
+
 # How much history to pull for the signal. A 10-month average needs 10 completed
 # months plus the running one; the extra year makes the returned history chart
 # useful and costs nothing (the market-data layer caches by symbol and range).
@@ -64,8 +73,46 @@ _SIGNAL_LOOKBACK_DAYS = 365 * 3
 
 # The market-trend indicator's default parameters. Informational only — no
 # strategy acts on it (see the module docstring).
-MARKET_SIGNAL_SYMBOL = "QQQ"
+MARKET_SIGNAL_SYMBOL = "SPY"
 MARKET_SIGNAL_SMA_MONTHS = 10
+
+# The markets the trend panel reads, broadest first. The panel shows both
+# because one index is not "the market": the S&P and the NASDAQ disagree often
+# enough that a single reading invites the viewer to generalise from whichever
+# one happened to be wired up. Two readings side by side make the
+# disagreement — and therefore the limits of the indicator — visible.
+#
+# Both legs are ETFs rather than the raw indices (^GSPC/^IXIC) on purpose: the
+# two averages are then built from the same kind of series, on the same data
+# path, so a crossing in one is comparable to a crossing in the other. This
+# list is the panel's contract; the clients read the pair from here (mirrored in
+# `web_app/components/dashboard/MarketTrendPanel.tsx` and
+# `macos_app/Investa/Features/Strategies/MarketTrendPanel.swift`).
+MARKET_SIGNAL_INDICES: tuple[tuple[str, str], ...] = (
+    ("SPY", "S&P 500"),
+    ("QQQ", "NASDAQ 100"),
+)
+
+# Display names for the symbols a signal can be asked for. Shipped in the
+# payload so every client names an index identically instead of each keeping its
+# own map; an unknown symbol falls back to the ticker rather than guessing.
+_SIGNAL_DISPLAY_NAMES = {
+    **{symbol: name for symbol, name in MARKET_SIGNAL_INDICES},
+    "^GSPC": "S&P 500",
+    "^IXIC": "NASDAQ Composite",
+    "^NDX": "NASDAQ 100",
+    "DIA": "Dow Jones",
+    "^DJI": "Dow Jones",
+    "IWM": "Russell 2000",
+    "^RUT": "Russell 2000",
+}
+
+# The signal's dates — the month-end that set it, the next check — are US market
+# dates, so they are reckoned on the US market clock and the zone ships with
+# them (see the market-local convention in CLAUDE.md). Investa's server runs on
+# a Bangkok clock, up to a day ahead of New York: with `date.today()` the panel
+# would call a month "completed" while its final session had yet to trade.
+MARKET_SIGNAL_TIMEZONE = "America/New_York"
 
 
 @dataclass(frozen=True)
@@ -261,12 +308,15 @@ def evaluate_trend_signal(
     `prices` is a daily close series indexed by date. Returns None when there is
     not enough history to form the average — a partial average silently biased
     by its own short window is worse than an honest refusal.
+
+    `today` decides which month is still running, so it is a *market* date, not
+    the server's (see `MARKET_SIGNAL_TIMEZONE`).
     """
     monthly = month_end_closes(prices)
     if monthly.empty:
         return None
 
-    today = today or date.today()
+    today = today or get_est_today()
     current_period = pd.Period(today, freq="M")
 
     # Split the running month off: its last close is *not* a month-end yet, and
@@ -344,7 +394,7 @@ def load_signal_prices(symbol: str, today: Optional[date] = None) -> Optional[pd
     """Daily closes for the signal symbol, via the shared market-data provider."""
     from server.route_utils import get_mdp
 
-    today = today or date.today()
+    today = today or get_est_today()
     start = today - timedelta(days=_SIGNAL_LOOKBACK_DAYS)
     try:
         history, _ = get_mdp().get_historical_data([symbol], start, today)
@@ -369,7 +419,7 @@ def latest_closes(symbols: Sequence[str], today: Optional[date] = None) -> Dict[
     """
     from server.route_utils import get_mdp
 
-    today = today or date.today()
+    today = today or get_est_today()
     wanted = sorted({s for s in symbols if s})
     if not wanted:
         return {}
@@ -400,8 +450,10 @@ def market_trend_signal(
 
     Informational context, not an instruction — no strategy in this module acts
     on it (see the module docstring for the measurement that retired it). The
-    symbol is tagged onto the result rather than added by the route, so the
-    object is self-describing wherever it is read.
+    symbol, its display name and the zone its dates were reckoned in are tagged
+    onto the result rather than added by the route, so the object is
+    self-describing wherever it is read — and so the panel that shows several of
+    these side by side names each market the same way in every client.
     """
     prices = load_signal_prices(symbol, today)
     if prices is None:
@@ -410,6 +462,10 @@ def market_trend_signal(
     if signal is None:
         return None
     signal["signal_symbol"] = symbol
+    signal["signal_name"] = _SIGNAL_DISPLAY_NAMES.get(symbol.upper(), symbol)
+    # Every date in the payload is a market date; say which market's clock they
+    # were read on so a client cannot re-reckon them against a device timezone.
+    signal["market_timezone"] = MARKET_SIGNAL_TIMEZONE
     # Stated in the payload so a client cannot present the indicator as a
     # trading rule the backend is standing behind.
     signal["advisory_only"] = True

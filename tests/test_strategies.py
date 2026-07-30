@@ -552,6 +552,51 @@ def test_market_signal_is_self_describing_and_marked_advisory(monkeypatch):
 
     assert signal["signal_symbol"] == "QQQ"
     assert signal["advisory_only"] is True
+    # The panel shows several of these at once; the name and the zone travel
+    # with each reading so no client has to invent either.
+    assert signal["signal_name"] == "NASDAQ 100"
+    assert signal["market_timezone"] == st.MARKET_SIGNAL_TIMEZONE
+
+
+def test_every_panel_index_is_named(monkeypatch):
+    """
+    Each market the panel reads must produce a reading that names itself.
+
+    Falling back to the ticker would put "SPY" where the reader expects
+    "S&P 500", so the display-name map has to cover the whole set — and cover it
+    here, rather than in three clients each keeping their own copy.
+    """
+    series = _daily_series(_rising(12))
+    monkeypatch.setattr(st, "load_signal_prices", lambda symbol, today=None: series)
+
+    assert st.MARKET_SIGNAL_INDICES, "the panel must read at least one market"
+    for symbol, label in st.MARKET_SIGNAL_INDICES:
+        signal = st.market_trend_signal(symbol, 10, today=date(2026, 7, 10))
+        assert signal["signal_name"] == label != symbol, symbol
+
+
+def test_the_running_month_is_decided_on_the_market_clock(monkeypatch):
+    """
+    Which month is still running is a US market fact, not a server one.
+
+    Investa's server runs on a Bangkok clock, up to a day ahead of New York. On
+    1 August in Bangkok it is still 31 July in New York, and July's final
+    session has yet to close: reading the server date would retire July's
+    month-end a day early and hand the panel a decision the market never made.
+
+    Pinned by the seam rather than by a story about today — the market clock is
+    stubbed to a date in the past, so a regression to `date.today()` cannot
+    coincide with it in any month this test is ever run.
+    """
+    series = _daily_series(_rising(12, end_year=2024, end_month=4))
+    monkeypatch.setattr(st, "load_signal_prices", lambda symbol, today=None: series)
+    monkeypatch.setattr(st, "get_est_today", lambda: date(2024, 5, 10))
+
+    signal = st.market_trend_signal("SPY", 10)
+
+    assert signal["governs_month"] == "2024-05"
+    assert signal["decision_date"].startswith("2024-04")
+    assert signal["next_decision_date"] == "2024-05-31"
 
 
 def test_allocation_amounts_sum_to_the_capital_given(monkeypatch):

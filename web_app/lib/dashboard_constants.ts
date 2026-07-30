@@ -29,7 +29,7 @@ export const DEFAULT_ITEMS = [
     // Overview (top of page)
     { id: 'portfolioHero', title: 'Portfolio Hero', group: 'Overview' },
     { id: 'todayStrip', title: 'Market Today', group: 'Overview' },
-    { id: 'trendSignal', title: 'Trend Signal', group: 'Overview' },
+    { id: 'trendSignal', title: 'Market Trend', group: 'Overview' },
     // Insights & Events
     { id: 'dashboardEvents', title: 'Upcoming Events', group: 'Insights & Events' },
     { id: 'dashboardInsights', title: 'Actionable Insights', group: 'Insights & Events' },

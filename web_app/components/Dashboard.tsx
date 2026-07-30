@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import TodayStrip from './dashboard/TodayStrip';
 import DashboardEvents from './dashboard/DashboardEvents';
 import DashboardInsights from './dashboard/DashboardInsights';
-import TrendSignalCard from './dashboard/TrendSignalCard';
+import MarketTrendPanel from './dashboard/MarketTrendPanel';
 
 const RiskMetrics       = lazy(() => import('./RiskMetrics'));
 const PortfolioDonut    = lazy(() => import('./PortfolioDonut'));
@@ -640,7 +640,7 @@ function DashboardInner({
                     )}
                     {(showTrendSignal || showInsights) && (
                         <div className="flex flex-col gap-4 md:gap-5">
-                            {showTrendSignal && <TrendSignalCard />}
+                            {showTrendSignal && <MarketTrendPanel />}
                             {showInsights && !isLoading && holdings.length > 0 && (
                                 <DashboardInsights holdings={holdings} currency={currency} />
                             )}

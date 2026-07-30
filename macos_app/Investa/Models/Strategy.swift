@@ -26,6 +26,12 @@ struct TrendSignal: Decodable, Sendable {
     /// Always true — kept in the model so the flag cannot be dropped silently.
     let advisoryOnly: Bool
     let signalSymbol: String
+    /// Display name for the symbol, e.g. "S&P 500". Named by the backend so every
+    /// client labels a market identically; optional only to stay decodable
+    /// against a server that predates the field.
+    let signalName: String?
+    /// Zone the payload's dates were reckoned in (always a market clock).
+    let marketTimezone: String?
     let state: State
     let smaMonths: Int
     /// Month-end close that set the active signal.
@@ -57,6 +63,8 @@ struct TrendSignal: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case advisoryOnly = "advisory_only"
         case signalSymbol = "signal_symbol"
+        case signalName = "signal_name"
+        case marketTimezone = "market_timezone"
         case state
         case smaMonths = "sma_months"
         case decisionDate = "decision_date"

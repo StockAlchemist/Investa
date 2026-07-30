@@ -1420,6 +1420,11 @@ export async function fetchBuffettRankHistory(
 export interface TrendSignal {
     advisory_only: boolean;
     signal_symbol: string;
+    /** Display name for the symbol, e.g. "S&P 500" — named by the backend so
+     *  every client labels a market identically. */
+    signal_name: string;
+    /** Zone the payload's dates were reckoned in (always a market clock). */
+    market_timezone: string;
     state: 'in' | 'out';
     sma_months: number;
     /** Month-end close that set the active signal. */
@@ -1545,8 +1550,22 @@ export async function fetchStrategies(signal?: AbortSignal): Promise<{
     return data as unknown as { strategies: StrategyDefinition[]; default: string };
 }
 
+/**
+ * The markets the trend panel reads, broadest first — mirrors
+ * `MARKET_SIGNAL_INDICES` in `src/strategies.py`.
+ *
+ * Both legs are ETFs rather than the raw indices so the two moving averages are
+ * built from the same kind of series, making a crossing in one comparable to a
+ * crossing in the other. The backend also ships each reading's display name, so
+ * these labels are only a fallback for a payload that predates that field.
+ */
+export const MARKET_TREND_INDICES = [
+    { symbol: 'SPY', label: 'S&P 500' },
+    { symbol: 'QQQ', label: 'NASDAQ 100' },
+] as const;
+
 export async function fetchTrendSignal(
-    symbol: string = 'QQQ',
+    symbol: string = 'SPY',
     smaMonths: number = 10,
     signal?: AbortSignal
 ): Promise<TrendSignal> {

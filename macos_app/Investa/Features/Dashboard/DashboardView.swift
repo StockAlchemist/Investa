@@ -127,7 +127,7 @@ struct DashboardView: View {
     /// share one column so the long events list can fill the other.
     @ViewBuilder private var trendAndInsightsColumn: some View {
         VStack(spacing: 16) {
-            if vis("trendSignal") { TrendSignalCardLoader() }
+            if vis("trendSignal") { MarketTrendPanel() }
             if vis("dashboardInsights") {
                 ActionableInsightsCard(holdings: viewModel.holdings, currency: cur,
                                        targets: appState.targetAllocation)
