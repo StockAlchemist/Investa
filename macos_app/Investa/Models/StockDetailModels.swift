@@ -330,6 +330,39 @@ struct TrackRecordRank: Decodable, Sendable {
     }
 }
 
+/// How one metric behaved peak-to-trough in a downturn.
+struct TrackRecordStressItem: Decodable, Sendable, Identifiable {
+    let metric: String
+    let label: String
+    let peakYear: Int
+    let troughYear: Int
+    let changePct: Double
+    let display: String
+    let recoveryDisplay: String?
+
+    var id: String { metric }
+
+    enum CodingKeys: String, CodingKey {
+        case metric, label, display
+        case peakYear = "peak_year"
+        case troughYear = "trough_year"
+        case changePct = "change_pct"
+        case recoveryDisplay = "recovery_display"
+    }
+}
+
+/// One downturn. `covered` is false when the company has no filings spanning it —
+/// "not listed then" and "did not fall" are opposite claims and must not render
+/// the same way.
+struct TrackRecordStress: Decodable, Sendable, Identifiable {
+    let key: String
+    let label: String
+    let covered: Bool
+    let items: [TrackRecordStressItem]
+
+    var id: String { key }
+}
+
 /// A number the company changed after first reporting it. `display` is
 /// preformatted by the backend ("$1.95bn → $4.41bn") so the three clients cannot
 /// render the same revision three ways.
@@ -375,9 +408,10 @@ struct TrackRecord: Decodable, Sendable {
     let rank: TrackRecordRank?
     let groups: [TrackRecordGroup]
     let revisions: TrackRecordRevisions?
+    let stress: [TrackRecordStress]?
 
     enum CodingKeys: String, CodingKey {
-        case symbol, name, model, coverage, rank, groups, revisions
+        case symbol, name, model, coverage, rank, groups, revisions, stress
         case periodCount = "period_count"
         case firstPeriod = "first_period"
         case latestPeriod = "latest_period"

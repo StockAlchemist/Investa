@@ -849,6 +849,10 @@ struct StockDetailView: View {
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             }
 
+            if let stress = record.stress, stress.contains(where: { $0.covered }) {
+                stressResponse(stress)
+            }
+
             if let revisions = record.revisions, revisions.count > 0 {
                 revisionHistory(revisions)
             }
@@ -885,6 +889,45 @@ struct StockDetailView: View {
         .padding(20)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, lineWidth: 1))
+    }
+
+    /// What each downturn in the filed history did to the business.
+    ///
+    /// Evidence about one company and never a score: only the companies filing
+    /// in 2008 have a reading for it, and the ones that did not survive are not
+    /// in the fact store to be compared against.
+    @ViewBuilder private func stressResponse(_ windows: [TrackRecordStress]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("In a downturn")
+                .font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+            ForEach(windows) { window in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(window.label)
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .frame(width: 150, alignment: .leading)
+                    if window.covered {
+                        HStack(spacing: 16) {
+                            ForEach(window.items) { item in
+                                HStack(spacing: 4) {
+                                    Text(item.label).font(.subheadline).foregroundStyle(.secondary)
+                                    Text(item.display)
+                                        .font(.subheadline.weight(.medium)).monospacedDigit()
+                                        .foregroundStyle(item.changePct < 0 ? .red : .green)
+                                    Text("(\(item.recoveryDisplay ?? "no fall"))")
+                                        .font(.caption2).foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                    } else {
+                        // Not the same claim as "did not fall".
+                        Text("not filing then").font(.subheadline.italic()).foregroundStyle(.tertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(14)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// Numbers the company changed after first reporting them.

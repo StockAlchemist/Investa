@@ -435,3 +435,101 @@ class TestMoneyFormatting:
     )
     def test_scales(self, value, expected):
         assert track_record._money(value) == expected
+
+
+class TestStressResponse:
+    """
+    `track_record.stress_response` — what each downturn did to a business.
+
+    The durability signal a five-year window structurally cannot express: a
+    window ending in 2025 begins in 2021 and contains no recession at all. The
+    tests are mostly about the ways this arithmetic misleads if written
+    naively — a fall measured from a loss, a year compared with itself, or a
+    company that was not listed reported as one that sailed through.
+    """
+
+    @staticmethod
+    def values(revenue=None, net_income=None, ocf=None, capex=None):
+        def series(mapping):
+            return {f"{year}-12-31": value for year, value in (mapping or {}).items()}
+
+        return {
+            "revenue": series(revenue),
+            "net_income": series(net_income),
+            "operating_cash_flow": series(ocf),
+            "capex": series(capex),
+        }
+
+    def test_a_fall_and_its_recovery(self):
+        values = self.values(
+            revenue={2018: 100.0, 2019: 110.0, 2020: 40.0, 2021: 90.0, 2022: 115.0}
+        )
+        covid = next(
+            w for w in track_record.stress_response(values) if w["key"] == "covid"
+        )
+        item = next(i for i in covid["items"] if i["metric"] == "revenue")
+        assert item["peak_year"] == 2019
+        assert item["trough_year"] == 2020
+        assert item["change_pct"] == pytest.approx(-63.6, abs=0.1)
+        assert item["recovered_year"] == 2022
+        assert item["recovery_display"] == "back in 2022"
+
+    def test_a_business_that_never_fell_has_nothing_to_recover(self):
+        values = self.values(
+            revenue={2018: 100.0, 2019: 110.0, 2020: 120.0, 2021: 130.0}
+        )
+        covid = next(
+            w for w in track_record.stress_response(values) if w["key"] == "covid"
+        )
+        item = next(i for i in covid["items"] if i["metric"] == "revenue")
+        assert item["change_pct"] > 0
+        assert item["recovery_display"] is None
+
+    def test_a_fall_that_never_came_back_says_so(self):
+        values = self.values(revenue={2019: 100.0, 2020: 50.0, 2021: 60.0, 2022: 70.0})
+        covid = next(
+            w for w in track_record.stress_response(values) if w["key"] == "covid"
+        )
+        item = next(i for i in covid["items"] if i["metric"] == "revenue")
+        assert item["recovered_year"] is None
+        assert item["recovery_display"] == "not back to its peak"
+
+    def test_a_loss_is_not_a_peak_to_fall_from(self):
+        """
+        Delta lost $8.9bn in 2008 and $1.2bn in 2009. Measured against a
+        negative peak that is "+86%", which reads as growth through the crisis
+        to anyone looking at it.
+        """
+        values = self.values(net_income={2008: -8900.0, 2009: -1200.0, 2010: 500.0})
+        gfc = next(w for w in track_record.stress_response(values) if w["key"] == "gfc")
+        assert all(i["metric"] != "net_income" for i in gfc["items"])
+
+    def test_one_year_is_not_a_peak_to_trough(self):
+        """
+        The windows overlap at 2008 on purpose — the downturn straddles it. A
+        company whose only observation is 2008 must not compare that year with
+        itself and report a 0% fall.
+        """
+        values = self.values(revenue={2008: 100.0})
+        gfc = next(w for w in track_record.stress_response(values) if w["key"] == "gfc")
+        assert gfc["covered"] is False
+        assert gfc["items"] == []
+
+    def test_a_company_that_was_not_filing_is_not_a_company_that_held_up(self):
+        values = self.values(revenue={2019: 100.0, 2020: 80.0})
+        windows = {w["key"]: w for w in track_record.stress_response(values)}
+        assert windows["gfc"]["covered"] is False
+        assert windows["covid"]["covered"] is True
+
+    def test_free_cash_flow_nets_capex_off_as_a_positive_outflow(self):
+        """EDGAR reports capex as a payment, the sign convention buffett_metrics uses."""
+        values = self.values(
+            ocf={2019: 100.0, 2020: 60.0, 2021: 120.0},
+            capex={2019: 20.0, 2020: 10.0, 2021: 20.0},
+        )
+        covid = next(
+            w for w in track_record.stress_response(values) if w["key"] == "covid"
+        )
+        item = next(i for i in covid["items"] if i["metric"] == "free_cash_flow")
+        # Peak 80 in 2019, trough 50 in 2020.
+        assert item["change_pct"] == pytest.approx(-37.5)

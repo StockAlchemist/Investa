@@ -2382,6 +2382,41 @@ function TrackRecordPanel({ record }: { record: TrackRecord }) {
                 </div>
             )}
 
+            {record.stress?.some(w => w.covered) && (
+                <div className="bg-card rounded-xl px-4 py-3">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                        In a downturn
+                    </h5>
+                    <div className="space-y-2">
+                        {record.stress.map(window => (
+                            <div key={window.key} className="flex flex-col sm:flex-row sm:items-baseline gap-x-3 gap-y-1 text-sm">
+                                <span className="text-muted-foreground whitespace-nowrap sm:w-40 shrink-0">{window.label}</span>
+                                {window.covered ? (
+                                    <span className="flex flex-wrap gap-x-4 gap-y-1">
+                                        {window.items.map(item => (
+                                            <span key={item.metric} className="whitespace-nowrap">
+                                                {item.label}{' '}
+                                                <span className={cn(
+                                                    "font-medium tabular-nums",
+                                                    item.change_pct < 0 ? "text-red-500" : "text-emerald-500"
+                                                )}>{item.display}</span>
+                                                <span className="text-muted-foreground text-xs">
+                                                    {' '}({item.recovery_display ?? 'no fall'})
+                                                </span>
+                                            </span>
+                                        ))}
+                                    </span>
+                                ) : (
+                                    // "Not listed then" is a different claim from
+                                    // "did not fall", and must not read as the latter.
+                                    <span className="text-muted-foreground/60 italic">not filing then</span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {record.revisions?.count > 0 && (
                 <details className="bg-card rounded-xl px-4 py-3 group">
                     <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 select-none">

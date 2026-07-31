@@ -194,6 +194,154 @@ def labelled_metrics(
     return groups
 
 
+# The two downturns the filed history reaches. A five-year window contains
+# neither, which is the whole reason a company's behaviour in one was not
+# something Investa could show before.
+#
+# Peak years bracket the entry into each downturn and trough years the exit,
+# read off the fiscal year end — a January year-end lands a quarter early, which
+# is close enough for "what happened to this business in the crisis" and far
+# more robust than trying to align fiscal calendars.
+STRESS_PERIODS = (
+    {
+        "key": "gfc",
+        "label": "2008-09 recession",
+        "peak_years": (2006, 2007, 2008),
+        "trough_years": (2008, 2009, 2010),
+    },
+    {
+        "key": "covid",
+        "label": "2020 shutdown",
+        "peak_years": (2018, 2019),
+        "trough_years": (2020, 2021),
+    },
+)
+
+# What a downturn is read on. Demand, profit and cash can fall by very different
+# amounts in the same year, and which one gave way is the information.
+_STRESS_METRICS = (
+    ("revenue", "Revenue"),
+    ("net_income", "Net income"),
+    ("free_cash_flow", "Free cash flow"),
+)
+
+
+def _by_fiscal_year(series: Dict[str, float]) -> Dict[int, float]:
+    """{calendar year of the period end: value}, latest wins within a year."""
+    out: Dict[int, float] = {}
+    for period_end in sorted(series):
+        try:
+            out[int(str(period_end)[:4])] = series[period_end]
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def stress_response(
+    values: Dict[str, Dict[str, float]], periods=STRESS_PERIODS
+) -> List[Dict[str, Any]]:
+    """
+    How far each metric fell peak-to-trough in each downturn, and when it recovered.
+
+    Evidence about one company, never a score. Two things make it unfit for
+    cross-sectional use and both are stated rather than smoothed over: only the
+    companies that were filing then have a 2008 reading at all, and the ones that
+    did not survive are not in the fact store to be compared against. Ranking on
+    this would reward having existed.
+
+    A company with no data covering a window comes back `covered: false` — "not
+    listed then" and "did not fall" are opposite claims.
+    """
+    free_cash_flow: Dict[str, float] = {}
+    ocf = values.get("operating_cash_flow", {})
+    capex = values.get("capex", {})
+    for period_end, operating in ocf.items():
+        if operating is None:
+            continue
+        # EDGAR reports capex as a positive outflow, as `buffett_metrics` does.
+        free_cash_flow[period_end] = operating - (capex.get(period_end) or 0.0)
+
+    by_metric = {
+        "revenue": _by_fiscal_year(values.get("revenue", {})),
+        "net_income": _by_fiscal_year(values.get("net_income", {})),
+        "free_cash_flow": _by_fiscal_year(free_cash_flow),
+    }
+
+    results: List[Dict[str, Any]] = []
+    for window in periods:
+        items: List[Dict[str, Any]] = []
+        for concept, label in _STRESS_METRICS:
+            annual = by_metric.get(concept) or {}
+            peaks = {y: annual[y] for y in window["peak_years"] if y in annual}
+            if not peaks:
+                continue
+            peak_year = max(peaks, key=lambda y: peaks[y])
+            peak = peaks[peak_year]
+            # A fall measured from a loss is not a fall. Delta lost $8.9bn in
+            # 2008 and $1.2bn in 2009, which this arithmetic would report as
+            # net income "+86%" — read as growth through the crisis by anyone
+            # looking. A company with no positive peak has nothing to fall from.
+            if not peak or peak <= 0:
+                continue
+
+            # Strictly after the peak. The windows overlap by a year, so without
+            # this a company whose only observation is 2008 compares that year
+            # with itself and reports a 0% fall — which reads as "sailed through
+            # it" when the truth is "there is one year of data here".
+            troughs = {
+                y: annual[y]
+                for y in window["trough_years"]
+                if y in annual and y > peak_year
+            }
+            if not troughs:
+                continue
+            trough_year = min(troughs, key=lambda y: troughs[y])
+            trough = troughs[trough_year]
+
+            change = (trough - peak) / abs(peak) * 100.0
+            # Recovery is measured from the trough forward, so a company that
+            # never fell has nothing to recover and reports None rather than 0.
+            recovered = None
+            if trough < peak:
+                for year in sorted(y for y in annual if y > trough_year):
+                    if annual[year] >= peak:
+                        recovered = year
+                        break
+
+            items.append(
+                {
+                    "metric": concept,
+                    "label": label,
+                    "peak_year": peak_year,
+                    "trough_year": trough_year,
+                    "peak": peak,
+                    "trough": trough,
+                    "change_pct": change,
+                    "display": f"{change:+.0f}%",
+                    "recovered_year": recovered,
+                    "recovery_display": (
+                        None
+                        if trough >= peak
+                        else (
+                            f"back in {recovered}"
+                            if recovered
+                            else "not back to its peak"
+                        )
+                    ),
+                }
+            )
+
+        results.append(
+            {
+                "key": window["key"],
+                "label": window["label"],
+                "covered": bool(items),
+                "items": items,
+            }
+        )
+    return results
+
+
 def _money(value: float) -> str:
     """A filing-scale figure, short enough to sit twice on one line."""
     magnitude = abs(value)
@@ -319,4 +467,19 @@ def build(symbol: str, cik: str, name: Optional[str] = None) -> Dict[str, Any]:
         "rank": rank,
         "groups": labelled_metrics(company.metrics, model),
         "revisions": revisions(cik),
+        "stress": _stress(cik),
     }
+
+
+def _stress(cik: str) -> List[Dict[str, Any]]:
+    """The company's behaviour in the two downturns the filed history reaches."""
+    try:
+        import edgar_provider
+
+        values = edgar_provider.get_concept_values(
+            cik, ["revenue", "net_income", "operating_cash_flow", "capex"]
+        )
+        return stress_response(values)
+    except Exception as exc:
+        logging.debug(f"Track record: stress history unavailable for {cik}: {exc}")
+        return []

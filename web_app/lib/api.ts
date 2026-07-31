@@ -1416,6 +1416,31 @@ export interface TrackRecordGroup {
     items: TrackRecordItem[];
 }
 
+/** How one metric behaved peak-to-trough in a downturn. */
+export interface TrackRecordStressItem {
+    metric: string;
+    label: string;
+    peak_year: number;
+    trough_year: number;
+    change_pct: number;
+    /** "-64%", formatted by the backend. */
+    display: string;
+    recovered_year: number | null;
+    /** "back in 2022" / "not back to its peak", or null when it never fell. */
+    recovery_display: string | null;
+}
+
+/**
+ * One downturn. `covered` is false when the company has no filings spanning it —
+ * "not listed then" and "did not fall" are opposite claims.
+ */
+export interface TrackRecordStress {
+    key: string;
+    label: string;
+    covered: boolean;
+    items: TrackRecordStressItem[];
+}
+
 /** A number the company changed after first reporting it. */
 export interface TrackRecordRevision {
     concept: string;
@@ -1460,6 +1485,8 @@ export interface TrackRecord {
     groups: TrackRecordGroup[];
     /** Revision history. `count` is the total; `items` is the largest handful. */
     revisions: { count: number; items: TrackRecordRevision[] };
+    /** Behaviour in each downturn the filed history reaches. */
+    stress: TrackRecordStress[];
 }
 
 export async function fetchTrackRecord(
