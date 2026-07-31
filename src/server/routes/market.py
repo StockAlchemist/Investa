@@ -749,9 +749,9 @@ def get_fundamentals_endpoint(
         except Exception as e_live:
             logging.debug(f"Live price piggyback skipped for {symbol}: {e_live}")
 
-        # Next earnings report / dividend for the detail modal's Overview tab.
-        # Derived from the blob we already hold, so it costs no extra fetch and
-        # agrees with the dashboard's Upcoming Events panel.
+        # Next earnings report / just-reported quarter / next dividend for the
+        # detail modal's Overview tab. Derived from the blob we already hold, so
+        # it costs no extra fetch and agrees with the dashboard's Events panel.
         try:
             from server.calendar_events import upcoming_events
 

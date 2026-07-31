@@ -422,6 +422,9 @@ struct UpcomingEventsCard: View {
 
     private var confirmedCount: Int { dividends.filter { $0.status == "confirmed" }.count }
 
+    /// Mirrors `REPORTED_LOOKBACK_DAYS` in `server/calendar_events.py`.
+    private static let reportedWindowDays = 5
+
     /// "today" / "3d" / "Jul 29" for an event date, counted in the *market's*
     /// local time: in Bangkok the device rolls into tomorrow while New York is
     /// still mid-afternoon, which would show a US report happening today as "1d ago".
@@ -444,6 +447,13 @@ struct UpcomingEventsCard: View {
             // The window is measured on each event's own exchange clock, so the
             // row shown as "today" is the one the market calls today.
             guard let days = MarketTime.dayDiff($0.date, timeZone: $0.marketTimezone) else { return false }
+            // A quarter that has just been reported is the one row that looks
+            // backwards: it stays a few days so a report resolves into its result
+            // here instead of vanishing the morning after. The backend already
+            // filters to that window; this only stops an older row slipping in.
+            if case .earnings(let e) = $0, e.isReported {
+                return days <= 0 && days >= -Self.reportedWindowDays
+            }
             return days >= 0 && days <= windowDays
         }
         .sorted { $0.date == $1.date ? $0.symbol < $1.symbol : $0.date < $1.date }
@@ -506,12 +516,17 @@ struct UpcomingEventsCard: View {
 
     /// Event-type marker: earnings are violet, dividends keep the est./confirmed pair.
     /// On a phone the word "earnings" is dropped — the icon and the trailing
-    /// "… EPS" already say it, and the width belongs to the ticker.
+    /// "… EPS" already say it, and the width belongs to the ticker. "reported"
+    /// is kept even when compact: it is what distinguishes a result from a date.
     @ViewBuilder private func badge(_ ev: TimelineEvent) -> some View {
         switch ev {
         case .earnings(let e):
             let estimated = e.status == "estimated"
-            let text = compact ? (estimated ? "est." : "") : (estimated ? "earnings est." : "earnings")
+            let text: String = {
+                if e.isReported { return "reported" }
+                if compact { return estimated ? "est." : "" }
+                return estimated ? "earnings est." : "earnings"
+            }()
             // fixedSize keeps the label on one line when the row is tight.
             HStack(spacing: 3) {
                 Image(systemName: "chart.bar.fill")
@@ -528,11 +543,30 @@ struct UpcomingEventsCard: View {
         }
     }
 
-    /// Dividends show the cash amount; earnings show the consensus EPS estimate.
+    /// Dividends show the cash amount; a scheduled report shows the consensus EPS
+    /// estimate, a reported one shows what was actually printed and by how much
+    /// it beat or missed.
     @ViewBuilder private func trailing(_ ev: TimelineEvent) -> some View {
         switch ev {
         case .dividend(let d):
             Text(Fmt.currency(d.amount, code: currency)).font(.callout.weight(.bold)).foregroundStyle(Color.up)
+        case .earnings(let e) where e.isReported:
+            if let actual = e.epsActual {
+                // A beat is green and a miss red, matching every other
+                // gain/loss figure in the app.
+                let tint: Color = e.surprisePct.map { $0 >= 0 ? Color.up : Color.down } ?? Theme.earnings
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(String(format: "%.2f EPS", actual))
+                        .font(.callout.weight(.bold)).foregroundStyle(tint)
+                    if let surprise = e.surprisePct {
+                        Text(String(format: "%+.1f%%", surprise))
+                            .font(.caption2.weight(.semibold)).foregroundStyle(tint)
+                    }
+                }
+            } else {
+                // Reported, but Yahoo has not attached the figures yet.
+                Text("Reported").font(.callout.weight(.bold)).foregroundStyle(.secondary)
+            }
         case .earnings(let e):
             Text(e.epsEstimate.map { String(format: "%.2f EPS", $0) } ?? "Report")
                 .font(.callout.weight(.bold)).foregroundStyle(Theme.earnings)

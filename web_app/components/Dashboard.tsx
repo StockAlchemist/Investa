@@ -55,7 +55,7 @@ interface DashboardProps {
     excludeFromAnalytics?: string[];
     /** Upcoming dividend events surfaced in the Events panel. */
     dividendEvents?: DividendEvent[];
-    /** Upcoming earnings dates surfaced alongside dividends in the Events panel. */
+    /** Earnings dates — scheduled and just-reported — shown beside dividends in the Events panel. */
     earningsEvents?: EarningsEvent[];
     /** Longer (1y/daily) history used by the hero period selector. */
     longHistory?: PerformanceData[];

@@ -281,15 +281,25 @@ struct StockDetailView: View {
         }
     }
 
-    /// Next earnings report / dividend, when the backend could derive either.
+    /// Just-reported quarter / next earnings report / next dividend, when the
+    /// backend could derive any of them.
     @ViewBuilder private var upcomingEventsSection: some View {
         let earnings = f?.upcomingEarnings
+        let reported = f?.recentEarnings
         let dividend = f?.upcomingDividend
-        if earnings != nil || dividend != nil {
+        if earnings != nil || dividend != nil || reported != nil {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Upcoming Events", systemImage: "calendar").font(.headline)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
                                          count: hSizeClass == .regular ? 2 : 1), spacing: 12) {
+                    if let r = reported {
+                        eventCard(
+                            "Latest Earnings", icon: "chart.bar.fill", tint: Theme.earnings,
+                            date: r.date, dateEnd: nil, status: r.status,
+                            timeZone: r.marketTimezone,
+                            detail: Self.reportedDetail(r),
+                            detailTint: r.surprisePct.map { $0 >= 0 ? Color.up : Color.down })
+                    }
                     if let e = earnings {
                         eventCard(
                             "Next Earnings", icon: "chart.bar.fill", tint: Theme.earnings,
@@ -333,20 +343,33 @@ struct StockDetailView: View {
         }
     }
 
+    /// "EPS 2.10 vs 1.95 expected · +7.7%", or the fact of the report alone while
+    /// Yahoo has yet to attach the figures.
+    private static func reportedDetail(_ r: UpcomingEarnings) -> String {
+        guard let actual = r.epsActual else { return "Figures not published yet" }
+        var parts = [String(format: "EPS %.2f", actual)]
+        if let estimate = r.epsEstimate { parts.append(String(format: "vs %.2f expected", estimate)) }
+        if let surprise = r.surprisePct { parts.append(String(format: "%+.1f%%", surprise)) }
+        return parts.joined(separator: " · ")
+    }
+
     private func eventCard(_ label: String, icon: String, tint: Color, date: String,
                            dateEnd: String?, status: String, timeZone: String?,
-                           detail: String?) -> some View {
+                           detail: String?, detailTint: Color? = nil) -> some View {
+        // "reported" is the backward-looking status: a quarter already printed.
+        let reported = status == "reported"
         let confirmed = status == "confirmed"
+        let badgeText = reported ? "reported" : (confirmed ? "confirmed" : "est.")
+        let badgeTint: Color = reported ? Theme.earnings : (confirmed ? Color.up : .orange)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: icon).foregroundStyle(tint).font(.system(size: 16))
                 Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                Text(confirmed ? "confirmed" : "est.")
+                Text(badgeText)
                     .font(.system(size: 9, weight: .bold)).textCase(.uppercase)
                     .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background((confirmed ? Color.up : .orange).opacity(0.12),
-                                in: RoundedRectangle(cornerRadius: 4))
-                    .foregroundStyle(confirmed ? Color.up : .orange)
+                    .background(badgeTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                    .foregroundStyle(badgeTint)
                 Spacer(minLength: 0)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -358,7 +381,8 @@ struct StockDetailView: View {
                     }
                 }
                 if let detail, !detail.isEmpty {
-                    Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
+                    Text(detail).font(.caption2).foregroundStyle(detailTint ?? .secondary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                 }
             }
         }

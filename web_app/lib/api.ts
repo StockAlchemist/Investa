@@ -716,9 +716,14 @@ export interface EarningsEvent {
     earnings_date: string;
     /** Set only when the company announced a window rather than an exact day. */
     earnings_date_end?: string;
-    status: 'confirmed' | 'estimated';
+    /** 'reported' is a quarter already printed — the date is in the past. */
+    status: 'confirmed' | 'estimated' | 'reported';
     eps_estimate?: number | null;
     eps_year_ago?: number | null;
+    /** Reported ('reported' only); null while Yahoo has yet to attach the figure. */
+    eps_actual?: number | null;
+    /** Beat/miss vs consensus in percent, derived server-side from actual/estimate. */
+    surprise_pct?: number | null;
     /** IANA zone of the reporting exchange — see DividendEvent.market_timezone. */
     market_timezone?: string | null;
 }
@@ -995,9 +1000,11 @@ export interface Fundamentals {
         sector_weightings: Record<string, number>;
         asset_classes: Record<string, number>;
     };
-    /** Next earnings report / dividend, derived server-side from this same blob. */
+    /** Earnings / dividend events, derived server-side from this same blob. */
     upcoming_events?: {
         earnings: EarningsEvent | null;
+        /** The quarter just reported (last 5 days), with the printed EPS. */
+        recent_earnings: EarningsEvent | null;
         dividend: UpcomingDividend | null;
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately

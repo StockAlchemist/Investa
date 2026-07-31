@@ -452,6 +452,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
         const upcomingEarnings = fundamentals.upcoming_events?.earnings;
         const upcomingDividend = fundamentals.upcoming_events?.dividend;
+        // The quarter just printed, kept beside the next one for a few days so a
+        // report resolves into its result here rather than simply disappearing.
+        const reportedEarnings = fundamentals.upcoming_events?.recent_earnings;
 
         const getUpsidePercentage = (iv?: number) => {
             if (!iv || !intrinsicValue?.current_price) return null;
@@ -544,13 +547,39 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     </div>
                 )}
 
-                {(upcomingEarnings || upcomingDividend) && (
+                {(upcomingEarnings || upcomingDividend || reportedEarnings) && (
                     <div className="space-y-3">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <Calendar className="w-5 h-5 text-indigo-500" />
                             Upcoming Events
                         </h3>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {reportedEarnings && (
+                                <UpcomingEventTile
+                                    icon={BarChart3}
+                                    color="bg-violet-500/10 text-violet-500"
+                                    label="Latest Earnings"
+                                    status={reportedEarnings.status}
+                                    date={reportedEarnings.earnings_date}
+                                    timeZone={reportedEarnings.market_timezone}
+                                    detail={reportedEarnings.eps_actual != null
+                                        ? [
+                                            `EPS ${reportedEarnings.eps_actual.toFixed(2)}`,
+                                            reportedEarnings.eps_estimate != null
+                                                ? `vs ${reportedEarnings.eps_estimate.toFixed(2)} expected`
+                                                : null,
+                                            reportedEarnings.surprise_pct != null
+                                                ? `${reportedEarnings.surprise_pct >= 0 ? '+' : ''}${reportedEarnings.surprise_pct.toFixed(1)}%`
+                                                : null,
+                                        ].filter(Boolean).join(' · ')
+                                        : 'Figures not published yet'}
+                                    detailColor={reportedEarnings.surprise_pct == null
+                                        ? undefined
+                                        : reportedEarnings.surprise_pct >= 0
+                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                            : 'text-rose-600 dark:text-rose-400'}
+                                />
+                            )}
                             {upcomingEarnings && (
                                 <UpcomingEventTile
                                     icon={BarChart3}
@@ -2120,21 +2149,29 @@ function relativeEventDay(iso: string, timeZone?: string | null): string | null 
 }
 
 /**
- * One upcoming corporate event (earnings report or dividend) in the Overview
- * tab, styled to match the StatCard tiles beside it.
+ * One corporate event (earnings report or dividend) in the Overview tab, styled
+ * to match the StatCard tiles beside it. `status='reported'` is the one that
+ * looks backwards — a quarter already printed, whose date is in the past.
  */
-function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, detail, timeZone }: {
+function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, detail, detailColor, timeZone }: {
     icon: React.ElementType;
     color: string;
     label: string;
-    status: 'confirmed' | 'estimated';
+    status: 'confirmed' | 'estimated' | 'reported';
     date: string;
     dateEnd?: string | null;
     detail?: string;
+    /** Tints the detail line — used to colour a beat green and a miss red. */
+    detailColor?: string;
     /** Exchange zone the date belongs to; the day count is measured against it. */
     timeZone?: string | null;
 }) {
     const relative = relativeEventDay(date, timeZone);
+    const badge = {
+        confirmed: { text: 'confirmed', tone: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10', title: 'Announced by the company' },
+        estimated: { text: 'est.', tone: 'text-amber-600 dark:text-amber-400 bg-amber-500/10', title: 'Projected from the past reporting/payment cadence' },
+        reported: { text: 'reported', tone: 'text-violet-600 dark:text-violet-400 bg-violet-500/10', title: 'Already reported by the company' },
+    }[status];
     return (
         <div className="bg-muted py-2 px-3 rounded-xl flex items-center gap-3 transition-all hover:bg-muted/50">
             <div className={cn("p-2 rounded-lg bg-card shrink-0", color)}>
@@ -2144,24 +2181,17 @@ function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, de
                 <div className="flex items-center gap-1.5">
                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</p>
                     <span
-                        className={cn(
-                            "text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded",
-                            status === 'confirmed'
-                                ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
-                                : "text-amber-600 dark:text-amber-400 bg-amber-500/10",
-                        )}
-                        title={status === 'confirmed'
-                            ? 'Announced by the company'
-                            : 'Projected from the past reporting/payment cadence'}
+                        className={cn("text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded", badge.tone)}
+                        title={badge.title}
                     >
-                        {status === 'confirmed' ? 'confirmed' : 'est.'}
+                        {badge.text}
                     </span>
                 </div>
                 <p className="text-sm font-bold truncate">
                     {formatEventDate(date)}{dateEnd ? ` – ${formatEventDate(dateEnd)}` : ''}
                     {relative && <span className="text-muted-foreground font-medium"> · {relative}</span>}
                 </p>
-                {detail && <p className="text-[11px] text-muted-foreground truncate">{detail}</p>}
+                {detail && <p className={cn("text-[11px] truncate", detailColor || "text-muted-foreground")}>{detail}</p>}
             </div>
         </div>
     );

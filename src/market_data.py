@@ -408,6 +408,110 @@ def _safe_json_load(path: str) -> Optional[Any]:
         return None
 
 
+# --- Post-earnings cache freshness -------------------------------------------
+# A report is the one moment a fundamentals blob turns from current into stale:
+# EPS, the "next earnings" date and the consensus row all move at once. The cache
+# therefore must not span the report. Yahoo needs a few minutes to publish the
+# print, and sometimes the better part of a day to attach the reported EPS, so
+# the blob is re-polled hourly until the figure lands rather than serving
+# pre-report data until the standard TTL runs out.
+EARNINGS_PUBLISH_GRACE_MINUTES = 20
+POST_EARNINGS_POLL_HOURS = 1
+POST_EARNINGS_WATCH_DAYS = 4
+
+_EARNINGS_TIMESTAMP_KEYS = (
+    "earningsTimestampStart",
+    "earningsTimestamp",
+    "earningsTimestampEnd",
+)
+
+
+def _earnings_moments(info: dict) -> List[datetime]:
+    """Every earnings instant Yahoo names for a symbol, as aware UTC datetimes."""
+    moments = []
+    for key in _EARNINGS_TIMESTAMP_KEYS:
+        ts = info.get(key)
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool) or ts <= 0:
+            continue
+        try:
+            moments.append(datetime.fromtimestamp(ts, tz=timezone.utc))
+        except (OSError, OverflowError, ValueError):
+            continue
+    return moments
+
+
+def _has_reported_eps(info: dict, moment: datetime) -> bool:
+    """
+    True when the blob already carries the EPS actually printed at `moment`.
+
+    `_earnings_history` is keyed by the report's *market-local* calendar day (see
+    `fetch_earnings_dates` in the worker), so the moment is read on the
+    exchange's clock — a post-close report has already tipped into the next UTC
+    day and would otherwise miss its own row.
+    """
+    history = info.get("_earnings_history")
+    if not isinstance(history, dict):
+        return False
+    try:
+        from zoneinfo import ZoneInfo
+
+        tz = info.get("exchangeTimezoneName") or "America/New_York"
+        try:
+            local_day = moment.astimezone(ZoneInfo(tz)).date()
+        except (KeyError, ValueError):
+            local_day = moment.astimezone(ZoneInfo("America/New_York")).date()
+    except Exception:
+        local_day = moment.date()
+    row = history.get(local_day.isoformat())
+    return isinstance(row, dict) and row.get("eps_actual") is not None
+
+
+def fundamentals_valid_until(info: dict, as_of: datetime, default_until: datetime) -> datetime:
+    """
+    When a fundamentals blob written at `as_of` stops being trustworthy.
+
+    A pure function of the blob and its write time, so the read path can
+    re-derive it instead of trusting a `valid_until` some earlier build stored —
+    which is how blobs ended up pinned months past their own reports.
+
+    Never later than `default_until` (the standard TTL): the earnings schedule
+    can only *shorten* the life of a blob, never extend it past its normal
+    expiry — the previous behaviour, which parked expiry 24h *after* the report,
+    served pre-report numbers for a full day afterwards.
+    """
+    valid_until = default_until
+    if not isinstance(info, dict):
+        return valid_until
+
+    moments = _earnings_moments(info)
+    if not moments:
+        return valid_until
+
+    # The next report ends this blob's usefulness, plus a moment for Yahoo to
+    # publish. Take the *earliest* upcoming one: a stale `earningsTimestamp`
+    # must not push expiry past a nearer announced date.
+    upcoming = [m for m in moments if m > as_of]
+    if upcoming:
+        valid_until = min(
+            valid_until,
+            min(upcoming) + timedelta(minutes=EARNINGS_PUBLISH_GRACE_MINUTES),
+        )
+
+    # A report that had just happened when this blob was written, with no figures
+    # attached: check back soon rather than waiting out the full TTL. A blob from
+    # a minimal fetch never carries the history, so it self-heals the same way.
+    past = [m for m in moments if m <= as_of]
+    if past:
+        latest = max(past)
+        within_watch = as_of - latest <= timedelta(days=POST_EARNINGS_WATCH_DAYS)
+        if within_watch and not _has_reported_eps(info, latest):
+            valid_until = min(valid_until, as_of + timedelta(hours=POST_EARNINGS_POLL_HOURS))
+
+    # Guard against a clock skew or a bogus timestamp pinning expiry before the
+    # blob was even written, which would re-fetch on every single request.
+    return max(valid_until, as_of + timedelta(minutes=1))
+
+
 def _maybe_enrich_with_fmp(meta_entry: dict, symbol: str) -> None:
     """
     In-place merge: if `country`, `sector`, or `industry` are missing on `meta_entry`,
@@ -3441,23 +3545,26 @@ class MarketDataProvider:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
                         
                         # --- SMART CACHING ---
-                        valid_until_str = symbol_cache_entry.get("valid_until")
-                        is_valid = False
-                        
-                        if valid_until_str:
-                            try:
-                                valid_until = datetime.fromisoformat(valid_until_str)
-                                if datetime.now(timezone.utc) < valid_until:
-                                    is_valid = True
-                                else:
-                                    logging.info(f"Fundamentals smart cache expired for {yf_symbol} (Valid until: {valid_until})")
-                            except ValueError:
-                                is_valid = False # Corrupt timestamp
-                        else:
-                            # Fallback to standard duration if no specific expiry
-                            if datetime.now(timezone.utc) - cache_timestamp < timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS):
-                                is_valid = True
-                        
+                        # Expiry is re-derived from the entry itself rather than
+                        # read back from `valid_until`. That stored value is only
+                        # ever as good as the build that wrote it: an earlier one
+                        # parked expiry 24h *after* the next report, which pinned
+                        # some blobs months out (a name reporting in October was
+                        # served pre-report until October). Recomputing makes the
+                        # read agree with the write by construction, and applies
+                        # any policy change to entries already on disk.
+                        entry_data = symbol_cache_entry.get("data") or {}
+                        valid_until = fundamentals_valid_until(
+                            entry_data,
+                            cache_timestamp,
+                            cache_timestamp + timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS),
+                        )
+                        is_valid = datetime.now(timezone.utc) < valid_until
+                        if not is_valid:
+                            logging.info(
+                                f"Fundamentals cache expired for {yf_symbol} (valid until {valid_until.isoformat()})"
+                            )
+
                         if is_valid:
                             cached_data = symbol_cache_entry.get("data")
                             # CRITICAL: Reject "empty" or "poisoned" cache entries
@@ -3478,10 +3585,7 @@ class MarketDataProvider:
                                     logging.info(f"Purged corrupt cache file: {symbol_cache_file}")
                                 except Exception as e_del:
                                     logging.error(f"Failed to purge corrupt cache file {symbol_cache_file}: {e_del}")
-                        else:
-                            if not valid_until_str: # Only log standard expiry if not smart
-                                 logging.info(f"Fundamentals cache expired for {yf_symbol} (Standard duration)")
-                    
+
                     # --- ETF CACHE FRESHNESS CHECK ---
                     if cache_valid and cached_data:
                          qt = str(cached_data.get('quoteType', '')).upper()
@@ -3552,28 +3656,20 @@ class MarketDataProvider:
                 data["expenseRatio"] = data.get("netExpenseRatio")
 
             # --- SMART CACHING CALCULATION ---
+            # Expire at the report, not after it — see fundamentals_valid_until.
             now_ts = datetime.now(timezone.utc)
-            earnings_ts = data.get("earningsTimestamp")
-            valid_until = now_ts + timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS) # Default
+            default_until = now_ts + timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS)
+            try:
+                valid_until = fundamentals_valid_until(data, now_ts, default_until)
+                if valid_until < default_until:
+                    logging.info(
+                        f"Smart Caching {yf_symbol}: earnings-aware expiry {valid_until.isoformat()} "
+                        f"(standard would be {default_until.isoformat()})"
+                    )
+            except Exception as e_smart:
+                logging.warning(f"Error calculating smart cache expiry for {yf_symbol}: {e_smart}")
+                valid_until = default_until
 
-            if earnings_ts:
-                try:
-                    # earningsTimestamp is epoch seconds
-                    earnings_date = datetime.fromtimestamp(earnings_ts, tz=timezone.utc)
-                    
-                    if earnings_date > now_ts:
-                         # Earnings in the future: Valid until 24H after earnings
-                         valid_until = earnings_date + timedelta(hours=24)
-                         logging.info(f"Smart Caching {yf_symbol}: Earnings at {earnings_date}. Cache valid until {valid_until}")
-                    else:
-                         # Earnings passed, data is fresh (presumably). Keep default long cache.
-                         # Unless it was VERY recent (e.g. yesterday)? 
-                         # If earnings were yesterday, yf might not have updated yet?
-                         # yf usually updates quickly. Let's stick to standard duration if past.
-                         pass
-                except Exception as e_smart:
-                    logging.warning(f"Error calculating smart cache expiry for {yf_symbol}: {e_smart}")
-            
             # Use data.get('_fetch_timestamp') if provided, else use now. 
             # In this isolated fetch context, we just fetched it.
             data['_fetch_timestamp'] = now_ts.isoformat()

@@ -10,11 +10,18 @@ import StockIcon from '../StockIcon';
 
 interface DashboardEventsProps {
     events: DividendEvent[];
-    /** Upcoming earnings reports, interleaved with dividends by date. */
+    /** Earnings reports — scheduled and just-reported — interleaved with dividends by date. */
     earnings?: EarningsEvent[];
     currency: string;
     windowDays?: number;
 }
+
+/**
+ * How far back a reported quarter stays on the timeline. Mirrors
+ * REPORTED_LOOKBACK_DAYS in server/calendar_events.py — the backend already
+ * filters to it, this only stops a stray older row from slipping through.
+ */
+const REPORTED_WINDOW_DAYS = 5;
 
 /** A dividend payment or an earnings report, normalized onto one timeline. */
 type TimelineRow =
@@ -144,6 +151,51 @@ function ConfirmedDividendsModal({
     );
 }
 
+/**
+ * What a just-reported quarter actually printed, coloured by whether it beat
+ * consensus. In the window between the release and Yahoo attaching the figure
+ * there is nothing to show but the fact that the report happened — the row still
+ * belongs here, so it says so rather than disappearing.
+ */
+function ReportedValue({ event }: { event: EarningsEvent }) {
+    const { eps_actual: actual, eps_estimate: estimate, surprise_pct: surprise } = event;
+
+    if (actual == null) {
+        return (
+            <span
+                className="text-xs font-bold tabular-nums text-muted-foreground w-20 text-right"
+                title="Reported — figures not published yet"
+            >
+                Reported
+            </span>
+        );
+    }
+
+    const tone = surprise == null
+        ? 'text-violet-600 dark:text-violet-400'
+        : surprise >= 0
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-rose-600 dark:text-rose-400';
+
+    return (
+        <span
+            className="w-20 text-right"
+            title={estimate != null
+                ? `Reported EPS ${actual.toFixed(2)} vs ${estimate.toFixed(2)} expected`
+                : `Reported EPS ${actual.toFixed(2)}`}
+        >
+            <span className={cn('block text-xs font-bold tabular-nums', tone)}>
+                {actual.toFixed(2)} EPS
+            </span>
+            {surprise != null && (
+                <span className={cn('block text-[10px] font-semibold tabular-nums leading-tight', tone)}>
+                    {surprise >= 0 ? '+' : ''}{surprise.toFixed(1)}%
+                </span>
+            )}
+        </span>
+    );
+}
+
 export default function DashboardEvents({ events, earnings = [], currency, windowDays = 14 }: DashboardEventsProps) {
     const { openStockDetail } = useStockModal();
     const [showAll, setShowAll] = useState(false);
@@ -156,6 +208,14 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
             return diff !== null && diff >= 0 && diff <= windowDays;
         };
 
+        // A quarter that has just been reported is the one earnings row that
+        // looks backwards: it stays for a few days so a report resolves into its
+        // result here instead of vanishing the morning after.
+        const inReportedWindow = (iso: string, timeZone?: string | null) => {
+            const diff = marketDayDiff(iso, timeZone);
+            return diff !== null && diff <= 0 && diff >= -REPORTED_WINDOW_DAYS;
+        };
+
         const rows: TimelineRow[] = [];
         for (const e of events || []) {
             if (inWindow(e.dividend_date, e.market_timezone)) {
@@ -163,7 +223,10 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
             }
         }
         for (const e of earnings || []) {
-            if (inWindow(e.earnings_date, e.market_timezone)) {
+            const keep = e.status === 'reported'
+                ? inReportedWindow(e.earnings_date, e.market_timezone)
+                : inWindow(e.earnings_date, e.market_timezone);
+            if (keep) {
                 rows.push({ kind: 'earnings', date: e.earnings_date, symbol: e.symbol, event: e });
             }
         }
@@ -227,10 +290,14 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                                     className="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-violet-600 dark:text-violet-400 shrink-0"
                                                     title={row.event.status === 'estimated'
                                                         ? 'Earnings date projected from past reporting cadence'
-                                                        : 'Confirmed earnings date'}
+                                                        : row.event.status === 'reported'
+                                                            ? 'Already reported'
+                                                            : 'Confirmed earnings date'}
                                                 >
                                                     <BarChart3 className="w-2.5 h-2.5" />
-                                                    earnings{row.event.status === 'estimated' ? ' est.' : ''}
+                                                    {row.event.status === 'reported'
+                                                        ? 'reported'
+                                                        : `earnings${row.event.status === 'estimated' ? ' est.' : ''}`}
                                                 </span>
                                             ) : row.event.status === 'estimated' ? (
                                                 <span className="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-amber-600 dark:text-amber-400 shrink-0">
@@ -259,7 +326,9 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                 >
                                     {rel}
                                 </span>
-                                {row.kind === 'earnings' ? (
+                                {row.kind === 'earnings' && row.event.status === 'reported' ? (
+                                    <ReportedValue event={row.event} />
+                                ) : row.kind === 'earnings' ? (
                                     <span
                                         className="text-xs font-bold tabular-nums text-violet-600 dark:text-violet-400 w-20 text-right"
                                         title={row.event.eps_year_ago != null

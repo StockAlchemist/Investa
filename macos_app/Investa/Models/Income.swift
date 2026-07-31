@@ -67,7 +67,8 @@ struct DividendEvent: Codable, Sendable, Identifiable {
     var id: String { "\(symbol)|\(exDividendDate)" }
 }
 
-/// An upcoming earnings report from `GET /api/earnings_calendar`.
+/// An earnings report from `GET /api/earnings_calendar` — either the next one
+/// scheduled or, under `status == "reported"`, a quarter just printed.
 struct EarningsEvent: Codable, Sendable, Identifiable {
     let symbol: String
     let name: String?
@@ -77,8 +78,16 @@ struct EarningsEvent: Codable, Sendable, Identifiable {
     let status: String
     let epsEstimate: Double?
     let epsYearAgo: Double?
+    /// What was actually printed. Reported rows only, and nil in the window
+    /// between the release and Yahoo attaching the figure.
+    let epsActual: Double?
+    /// Beat/miss against consensus, in percent.
+    let surprisePct: Double?
     /// IANA zone of the reporting exchange — see `DividendEvent.marketTimezone`.
     let marketTimezone: String?
+
+    /// True once the company has reported the quarter this row describes.
+    var isReported: Bool { status == "reported" }
 
     enum CodingKeys: String, CodingKey {
         case symbol, name
@@ -87,6 +96,8 @@ struct EarningsEvent: Codable, Sendable, Identifiable {
         case status
         case epsEstimate = "eps_estimate"
         case epsYearAgo = "eps_year_ago"
+        case epsActual = "eps_actual"
+        case surprisePct = "surprise_pct"
         case marketTimezone = "market_timezone"
     }
 
@@ -99,8 +110,12 @@ struct EarningsEvent: Codable, Sendable, Identifiable {
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "estimated"
         epsEstimate = try c.decodeIfPresent(Double.self, forKey: .epsEstimate)
         epsYearAgo = try c.decodeIfPresent(Double.self, forKey: .epsYearAgo)
+        epsActual = try c.decodeIfPresent(Double.self, forKey: .epsActual)
+        surprisePct = try c.decodeIfPresent(Double.self, forKey: .surprisePct)
         marketTimezone = try c.decodeIfPresent(String.self, forKey: .marketTimezone)
     }
 
-    var id: String { "\(symbol)|\(earningsDate)" }
+    /// A symbol can carry both a reported and a scheduled row; the status keeps
+    /// their identities distinct.
+    var id: String { "\(symbol)|\(earningsDate)|\(status)" }
 }

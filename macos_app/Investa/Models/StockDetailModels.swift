@@ -66,19 +66,28 @@ struct Fundamentals: Codable, Sendable {
     var upcomingEarnings: UpcomingEarnings? {
         UpcomingEarnings(json: raw["upcoming_events"]?["earnings"])
     }
+    /// The quarter just reported (within the last few days), with what it printed.
+    var recentEarnings: UpcomingEarnings? {
+        UpcomingEarnings(json: raw["upcoming_events"]?["recent_earnings"])
+    }
     /// Next dividend, per share and in the stock's own currency.
     var upcomingDividend: UpcomingDividend? {
         UpcomingDividend(json: raw["upcoming_events"]?["dividend"])
     }
 }
 
-/// An announced or projected earnings report for one symbol.
+/// An earnings report for one symbol — announced, projected, or (under
+/// `status == "reported"`) already printed.
 struct UpcomingEarnings: Sendable {
     let date: String
     let dateEnd: String?
     let status: String
     let epsEstimate: Double?
     let epsYearAgo: Double?
+    /// What was actually printed; nil until Yahoo attaches the figure.
+    let epsActual: Double?
+    /// Beat/miss against consensus, in percent.
+    let surprisePct: Double?
     /// IANA zone of the reporting exchange — the day count is measured against it
     /// rather than the device clock (see `MarketTime`).
     let marketTimezone: String?
@@ -90,6 +99,8 @@ struct UpcomingEarnings: Sendable {
         status = json?["status"]?.stringValue ?? "estimated"
         epsEstimate = json?["eps_estimate"]?.doubleValue
         epsYearAgo = json?["eps_year_ago"]?.doubleValue
+        epsActual = json?["eps_actual"]?.doubleValue
+        surprisePct = json?["surprise_pct"]?.doubleValue
         marketTimezone = json?["market_timezone"]?.stringValue
     }
 }

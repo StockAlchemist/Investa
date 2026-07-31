@@ -82,6 +82,47 @@ def retry_with_backoff(retries=3, backoff_in_seconds=5):
         return wrapper
     return decorator
 
+# How many quarters of reported results ride along with .info. Only the newest
+# one or two are ever displayed; the rest are cheap and make the row available
+# even when Yahoo's schedule timestamps disagree with its history table.
+EARNINGS_HISTORY_QUARTERS = 8
+
+
+def _earnings_history_rows(ticker):
+    """
+    `{market-local report date: {eps_estimate, eps_actual, surprise_pct}}`.
+
+    Keyed by the calendar day *on the reporting exchange* — yfinance indexes the
+    table in exchange-local time, and that is the day Investa calls the report
+    date everywhere else (see `server/calendar_events.py`). Missing figures are
+    written as None rather than NaN so the blob stays valid JSON.
+    """
+    df = ticker.get_earnings_dates(limit=EARNINGS_HISTORY_QUARTERS)
+    if df is None or df.empty:
+        return {}
+
+    columns = {
+        "EPS Estimate": "eps_estimate",
+        "Reported EPS": "eps_actual",
+        "Surprise(%)": "surprise_pct",
+    }
+    rows = {}
+    for idx, row in df.iterrows():
+        try:
+            day = idx.date().isoformat()
+        except AttributeError:
+            continue
+        entry = {}
+        for src, dst in columns.items():
+            value = row.get(src) if hasattr(row, "get") else None
+            try:
+                entry[dst] = None if value is None or value != value else float(value)
+            except (TypeError, ValueError):
+                entry[dst] = None
+        rows[day] = entry
+    return rows
+
+
 def fetch_info(symbols, output_file, minimal=False):
     try:
         # Randomized jitter to prevent thundering herd
@@ -150,6 +191,17 @@ def fetch_info(symbols, output_file, minimal=False):
                         log(f"Analyst estimates processed for {sym}")
                     except Exception as e_analyst:
                         log(f"Error fetching analyst estimates for {sym}: {e_analyst}")
+
+                    # --- REPORTED EARNINGS (what the company actually printed) ---
+                    # Rides along with .info so the dashboard calendar and the
+                    # Overview tab can show a just-reported quarter straight from
+                    # the cached blob, with no extra Yahoo round-trip per symbol.
+                    try:
+                        log(f"Fetching earnings history for {sym}...")
+                        info['_earnings_history'] = _earnings_history_rows(ticker)
+                        log(f"Earnings history processed for {sym}")
+                    except Exception as e_hist:
+                        log(f"Error fetching earnings history for {sym}: {e_hist}")
                 else:
                     log(f"Minimal mode: Skipping ETF and Analyst data for {sym}")
                 

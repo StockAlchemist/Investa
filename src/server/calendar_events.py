@@ -1,8 +1,13 @@
-"""Upcoming earnings / dividend events derived from a Yahoo fundamentals blob.
+"""Earnings / dividend events derived from a Yahoo fundamentals blob.
 
 Pure helpers shared by the dashboard calendars (`routes/analytics.py`) and the
 stock-detail Overview tab (`routes/fundamentals` piggyback in `routes/market.py`),
 so both surfaces answer "when does this company next report / pay?" identically.
+
+Reports run forwards *and* backwards: `next_earnings_event` is the scheduled one,
+`recent_earnings_event` is the quarter a company has just printed, so a report
+resolves into its result on the calendar instead of silently dropping off it the
+day after.
 """
 
 import logging
@@ -16,6 +21,18 @@ import pandas as pd
 # server's or the viewer's — see CLAUDE.md. US-listed names are the default when
 # a blob does not name its exchange's zone.
 DEFAULT_MARKET_TIMEZONE = "America/New_York"
+
+# How long a quarter that has just been reported stays on the calendar. Long
+# enough to survive a weekend and a Monday morning, short enough that the panel
+# stays a view of what is happening now.
+REPORTED_LOOKBACK_DAYS = 5
+
+# The three timestamps Yahoo names an earnings date with, earliest-first.
+EARNINGS_TIMESTAMP_KEYS = (
+    "earningsTimestampStart",
+    "earningsTimestamp",
+    "earningsTimestampEnd",
+)
 
 
 def market_timezone(info: Dict) -> str:
@@ -115,11 +132,7 @@ def next_earnings_event(
 
     upcoming = [
         d
-        for d in (
-            epoch_to_market_date(info.get("earningsTimestampStart"), tz),
-            epoch_to_market_date(info.get("earningsTimestamp"), tz),
-            epoch_to_market_date(ts_end, tz),
-        )
+        for d in (epoch_to_market_date(info.get(key), tz) for key in EARNINGS_TIMESTAMP_KEYS)
         if d is not None and d >= today
     ]
     if not upcoming:
@@ -155,6 +168,95 @@ def next_earnings_event(
             event["eps_year_ago"] = current_q.get("yearAgoEps")
 
     return event
+
+
+def earnings_history(info: Dict) -> Dict[str, dict]:
+    """
+    Reported quarters keyed by market-local report date, as stashed on the blob
+    by the market-data worker (`_earnings_history_rows`). Empty when the blob
+    predates that field or the fetch failed — every caller must cope with a
+    report it has no figures for yet.
+    """
+    history = info.get("_earnings_history") if info else None
+    return history if isinstance(history, dict) else {}
+
+
+def _surprise_pct(eps_actual: Optional[float], eps_estimate: Optional[float]) -> Optional[float]:
+    """
+    Beat/miss against consensus, in percent.
+
+    Derived here rather than taken from Yahoo's `Surprise(%)` column, which is
+    inconsistently a fraction or a percentage across yfinance versions — a
+    reading that would silently render a 4.7% beat as 0.05%.
+    """
+    if eps_actual is None or eps_estimate is None or eps_estimate == 0:
+        return None
+    return (eps_actual - eps_estimate) / abs(eps_estimate) * 100.0
+
+
+def recent_earnings_event(
+    symbol: str,
+    info: Dict,
+    today: Optional[date] = None,
+    lookback_days: int = REPORTED_LOOKBACK_DAYS,
+) -> Optional[dict]:
+    """
+    The quarter this company has just reported, with what it actually printed.
+
+    Carries the same shape as `next_earnings_event` under `status="reported"`, so
+    a client can lay both on one timeline. `eps_actual` is None in the window
+    between the release and Yahoo attaching the figure — the report still belongs
+    on the calendar then, it just has nothing to compare yet.
+
+    A merely *projected* past date is not evidence that anything was reported, so
+    a date Yahoo flagged as an estimate only counts once it appears in the
+    earnings history table.
+
+    `today` defaults to today on the symbol's own exchange (see `market_today`).
+    """
+    if not info:
+        return None
+
+    tz = market_timezone(info)
+    if today is None:
+        today = market_today(info)
+    earliest = today - timedelta(days=max(0, lookback_days))
+
+    history = earnings_history(info)
+    candidates = set()
+    for key in history:
+        try:
+            candidates.add(date.fromisoformat(key))
+        except (TypeError, ValueError):
+            continue
+    for key in EARNINGS_TIMESTAMP_KEYS:
+        reported = epoch_to_market_date(info.get(key), tz)
+        if reported is not None:
+            candidates.add(reported)
+
+    past = [d for d in candidates if earliest <= d <= today]
+    if not past:
+        return None
+
+    report_date = max(past)
+    row = history.get(str(report_date))
+    if row is None and info.get("isEarningsDateEstimate"):
+        return None
+
+    row = row if isinstance(row, dict) else {}
+    eps_actual = row.get("eps_actual")
+    eps_estimate = row.get("eps_estimate")
+
+    return {
+        "symbol": symbol,
+        "name": company_name(info),
+        "earnings_date": str(report_date),
+        "status": "reported",
+        "eps_actual": eps_actual,
+        "eps_estimate": eps_estimate,
+        "surprise_pct": _surprise_pct(eps_actual, eps_estimate),
+        "market_timezone": tz,
+    }
 
 
 def next_dividend_event(symbol: str, info: Dict, today: Optional[date] = None) -> Optional[dict]:
@@ -231,13 +333,28 @@ def next_dividend_event(symbol: str, info: Dict, today: Optional[date] = None) -
 def upcoming_events(
     symbol: str, info: Dict, today: Optional[date] = None, horizon_days: int = 365
 ) -> dict:
-    """Both event types for one symbol, as consumed by the stock-detail Overview tab."""
+    """Every event type for one symbol, as consumed by the stock-detail Overview tab."""
     if not info:
-        return {"earnings": None, "dividend": None}
+        return {"earnings": None, "recent_earnings": None, "dividend": None}
     if today is None:
         today = market_today(info)
     horizon_end = today + timedelta(days=horizon_days)
+
+    reported = recent_earnings_event(symbol, info, today)
+    scheduled = next_earnings_event(symbol, info, today, horizon_end)
+
+    # Yahoo leaves `earningsTimestamp` on the report it has just been through
+    # until the next quarter is scheduled, so a company that reported this
+    # morning reads as both "reported today" and "reporting today". It is one
+    # event, and it has happened — so look for the next one strictly *after* the
+    # reported day rather than dropping the scheduled side outright, which would
+    # also hide a next date the company has already announced.
+    if reported and scheduled and reported["earnings_date"] == scheduled["earnings_date"]:
+        day_after = date.fromisoformat(reported["earnings_date"]) + timedelta(days=1)
+        scheduled = next_earnings_event(symbol, info, day_after, horizon_end)
+
     return {
-        "earnings": next_earnings_event(symbol, info, today, horizon_end),
+        "earnings": scheduled,
+        "recent_earnings": reported,
         "dividend": next_dividend_event(symbol, info, today),
     }

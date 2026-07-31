@@ -22,10 +22,12 @@ from projections import compute_projection
 from risk_metrics import calculate_all_risk_metrics, calculate_benchmark_scoreboard
 from server.auth import User
 from server.calendar_events import (
+    REPORTED_LOOKBACK_DAYS,
     company_name,
     market_timezone,
     market_today,
     next_earnings_event,
+    recent_earnings_event,
 )
 from server.dependencies import get_config_manager, get_current_user, get_transaction_data
 from server.portfolio_service import (
@@ -1019,12 +1021,14 @@ async def get_dividend_calendar(
 async def get_earnings_calendar(
     accounts: Optional[List[str]] = Query(None),
     days: int = 90,
+    lookback_days: int = REPORTED_LOOKBACK_DAYS,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Returns the next scheduled earnings report for each currently-held equity
-    within the next `days` days, sorted by date.
+    Earnings reports for each currently-held equity, sorted by date: the next
+    scheduled one within `days` days, plus any quarter reported in the last
+    `lookback_days` days (`status="reported"`, carrying the printed EPS).
 
     Reads the fundamentals cache the rest of the dashboard already warms, so
     this is cheap and adds no extra Yahoo round-trips in the common case.
@@ -1057,26 +1061,38 @@ async def get_earnings_calendar(
         _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         provider = get_mdp()
 
-        def fetch_symbol_earnings(sym: str) -> Optional[dict]:
+        def fetch_symbol_earnings(sym: str) -> List[dict]:
+            """The scheduled report and the just-reported quarter, if either exists."""
             try:
                 yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols)
                 if not yf_sym:
-                    return None
+                    return []
                 info = provider.get_fundamental_data(yf_sym) or {}
                 # "Today" and the horizon are per-symbol: a name on the SET rolls
                 # over hours before one on the NYSE does.
                 today = market_today(info)
                 horizon_end = today + timedelta(days=max(1, days))
-                return next_earnings_event(sym, info, today, horizon_end)
+                found = [
+                    recent_earnings_event(sym, info, today, max(0, lookback_days)),
+                    next_earnings_event(sym, info, today, horizon_end),
+                ]
+                # A report happening *today* is both the last and the next one;
+                # the reported row wins, since it may already carry the figures.
+                dates = set()
+                events = []
+                for event in found:
+                    if event and event["earnings_date"] not in dates:
+                        dates.add(event["earnings_date"])
+                        events.append(event)
+                return events
             except Exception as e:
                 logging.warning(f"Error fetching earnings date for {sym}: {e}")
-                return None
+                return []
 
         events = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            for event in executor.map(fetch_symbol_earnings, sorted(symbols)):
-                if event:
-                    events.append(event)
+            for symbol_events in executor.map(fetch_symbol_earnings, sorted(symbols)):
+                events.extend(symbol_events)
 
         events.sort(key=lambda e: (e["earnings_date"], e["symbol"]))
         return clean_nans(events)

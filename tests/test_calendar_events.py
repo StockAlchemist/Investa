@@ -22,6 +22,7 @@ from server.calendar_events import (  # noqa: E402
     market_today,
     next_dividend_event,
     next_earnings_event,
+    recent_earnings_event,
     upcoming_events,
 )
 
@@ -139,17 +140,123 @@ def test_non_payers_have_no_dividend_event():
     assert next_dividend_event("NVDA", {"dividendRate": 0, "lastDividendValue": 0}, TODAY) is None
 
 
-def test_upcoming_events_bundles_both_sides():
+def test_upcoming_events_bundles_every_side():
     info = {
         "earningsTimestampStart": _ts(TODAY + timedelta(days=5)),
         "dividendDate": _ts(TODAY + timedelta(days=20)),
         "dividendRate": 2.0,
         "lastDividendValue": 0.5,
+        "_earnings_history": {str(TODAY - timedelta(days=2)): {"eps_actual": 1.2, "eps_estimate": 1.0}},
     }
     both = upcoming_events("KO", info, TODAY)
     assert both["earnings"]["earnings_date"] == str(TODAY + timedelta(days=5))
     assert both["dividend"]["dividend_date"] == str(TODAY + timedelta(days=20))
-    assert upcoming_events("X", {}, TODAY) == {"earnings": None, "dividend": None}
+    assert both["recent_earnings"]["earnings_date"] == str(TODAY - timedelta(days=2))
+    assert upcoming_events("X", {}, TODAY) == {
+        "earnings": None,
+        "recent_earnings": None,
+        "dividend": None,
+    }
+
+
+# ── Just-reported quarters ───────────────────────────────────────────────────
+
+def test_reported_quarter_carries_what_was_printed():
+    reported_on = TODAY - timedelta(days=1)
+    info = {
+        "earningsTimestamp": _ts(reported_on),
+        "shortName": "Netflix, Inc.",
+        "_earnings_history": {
+            str(reported_on): {"eps_actual": 2.10, "eps_estimate": 1.95, "surprise_pct": 999},
+        },
+    }
+    event = recent_earnings_event("NFLX", info, TODAY)
+    assert event["earnings_date"] == str(reported_on)
+    assert event["status"] == "reported"
+    assert event["name"] == "Netflix, Inc."
+    assert event["eps_actual"] == 2.10
+    assert event["eps_estimate"] == 1.95
+    # Derived here, never read from Yahoo's ambiguous Surprise(%) column.
+    assert event["surprise_pct"] == pytest.approx(7.6923, rel=1e-3)
+
+
+def test_a_miss_is_reported_as_a_negative_surprise():
+    info = {"_earnings_history": {str(TODAY): {"eps_actual": 0.80, "eps_estimate": 1.00}}}
+    assert recent_earnings_event("X", info, TODAY)["surprise_pct"] == pytest.approx(-20.0)
+
+
+def test_report_still_appears_before_the_figures_land():
+    """The window between the release and Yahoo attaching the EPS: the report
+    happened, so the row stays — it just has nothing to compare yet."""
+    info = {
+        "earningsTimestamp": _ts(TODAY),
+        "isEarningsDateEstimate": False,
+        "_earnings_history": {str(TODAY): {"eps_actual": None, "eps_estimate": 1.4}},
+    }
+    event = recent_earnings_event("MSFT", info, TODAY)
+    assert event["earnings_date"] == str(TODAY)
+    assert event["eps_actual"] is None
+    assert event["surprise_pct"] is None
+
+
+def test_a_merely_projected_past_date_is_not_a_report():
+    """Yahoo guesses dates from the past cadence; a guess that has come and gone
+    is no evidence anything was actually reported."""
+    info = {
+        "earningsTimestamp": _ts(TODAY - timedelta(days=2)),
+        "isEarningsDateEstimate": True,
+    }
+    assert recent_earnings_event("X", info, TODAY) is None
+
+    # …but once it shows up in the history table, it is a real report.
+    info["_earnings_history"] = {str(TODAY - timedelta(days=2)): {"eps_actual": 3.0, "eps_estimate": 2.9}}
+    assert recent_earnings_event("X", info, TODAY)["eps_actual"] == 3.0
+
+
+def test_reports_older_than_the_lookback_are_dropped():
+    old = TODAY - timedelta(days=9)
+    info = {"earningsTimestamp": _ts(old), "_earnings_history": {str(old): {"eps_actual": 1.0}}}
+    assert recent_earnings_event("X", info, TODAY) is None
+    assert recent_earnings_event("X", info, TODAY, lookback_days=10)["earnings_date"] == str(old)
+
+
+def test_the_newest_report_wins_when_history_holds_several():
+    newest = TODAY - timedelta(days=3)
+    info = {
+        "_earnings_history": {
+            str(TODAY - timedelta(days=95)): {"eps_actual": 1.0, "eps_estimate": 1.0},
+            str(newest): {"eps_actual": 1.5, "eps_estimate": 1.4},
+        }
+    }
+    assert recent_earnings_event("X", info, TODAY)["earnings_date"] == str(newest)
+
+
+def test_a_report_today_is_not_also_listed_as_upcoming():
+    """Yahoo leaves `earningsTimestamp` on the report it has just been through,
+    so a company that reported this morning reads as both "reported today" and
+    "reporting today". One event, already happened — it must not show twice."""
+    info = {
+        "earningsTimestamp": _ts(TODAY),
+        "earningsTimestampStart": _ts(TODAY),
+        "earningsTimestampEnd": _ts(TODAY),
+        "_earnings_history": {str(TODAY): {"eps_actual": 2.02, "eps_estimate": 1.89}},
+    }
+    both = upcoming_events("AAPL", info, TODAY)
+    assert both["recent_earnings"]["earnings_date"] == str(TODAY)
+    assert both["recent_earnings"]["eps_actual"] == 2.02
+    assert both["earnings"] is None
+
+    # A genuinely scheduled next quarter is untouched by that suppression.
+    info["earningsTimestampStart"] = _ts(TODAY + timedelta(days=91))
+    assert upcoming_events("AAPL", info, TODAY)["earnings"]["earnings_date"] == str(
+        TODAY + timedelta(days=91)
+    )
+
+
+def test_a_future_report_is_not_a_reported_one():
+    info = {"_earnings_history": {str(TODAY + timedelta(days=2)): {"eps_actual": None, "eps_estimate": 1.0}}}
+    assert recent_earnings_event("X", info, TODAY) is None
+    assert recent_earnings_event("X", {}, TODAY) is None
 
 
 # ── Market-local reckoning ───────────────────────────────────────────────────

@@ -979,8 +979,9 @@ export interface paths {
         };
         /**
          * Get Earnings Calendar
-         * @description Returns the next scheduled earnings report for each currently-held equity
-         *     within the next `days` days, sorted by date.
+         * @description Earnings reports for each currently-held equity, sorted by date: the next
+         *     scheduled one within `days` days, plus any quarter reported in the last
+         *     `lookback_days` days (`status="reported"`, carrying the printed EPS).
          *
          *     Reads the fundamentals cache the rest of the dashboard already warms, so
          *     this is cheap and adds no extra Yahoo round-trips in the common case.
@@ -1417,9 +1418,15 @@ export interface paths {
          * Get Allocation
          * @description What the strategy says to hold today, sized to `capital`.
          *
-         *     Share counts are indicative — they use the price stored with the ranking
-         *     snapshot, which is a close from the last pipeline run, not a live quote.
-         *     The weights are the part of the answer that is actually fixed.
+         *     Recomputed per request from the newest *completed* ranking run, so a fresh
+         *     run is picked up immediately and a run still being written is never read.
+         *     Deliberately uncached for that reason: which twenty companies to hold is
+         *     the answer people act on, and it is cheap to derive.
+         *
+         *     Which names to hold comes from the snapshot; the prices used to turn
+         *     weights into share counts are live quotes, falling back to the snapshot's
+         *     stored close when a quote is unavailable (`price_source` says which). The
+         *     weights are the part of the answer that is actually fixed.
          */
         get: operations["get_allocation_api_strategies__strategy_id__allocation_get"];
         put?: never;
@@ -2405,8 +2412,9 @@ export interface paths {
         };
         /**
          * Get Earnings Calendar
-         * @description Returns the next scheduled earnings report for each currently-held equity
-         *     within the next `days` days, sorted by date.
+         * @description Earnings reports for each currently-held equity, sorted by date: the next
+         *     scheduled one within `days` days, plus any quarter reported in the last
+         *     `lookback_days` days (`status="reported"`, carrying the printed EPS).
          *
          *     Reads the fundamentals cache the rest of the dashboard already warms, so
          *     this is cheap and adds no extra Yahoo round-trips in the common case.
@@ -2843,9 +2851,15 @@ export interface paths {
          * Get Allocation
          * @description What the strategy says to hold today, sized to `capital`.
          *
-         *     Share counts are indicative — they use the price stored with the ranking
-         *     snapshot, which is a close from the last pipeline run, not a live quote.
-         *     The weights are the part of the answer that is actually fixed.
+         *     Recomputed per request from the newest *completed* ranking run, so a fresh
+         *     run is picked up immediately and a run still being written is never read.
+         *     Deliberately uncached for that reason: which twenty companies to hold is
+         *     the answer people act on, and it is cheap to derive.
+         *
+         *     Which names to hold comes from the snapshot; the prices used to turn
+         *     weights into share counts are live quotes, falling back to the snapshot's
+         *     stored close when a quote is unavailable (`price_source` says which). The
+         *     weights are the part of the answer that is actually fixed.
          */
         get: operations["get_allocation_strategies__strategy_id__allocation_get"];
         put?: never;
@@ -4669,6 +4683,7 @@ export interface operations {
             query?: {
                 accounts?: string[] | null;
                 days?: number;
+                lookback_days?: number;
             };
             header?: never;
             path?: never;
@@ -6862,6 +6877,7 @@ export interface operations {
             query?: {
                 accounts?: string[] | null;
                 days?: number;
+                lookback_days?: number;
             };
             header?: never;
             path?: never;
