@@ -953,33 +953,52 @@ struct StockDetailView: View {
             Text("In a downturn")
                 .font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
             ForEach(windows) { window in
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(window.label)
-                        .font(.subheadline).foregroundStyle(.secondary)
-                        .frame(width: 150, alignment: .leading)
-                    if window.covered {
-                        HStack(spacing: 16) {
-                            ForEach(window.items) { item in
-                                HStack(spacing: 4) {
-                                    Text(item.label).font(.subheadline).foregroundStyle(.secondary)
-                                    Text(item.display)
-                                        .font(.subheadline.weight(.medium)).monospacedDigit()
-                                        .foregroundStyle(item.changePct < 0 ? .red : .green)
-                                    Text("(\(item.recoveryDisplay ?? "no fall"))")
-                                        .font(.caption2).foregroundStyle(.tertiary)
-                                }
-                            }
-                        }
-                    } else {
-                        // Not the same claim as "did not fall".
-                        Text("not filing then").font(.subheadline.italic()).foregroundStyle(.tertiary)
+                // Three metrics beside the window label want ~460pt. An iPhone
+                // has half that, and a row with nowhere to give does not
+                // truncate — SwiftUI compresses every Text to one character per
+                // line. So measure, and stack the metrics under the label when
+                // they cannot sit beside it.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        stressLabel(window).frame(width: 150, alignment: .leading)
+                        HStack(spacing: 16) { stressMetrics(window) }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 3) {
+                        stressLabel(window)
+                        VStack(alignment: .leading, spacing: 3) { stressMetrics(window) }
+                            .padding(.leading, 10)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
         .padding(14)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func stressLabel(_ window: TrackRecordStress) -> some View {
+        Text(window.label).font(.subheadline).foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder private func stressMetrics(_ window: TrackRecordStress) -> some View {
+        if window.covered {
+            ForEach(window.items) { item in
+                // One Text, not an HStack of three: a metric too wide for the
+                // line then wraps at its spaces instead of being squeezed a
+                // character at a time.
+                (Text(item.label + " ").font(.subheadline).foregroundStyle(.secondary)
+                 + Text(item.display).font(.subheadline.weight(.medium)).monospacedDigit()
+                    .foregroundStyle(item.changePct < 0 ? Color.red : Color.green)
+                 + Text(" (\(item.recoveryDisplay ?? "no fall"))")
+                    .font(.caption2).foregroundStyle(.tertiary))
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            // Not the same claim as "did not fall".
+            Text("not filing then").font(.subheadline.italic()).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// Numbers the company changed after first reporting them.
