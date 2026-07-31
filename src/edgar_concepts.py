@@ -140,10 +140,31 @@ CASHFLOW_CONCEPTS: Dict[str, List[str]] = {
         "NetCashProvidedByUsedInOperatingActivities",
         "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
     ],
+    # Appended entries fill gaps only — `resolve_concept` takes the first tag
+    # with data for each period, so order is what protects the existing series.
+    #
+    # Measured over 120 ranked filers: 33 have years where operating cash flow is
+    # reported and capex is not. Plenty of tags *cover* those years, and almost
+    # all of them are the wrong thing — purchases of securities, held-to-maturity
+    # debt, equity-method stakes, whole businesses. Subtracting an acquisition
+    # spree from operating cash flow does not produce free cash flow, so only
+    # tags that mean "spent on productive assets" appear here.
+    #
+    # Real-estate acquisition and development are excluded on the same principle
+    # from the other direction: for a REIT, buying buildings is the growth
+    # programme rather than maintenance, and treating it as capex would drive
+    # every REIT's free cash flow deeply negative and cost them a valuation they
+    # can legitimately have. REITs are scored on FFO for exactly this reason.
     "capex": [
         "PaymentsToAcquirePropertyPlantAndEquipment",
         "PaymentsToAcquireProductiveAssets",
         "PaymentsForCapitalImprovements",
+        "PaymentsForProceedsFromProductiveAssets",
+        "PaymentsToAcquireOtherPropertyPlantAndEquipment",
+        "PaymentsToAcquireMachineryAndEquipment",
+        "PaymentsToAcquireBuildings",
+        "PaymentsToAcquireOilAndGasProperty",
+        "PaymentsToExploreAndDevelopOilAndGasProperties",
     ],
     "depreciation_amortization": [
         "DepreciationDepletionAndAmortization",
