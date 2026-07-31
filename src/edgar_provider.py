@@ -27,6 +27,7 @@ possible later (principle P8).
 row labels and column ordering**, so `financial_ratios.calculate_key_ratios_timeseries`,
 the DCF and the Graham model all consume EDGAR data with no changes.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -150,7 +151,9 @@ class EdgarFactStore:
                     PRIMARY KEY (cik, tag, period_end, accn)
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_facts_cik_tag ON facts (cik, tag)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_facts_cik_tag ON facts (cik, tag)"
+            )
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ingest_log (
                     cik TEXT PRIMARY KEY,
@@ -244,6 +247,39 @@ class EdgarFactStore:
                     result.setdefault(tag, {})[period_end] = (val, unit)
         return result
 
+    def get_tag_revisions(
+        self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
+    ) -> Dict[Tuple[str, str], List[Tuple[str, float, str]]]:
+        """
+        {(tag, period_end): [(filed, value, form), ...]} filed-ascending.
+
+        The whole filing history of each number rather than the winner. Keeping
+        every revision is the reason this store never overwrites a fact, and it
+        is what makes "they said 1.2bn in 2020 and 1.1bn in 2022" answerable at
+        all — no vendor feed carries it, because a feed serves the current view.
+        """
+        tag_list = list(tags)
+        if not tag_list:
+            return {}
+        as_of = _effective_as_of(as_of)
+        placeholders = ",".join("?" * len(tag_list))
+        query = f"""
+            SELECT tag, period_end, filed, val, form FROM facts
+            WHERE cik = ? AND tag IN ({placeholders}) AND val IS NOT NULL
+        """
+        params: List[Any] = [cik, *tag_list]
+        if as_of:
+            query += " AND filed <= ?"
+            params.append(as_of)
+        query += " ORDER BY period_end, filed"
+
+        result: Dict[Tuple[str, str], List[Tuple[str, float, str]]] = {}
+        with self._connect() as conn:
+            for tag, period_end, filed, val, form in conn.execute(query, params):
+                if filed:
+                    result.setdefault((tag, period_end), []).append((filed, val, form))
+        return result
+
     def get_tag_series_by_accession(
         self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
     ) -> Dict[str, Dict[str, Dict[str, float]]]:
@@ -282,7 +318,9 @@ class EdgarFactStore:
 
     def has_data(self, cik: str) -> bool:
         with self._connect() as conn:
-            row = conn.execute("SELECT 1 FROM facts WHERE cik = ? LIMIT 1", (cik,)).fetchone()
+            row = conn.execute(
+                "SELECT 1 FROM facts WHERE cik = ? LIMIT 1", (cik,)
+            ).fetchone()
         return row is not None
 
 
@@ -310,7 +348,9 @@ def _is_annual_duration(start: Optional[str], end: str) -> bool:
     return _MIN_ANNUAL_DAYS <= span <= _MAX_ANNUAL_DAYS
 
 
-def parse_company_facts(payload: Dict[str, Any], wanted_tags: Optional[set] = None) -> List[Tuple]:
+def parse_company_facts(
+    payload: Dict[str, Any], wanted_tags: Optional[set] = None
+) -> List[Tuple]:
     """
     Flatten one companyfacts document into rows for the `facts` table.
 
@@ -363,7 +403,9 @@ def parse_company_facts(payload: Dict[str, Any], wanted_tags: Optional[set] = No
 # --- ingest -----------------------------------------------------------------
 
 
-def download_bulk_archive(dest_path: Optional[str] = None, force: bool = False) -> Optional[str]:
+def download_bulk_archive(
+    dest_path: Optional[str] = None, force: bool = False
+) -> Optional[str]:
     """
     Download `companyfacts.zip` (~1.4 GB). Returns the local path, or None.
 
@@ -375,7 +417,11 @@ def download_bulk_archive(dest_path: Optional[str] = None, force: bool = False) 
         os.makedirs(cache_dir, exist_ok=True)
         dest_path = os.path.join(cache_dir, "companyfacts.zip")
 
-    if not force and os.path.exists(dest_path) and os.path.getsize(dest_path) > 500_000_000:
+    if (
+        not force
+        and os.path.exists(dest_path)
+        and os.path.getsize(dest_path) > 500_000_000
+    ):
         logging.info(f"EDGAR: reusing existing archive at {dest_path}")
         return dest_path
 
@@ -385,7 +431,9 @@ def download_bulk_archive(dest_path: Optional[str] = None, force: bool = False) 
     # memory would cost 1.4 GB of RSS, and a partial write must never be left
     # at the real path where the size check above would accept it as complete.
     temp_path = dest_path + ".part"
-    request = urllib.request.Request(_BULK_URL, headers={"User-Agent": get_user_agent()})
+    request = urllib.request.Request(
+        _BULK_URL, headers={"User-Agent": get_user_agent()}
+    )
     try:
         with urllib.request.urlopen(request, timeout=1800) as response:
             downloaded = 0
@@ -409,7 +457,9 @@ def download_bulk_archive(dest_path: Optional[str] = None, force: bool = False) 
     return dest_path
 
 
-def iter_bulk_documents(zip_path: str, ciks: Optional[set] = None) -> Iterator[Dict[str, Any]]:
+def iter_bulk_documents(
+    zip_path: str, ciks: Optional[set] = None
+) -> Iterator[Dict[str, Any]]:
     """
     Yield companyfacts documents from the archive, one at a time.
 
@@ -418,7 +468,9 @@ def iter_bulk_documents(zip_path: str, ciks: Optional[set] = None) -> Iterator[D
     """
     with zipfile.ZipFile(zip_path) as archive:
         for info in archive.infolist():
-            if not info.filename.startswith("CIK") or not info.filename.endswith(".json"):
+            if not info.filename.startswith("CIK") or not info.filename.endswith(
+                ".json"
+            ):
                 continue
             if ciks is not None:
                 # Filenames are CIK##########.json
@@ -525,7 +577,9 @@ def resolve_concept(
     return values, provenance
 
 
-def get_concept_values(cik: str, concepts: Optional[List[str]] = None) -> Dict[str, Dict[str, float]]:
+def get_concept_values(
+    cik: str, concepts: Optional[List[str]] = None
+) -> Dict[str, Dict[str, float]]:
     """
     {concept: {period_end: value}} for the requested concepts (default: all).
     """
@@ -626,7 +680,97 @@ def split_consistent_series(cik: str, concept: str) -> Dict[str, float]:
     return corrected
 
 
-def get_concept_provenance(cik: str, concepts: Optional[List[str]] = None) -> Dict[str, Dict[str, str]]:
+# Concepts whose value a stock split rescales. Excluded from revision detection:
+# a 4:1 split changes every prior-year share count and EPS by exactly 4x, which
+# would swamp the list with events that are not revisions of anything.
+_SPLIT_RESCALED_CONCEPTS = frozenset(
+    {"shares_diluted", "shares_basic", "shares_outstanding", "eps_diluted", "eps_basic"}
+)
+
+
+def revisions(
+    cik: str,
+    concepts: Optional[List[str]] = None,
+    min_change: float = 0.01,
+) -> List[Dict[str, Any]]:
+    """
+    Where a later filing changed a number this company had already reported.
+
+    Compares the first filed value for each (tag, period) against the newest one.
+    Restatements are ordinary — a discontinued operation reclassifies years of
+    revenue, and an error correction looks identical in the data — so this
+    reports magnitude and dates and calls nothing fraud.
+
+    Two things it deliberately does not count:
+
+      * **Tag switches.** A company moving from `Revenues` to
+        `RevenueFromContractWithCustomerExcludingAssessedTax` reports the same
+        year under two names, and comparing across them would invent a revision
+        out of an accounting-standard change. Comparison is always within a tag.
+      * **Splits.** Share counts and per-share figures are rescaled by every
+        later split, so they are excluded outright rather than reported as
+        thousands of revisions of nothing.
+
+    Only the tag that actually answers for a period is reported, so a line item
+    appears once and the revision shown is a revision of the number the rest of
+    the app uses. Without this Boeing's equity shows up twice for 2017 — once
+    from the concept's preferred tag and once from a fallback holding a narrower
+    figure — which reads as two different restatements of one line.
+
+    `min_change` is relative; below a percent is rounding, not a restatement.
+    """
+    chains = all_concepts()
+    wanted = [
+        name
+        for name in (concepts or list(chains))
+        if name not in _SPLIT_RESCALED_CONCEPTS
+    ]
+    tag_to_concept = {tag: name for name in wanted for tag in chains.get(name, [])}
+    if not tag_to_concept:
+        return []
+
+    history = get_store().get_tag_revisions(cik, list(tag_to_concept))
+    provenance = get_concept_provenance(cik, wanted)
+
+    found: List[Dict[str, Any]] = []
+    for (tag, period_end), entries in history.items():
+        if len(entries) < 2:
+            continue
+        concept = tag_to_concept[tag]
+        if provenance.get(concept, {}).get(period_end) != tag:
+            continue
+        first_filed, original, first_form = entries[0]
+        last_filed, current, last_form = entries[-1]
+        if original is None or current is None or not original:
+            continue
+        change = (current - original) / abs(original)
+        if abs(change) < min_change:
+            continue
+        found.append(
+            {
+                "concept": concept,
+                "tag": tag,
+                "period_end": period_end,
+                "original": original,
+                "current": current,
+                "change_pct": change * 100.0,
+                "first_filed": first_filed,
+                "restated_filed": last_filed,
+                "first_form": first_form,
+                "restated_form": last_form,
+                "revision_count": len(entries),
+            }
+        )
+
+    # Largest revisions first: a 30% change to revenue is the story, and a 1.2%
+    # tweak to inventory three years ago is not.
+    found.sort(key=lambda row: abs(row["change_pct"]), reverse=True)
+    return found
+
+
+def get_concept_provenance(
+    cik: str, concepts: Optional[List[str]] = None
+) -> Dict[str, Dict[str, str]]:
     """Which tag answered for each concept and period. Used by the coverage report."""
     chains = all_concepts()
     wanted = concepts or list(chains)
@@ -745,6 +889,23 @@ def _apply_split_adjustment(
                 series[period] /= factor
 
 
+def concept_labels() -> Dict[str, str]:
+    """
+    Human label for each statement concept, in yfinance's vocabulary.
+
+    The same names the statements tab prints, so a revision reads as "Total
+    Revenue" rather than `revenue` and lines up with the row a reader can go and
+    look at. Includes the sign-flipped concepts — `capex` is still "Capital
+    Expenditure" whichever way the cash flows.
+    """
+    return {
+        **_INCOME_LABELS,
+        **_BALANCE_LABELS,
+        **_CASHFLOW_LABELS,
+        **_NEGATE_ON_EMIT,
+    }
+
+
 def _frame_from_concepts(
     values: Dict[str, Dict[str, float]],
     labels: Dict[str, str],
@@ -836,7 +997,10 @@ def _add_derived_rows(
     # Some filers omit Liabilities entirely; assets minus equity recovers it.
     assets = values.get("total_assets", {})
     equity = values.get("equity", {})
-    if not balance.empty and "Total Liabilities Net Minority Interest" not in balance.index:
+    if (
+        not balance.empty
+        and "Total Liabilities Net Minority Interest" not in balance.index
+    ):
         for period_end, asset_value in assets.items():
             if period_end not in equity:
                 continue

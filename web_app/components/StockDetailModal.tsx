@@ -53,6 +53,7 @@ import {
     Loader2,
     AlertCircle,
     Newspaper,
+    History,
     ExternalLink
 } from 'lucide-react';
 import {
@@ -2355,6 +2356,47 @@ function TrackRecordPanel({ record }: { record: TrackRecord }) {
                         {record.gate_failures.map(reason => reason.replace(/_/g, ' ')).join(', ')}
                     </span>
                 </div>
+            )}
+
+            {record.revisions?.count > 0 && (
+                <details className="bg-card rounded-xl px-4 py-3 group">
+                    <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 select-none">
+                        <History className="w-3.5 h-3.5" />
+                        {record.revisions.count} figure{record.revisions.count === 1 ? '' : 's'} revised after first reporting
+                    </summary>
+                    {/* Ordinary, not damning: most are an accounting standard adopted
+                        retrospectively or a discontinued operation reclassifying years
+                        at once. The magnitude and the dates are the information. */}
+                    <p className="text-[11px] text-muted-foreground mt-2 mb-3">
+                        Later filings changed these. Usually a retrospectively adopted accounting
+                        standard or a reclassification — the size and the gap are what matter.
+                    </p>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <tbody>
+                                {record.revisions.items.map(item => (
+                                    <tr key={`${item.concept}-${item.period_end}`} className="border-t border-border/40">
+                                        <td className="py-1.5 pr-3 text-muted-foreground whitespace-nowrap">{item.label}</td>
+                                        <td className="py-1.5 pr-3 text-muted-foreground tabular-nums whitespace-nowrap">{fiscalPeriodYear(item.period_end)}</td>
+                                        <td className="py-1.5 pr-3 tabular-nums whitespace-nowrap">{item.display}</td>
+                                        <td className={cn(
+                                            "py-1.5 pr-3 text-right font-medium tabular-nums whitespace-nowrap",
+                                            item.change_pct < 0 ? "text-red-500" : "text-emerald-500"
+                                        )}>{item.change_display}</td>
+                                        <td className="py-1.5 text-right text-[11px] text-muted-foreground whitespace-nowrap">
+                                            {fiscalPeriodYear(item.first_filed)} → {fiscalPeriodYear(item.restated_filed)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {record.revisions.count > record.revisions.items.length && (
+                        <p className="text-[11px] text-muted-foreground mt-2">
+                            Showing the {record.revisions.items.length} largest of {record.revisions.count}.
+                        </p>
+                    )}
+                </details>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

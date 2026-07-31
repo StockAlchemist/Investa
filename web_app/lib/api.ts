@@ -1416,6 +1416,22 @@ export interface TrackRecordGroup {
     items: TrackRecordItem[];
 }
 
+/** A number the company changed after first reporting it. */
+export interface TrackRecordRevision {
+    concept: string;
+    /** The statement row it belongs to, e.g. "Total Revenue". */
+    label: string;
+    period_end: string;
+    original: number;
+    current: number;
+    change_pct: number;
+    /** "$1.95bn → $4.41bn", formatted by the backend. */
+    display: string;
+    change_display: string;
+    first_filed: string;
+    restated_filed: string;
+}
+
 /**
  * The measured quality record: the same metrics the Buffett ranking scores on,
  * over the durability window, with the span they rest on.
@@ -1442,6 +1458,8 @@ export interface TrackRecord {
         pillars: Record<string, number | null>;
     } | null;
     groups: TrackRecordGroup[];
+    /** Revision history. `count` is the total; `items` is the largest handful. */
+    revisions: { count: number; items: TrackRecordRevision[] };
 }
 
 export async function fetchTrackRecord(

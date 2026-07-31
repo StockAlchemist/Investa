@@ -106,6 +106,10 @@ _DENOMINATORS: Dict[str, str] = {
 # Pillar scores carried on a ranked row, in scoring order.
 _PILLAR_SCORE_KEYS = list(PILLAR_TITLES)
 
+# How many revisions to send. GE has 103; the largest handful is the story, and
+# the count carries the rest.
+REVISION_LIMIT = 8
+
 # Per-share rates used to be suppressed here, because the assembled share count
 # steps at a stock split and every rate spanning it was the split rather than
 # the company. That is now repaired at the source — `buffett_metrics` rebuilds
@@ -190,6 +194,60 @@ def labelled_metrics(
     return groups
 
 
+def _money(value: float) -> str:
+    """A filing-scale figure, short enough to sit twice on one line."""
+    magnitude = abs(value)
+    for scale, suffix in ((1e12, "tn"), (1e9, "bn"), (1e6, "m"), (1e3, "k")):
+        if magnitude >= scale:
+            return f"{'-' if value < 0 else ''}${magnitude / scale:,.2f}{suffix}"
+    return f"{'-' if value < 0 else ''}${magnitude:,.0f}"
+
+
+def revisions(cik: str, limit: int = REVISION_LIMIT) -> Dict[str, Any]:
+    """
+    Numbers this company changed after first reporting them.
+
+    Nothing else in the retail world shows this, and the only reason Investa can
+    is that the fact store keys every (cik, tag, period_end, accession) and never
+    overwrites — a vendor feed carries the current view and has thrown the rest
+    away.
+
+    Presented as history, not as an accusation. Most revisions are the
+    retrospective adoption of an accounting standard (Microsoft's FY2017 tax
+    provision moved 127% on ASC 606) or a discontinued operation reclassifying
+    years of revenue at once. The magnitude and the dates are the information;
+    what they mean is the reader's call.
+    """
+    try:
+        import edgar_provider
+
+        found = edgar_provider.revisions(cik)
+        labels = edgar_provider.concept_labels()
+    except Exception as exc:
+        logging.debug(f"Track record: revision history unavailable for {cik}: {exc}")
+        return {"count": 0, "items": []}
+
+    items = []
+    for row in found[:limit]:
+        items.append(
+            {
+                "concept": row["concept"],
+                "label": labels.get(
+                    row["concept"], row["concept"].replace("_", " ").capitalize()
+                ),
+                "period_end": row["period_end"],
+                "original": row["original"],
+                "current": row["current"],
+                "change_pct": row["change_pct"],
+                "display": f"{_money(row['original'])} → {_money(row['current'])}",
+                "change_display": f"{row['change_pct']:+.1f}%",
+                "first_filed": row["first_filed"],
+                "restated_filed": row["restated_filed"],
+            }
+        )
+    return {"count": len(found), "items": items}
+
+
 def _ranked_row(symbol: str) -> Optional[Dict[str, Any]]:
     """The company's row in the most recent run, or None if it was not ranked."""
     try:
@@ -260,4 +318,5 @@ def build(symbol: str, cik: str, name: Optional[str] = None) -> Dict[str, Any]:
         "gate_failures": gate_failures,
         "rank": rank,
         "groups": labelled_metrics(company.metrics, model),
+        "revisions": revisions(cik),
     }

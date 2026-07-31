@@ -843,6 +843,10 @@ struct StockDetailView: View {
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             }
 
+            if let revisions = record.revisions, revisions.count > 0 {
+                revisionHistory(revisions)
+            }
+
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 16)], alignment: .leading, spacing: 16) {
                 ForEach(record.groups) { group in
                     VStack(alignment: .leading, spacing: 8) {
@@ -875,6 +879,49 @@ struct StockDetailView: View {
         .padding(20)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, lineWidth: 1))
+    }
+
+    /// Numbers the company changed after first reporting them.
+    ///
+    /// Presented as history, not as an accusation: most revisions are an
+    /// accounting standard adopted retrospectively or a discontinued operation
+    /// reclassifying years of revenue at once.
+    @ViewBuilder private func revisionHistory(_ revisions: TrackRecordRevisions) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Later filings changed these. Usually a retrospectively adopted accounting standard or a reclassification — the size and the gap are what matter.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(revisions.items) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(item.label).font(.subheadline).foregroundStyle(.secondary)
+                        Text(String(item.periodEnd.prefix(4)))
+                            .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
+                        Spacer(minLength: 8)
+                        Text(item.display).font(.subheadline).monospacedDigit()
+                        Text(item.changeDisplay)
+                            .font(.subheadline.weight(.medium)).monospacedDigit()
+                            .foregroundStyle(item.changePct < 0 ? .red : .green)
+                            .frame(width: 72, alignment: .trailing)
+                        Text("\(item.firstFiled.prefix(4)) → \(item.restatedFiled.prefix(4))")
+                            .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                    }
+                }
+                if revisions.count > revisions.items.count {
+                    Text("Showing the \(revisions.items.count) largest of \(revisions.count).")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            Label(
+                "\(revisions.count) figure\(revisions.count == 1 ? "" : "s") revised after first reporting",
+                systemImage: "clock.arrow.circlepath"
+            )
+            .font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+        }
+        .padding(14)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func trackRecordSpan(_ record: TrackRecord) -> String {

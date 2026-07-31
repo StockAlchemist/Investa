@@ -330,6 +330,36 @@ struct TrackRecordRank: Decodable, Sendable {
     }
 }
 
+/// A number the company changed after first reporting it. `display` is
+/// preformatted by the backend ("$1.95bn → $4.41bn") so the three clients cannot
+/// render the same revision three ways.
+struct TrackRecordRevision: Decodable, Sendable, Identifiable {
+    let concept: String
+    let label: String
+    let periodEnd: String
+    let changePct: Double
+    let display: String
+    let changeDisplay: String
+    let firstFiled: String
+    let restatedFiled: String
+
+    var id: String { "\(concept)-\(periodEnd)" }
+
+    enum CodingKeys: String, CodingKey {
+        case concept, label, display
+        case periodEnd = "period_end"
+        case changePct = "change_pct"
+        case changeDisplay = "change_display"
+        case firstFiled = "first_filed"
+        case restatedFiled = "restated_filed"
+    }
+}
+
+struct TrackRecordRevisions: Decodable, Sendable {
+    let count: Int
+    let items: [TrackRecordRevision]
+}
+
 /// The measured quality record: the metrics the Buffett ranking scores on, over
 /// the durability window, with the span of filings they rest on.
 struct TrackRecord: Decodable, Sendable {
@@ -344,9 +374,10 @@ struct TrackRecord: Decodable, Sendable {
     let gateFailures: [String]
     let rank: TrackRecordRank?
     let groups: [TrackRecordGroup]
+    let revisions: TrackRecordRevisions?
 
     enum CodingKeys: String, CodingKey {
-        case symbol, name, model, coverage, rank, groups
+        case symbol, name, model, coverage, rank, groups, revisions
         case periodCount = "period_count"
         case firstPeriod = "first_period"
         case latestPeriod = "latest_period"

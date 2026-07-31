@@ -266,3 +266,172 @@ class TestBuild:
         assert record["period_count"] == 0
         assert "no_fundamentals" in record["gate_failures"]
         assert record["groups"]
+
+
+class TestRevisionHistory:
+    """
+    `edgar_provider.revisions` — numbers a company changed after first reporting
+    them, which only exists because the fact store keeps every accession instead
+    of overwriting. A vendor feed serves the current view and has thrown the rest
+    away.
+
+    The tests are mostly about what must *not* be counted. Almost every naive
+    version of this drowns in false positives: a tag switch, a stock split, or a
+    rounding difference each look exactly like a restatement in the raw data.
+    """
+
+    REVENUE_TAG = all_concepts()["revenue"][0]
+
+    @pytest.fixture
+    def store(self, monkeypatch):
+        import edgar_provider
+
+        class FakeStore:
+            def __init__(self):
+                self.history = {}
+
+            def get_tag_revisions(self, cik, tags, as_of=None):
+                return {k: v for k, v in self.history.items() if k[0] in set(tags)}
+
+        fake = FakeStore()
+        monkeypatch.setattr(edgar_provider, "get_store", lambda: fake)
+        return fake
+
+    def _patch_provenance(self, monkeypatch, mapping):
+        import edgar_provider
+
+        monkeypatch.setattr(
+            edgar_provider, "get_concept_provenance", lambda cik, concepts=None: mapping
+        )
+
+    def test_a_restated_figure_is_found(self, store, monkeypatch):
+        """Microsoft's shape: FY2017 revenue moved on retrospective ASC 606."""
+        import edgar_provider
+
+        store.history = {
+            (self.REVENUE_TAG, "2017-06-30"): [
+                ("2017-08-02", 89.95e9, "10-K"),
+                ("2019-08-01", 96.57e9, "10-K"),
+            ]
+        }
+        self._patch_provenance(
+            monkeypatch, {"revenue": {"2017-06-30": self.REVENUE_TAG}}
+        )
+
+        found = edgar_provider.revisions("0000789019")
+        assert len(found) == 1
+        assert found[0]["original"] == 89.95e9
+        assert found[0]["current"] == 96.57e9
+        assert found[0]["change_pct"] == pytest.approx(7.36, abs=0.05)
+        assert found[0]["first_filed"] == "2017-08-02"
+
+    def test_a_figure_reported_once_is_not_a_revision(self, store, monkeypatch):
+        import edgar_provider
+
+        store.history = {
+            (self.REVENUE_TAG, "2017-06-30"): [("2017-08-02", 89.95e9, "10-K")]
+        }
+        self._patch_provenance(
+            monkeypatch, {"revenue": {"2017-06-30": self.REVENUE_TAG}}
+        )
+        assert edgar_provider.revisions("0000789019") == []
+
+    def test_rounding_is_not_a_restatement(self, store, monkeypatch):
+        import edgar_provider
+
+        store.history = {
+            (self.REVENUE_TAG, "2017-06-30"): [
+                ("2017-08-02", 89.95e9, "10-K"),
+                ("2019-08-01", 89.99e9, "10-K"),
+            ]
+        }
+        self._patch_provenance(
+            monkeypatch, {"revenue": {"2017-06-30": self.REVENUE_TAG}}
+        )
+        assert edgar_provider.revisions("0000789019") == []
+
+    def test_only_the_tag_that_answers_is_reported(self, store, monkeypatch):
+        """
+        Boeing's 2017 equity otherwise appears twice — once from the concept's
+        preferred tag and once from a fallback holding a narrower figure — which
+        reads as two restatements of one line item.
+        """
+        import edgar_provider
+
+        chain = all_concepts()["revenue"]
+        if len(chain) < 2:
+            pytest.skip("revenue concept has no fallback tag to collide with")
+        store.history = {
+            (chain[0], "2017-12-31"): [
+                ("2018-01-01", 100.0, "10-K"),
+                ("2020-01-01", 150.0, "10-K"),
+            ],
+            (chain[1], "2017-12-31"): [
+                ("2018-01-01", 10.0, "10-K"),
+                ("2020-01-01", 90.0, "10-K"),
+            ],
+        }
+        self._patch_provenance(monkeypatch, {"revenue": {"2017-12-31": chain[0]}})
+
+        found = edgar_provider.revisions("0000012927")
+        assert len(found) == 1
+        assert found[0]["tag"] == chain[0]
+
+    def test_splits_are_excluded_outright(self, store, monkeypatch):
+        """
+        A 4:1 split rescales every prior-year share count and EPS by exactly 4x.
+        Counting those would bury the real revisions under events that revise
+        nothing.
+        """
+        import edgar_provider
+
+        shares_tag = all_concepts()["shares_diluted"][0]
+        store.history = {
+            (shares_tag, "2017-09-30"): [
+                ("2017-11-03", 5.25e9, "10-K"),
+                ("2021-10-29", 21.0e9, "10-K"),
+            ]
+        }
+        self._patch_provenance(
+            monkeypatch, {"shares_diluted": {"2017-09-30": shares_tag}}
+        )
+        assert edgar_provider.revisions("0000320193") == []
+
+    def test_largest_revisions_come_first(self, store, monkeypatch):
+        import edgar_provider
+
+        income_tag = all_concepts()["net_income"][0]
+        store.history = {
+            (self.REVENUE_TAG, "2019-12-31"): [
+                ("2020-01-01", 100.0, "10-K"),
+                ("2022-01-01", 105.0, "10-K"),
+            ],
+            (income_tag, "2019-12-31"): [
+                ("2020-01-01", 10.0, "10-K"),
+                ("2022-01-01", 20.0, "10-K"),
+            ],
+        }
+        self._patch_provenance(
+            monkeypatch,
+            {
+                "revenue": {"2019-12-31": self.REVENUE_TAG},
+                "net_income": {"2019-12-31": income_tag},
+            },
+        )
+        found = edgar_provider.revisions("0000000001")
+        assert [row["concept"] for row in found] == ["net_income", "revenue"]
+
+
+class TestMoneyFormatting:
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (1.95e9, "$1.95bn"),
+            (-244e6, "-$244.00m"),
+            (1.2e12, "$1.20tn"),
+            (4500.0, "$4.50k"),
+            (-12.0, "-$12"),
+        ],
+    )
+    def test_scales(self, value, expected):
+        assert track_record._money(value) == expected
