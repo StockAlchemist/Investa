@@ -736,6 +736,284 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
         return pd.DataFrame()
 
 
+# --- EDGAR-preferred annual statements ---
+#
+# yfinance returns only 4-5 annual periods per company; the SEC XBRL store
+# behind `edgar_provider` carries ~19 for the same filers, which is why the
+# Buffett ranking reads EDGAR directly. The statement getters below merge the
+# two so the per-stock views — statements tab, ratio history, DCF — see the
+# same depth as the ranking instead of Yahoo's five years.
+#
+# EDGAR is the preferred source because it is the number the company actually
+# filed. Yahoo is not discarded: it carries line items EDGAR does not tag
+# (gross profit detail, R&D, working-capital rows) and it is fresher between
+# ingests, so it fills every cell EDGAR leaves empty and never overwrites one.
+
+# Yahoo normalises 52/53-week fiscal ends to a month end while EDGAR keeps the
+# filed date: AAPL FY2025 is 2025-09-30 to Yahoo and 2025-09-27 as filed, and
+# AAP's FY2025 straddles the new year (2025-12-31 vs 2026-01-03). Matching a
+# Yahoo period to the nearest filed period within a fortnight collapses these
+# onto one column; without it the same fiscal year appears twice.
+_EDGAR_PERIOD_TOLERANCE = pd.Timedelta(days=15)
+
+# The XBRL store holds 10-K facts only, so it can answer for annual periods.
+_EDGAR_PERIOD_TYPE = "annual"
+
+# The ticker -> CIK map comes from the SEC and is the one part of this path that
+# can touch the network. It is never fetched while a request waits: a stale or
+# missing map degrades to Yahoo's five years for that one call and refreshes in
+# the background. Blocking here would put a statement request behind `sec_get`'s
+# three retries, which is minutes in the worst case.
+_cik_map_lock = threading.Lock()
+_cik_map: Optional[Dict[str, str]] = None
+_cik_map_loaded_at = 0.0
+_cik_map_refreshing = False
+_CIK_MAP_TTL_SECONDS = 24 * 3600
+# A failed fetch is retried sooner than a good one is refreshed, but not so often
+# that an SEC outage means a refresh thread per request.
+_CIK_MAP_RETRY_SECONDS = 600
+_CIK_MAP_CACHE_SUBDIR = "edgar"
+_CIK_MAP_CACHE_FILENAME = "ticker_cik_map.json"
+
+# One `get_statements` call costs ~15 ms against the local store, and every
+# request asks for all three statements of the same company in a row, so a
+# short-lived memo turns three queries into one. Batch workers walking a few
+# thousand symbols are the reason this matters.
+_edgar_statement_cache: Dict[str, Tuple[float, Dict[str, pd.DataFrame]]] = {}
+_edgar_statement_lock = threading.Lock()
+_EDGAR_STATEMENT_TTL_SECONDS = 900
+_EDGAR_STATEMENT_CACHE_MAX = 64
+
+
+def _cik_map_cache_path() -> str:
+    directory = os.path.join(
+        config.get_app_data_dir(), config.CACHE_DIR, _CIK_MAP_CACHE_SUBDIR
+    )
+    os.makedirs(directory, exist_ok=True)
+    return os.path.join(directory, _CIK_MAP_CACHE_FILENAME)
+
+
+def _load_cik_map_from_disk() -> Tuple[Optional[Dict[str, str]], float]:
+    """
+    The last map fetched, with its age in seconds.
+
+    Survives restarts so a fresh process answers from EDGAR immediately instead
+    of serving Yahoo's five years until the first refresh lands.
+    """
+    try:
+        path = _cik_map_cache_path()
+        blob = _safe_json_load(path)
+        if not isinstance(blob, dict) or not isinstance(blob.get("map"), dict):
+            return None, 0.0
+        age = max(0.0, datetime.now(timezone.utc).timestamp() - float(blob.get("fetched_at", 0)))
+        return {str(k): str(v) for k, v in blob["map"].items()}, age
+    except Exception as exc:
+        logging.debug(f"EDGAR: ticker->CIK disk cache unreadable: {exc}")
+        return None, 0.0
+
+
+def _save_cik_map_to_disk(mapping: Dict[str, str]) -> None:
+    try:
+        with open(_cik_map_cache_path(), "w", encoding="utf-8") as handle:
+            json.dump(
+                {"fetched_at": datetime.now(timezone.utc).timestamp(), "map": mapping},
+                handle,
+            )
+    except OSError as exc:
+        logging.debug(f"EDGAR: could not cache ticker->CIK map: {exc}")
+
+
+def _refresh_cik_map() -> None:
+    """Fetch the SEC's map off the request path and publish it when it lands."""
+    global _cik_map, _cik_map_loaded_at, _cik_map_refreshing
+    try:
+        import universe
+
+        fetched = universe.get_cik_map()
+    except Exception as exc:
+        logging.debug(f"EDGAR: ticker->CIK map unavailable: {exc}")
+        fetched = {}
+
+    with _cik_map_lock:
+        # An empty result means the SEC was unreachable. Keep the map already in
+        # hand rather than blanking a working one; only the timestamp moves, so
+        # the next attempt waits out the retry interval.
+        if fetched:
+            _cik_map = fetched
+        elif _cik_map is None:
+            _cik_map = {}
+        _cik_map_loaded_at = time.monotonic()
+        _cik_map_refreshing = False
+
+    if fetched:
+        _save_cik_map_to_disk(fetched)
+
+
+def _cik_for_symbol(yf_symbol: str) -> Optional[str]:
+    """
+    The SEC CIK for a Yahoo symbol, or None when EDGAR cannot cover it.
+
+    A suffixed symbol (PTT.BK, 0700.HK) is a foreign listing and an index or FX
+    ticker is not a filer at all; neither appears in the SEC's map, so they are
+    rejected without a lookup. Never blocks: an absent map means this call falls
+    back to Yahoo while a refresh runs behind it.
+    """
+    if not yf_symbol:
+        return None
+    if any(marker in yf_symbol for marker in (".", "^", "=")):
+        return None
+
+    global _cik_map, _cik_map_loaded_at, _cik_map_refreshing
+    with _cik_map_lock:
+        if _cik_map is None:
+            # First use in this process: adopt the map on disk, and age it so a
+            # cached-but-old map still triggers the refresh below.
+            from_disk, age = _load_cik_map_from_disk()
+            if from_disk:
+                _cik_map = from_disk
+                _cik_map_loaded_at = time.monotonic() - age
+
+        ttl = _CIK_MAP_TTL_SECONDS if _cik_map else _CIK_MAP_RETRY_SECONDS
+        stale = _cik_map is None or (time.monotonic() - _cik_map_loaded_at) > ttl
+        if stale and not _cik_map_refreshing:
+            _cik_map_refreshing = True
+            threading.Thread(
+                target=_refresh_cik_map, name="edgar-cik-map", daemon=True
+            ).start()
+
+        return (_cik_map or {}).get(yf_symbol.upper()) or None
+
+
+# Public alias: the cached, non-blocking resolver is useful to anything that has
+# a ticker and needs the filer behind it (the track-record view, for one), and
+# every caller should share this one map rather than fetching the SEC's again.
+cik_for_symbol = _cik_for_symbol
+
+
+def _edgar_annual_statements(cik: str) -> Dict[str, pd.DataFrame]:
+    """All three EDGAR statements for one filer. Returns {} when unavailable."""
+    now = time.monotonic()
+    with _edgar_statement_lock:
+        entry = _edgar_statement_cache.get(cik)
+        if entry and (now - entry[0]) < _EDGAR_STATEMENT_TTL_SECONDS:
+            return entry[1]
+
+    try:
+        import edgar_provider
+
+        statements = edgar_provider.get_statements(cik)
+    except Exception as exc:
+        # A missing store or an unreadable row is not an error here: the caller
+        # still has Yahoo's five years.
+        logging.debug(f"EDGAR: no statements for CIK {cik}: {exc}")
+        statements = {}
+
+    with _edgar_statement_lock:
+        if len(_edgar_statement_cache) >= _EDGAR_STATEMENT_CACHE_MAX:
+            oldest = min(_edgar_statement_cache, key=lambda k: _edgar_statement_cache[k][0])
+            _edgar_statement_cache.pop(oldest, None)
+        _edgar_statement_cache[cik] = (now, statements)
+    return statements
+
+
+def _canonical_periods(statements: Dict[str, pd.DataFrame]) -> pd.DatetimeIndex:
+    """
+    Every filed period end across the three statements.
+
+    Shared deliberately: `calculate_key_ratios_timeseries` intersects the income
+    and balance columns, so snapping each statement to its own calendar could
+    leave the two with no period in common and silently empty the ratio history.
+    """
+    stamps: Set[pd.Timestamp] = set()
+    for frame in statements.values():
+        if frame is None or frame.empty:
+            continue
+        stamps.update(pd.to_datetime(frame.columns, errors="coerce").dropna())
+    return pd.DatetimeIndex(sorted(stamps))
+
+
+def _snap_to_filed_period(stamp: Any, calendar: pd.DatetimeIndex) -> Any:
+    """The filed period end `stamp` refers to, or `stamp` itself if it is new."""
+    if len(calendar) == 0 or stamp is None or pd.isna(stamp):
+        return stamp
+    offsets = (calendar - stamp).map(abs)
+    nearest = int(offsets.argmin())
+    if offsets[nearest] <= _EDGAR_PERIOD_TOLERANCE:
+        return calendar[nearest]
+    return stamp
+
+
+def _merge_with_edgar(
+    yahoo_df: Optional[pd.DataFrame],
+    edgar_df: pd.DataFrame,
+    calendar: pd.DatetimeIndex,
+) -> pd.DataFrame:
+    """
+    One statement carrying EDGAR's history and Yahoo's line-item breadth.
+
+    EDGAR wins every cell it can fill; Yahoo supplies the rest. Rows keep
+    statement order (EDGAR's line items first, then Yahoo-only ones) and columns
+    stay newest-first, which is the order `financial_ratios` and every client
+    already expect from yfinance.
+    """
+    merged = edgar_df.copy()
+    merged.columns = pd.to_datetime(merged.columns, errors="coerce")
+    merged = merged.loc[:, merged.columns.notna()]
+
+    row_order = list(merged.index)
+
+    if yahoo_df is not None and not yahoo_df.empty:
+        yahoo = yahoo_df.copy()
+        yahoo.columns = [
+            _snap_to_filed_period(pd.to_datetime(col, errors="coerce"), calendar)
+            for col in yahoo.columns
+        ]
+        yahoo = yahoo.loc[:, pd.notna(yahoo.columns)]
+        # Two Yahoo periods can snap to one filed period only if Yahoo reported
+        # the same fiscal year twice; keep the first and drop the duplicate,
+        # since a duplicated axis cannot be aligned.
+        yahoo = yahoo.loc[:, ~pd.Index(yahoo.columns).duplicated()]
+        row_order += [row for row in yahoo.index if row not in set(merged.index)]
+        merged = merged.combine_first(yahoo)
+
+    merged = merged.reindex(row_order)
+    return merged.sort_index(axis=1, ascending=False)
+
+
+def _with_edgar_history(
+    yf_symbol: str,
+    statement_type: str,
+    period_type: str,
+    yahoo_df: Optional[pd.DataFrame],
+) -> Optional[pd.DataFrame]:
+    """Extend one Yahoo statement with the filed history, where EDGAR has it."""
+    if period_type != _EDGAR_PERIOD_TYPE:
+        return yahoo_df
+
+    cik = _cik_for_symbol(yf_symbol)
+    if not cik:
+        return yahoo_df
+
+    statements = _edgar_annual_statements(cik)
+    edgar_df = statements.get(statement_type)
+    if edgar_df is None or edgar_df.empty:
+        return yahoo_df
+
+    try:
+        merged = _merge_with_edgar(yahoo_df, edgar_df, _canonical_periods(statements))
+    except Exception as exc:
+        logging.warning(
+            f"EDGAR merge failed for {yf_symbol} {statement_type}, using Yahoo only: {exc}"
+        )
+        return yahoo_df
+
+    before = 0 if yahoo_df is None or yahoo_df.empty else len(yahoo_df.columns)
+    logging.debug(
+        f"EDGAR: {yf_symbol} {statement_type} {before} -> {len(merged.columns)} annual periods"
+    )
+    return merged
+
+
 # --- Main Class ---
 class MarketDataProvider:
     """
@@ -3879,22 +4157,25 @@ class MarketDataProvider:
     def get_financials(
         self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
-        """Fetches Income Statement data for a symbol."""
-        return self._fetch_statement_data(yf_symbol, "financials", period_type, force_refresh)
+        """Income Statement, extended with SEC-filed history for annual periods."""
+        df = self._fetch_statement_data(yf_symbol, "financials", period_type, force_refresh)
+        return _with_edgar_history(yf_symbol, "financials", period_type, df)
 
     @profile
     def get_balance_sheet(
         self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
-        """Fetches Balance Sheet data for a symbol."""
-        return self._fetch_statement_data(yf_symbol, "balance_sheet", period_type, force_refresh)
+        """Balance Sheet, extended with SEC-filed history for annual periods."""
+        df = self._fetch_statement_data(yf_symbol, "balance_sheet", period_type, force_refresh)
+        return _with_edgar_history(yf_symbol, "balance_sheet", period_type, df)
 
     @profile
     def get_cashflow(
         self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
-        """Fetches Cash Flow Statement data for a symbol."""
-        return self._fetch_statement_data(yf_symbol, "cashflow", period_type, force_refresh)
+        """Cash Flow Statement, extended with SEC-filed history for annual periods."""
+        df = self._fetch_statement_data(yf_symbol, "cashflow", period_type, force_refresh)
+        return _with_edgar_history(yf_symbol, "cashflow", period_type, df)
 
     def get_exchange_for_symbol(self, yf_symbol: str) -> Optional[str]:
         """

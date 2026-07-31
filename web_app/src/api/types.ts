@@ -1335,6 +1335,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/track-record/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Record
+         * @description The measured quality record for one company: the same metrics the ranking
+         *     scores on, labelled for a reader.
+         *
+         *     404 for anything that does not file with the SEC — foreign listings and SET
+         *     holdings among them. That is a normal state for a portfolio that isn't
+         *     all-US, so clients hide the panel rather than showing an error.
+         */
+        get: operations["get_track_record_api_track_record__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buffett-rank/history/{symbol}": {
         parameters: {
             query?: never;
@@ -2760,6 +2785,31 @@ export interface paths {
          * @description Companies excluded from the ranking, each with the reasons it failed.
          */
         get: operations["get_exclusions_buffett_rank_exclusions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/track-record/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Record
+         * @description The measured quality record for one company: the same metrics the ranking
+         *     scores on, labelled for a reader.
+         *
+         *     404 for anything that does not file with the SEC — foreign listings and SET
+         *     holdings among them. That is a normal state for a portfolio that isn't
+         *     all-US, so clients hide the panel rather than showing an error.
+         */
+        get: operations["get_track_record_track_record__symbol__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5294,6 +5344,37 @@ export interface operations {
             };
         };
     };
+    get_track_record_api_track_record__symbol__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_symbol_history_api_buffett_rank_history__symbol__get: {
         parameters: {
             query?: {
@@ -7464,6 +7545,37 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_record_track_record__symbol__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

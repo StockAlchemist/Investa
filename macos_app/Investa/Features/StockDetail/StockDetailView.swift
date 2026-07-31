@@ -717,23 +717,35 @@ struct StockDetailView: View {
         }
     }
 
+    /// Statements now carry ~19 filed years, so every period is shown and the
+    /// table scrolls. The year alone would not identify a column: filed period
+    /// ends are the company's own 52/53-week dates, and two of them can fall in
+    /// one calendar year (Advance Auto Parts closed fiscal years on 2022-01-01
+    /// and 2022-12-31), so the end date sits under the year.
     private func statementTable(_ s: FinancialStatement) -> some View {
         ScrollView(.horizontal, showsIndicators: true) {
             Grid(alignment: .trailing, horizontalSpacing: 24, verticalSpacing: 12) {
                 GridRow {
                     Text("Metric").gridColumnAlignment(.leading)
                     Text("Trend").gridColumnAlignment(.center)
-                    ForEach(Array(s.columns.prefix(6).enumerated()), id: \.offset) { _, c in Text(String(c.prefix(4))) }
+                    ForEach(Array(s.columns.enumerated()), id: \.offset) { _, c in
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(String(c.prefix(4)))
+                            Text(MarketTime.shortDay(c))
+                                .font(.system(size: 9, weight: .regular))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
                 }
                 .font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
-                
+
                 Divider()
-                
+
                 ForEach(Array(s.index.enumerated()), id: \.offset) { i, label in
                     GridRow {
                         Text(label).font(.subheadline.weight(.semibold)).lineLimit(1).gridColumnAlignment(.leading)
                         sparkline(i < s.data.count ? s.data[i].compactMap { $0 } : [])
-                        ForEach(0..<min(6, s.columns.count), id: \.self) { j in
+                        ForEach(0..<s.columns.count, id: \.self) { j in
                             let v = (i < s.data.count && j < s.data[i].count) ? s.data[i][j] : nil
                             Text(v.map { compact($0) } ?? "—")
                                 .font(.subheadline).monospacedDigit()
@@ -775,12 +787,18 @@ struct StockDetailView: View {
     // MARK: - Ratios
 
     @ViewBuilder private var ratiosTab: some View {
-        if let h = viewModel.ratios?.historical, !h.isEmpty {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
-                ratioChart("Return on Equity", h, "Return on Equity (ROE) (%)", Color(red: 16/255, green: 185/255, blue: 129/255), isPercent: true)
-                ratioChart("Gross Margin", h, "Gross Profit Margin (%)", Color(red: 6/255, green: 182/255, blue: 212/255), isPercent: true)
-                ratioChart("Net Margin", h, "Net Profit Margin (%)", Color(red: 139/255, green: 92/255, blue: 246/255), isPercent: true)
-                ratioChart("Asset Turnover", h, "Asset Turnover", Color(red: 245/255, green: 158/255, blue: 11/255), isPercent: false)
+        let history = viewModel.ratios?.historical ?? []
+        if !history.isEmpty || viewModel.trackRecord != nil {
+            VStack(alignment: .leading, spacing: 24) {
+                if let record = viewModel.trackRecord { trackRecordPanel(record) }
+                if !history.isEmpty {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
+                        ratioChart("Return on Equity", history, "Return on Equity (ROE) (%)", Color(red: 16/255, green: 185/255, blue: 129/255), isPercent: true)
+                        ratioChart("Gross Margin", history, "Gross Profit Margin (%)", Color(red: 6/255, green: 182/255, blue: 212/255), isPercent: true)
+                        ratioChart("Net Margin", history, "Net Profit Margin (%)", Color(red: 139/255, green: 92/255, blue: 246/255), isPercent: true)
+                        ratioChart("Asset Turnover", history, "Asset Turnover", Color(red: 245/255, green: 158/255, blue: 11/255), isPercent: false)
+                    }
+                }
             }
         } else if viewModel.isLoadingFinancials {
             ProgressView().frame(maxWidth: .infinity).padding(40)
@@ -789,20 +807,114 @@ struct StockDetailView: View {
         }
     }
 
+    /// The measured quality record — the metrics the Buffett ranking scores on.
+    ///
+    /// Nothing here is coloured good or bad: a median ROE of 13% is excellent
+    /// for a bank and mediocre for a software company. The only absolute
+    /// thresholds this system holds are the hard gates, and those appear as the
+    /// exclusion reasons they are.
+    @ViewBuilder private func trackRecordPanel(_ record: TrackRecord) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Track Record", systemImage: "checkmark.shield")
+                        .font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                    Text(trackRecordSpan(record))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                if let rank = record.rank?.rank {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("#\(rank)").font(.title2.weight(.bold)).monospacedDigit()
+                        Text("Buffett rank").font(.system(size: 9)).foregroundStyle(.tertiary).textCase(.uppercase)
+                    }
+                }
+            }
+
+            if !record.gateFailures.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text("Not eligible for the ranking: "
+                         + record.gateFailures.map { $0.replacingOccurrences(of: "_", with: " ") }
+                            .joined(separator: ", "))
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 16)], alignment: .leading, spacing: 16) {
+                ForEach(record.groups) { group in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(group.title)
+                                .font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                            Spacer()
+                            if let score = record.rank?.pillars?[group.key] ?? nil {
+                                Text(String(format: "%.0f", score))
+                                    .font(.caption.weight(.semibold)).monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        ForEach(group.items) { item in
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(item.label).font(.subheadline).foregroundStyle(.secondary)
+                                Spacer(minLength: 12)
+                                Text(item.display ?? (item.note != nil ? "n/a" : "—"))
+                                    .font(.subheadline.weight(.medium)).monospacedDigit()
+                                    .foregroundStyle(item.display == nil ? .tertiary : .primary)
+                                    .help(item.note ?? "")
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+        .padding(20)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, lineWidth: 1))
+    }
+
+    private func trackRecordSpan(_ record: TrackRecord) -> String {
+        var parts = ["\(record.periodCount) years of SEC filings"]
+        if let first = record.firstPeriod, let last = record.latestPeriod {
+            parts[0] += " (\(first.prefix(4))–\(last.prefix(4)))"
+        }
+        parts.append("measured over the last \(record.windowYears)")
+        if record.model != "generic" { parts.append("\(record.model) model") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The ratio history runs as far back as the filings do, so the x-axis plots
+    /// the period end itself rather than a year string: two fiscal years can end
+    /// in the same calendar year, and as categories they would collapse onto one
+    /// point. Dates are read at UTC midnight so a period end never slides a day.
     private func ratioChart(_ title: String, _ data: [[String: JSONValue]], _ key: String, _ color: Color, isPercent: Bool) -> some View {
         let valid = data.filter { $0[key]?.doubleValue != nil }.reversed()
         return card(title) {
             Chart {
                 ForEach(Array(valid.enumerated()), id: \.offset) { _, item in
-                    if let val = item[key]?.doubleValue, let dateStr = item["Period"]?.stringValue {
-                        let displayDate = String(dateStr.prefix(4))
-                        LineMark(x: .value("Year", displayDate), y: .value(title, val))
+                    if let val = item[key]?.doubleValue, let dateStr = item["Period"]?.stringValue,
+                       let period = MarketTime.calendarDay(dateStr) {
+                        LineMark(x: .value("Period", period), y: .value(title, val))
                             .foregroundStyle(color).interpolationMethod(.monotone)
-                        AreaMark(x: .value("Year", displayDate), y: .value(title, val))
+                        AreaMark(x: .value("Period", period), y: .value(title, val))
                             .foregroundStyle(LinearGradient(colors: [color.opacity(0.3), color.opacity(0.0)], startPoint: .top, endPoint: .bottom))
                             .interpolationMethod(.monotone)
-                        PointMark(x: .value("Year", displayDate), y: .value(title, val))
+                        PointMark(x: .value("Period", period), y: .value(title, val))
                             .foregroundStyle(color)
+                    }
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let date = value.as(Date.self) {
+                            Text(MarketTime.year(date))
+                        }
                     }
                 }
             }

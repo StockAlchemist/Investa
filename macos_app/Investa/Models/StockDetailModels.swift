@@ -283,6 +283,78 @@ struct FinancialsResponse: Codable, Sendable {
     }
 }
 
+// MARK: - Track record (`GET /api/track-record/{symbol}`)
+
+/// One measured metric. `display` is preformatted by the backend so the web,
+/// macOS and iOS clients cannot render the same number three ways; `note` says
+/// why a metric is unmeasurable when that is knowable (a stock split breaking
+/// the share-count series, for one).
+struct TrackRecordItem: Decodable, Sendable, Identifiable {
+    let key: String
+    let label: String
+    let unit: String
+    let value: Double?
+    let display: String?
+    let note: String?
+    let higherIsBetter: Bool
+
+    var id: String { key }
+
+    enum CodingKeys: String, CodingKey {
+        case key, label, unit, value, display, note
+        case higherIsBetter = "higher_is_better"
+    }
+}
+
+struct TrackRecordGroup: Decodable, Sendable, Identifiable {
+    let key: String
+    let title: String
+    let items: [TrackRecordItem]
+
+    var id: String { key }
+}
+
+struct TrackRecordRank: Decodable, Sendable {
+    let rank: Int?
+    let compositeScore: Double?
+    let qualityScore: Double?
+    let valueScore: Double?
+    let confidence: Double?
+    let pillars: [String: Double?]?
+
+    enum CodingKeys: String, CodingKey {
+        case rank, confidence, pillars
+        case compositeScore = "composite_score"
+        case qualityScore = "quality_score"
+        case valueScore = "value_score"
+    }
+}
+
+/// The measured quality record: the metrics the Buffett ranking scores on, over
+/// the durability window, with the span of filings they rest on.
+struct TrackRecord: Decodable, Sendable {
+    let symbol: String
+    let name: String?
+    let model: String
+    let periodCount: Int
+    let firstPeriod: String?
+    let latestPeriod: String?
+    let windowYears: Int
+    let coverage: Double?
+    let gateFailures: [String]
+    let rank: TrackRecordRank?
+    let groups: [TrackRecordGroup]
+
+    enum CodingKeys: String, CodingKey {
+        case symbol, name, model, coverage, rank, groups
+        case periodCount = "period_count"
+        case firstPeriod = "first_period"
+        case latestPeriod = "latest_period"
+        case windowYears = "window_years"
+        case gateFailures = "gate_failures"
+    }
+}
+
 // MARK: - Ratios (`GET /api/ratios/{symbol}`)
 
 struct RatiosResponse: Decodable, Sendable {

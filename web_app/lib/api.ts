@@ -1397,6 +1397,68 @@ export async function fetchBuffettExclusions(
     return data as unknown as BuffettExclusionPage;
 }
 
+/** One measured metric from a company's record. */
+export interface TrackRecordItem {
+    key: string;
+    label: string;
+    unit: string;
+    value: number | null;
+    /** Preformatted by the backend so the three clients cannot format it differently. */
+    display: string | null;
+    /** Why a metric is unmeasurable, when it is knowably so (e.g. a stock split). */
+    note: string | null;
+    higher_is_better: boolean;
+}
+
+export interface TrackRecordGroup {
+    key: string;
+    title: string;
+    items: TrackRecordItem[];
+}
+
+/**
+ * The measured quality record: the same metrics the Buffett ranking scores on,
+ * over the durability window, with the span they rest on.
+ */
+export interface TrackRecord {
+    symbol: string;
+    name: string | null;
+    cik: string;
+    model: BuffettModel;
+    period_count: number;
+    first_period: string | null;
+    latest_period: string | null;
+    window_years: number;
+    coverage: number | null;
+    /** Hard-gate failures — why the ranking excludes this company, if it does. */
+    gate_failures: string[];
+    rank: {
+        run_id: number | null;
+        rank: number | null;
+        composite_score: number | null;
+        quality_score: number | null;
+        value_score: number | null;
+        confidence: number | null;
+        pillars: Record<string, number | null>;
+    } | null;
+    groups: TrackRecordGroup[];
+}
+
+export async function fetchTrackRecord(
+    symbol: string,
+    signal?: AbortSignal
+): Promise<TrackRecord | null> {
+    const { data, error, response } = await apiClient.GET("/api/track-record/{symbol}", {
+        params: { path: { symbol } },
+        signal
+    });
+    // 404 is the normal answer for anything that does not file with the SEC —
+    // every SET holding, every foreign listing. The panel hides itself.
+    if (response.status === 404) return null;
+    if (error) throw new Error(`Failed to fetch track record for ${symbol}`);
+    return data as unknown as TrackRecord;
+}
+
 export async function fetchBuffettRankHistory(
     symbol: string,
     limit: number = 24,

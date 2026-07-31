@@ -164,6 +164,43 @@ async def get_exclusions(
         raise HTTPException(status_code=500, detail="Could not load exclusions")
 
 
+@router.get("/track-record/{symbol}")
+async def get_track_record(
+    symbol: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    The measured quality record for one company: the same metrics the ranking
+    scores on, labelled for a reader.
+
+    404 for anything that does not file with the SEC — foreign listings and SET
+    holdings among them. That is a normal state for a portfolio that isn't
+    all-US, so clients hide the panel rather than showing an error.
+    """
+    import market_data
+    import track_record
+
+    cik = await run_in_threadpool(market_data.cik_for_symbol, symbol.upper())
+    if not cik:
+        raise HTTPException(
+            status_code=404, detail=f"{symbol.upper()} does not file with the SEC"
+        )
+
+    try:
+        record = await run_in_threadpool(track_record.build, symbol, cik)
+    except Exception as exc:
+        logging.error(f"Track record: failed to build for {symbol}: {exc}")
+        raise HTTPException(status_code=500, detail="Could not build track record")
+
+    if not record.get("period_count"):
+        raise HTTPException(
+            status_code=404, detail=f"No SEC fundamentals on file for {symbol.upper()}"
+        )
+
+    record["name"] = _display_name(record.get("name"))
+    return clean_nans(record)
+
+
 @router.get("/buffett-rank/history/{symbol}")
 async def get_symbol_history(
     symbol: str,

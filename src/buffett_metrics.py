@@ -54,6 +54,9 @@ class CompanyMetrics:
 
     period_count: int = 0
     latest_period: Optional[str] = None
+    # The oldest filed year, so a reader can see the span the metrics rest on
+    # rather than inferring it from a count.
+    first_period: Optional[str] = None
     metrics: Dict[str, Optional[float]] = field(default_factory=dict)
     gate_failures: List[str] = field(default_factory=list)
     coverage: float = 0.0
@@ -204,9 +207,14 @@ def _compute_generic_metrics(
     metrics["net_margin_median"] = _median(net_margin_series)
 
     clean_roe = [v for v in (_finite(x) for x in roe_series) if v is not None]
-    metrics["roe_years_above_15"] = (
-        sum(1 for v in clean_roe if v >= 15.0) / len(clean_roe) if clean_roe else None
-    )
+    above_15 = sum(1 for v in clean_roe if v >= 15.0)
+    metrics["roe_years_above_15"] = above_15 / len(clean_roe) if clean_roe else None
+    # The count and its denominator alongside the share. Scoring uses the share;
+    # a reader needs "7 of 10 years", because the denominator is what says
+    # whether the record is long enough to mean anything. Nothing scores these:
+    # pillars and coverage both name their inputs explicitly.
+    metrics["roe_years_above_15_count"] = float(above_15) if clean_roe else None
+    metrics["roe_observation_years"] = float(len(clean_roe)) if clean_roe else None
 
     # ROIC: NOPAT over capital actually employed. Cash is netted off because
     # a large idle balance would otherwise depress the return on the operating
@@ -279,8 +287,12 @@ def _compute_generic_metrics(
 
     # --- Predictability -----------------------------------------------------
     metrics["roe_stdev"] = _stdev(roe_series)
+    observed_owner_earnings = [v for v in owner_earnings if v is not None]
     metrics["negative_owner_earnings_years"] = sum(
-        1 for v in owner_earnings if v is not None and v < 0
+        1 for v in observed_owner_earnings if v < 0
+    )
+    metrics["owner_earnings_years"] = (
+        float(len(observed_owner_earnings)) if observed_owner_earnings else None
     )
 
     revenue_series = _aligned(concepts.get("revenue", {}), window)
@@ -378,9 +390,10 @@ def _compute_bank_metrics(
     clean_roe = [v for v in (_finite(x) for x in roe_series) if v is not None]
     # Banks clear a lower bar than industrials: sustained mid-teens ROE on a
     # conservatively funded book is an excellent bank.
-    metrics["roe_years_above_12"] = (
-        sum(1 for v in clean_roe if v >= 12.0) / len(clean_roe) if clean_roe else None
-    )
+    above_12 = sum(1 for v in clean_roe if v >= 12.0)
+    metrics["roe_years_above_12"] = above_12 / len(clean_roe) if clean_roe else None
+    metrics["roe_years_above_12_count"] = float(above_12) if clean_roe else None
+    metrics["roe_observation_years"] = float(len(clean_roe)) if clean_roe else None
 
     # Solvency: equity as a share of assets, the leverage measure that actually
     # binds for a bank.
@@ -436,7 +449,11 @@ def _compute_bank_metrics(
     metrics["efficiency_ratio_median"] = _median(efficiency)
 
     net_income_series = _aligned(concepts.get("net_income", {}), window)
-    metrics["loss_years"] = sum(1 for v in net_income_series if v is not None and v < 0)
+    observed_net_income = [v for v in net_income_series if v is not None]
+    metrics["loss_years"] = sum(1 for v in observed_net_income if v < 0)
+    metrics["net_income_years"] = (
+        float(len(observed_net_income)) if observed_net_income else None
+    )
 
     equity_series = _aligned(concepts.get("equity", {}), window)
     shares_series = _aligned(concepts.get("shares_diluted", {}), window)
@@ -502,9 +519,11 @@ def _compute_reit_metrics(
         gains = _finite(sector.get("gain_on_sale_real_estate", {}).get(period)) or 0.0
         ffo_series.append(net_income + depreciation - gains)
 
+    observed_ffo = [v for v in ffo_series if v is not None]
     metrics["ffo_latest"] = next((v for v in reversed(ffo_series) if v is not None), None)
-    metrics["ffo_cagr"] = _cagr([v for v in ffo_series if v is not None])
-    metrics["negative_ffo_years"] = sum(1 for v in ffo_series if v is not None and v < 0)
+    metrics["ffo_cagr"] = _cagr(observed_ffo)
+    metrics["negative_ffo_years"] = sum(1 for v in observed_ffo if v < 0)
+    metrics["ffo_years"] = float(len(observed_ffo)) if observed_ffo else None
 
     ffo_margins = []
     ffo_on_equity = []
@@ -658,6 +677,24 @@ def compute_metrics(cik: str, symbol: str, name: str, model: str) -> CompanyMetr
     periods = sorted(set(concepts.get("net_income", {})))
     result.period_count = len(periods)
     result.latest_period = periods[-1] if periods else None
+    result.first_period = periods[0] if periods else None
+
+    # The share count is the one series here a stock split can corrupt. A 10-K
+    # restates the two prior years for the split and nothing restates the years
+    # before it, so the assembled series steps by the split ratio partway
+    # through the window: Apple's reads as +11.8%/yr of issuance across a decade
+    # in which it retired a quarter of its shares, and NVIDIA's as +49.7%.
+    # Every per-share rate below divides by this — share-count CAGR, book value
+    # per share, FFO per share — so it is rebuilt once, here, from same-filing
+    # ratios that no split can distort. Companies that never split come back
+    # unchanged.
+    if concepts.get("shares_diluted"):
+        try:
+            concepts["shares_diluted"] = edgar_provider.split_consistent_series(
+                cik, "shares_diluted"
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.warning(f"Metrics: share-count reconstruction failed for {symbol}: {exc}")
 
     try:
         ratios = _ratios_by_period(cik)

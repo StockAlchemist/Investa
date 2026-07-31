@@ -14,8 +14,10 @@ import {
     fetchStockAnalysis,
     fetchStockNews,
     fetchHoldings,
+    fetchTrackRecord,
     Holding,
-    FinancialRatio
+    FinancialRatio,
+    TrackRecord
 } from '../lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -181,6 +183,16 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         staleTime: 30 * 60 * 1000,
     });
     const ratios = ratiosQuery.data ?? null;
+
+    // The measured durability record. Resolves to null for anything that does
+    // not file with the SEC, which is a normal state, so no error is surfaced.
+    const trackRecordQuery = useQuery({
+        queryKey: ['stock-track-record', symbol],
+        queryFn: () => fetchTrackRecord(symbol),
+        enabled: isOpen && !!symbol,
+        staleTime: 60 * 60 * 1000,
+    });
+    const trackRecord = trackRecordQuery.data ?? null;
 
     const intrinsicValueQuery = useQuery({
         queryKey: ['stock-intrinsic-value', symbol],
@@ -797,7 +809,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 <th className="px-6 py-3 font-semibold text-foreground sticky left-0 bg-card"></th>
                                 <th className="px-6 py-3 font-semibold text-center text-muted-foreground">Trend</th>
                                 {currentStatement.columns.map(col => (
-                                    <th key={col} className="px-6 py-3 font-semibold text-center text-muted-foreground tabular-nums">{new Date(col).getFullYear()}</th>
+                                    <th key={col} className="px-4 py-3 font-semibold text-center text-muted-foreground tabular-nums whitespace-nowrap">
+                                        <div>{fiscalPeriodYear(col)}</div>
+                                        <div className="text-[10px] font-normal opacity-60">{fiscalPeriodDay(col)}</div>
+                                    </th>
                                 ))}
                             </tr>
                         </thead>
@@ -823,12 +838,17 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     };
 
     const renderRatios = () => {
-        if (!ratios || !ratios.historical.length) return <div className="text-center py-20 text-gray-500">No historical ratio data available.</div>;
+        if (!ratios || !ratios.historical.length) {
+            return trackRecord
+                ? <div className="animate-in fade-in duration-500"><TrackRecordPanel record={trackRecord} /></div>
+                : <div className="text-center py-20 text-gray-500">No historical ratio data available.</div>;
+        }
 
         const chartData = [...ratios.historical].reverse();
 
         return (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {trackRecord && <TrackRecordPanel record={trackRecord} />}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <RatioChart
                         data={chartData}
@@ -2135,6 +2155,26 @@ function formatEventDate(iso: string): string {
 }
 
 /**
+ * Statement column headers, split so a fiscal period is never ambiguous.
+ *
+ * Statements now run ~19 years back, straight off the SEC filings, and filed
+ * period ends are the company's own 52/53-week dates rather than month ends.
+ * Two of them can land in one calendar year — Advance Auto Parts closed fiscal
+ * years on 2022-01-01 and 2022-12-31 — so a bare year would label two different
+ * columns "2022". The end date underneath tells them apart.
+ *
+ * Both are read straight out of the ISO string: a period end is a calendar day,
+ * not an instant, and must not shift for a viewer west of the market.
+ */
+function fiscalPeriodYear(iso: string): string {
+    return iso.slice(0, 4);
+}
+
+function fiscalPeriodDay(iso: string): string {
+    return formatCalendarDate(iso, { month: 'short', day: 'numeric' });
+}
+
+/**
  * "today" / "in 8 days" / "3 days ago", counted in the market's local time so a
  * viewer whose device has already rolled into tomorrow doesn't see the count
  * slip by a day.
@@ -2271,6 +2311,86 @@ function TabButton({ active, onClick, icon: Icon, label }: {
     );
 }
 
+/**
+ * The measured quality record — the metrics the Buffett ranking scores on,
+ * shown as evidence rather than a verdict.
+ *
+ * No metric is coloured good or bad. A median ROE of 13% is excellent for a bank
+ * and mediocre for a software company, and the only absolute thresholds this
+ * system holds are the hard gates, which appear verbatim as the exclusion
+ * reasons they are.
+ */
+function TrackRecordPanel({ record }: { record: TrackRecord }) {
+    const span = record.first_period && record.latest_period
+        ? `${fiscalPeriodYear(record.first_period)}–${fiscalPeriodYear(record.latest_period)}`
+        : null;
+
+    return (
+        <div className="bg-muted rounded-2xl p-6 space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-indigo-500" />
+                        Track Record
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        {record.period_count} years of SEC filings{span ? ` (${span})` : ''}
+                        {' · '}measured over the last {record.window_years}
+                        {record.model !== 'generic' ? ` · ${record.model} model` : ''}
+                    </p>
+                </div>
+                {record.rank?.rank != null && (
+                    <div className="text-right">
+                        <div className="text-2xl font-bold tabular-nums">#{record.rank.rank}</div>
+                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Buffett rank</div>
+                    </div>
+                )}
+            </div>
+
+            {record.gate_failures.length > 0 && (
+                <div className="flex items-start gap-2 text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl px-3 py-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-px" />
+                    <span>
+                        Not eligible for the ranking:{' '}
+                        {record.gate_failures.map(reason => reason.replace(/_/g, ' ')).join(', ')}
+                    </span>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {record.groups.map(group => (
+                    <div key={group.key} className="bg-card rounded-xl p-4">
+                        <div className="flex items-baseline justify-between gap-2 mb-3">
+                            <h5 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{group.title}</h5>
+                            {record.rank?.pillars?.[group.key] != null && (
+                                <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+                                    {(record.rank.pillars[group.key] as number).toFixed(0)}
+                                </span>
+                            )}
+                        </div>
+                        <dl className="space-y-2">
+                            {group.items.map(item => (
+                                <div key={item.key} className="flex items-baseline justify-between gap-3 text-sm">
+                                    <dt className="text-muted-foreground">{item.label}</dt>
+                                    <dd
+                                        className={cn(
+                                            "font-medium tabular-nums text-right whitespace-nowrap",
+                                            item.display ? "text-foreground" : "text-muted-foreground/60"
+                                        )}
+                                        title={item.note ?? undefined}
+                                    >
+                                        {item.display ?? (item.note ? 'n/a' : '—')}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function RatioChart({ data, dataKey, title, color, suffix = "" }: {
     data: FinancialRatio[];
     dataKey: string;
@@ -2298,7 +2418,11 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: {
                             tickLine={false}
                             tick={{ fontSize: 10 }}
                             className="fill-muted-foreground"
-                            tickFormatter={(val) => new Date(val).getFullYear().toString()}
+                            // Sliced, not parsed: a fiscal period end is a calendar
+                            // day, and filed ends land on 2022-01-01 often enough
+                            // that parsing it as an instant would label the column
+                            // 2021 for any viewer west of UTC.
+                            tickFormatter={(val) => fiscalPeriodYear(String(val))}
                         />
                         <YAxis
                             axisLine={false}

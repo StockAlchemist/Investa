@@ -46,6 +46,15 @@ enum MarketTime {
         return f
     }()
 
+    /// "2026" — the axis label for a chart plotted on calendar days.
+    private static let yearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy"
+        f.timeZone = utc
+        return f
+    }()
+
     /// The calendar day an ISO date (or datetime) string names, at UTC midnight.
     static func calendarDay(_ iso: String) -> Date? {
         dayParser.date(from: String(iso.prefix(10)))
@@ -98,5 +107,11 @@ enum MarketTime {
     static func shortDay(_ iso: String) -> String {
         guard let d = calendarDay(iso) else { return iso }
         return shortDayFormatter.string(from: d)
+    }
+
+    /// The calendar year of a day produced by `calendarDay(_:)`, read back in the
+    /// same zone it was built in.
+    static func year(_ day: Date) -> String {
+        yearFormatter.string(from: day)
     }
 }

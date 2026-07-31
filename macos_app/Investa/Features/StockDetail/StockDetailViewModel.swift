@@ -11,6 +11,7 @@ final class StockDetailViewModel: ObservableObject {
     @Published var analysis: StockAnalysis?
     @Published var financials: FinancialsResponse?
     @Published var ratios: RatiosResponse?
+    @Published var trackRecord: TrackRecord?
     @Published var userPosition: Holding?
     @Published var news: [MarketNewsItem] = []
 
@@ -79,8 +80,12 @@ final class StockDetailViewModel: ObservableObject {
             "/financials/\(symbol)", query: [URLQueryItem(name: "period_type", value: "annual")]
         )
         async let rat: RatiosResponse = api.get("/ratios/\(symbol)")
+        async let record: TrackRecord = api.get("/track-record/\(symbol)")
         do { financials = try await fin } catch {}
         do { ratios = try await rat } catch {}
+        // A 404 here is the normal answer for anything that does not file with
+        // the SEC — every SET holding — so the panel simply stays hidden.
+        do { trackRecord = try await record } catch {}
     }
 
     /// AI analysis is expensive, so it's loaded on demand.
