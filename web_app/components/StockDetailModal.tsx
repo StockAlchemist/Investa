@@ -2382,6 +2382,49 @@ function TrackRecordPanel({ record }: { record: TrackRecord }) {
                 </div>
             )}
 
+            {record.valuation_bands?.length > 0 && (
+                <div className="bg-card rounded-xl px-4 py-3">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                        Against its own history
+                    </h5>
+                    <div className="space-y-4">
+                        {record.valuation_bands.map(band => {
+                            // Linear scale across the observed range. The marker
+                            // positions are presentation only — every number the
+                            // reader acts on is printed alongside.
+                            const span = Math.max(band.high - band.low, 1e-9);
+                            const at = (v: number) => `${Math.min(100, Math.max(0, ((v - band.low) / span) * 100))}%`;
+                            return (
+                                <div key={band.metric}>
+                                    <div className="flex items-baseline justify-between gap-3 text-sm mb-1.5">
+                                        <span className="text-muted-foreground">{band.label}</span>
+                                        <span className="tabular-nums">
+                                            <span className="font-semibold">{band.display}</span>
+                                            <span className="text-muted-foreground text-xs"> vs {band.median_display} median</span>
+                                        </span>
+                                    </div>
+                                    <div className="relative h-2 rounded-full bg-muted">
+                                        <div
+                                            className="absolute h-2 rounded-full bg-indigo-500/25"
+                                            style={{ left: at(band.p25), width: `calc(${at(band.p75)} - ${at(band.p25)})` }}
+                                        />
+                                        <div className="absolute h-2 w-px bg-muted-foreground/60" style={{ left: at(band.median) }} />
+                                        <div
+                                            className="absolute -top-0.5 h-3 w-1 rounded-sm bg-indigo-500"
+                                            style={{ left: at(band.current) }}
+                                            title={`${band.display} — ${band.percentile.toFixed(0)}th percentile of ${band.observations} years`}
+                                        />
+                                    </div>
+                                    <div className="text-[11px] text-muted-foreground mt-1">
+                                        {band.summary} ({band.observations} years)
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {record.stress?.some(w => w.covered) && (
                 <div className="bg-card rounded-xl px-4 py-3">
                     <h5 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">

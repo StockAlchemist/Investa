@@ -1416,6 +1416,28 @@ export interface TrackRecordGroup {
     items: TrackRecordItem[];
 }
 
+/**
+ * Today's multiple against the company's own history. Absent entirely when the
+ * local price store is too shallow to support a band.
+ */
+export interface TrackRecordBand {
+    metric: string;
+    label: string;
+    current: number;
+    median: number;
+    p25: number;
+    p75: number;
+    low: number;
+    high: number;
+    /** 0 = cheapest it has ever been, 100 = dearest. */
+    percentile: number;
+    observations: number;
+    display: string;
+    median_display: string;
+    /** "dearer than usual for this company" — a comparison, never advice. */
+    summary: string;
+}
+
 /** How one metric behaved peak-to-trough in a downturn. */
 export interface TrackRecordStressItem {
     metric: string;
@@ -1487,6 +1509,8 @@ export interface TrackRecord {
     revisions: { count: number; items: TrackRecordRevision[] };
     /** Behaviour in each downturn the filed history reaches. */
     stress: TrackRecordStress[];
+    /** Today's multiples against this company's own record. */
+    valuation_bands: TrackRecordBand[];
 }
 
 export async function fetchTrackRecord(

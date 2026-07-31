@@ -330,6 +330,34 @@ struct TrackRecordRank: Decodable, Sendable {
     }
 }
 
+/// Today's multiple against the company's own history. Absent entirely when the
+/// local price store is too shallow to support a band.
+struct TrackRecordBand: Decodable, Sendable, Identifiable {
+    let metric: String
+    let label: String
+    let current: Double
+    let median: Double
+    let p25: Double
+    let p75: Double
+    let low: Double
+    let high: Double
+    /// 0 = cheapest it has ever been, 100 = dearest.
+    let percentile: Double
+    let observations: Int
+    let display: String
+    let medianDisplay: String
+    /// "dearer than usual for this company" — a comparison, never advice.
+    let summary: String
+
+    var id: String { metric }
+
+    enum CodingKeys: String, CodingKey {
+        case metric, label, current, median, p25, p75, low, high, percentile, observations
+        case display, summary
+        case medianDisplay = "median_display"
+    }
+}
+
 /// How one metric behaved peak-to-trough in a downturn.
 struct TrackRecordStressItem: Decodable, Sendable, Identifiable {
     let metric: String
@@ -409,9 +437,11 @@ struct TrackRecord: Decodable, Sendable {
     let groups: [TrackRecordGroup]
     let revisions: TrackRecordRevisions?
     let stress: [TrackRecordStress]?
+    let valuationBands: [TrackRecordBand]?
 
     enum CodingKeys: String, CodingKey {
         case symbol, name, model, coverage, rank, groups, revisions, stress
+        case valuationBands = "valuation_bands"
         case periodCount = "period_count"
         case firstPeriod = "first_period"
         case latestPeriod = "latest_period"

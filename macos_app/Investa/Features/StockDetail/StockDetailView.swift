@@ -849,6 +849,10 @@ struct StockDetailView: View {
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             }
 
+            if let bands = record.valuationBands, !bands.isEmpty {
+                valuationBands(bands)
+            }
+
             if let stress = record.stress, stress.contains(where: { $0.covered }) {
                 stressResponse(stress)
             }
@@ -889,6 +893,54 @@ struct StockDetailView: View {
         .padding(20)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, lineWidth: 1))
+    }
+
+    /// Today's multiples against the company's own fifteen-year record.
+    ///
+    /// The bar is presentation only — every number a reader acts on is printed
+    /// beside it. Cross-sectional cheapness is what the ranking scores; this
+    /// answers the different question of whether *this* business is dear
+    /// relative to how it has been priced before.
+    @ViewBuilder private func valuationBands(_ bands: [TrackRecordBand]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Against its own history")
+                .font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+            ForEach(bands) { band in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(band.label).font(.subheadline).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(band.display).font(.subheadline.weight(.semibold)).monospacedDigit()
+                        Text("vs \(band.medianDisplay) median")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
+                    GeometryReader { geo in
+                        let span = max(band.high - band.low, 1e-9)
+                        let x = { (v: Double) in
+                            CGFloat(min(max((v - band.low) / span, 0), 1)) * geo.size.width
+                        }
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.secondary.opacity(0.15)).frame(height: 8)
+                            Capsule().fill(Color.indigo.opacity(0.25))
+                                .frame(width: max(2, x(band.p75) - x(band.p25)), height: 8)
+                                .offset(x: x(band.p25))
+                            Rectangle().fill(Color.secondary.opacity(0.6))
+                                .frame(width: 1, height: 8)
+                                .offset(x: x(band.median))
+                            RoundedRectangle(cornerRadius: 1).fill(Color.indigo)
+                                .frame(width: 3, height: 12)
+                                .offset(x: max(0, x(band.current) - 1.5))
+                        }
+                        .frame(height: 12)
+                    }
+                    .frame(height: 12)
+                    Text("\(band.summary) (\(band.observations) years)")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(14)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// What each downturn in the filed history did to the business.

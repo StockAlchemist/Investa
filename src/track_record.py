@@ -468,7 +468,19 @@ def build(symbol: str, cik: str, name: Optional[str] = None) -> Dict[str, Any]:
         "groups": labelled_metrics(company.metrics, model),
         "revisions": revisions(cik),
         "stress": _stress(cik),
+        "valuation_bands": _bands(symbol, cik),
     }
+
+
+def _bands(symbol: str, cik: str) -> List[Dict[str, Any]]:
+    """Today's multiples against the company's own fifteen-year record."""
+    try:
+        import valuation_history
+
+        return valuation_history.bands(symbol, cik)
+    except Exception as exc:
+        logging.debug(f"Track record: valuation bands unavailable for {symbol}: {exc}")
+        return []
 
 
 def _stress(cik: str) -> List[Dict[str, Any]]:
