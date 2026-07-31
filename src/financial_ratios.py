@@ -772,6 +772,61 @@ def estimate_fcf_margin(
     return 0.05  # Fallback
 
 
+# A full business cycle. Five years was never a judgement about normalization —
+# it was the number of annual periods yfinance returned, and it cannot contain a
+# recession: a window ending in 2025 starts in 2021 and has only ever seen an
+# expansion. The SEC-filed history reaches ~19 years, so the through-cycle
+# figure Buffett's owner earnings actually describe is now computable.
+CYCLE_YEARS = 10
+
+# Below this the median is not a cycle, just a short average, and the shorter
+# absolute-dollar path is the more honest answer.
+MIN_CYCLE_OBSERVATIONS = 6
+
+
+def through_cycle_fcf_margin(
+    financials_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame],
+    years: int = CYCLE_YEARS,
+) -> Dict[str, Any]:
+    """The FCF margin this business earns in a normal year, over a full cycle.
+
+    A *margin* rather than a dollar figure, because dollars go stale: the median
+    of ten years of absolute FCF describes a company the size this one was five
+    years ago, which for anything growing is not conservatism but an error. The
+    margin is the durable part — it is what mean-reverts — and multiplying it by
+    today's revenue puts the normalized figure back on today's scale.
+
+    Loss years are kept. Dropping them would score a company that burned cash in
+    four of ten years on the six that worked, which is the single most
+    upward-biased thing a normalizer can do.
+    """
+    margins: List[float] = []
+    try:
+        if financials_df is not None and cashflow_df is not None:
+            common = sorted(
+                set(financials_df.columns).intersection(set(cashflow_df.columns)),
+                key=lambda c: pd.to_datetime(c, errors="coerce"),
+            )
+            for col in common[-years:]:
+                revenue = _get_statement_value(financials_df, "Total Revenue", col)
+                ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", col)
+                capex = _get_statement_value(cashflow_df, "Capital Expenditure", col)
+                if not revenue or revenue <= 0 or ocf is None or capex is None:
+                    continue
+                margin = (ocf + capex) / revenue
+                # The same plausibility band `estimate_fcf_margin` uses: outside
+                # it the statement mapping is wrong, not the business remarkable.
+                if -1.0 < margin < 0.6:
+                    margins.append(margin)
+    except Exception as exc:
+        logging.debug(f"Through-cycle margin extraction failed: {exc}")
+
+    if len(margins) < MIN_CYCLE_OBSERVATIONS:
+        return {"margin": None, "observations": len(margins)}
+    return {"margin": float(np.median(margins)), "observations": len(margins)}
+
+
 def normalized_base_fcf(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame],
@@ -785,11 +840,15 @@ def normalized_base_fcf(
     that year — a big working-capital swing, a factory built, a legal
     settlement. Buffett's "owner earnings" are explicitly a normal-year figure.
 
-    Takes the median of the last `years` FCF observations, and reconciles it
-    against the latest year: when the two disagree the more conservative is
-    used, because the direction of a surprise in cash conversion is rarely
-    favourable. Returns `fcf=None` when the business has no positive
-    normalized cash flow, which is a refusal, not a fallback.
+    Preferred estimate: the through-cycle FCF *margin* applied to current
+    revenue. It spans a recession where a five-year window cannot, and it stays
+    on today's scale, which a ten-year median of absolute dollars does not.
+
+    Falls back to the median of the last `years` absolute FCF observations when
+    there is no cycle to measure — and only ever falls back, never refuses on
+    the cycle's behalf: a company the short window can value is not made
+    unvaluable by a longer one. Returns `fcf=None` when neither estimate finds
+    positive normalized cash flow, which is a refusal, not a fallback.
     """
     history: List[float] = []
     try:
@@ -826,6 +885,23 @@ def normalized_base_fcf(
             latest_fcf = history[-1] if history else None
         if latest_fcf and latest_fcf / revenue > 0.6:
             latest_fcf = None
+
+    # Preferred: the cycle. Positive-only, so this can rescale a valuation but
+    # never take one away — a company the five-year window can value is not made
+    # unvaluable by looking further back.
+    cycle = through_cycle_fcf_margin(financials_df, cashflow_df)
+    if cycle["margin"] and cycle["margin"] > 0 and revenue and revenue > 0:
+        cycle_fcf = cycle["margin"] * revenue
+        if cycle_fcf > 0:
+            return {
+                "fcf": float(cycle_fcf),
+                "method": (
+                    f"through-cycle {cycle['margin']:.1%} FCF margin over "
+                    f"{cycle['observations']}y x current revenue"
+                ),
+                "history": history,
+                "normalized": True,
+            }
 
     if len(history) >= 3:
         median_fcf = float(np.median(history))

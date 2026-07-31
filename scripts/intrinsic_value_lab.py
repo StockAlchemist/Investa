@@ -36,6 +36,7 @@ import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 import financial_ratios as fr  # noqa: E402
+import market_data  # noqa: E402
 
 CACHE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "data", "cache", "fundamentals_cache")
@@ -55,6 +56,14 @@ def _load_json(path: str) -> Optional[dict]:
 
 
 def _load_statement(symbol: str, kind: str) -> Optional[pd.DataFrame]:
+    """
+    The statement as production assembles it: the cached Yahoo frame with the
+    SEC-filed history merged over it.
+
+    Reading the cache alone would test a model on four annual periods while the
+    app runs it on nineteen, which is not a calibration of anything shipped. The
+    merge is a local SQLite read, so the harness stays offline either way.
+    """
     entry = _load_json(os.path.join(CACHE_DIR, f"{symbol}_{kind}_annual.json"))
     if not entry:
         return None
@@ -65,7 +74,10 @@ def _load_statement(symbol: str, kind: str) -> Optional[pd.DataFrame]:
         df = pd.read_json(StringIO(raw), orient="split")
     except Exception:
         return None
-    return None if df.empty else df
+    if df.empty:
+        return None
+    merged = market_data._with_edgar_history(symbol, kind, "annual", df)
+    return None if merged is None or merged.empty else merged
 
 
 def _load_info(symbol: str) -> Optional[dict]:
