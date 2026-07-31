@@ -797,6 +797,12 @@ struct StockDetailView: View {
                         ratioChart("Gross Margin", history, "Gross Profit Margin (%)", Color(red: 6/255, green: 182/255, blue: 212/255), isPercent: true)
                         ratioChart("Net Margin", history, "Net Profit Margin (%)", Color(red: 139/255, green: 92/255, blue: 246/255), isPercent: true)
                         ratioChart("Asset Turnover", history, "Asset Turnover", Color(red: 245/255, green: 158/255, blue: 11/255), isPercent: false)
+                        ratioChart("Return on Invested Capital", history, "Return on Invested Capital (ROIC) (%)", Color(red: 236/255, green: 72/255, blue: 153/255), isPercent: true)
+                        ratioChart("Free Cash Flow Margin", history, "Free Cash Flow Margin (%)", Color(red: 20/255, green: 184/255, blue: 166/255), isPercent: true)
+                        // A falling line is the owner's slice growing. Over
+                        // nineteen years it is the clearest picture of whether
+                        // management returned capital or issued it away.
+                        ratioChart("Diluted Shares Outstanding", history, "Diluted Shares Outstanding", Color(red: 100/255, green: 116/255, blue: 139/255), isPercent: false, isCount: true)
                     }
                 }
             }
@@ -938,7 +944,14 @@ struct StockDetailView: View {
     /// the period end itself rather than a year string: two fiscal years can end
     /// in the same calendar year, and as categories they would collapse onto one
     /// point. Dates are read at UTC midnight so a period end never slides a day.
-    private func ratioChart(_ title: String, _ data: [[String: JSONValue]], _ key: String, _ color: Color, isPercent: Bool) -> some View {
+    private func ratioChart(
+        _ title: String,
+        _ data: [[String: JSONValue]],
+        _ key: String,
+        _ color: Color,
+        isPercent: Bool,
+        isCount: Bool = false
+    ) -> some View {
         let valid = data.filter { $0[key]?.doubleValue != nil }.reversed()
         return card(title) {
             Chart {
@@ -970,7 +983,13 @@ struct StockDetailView: View {
                     AxisGridLine()
                     AxisValueLabel {
                         if let v = value.as(Double.self) {
-                            Text(isPercent ? Fmt.percent(v) : Fmt.number(v, fractionDigits: 2))
+                            // A raw share count is unreadable on an axis;
+                            // 15.00B is the same number said usefully.
+                            if isCount {
+                                Text(compact(v))
+                            } else {
+                                Text(isPercent ? Fmt.percent(v) : Fmt.number(v, fractionDigits: 2))
+                            }
                         }
                     }
                 }

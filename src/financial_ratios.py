@@ -98,13 +98,17 @@ def _get_statement_value(
 def calculate_key_ratios_timeseries(
     financials_df: Optional[pd.DataFrame],
     balance_sheet_df: Optional[pd.DataFrame],
-    # cashflow_df: Optional[pd.DataFrame], # Not used in current set of ratios
+    cashflow_df: Optional[pd.DataFrame] = None,
     # ticker_info: Optional[Dict] = None, # Not used for historical series ratios
     # is_annual: bool = True # Not directly used, period determined by data
 ) -> pd.DataFrame:
     """
     Calculates a timeseries of key financial ratios.
     Assumes input DataFrames have periods as columns and financial items as index.
+
+    `cashflow_df` is optional and only adds the free-cash-flow margin: callers
+    that predate it — the ranking's `_ratios_by_period` among them — keep working
+    and simply do not get that one series.
     """
     if (
         financials_df is None
@@ -304,6 +308,69 @@ def calculate_key_ratios_timeseries(
             if avg_assets and avg_assets != 0 and revenue is not None
             else np.nan
         )
+
+        # Return on invested capital. The formula is `buffett_metrics`' one,
+        # deliberately: the ranking scores a company on its median ROIC and the
+        # stock window now charts the series behind it, so the two disagreeing
+        # would make "why is this ranked here" unanswerable. Cash is netted off
+        # because an idle balance depresses the return on the operating business
+        # the moat question is actually about.
+        pretax = _get_statement_value(financials_df, "Pretax Income", period_str_fin)
+        tax = _get_statement_value(financials_df, "Tax Provision", period_str_fin)
+        total_debt = _get_statement_value(balance_sheet_df, "Total Debt", period_str_bs)
+        cash = _get_statement_value(
+            balance_sheet_df, "Cash And Cash Equivalents", period_str_bs
+        )
+        roic = np.nan
+        if pretax is not None and total_equity:
+            operating_earnings = pretax + (interest_exp or 0.0)
+            tax_rate = (tax / pretax) if pretax and pretax > 0 and tax is not None else None
+            if tax_rate is None or not (0.0 <= tax_rate <= 0.6):
+                tax_rate = 0.21  # US statutory; filers with odd effective rates
+            nopat = operating_earnings * (1.0 - tax_rate)
+            invested = total_equity + (total_debt or 0.0) - (cash or 0.0)
+            if invested and invested != 0:
+                candidate = nopat / invested
+                # The same band the ranking applies: outside it the statement
+                # mapping is wrong rather than the business extraordinary.
+                if -2.0 < candidate < 3.0:
+                    roic = candidate * 100.0
+        current_ratios["Return on Invested Capital (ROIC) (%)"] = roic
+
+        # Cash conversion and share count, the two series a nineteen-year window
+        # makes worth plotting: one shows whether profit becomes cash, the other
+        # whether the owner's slice grew or shrank. Both need a statement the
+        # ratio engine did not previously take.
+        current_ratios["Free Cash Flow Margin (%)"] = np.nan
+        current_ratios["Diluted Shares Outstanding"] = np.nan
+        if cashflow_df is not None and not cashflow_df.empty:
+            period_str_cf = next(
+                (
+                    col
+                    for col in cashflow_df.columns
+                    if pd.to_datetime(col, errors="coerce") == period_dt
+                ),
+                None,
+            )
+            if period_str_cf is not None:
+                ocf = _get_statement_value(
+                    cashflow_df, "Operating Cash Flow", period_str_cf
+                )
+                capex = _get_statement_value(
+                    cashflow_df, "Capital Expenditure", period_str_cf
+                )
+                if ocf is not None and capex is not None and revenue:
+                    current_ratios["Free Cash Flow Margin (%)"] = (
+                        (ocf + capex) / revenue
+                    ) * 100.0
+
+        shares = _get_statement_value(
+            financials_df, "Diluted Average Shares", period_str_fin
+        ) or _get_statement_value(
+            balance_sheet_df, "Ordinary Shares Number", period_str_bs
+        )
+        if shares:
+            current_ratios["Diluted Shares Outstanding"] = shares
 
         ratios_data_list.append(current_ratios)
 

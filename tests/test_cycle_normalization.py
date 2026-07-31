@@ -150,3 +150,93 @@ class TestNormalizedBase:
         result = fr.normalized_base_fcf(self.INFO, income, cashflow)
         assert result["fcf"] is None
         assert result["normalized"] is False
+
+
+class TestAddedRatioSeries:
+    """
+    ROIC, free-cash-flow margin and share count in `calculate_key_ratios_timeseries`.
+
+    Three series worth plotting only once the history is long: whether returns on
+    capital held, whether profit became cash, and whether the owner's slice grew
+    or shrank. Over four years none of them says much.
+    """
+
+    @staticmethod
+    def frames():
+        columns = pd.to_datetime(["2024-12-31", "2023-12-31"])
+        income = pd.DataFrame(
+            [
+                [1000.0, 900.0],  # Total Revenue
+                [200.0, 180.0],  # Pretax Income
+                [40.0, 36.0],  # Tax Provision
+                [10.0, 10.0],  # Interest Expense
+                [100.0, 100.0],  # Net Income
+                [50.0, 55.0],  # Diluted Average Shares
+            ],
+            index=[
+                "Total Revenue",
+                "Pretax Income",
+                "Tax Provision",
+                "Interest Expense",
+                "Net Income",
+                "Diluted Average Shares",
+            ],
+            columns=columns,
+        )
+        balance = pd.DataFrame(
+            [
+                [800.0, 750.0],  # Stockholders Equity
+                [2000.0, 1900.0],  # Total Assets
+                [300.0, 300.0],  # Total Debt
+                [100.0, 90.0],  # Cash And Cash Equivalents
+            ],
+            index=[
+                "Stockholders Equity",
+                "Total Assets",
+                "Total Debt",
+                "Cash And Cash Equivalents",
+            ],
+            columns=columns,
+        )
+        cashflow = pd.DataFrame(
+            [[250.0, 220.0], [-50.0, -40.0]],
+            index=["Operating Cash Flow", "Capital Expenditure"],
+            columns=columns,
+        )
+        return income, balance, cashflow
+
+    def test_roic_uses_the_rankings_formula(self):
+        """
+        NOPAT over capital employed, cash netted off — the definition in
+        `buffett_metrics`. The stock window charts the series the ranking scores
+        the median of, so a second formula here would make the two contradict.
+        """
+        income, balance, cashflow = self.frames()
+        result = fr.calculate_key_ratios_timeseries(income, balance, cashflow)
+        # (200 + 10) x (1 - 40/200) / (800 + 300 - 100) = 168 / 1000
+        assert result["Return on Invested Capital (ROIC) (%)"].iloc[0] == pytest.approx(
+            16.8
+        )
+
+    def test_free_cash_flow_margin(self):
+        income, balance, cashflow = self.frames()
+        result = fr.calculate_key_ratios_timeseries(income, balance, cashflow)
+        assert result["Free Cash Flow Margin (%)"].iloc[0] == pytest.approx(20.0)
+
+    def test_share_count_is_carried_through(self):
+        income, balance, cashflow = self.frames()
+        result = fr.calculate_key_ratios_timeseries(income, balance, cashflow)
+        assert result["Diluted Shares Outstanding"].iloc[0] == pytest.approx(50.0)
+
+    def test_cashflow_stays_optional(self):
+        """
+        The ranking's `_ratios_by_period` calls this with two frames and must
+        keep working; it simply does not get the cash-margin series.
+        """
+        income, balance, _ = self.frames()
+        result = fr.calculate_key_ratios_timeseries(income, balance)
+        assert not result.empty
+        assert result["Free Cash Flow Margin (%)"].isna().all()
+        assert result["Return on Invested Capital (ROIC) (%)"].iloc[0] == pytest.approx(
+            16.8
+        )

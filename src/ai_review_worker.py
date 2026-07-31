@@ -157,7 +157,9 @@ def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') ->
         ratios = {}
         if financials_df is not None and not financials_df.empty and balance_sheet_df is not None and not balance_sheet_df.empty:
             try:
-                ratios_df = calculate_key_ratios_timeseries(financials_df, balance_sheet_df)
+                ratios_df = calculate_key_ratios_timeseries(
+                    financials_df, balance_sheet_df, cashflow_df
+                )
                 if not ratios_df.empty:
                     ratios = ratios_df.iloc[0].to_dict()
             except Exception as e:

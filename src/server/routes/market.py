@@ -593,7 +593,8 @@ def get_stock_analysis(
             try:
                 ratios_df = calculate_key_ratios_timeseries(
                     financials_df,
-                    balance_sheet_df
+                    balance_sheet_df,
+                    cashflow_df
                 )
                 if not ratios_df.empty:
                     # Take the most recent period ratios
@@ -755,6 +756,10 @@ def get_fundamentals_endpoint(
         try:
             from server.calendar_events import upcoming_events
 
+            # Fill in a just-reported quarter's figures if the blob has none, so
+            # the Overview tab shows what was printed rather than that something
+            # was (same backfill the dashboard's Events panel uses).
+            fundamental_data = mdp.with_reported_earnings(yf_symbol, fundamental_data)
             # No `today` argument: the horizon is reckoned on the exchange's own
             # clock, not this server's.
             fundamental_data["upcoming_events"] = upcoming_events(symbol, fundamental_data)
@@ -849,9 +854,14 @@ def get_ratios_endpoint(
         info = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         financials = mdp.get_financials(yf_symbol, "annual", force_refresh=force)
         balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force)
-        
+        # Cash flow is here for the free-cash-flow margin: whether reported
+        # profit turns into cash is the one thing the other ratios cannot say.
+        cashflow = mdp.get_cashflow(yf_symbol, "annual", force_refresh=force)
+
         # Calculate historical ratios
-        historical_ratios_df = calculate_key_ratios_timeseries(financials, balance_sheet)
+        historical_ratios_df = calculate_key_ratios_timeseries(
+            financials, balance_sheet, cashflow
+        )
         
         # Calculate current valuation ratios
         current_valuation = calculate_current_valuation_ratios(info, financials, balance_sheet)

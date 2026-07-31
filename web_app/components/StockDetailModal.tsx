@@ -878,6 +878,30 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         title="Asset Turnover"
                         color="#f59e0b"
                     />
+                    <RatioChart
+                        data={chartData}
+                        dataKey="Return on Invested Capital (ROIC) (%)"
+                        title="Return on Invested Capital"
+                        color="#ec4899"
+                        suffix="%"
+                    />
+                    <RatioChart
+                        data={chartData}
+                        dataKey="Free Cash Flow Margin (%)"
+                        title="Free Cash Flow Margin"
+                        color="#14b8a6"
+                        suffix="%"
+                    />
+                    {/* A falling line here is the owner's slice growing. Over
+                        nineteen years it is the clearest picture of whether
+                        management returned capital or issued it away. */}
+                    <RatioChart
+                        data={chartData}
+                        dataKey="Diluted Shares Outstanding"
+                        title="Diluted Shares Outstanding"
+                        color="#64748b"
+                        compact
+                    />
                 </div>
             </div>
         );
@@ -2433,14 +2457,20 @@ function TrackRecordPanel({ record }: { record: TrackRecord }) {
     );
 }
 
-function RatioChart({ data, dataKey, title, color, suffix = "" }: {
+function RatioChart({ data, dataKey, title, color, suffix = "", compact = false }: {
     data: FinancialRatio[];
     dataKey: string;
     title: React.ReactNode;
     color: string;
     suffix?: string;
+    /** For a count rather than a rate — a raw share count is unreadable on an axis. */
+    compact?: boolean;
 }) {
     const sanitizedId = `gradient-${dataKey.replace(/[^a-zA-Z0-9]/g, '')}`;
+    const formatValue = (val: number) =>
+        compact
+            ? new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(val)
+            : `${val}${suffix}`;
     return (
         <div className="bg-muted p-6 rounded-2xl">
             <h4 className="text-sm font-semibold text-muted-foreground mb-6 uppercase tracking-wider">{title}</h4>
@@ -2471,7 +2501,7 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: {
                             tickLine={false}
                             tick={{ fontSize: 10 }}
                             className="fill-muted-foreground"
-                            tickFormatter={(val) => `${val}${suffix}`}
+                            tickFormatter={(val) => formatValue(Number(val))}
                         />
                         <Tooltip
                             wrapperStyle={{ opacity: 1, zIndex: 1000 }}
@@ -2484,7 +2514,7 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: {
                                                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
                                                 <span className="text-muted-foreground">{title}:</span>
                                                 <span className="font-bold text-foreground">
-                                                    {Number(payload[0].value).toFixed(2)}{suffix}
+                                                    {compact ? formatValue(Number(payload[0].value)) : `${Number(payload[0].value).toFixed(2)}${suffix}`}
                                                 </span>
                                             </div>
                                         </div>
