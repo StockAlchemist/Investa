@@ -37,6 +37,12 @@ GROWTH_SHRINK_WEIGHT = 0.35
 # for a decade is already a 9x business; the old 40% cap implied 29x.
 MAX_PROJECTED_GROWTH = 0.25
 MIN_PROJECTED_GROWTH = -0.05
+# Years of history the growth measurements read. Five was yfinance's limit, not
+# a choice: it made a decade-long projection out of a window too short to hold a
+# downturn, so one good stretch set the trend. Ten spans a cycle, and the shrink
+# and the band above are what keep a long high-growth run from being
+# extrapolated forward regardless.
+GROWTH_HISTORY_YEARS = 10
 TERMINAL_GROWTH = 0.02
 
 # Discount rate.
@@ -457,7 +463,7 @@ def estimate_growth_rate(
     financials_df: Optional[pd.DataFrame],
     ticker_info: Optional[Dict[str, Any]] = None,
     item_name: str = "Net Income",
-    years: int = 5
+    years: int = GROWTH_HISTORY_YEARS
 ) -> float:
     """Attempts to estimate a historical growth rate for a financial item."""
     _values = []
@@ -538,7 +544,7 @@ def estimate_growth_rate(
 def _historical_growth_regression(
     financials_df: Optional[pd.DataFrame],
     item_name: str = "Net Income",
-    years: int = 5,
+    years: int = GROWTH_HISTORY_YEARS,
 ) -> Optional[float]:
     """Log-linear growth over the available history.
 
