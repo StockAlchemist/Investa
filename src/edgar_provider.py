@@ -687,6 +687,64 @@ _NEGATE_ON_EMIT = {
 }
 
 
+# Rows a stock split rescales. Shares move with the split, per-share figures move
+# against it, and both are reported as filed — so a nineteen-year statement shows
+# Apple earning $9.21 a share in FY2017 and $2.98 in FY2018, which reads as a
+# collapse rather than the 4:1 split it is. Restated onto the latest basis so the
+# column-to-column comparison a statement table invites is a real one.
+_SHARE_SCALED = ("shares_diluted", "shares_basic", "shares_outstanding")
+_PER_SHARE_SCALED = ("eps_diluted",)
+
+
+def split_adjustment_factors(cik: str) -> Dict[str, float]:
+    """
+    {period_end: latest-basis factor} derived from the diluted share count.
+
+    One factor for every rescaled row rather than a reconstruction per concept:
+    a split moves shares and EPS by the same ratio in opposite directions, so
+    sharing the factor is what keeps `EPS x shares = net income` true down the
+    whole table. The newest period's factor is 1.0 by construction — that is the
+    basis everything is restated onto.
+    """
+    assembled = get_concept_values(cik, ["shares_diluted"]).get("shares_diluted", {})
+    if not assembled:
+        return {}
+    corrected = split_consistent_series(cik, "shares_diluted")
+    return {
+        period: corrected[period] / assembled[period]
+        for period in assembled
+        if assembled.get(period) and corrected.get(period)
+    }
+
+
+def _apply_split_adjustment(
+    values: Dict[str, Dict[str, float]], factors: Dict[str, float]
+) -> None:
+    """
+    Rescale the split-sensitive concepts in place.
+
+    Periods the diluted share count does not cover keep their filed value: with
+    no factor there is nothing to restate onto, and inventing one would be worse
+    than a visible step.
+    """
+    if not factors:
+        return
+    for concept in _SHARE_SCALED:
+        series = values.get(concept)
+        if not series:
+            continue
+        for period, factor in factors.items():
+            if period in series and factor:
+                series[period] *= factor
+    for concept in _PER_SHARE_SCALED:
+        series = values.get(concept)
+        if not series:
+            continue
+        for period, factor in factors.items():
+            if period in series and factor:
+                series[period] /= factor
+
+
 def _frame_from_concepts(
     values: Dict[str, Dict[str, float]],
     labels: Dict[str, str],
@@ -722,11 +780,17 @@ def get_statements(cik: str) -> Dict[str, pd.DataFrame]:
     Shape and labels match yfinance's `Ticker.financials` / `.balance_sheet` /
     `.cashflow`, so these can be passed straight to
     `financial_ratios.calculate_key_ratios_timeseries` and the valuation models.
+
+    Share counts and per-share figures are restated onto the latest split basis;
+    everything else is exactly as filed. Dollar totals are untouched, and the
+    newest period is its own basis, so the columns the valuation models read
+    (they take the latest one) are unchanged.
     """
     concept_names = (
         list(INCOME_CONCEPTS) + list(BALANCE_CONCEPTS) + list(CASHFLOW_CONCEPTS)
     )
     values = get_concept_values(cik, concept_names)
+    _apply_split_adjustment(values, split_adjustment_factors(cik))
 
     income = _frame_from_concepts(values, _INCOME_LABELS)
     balance = _frame_from_concepts(values, _BALANCE_LABELS)

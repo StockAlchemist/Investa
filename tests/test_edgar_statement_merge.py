@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+import edgar_provider  # noqa: E402
 import market_data  # noqa: E402
 from market_data import (  # noqa: E402
     _canonical_periods,
@@ -248,3 +249,71 @@ class TestApplicability:
 
         monkeypatch.setattr(market_data, "_merge_with_edgar", boom)
         assert _with_edgar_history("XYZ", "financials", "annual", yahoo) is yahoo
+
+
+class TestSplitAdjustedStatements:
+    """
+    Per-share rows are restated onto the latest split basis before they reach a
+    statement table (`edgar_provider._apply_split_adjustment`).
+
+    As-filed is right for one filing and wrong for nineteen side by side: Apple
+    filed $9.21 of diluted EPS for FY2017 and $2.98 for FY2018, and a table that
+    prints both reads as a two-thirds collapse rather than the 4:1 split it is.
+    The trend sparkline draws that cliff.
+    """
+
+    @staticmethod
+    def values():
+        return {
+            "eps_diluted": {"2017-09-30": 9.21, "2018-09-29": 2.98},
+            "shares_diluted": {"2017-09-30": 5.25e9, "2018-09-29": 20.0e9},
+            "shares_basic": {"2017-09-30": 5.22e9, "2018-09-29": 19.82e9},
+            "net_income": {"2017-09-30": 48.35e9, "2018-09-29": 59.53e9},
+            "revenue": {"2017-09-30": 229.23e9, "2018-09-29": 265.60e9},
+        }
+
+    # FY2017 was filed pre-split; FY2018 is already on today's basis.
+    FACTORS = {"2017-09-30": 4.0, "2018-09-29": 1.0}
+
+    def test_shares_scale_up_and_per_share_scales_down(self):
+        values = self.values()
+        edgar_provider._apply_split_adjustment(values, self.FACTORS)
+        assert values["shares_diluted"]["2017-09-30"] == pytest.approx(21.0e9)
+        assert values["eps_diluted"]["2017-09-30"] == pytest.approx(2.3025)
+        assert values["shares_basic"]["2017-09-30"] == pytest.approx(20.88e9)
+
+    def test_the_latest_basis_is_left_alone(self):
+        values = self.values()
+        edgar_provider._apply_split_adjustment(values, self.FACTORS)
+        assert values["eps_diluted"]["2018-09-29"] == 2.98
+        assert values["shares_diluted"]["2018-09-29"] == 20.0e9
+
+    def test_dollar_totals_are_untouched(self):
+        """A split moves no money. Revenue and net income are as filed."""
+        values = self.values()
+        edgar_provider._apply_split_adjustment(values, self.FACTORS)
+        assert values["net_income"]["2017-09-30"] == 48.35e9
+        assert values["revenue"]["2017-09-30"] == 229.23e9
+
+    def test_eps_times_shares_still_equals_net_income(self):
+        """
+        The reason one factor is shared across the rows rather than each concept
+        being reconstructed on its own: the identity has to survive.
+        """
+        values = self.values()
+        edgar_provider._apply_split_adjustment(values, self.FACTORS)
+        for period in ("2017-09-30", "2018-09-29"):
+            product = values["eps_diluted"][period] * values["shares_diluted"][period]
+            assert product == pytest.approx(values["net_income"][period], rel=0.01)
+
+    def test_a_period_without_a_factor_keeps_its_filed_value(self):
+        """No factor means nothing to restate onto — better a visible step than
+        an invented one."""
+        values = self.values()
+        edgar_provider._apply_split_adjustment(values, {"2018-09-29": 1.0})
+        assert values["eps_diluted"]["2017-09-30"] == 9.21
+
+    def test_no_factors_at_all_is_a_no_op(self):
+        values = self.values()
+        edgar_provider._apply_split_adjustment(values, {})
+        assert values == self.values()
