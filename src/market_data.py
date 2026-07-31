@@ -419,6 +419,19 @@ EARNINGS_PUBLISH_GRACE_MINUTES = 20
 POST_EARNINGS_POLL_HOURS = 1
 POST_EARNINGS_WATCH_DAYS = 4
 
+# On-demand backfill of the reported figures (`with_reported_earnings`). The
+# window covers the calendar's REPORTED_LOOKBACK_DAYS (5, in
+# `server/calendar_events.py`) with a day to spare, so every quarter the Events
+# panel can still show is one this can still go and fetch figures for. The
+# cool-down stops a table Yahoo has genuinely not filled in yet from being
+# re-fetched on every dashboard refresh.
+EARNINGS_BACKFILL_WINDOW_DAYS = 6
+EARNINGS_BACKFILL_COOLDOWN_MINUTES = 30
+EARNINGS_BACKFILL_QUARTERS = 8
+
+_EARNINGS_BACKFILL_ATTEMPTS: Dict[str, datetime] = {}
+_EARNINGS_BACKFILL_LOCK = threading.Lock()
+
 _EARNINGS_TIMESTAMP_KEYS = (
     "earningsTimestampStart",
     "earningsTimestamp",
@@ -438,6 +451,47 @@ def _earnings_moments(info: dict) -> List[datetime]:
         except (OSError, OverflowError, ValueError):
             continue
     return moments
+
+
+def _earnings_history_from_frame(df) -> Dict[str, dict]:
+    """
+    `{market-local report day: {eps_estimate, eps_actual, surprise_pct}}` from the
+    worker's earnings-dates table.
+
+    Mirrors `_earnings_history_rows` in `market_data_worker.py` so a blob filled
+    in on demand is indistinguishable from one the full fetch wrote. The table is
+    indexed in exchange-local time and the worker strips the zone before
+    serializing, so the calendar day here is already the market's own.
+    """
+    if df is None or getattr(df, "empty", True):
+        return {}
+
+    columns = {
+        "EPS Estimate": "eps_estimate",
+        "Reported EPS": "eps_actual",
+        "Surprise(%)": "surprise_pct",
+    }
+    frame = df.reset_index()
+    # orient='split' does not carry the index name, so the report datetime comes
+    # back as either "date" or the unnamed first column.
+    date_col = "date" if "date" in frame.columns else frame.columns[0]
+
+    rows: Dict[str, dict] = {}
+    for _, row in frame.iterrows():
+        try:
+            day = pd.to_datetime(row[date_col]).date().isoformat()
+        except Exception:
+            continue
+        entry = {}
+        for src, dst in columns.items():
+            value = row.get(src) if src in frame.columns else None
+            try:
+                # NaN is written as None so the blob stays valid JSON.
+                entry[dst] = None if value is None or value != value else float(value)
+            except (TypeError, ValueError):
+                entry[dst] = None
+        rows[day] = entry
+    return rows
 
 
 def _has_reported_eps(info: dict, moment: datetime) -> bool:
@@ -1344,6 +1398,18 @@ class MarketDataProvider:
                 # Mirror the full ticker info into "data" so the per-symbol detail
                 # reader (which only looks at "data") sees substantive content
                 # instead of the empty dict left from the legacy wrap step above.
+                #
+                # Carry the reported quarters across the overwrite. Batch writers
+                # fetch with minimal=True and never carry `_earnings_history`, so
+                # a screener sweep would otherwise strip the figures off a blob a
+                # full fetch had just filled in — and the dashboard's Events panel
+                # would go back to saying a company "reported" without saying what.
+                # The rows are settled history keyed by report day, so an older
+                # copy is never wrong, only shorter.
+                previous_history = (existing.get("data") or {}).get("_earnings_history")
+                if isinstance(previous_history, dict) and not ticker_info.get("_earnings_history"):
+                    ticker_info = {**ticker_info, "_earnings_history": previous_history}
+
                 existing["data"] = ticker_info
                 existing["ticker_info"] = ticker_info
 
@@ -1356,6 +1422,80 @@ class MarketDataProvider:
                     json.dump(existing, f, indent=2, cls=NpEncoder)
             except Exception as e:
                 logging.warning(f"Error saving fundamentals for {sym}: {e}")
+
+    def get_earnings_history(self, yf_symbol: str, quarters: int = EARNINGS_BACKFILL_QUARTERS) -> Dict[str, dict]:
+        """
+        Reported quarters for one symbol, keyed by market-local report day, fetched
+        from Yahoo now. Same shape as the `_earnings_history` the full info fetch
+        stashes on the fundamentals blob.
+        """
+        try:
+            df = _run_isolated_fetch([yf_symbol], task="earnings_dates", limit=quarters, timeout=60)
+            return _earnings_history_from_frame(df)
+        except Exception as e:
+            logging.warning(f"Earnings history fetch failed for {yf_symbol}: {e}")
+            return {}
+
+    def _stash_earnings_history(self, yf_symbol: str, history: Dict[str, dict]) -> None:
+        """
+        Write reported quarters onto the symbol's cached fundamentals blob, so the
+        next reader gets them for free and every surface tells the same story.
+        Leaves the blob's timestamp and expiry alone — the figures are the only
+        thing that changed, and they do not make the rest of it any fresher.
+        """
+        path = self._get_symbol_fundamentals_path(yf_symbol)
+        entry = _safe_json_load(path)
+        if not isinstance(entry, dict) or not isinstance(entry.get("data"), dict):
+            return
+        try:
+            entry["data"]["_earnings_history"] = history
+            if isinstance(entry.get("ticker_info"), dict):
+                entry["ticker_info"]["_earnings_history"] = history
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(entry, f, indent=2, cls=NpEncoder)
+        except Exception as e:
+            logging.debug(f"Could not stash earnings history for {yf_symbol}: {e}")
+
+    def with_reported_earnings(self, yf_symbol: str, info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        `info` with the figures for a just-reported quarter attached.
+
+        The reported EPS normally rides along with the blob (`_earnings_history`),
+        but a blob written *before* a report, or by a batch writer that fetched
+        minimal info, carries nothing for it. Rather than let the calendar say a
+        company reported without saying what it printed, fetch that one table on
+        demand and stash it back on the blob.
+
+        A no-op unless a report landed inside EARNINGS_BACKFILL_WINDOW_DAYS and the
+        blob has no figures for it, and rate-limited per symbol so a table Yahoo
+        has genuinely not filled in yet is not re-fetched on every request.
+        """
+        if not isinstance(info, dict) or not info:
+            return info
+
+        now = datetime.now(timezone.utc)
+        window = timedelta(days=EARNINGS_BACKFILL_WINDOW_DAYS)
+        past = [m for m in _earnings_moments(info) if m <= now and now - m <= window]
+        if not past or _has_reported_eps(info, max(past)):
+            return info
+
+        with _EARNINGS_BACKFILL_LOCK:
+            last_try = _EARNINGS_BACKFILL_ATTEMPTS.get(yf_symbol)
+            if last_try and now - last_try < timedelta(minutes=EARNINGS_BACKFILL_COOLDOWN_MINUTES):
+                return info
+            _EARNINGS_BACKFILL_ATTEMPTS[yf_symbol] = now
+
+        history = self.get_earnings_history(yf_symbol)
+        if not history:
+            return info
+
+        # Union rather than replace: the fetched table is the newer word on the
+        # quarters it covers, but an older blob may reach further back.
+        existing = info.get("_earnings_history")
+        merged = {**existing, **history} if isinstance(existing, dict) else history
+        self._stash_earnings_history(yf_symbol, merged)
+        logging.info(f"Backfilled reported earnings for {yf_symbol} ({len(history)} quarters).")
+        return {**info, "_earnings_history": merged}
 
     def get_fundamental_data_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
         """

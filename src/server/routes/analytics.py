@@ -1068,6 +1068,11 @@ async def get_earnings_calendar(
                 if not yf_sym:
                     return []
                 info = provider.get_fundamental_data(yf_sym) or {}
+                # A quarter this company has just reported is worth showing the
+                # print for, not just the fact that it happened — go and get the
+                # figures if the blob has none. Costs a fetch only for a symbol
+                # that reported in the last few days and is missing them.
+                info = provider.with_reported_earnings(yf_sym, info)
                 # "Today" and the horizon are per-symbol: a name on the SET rolls
                 # over hours before one on the NYSE does.
                 today = market_today(info)

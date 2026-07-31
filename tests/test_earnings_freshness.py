@@ -7,6 +7,7 @@ served pre-report numbers for a full day afterwards. These pin the replacement:
 the schedule may only ever *shorten* a blob's life.
 """
 
+import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -212,3 +213,112 @@ def test_earnings_history_rows_cope_with_an_empty_table():
 
     assert _earnings_history_rows(_FakeTicker(None)) == {}
     assert _earnings_history_rows(_FakeTicker(pd.DataFrame())) == {}
+
+
+# ── Filling the figures in when the blob has none ────────────────────────────
+
+
+def test_the_history_survives_a_minimal_batch_overwrite(tmp_path):
+    """A screener sweep writes minimal info over the same per-symbol file. It
+    carries no `_earnings_history`, and stripping the figures off would put the
+    Events panel back to saying a company reported without saying what."""
+    from market_data import MarketDataProvider
+
+    provider = MarketDataProvider(fundamentals_cache_dir=str(tmp_path))
+    path = provider._get_symbol_fundamentals_path("AAPL")
+    full = {"symbol": "AAPL", "_earnings_history": {"2026-07-30": {"eps_actual": 2.02}}}
+    with open(path, "w") as f:
+        json.dump({"timestamp": NOW.isoformat(), "data": full}, f)
+
+    minimal = {f"k{i}": i for i in range(12)} | {"symbol": "AAPL"}
+    provider._save_fundamentals_cache({"AAPL": {"ticker_info": minimal}})
+
+    with open(path) as f:
+        saved = json.load(f)
+    assert saved["data"]["_earnings_history"] == {"2026-07-30": {"eps_actual": 2.02}}
+    # A fetch that *does* carry the figures still wins.
+    provider._save_fundamentals_cache(
+        {"AAPL": {"ticker_info": minimal | {"_earnings_history": {"2026-07-30": {"eps_actual": 2.10}}}}}
+    )
+    with open(path) as f:
+        assert json.load(f)["data"]["_earnings_history"]["2026-07-30"]["eps_actual"] == 2.10
+
+
+def test_a_reported_quarter_with_no_figures_is_backfilled(tmp_path, monkeypatch):
+    """The blob predates the report (or came from a batch write), so it says a
+    company reported and nothing more. Go and get the print — once, then cached."""
+    import market_data
+    from market_data import MarketDataProvider
+
+    provider = MarketDataProvider(fundamentals_cache_dir=str(tmp_path))
+    path = provider._get_symbol_fundamentals_path("MA")
+    reported_at = datetime.now(timezone.utc) - timedelta(hours=6)
+    info = {"symbol": "MA", "earningsTimestamp": int(reported_at.timestamp())}
+    with open(path, "w") as f:
+        json.dump({"timestamp": NOW.isoformat(), "data": info}, f)
+
+    day = reported_at.astimezone(ZoneInfo("America/New_York")).date().isoformat()
+    calls = []
+
+    def _fake_fetch(*args, **kwargs):
+        calls.append(kwargs.get("task"))
+        import pandas as pd
+
+        return pd.DataFrame(
+            {"EPS Estimate": [4.78], "Reported EPS": [5.04], "Surprise(%)": [5.53]},
+            index=pd.DatetimeIndex([pd.Timestamp(f"{day} 08:00")], name="date"),
+        )
+
+    monkeypatch.setattr(market_data, "_run_isolated_fetch", _fake_fetch)
+    market_data._EARNINGS_BACKFILL_ATTEMPTS.clear()
+
+    filled = provider.with_reported_earnings("MA", info)
+    assert filled["_earnings_history"][day]["eps_actual"] == 5.04
+    # Stashed on the blob, so every later reader gets it for free.
+    with open(path) as f:
+        assert json.load(f)["data"]["_earnings_history"][day]["eps_actual"] == 5.04
+
+    # A blob that already carries the figures asks Yahoo nothing.
+    provider.with_reported_earnings("MA", filled)
+    assert calls == ["earnings_dates"]
+
+
+def test_the_backfill_does_not_re_ask_for_a_table_yahoo_has_not_filled_in(tmp_path, monkeypatch):
+    import market_data
+    from market_data import MarketDataProvider
+
+    provider = MarketDataProvider(fundamentals_cache_dir=str(tmp_path))
+    info = {"symbol": "X", "earningsTimestamp": int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp())}
+
+    calls = []
+
+    def _empty_fetch(*args, **kwargs):
+        import pandas as pd
+
+        calls.append(kwargs.get("task"))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(market_data, "_run_isolated_fetch", _empty_fetch)
+    market_data._EARNINGS_BACKFILL_ATTEMPTS.clear()
+
+    assert provider.with_reported_earnings("X", info) is info
+    assert provider.with_reported_earnings("X", info) is info
+    assert calls == ["earnings_dates"]  # the cool-down held the second one back
+
+
+def test_a_report_outside_the_backfill_window_is_left_alone(tmp_path, monkeypatch):
+    """Old quarters are nobody's news: the Events panel cannot show them, so they
+    are not worth a fetch."""
+    import market_data
+    from market_data import EARNINGS_BACKFILL_WINDOW_DAYS, MarketDataProvider
+
+    provider = MarketDataProvider(fundamentals_cache_dir=str(tmp_path))
+    old = datetime.now(timezone.utc) - timedelta(days=EARNINGS_BACKFILL_WINDOW_DAYS + 1)
+    info = {"symbol": "X", "earningsTimestamp": int(old.timestamp())}
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("should not fetch")
+
+    monkeypatch.setattr(market_data, "_run_isolated_fetch", _boom)
+    market_data._EARNINGS_BACKFILL_ATTEMPTS.clear()
+    assert provider.with_reported_earnings("X", info) is info

@@ -259,6 +259,44 @@ def test_a_future_report_is_not_a_reported_one():
     assert recent_earnings_event("X", {}, TODAY) is None
 
 
+def test_a_report_due_later_today_has_not_reported_yet():
+    """A company reporting at 08:30 must not read as "reported" at midnight — the
+    Events panel would show a result-less "Reported" row hours before the print,
+    and suppress the scheduled row (with its consensus estimate) that belongs there."""
+    tz = ZoneInfo("America/New_York")
+    midnight = datetime(TODAY.year, TODAY.month, TODAY.day, 0, 23, tzinfo=tz)
+    before_open = int(datetime(TODAY.year, TODAY.month, TODAY.day, 8, 30, tzinfo=tz).timestamp())
+    info = {
+        "exchangeTimezoneName": "America/New_York",
+        "earningsTimestamp": before_open,
+        "earningsTimestampStart": before_open,
+        "earningsTimestampEnd": before_open,
+        "isEarningsDateEstimate": False,
+    }
+    assert recent_earnings_event("ABBV", info, TODAY, now=midnight) is None
+    # It is still the next scheduled report, which is what the panel should show.
+    assert next_earnings_event("ABBV", info, TODAY, HORIZON)["earnings_date"] == str(TODAY)
+
+    # Once the announced time has gone by, it is a report — figures or not.
+    after = midnight.replace(hour=9, minute=0)
+    assert recent_earnings_event("ABBV", info, TODAY, now=after)["earnings_date"] == str(TODAY)
+
+
+def test_the_day_with_figures_beats_a_projected_timestamp():
+    """Yahoo's *estimated* `earningsTimestamp` can sit a day past the real print
+    (ADP printed on the 28th while the blob still said the 29th). Taking the
+    latest candidate date would pick the empty day and bury the result."""
+    printed_on = TODAY - timedelta(days=2)
+    info = {
+        "earningsTimestamp": _ts(TODAY - timedelta(days=1)),
+        "isEarningsDateEstimate": True,
+        "_earnings_history": {str(printed_on): {"eps_actual": 2.64, "eps_estimate": 2.60}},
+    }
+    event = recent_earnings_event("ADP", info, TODAY)
+    assert event["earnings_date"] == str(printed_on)
+    assert event["eps_actual"] == 2.64
+
+
 # ── Market-local reckoning ───────────────────────────────────────────────────
 
 def _freeze(monkeypatch, moment: datetime) -> None:

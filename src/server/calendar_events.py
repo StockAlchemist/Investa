@@ -82,6 +82,21 @@ def epoch_to_date(ts) -> Optional[date]:
         return None
 
 
+def epoch_to_market_datetime(ts, tz: str) -> Optional[datetime]:
+    """
+    Exchange-local wall-clock moment for a Yahoo epoch-seconds timestamp, or None.
+
+    The earnings timestamps carry the report's actual time (08:30 or 16:00 ET),
+    which is the difference between "reports today" and "has reported".
+    """
+    if not isinstance(ts, (int, float)) or isinstance(ts, bool) or ts <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(ts, tz=ZoneInfo(tz))
+    except (OSError, OverflowError, ValueError, KeyError):
+        return None
+
+
 def epoch_to_market_date(ts, tz: str) -> Optional[date]:
     """
     Exchange-local calendar date for a Yahoo epoch-seconds timestamp, or None.
@@ -90,12 +105,8 @@ def epoch_to_market_date(ts, tz: str) -> Optional[date]:
     at the report's actual time (08:30 or 16:00 ET), so a post-close report has
     already tipped into the next UTC day and must be read on the market's clock.
     """
-    if not isinstance(ts, (int, float)) or isinstance(ts, bool) or ts <= 0:
-        return None
-    try:
-        return datetime.fromtimestamp(ts, tz=ZoneInfo(tz)).date()
-    except (OSError, OverflowError, ValueError, KeyError):
-        return None
+    moment = epoch_to_market_datetime(ts, tz)
+    return moment.date() if moment else None
 
 
 def company_name(info: Dict) -> Optional[str]:
@@ -194,11 +205,26 @@ def _surprise_pct(eps_actual: Optional[float], eps_estimate: Optional[float]) ->
     return (eps_actual - eps_estimate) / abs(eps_estimate) * 100.0
 
 
+def _report_moment_passed(info: Dict, day: date, tz: str, now: datetime) -> bool:
+    """
+    True when the time Yahoo announced for a report on `day` has actually gone by.
+
+    A date alone cannot tell a report that has happened from one that is hours
+    away: a company reporting at 08:30 must not read as "reported" at midnight.
+    """
+    for key in EARNINGS_TIMESTAMP_KEYS:
+        moment = epoch_to_market_datetime(info.get(key), tz)
+        if moment is not None and moment.date() == day and moment <= now:
+            return True
+    return False
+
+
 def recent_earnings_event(
     symbol: str,
     info: Dict,
     today: Optional[date] = None,
     lookback_days: int = REPORTED_LOOKBACK_DAYS,
+    now: Optional[datetime] = None,
 ) -> Optional[dict]:
     """
     The quarter this company has just reported, with what it actually printed.
@@ -212,14 +238,16 @@ def recent_earnings_event(
     a date Yahoo flagged as an estimate only counts once it appears in the
     earnings history table.
 
-    `today` defaults to today on the symbol's own exchange (see `market_today`).
+    `today`/`now` default to the symbol's own exchange clock (see `market_today`).
     """
     if not info:
         return None
 
     tz = market_timezone(info)
+    if now is None:
+        now = datetime.now(ZoneInfo(tz))
     if today is None:
-        today = market_today(info)
+        today = now.date()
     earliest = today - timedelta(days=max(0, lookback_days))
 
     history = earnings_history(info)
@@ -238,10 +266,29 @@ def recent_earnings_event(
     if not past:
         return None
 
-    report_date = max(past)
-    row = history.get(str(report_date))
-    if row is None and info.get("isEarningsDateEstimate"):
-        return None
+    def _printed(day: date) -> bool:
+        row = history.get(str(day))
+        return isinstance(row, dict) and row.get("eps_actual") is not None
+
+    # A day Yahoo holds figures against is the strongest evidence of a report,
+    # and it beats a bare timestamp: an *estimated* `earningsTimestamp` can sit a
+    # day past the real print (ADP printed on the 28th while the blob still said
+    # the 29th), so taking the latest candidate date would pick the empty day and
+    # bury the result the panel exists to show.
+    printed = [d for d in past if _printed(d)]
+    if printed:
+        report_date = max(printed)
+        row = history.get(str(report_date))
+    else:
+        # Nothing printed yet, so the report only counts once its announced
+        # moment has passed. Days already over need no such proof; today's does.
+        elapsed = [d for d in past if d < today or _report_moment_passed(info, d, tz, now)]
+        if not elapsed:
+            return None
+        report_date = max(elapsed)
+        row = history.get(str(report_date))
+        if row is None and info.get("isEarningsDateEstimate"):
+            return None
 
     row = row if isinstance(row, dict) else {}
     eps_actual = row.get("eps_actual")
