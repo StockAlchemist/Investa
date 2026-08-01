@@ -6,12 +6,14 @@ import logging
 import os
 import re
 import sqlite3
+import threading
 import time
 import traceback
 from collections import OrderedDict
 from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -22,8 +24,8 @@ from finutils import is_cash_symbol
 from market_data import map_to_yf_symbol
 from server.ai_analyzer import generate_stock_review
 from server.dependencies import get_config_manager, get_transaction_data, get_user_db_connection
-from server.route_utils import _lru_get, _lru_put, clean_nans, get_mdp
-from utils_time import is_market_open
+from server.route_utils import SWRCache, _lru_get, _lru_put, clean_nans, get_mdp
+from utils_time import get_est_today, is_market_open
 
 try:
     from financial_ratios import (
@@ -766,6 +768,15 @@ def get_fundamentals_endpoint(
         except Exception as e_events:
             logging.debug(f"Upcoming-events derivation skipped for {symbol}: {e_events}")
 
+        # The valuation / earnings / profitability / market block the detail
+        # window shows. Derived from the blob already in hand plus one indexed
+        # read of the local EDGAR store, so it costs no fetch; a symbol with no
+        # filings gets the same block with the filed-history fields absent.
+        try:
+            fundamental_data["key_metrics"] = _key_metrics_for_symbol(symbol, fundamental_data)
+        except Exception as e_metrics:
+            logging.debug(f"Key-metrics derivation skipped for {symbol}: {e_metrics}")
+
         return clean_nans(fundamental_data)
     except Exception as e:
         logging.error(f"Error fetching fundamentals for {yf_symbol}: {e}")
@@ -986,3 +997,780 @@ async def get_fx_rate(currency: str):
     if rate is None:
         raise HTTPException(status_code=404, detail=f"Exchange rate not found for {currency}")
     return {"rate": rate}
+
+
+# ---------------------------------------------------------------------------
+# S&P 500 Heatmap
+# ---------------------------------------------------------------------------
+
+_SP500_HEATMAP_CACHE = SWRCache(max_size=2)
+
+# The heatmap quotes 500 symbols. `get_current_quotes` keys a *single* cache file
+# on the symbol set, so sharing the portfolio's provider would make the two
+# permanently evict each other: every heatmap rebuild would overwrite the
+# dashboard's 60-symbol entry and vice versa, and neither would ever hit cache.
+# A dedicated provider gives the heatmap its own quotes file; the per-symbol
+# fundamentals/metadata/history caches are shared as normal (no clobbering
+# there — those are keyed per symbol).
+_SP500_HEATMAP_MDP = None
+_SP500_HEATMAP_MDP_LOCK = threading.Lock()
+
+
+def _get_heatmap_mdp():
+    """Market data provider whose current-quotes cache is private to the heatmap."""
+    global _SP500_HEATMAP_MDP
+    with _SP500_HEATMAP_MDP_LOCK:
+        if _SP500_HEATMAP_MDP is None:
+            from market_data import MarketDataProvider
+
+            _SP500_HEATMAP_MDP = MarketDataProvider(
+                current_cache_file="sp500_heatmap_quotes.json"
+            )
+    return _SP500_HEATMAP_MDP
+
+
+def _dedupe_share_classes(constituents: list) -> list:
+    """Keep one ticker per company so market cap is not double-counted.
+
+    Yahoo reports the *company's* market cap against every share class, so
+    keeping both GOOGL and GOOG would draw Alphabet at twice its true weight.
+    Wikipedia's CIK column identifies the issuer, and it lists the class with
+    the broader float first (GOOGL before GOOG, FOXA before FOX), so first-wins
+    keeps the primary line without hardcoding a ticker list that goes stale as
+    the index changes.
+    """
+    seen_ciks = set()
+    kept = []
+    for c in constituents:
+        cik = c.get("cik")
+        if cik:
+            if cik in seen_ciks:
+                continue
+            seen_ciks.add(cik)
+        kept.append(c)
+    return kept
+
+
+def _dividend_yield_fraction(info: dict, price) -> Optional[float]:
+    """Yahoo's `dividendYield` as a fraction, or None.
+
+    Yahoo encodes this field as *percent* for some symbols and as a fraction for
+    others, and the two ranges overlap (a 0.35 could be 0.35% or 35%), so it
+    cannot be settled by magnitude. Resolve it the way the watchlist route does:
+    against dividend rate over price, falling back to the trailing yield, which
+    Yahoo always reports as a fraction.
+    """
+    rate = info.get("dividendRate") or info.get("trailingAnnualDividendRate")
+    if rate and price and price > 0:
+        return float(rate) / float(price)
+
+    trailing = info.get("trailingAnnualDividendYield")
+    if trailing is not None:
+        return float(trailing)
+
+    return None
+
+
+# Yahoo drops individual symbols from a large multi-symbol response when it is
+# under pressure (yfinance logs "possibly delisted" and omits the column), and
+# the wider the chunk the more a single bad response costs.
+_HEATMAP_HISTORY_CHUNK = 50
+
+# How long a fetched history frame stays usable. Ten years of monthly bars only
+# change when a month closes, and daily bars once a day — re-fetching 500
+# symbols of both every five minutes was pure waste, and it was the load that
+# got the rebuild throttled in the first place.
+_HISTORY_CACHE_TTL = {"1mo": 12 * 3600, "1d": 45 * 60}
+# Below this share of symbols having usable history, the build is treated as
+# failed rather than cached — see `_fetch_monthly_closes`.
+_HEATMAP_MIN_HISTORY_COVERAGE = 0.5
+# Empty chunks usually mean Yahoo throttled us, so the retry pass waits first.
+_HEATMAP_RETRY_BACKOFF = 15.0
+
+
+def _naive_index(frame: pd.DataFrame) -> pd.DataFrame:
+    """Drop any timezone from the index.
+
+    yfinance returns tz-aware bars for some intervals and naive for others, and
+    a cached frame can disagree with a fresh one. Left alone, merging the two
+    raises "Cannot join tz-naive with tz-aware DatetimeIndex". These are
+    calendar days on an exchange, so the zone carries no information here.
+    """
+    if not frame.empty and getattr(frame.index, "tz", None) is not None:
+        frame = frame.copy()
+        frame.index = frame.index.tz_localize(None)
+    return frame
+
+
+def _fetch_closes(symbols: list, start, end, interval: str, min_coverage: float) -> pd.DataFrame:
+    """Adjusted closes per symbol, fetched through the isolated worker.
+
+    Deliberately NOT a direct ``yf.download``. yfinance keeps module-level state
+    across threads and has no rate-limit memory, so calling it in-process races
+    the refresh worker and the portfolio's own fetches: symbols come back empty
+    and every period column for them silently reads n/a. Routing through
+    ``_run_isolated_fetch`` reuses the retry/backoff, the global 429 cool-down
+    and the crash isolation the rest of the codebase already depends on.
+
+    ``min_coverage`` is the share of symbols that must come back with data before
+    the result is considered usable; below it the fetch raises.
+    """
+    from market_data import _extract_ticker_from_df, _run_isolated_fetch
+
+    def _fetch(batch: list) -> list:
+        frames = []
+        for i in range(0, len(batch), _HEATMAP_HISTORY_CHUNK):
+            chunk = batch[i : i + _HEATMAP_HISTORY_CHUNK]
+            try:
+                df = _run_isolated_fetch(
+                    chunk, start=start, end=end, interval=interval, task="history"
+                )
+                if df is not None and not df.empty:
+                    frames.append(df)
+            except Exception as e:
+                logging.warning(f"Heatmap history chunk {i // _HEATMAP_HISTORY_CHUNK} failed: {e}")
+        return frames
+
+    def _to_closes(frames: list) -> dict:
+        if not frames:
+            return {}
+        combined = pd.concat(frames, axis=1) if len(frames) > 1 else frames[0]
+        out = {}
+        for sym in symbols:
+            try:
+                sym_df = _extract_ticker_from_df(combined, sym)
+            except Exception:
+                continue
+            if sym_df.empty:
+                continue
+            # Adjusted where available so the returns are total returns; the
+            # worker requests auto_adjust=False, which keeps both columns. The
+            # raw close rides along because it is the price a user recognises.
+            adj_col = next((c for c in ("Adj Close", "Close") if c in sym_df.columns), None)
+            if adj_col is None:
+                continue
+            series = sym_df[adj_col].dropna()
+            if series.empty:
+                continue
+            raw = sym_df["Close"].dropna() if "Close" in sym_df.columns else series
+            out[sym] = (series, raw)
+        return out
+
+    closes = _to_closes(_fetch(symbols))
+
+    # One retry for whatever came back empty. Yahoo drops symbols sporadically
+    # under load, and a second pass over the stragglers is far cheaper than
+    # serving a map where a third of the tiles read n/a.
+    stragglers = [s for s in symbols if s not in closes]
+    if stragglers and len(stragglers) < len(symbols):
+        # Back off first. Empty chunks usually mean Yahoo throttled us, and an
+        # immediate retry just collects the same 429.
+        logging.info(f"Heatmap: retrying {interval} history for {len(stragglers)} symbols")
+        time.sleep(_HEATMAP_RETRY_BACKOFF)
+        closes.update(_to_closes(_fetch(stragglers)))
+
+    covered = len(closes) / len(symbols) if symbols else 0
+    if covered < min_coverage:
+        # Refuse rather than return a mostly-empty frame: the caller caches its
+        # result for up to an hour, so a degraded build would pin every period
+        # column at n/a long after Yahoo recovered. Raising leaves the previous
+        # good payload in place.
+        raise RuntimeError(
+            f"Heatmap {interval} history covered only {len(closes)}/{len(symbols)} symbols"
+        )
+    if stragglers:
+        logging.warning(
+            f"Heatmap: no {interval} history for {len(symbols) - len(closes)}/{len(symbols)} symbols"
+        )
+
+    return (
+        _naive_index(pd.DataFrame({s: v[0] for s, v in closes.items()})),
+        _naive_index(pd.DataFrame({s: v[1] for s, v in closes.items()})),
+    )
+
+
+def _history_cache_path(interval: str) -> str:
+    return os.path.join(
+        config.get_app_data_dir(), config.CACHE_DIR, f"sp500_heatmap_history_{interval}.pkl"
+    )
+
+
+def _load_cached_history(interval: str):
+    """(adjusted, raw, age_seconds) from the on-disk frame, or None."""
+    path = _history_cache_path(interval)
+    try:
+        if not os.path.exists(path):
+            return None
+        age = time.time() - os.path.getmtime(path)
+        adjusted, raw = pd.read_pickle(path)
+        if adjusted is None or adjusted.empty:
+            return None
+        # Frames written before the index was normalised may still be tz-aware.
+        return _naive_index(adjusted), _naive_index(raw), age
+    except Exception as e:
+        logging.warning(f"Heatmap {interval} history cache unreadable ({e}); refetching")
+        return None
+
+
+def _get_history(symbols: list, start, end, interval: str, min_coverage: float):
+    """Adjusted and raw closes, fetched at most once per cache TTL.
+
+    A fresh fetch is *merged over* the previous frame rather than replacing it.
+    Yahoo silently omits symbols it is rate-limiting, so a replace turns one bad
+    minute into a map where a third of the tiles read n/a; merging means a
+    partial response can only ever add coverage.
+    """
+    cached = _load_cached_history(interval)
+    if cached is not None:
+        adjusted, raw, age = cached
+        covered = len([s for s in symbols if s in adjusted.columns]) / max(len(symbols), 1)
+        if age < _HISTORY_CACHE_TTL.get(interval, 3600) and covered >= min_coverage:
+            logging.info(
+                f"Heatmap: reusing {interval} history ({covered:.0%} of symbols, {age / 60:.0f}m old)"
+            )
+            return adjusted, raw
+
+    fresh_adj, fresh_raw = _fetch_closes(symbols, start, end, interval, 0.0)
+
+    if cached is not None:
+        prev_adj, prev_raw, _ = cached
+        # New values win; the previous frame fills only what this fetch missed.
+        fresh_adj = fresh_adj.combine_first(prev_adj) if not fresh_adj.empty else prev_adj
+        fresh_raw = fresh_raw.combine_first(prev_raw) if not fresh_raw.empty else prev_raw
+
+    keep = [s for s in symbols if s in fresh_adj.columns]
+    covered = len(keep) / max(len(symbols), 1)
+    if covered < min_coverage:
+        raise RuntimeError(
+            f"Heatmap {interval} history covered only {len(keep)}/{len(symbols)} symbols"
+        )
+
+    try:
+        pd.to_pickle((fresh_adj, fresh_raw), _history_cache_path(interval))
+    except Exception as e:
+        logging.warning(f"Could not persist heatmap {interval} history: {e}")
+
+    return fresh_adj, fresh_raw
+
+
+def _fetch_monthly_closes(symbols: list, start, end) -> pd.DataFrame:
+    """Long-horizon monthly closes. Load-bearing: the build fails without them."""
+    adjusted, _ = _get_history(symbols, start, end, "1mo", _HEATMAP_MIN_HISTORY_COVERAGE)
+    return adjusted
+
+
+def _fetch_daily_closes(symbols: list, start, end):
+    """Recent daily bars: adjusted closes for returns, raw closes for price.
+
+    Also the source of the live price and the 1-day change. Deriving both from
+    this frame is what lets the build skip `get_current_quotes`, which chunks
+    500 symbols into ~25 separate worker fetches plus a 500-symbol intraday
+    pull — enough traffic on its own to get the whole rebuild rate-limited.
+
+    Supplementary: a failure degrades the short-horizon metrics to n/a rather
+    than sinking the map, so it carries no coverage floor.
+    """
+    try:
+        return _get_history(symbols, start, end, "1d", 0.0)
+    except Exception as e:
+        logging.warning(f"Heatmap daily history unavailable: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+
+# EPS and revenue come from filed annual figures rather than Yahoo, which only
+# carries the trailing twelve months. Revenue moved tags over the years, so the
+# fallback chain mirrors edgar_provider's.
+_EDGAR_EPS_TAG = "EarningsPerShareDiluted"
+_EDGAR_REVENUE_TAGS = (
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+    "Revenues",
+    "SalesRevenueNet",
+)
+_EDGAR_LT_DEBT_TAG = "LongTermDebtNoncurrent"
+_EDGAR_EQUITY_TAG = "StockholdersEquity"
+
+
+def _edgar_annual_facts(constituents: list) -> dict:
+    """Filed annual EPS / revenue / long-term debt / equity, keyed by symbol.
+
+    One bulk query over the local EDGAR fact store (~0.5s for the whole index)
+    rather than a per-company round trip.
+    """
+    by_cik = {}
+    for c in constituents:
+        cik = str(c.get("cik", "")).strip()
+        if cik.isdigit():
+            by_cik.setdefault(cik.zfill(10), c["symbol"])
+    if not by_cik:
+        return {}
+
+    tags = (_EDGAR_EPS_TAG, *_EDGAR_REVENUE_TAGS, _EDGAR_LT_DEBT_TAG, _EDGAR_EQUITY_TAG)
+    try:
+        from edgar_provider import get_store
+
+        store = get_store()
+        with store._connect() as conn:
+            rows = conn.execute(
+                f"SELECT cik, tag, period_end, val FROM facts "
+                f"WHERE tag IN ({','.join('?' * len(tags))}) "
+                f"AND cik IN ({','.join('?' * len(by_cik))})",
+                [*tags, *by_cik],
+            ).fetchall()
+    except Exception as e:
+        logging.warning(f"Heatmap: EDGAR facts unavailable ({e}); filed-history metrics will be n/a")
+        return {}
+
+    out: dict = {}
+    for cik, tag, period_end, val in rows:
+        sym = by_cik.get(cik)
+        if sym is None or val is None:
+            continue
+        out.setdefault(sym, {}).setdefault(tag, {})[period_end] = float(val)
+    return out
+
+
+def _annual_series(facts: dict, tags) -> list:
+    """(period_end, value) pairs, newest last, from the first tag that has data."""
+    for tag in (tags,) if isinstance(tags, str) else tags:
+        series = facts.get(tag)
+        if series:
+            return sorted(series.items())
+    return []
+
+
+def _cagr_over(series: list, years: int):
+    """Annualised growth across ``years`` of filed annuals, or None.
+
+    Returns None when either endpoint is non-positive — a CAGR through zero or
+    a sign change is not a real growth rate, and reporting one would be worse
+    than admitting the figure does not exist.
+    """
+    if len(series) < 2:
+        return None
+    end_date, end_val = series[-1]
+    target = pd.Timestamp(end_date) - pd.DateOffset(years=years)
+    # Nearest filed annual on or before the target, tolerating a ragged fiscal
+    # calendar by allowing a quarter of slack.
+    candidates = [(d, v) for d, v in series[:-1] if pd.Timestamp(d) <= target + pd.DateOffset(months=3)]
+    if not candidates:
+        return None
+    start_date, start_val = candidates[-1]
+    span = (pd.Timestamp(end_date) - pd.Timestamp(start_date)).days / 365.25
+    if span < 1 or start_val <= 0 or end_val <= 0:
+        return None
+    return (end_val / start_val) ** (1 / span) - 1
+
+
+def _safe_div(numerator, denominator):
+    """Quotient, or None when either side is missing or the divisor is zero."""
+    try:
+        if numerator is None or not denominator:
+            return None
+        return float(numerator) / float(denominator)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _latest_eps_surprise(info: dict):
+    """Most recent reported quarter's EPS surprise, as a fraction.
+
+    Yahoo stashes `surprise_pct` in percent points; everything else on the wire
+    is a fraction, so it is converted here rather than in each client.
+    """
+    history = info.get("_earnings_history")
+    if not isinstance(history, dict):
+        return None
+    for _, row in sorted(history.items(), reverse=True):
+        if not isinstance(row, dict):
+            continue
+        if row.get("eps_actual") is not None and row.get("surprise_pct") is not None:
+            return float(row["surprise_pct"]) / 100.0
+    return None
+
+
+def _days_to_earnings(info: dict, today):
+    """Calendar days until the next reported earnings date (negative if past)."""
+    ts = info.get("earningsTimestamp")
+    if not ts:
+        return None
+    try:
+        # Yahoo dates the event in the market's own timezone, not the server's.
+        when = datetime.fromtimestamp(float(ts), tz=timezone.utc).date()
+    except (TypeError, ValueError, OSError):
+        return None
+    return (when - today).days
+
+
+def _fundamental_metrics(info: dict, facts: dict, *, market_cap, pe_ratio, price, today) -> dict:
+    """Valuation / earnings / profitability / market readings for one company.
+
+    Shared by the S&P 500 heatmap and the per-symbol detail window so the two can
+    never disagree about what "P/FCF" or "ROIC" means. Every field here is a
+    fraction, a plain ratio or a count; the two that are percent *points* are
+    called out where they are produced.
+
+    `facts` is that company's filed annual series (see `_edgar_annual_facts`);
+    pass `{}` when there are none and the filed-history fields report absent
+    rather than guessing from the trailing twelve months.
+    """
+    eps_annual = _annual_series(facts, _EDGAR_EPS_TAG)
+    revenue_annual = _annual_series(facts, _EDGAR_REVENUE_TAGS)
+    lt_debt = _annual_series(facts, _EDGAR_LT_DEBT_TAG)
+    equity = _annual_series(facts, _EDGAR_EQUITY_TAG)
+
+    # Yahoo has no ROIC; derive it from figures it does carry. Net income
+    # stands in for NOPAT and book equity comes from the per-share book
+    # value, so this is a screening approximation, not a filed figure.
+    book_equity = None
+    if info.get("bookValue") and info.get("sharesOutstanding"):
+        book_equity = float(info["bookValue"]) * float(info["sharesOutstanding"])
+    invested_capital = None
+    if book_equity is not None and info.get("totalDebt") is not None:
+        invested_capital = book_equity + float(info["totalDebt"])
+
+    return {
+        # --- Valuation
+        "pe_ratio": pe_ratio,
+        "forward_pe": info.get("forwardPE"),
+        "peg_ratio": info.get("pegRatio"),
+        "ps_ratio": info.get("priceToSalesTrailing12Months"),
+        "pb_ratio": info.get("priceToBook"),
+        "p_fcf": _safe_div(market_cap, info.get("freeCashflow")),
+        "ev_ebitda": info.get("enterpriseToEbitda"),
+        "ev_sales": info.get("enterpriseToRevenue"),
+        # Always a fraction, unlike Yahoo's own field — see
+        # `_dividend_yield_fraction`.
+        "dividend_yield": _dividend_yield_fraction(info, price),
+        # --- Earnings & sales
+        "eps_ttm": info.get("trailingEps"),
+        "eps_qoq": info.get("earningsQuarterlyGrowth"),
+        "eps_growth_3y": _cagr_over(eps_annual, 3),
+        "eps_growth_5y": _cagr_over(eps_annual, 5),
+        "eps_surprise": _latest_eps_surprise(info),
+        "sales_ttm": info.get("totalRevenue"),
+        "sales_qoq": info.get("revenueGrowth"),
+        "sales_growth_3y": _cagr_over(revenue_annual, 3),
+        "sales_growth_5y": _cagr_over(revenue_annual, 5),
+        # --- Profitability & balance sheet
+        "roa": info.get("returnOnAssets"),
+        "roe": info.get("returnOnEquity"),
+        "roic": _safe_div(info.get("netIncomeToCommon"), invested_capital),
+        "gross_margin": info.get("grossMargins"),
+        "operating_margin": info.get("operatingMargins"),
+        "net_margin": info.get("profitMargins"),
+        "quick_ratio": info.get("quickRatio"),
+        "current_ratio": info.get("currentRatio"),
+        "debt_equity": info.get("debtToEquity"),
+        # Filed figures, so expressed like debt_equity: percent points.
+        # Negative book equity makes the ratio meaningless (it flips
+        # sign rather than growing), so it is reported as absent.
+        "lt_debt_equity": (
+            _safe_div(lt_debt[-1][1], equity[-1][1]) * 100
+            if lt_debt and equity and equity[-1][1] > 0
+            else None
+        ),
+        # --- Market & sentiment
+        "relative_volume": _safe_div(
+            info.get("volume") or info.get("regularMarketVolume"),
+            info.get("averageVolume"),
+        ),
+        "float_short": info.get("shortPercentOfFloat"),
+        # Yahoo's 1 (strong buy) .. 5 (sell) consensus.
+        "analyst_recom": info.get("recommendationMean"),
+        "earnings_days": _days_to_earnings(info, today),
+    }
+
+
+def _cik_for_symbol(symbol: str) -> Optional[str]:
+    """This symbol's zero-padded CIK, or None — without ever hitting the network.
+
+    The detail window is on a request path, so a miss must cost nothing: the
+    ticker→CIK map is read from whatever the universe build already left on
+    disk, and a symbol that is not in it simply has no filed history to show.
+    """
+    try:
+        from universe import get_cached_cik_map
+
+        return get_cached_cik_map().get(symbol.upper())
+    except Exception as e:
+        logging.debug(f"CIK lookup unavailable for {symbol}: {e}")
+        return None
+
+
+def _key_metrics_for_symbol(symbol: str, info: dict) -> dict:
+    """The detail window's metric block for one symbol.
+
+    Same computation the heatmap runs over the whole index, so a stock reads the
+    same either side of a click.
+    """
+    cik = _cik_for_symbol(symbol)
+    facts = _edgar_annual_facts([{"symbol": symbol, "cik": cik}]).get(symbol, {}) if cik else {}
+
+    price = info.get("currentPrice") or info.get("regularMarketPrice")
+    # Days-to-earnings is a "days from now" a user reads, so it is counted on the
+    # exchange's own calendar rather than this server's (see utils_time).
+    try:
+        from server.calendar_events import market_today
+
+        today = market_today(info)
+    except Exception:
+        today = get_est_today()
+
+    return _fundamental_metrics(
+        info,
+        facts,
+        market_cap=info.get("marketCap"),
+        pe_ratio=info.get("trailingPE"),
+        price=price,
+        today=today,
+    )
+
+
+def _build_sp500_heatmap_sync() -> list:
+    """Heavy lifting for the S&P 500 heatmap: fetch constituents + live quotes.
+
+    Called from a thread (via asyncio.to_thread) so it can use the synchronous
+    yfinance / Wikipedia helpers without blocking the event loop.
+    """
+    from server.screener_service import get_sp500_constituents
+
+    constituents = _dedupe_share_classes(get_sp500_constituents())
+    if not constituents:
+        return []
+
+    symbols = [c["symbol"] for c in constituents]
+    meta_by_symbol = {c["symbol"]: c for c in constituents}
+
+    # Price and the 1-day change come out of the daily frame below rather than
+    # `get_current_quotes`: that call chunks 500 symbols into ~25 worker fetches
+    # and then pulls 500 symbols of 1-minute data, which by itself was enough to
+    # get the rebuild rate-limited and leave most of the map blank.
+    mdp = _get_heatmap_mdp()
+
+    # OPTIMIZATION: Do not use `mdp.get_ticker_details_batch(set(symbols))` for 500 symbols
+    # as it does synchronous scraping when the file cache expires (taking 30s+).
+    # Instead, use the screener database which is maintained by the background worker.
+    screener_data = get_cached_screener_results(symbols)
+
+    # We opportunistically get fundamental data from the file cache if available.
+    # The background worker populates this. If it's missing, we don't want to block the heatmap.
+    fundamental_data = {}
+    for sym in symbols:
+        path = mdp._get_symbol_fundamentals_path(sym)
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    entry = json.load(f)
+                info = entry.get("ticker_info") or entry.get("data")
+                if info:
+                    fundamental_data[sym] = info
+            except Exception:
+                pass
+
+    # Cutoffs are market dates, never the server's (Investa runs on a Bangkok
+    # clock that is up to a day ahead of New York — see utils_time).
+    today_pd = pd.Timestamp(get_est_today())
+    ytd_date = pd.Timestamp(year=today_pd.year - 1, month=12, day=31)
+    date_1y = today_pd - pd.DateOffset(years=1)
+    date_3y = today_pd - pd.DateOffset(years=3)
+    date_5y = today_pd - pd.DateOffset(years=5)
+    date_10y = today_pd - pd.DateOffset(years=10)
+
+    # Monthly bars keep the payload small (60K points vs 1.25M daily).
+    #
+    # Start a quarter before the oldest cutoff rather than passing period="10y":
+    # that returns exactly 120 bars beginning *after* the 10-year mark, so the
+    # earliest close available is already inside the window and the 10Y column
+    # can never resolve.
+    hist_start = (date_10y - pd.DateOffset(months=3)).date()
+    adj_close = _fetch_monthly_closes(symbols, hist_start, today_pd.date())
+
+    # A monthly bar cannot answer "1 week" or "month to date", so the short
+    # horizons take their own daily pull. Eight months covers the 6M lookback
+    # and reaches back past the most recent earnings date.
+    daily_close, daily_raw = _fetch_daily_closes(
+        symbols, (today_pd - pd.DateOffset(months=8)).date(), today_pd.date()
+    )
+    daily_index = daily_close.index
+    if getattr(daily_index, "tz", None) is not None:
+        daily_index = daily_index.tz_localize(None)
+
+    daily_masks = {}
+    if not daily_close.empty:
+        for key, cutoff in (
+            ("1w", today_pd - pd.DateOffset(weeks=1)),
+            ("1m", today_pd - pd.DateOffset(months=1)),
+            # Month to date measures from the last close of the previous month.
+            ("mtd", today_pd.replace(day=1) - pd.Timedelta(days=1)),
+            ("3m", today_pd - pd.DateOffset(months=3)),
+            ("6m", today_pd - pd.DateOffset(months=6)),
+            ("now", today_pd),
+        ):
+            daily_masks[key] = daily_index <= cutoff
+
+    edgar_facts = _edgar_annual_facts(constituents)
+
+    # Monthly bars are labelled with the month's *first* day but carry that
+    # month's closing price, so the label understates the observation by up to a
+    # month — comparing labels directly makes "1Y change" span only 11 months.
+    # Score each bar by the date its close actually belongs to: the month end,
+    # or today for the current (still forming) month.
+    if not adj_close.empty:
+        raw_index = adj_close.index
+        if getattr(raw_index, "tz", None) is not None:
+            raw_index = raw_index.tz_localize(None)
+        effective = raw_index + pd.offsets.MonthEnd(0)
+        effective = pd.DatetimeIndex(
+            np.minimum(effective.values, np.datetime64(today_pd.to_pydatetime()))
+        )
+    else:
+        effective = pd.DatetimeIndex([])
+
+    def _mask_upto(target):
+        return effective <= target
+
+    masks = {
+        "ytd": _mask_upto(ytd_date),
+        "1y": _mask_upto(date_1y),
+        "3y": _mask_upto(date_3y),
+        "5y": _mask_upto(date_5y),
+        "10y": _mask_upto(date_10y),
+        "now": _mask_upto(today_pd),
+    }
+
+    def _price_at(column, mask):
+        if column is None:
+            return None
+        past = column[mask].dropna()
+        if past.empty:
+            return None
+        value = float(past.iloc[-1])
+        return value if value > 0 else None
+
+    def _pct_change(current, past):
+        if current is None or not past:
+            return None
+        return (current - past) / past
+
+    has_history = not adj_close.empty
+    result = []
+    for sym in symbols:
+        meta = meta_by_symbol.get(sym, {})
+        screen = screener_data.get(sym, {})
+        info = fundamental_data.get(sym, {})
+
+        # The last daily bar is today's once the session opens, so this tracks
+        # the live price the same way the batch quote path did.
+        raw_bars = daily_raw[sym].dropna() if sym in daily_raw.columns else None
+        price = float(raw_bars.iloc[-1]) if raw_bars is not None and not raw_bars.empty else None
+        if not price:
+            price = screen.get("price") or info.get("currentPrice") or info.get("regularMarketPrice")
+        if not price:
+            continue
+
+        # Percent points, unlike every other return on the payload — this is the
+        # one field the clients do not rescale.
+        change_pct = None
+        if raw_bars is not None and len(raw_bars) >= 2:
+            prev = float(raw_bars.iloc[-2])
+            if prev > 0:
+                change_pct = (price - prev) / prev * 100.0
+        if change_pct is None:
+            change_pct = 0.0
+
+        # The screener DB is filled by the background sweep; fall back to the
+        # per-symbol fundamentals blob so the tile still gets a size (and so
+        # `cap` mode does not silently drop the stock) before that sweep runs.
+        market_cap = screen.get("market_cap") or info.get("marketCap")
+        pe_ratio = screen.get("pe_ratio") or info.get("trailingPE")
+
+        column = adj_close[sym] if (has_history and sym in adj_close.columns) else None
+        # Prices are dividend/split adjusted on both ends, so these are total returns.
+        current_adj = _price_at(column, masks["now"])
+
+        d_col = daily_close[sym] if (sym in daily_close.columns) else None
+        d_now = _price_at(d_col, daily_masks["now"]) if daily_masks else None
+
+        def _daily_change(key, _col=d_col, _now=d_now):
+            if not daily_masks:
+                return None
+            return _pct_change(_now, _price_at(_col, daily_masks[key]))
+
+        high_52w = info.get("fiftyTwoWeekHigh")
+        low_52w = info.get("fiftyTwoWeekLow")
+
+        result.append(
+            {
+                "symbol": sym,
+                "name": meta.get("name", sym),
+                "sector": meta.get("sector", "Unknown"),
+                "sub_industry": meta.get("sub_industry", "Unknown"),
+                "price": price,
+                "market_cap": market_cap,
+                # --- Performance. `change_pct` is percent points (it comes
+                # straight off the quote); every other return here is a
+                # fraction, as are the growth/margin/ratio-of-quantities fields.
+                "change_pct": change_pct,
+                "week_change_pct": _daily_change("1w"),
+                "month_change_pct": _daily_change("1m"),
+                "mtd_change_pct": _daily_change("mtd"),
+                "3m_change_pct": _daily_change("3m"),
+                "6m_change_pct": _daily_change("6m"),
+                "ytd_change_pct": _pct_change(current_adj, _price_at(column, masks["ytd"])),
+                "1y_change_pct": _pct_change(current_adj, _price_at(column, masks["1y"])),
+                "3y_change_pct": _pct_change(current_adj, _price_at(column, masks["3y"])),
+                "5y_change_pct": _pct_change(current_adj, _price_at(column, masks["5y"])),
+                "10y_change_pct": _pct_change(current_adj, _price_at(column, masks["10y"])),
+                # Zero or below by construction; the high is an upper bound.
+                "drawdown_52w": _pct_change(price, high_52w) if high_52w else None,
+                "gain_from_52w_low": _pct_change(price, low_52w) if low_52w else None,
+                # --- Valuation, earnings, profitability and market readings.
+                # Shared with the per-symbol detail window so a stock reads the
+                # same either side of a click.
+                **_fundamental_metrics(
+                    info,
+                    edgar_facts.get(sym, {}),
+                    market_cap=market_cap,
+                    pe_ratio=pe_ratio,
+                    price=price,
+                    today=today_pd.date(),
+                ),
+            }
+        )
+
+    return result
+
+
+@router.get("/sp500/heatmap")
+async def get_sp500_heatmap():
+    """Return S&P 500 constituent data for the heatmap visualisation.
+
+    Each item includes symbol, name, sector, sub_industry, price,
+    change_pct, market_cap, pe_ratio, and dividend_yield.
+    Results are cached with adaptive TTL (5 min during market hours,
+    60 min off-hours) using stale-while-revalidate.
+    """
+    ttl = 300 if is_market_open() else 3600  # 5 min / 60 min
+
+    async def _compute():
+        return await asyncio.to_thread(_build_sp500_heatmap_sync)
+
+    try:
+        data = await _SP500_HEATMAP_CACHE.get_or_compute(
+            "sp500_heatmap", ttl=ttl, compute=_compute
+        )
+        return clean_nans(data)
+    except Exception as e:
+        # Logged in full; the client gets a generic message rather than the
+        # internal exception text.
+        logging.error(f"SP500 heatmap error: {e}", exc_info=True)
+        # A rebuild can fail transiently (Yahoo throttling mid-fetch). Yesterday's
+        # map is far more useful than an error page, so fall back to whatever was
+        # last built rather than making the failure the user's problem.
+        stale = _SP500_HEATMAP_CACHE.peek("sp500_heatmap")
+        if stale:
+            logging.warning("SP500 heatmap: serving the last good payload after a failed rebuild")
+            return clean_nans(stale)
+        raise HTTPException(
+            status_code=503, detail="S&P 500 heatmap is temporarily unavailable"
+        )

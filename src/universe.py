@@ -311,6 +311,30 @@ def get_universe(
     return entries
 
 
+_CACHED_CIK_MAP: Optional[Dict[str, str]] = None
+
+
+def get_cached_cik_map() -> Dict[str, str]:
+    """
+    Ticker → CIK read from the on-disk universe cache, never from the network.
+
+    For callers on a request path, where a cache miss must cost nothing: a
+    symbol the last universe build did not cover simply has no filed history to
+    show, which is the same answer a foreign private issuer gets. Use
+    `get_cik_map()` when a live fetch is acceptable.
+
+    The cache is read once per process; listings change on the order of days,
+    and the rebuild that refreshes them writes the file this reads.
+    """
+    global _CACHED_CIK_MAP
+    if _CACHED_CIK_MAP is None:
+        # Age is not a reason to reject here: a stale CIK is still the right CIK
+        # (they are permanent), and there is no fallback to fall back to.
+        entries = _load_cache(max_age_days=36500) or []
+        _CACHED_CIK_MAP = {e.symbol.upper(): e.cik for e in entries if e.cik}
+    return _CACHED_CIK_MAP
+
+
 def get_rankable_universe(force_refresh: bool = False) -> List[UniverseEntry]:
     """Universe members that have an SEC CIK, i.e. those we can pull fundamentals for."""
     return [e for e in get_universe(force_refresh=force_refresh) if e.has_filings]

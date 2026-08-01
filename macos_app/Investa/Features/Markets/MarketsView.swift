@@ -81,9 +81,9 @@ struct MarketsView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if !viewModel.indices.isEmpty { summaryBar }
                     indicesSection
                     YourMoversSection(holdings: viewModel.holdings, currency: cur, onPick: { stockDetail = SymbolID(id: $0) })
+                    SP500HeatmapView()
                     searchField
                     if !viewModel.stockNews.isEmpty {
                         newsSection("Your Stock News", filterNews(viewModel.stockNews))
@@ -98,51 +98,6 @@ struct MarketsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in viewModel.reload(currency: cur) }
         .sheet(item: $indexDetail) { idx in IndexGraphSheet(index: idx) }
         .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id, currency: cur) }
-    }
-
-    // MARK: - Summary bar
-
-    @ViewBuilder private var summaryBar: some View {
-        let list = viewModel.indices
-        let up = list.filter { ($0.changesPercentage ?? 0) >= 0 }.count
-        let down = list.count - up
-        let best = list.max { ($0.changesPercentage ?? 0) < ($1.changesPercentage ?? 0) }
-        let worst = list.min { ($0.changesPercentage ?? 0) < ($1.changesPercentage ?? 0) }
-        
-        let content = HStack(spacing: 0) {
-            tile("Breadth", "\(up) ▲ / \(down) ▼", "\(list.count) indices", up >= down ? .green : .red)
-            Divider().frame(height: 36)
-            tile("Best", best.map { Fmt.percent($0.changesPercentage, includeSign: true) } ?? "–", best?.name, .green)
-            Divider().frame(height: 36)
-            tile("Worst", worst.map { Fmt.percent($0.changesPercentage, includeSign: true) } ?? "–", worst?.name, .red)
-        }
-        .padding(16)
-
-        let isCompact: Bool = {
-            #if os(iOS)
-            return hSize == .compact
-            #else
-            return false
-            #endif
-        }()
-
-        if isCompact {
-            ScrollView(.horizontal, showsIndicators: false) { content }
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-        } else {
-            content
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-        }
-    }
-    private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(value).font(.title3.bold()).foregroundStyle(tone)
-            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
-        }
-        .padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Indices

@@ -363,6 +363,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sp500/heatmap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sp500 Heatmap
+         * @description Return S&P 500 constituent data for the heatmap visualisation.
+         *
+         *     Each item includes symbol, name, sector, sub_industry, price,
+         *     change_pct, market_cap, pe_ratio, and dividend_yield.
+         *     Results are cached with adaptive TTL (5 min during market hours,
+         *     60 min off-hours) using stale-while-revalidate.
+         */
+        get: operations["get_sp500_heatmap_api_sp500_heatmap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions": {
         parameters: {
             query?: never;
@@ -1813,6 +1838,31 @@ export interface paths {
          * @description Returns the current exchange rate for USD to the given currency.
          */
         get: operations["get_fx_rate_fx_rate__currency__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sp500/heatmap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sp500 Heatmap
+         * @description Return S&P 500 constituent data for the heatmap visualisation.
+         *
+         *     Each item includes symbol, name, sector, sub_industry, price,
+         *     change_pct, market_cap, pe_ratio, and dividend_yield.
+         *     Results are cached with adaptive TTL (5 min during market hours,
+         *     60 min off-hours) using stale-while-revalidate.
+         */
+        get: operations["get_sp500_heatmap_sp500_heatmap_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3861,6 +3911,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sp500_heatmap_api_sp500_heatmap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -6086,6 +6156,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sp500_heatmap_sp500_heatmap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -62,6 +62,13 @@ struct Fundamentals: Codable, Sendable {
         }.sorted { $0.1 > $1.1 }
     }
 
+    /// Valuation / earnings / profitability / market readings, derived
+    /// server-side by the same code that builds the heatmap payload — so the
+    /// keys are the heatmap's, and `StockMetric` reads both.
+    var keyMetrics: [String: Double] {
+        (raw["key_metrics"]?.objectValue ?? [:]).compactMapValues { $0.doubleValue }
+    }
+
     /// Next scheduled report, derived server-side (see `server/calendar_events.py`).
     var upcomingEarnings: UpcomingEarnings? {
         UpcomingEarnings(json: raw["upcoming_events"]?["earnings"])

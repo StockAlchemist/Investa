@@ -1000,6 +1000,10 @@ export interface Fundamentals {
         sector_weightings: Record<string, number>;
         asset_classes: Record<string, number>;
     };
+    /** Valuation / earnings / profitability / market readings, derived
+     *  server-side by the same code that builds the heatmap payload — the field
+     *  names are the heatmap's, so lib/metrics.ts reads both. */
+    key_metrics?: Record<string, number | null>;
     /** Earnings / dividend events, derived server-side from this same blob. */
     upcoming_events?: {
         earnings: EarningsEvent | null;
@@ -1129,6 +1133,88 @@ export async function fetchStockNews(symbols: string[], limit = 30): Promise<Mar
     });
     if (error) return [];
     return data as unknown as MarketNewsItem[];
+}
+
+// S&P 500 Heatmap
+//
+// Unit convention, mirrored by the Swift client: `change_pct` is percent points
+// (it comes straight off the quote), ratio-style fields are raw numbers, and
+// every other percentage — returns, growth, margins, yield, float short — is a
+// **fraction** (0.15 = 15%). Ratios expressed against equity (`debt_equity`,
+// `lt_debt_equity`) follow Yahoo and are percent points.
+export interface SP500HeatmapItem {
+    symbol: string;
+    name: string;
+    sector: string;
+    sub_industry: string;
+    price: number;
+    market_cap: number | null;
+
+    // Performance
+    change_pct: number | null;
+    week_change_pct?: number | null;
+    month_change_pct?: number | null;
+    mtd_change_pct?: number | null;
+    "3m_change_pct"?: number | null;
+    "6m_change_pct"?: number | null;
+    ytd_change_pct?: number | null;
+    "1y_change_pct"?: number | null;
+    "3y_change_pct"?: number | null;
+    "5y_change_pct"?: number | null;
+    "10y_change_pct"?: number | null;
+    /** Zero or below: the price cannot exceed its own 52-week high. */
+    drawdown_52w?: number | null;
+    /** Zero or above: the price cannot fall below its own 52-week low. */
+    gain_from_52w_low?: number | null;
+
+    // Valuation
+    pe_ratio: number | null;
+    forward_pe?: number | null;
+    peg_ratio?: number | null;
+    ps_ratio?: number | null;
+    pb_ratio?: number | null;
+    p_fcf?: number | null;
+    ev_ebitda?: number | null;
+    ev_sales?: number | null;
+    dividend_yield: number | null;
+
+    // Earnings & sales
+    eps_ttm?: number | null;
+    eps_qoq?: number | null;
+    eps_growth_3y?: number | null;
+    eps_growth_5y?: number | null;
+    eps_surprise?: number | null;
+    sales_ttm?: number | null;
+    sales_qoq?: number | null;
+    sales_growth_3y?: number | null;
+    sales_growth_5y?: number | null;
+
+    // Profitability & balance sheet
+    roa?: number | null;
+    roe?: number | null;
+    roic?: number | null;
+    gross_margin?: number | null;
+    operating_margin?: number | null;
+    net_margin?: number | null;
+    quick_ratio?: number | null;
+    current_ratio?: number | null;
+    lt_debt_equity?: number | null;
+    debt_equity?: number | null;
+
+    // Market & sentiment
+    relative_volume?: number | null;
+    float_short?: number | null;
+    /** Yahoo consensus: 1 (strong buy) .. 5 (sell). */
+    analyst_recom?: number | null;
+    /** Days until the next report; negative once it has happened. */
+    earnings_days?: number | null;
+}
+
+export async function fetchSP500Heatmap(signal?: AbortSignal): Promise<SP500HeatmapItem[]> {
+    const url = `${API_BASE_URL}/sp500/heatmap`;
+    const response = await authFetch(url, { signal });
+    if (!response.ok) throw new Error('Failed to fetch S&P 500 heatmap');
+    return (await response.json()) as SP500HeatmapItem[];
 }
 
 export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {

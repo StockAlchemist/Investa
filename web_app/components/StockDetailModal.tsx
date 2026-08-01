@@ -77,6 +77,7 @@ import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
 import StockIcon from './StockIcon';
 import StockPriceChart from './StockPriceChart';
+import StockKeyMetrics from './StockKeyMetrics';
 
 interface StockDetailModalProps {
     symbol: string;
@@ -146,6 +147,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [finType, setFinType] = useState<'income' | 'balance' | 'cash' | 'equity'>('income');
     const [viewingDistribution, setViewingDistribution] = useState<'dcf' | 'graham' | null>(null);
+    const [summaryExpanded, setSummaryExpanded] = useState(false);
     const [mounted, setMounted] = useState(false);
     const queryClient = useQueryClient();
 
@@ -682,25 +684,17 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             )}
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                {/* The headline three. Everything else that used to sit here —
+                    P/E, dividend yield, beta — now reads in Key Metrics below,
+                    beside the figures it should be compared against. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                     <StatCard label="Market Cap" value={formatCurrency(fundamentals.marketCap)} icon={Globe} color="text-indigo-400" />
-                    <StatCard label="P/E Ratio (TTM)" value={fundamentals.trailingPE?.toFixed(2)} icon={TrendingUp} color="text-emerald-400" />
-                    <StatCard
-                        label="Dividend Yield"
-                        value={formatPercentPoints(normalizeDividendYield({
-                            rawYield: fundamentals.dividendYield,
-                            dividendRate: fundamentals.dividendRate ?? fundamentals.trailingAnnualDividendRate,
-                            price: fundamentals.currentPrice ?? fundamentals.regularMarketPrice,
-                            trailingYield: fundamentals.trailingAnnualDividendYield,
-                        }))}
-                        icon={DollarSign}
-                        color="text-amber-400"
+                    <FiftyTwoWeekCard
+                        low={fundamentals.fiftyTwoWeekLow}
+                        high={fundamentals.fiftyTwoWeekHigh}
+                        price={fundamentals.currentPrice ?? fundamentals.regularMarketPrice}
+                        format={(v) => formatCurrency(v)}
                     />
-                    <StatCard label="52W High" value={formatCurrency(fundamentals.fiftyTwoWeekHigh)} icon={TrendingUp} color="text-blue-400" />
-                    <StatCard label="52W Low" value={formatCurrency(fundamentals.fiftyTwoWeekLow)} icon={TrendingUp} color="text-pink-400" className="rotate-180" />
-                    {!fundamentals.etf_data && (
-                        <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={LucideActivity} color="text-purple-400" />
-                    )}
                     {(() => {
                         // Resolved once: the card's visibility and its value must
                         // agree on which of the three fields wins, and must agree
@@ -708,27 +702,69 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         const expensePct = normalizeExpenseRatio(
                             fundamentals.netExpenseRatio || fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio
                         );
-                        if (expensePct === null) return null;
+                        if (expensePct !== null) {
+                            return (
+                                <StatCard
+                                    label="Expense Ratio"
+                                    value={formatPercentPoints(expensePct)}
+                                    icon={Receipt}
+                                    color="text-orange-400"
+                                />
+                            );
+                        }
+                        // A fund has no dividend yield of its own worth leading
+                        // with; a company does, and it is the third thing a
+                        // reader looks for after size and range.
                         return (
                             <StatCard
-                                label="Expense Ratio"
-                                value={formatPercentPoints(expensePct)}
-                                icon={Receipt}
-                                color="text-orange-400"
+                                label="Dividend Yield"
+                                value={formatPercentPoints(normalizeDividendYield({
+                                    rawYield: fundamentals.dividendYield,
+                                    dividendRate: fundamentals.dividendRate ?? fundamentals.trailingAnnualDividendRate,
+                                    price: fundamentals.currentPrice ?? fundamentals.regularMarketPrice,
+                                    trailingYield: fundamentals.trailingAnnualDividendYield,
+                                }))}
+                                icon={DollarSign}
+                                color="text-amber-400"
                             />
                         );
                     })()}
                 </div>
 
-                <div className="bg-muted px-6 py-4">
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                        <Building2 className="w-5 h-5 text-indigo-500" />
-                        Business Summary
-                    </h3>
-                    <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
-                        {fundamentals.longBusinessSummary}
-                    </p>
-                </div>
+                <StockKeyMetrics
+                    metrics={fundamentals.key_metrics}
+                    beta={fundamentals.beta}
+                    averageVolume={fundamentals.averageVolume}
+                />
+
+                {fundamentals.longBusinessSummary && (
+                    <div className="bg-muted rounded-2xl px-5 py-4">
+                        <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-indigo-500" />
+                            Business Summary
+                        </h3>
+                        {/* Clamped by default: these run to a dozen lines and
+                            pushed everything measurable off the screen. */}
+                        <p className={cn(
+                            "text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap",
+                            !summaryExpanded && "line-clamp-4"
+                        )}>
+                            {fundamentals.longBusinessSummary}
+                        </p>
+                        {/* Only offered when there is something behind the
+                            clamp — a toggle that does nothing is worse than no
+                            toggle. Four lines is roughly this many characters at
+                            the modal's width. */}
+                        {fundamentals.longBusinessSummary.length > 320 && (
+                            <button
+                                onClick={() => setSummaryExpanded(v => !v)}
+                                className="mt-2 text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                                {summaryExpanded ? 'Show less' : 'Read more'}
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
         );
     };
@@ -2311,6 +2347,58 @@ function StatCard({ icon: Icon, label, value, subValue, color, valueColor, subVa
                         {extra}
                     </div>
                 ) : null}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Where the price sits inside its own 52-week range.
+ *
+ * Replaces the separate "52W High" and "52W Low" cards: the two numbers only
+ * ever meant anything relative to today's price, and side by side they made the
+ * reader do the arithmetic. One card, one bar, and the position is read rather
+ * than computed.
+ */
+function FiftyTwoWeekCard({ low, high, price, format }: {
+    low?: number | null;
+    high?: number | null;
+    price?: number | null;
+    format: (v: number) => string;
+}) {
+    const usable = low != null && high != null && high > low;
+    // Clamped: an intraday print can sit a hair outside a range Yahoo has yet to
+    // update, and a marker off the end of its own track reads as a bug.
+    const position = usable && price != null
+        ? Math.max(0, Math.min(1, (price - low) / (high - low)))
+        : null;
+
+    return (
+        <div className="bg-muted py-1.5 px-3 rounded-xl flex items-center gap-3 relative overflow-hidden">
+            <div className="p-2 rounded-lg bg-card text-blue-400 relative z-10">
+                <LucideActivity className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0 relative z-10">
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">52-Week Range</p>
+                {usable ? (
+                    <>
+                        <div className="flex items-baseline justify-between gap-2 text-[13px] font-bold tabular-nums">
+                            <span>{format(low)}</span>
+                            <span>{format(high)}</span>
+                        </div>
+                        <div className="relative h-1 rounded-full bg-gradient-to-r from-rose-500/40 via-amber-400/40 to-emerald-500/50 mt-1 mb-1">
+                            {position !== null && (
+                                <div
+                                    className="absolute top-1/2 w-1.5 h-3 -translate-y-1/2 -translate-x-1/2 rounded-full bg-foreground shadow"
+                                    style={{ left: `${position * 100}%` }}
+                                    title={price != null ? format(price) : undefined}
+                                />
+                            )}
+                        </div>
+                    </>
+                ) : (
+                    <p className="text-base font-bold tracking-tight">-</p>
+                )}
             </div>
         </div>
     );

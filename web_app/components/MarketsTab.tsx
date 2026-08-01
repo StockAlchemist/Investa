@@ -8,6 +8,7 @@ import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
 import { ExternalLink, Newspaper, TrendingUp, TrendingDown, Search, X, BarChart3 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { fetchMarketNews, fetchStockNews, type MarketNewsItem, type Holding } from '@/lib/api';
+import SP500Heatmap from './SP500Heatmap';
 import { useStockModal } from '@/context/StockModalContext';
 
 export interface MarketIndex {
@@ -212,43 +213,6 @@ function NewsSection({ title, news, isLoading }: { title: string; news: MarketNe
     );
 }
 
-function SummaryTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'pos' | 'neg' | 'neutral' }) {
-    return (
-        <div className="flex-1 min-w-0 px-2 sm:px-4 py-2.5 first:pl-0 last:pr-0">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1.5">{label}</div>
-            <div className={cn(
-                'text-lg sm:text-xl font-bold tabular-nums leading-none truncate',
-                tone === 'pos' ? 'text-emerald-600 dark:text-emerald-400'
-                : tone === 'neg' ? 'text-red-600 dark:text-red-400'
-                : 'text-foreground',
-            )}>
-                {value}
-            </div>
-            {sub && <div className="text-[10px] text-muted-foreground/70 mt-1 leading-none truncate">{sub}</div>}
-        </div>
-    );
-}
-
-function MarketsSummaryBar({ indices }: { indices: Record<string, MarketIndex> }) {
-    const list = Object.values(indices);
-    if (list.length === 0) return null;
-
-    const up = list.filter(i => i.changesPercentage >= 0).length;
-    const down = list.length - up;
-    const best = list.reduce((a, b) => (b.changesPercentage > a.changesPercentage ? b : a));
-    const worst = list.reduce((a, b) => (b.changesPercentage < a.changesPercentage ? b : a));
-
-    return (
-        <div className="metric-card p-3 sm:p-4">
-            <div className="flex divide-x divide-border/60">
-                <SummaryTile label="Breadth" value={`${up} ▲ / ${down} ▼`} sub={`${list.length} indices`} tone={up >= down ? 'pos' : 'neg'} />
-                <SummaryTile label="Best" value={`${best.changesPercentage >= 0 ? '+' : ''}${best.changesPercentage.toFixed(2)}%`} sub={best.name} tone="pos" />
-                <SummaryTile label="Worst" value={`${worst.changesPercentage >= 0 ? '+' : ''}${worst.changesPercentage.toFixed(2)}%`} sub={worst.name} tone="neg" />
-            </div>
-        </div>
-    );
-}
-
 interface MoverRow {
     symbol: string;
     pct: number;
@@ -373,9 +337,6 @@ export default function MarketsTab({ indices, onIndexClick, holdings = [], curre
 
     return (
         <div className="space-y-8">
-            {/* Market breadth summary */}
-            <MarketsSummaryBar indices={indices} />
-
             {/* Indices */}
             <div>
                 <h2 className="text-2xl font-bold tracking-tight text-foreground mb-4">Market Indices</h2>
@@ -388,6 +349,9 @@ export default function MarketsTab({ indices, onIndexClick, holdings = [], curre
 
             {/* Your Movers Today */}
             <YourMovers holdings={holdings} currency={currency} onPick={(s) => openStockDetail(s, currency)} />
+
+            {/* S&P 500 Heatmap */}
+            <SP500Heatmap />
 
             {/* News search */}
             <div className="relative max-w-md">

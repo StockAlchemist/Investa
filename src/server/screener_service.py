@@ -233,6 +233,98 @@ def get_sp500_tickers() -> List[str]:
         logging.error(f"Failed to fetch S&P 500 list: {e}")
         return []
 
+def get_sp500_constituents() -> List[Dict[str, str]]:
+    """
+    Fetches the full S&P 500 constituents table from Wikipedia, returning
+    a list of dicts with keys: symbol, name, sector, sub_industry, cik.
+    Results are cached for 24 hours alongside the ticker-only cache.
+
+    Unlike the ticker-only sibling, this one serves a user-facing request path
+    (the S&P 500 heatmap), so a Wikipedia outage falls back to the expired cache
+    rather than returning nothing: a day-old constituent list is still a far
+    better answer than an empty heatmap.
+    """
+    cache_path = os.path.join(
+        config.get_app_data_dir(), config.CACHE_DIR, "sp500_constituents_cache.json"
+    )
+
+    # Check cache
+    stale_constituents: List[Dict[str, str]] = []
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+                timestamp = data.get("timestamp", 0)
+                cached = data.get("constituents", [])
+                # Entries written before the CIK column was captured cannot
+                # collapse dual-class lines, so treat them as stale regardless
+                # of age (they stay usable as a last-resort fallback below).
+                has_cik = bool(cached) and all("cik" in c for c in cached)
+                if has_cik and time.time() - timestamp < SP500_CACHE_TTL:
+                    logging.info("Using cached S&P 500 constituents")
+                    return cached
+                stale_constituents = cached
+        except Exception as e:
+            logging.warning(f"Error reading S&P 500 constituents cache: {e}")
+
+    logging.info("Fetching S&P 500 constituents from Wikipedia...")
+    try:
+        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        # Bounded: without a timeout a hung connection would pin the worker
+        # thread and, with stale-while-revalidate in front, block the request.
+        response = requests.get(url, headers=headers, timeout=(10, 30))
+        response.raise_for_status()
+
+        tables = pd.read_html(io.StringIO(response.text))
+        df = tables[0]
+
+        constituents = []
+        for _, row in df.iterrows():
+            symbol = str(row.get("Symbol", "")).strip().replace(".", "-")
+            name = str(row.get("Security", "")).strip()
+            sector = str(row.get("GICS Sector", "")).strip()
+            sub_industry = str(row.get("GICS Sub-Industry", "")).strip()
+            # The issuer id; lets callers collapse dual-class lines (GOOGL/GOOG)
+            # without hardcoding a ticker list that goes stale.
+            cik = str(row.get("CIK", "")).strip()
+            if symbol:
+                constituents.append(
+                    {
+                        "symbol": symbol,
+                        "name": name,
+                        "sector": sector,
+                        "sub_industry": sub_industry,
+                        "cik": cik,
+                    }
+                )
+
+        # Save to cache
+        try:
+            with open(cache_path, "w") as f:
+                json.dump(
+                    {
+                        "timestamp": time.time(),
+                        "constituents": constituents,
+                    },
+                    f,
+                )
+        except Exception as e:
+            logging.warning(f"Error saving S&P 500 constituents cache: {e}")
+
+        return constituents
+    except Exception as e:
+        if stale_constituents:
+            logging.warning(
+                f"Failed to refresh S&P 500 constituents ({e}); serving {len(stale_constituents)} stale entries"
+            )
+            return stale_constituents
+        logging.error(f"Failed to fetch S&P 500 constituents: {e}")
+        return []
+
+
 def get_russell2000_tickers() -> List[str]:
     """
     Fetches Russell 2000 tickers from a stable GitHub repository.

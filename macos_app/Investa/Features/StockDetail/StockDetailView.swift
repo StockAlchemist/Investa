@@ -31,6 +31,7 @@ struct StockDetailView: View {
     @State private var finType = "income"
     @State private var detail: SymbolID?
     @State private var showGrahamExplanation = false
+    @State private var summaryExpanded = false
 
     init(symbol: String, currency: String = "USD") {
         _viewModel = StateObject(wrappedValue: StockDetailViewModel(symbol: symbol, currency: currency))
@@ -277,6 +278,11 @@ struct StockDetailView: View {
             marketOverviewHeader
             intrinsicValueSection
             marketStatsSection
+            StockKeyMetricsView(
+                metrics: f?.keyMetrics ?? [:],
+                beta: f?.beta,
+                averageVolume: f?.double("averageVolume")
+            )
             businessSummarySection
         }
     }
@@ -421,26 +427,90 @@ struct StockDetailView: View {
         }
     }
 
+    /// The headline three. Everything that used to sit here as well — P/E,
+    /// dividend yield, beta — now reads in Key Metrics below, beside the figures
+    /// it should be compared against.
     @ViewBuilder private var marketStatsSection: some View {
-        // Web app uses 3 columns for Market Stats on md+
-        let cols = hSizeClass == .regular ? 3 : 2
+        let cols = hSizeClass == .regular ? 3 : 1
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: cols), spacing: 12) {
             statCard("Market Cap", Fmt.compact(f?.marketCap ?? 0, code: nativeCur), icon: "globe", iconTint: .indigo)
-            statCard("P/E Ratio (TTM)", Fmt.number(f?.trailingPE, fractionDigits: 2), icon: "chart.line.uptrend.xyaxis", iconTint: .green)
-            statCard("Dividend Yield", Fmt.percent(f?.dividendYield), icon: "dollarsign", iconTint: .orange)
-            statCard("52W High", Fmt.currency(f?.high52, code: nativeCur), icon: "chart.line.uptrend.xyaxis", iconTint: .blue)
-            statCard("52W Low", Fmt.currency(f?.low52, code: nativeCur), icon: "chart.line.downtrend.xyaxis", iconTint: .pink)
-            if !(f?.isETF ?? false) { statCard("Beta", Fmt.number(f?.beta, fractionDigits: 2), icon: "bolt.heart", iconTint: .purple) }
-            if let e = f?.expenseRatio { statCard("Expense Ratio", Fmt.percent(e), icon: "receipt", iconTint: .orange) }
+            fiftyTwoWeekCard
+            if let e = f?.expenseRatio {
+                statCard("Expense Ratio", Fmt.percent(e), icon: "receipt", iconTint: .orange)
+            } else {
+                // A fund has no dividend yield of its own worth leading with; a
+                // company does, and it is the third thing a reader looks for
+                // after size and range.
+                statCard("Dividend Yield", Fmt.percent(f?.dividendYield), icon: "dollarsign", iconTint: .orange)
+            }
         }
+    }
+
+    /// Where the price sits inside its own 52-week range.
+    ///
+    /// Replaces the separate "52W High" and "52W Low" cards: the two numbers
+    /// only ever meant anything relative to today's price, and side by side they
+    /// made the reader do the arithmetic.
+    @ViewBuilder private var fiftyTwoWeekCard: some View {
+        let low = f?.low52
+        let high = f?.high52
+        let usable = (low != nil && high != nil && high! > low!)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.left.and.right").foregroundStyle(.blue).font(.system(size: 16))
+                Text("52-Week Range").font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+            }
+            if usable, let low, let high {
+                HStack {
+                    Text(Fmt.currency(low, code: nativeCur)).font(.callout.weight(.bold))
+                    Spacer()
+                    Text(Fmt.currency(high, code: nativeCur)).font(.callout.weight(.bold))
+                }
+                .lineLimit(1).minimumScaleFactor(0.7)
+                GeometryReader { geo in
+                    // Clamped: an intraday print can sit a hair outside a range
+                    // Yahoo has yet to update, and a marker off the end of its
+                    // own track reads as a bug.
+                    let t = min(max(((f?.price ?? low) - low) / (high - low), 0), 1)
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(LinearGradient(colors: [Color.down.opacity(0.4), .orange.opacity(0.4), Color.up.opacity(0.5)],
+                                                 startPoint: .leading, endPoint: .trailing))
+                            .frame(height: 4)
+                        Capsule().fill(Color.primary)
+                            .frame(width: 3, height: 12)
+                            .offset(x: max(0, min(geo.size.width - 3, geo.size.width * t - 1.5)))
+                    }
+                    .frame(height: 12)
+                }
+                .frame(height: 12)
+            } else {
+                Text("-").font(.title3.weight(.bold))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+        .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 
     @ViewBuilder private var businessSummarySection: some View {
         if let summary = f?.summary, !summary.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Business Summary", systemImage: "building.2").font(.headline)
+                // Clamped by default: these run to a dozen lines and pushed
+                // everything measurable off the screen.
                 Text(summary).font(.subheadline).foregroundStyle(.secondary)
                     .lineSpacing(4)
+                    .lineLimit(summaryExpanded ? nil : 4)
+                // Only offered when there is something behind the clamp — a
+                // toggle that does nothing is worse than no toggle.
+                if summary.count > 320 {
+                    Button(summaryExpanded ? "Show less" : "Read more") {
+                        withAnimation(.easeInOut(duration: 0.2)) { summaryExpanded.toggle() }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.indigo)
+                }
             }
             .padding(20).frame(maxWidth: .infinity, alignment: .leading)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
