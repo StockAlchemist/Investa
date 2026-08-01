@@ -3,7 +3,10 @@
     "allow": [
       "WebFetch(domain:firebase.google.com)",
       "Bash(xelatex -interaction=nonstopmode buffett_strategy_report.tex)",
-      "Bash(rm -f quality_strategy_report.aux quality_strategy_report.log quality_strategy_report.out quality_strategy_report.toc && python3 -c \" *)"
+      "Bash(rm -f quality_strategy_report.aux quality_strategy_report.log quality_strategy_report.out quality_strategy_report.toc && python3 -c \" *)",
+      "WebFetch(domain:www.stockoracle.com)",
+      "WebFetch(domain:www.piranhaprofits.com)",
+      "WebFetch(domain:help.stockoracle.com)"
     ],
     "additionalDirectories": [
       "/Users/kmatan/Investa/docs"
