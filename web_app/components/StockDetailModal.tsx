@@ -489,6 +489,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         const dcfUpside = getUpsidePercentage(intrinsicValue?.models?.dcf?.intrinsic_value);
         const grahamUpside = getUpsidePercentage(intrinsicValue?.models?.graham?.intrinsic_value);
         const epvUpside = getUpsidePercentage(intrinsicValue?.models?.epv?.intrinsic_value);
+        const valuationCardCount = [
+            intrinsicValue?.models?.dcf?.intrinsic_value,
+            intrinsicValue?.models?.graham?.intrinsic_value,
+            intrinsicValue?.models?.epv?.intrinsic_value,
+        ].filter(Boolean).length;
 
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -568,9 +573,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             <Calendar className="w-5 h-5 text-indigo-500" />
                             Upcoming Events
                         </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="bg-muted rounded-xl divide-y divide-border/50 overflow-hidden">
                             {reportedEarnings && (
-                                <UpcomingEventTile
+                                <UpcomingEventRow
                                     icon={BarChart3}
                                     color="bg-violet-500/10 text-violet-500"
                                     label="Latest Earnings"
@@ -596,7 +601,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 />
                             )}
                             {upcomingEarnings && (
-                                <UpcomingEventTile
+                                <UpcomingEventRow
                                     icon={BarChart3}
                                     color="bg-violet-500/10 text-violet-500"
                                     label="Next Earnings"
@@ -611,7 +616,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 />
                             )}
                             {upcomingDividend && (
-                                <UpcomingEventTile
+                                <UpcomingEventRow
                                     icon={DollarSign}
                                     color="bg-emerald-500/10 text-emerald-500"
                                     label="Next Dividend"
@@ -645,7 +650,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         Refresh Data
                     </button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
+                {/* Column count follows how many models actually returned a
+                    value, so a third card never lands alone on a half-empty row. */}
+                <div className={cn(
+                    'grid grid-cols-1 gap-2.5 w-full',
+                    valuationCardCount >= 3 ? 'sm:grid-cols-2 md:grid-cols-3' : 'sm:grid-cols-2',
+                )}>
                     {intrinsicValue?.models?.dcf?.intrinsic_value && (
                                 <StatCard
                                     label="DCF Intrinsic Value"
@@ -2255,7 +2265,15 @@ function relativeEventDay(iso: string, timeZone?: string | null): string | null 
  * to match the StatCard tiles beside it. `status='reported'` is the one that
  * looks backwards — a quarter already printed, whose date is in the past.
  */
-function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, detail, detailColor, timeZone }: {
+/**
+ * One upcoming/just-passed event as a single full-width row.
+ *
+ * Deliberately a row and not a card: there are one to three of these, and as
+ * cards in a two-column grid the odd one out left half the section blank. A row
+ * puts label, date and figures on one line, which fills the width and costs
+ * less height than the grid it replaced.
+ */
+function UpcomingEventRow({ icon: Icon, color, label, status, date, dateEnd, detail, detailColor, timeZone }: {
     icon: React.ElementType;
     color: string;
     label: string;
@@ -2275,26 +2293,33 @@ function UpcomingEventTile({ icon: Icon, color, label, status, date, dateEnd, de
         reported: { text: 'reported', tone: 'text-violet-600 dark:text-violet-400 bg-violet-500/10', title: 'Already reported by the company' },
     }[status];
     return (
-        <div className="bg-muted py-2 px-3 rounded-xl flex items-center gap-3 transition-all hover:bg-muted/50">
-            <div className={cn("p-2 rounded-lg bg-card shrink-0", color)}>
-                <Icon className="w-4 h-4" />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 transition-colors hover:bg-muted/60">
+            <div className={cn("p-1.5 rounded-lg bg-card shrink-0", color)}>
+                <Icon className="w-3.5 h-3.5" />
             </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</p>
-                    <span
-                        className={cn("text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded", badge.tone)}
-                        title={badge.title}
-                    >
-                        {badge.text}
-                    </span>
-                </div>
-                <p className="text-sm font-bold truncate">
-                    {formatEventDate(date)}{dateEnd ? ` – ${formatEventDate(dateEnd)}` : ''}
-                    {relative && <span className="text-muted-foreground font-medium"> · {relative}</span>}
+            <div className="flex items-center gap-1.5 shrink-0">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</p>
+                <span
+                    className={cn("text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded", badge.tone)}
+                    title={badge.title}
+                >
+                    {badge.text}
+                </span>
+            </div>
+            <p className="text-sm font-bold">
+                {formatEventDate(date)}{dateEnd ? ` – ${formatEventDate(dateEnd)}` : ''}
+                {relative && <span className="text-muted-foreground font-medium"> · {relative}</span>}
+            </p>
+            {/* Right-aligned on one line where it fits; its own line once the row
+                wraps, where hanging off the right edge would read as a stray. */}
+            {detail && (
+                <p className={cn(
+                    "text-[11px] w-full sm:w-auto sm:ml-auto sm:text-right truncate",
+                    detailColor || "text-muted-foreground",
+                )}>
+                    {detail}
                 </p>
-                {detail && <p className={cn("text-[11px] truncate", detailColor || "text-muted-foreground")}>{detail}</p>}
-            </div>
+            )}
         </div>
     );
 }

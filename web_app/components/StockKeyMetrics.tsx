@@ -140,9 +140,12 @@ export default function StockKeyMetrics({ metrics, beta, averageVolume, classNam
                 </p>
             </div>
 
+            {/* Panels side by side are one height: `h-full` fills the row the
+                tallest of them sets, so their edges line up rather than each
+                card ending wherever its own last row happens to fall. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {panels.map(({ group, defs, extras }) => (
-                    <div key={group} className="bg-muted/50 rounded-xl px-3 py-2.5">
+                    <div key={group} className="bg-muted/50 rounded-xl px-3 py-2.5 h-full">
                         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
                             {group}
                         </p>

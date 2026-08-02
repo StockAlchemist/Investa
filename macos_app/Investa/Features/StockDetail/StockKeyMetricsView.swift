@@ -51,7 +51,8 @@ struct StockKeyMetricsView: View {
                 }
 
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columns),
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top),
+                                   count: columns),
                     alignment: .leading, spacing: 12
                 ) {
                     ForEach(populatedGroups, id: \.self) { group in
@@ -103,7 +104,9 @@ struct StockKeyMetricsView: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Fills its grid row rather than sitting centred in it, so the panels
+        // beside each other are one height and their edges line up.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 

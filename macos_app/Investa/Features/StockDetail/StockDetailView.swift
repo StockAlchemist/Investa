@@ -296,10 +296,12 @@ struct StockDetailView: View {
         if earnings != nil || dividend != nil || reported != nil {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Upcoming Events", systemImage: "calendar").font(.headline)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
-                                         count: hSizeClass == .regular ? 2 : 1), spacing: 12) {
+                // One panel of full-width rows, not a grid of cards: there are
+                // one to three of these, and as cards the odd one out left half
+                // the section blank.
+                VStack(spacing: 0) {
                     if let r = reported {
-                        eventCard(
+                        eventRow(
                             "Latest Earnings", icon: "chart.bar.fill", tint: Theme.earnings,
                             date: r.date, dateEnd: nil, status: r.status,
                             timeZone: r.marketTimezone,
@@ -307,7 +309,8 @@ struct StockDetailView: View {
                             detailTint: r.surprisePct.map { $0 >= 0 ? Color.up : Color.down })
                     }
                     if let e = earnings {
-                        eventCard(
+                        if reported != nil { Divider().opacity(0.5) }
+                        eventRow(
                             "Next Earnings", icon: "chart.bar.fill", tint: Theme.earnings,
                             date: e.date, dateEnd: e.dateEnd, status: e.status,
                             timeZone: e.marketTimezone,
@@ -318,7 +321,8 @@ struct StockDetailView: View {
                             })
                     }
                     if let d = dividend {
-                        eventCard(
+                        if reported != nil || earnings != nil { Divider().opacity(0.5) }
+                        eventRow(
                             "Next Dividend", icon: "dollarsign.circle.fill", tint: Color.up,
                             date: d.date, dateEnd: nil, status: d.status,
                             timeZone: d.marketTimezone,
@@ -328,6 +332,7 @@ struct StockDetailView: View {
                             ].compactMap { $0 }.joined(separator: " · "))
                     }
                 }
+                .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
             }
         }
     }
@@ -359,41 +364,63 @@ struct StockDetailView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func eventCard(_ label: String, icon: String, tint: Color, date: String,
-                           dateEnd: String?, status: String, timeZone: String?,
-                           detail: String?, detailTint: Color? = nil) -> some View {
+    /// One event as a full-width row: label and badge, the date, and the figures
+    /// pushed to the trailing edge. On a phone there is no room for all three on
+    /// one line, so it stacks — the same switch the web makes at its `sm` width.
+    private func eventRow(_ label: String, icon: String, tint: Color, date: String,
+                          dateEnd: String?, status: String, timeZone: String?,
+                          detail: String?, detailTint: Color? = nil) -> some View {
         // "reported" is the backward-looking status: a quarter already printed.
         let reported = status == "reported"
         let confirmed = status == "confirmed"
         let badgeText = reported ? "reported" : (confirmed ? "confirmed" : "est.")
         let badgeTint: Color = reported ? Theme.earnings : (confirmed ? Color.up : .orange)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).foregroundStyle(tint).font(.system(size: 16))
-                Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                Text(badgeText)
-                    .font(.system(size: 9, weight: .bold)).textCase(.uppercase)
-                    .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(badgeTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                    .foregroundStyle(badgeTint)
-                Spacer(minLength: 0)
+
+        let heading = HStack(spacing: 6) {
+            Image(systemName: icon).foregroundStyle(tint).font(.system(size: 14))
+            Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(badgeText)
+                .font(.system(size: 9, weight: .bold)).textCase(.uppercase)
+                .padding(.horizontal, 4).padding(.vertical, 1)
+                .background(badgeTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                .foregroundStyle(badgeTint)
+        }
+        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+
+        let when = HStack(spacing: 4) {
+            Text(Self.eventDate(date) + (dateEnd.map { " – " + Self.eventDate($0) } ?? ""))
+                .font(.callout.weight(.bold))
+            if let rel = Self.relativeEventDay(date, timeZone) {
+                Text("· \(rel)").font(.caption).foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(Self.eventDate(date) + (dateEnd.map { " – " + Self.eventDate($0) } ?? ""))
-                        .font(.callout.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
-                    if let rel = Self.relativeEventDay(date, timeZone) {
-                        Text("· \(rel)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
+        }
+        .lineLimit(1).minimumScaleFactor(0.8)
+
+        let figures = Group {
+            if let detail, !detail.isEmpty {
+                Text(detail).font(.caption2).foregroundStyle(detailTint ?? .secondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+
+        return Group {
+            if hSizeClass == .regular {
+                HStack(spacing: 10) {
+                    heading
+                    when
+                    Spacer(minLength: 12)
+                    figures
                 }
-                if let detail, !detail.isEmpty {
-                    Text(detail).font(.caption2).foregroundStyle(detailTint ?? .secondary)
-                        .lineLimit(1).minimumScaleFactor(0.7)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) { heading; Spacer(minLength: 0) }
+                    when
+                    figures
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
-        .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
     @ViewBuilder private var marketOverviewHeader: some View {
@@ -410,8 +437,13 @@ struct StockDetailView: View {
 
     @ViewBuilder private var intrinsicValueSection: some View {
         if let iv = viewModel.intrinsic {
-            // Web app uses 2 columns for Intrinsic Value on md+
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: hSizeClass == .regular ? 2 : 1), spacing: 12) {
+            // Column count follows how many models actually returned a value, so
+            // a third card never lands alone on a half-empty row.
+            let present = [iv.models?.dcf?.intrinsicValue,
+                           iv.models?.graham?.intrinsicValue,
+                           iv.models?.epv?.intrinsicValue].compactMap { $0 }.count
+            let cols = hSizeClass == .regular ? min(max(present, 1), 3) : 1
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: cols), spacing: 12) {
                 if let dcf = iv.models?.dcf?.intrinsicValue {
                     ivCard("DCF Intrinsic Value", dcf, upside: upside(dcf, iv.currentPrice), range: iv.models?.dcf?.mc, tint: .green, icon: "chart.line.uptrend.xyaxis")
                 }
@@ -488,7 +520,7 @@ struct StockDetailView: View {
                 Text("-").font(.title3.weight(.bold))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
         .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -579,7 +611,7 @@ struct StockDetailView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -592,7 +624,8 @@ struct StockDetailView: View {
             avgCost: viewModel.userPosition?.double("Avg Cost"),
             fxRate: viewModel.userPosition?.double("fx_rate") ?? 1,
             accounts: appState.accountsQuery,
-            hidePrice: true
+            hidePrice: true,
+            exchange: viewModel.fundamentals?.exchange
         )
     }
 
@@ -1733,7 +1766,7 @@ struct StockDetailView: View {
                 if let sub { Text(sub).font(.caption2.weight(.bold)).foregroundStyle(subTint ?? iconTint) }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
         .background(bgTint ?? Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 
