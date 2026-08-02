@@ -313,6 +313,11 @@ export interface paths {
         /**
          * Get Ratios Endpoint
          * @description Returns calculated financial ratios for a symbol.
+         *
+         *     `period_type` shapes the historical series only. Quarterly measures the same
+         *     ratios on trailing-twelve-month flows at each quarter end, so the numbers
+         *     stay comparable with the annual series and simply arrive four times as
+         *     often. The current valuation block is point-in-time and is unaffected.
          */
         get: operations["get_ratios_endpoint_api_ratios__symbol__get"];
         put?: never;
@@ -1796,6 +1801,11 @@ export interface paths {
         /**
          * Get Ratios Endpoint
          * @description Returns calculated financial ratios for a symbol.
+         *
+         *     `period_type` shapes the historical series only. Quarterly measures the same
+         *     ratios on trailing-twelve-month flows at each quarter end, so the numbers
+         *     stay comparable with the annual series and simply arrive four times as
+         *     often. The current valuation block is point-in-time and is unaffected.
          */
         get: operations["get_ratios_endpoint_ratios__symbol__get"];
         put?: never;
@@ -3821,6 +3831,7 @@ export interface operations {
     get_ratios_endpoint_api_ratios__symbol__get: {
         parameters: {
             query?: {
+                period_type?: string;
                 force?: boolean;
             };
             header?: never;
@@ -6066,6 +6077,7 @@ export interface operations {
     get_ratios_endpoint_ratios__symbol__get: {
         parameters: {
             query?: {
+                period_type?: string;
                 force?: boolean;
             };
             header?: never;

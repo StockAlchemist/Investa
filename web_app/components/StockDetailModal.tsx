@@ -64,6 +64,9 @@ import {
     ResponsiveContainer,
     AreaChart,
     Area,
+    ComposedChart,
+    Bar,
+    Line,
     ReferenceLine,
     PieChart,
     Pie,
@@ -72,6 +75,23 @@ import {
 } from 'recharts';
 import { cn, formatPercent as formatPercentShared } from "@/lib/utils";
 import { formatCalendarDate, marketDayDiff } from "@/lib/market_time";
+import {
+    DEFAULT_CHART_METRICS,
+    BAR_TO_LINE_THRESHOLD,
+    MAX_CHART_SERIES,
+    defaultRange,
+    periodsInRange,
+    pickDefaultMetrics,
+    SERIES_COLORS_DARK,
+    SERIES_COLORS_LIGHT,
+    formatStatementValue,
+    groupBySharedScale,
+    isFiniteNumber,
+    periodAxisLabel,
+    toggleSlot,
+    type StatementPeriod,
+    type StatementRange,
+} from "@/lib/statement_chart";
 import { normalizeDividendYield, normalizeExpenseRatio } from "@/lib/dividend";
 import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
@@ -143,9 +163,25 @@ const RANKING_CONFIG: Record<string, string[]> = {
     ]
 };
 
+
 export default function StockDetailModal({ symbol, isOpen, onClose, currency }: StockDetailModalProps) {
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [finType, setFinType] = useState<'income' | 'balance' | 'cash' | 'equity'>('income');
+    // Quarterly by default: it is the reporting cadence a holder actually
+    // follows. Annual stays a click away because only the annual statements
+    // carry the SEC-filed back history.
+    const [finPeriod, setFinPeriod] = useState<StatementPeriod>('quarterly');
+    /**
+     * Chart series by colour slot, so removing one series never repaints the
+     * others. Empty means "no explicit choice yet" — the defaults are derived
+     * from whatever rows the statement actually has.
+     */
+    const [chartSlots, setChartSlots] = useState<(string | null)[]>([]);
+    const [showAllMetrics, setShowAllMetrics] = useState(false);
+    /** null follows the period's own default; a click pins a range. */
+    const [finRange, setFinRange] = useState<StatementRange | null>(null);
+    /** Ratios follow the same cadence rule as the statements: quarterly first. */
+    const [ratioPeriod, setRatioPeriod] = useState<StatementPeriod>('quarterly');
     const [viewingDistribution, setViewingDistribution] = useState<'dcf' | 'graham' | null>(null);
     const [summaryExpanded, setSummaryExpanded] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -172,16 +208,29 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const error = fundamentalsQuery.error ? (fundamentalsQuery.error as Error).message : null;
 
     const financialsQuery = useQuery({
-        queryKey: ['stock-financials', symbol],
-        queryFn: () => fetchFinancials(symbol, 'annual'),
+        queryKey: ['stock-financials', symbol, finPeriod],
+        queryFn: () => fetchFinancials(symbol, finPeriod),
         enabled: isOpen && !!symbol,
         staleTime: 30 * 60 * 1000,
     });
     const financials = financialsQuery.data ?? null;
 
+    // A statement's rows have nothing to do with the previous statement's, so a
+    // carried-over selection would silently chart nothing.
+    useEffect(() => {
+        setChartSlots([]);
+        setShowAllMetrics(false);
+    }, [finType, finPeriod, symbol]);
+
+    // Five years of quarters and ten of years are different column counts for
+    // the same span, so a pinned range does not survive the switch.
+    useEffect(() => {
+        setFinRange(null);
+    }, [finPeriod, symbol]);
+
     const ratiosQuery = useQuery({
-        queryKey: ['stock-ratios', symbol],
-        queryFn: () => fetchRatios(symbol),
+        queryKey: ['stock-ratios', symbol, ratioPeriod],
+        queryFn: () => fetchRatios(symbol, ratioPeriod),
         enabled: isOpen && !!symbol,
         staleTime: 30 * 60 * 1000,
     });
@@ -362,13 +411,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     staleTime: 5 * 60 * 1000,
                 }),
                 queryClient.fetchQuery({
-                    queryKey: ['stock-financials', symbol],
-                    queryFn: () => fetchFinancials(symbol, 'annual', true),
+                    queryKey: ['stock-financials', symbol, finPeriod],
+                    queryFn: () => fetchFinancials(symbol, finPeriod, true),
                     staleTime: 30 * 60 * 1000,
                 }),
                 queryClient.fetchQuery({
-                    queryKey: ['stock-ratios', symbol],
-                    queryFn: () => fetchRatios(symbol, true),
+                    queryKey: ['stock-ratios', symbol, ratioPeriod],
+                    queryFn: () => fetchRatios(symbol, ratioPeriod, true),
                     staleTime: 30 * 60 * 1000,
                 }),
                 queryClient.fetchQuery({
@@ -780,52 +829,14 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     };
 
     const renderFinancials = () => {
-        if (!financials) return null;
+        const seriesColors = isDarkMode ? SERIES_COLORS_DARK : SERIES_COLORS_LIGHT;
 
-        let rawStatement;
-        switch (finType) {
-            case 'income': rawStatement = financials.financials; break;
-            case 'balance': rawStatement = financials.balance_sheet; break;
-            case 'cash': rawStatement = financials.cashflow; break;
-            case 'equity': rawStatement = financials.shareholders_equity; break;
-            default: rawStatement = financials.financials;
-        }
-
-        if (!rawStatement || !rawStatement.index) {
-            return (
-                <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
-                    <Info className="w-8 h-8 mb-2 opacity-20" />
-                    <p>No data available for this statement.</p>
-                </div>
-            );
-        }
-
-        // Apply importance ranking
-        const ranking = RANKING_CONFIG[finType] || [];
-        const indexedData = rawStatement.index.map((label, idx) => ({
-            label,
-            data: rawStatement.data[idx]
-        }));
-
-        const sortedData = [...indexedData].sort((a, b) => {
-            const idxA = ranking.indexOf(a.label);
-            const idxB = ranking.indexOf(b.label);
-
-            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-            if (idxA !== -1) return -1;
-            if (idxB !== -1) return 1;
-            return 0;
-        });
-
-        const currentStatement = {
-            ...rawStatement,
-            index: sortedData.map(d => d.label),
-            data: sortedData.map(d => d.data)
-        };
-
-        return (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex flex-nowrap overflow-x-auto no-scrollbar gap-2 mb-4 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+        // The statement picker and the period switch are chrome: they stay put
+        // through loading and empty states, because "quarterly has nothing for
+        // this company" is only actionable if Annual is still one click away.
+        const controls = (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-nowrap overflow-x-auto no-scrollbar gap-2 -mx-4 px-4 sm:mx-0 sm:px-0">
                     {[
                         { id: 'income', label: 'Income', fullLabel: 'Income Statement', icon: Receipt },
                         { id: 'balance', label: 'Balance', fullLabel: 'Balance Sheet', icon: Scale },
@@ -848,56 +859,399 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         </button>
                     ))}
                 </div>
-
-                <div className="overflow-x-auto bg-muted">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-secondary/50 font-semibold">
-                            <tr>
-                                <th className="px-6 py-3 font-semibold text-foreground sticky left-0 bg-card"></th>
-                                <th className="px-6 py-3 font-semibold text-center text-muted-foreground">Trend</th>
-                                {currentStatement.columns.map(col => (
-                                    <th key={col} className="px-4 py-3 font-semibold text-center text-muted-foreground tabular-nums whitespace-nowrap">
-                                        <div>{fiscalPeriodYear(col)}</div>
-                                        <div className="text-[10px] font-normal opacity-60">{fiscalPeriodDay(col)}</div>
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="">
-                            {currentStatement.index.map((item, idx) => (
-                                <tr key={item} className="hover:bg-accent/5 transition-colors">
-                                    <td className="px-6 py-3 font-medium text-foreground sticky left-0 bg-card min-w-[200px]">{item}</td>
-                                    <td className="px-6 py-3 text-center min-w-[100px]">
-                                        <Sparkline data={currentStatement.data[idx] as number[]} />
-                                    </td>
-                                    {currentStatement.data[idx].map((val, vIdx) => (
-                                        <td key={vIdx} className="px-6 py-3 text-foreground text-right font-medium tabular-nums">
-                                            {formatCompact(val as number)}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <div className="flex items-center p-0.5 rounded-full bg-muted/50 flex-shrink-0">
+                    {([
+                        { id: 'quarterly', label: 'Quarterly' },
+                        { id: 'annual', label: 'Annual' }
+                    ] as const).map(opt => (
+                        <button
+                            key={opt.id}
+                            onClick={() => setFinPeriod(opt.id)}
+                            aria-pressed={finPeriod === opt.id}
+                            className={cn(
+                                "px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap",
+                                finPeriod === opt.id
+                                    ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
                 </div>
             </div>
+        );
+
+        const frame = (body: React.ReactNode) => (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {controls}
+                {body}
+            </div>
+        );
+
+        if (financialsQuery.isPending) {
+            return frame(
+                <div className="space-y-6">
+                    <Skeleton className="h-80 w-full rounded-2xl" />
+                    <Skeleton className="h-64 w-full rounded-2xl" />
+                </div>
+            );
+        }
+
+        let rawStatement;
+        switch (finType) {
+            case 'income': rawStatement = financials?.financials; break;
+            case 'balance': rawStatement = financials?.balance_sheet; break;
+            case 'cash': rawStatement = financials?.cashflow; break;
+            case 'equity': rawStatement = financials?.shareholders_equity; break;
+            default: rawStatement = financials?.financials;
+        }
+
+        if (!rawStatement || !rawStatement.index || !rawStatement.index.length) {
+            return frame(
+                <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
+                    <Info className="w-8 h-8 mb-2 opacity-20" />
+                    <p>No {finPeriod} data available for this statement.</p>
+                    {finPeriod === 'quarterly' && (
+                        <button
+                            onClick={() => setFinPeriod('annual')}
+                            className="mt-4 text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                            Show annual instead
+                        </button>
+                    )}
+                </div>
+            );
+        }
+        const statement = rawStatement;
+
+        // Apply importance ranking
+        const ranking = RANKING_CONFIG[finType] || [];
+        const indexedData = statement.index.map((label, idx) => ({
+            label,
+            data: statement.data[idx]
+        }));
+
+        const sortedData = [...indexedData].sort((a, b) => {
+            const idxA = ranking.indexOf(a.label);
+            const idxB = ranking.indexOf(b.label);
+
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return 0;
+        });
+
+        const currentStatement = {
+            ...statement,
+            index: sortedData.map(d => d.label),
+            data: sortedData.map(d => d.data)
+        };
+
+        // --- what can be charted ------------------------------------------
+        const rows = currentStatement.index.map((label, idx) => ({
+            label,
+            values: currentStatement.data[idx] as (number | null)[],
+            ranked: ranking.includes(label)
+        }));
+        const chartable = rows.filter(r => r.values.some(isFiniteNumber));
+
+        const defaultSlots: (string | null)[] = pickDefaultMetrics(
+            DEFAULT_CHART_METRICS[finType] ?? [],
+            chartable,
+        );
+        if (!defaultSlots.length && chartable.length) defaultSlots.push(chartable[0].label);
+
+        const slots = chartSlots.length ? chartSlots : defaultSlots;
+        const slotFull = slots.filter(Boolean).length >= MAX_CHART_SERIES && !slots.includes(null);
+
+        const toggleMetric = (label: string) => {
+            setChartSlots(prev => toggleSlot(prev.length ? prev : defaultSlots, label));
+        };
+
+        // Colour belongs to the metric's slot, not to its rank in the chart, so
+        // dropping one series never recolours the ones left standing.
+        const activeSeries = slots
+            .map((label, slot) => {
+                if (!label) return null;
+                const row = chartable.find(r => r.label === label);
+                if (!row) return null;
+                const magnitudes = row.values.filter(isFiniteNumber).map(Math.abs);
+                return {
+                    key: `m${slot}`,
+                    label,
+                    color: seriesColors[slot % seriesColors.length],
+                    values: row.values,
+                    maxAbs: magnitudes.length ? Math.max(...magnitudes) : 0
+                };
+            })
+            .filter((s): s is NonNullable<typeof s> => s !== null);
+
+        // Newest-first from the API; charts read left-to-right in time.
+        const range = finRange ?? defaultRange(finPeriod);
+        const columnOrder = currentStatement.columns
+            .map((col, idx) => ({ col, idx }))
+            .reverse()
+            .slice(-periodsInRange(range, finPeriod));
+
+        const points = columnOrder.map(({ col, idx }) => {
+            const point: Record<string, string | number | null> = {
+                period: col,
+                label: periodAxisLabel(col, finPeriod)
+            };
+            activeSeries.forEach(s => {
+                point[s.key] = isFiniteNumber(s.values[idx]) ? (s.values[idx] as number) : null;
+            });
+            return point;
+        });
+
+        // One y-axis per chart, always: series whose magnitudes are too far
+        // apart to share a scale get their own chart rather than a second axis.
+        const scaleGroups = groupBySharedScale(activeSeries);
+
+        const primary = activeSeries[0];
+        const chartableRanked = chartable.filter(r => r.ranked);
+        const chipRows = showAllMetrics || !chartableRanked.length ? chartable : chartableRanked;
+
+        return frame(
+            <>
+                {/* --- chart ------------------------------------------------ */}
+                <div className="bg-muted rounded-2xl p-4 sm:p-6 space-y-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            {finPeriod === 'quarterly' ? 'Quarterly' : 'Annual'} trend
+                            <span className="ml-2 font-normal normal-case tracking-normal text-[11px] opacity-70">
+                                {points.length} {finPeriod === 'quarterly' ? 'quarters' : 'years'}
+                            </span>
+                        </h4>
+                        <div className="flex items-center gap-3">
+                            <p className="hidden sm:block text-[11px] text-muted-foreground">
+                                {fundamentals?.financialCurrency ? `Figures in ${fundamentals.financialCurrency}. ` : ''}
+                                Pick up to {MAX_CHART_SERIES}.
+                            </p>
+                            <div className="flex items-center p-0.5 rounded-full bg-background/60">
+                                {(['5y', '10y', 'max'] as const).map(opt => (
+                                    <button
+                                        key={opt}
+                                        onClick={() => setFinRange(opt)}
+                                        aria-pressed={range === opt}
+                                        className={cn(
+                                            "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-all",
+                                            range === opt
+                                                ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm"
+                                                : "text-muted-foreground hover:text-foreground"
+                                        )}
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Metric picker — one row above the chart it scopes. */}
+                    <div className="flex flex-wrap gap-1.5">
+                        {chipRows.map(row => {
+                            const slot = slots.indexOf(row.label);
+                            const selected = slot !== -1;
+                            const disabled = !selected && slotFull;
+                            return (
+                                <button
+                                    key={row.label}
+                                    onClick={() => toggleMetric(row.label)}
+                                    disabled={disabled}
+                                    aria-pressed={selected}
+                                    title={disabled ? `Deselect one first — ${MAX_CHART_SERIES} is the limit` : row.label}
+                                    className={cn(
+                                        "flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-full text-[11px] font-medium transition-all border",
+                                        selected
+                                            ? "bg-background border-black/10 dark:border-white/15 text-foreground"
+                                            : "bg-transparent border-transparent text-muted-foreground hover:bg-background/60 hover:text-foreground",
+                                        disabled && "opacity-40 cursor-not-allowed hover:bg-transparent"
+                                    )}
+                                >
+                                    <span
+                                        className="w-2 h-2 rounded-full flex-shrink-0"
+                                        style={{
+                                            backgroundColor: selected
+                                                ? seriesColors[slot % seriesColors.length]
+                                                : 'currentColor',
+                                            opacity: selected ? 1 : 0.25
+                                        }}
+                                    />
+                                    {row.label}
+                                </button>
+                            );
+                        })}
+                        {chartableRanked.length > 0 && chartable.length > chartableRanked.length && (
+                            <button
+                                onClick={() => setShowAllMetrics(v => !v)}
+                                className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                                {showAllMetrics ? 'Show key items' : `+${chartable.length - chartableRanked.length} more`}
+                            </button>
+                        )}
+                    </div>
+
+                    {scaleGroups.length === 0 ? (
+                        <div className="h-64 flex flex-col items-center justify-center text-center text-muted-foreground">
+                            <LineChartIcon className="w-8 h-8 mb-2 opacity-20" />
+                            <p className="text-sm">Pick a line item above to chart it.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            {scaleGroups.map((group, gIdx) => (
+                                <StatementChart
+                                    key={group.map(s => s.key).join('-') || gIdx}
+                                    points={points}
+                                    series={group}
+                                    periodType={finPeriod}
+                                />
+                            ))}
+                        </div>
+                    )}
+
+                    {primary && (
+                        <MetricChangeStrip
+                            label={primary.label}
+                            color={primary.color}
+                            points={points}
+                            seriesKey={primary.key}
+                            periodType={finPeriod}
+                        />
+                    )}
+                </div>
+
+                {/* --- table ------------------------------------------------ */}
+                <div>
+                    <p className="text-[11px] text-muted-foreground mb-2 px-1">
+                        {finPeriod === 'quarterly'
+                            ? 'Quarterly figures are built from the company’s own 10-Q filings, differenced out of the year-to-date numbers where that is all it tags.'
+                            : 'Annual statements are extended with SEC-filed history where the company files one.'}
+                        {' '}Click any row to chart it.
+                    </p>
+                    <div className="overflow-x-auto bg-muted">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-secondary/50 font-semibold">
+                                <tr>
+                                    <th className="px-6 py-3 font-semibold text-foreground sticky left-0 z-20 bg-white dark:bg-zinc-950 border-r border-black/5 dark:border-white/10"></th>
+                                    <th className="px-6 py-3 font-semibold text-center text-muted-foreground">Trend</th>
+                                    {currentStatement.columns.map(col => (
+                                        <th key={col} className="px-4 py-3 font-semibold text-center text-muted-foreground tabular-nums whitespace-nowrap">
+                                            <div>{periodAxisLabel(col, finPeriod)}</div>
+                                            <div className="text-[10px] font-normal opacity-60">{fiscalPeriodDay(col)}</div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody className="">
+                                {currentStatement.index.map((item, idx) => {
+                                    const slot = slots.indexOf(item);
+                                    const selected = slot !== -1;
+                                    const chartableRow = chartable.some(r => r.label === item);
+                                    return (
+                                        <tr
+                                            key={item}
+                                            onClick={() => chartableRow && toggleMetric(item)}
+                                            aria-pressed={selected}
+                                            className={cn(
+                                                "transition-colors",
+                                                chartableRow ? "cursor-pointer hover:bg-accent/5" : "opacity-70",
+                                                selected && "bg-accent/5"
+                                            )}
+                                        >
+                                            <td className="px-6 py-3 font-medium text-foreground sticky left-0 z-10 bg-white dark:bg-zinc-950 border-r border-black/5 dark:border-white/10 min-w-[200px]">
+                                                <span className="flex items-center gap-2">
+                                                    <span
+                                                        className={cn("w-2 h-2 rounded-full flex-shrink-0", !selected && "opacity-0")}
+                                                        style={{ backgroundColor: selected ? seriesColors[slot % seriesColors.length] : 'transparent' }}
+                                                    />
+                                                    {item}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-3 text-center min-w-[100px]">
+                                                <Sparkline data={currentStatement.data[idx] as number[]} />
+                                            </td>
+                                            {currentStatement.data[idx].map((val, vIdx) => (
+                                                <td key={vIdx} className="px-6 py-3 text-foreground text-right font-medium tabular-nums">
+                                                    {formatCompact(val as number)}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </>
         );
     };
 
     const renderRatios = () => {
+        // Chrome first, so the period switch survives an empty quarterly answer
+        // exactly as it does on the statements tab.
+        const periodSwitch = (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[11px] text-muted-foreground">
+                    {ratioPeriod === 'quarterly'
+                        ? 'Measured on the trailing twelve months at each quarter end, so these are the same ratios the annual view reports — sampled four times as often.'
+                        : 'Measured on each filed fiscal year.'}
+                </p>
+                <div className="flex items-center p-0.5 rounded-full bg-muted/50 flex-shrink-0">
+                    {([
+                        { id: 'quarterly', label: 'Quarterly' },
+                        { id: 'annual', label: 'Annual' }
+                    ] as const).map(opt => (
+                        <button
+                            key={opt.id}
+                            onClick={() => setRatioPeriod(opt.id)}
+                            aria-pressed={ratioPeriod === opt.id}
+                            className={cn(
+                                "px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap",
+                                ratioPeriod === opt.id
+                                    ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
+
+        if (ratiosQuery.isPending) {
+            return (
+                <div className="space-y-8 animate-in fade-in duration-500">
+                    {periodSwitch}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-64 rounded-2xl" />)}
+                    </div>
+                </div>
+            );
+        }
+
         if (!ratios || !ratios.historical.length) {
-            return trackRecord
-                ? <div className="animate-in fade-in duration-500"><TrackRecordPanel record={trackRecord} /></div>
-                : <div className="text-center py-20 text-gray-500">No historical ratio data available.</div>;
+            return (
+                <div className="space-y-8 animate-in fade-in duration-500">
+                    {periodSwitch}
+                    {trackRecord
+                        ? <TrackRecordPanel record={trackRecord} />
+                        : <div className="text-center py-20 text-gray-500">No historical ratio data available.</div>}
+                </div>
+            );
         }
 
         const chartData = [...ratios.historical].reverse();
 
         return (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {periodSwitch}
                 {trackRecord && <TrackRecordPanel record={trackRecord} />}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <RatioChart
+                        periodType={ratioPeriod}
                         data={chartData}
                         dataKey="Return on Equity (ROE) (%)"
                         title="Return on Equity"
@@ -905,6 +1259,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         suffix="%"
                     />
                     <RatioChart
+                        periodType={ratioPeriod}
                         data={chartData}
                         dataKey="Gross Profit Margin (%)"
                         title="Gross Margin"
@@ -912,6 +1267,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         suffix="%"
                     />
                     <RatioChart
+                        periodType={ratioPeriod}
                         data={chartData}
                         dataKey="Net Profit Margin (%)"
                         title="Net Margin"
@@ -919,12 +1275,14 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         suffix="%"
                     />
                     <RatioChart
+                        periodType={ratioPeriod}
                         data={chartData}
                         dataKey="Asset Turnover"
                         title="Asset Turnover"
                         color="#f59e0b"
                     />
                     <RatioChart
+                        periodType={ratioPeriod}
                         data={chartData}
                         dataKey="Return on Invested Capital (ROIC) (%)"
                         title="Return on Invested Capital"
@@ -932,6 +1290,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         suffix="%"
                     />
                     <RatioChart
+                        periodType={ratioPeriod}
                         data={chartData}
                         dataKey="Free Cash Flow Margin (%)"
                         title="Free Cash Flow Margin"
@@ -942,6 +1301,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         nineteen years it is the clearest picture of whether
                         management returned capital or issued it away. */}
                     <RatioChart
+                        periodType={ratioPeriod}
                         data={chartData}
                         dataKey="Diluted Shares Outstanding"
                         title="Diluted Shares Outstanding"
@@ -2238,6 +2598,223 @@ function formatEventDate(iso: string): string {
  * Both are read straight out of the ISO string: a period end is a calendar day,
  * not an instant, and must not shift for a viewer west of the market.
  */
+type ChartSeries = { key: string; label: string; color: string };
+type ChartPoint = Record<string, string | number | null>;
+
+/**
+ * A bar with its data end rounded — the baseline end stays square, so a
+ * negative bar (capex, buybacks) rounds downward rather than at zero.
+ */
+function RoundedBar(props: {
+    x?: number; y?: number; width?: number; height?: number; fill?: string; value?: number;
+}) {
+    const { x = 0, y = 0, width = 0, height = 0, fill } = props;
+    if (!width || !height) return null;
+    const negative = (props.value ?? 0) < 0;
+    const r = Math.max(0, Math.min(4, width / 2, height));
+    const path = negative
+        ? `M${x},${y} L${x + width},${y} L${x + width},${y + height - r} Q${x + width},${y + height} ${x + width - r},${y + height} L${x + r},${y + height} Q${x},${y + height} ${x},${y + height - r} Z`
+        : `M${x},${y + height} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + width - r},${y} Q${x + width},${y} ${x + width},${y + r} L${x + width},${y + height} Z`;
+    return <path d={path} fill={fill} />;
+}
+
+/**
+ * One tooltip per period listing every series in the chart, so the pointer
+ * never has to find a particular bar to read a number. The value leads and the
+ * line item follows — the reader already knows which row they picked.
+ */
+function StatementTooltip({ active, payload, series }: {
+    active?: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Recharts' tooltip payload shape
+    payload?: any[];
+    series: ChartSeries[];
+}) {
+    if (!active || !payload || !payload.length) return null;
+    const period = payload[0]?.payload?.period as string | undefined;
+    return (
+        <div className="bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md rounded-xl px-3 py-2 shadow-lg border border-black/5 dark:border-white/10">
+            <p className="text-[11px] font-medium text-muted-foreground mb-1.5">
+                {period ? formatCalendarDate(period) : ''}
+            </p>
+            <div className="space-y-1">
+                {series.map(s => {
+                    const entry = payload.find(p => p.dataKey === s.key);
+                    const value = entry?.value;
+                    return (
+                        <div key={s.key} className="flex items-center justify-between gap-6">
+                            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span className="w-3 h-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                                {s.label}
+                            </span>
+                            <span className="text-sm font-bold tabular-nums text-foreground">
+                                {isFiniteNumber(value) ? formatStatementValue(value) : '—'}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * One chart, one y-axis. Callers split series that cannot share a scale into
+ * separate charts rather than reaching for a second axis.
+ */
+function StatementChart({ points, series, periodType }: {
+    points: ChartPoint[];
+    series: ChartSeries[];
+    periodType: StatementPeriod;
+}) {
+    const hasNegative = points.some(p => series.some(s => isFiniteNumber(p[s.key]) && (p[s.key] as number) < 0));
+    // Grouped bars stop reading as magnitudes once they are hairlines: past two
+    // dozen periods the question is the shape of the series, which is a line's
+    // job. Fifteen years of quarters is a line chart whether or not one asked.
+    const asLines = points.length > BAR_TO_LINE_THRESHOLD;
+    return (
+        <div>
+            {/* One series is named by its title; several need the legend, since
+                identity must never rest on colour alone. */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
+                {series.map(s => (
+                    <span key={s.key} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span className="w-2.5 h-2.5 rounded-[2px] flex-shrink-0" style={{ backgroundColor: s.color }} />
+                        {s.label}
+                    </span>
+                ))}
+            </div>
+            <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                    {/* The 2px gap between bars in a group stays — it is what
+                        keeps three fills from reading as one block — but the
+                        space between periods is spent on the bars instead. */}
+                    <ComposedChart data={points} margin={{ top: 8, right: 4, left: 0, bottom: 0 }} barGap={2} barCategoryGap="10%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" opacity={0.1} vertical={false} />
+                        <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 10 }}
+                            className="fill-muted-foreground"
+                            interval="preserveStartEnd"
+                            minTickGap={periodType === 'quarterly' ? 4 : 12}
+                        />
+                        <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 10 }}
+                            width={56}
+                            className="fill-muted-foreground"
+                            tickFormatter={(val) => formatStatementValue(Number(val))}
+                        />
+                        {hasNegative && <ReferenceLine y={0} stroke="currentColor" className="text-border" strokeWidth={1} />}
+                        <Tooltip
+                            wrapperStyle={{ opacity: 1, zIndex: 1000 }}
+                            cursor={
+                                asLines
+                                    ? { stroke: 'currentColor', className: 'text-muted-foreground', strokeWidth: 1, strokeDasharray: '3 3' }
+                                    : { fill: 'currentColor', className: 'text-muted-foreground', opacity: 0.08 }
+                            }
+                            content={<StatementTooltip series={series} />}
+                        />
+                        {series.map(s => (asLines ? (
+                            <Line
+                                key={s.key}
+                                type="monotone"
+                                dataKey={s.key}
+                                name={s.label}
+                                stroke={s.color}
+                                strokeWidth={2}
+                                dot={false}
+                                activeDot={{ r: 4, strokeWidth: 2 }}
+                                connectNulls
+                                animationDuration={600}
+                            />
+                        ) : (
+                            <Bar
+                                key={s.key}
+                                dataKey={s.key}
+                                name={s.label}
+                                fill={s.color}
+                                shape={<RoundedBar />}
+                                animationDuration={600}
+                            />
+                        )))}
+                    </ComposedChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * The three numbers a quarterly statement is usually opened for: where the
+ * headline line item landed, how it moved on the prior period, and how it moved
+ * on the same period a year earlier — the one comparison a seasonal business
+ * can be judged on.
+ */
+function MetricChangeStrip({ label, color, points, seriesKey, periodType }: {
+    label: string;
+    color: string;
+    points: ChartPoint[];
+    seriesKey: string;
+    periodType: StatementPeriod;
+}) {
+    const values = points.map(p => (isFiniteNumber(p[seriesKey]) ? (p[seriesKey] as number) : null));
+    const lastIdx = values.map((v, i) => (v === null ? -1 : i)).filter(i => i >= 0).pop();
+    if (lastIdx === undefined) return null;
+
+    const latest = values[lastIdx] as number;
+    const back = (n: number) => (lastIdx - n >= 0 ? values[lastIdx - n] : null);
+    const yearBack = periodType === 'quarterly' ? 4 : 1;
+
+    // A percentage change off a negative or zero base says nothing, so it isn't shown.
+    const change = (prior: number | null) =>
+        prior === null || prior <= 0 ? null : ((latest - prior) / prior) * 100;
+    const formatChange = (pct: number) => `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+
+    const priorChange = change(back(1));
+    const yoyChange = periodType === 'quarterly' ? change(back(yearBack)) : change(back(1));
+
+    const cells: { title: string; value: string; tone?: number | null }[] = [
+        {
+            title: `${label} · ${String(points[lastIdx].label ?? '')}`,
+            value: formatStatementValue(latest)
+        },
+        ...(periodType === 'quarterly'
+            ? [{
+                title: 'vs prior quarter',
+                value: priorChange === null ? '—' : formatChange(priorChange),
+                tone: priorChange
+            }]
+            : []),
+        {
+            title: periodType === 'quarterly' ? 'vs year ago' : 'vs prior year',
+            value: yoyChange === null ? '—' : formatChange(yoyChange),
+            tone: yoyChange
+        }
+    ];
+
+    return (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {cells.map((cell, i) => (
+                <div key={cell.title} className="bg-background/60 rounded-xl px-3 py-2">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">
+                        {i === 0 && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />}
+                        <span className="truncate" title={cell.title}>{cell.title}</span>
+                    </div>
+                    <div className={cn(
+                        "text-lg font-bold tabular-nums mt-0.5",
+                        cell.tone == null ? "text-foreground" : cell.tone >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+                    )}>
+                        {cell.value}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
 function fiscalPeriodYear(iso: string): string {
     return iso.slice(0, 4);
 }
@@ -2649,7 +3226,7 @@ function TrackRecordPanel({ record }: { record: TrackRecord }) {
     );
 }
 
-function RatioChart({ data, dataKey, title, color, suffix = "", compact = false }: {
+function RatioChart({ data, dataKey, title, color, suffix = "", compact = false, periodType = 'annual' }: {
     data: FinancialRatio[];
     dataKey: string;
     title: React.ReactNode;
@@ -2657,6 +3234,8 @@ function RatioChart({ data, dataKey, title, color, suffix = "", compact = false 
     suffix?: string;
     /** For a count rather than a rate — a raw share count is unreadable on an axis. */
     compact?: boolean;
+    /** Names the x-axis ticks: four columns a year would otherwise all read "2026". */
+    periodType?: StatementPeriod;
 }) {
     const sanitizedId = `gradient-${dataKey.replace(/[^a-zA-Z0-9]/g, '')}`;
     const formatValue = (val: number) =>
@@ -2682,11 +3261,13 @@ function RatioChart({ data, dataKey, title, color, suffix = "", compact = false 
                             tickLine={false}
                             tick={{ fontSize: 10 }}
                             className="fill-muted-foreground"
-                            // Sliced, not parsed: a fiscal period end is a calendar
-                            // day, and filed ends land on 2022-01-01 often enough
-                            // that parsing it as an instant would label the column
-                            // 2021 for any viewer west of UTC.
-                            tickFormatter={(val) => fiscalPeriodYear(String(val))}
+                            // Sliced (or formatted in UTC), not parsed as an
+                            // instant: a fiscal period end is a calendar day, and
+                            // filed ends land on 2022-01-01 often enough that
+                            // parsing it locally would label the column 2021 for
+                            // any viewer west of UTC.
+                            tickFormatter={(val) => periodAxisLabel(String(val), periodType)}
+                            minTickGap={periodType === 'quarterly' ? 24 : 8}
                         />
                         <YAxis
                             axisLine={false}
@@ -2701,7 +3282,7 @@ function RatioChart({ data, dataKey, title, color, suffix = "", compact = false 
                                 if (active && payload && payload.length) {
                                     return (
                                         <div className="bg-white/95 dark:bg-slate-950/95 backdrop-blur-md p-3 rounded-xl text-xs">
-                                            <p className="font-medium text-foreground mb-1">{label}</p>
+                                            <p className="font-medium text-foreground mb-1">{formatCalendarDate(String(label))}</p>
                                             <div className="flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
                                                 <span className="text-muted-foreground">{title}:</span>

@@ -29,9 +29,18 @@ enum MarketTime {
         return f
     }()
 
+    /// A market date belongs to the market's calendar, not the device's. A
+    /// phone set to Thailand defaults to the Buddhist era and renders a fiscal
+    /// quarter ending March 2026 as "Mar 2569 BE" — the same class of mistake
+    /// as reading a US market date on a Bangkok clock, and just as wrong on a
+    /// filed statement. Pinning the calendar keeps the year the filer's own
+    /// while leaving month names localized.
+    private static let gregorian = Calendar(identifier: .gregorian)
+
     /// "Jul 29, 2026" — a calendar day, so it renders in UTC to match the parser.
     private static let mediumFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.calendar = gregorian
         f.dateStyle = .medium
         f.timeStyle = .none
         f.timeZone = utc
@@ -41,7 +50,23 @@ enum MarketTime {
     /// "Jul 29" — the compact form for rows too narrow for a full date.
     private static let shortDayFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.calendar = gregorian
         f.setLocalizedDateFormatFromTemplate("MMMd")
+        f.timeZone = utc
+        return f
+    }()
+
+    /// "Mar 2026" — how a quarter is named, since four columns a year would
+    /// otherwise all read "2026".
+    ///
+    /// Fixed English rather than localized, matching `yearFormatter` below: a
+    /// localized month-year template carries an era marker in some regions
+    /// ("Mar 2026 AD" for en_TH), and an axis label has no room for it.
+    private static let monthYearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = gregorian
+        f.dateFormat = "MMM yyyy"
         f.timeZone = utc
         return f
     }()
@@ -107,6 +132,18 @@ enum MarketTime {
     static func shortDay(_ iso: String) -> String {
         guard let d = calendarDay(iso) else { return iso }
         return shortDayFormatter.string(from: d)
+    }
+
+    /// "Jul 2026" for a date-only string.
+    static func monthYear(_ iso: String) -> String {
+        guard let d = calendarDay(iso) else { return iso }
+        return monthYearFormatter.string(from: d)
+    }
+
+    /// "Jul 2026" for a day already parsed by `calendarDay(_:)` — the form a
+    /// chart axis hands back.
+    static func monthYear(_ day: Date) -> String {
+        monthYearFormatter.string(from: day)
     }
 
     /// The calendar year of a day produced by `calendarDay(_:)`, read back in the

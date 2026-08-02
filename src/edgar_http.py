@@ -102,9 +102,15 @@ def sec_get(url: str, timeout: int = 60, retries: int = 3) -> Optional[bytes]:
     return None
 
 
-def sec_get_json(url: str, timeout: int = 60) -> Optional[Any]:
-    """Fetch and parse a JSON document from sec.gov. Returns None on failure."""
-    payload = sec_get(url, timeout=timeout)
+def sec_get_json(url: str, timeout: int = 60, retries: int = 3) -> Optional[Any]:
+    """
+    Fetch and parse a JSON document from sec.gov. Returns None on failure.
+
+    `retries` is worth lowering for anything a user is waiting on: the default
+    three attempts at a 60-second timeout is a three-minute worst case, which is
+    fine for a batch ingest and far too long inside a request.
+    """
+    payload = sec_get(url, timeout=timeout, retries=retries)
     if payload is None:
         return None
     try:

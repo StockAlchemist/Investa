@@ -1233,9 +1233,18 @@ export async function fetchFinancials(symbol: string, periodType: 'annual' | 'qu
     return data as unknown as FinancialsResponse;
 }
 
-export async function fetchRatios(symbol: string, force: boolean = false): Promise<RatiosResponse> {
+/**
+ * `periodType` shapes the historical series only. Quarterly measures the same
+ * ratios on trailing-twelve-month flows at each quarter end, so they stay
+ * comparable with the annual series and simply arrive four times as often.
+ */
+export async function fetchRatios(
+    symbol: string,
+    periodType: 'annual' | 'quarterly' = 'quarterly',
+    force: boolean = false,
+): Promise<RatiosResponse> {
     const { data, error } = await apiClient.GET("/api/ratios/{symbol}", {
-        params: { path: { symbol }, query: { force: force || undefined } },
+        params: { path: { symbol }, query: { period_type: periodType, force: force || undefined } },
     });
     if (error) throw new Error(`Failed to fetch ratios for ${symbol}`);
     return data as unknown as RatiosResponse;

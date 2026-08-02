@@ -95,10 +95,101 @@ def _get_statement_value(
     return float(val) if pd.notna(val) else None
 
 
+# A share count is a level, not a flow: four quarters of "Diluted Average
+# Shares" summed would report four times the company's shares. These rows are
+# averaged over the window instead of added.
+_LEVEL_ROW_MARKERS = ("Shares", "Share Issued")
+
+
+def _is_level_row(label: Any) -> bool:
+    text = str(label)
+    return any(marker in text for marker in _LEVEL_ROW_MARKERS)
+
+
+# Bounds on the *average* quarter in the window, which is what its span divided
+# by its steps comes to. 12 weeks is the shortest quarter any calendar uses; the
+# average never reaches the 16 weeks a 12/12/12/16 filer closes its year with,
+# because the three siblings pulling it back down are in the same window. Across
+# nine filers and 600 windows the real spread is 252 to 287 days for four
+# quarters, so 14 weeks is a ceiling with room rather than a guess.
+_MIN_QUARTER_SPAN_DAYS = 80
+_MAX_QUARTER_SPAN_DAYS = 98
+
+
+def _is_consecutive_window(newest: Any, oldest: Any, quarters: int) -> bool:
+    """
+    Whether the ends of a window this wide can be `quarters` consecutive quarters.
+
+    Adjacency has to be checked, not assumed. The quarterly series is built by
+    differencing a year-to-date ladder and *refuses* to difference across a
+    missing rung, so a hole in it is the designed-for outcome rather than a
+    surprise — and four columns either side of a hole are not a year. NVIDIA
+    tagged one quarter twice, a day apart, and the four columns ending
+    2011-01-30 spanned 183 days and reported $3.353bn of trailing revenue
+    against the $3.543bn it filed.
+
+    Measured between the outermost period *ends*, which is one quarter fewer
+    than the window holds.
+    """
+    if pd.isna(newest) or pd.isna(oldest) or quarters < 2:
+        return False
+    steps = quarters - 1
+    days = (newest - oldest).days
+    return _MIN_QUARTER_SPAN_DAYS * steps <= days <= _MAX_QUARTER_SPAN_DAYS * steps
+
+
+def to_trailing_twelve_months(
+    statement_df: Optional[pd.DataFrame], min_quarters: int = 4
+) -> Optional[pd.DataFrame]:
+    """
+    Turn a quarterly flow statement into trailing-twelve-month columns.
+
+    A ratio that divides a flow by a level — return on equity, asset turnover —
+    is meaningless on a raw quarter: one quarter of profit over the whole
+    equity balance reads as a quarter of the real return, and would sit four
+    times below the annual series for the same company. Summing the four
+    quarters ending at each period restores the comparison, and keeps the
+    quarterly *sampling* that makes a turn in the trend visible three quarters
+    before the annual figure shows it.
+
+    Columns are newest-first, as every statement in this system is. A period
+    without four quarters behind it is dropped rather than annualised from
+    fewer — a company's first three quarters are not a year — and so is one
+    whose four columns are not four *consecutive* quarters, which is the same
+    rule the quarterly series itself follows when it refuses to difference
+    across a missing rung.
+    """
+    if statement_df is None or statement_df.empty:
+        return statement_df
+
+    periods = list(statement_df.columns)
+    if len(periods) < min_quarters:
+        return statement_df.iloc[:, :0]
+
+    stamps = pd.to_datetime(pd.Index(periods), errors="coerce")
+
+    columns: Dict[Any, pd.Series] = {}
+    for i in range(len(periods) - min_quarters + 1):
+        oldest = i + min_quarters - 1
+        if not _is_consecutive_window(stamps[i], stamps[oldest], min_quarters):
+            continue
+        window = statement_df.iloc[:, i : oldest + 1]
+        # `min_count` keeps a row that no quarter reported as NaN rather than
+        # letting it sum to a confident zero.
+        summed = window.sum(axis=1, min_count=min_quarters)
+        averaged = window.mean(axis=1)
+        columns[periods[i]] = summed.where(~summed.index.map(_is_level_row), averaged)
+
+    if not columns:
+        return statement_df.iloc[:, :0]
+    return pd.DataFrame(columns)
+
+
 def calculate_key_ratios_timeseries(
     financials_df: Optional[pd.DataFrame],
     balance_sheet_df: Optional[pd.DataFrame],
     cashflow_df: Optional[pd.DataFrame] = None,
+    periods_per_year: int = 1,
     # ticker_info: Optional[Dict] = None, # Not used for historical series ratios
     # is_annual: bool = True # Not directly used, period determined by data
 ) -> pd.DataFrame:
@@ -109,6 +200,15 @@ def calculate_key_ratios_timeseries(
     `cashflow_df` is optional and only adds the free-cash-flow margin: callers
     that predate it — the ranking's `_ratios_by_period` among them — keep working
     and simply do not get that one series.
+
+    `periods_per_year` says how many columns make a year, and exists for the
+    ratios that average a balance sheet across the window their flow was earned
+    over — return on assets, asset turnover. Averaging against the previous
+    *column* is right at one column a year and wrong at four: it would pair a
+    trailing-twelve-month flow with a balance averaged over one quarter, and the
+    quarterly view then disagreed with the annual view on the same fiscal year
+    end (Apple FY2025 asset turnover: 1.205 against 1.149). Pass 4 for a
+    quarterly series so both views measure the same year.
     """
     if (
         financials_df is None
@@ -208,8 +308,10 @@ def calculate_key_ratios_timeseries(
         )
 
         avg_equity, avg_assets = total_equity, total_assets
-        if i > 0:
-            prev_period_dt = common_periods_dt[i - 1]
+        # A year back, not a column back: at four columns a year the two are not
+        # the same window, and the flow above is a trailing twelve months.
+        if i >= periods_per_year:
+            prev_period_dt = common_periods_dt[i - periods_per_year]
             prev_period_str_bs = next(
                 (
                     col

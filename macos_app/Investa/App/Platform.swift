@@ -92,6 +92,23 @@ extension View {
         #endif
     }
 
+    /// Sheet sizing on macOS: asks for `width` × `height`, but never larger than
+    /// 90% of the screen area a window may occupy, so the sheet keeps a margin
+    /// off the screen edges — the same breathing room the web modal gets from
+    /// `max-h-[90vh]`. Without the cap a sheet whose body is a `ScrollView`
+    /// stretches until its bottom edge sits flush against the screen.
+    /// iOS sizes to the device.
+    @ViewBuilder func macSheetSize(width: CGFloat, height: CGFloat) -> some View {
+        #if os(macOS)
+        let visible = (NSApplication.shared.keyWindow?.screen ?? NSScreen.main)?.visibleFrame.size
+        let maxW = (visible?.width).map { $0 * 0.9 } ?? width
+        let maxH = (visible?.height).map { $0 * 0.9 } ?? height
+        self.frame(minWidth: min(width, maxW), minHeight: min(height, maxH), maxHeight: maxH)
+        #else
+        self
+        #endif
+    }
+
     /// Presents `content` as large as the platform allows: a full-screen cover
     /// on iOS, a sheet on macOS (which has no cover — the sheet sizes itself to
     /// its content, so that content should ask for the room it wants).

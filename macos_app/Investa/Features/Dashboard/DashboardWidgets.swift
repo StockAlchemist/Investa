@@ -718,29 +718,55 @@ struct PortfolioCompositionCard: View {
     private var byHolding: [DonutSlice] { donutSlices(holdings, currency: currency) { $0.symbol } }
     private var byAccount: [DonutSlice] { donutSlices(holdings, currency: currency) { $0.account ?? "Unknown" } }
 
+    /// The donuts grow with the card so a wide window doesn't leave a gulf
+    /// between them; clamped so they stay readable narrow and sane when huge.
+    private static let minSide: CGFloat = 300
+    private static let maxSide: CGFloat = 560
+    private static let columnGap: CGFloat = 24
+    @State private var contentWidth: CGFloat = 0
+
+    private var sideBySide: Bool {
+        !compact && contentWidth >= 2 * Self.minSide + Self.columnGap
+    }
+
+    private var side: CGFloat {
+        guard contentWidth > 0 else { return compact ? Self.minSide : 360 }
+        let available = sideBySide ? (contentWidth - Self.columnGap) / 2 : contentWidth
+        return min(max(available, Self.minSide), Self.maxSide)
+    }
+
     var body: some View {
         Card(title: "Portfolio Composition", icon: "chart.pie") {
             Group {
-                if compact {
-                    VStack(spacing: 32) {
-                        SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: 300)
-                        SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: 300, forceAllLabels: true)
+                if sideBySide {
+                    HStack(alignment: .top, spacing: Self.columnGap) {
+                        SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: side)
+                        SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: side, forceAllLabels: true)
                     }
                 } else {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 24) {
-                            SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: 360)
-                            SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: 360, forceAllLabels: true)
-                        }
-                        VStack(spacing: 32) {
-                            SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: 360)
-                            SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: 360, forceAllLabels: true)
-                        }
+                    VStack(spacing: 32) {
+                        SingleDonut(title: "By Holding", slices: byHolding, currency: currency, side: side)
+                        SingleDonut(title: "By Account", slices: byAccount, currency: currency, side: side, forceAllLabels: true)
                     }
                 }
             }
             .frame(maxWidth: .infinity)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: CompositionWidthKey.self, value: proxy.size.width)
+                }
+            }
+            .onPreferenceChange(CompositionWidthKey.self) { contentWidth = $0 }
         }
+    }
+}
+
+/// Carries the composition card's laid-out width back up so the donuts can size
+/// themselves to it.
+private struct CompositionWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
@@ -752,6 +778,10 @@ private struct SingleDonut: View {
     var forceAllLabels = false
     @State private var metric: CompositionMetric = .value
     @State private var selectedValue: Double?
+
+    /// Type and icons grow with the ring, but slower, so a big donut doesn't
+    /// read as a blown-up screenshot.
+    private var scale: CGFloat { min(max(side / 360, 1), 1.35) }
 
     private var totalValue: Double { slices.reduce(0) { $0 + $1.value } }
     private var totalDay: Double { slices.reduce(0) { $0 + $1.dayChange } }
@@ -816,9 +846,9 @@ private struct SingleDonut: View {
             ForEach(labeled, id: \.slice.id) { item in
                 let theta = item.mid * 2 * .pi
                 HStack(spacing: 3) {
-                    StockIcon(symbol: item.slice.name, size: 18)
+                    StockIcon(symbol: item.slice.name, size: 18 * scale)
                     Text(item.slice.name)
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(.primary).lineLimit(1)
+                        .font(.system(size: 10 * scale, weight: .bold)).foregroundStyle(.primary).lineLimit(1)
                 }
                 .padding(.horizontal, 4).padding(.vertical, 2)
                 .background(.background, in: Capsule())
@@ -836,11 +866,11 @@ private struct SingleDonut: View {
             let holeWidth = min(geo.size.width, geo.size.height) * 0.30
             VStack(spacing: 2) {
                 if let a = active {
-                    StockIcon(symbol: a.name, size: 27)
-                    Text(a.name).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
-                    Text(value(of: a)).font(.system(size: 18, weight: .bold)).foregroundStyle(tint(of: a))
+                    StockIcon(symbol: a.name, size: 27 * scale)
+                    Text(a.name).font(.system(size: 13 * scale, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(value(of: a)).font(.system(size: 18 * scale, weight: .bold)).foregroundStyle(tint(of: a))
                         .lineLimit(1).minimumScaleFactor(0.4)
-                    Text(subtitle(of: a)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: a))
+                    Text(subtitle(of: a)).font(.system(size: 14 * scale, weight: .bold)).foregroundStyle(subtitleTint(of: a))
                         .lineLimit(1).minimumScaleFactor(0.4)
                 } else {
                     PopoverMenu(minWidth: 180) {
@@ -849,16 +879,16 @@ private struct SingleDonut: View {
                         }
                     } label: {
                         HStack(spacing: 3) {
-                            Text(metric.label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                            Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(.secondary)
+                            Text(metric.label).font(.system(size: 11 * scale, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                            Image(systemName: "chevron.down").font(.system(size: 9 * scale)).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(.background.tertiary, in: Capsule())
                         .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
                     }.fixedSize()
-                    Text(value(of: nil)).font(.system(size: 18, weight: .bold)).foregroundStyle(tint(of: nil))
+                    Text(value(of: nil)).font(.system(size: 18 * scale, weight: .bold)).foregroundStyle(tint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.4)
-                    Text(subtitle(of: nil)).font(.system(size: 14, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
+                    Text(subtitle(of: nil)).font(.system(size: 14 * scale, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.4)
                 }
             }

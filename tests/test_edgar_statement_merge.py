@@ -167,11 +167,33 @@ class TestSharedCalendar:
 
 
 class TestApplicability:
-    def test_quarterly_requests_are_left_alone(self):
-        """The store holds 10-K facts only; a quarterly merge would be a lie."""
+    def test_quarterly_requests_are_extended_too(self, monkeypatch):
+        """
+        Quarterly used to be left alone, because the store held 10-K facts only.
+        It now has its own table fed from the 10-Qs, so the same merge applies —
+        Yahoo's five quarters were the whole reason the Financials tab could
+        show a year and no more.
+        """
+        edgar_quarters = frame(
+            {"Total Revenue": [102.5, 95.4, 124.3]},
+            ["2025-06-28", "2025-03-29", "2024-12-28"],
+        )
+        monkeypatch.setattr(
+            market_data,
+            "_edgar_quarterly_statements",
+            lambda cik: {"financials": edgar_quarters},
+        )
+        monkeypatch.setattr(market_data, "_cik_for_symbol", lambda symbol: "0000320193")
+
         yahoo = frame({"Total Revenue": [102.5]}, ["2025-06-28"])
         result = _with_edgar_history("AAPL", "financials", "quarterly", yahoo)
-        assert result is yahoo
+        assert result is not yahoo
+        assert len(result.columns) == 3
+
+    def test_an_unknown_period_type_is_left_alone(self):
+        """Only the two period types the store models are merged."""
+        yahoo = frame({"Total Revenue": [102.5]}, ["2025-06-28"])
+        assert _with_edgar_history("AAPL", "financials", "ttm", yahoo) is yahoo
 
     @pytest.mark.parametrize("symbol", ["PTT.BK", "0700.HK", "^GSPC", "THB=X"])
     def test_non_us_symbols_skip_the_lookup(self, symbol, monkeypatch):

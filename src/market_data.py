@@ -812,6 +812,7 @@ _EDGAR_PERIOD_TOLERANCE = pd.Timedelta(days=15)
 
 # The XBRL store holds 10-K facts only, so it can answer for annual periods.
 _EDGAR_PERIOD_TYPE = "annual"
+_EDGAR_QUARTERLY_PERIOD_TYPE = "quarterly"
 
 # The ticker -> CIK map comes from the SEC and is the one part of this path that
 # can touch the network. It is never fetched while a request waits: a stale or
@@ -834,6 +835,7 @@ _CIK_MAP_CACHE_FILENAME = "ticker_cik_map.json"
 # short-lived memo turns three queries into one. Batch workers walking a few
 # thousand symbols are the reason this matters.
 _edgar_statement_cache: Dict[str, Tuple[float, Dict[str, pd.DataFrame]]] = {}
+_edgar_quarterly_cache: Dict[str, Tuple[float, Dict[str, pd.DataFrame]]] = {}
 _edgar_statement_lock = threading.Lock()
 _EDGAR_STATEMENT_TTL_SECONDS = 900
 _EDGAR_STATEMENT_CACHE_MAX = 64
@@ -970,6 +972,41 @@ def _edgar_annual_statements(cik: str) -> Dict[str, pd.DataFrame]:
     return statements
 
 
+def _edgar_quarterly_statements(cik: str) -> Dict[str, pd.DataFrame]:
+    """
+    All three EDGAR statements by fiscal quarter. Returns {} when unavailable.
+
+    Quarterly facts are ingested per filer the first time someone asks for them,
+    so the first view of a company pays one companyfacts download and every view
+    after it reads the local store. A failed download leaves Yahoo's five
+    quarters in place rather than an error.
+    """
+    now = time.monotonic()
+    with _edgar_statement_lock:
+        entry = _edgar_quarterly_cache.get(cik)
+        if entry and (now - entry[0]) < _EDGAR_STATEMENT_TTL_SECONDS:
+            return entry[1]
+
+    try:
+        import edgar_provider
+
+        # A user is waiting on this one, so the SEC gets a short budget: on a
+        # timeout the statement still renders, from Yahoo's few quarters, and
+        # the next view picks the history up.
+        edgar_provider.ingest_company_quarterly(cik, timeout=20, retries=1)
+        statements = edgar_provider.get_quarterly_statements(cik)
+    except Exception as exc:
+        logging.debug(f"EDGAR: no quarterly statements for CIK {cik}: {exc}")
+        statements = {}
+
+    with _edgar_statement_lock:
+        if len(_edgar_quarterly_cache) >= _EDGAR_STATEMENT_CACHE_MAX:
+            oldest = min(_edgar_quarterly_cache, key=lambda k: _edgar_quarterly_cache[k][0])
+            _edgar_quarterly_cache.pop(oldest, None)
+        _edgar_quarterly_cache[cik] = (now, statements)
+    return statements
+
+
 def _canonical_periods(statements: Dict[str, pd.DataFrame]) -> pd.DatetimeIndex:
     """
     Every filed period end across the three statements.
@@ -1041,14 +1078,17 @@ def _with_edgar_history(
     yahoo_df: Optional[pd.DataFrame],
 ) -> Optional[pd.DataFrame]:
     """Extend one Yahoo statement with the filed history, where EDGAR has it."""
-    if period_type != _EDGAR_PERIOD_TYPE:
+    if period_type not in (_EDGAR_PERIOD_TYPE, _EDGAR_QUARTERLY_PERIOD_TYPE):
         return yahoo_df
 
     cik = _cik_for_symbol(yf_symbol)
     if not cik:
         return yahoo_df
 
-    statements = _edgar_annual_statements(cik)
+    quarterly = period_type == _EDGAR_QUARTERLY_PERIOD_TYPE
+    statements = (
+        _edgar_quarterly_statements(cik) if quarterly else _edgar_annual_statements(cik)
+    )
     edgar_df = statements.get(statement_type)
     if edgar_df is None or edgar_df.empty:
         return yahoo_df
@@ -1063,7 +1103,7 @@ def _with_edgar_history(
 
     before = 0 if yahoo_df is None or yahoo_df.empty else len(yahoo_df.columns)
     logging.debug(
-        f"EDGAR: {yf_symbol} {statement_type} {before} -> {len(merged.columns)} annual periods"
+        f"EDGAR: {yf_symbol} {statement_type} {before} -> {len(merged.columns)} {period_type} periods"
     )
     return merged
 

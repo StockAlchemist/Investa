@@ -25,10 +25,17 @@ struct StockDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) var hSizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel: StockDetailViewModel
     @State private var tab: DetailTab = .overview
     @State private var finType = "income"
+    /// Charted line items by colour slot, so removing one never repaints the
+    /// others. Empty means "no explicit choice yet".
+    @State private var chartSlots: [String?] = []
+    @State private var showAllMetrics = false
+    /// nil follows the period's own default; a tap pins a range.
+    @State private var chartRange: StatementRange?
     @State private var detail: SymbolID?
     @State private var showGrahamExplanation = false
     @State private var summaryExpanded = false
@@ -71,7 +78,7 @@ struct StockDetailView: View {
                 .padding(20)
             }
         }
-        .macMinSize(width: 860, height: 720)
+        .macSheetSize(width: 860, height: 720)
         .task { await viewModel.loadAll() }
         .onChange(of: tab) { _, t in
             Task {
@@ -783,15 +790,16 @@ struct StockDetailView: View {
     // MARK: - Financials
 
     @ViewBuilder private var financialsTab: some View {
-        if viewModel.isLoadingFinancials {
-            ProgressView().frame(maxWidth: .infinity).padding(40)
-        } else if let fin = viewModel.financials {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 16) {
+            // The statement picker and the period switch stay put through
+            // loading and empty states: "quarterly has nothing for this
+            // company" is only actionable if Annual is still one tap away.
+            HStack(alignment: .center, spacing: 12) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         let tabs = [("income", "Income", "receipt"), ("balance", "Balance", "scalemass"), ("cash", "Cash Flow", "wallet.pass"), ("equity", "Equity", "person.2")]
                         ForEach(tabs, id: \.0) { t in
-                            Button { finType = t.0 } label: {
+                            Button { finType = t.0; chartSlots = []; showAllMetrics = false } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: t.2).font(.system(size: 16))
                                     Text(t.1)
@@ -804,14 +812,219 @@ struct StockDetailView: View {
                         }
                     }
                 }
-                let stmt = statement(for: finType, fin)
-                if let stmt, !stmt.index.isEmpty { statementTable(stmt) }
-                else { ContentUnavailableView("No data for this statement", systemImage: "doc").frame(height: 200) }
+                Picker("", selection: Binding(
+                    get: { viewModel.financialsPeriod },
+                    set: { p in
+                        chartSlots = []
+                        showAllMetrics = false
+                        chartRange = nil
+                        Task { await viewModel.loadFinancials(period: p) }
+                    }
+                )) {
+                    ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 190)
             }
-        } else {
-            ContentUnavailableView("No financials", systemImage: "doc").frame(height: 200)
+
+            if viewModel.isLoadingFinancials {
+                ProgressView().frame(maxWidth: .infinity).padding(40)
+            } else if let stmt = viewModel.financials.flatMap({ statement(for: finType, $0) }), !stmt.index.isEmpty {
+                financialsBody(stmt)
+            } else {
+                VStack(spacing: 10) {
+                    ContentUnavailableView(
+                        "No \(viewModel.financialsPeriod.title.lowercased()) data for this statement",
+                        systemImage: "doc"
+                    )
+                    if viewModel.financialsPeriod == .quarterly {
+                        Button("Show annual instead") {
+                            Task { await viewModel.loadFinancials(period: .annual) }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.indigo)
+                    }
+                }
+                .frame(height: 200)
+            }
         }
     }
+
+    /// The ranked rows of one statement, the chart built from the picked ones,
+    /// and the full table underneath.
+    @ViewBuilder private func financialsBody(_ stmt: FinancialStatement) -> some View {
+        let period = viewModel.financialsPeriod
+        let ranked = rankedRows(stmt)
+        let chartable = ranked.filter(\.isChartable)
+        let slots = effectiveSlots(chartable)
+        let colors = StatementChartConfig.colors(colorScheme)
+
+        // Newest-first from the API; charts read left-to-right in time.
+        let range = chartRange ?? period.defaultRange
+        let order = Array(stmt.columns.enumerated()).reversed().suffix(range.periods(period))
+        let periods = order.map(\.element)
+        let series: [StatementSeries] = slots.enumerated().compactMap { slot, label in
+            guard let label, let row = chartable.first(where: { $0.label == label }) else { return nil }
+            return StatementSeries(
+                slot: slot,
+                label: label,
+                color: colors[slot % colors.count],
+                values: order.map { row.values.indices.contains($0.offset) ? row.values[$0.offset] : nil }
+            )
+        }
+
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center) {
+                Text("\(period.title) trend")
+                    .font(.caption.weight(.bold)).textCase(.uppercase).foregroundStyle(.secondary)
+                Text("\(periods.count) \(period == .quarterly ? "quarters" : "years")")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { range }, set: { chartRange = $0 }
+                )) {
+                    ForEach(StatementRange.allCases) { r in Text(r.rawValue).tag(r) }
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 170)
+            }
+
+            metricChips(chartable, slots: slots, colors: colors)
+
+            if series.isEmpty {
+                Text("Pick a line item above to chart it.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 160)
+            } else {
+                // One y-axis per chart, always: series whose magnitudes are too
+                // far apart to share a scale get their own chart.
+                ForEach(Array(groupBySharedScale(series, maxAbs: { $0.maxAbs }).enumerated()), id: \.offset) { _, group in
+                    StatementChartView(periods: periods, series: group, periodType: period)
+                }
+                if let primary = series.first {
+                    StatementChangeStrip(series: primary, periods: periods, periodType: period)
+                }
+            }
+        }
+        .padding(16)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+
+        Text(period == .quarterly
+             ? "Quarterly figures are built from the company\u{2019}s own 10-Q filings, differenced out of the year-to-date numbers where that is all it tags. Tap any row to chart it."
+             : "Annual statements are extended with SEC-filed history where the company files one. Tap any row to chart it.")
+            .font(.caption2).foregroundStyle(.tertiary)
+
+        statementTable(stmt, slots: slots, colors: colors)
+    }
+
+    /// Line items in importance order, the way the web app ranks them.
+    private func rankedRows(_ s: FinancialStatement) -> [StatementRow] {
+        let ranking = StockDetailView.rankingConfig[finType] ?? []
+        return s.index.enumerated()
+            .map { StatementRow(label: $0.element, values: $0.offset < s.data.count ? s.data[$0.offset] : []) }
+            .enumerated()
+            .sorted { a, b in
+                let ia = ranking.firstIndex(of: a.element.label)
+                let ib = ranking.firstIndex(of: b.element.label)
+                switch (ia, ib) {
+                case let (x?, y?): return x < y
+                case (_?, nil): return true
+                case (nil, _?): return false
+                // Stable: equal keys keep the order the statement arrived in.
+                default: return a.offset < b.offset
+                }
+            }
+            .map(\.element)
+    }
+
+    /// The user's picks, or the statement's opening set when they have not
+    /// picked yet.
+    private func effectiveSlots(_ chartable: [StatementRow]) -> [String?] {
+        if !chartSlots.isEmpty { return chartSlots }
+        var defaults = pickDefaultMetrics(
+            StatementChartConfig.defaultMetrics[finType] ?? [], chartable
+        ).map { Optional($0) }
+        if defaults.isEmpty, let first = chartable.first { defaults = [first.label] }
+        return defaults
+    }
+
+    private func toggleMetric(_ label: String, _ slots: [String?]) {
+        chartSlots = toggleStatementSlot(slots, label)
+    }
+
+    @ViewBuilder private func metricChips(
+        _ chartable: [StatementRow],
+        slots: [String?],
+        colors: [Color]
+    ) -> some View {
+        let ranking = StockDetailView.rankingConfig[finType] ?? []
+        let key = chartable.filter { ranking.contains($0.label) }
+        let shown = (showAllMetrics || key.isEmpty) ? chartable : key
+        let full = slots.compactMap { $0 }.count >= StatementChartConfig.maxSeries && !slots.contains(where: { $0 == nil })
+
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(shown) { row in
+                    let slot = slots.firstIndex(of: row.label)
+                    let selected = slot != nil
+                    Button { toggleMetric(row.label, slots) } label: {
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(selected ? colors[(slot ?? 0) % colors.count] : Color.secondary.opacity(0.3))
+                                .frame(width: 7, height: 7)
+                            Text(row.label).font(.caption)
+                        }
+                        .foregroundStyle(selected ? Color.primary : .secondary)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(selected ? AnyShapeStyle(.background) : AnyShapeStyle(Color.clear), in: Capsule())
+                        .overlay(
+                            Capsule().strokeBorder(
+                                selected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(Color.clear),
+                                lineWidth: 1
+                            )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!selected && full)
+                    .opacity(!selected && full ? 0.4 : 1)
+                    .help(!selected && full ? "Deselect one first — \(StatementChartConfig.maxSeries) is the limit" : row.label)
+                }
+                if !key.isEmpty, chartable.count > key.count {
+                    Button(showAllMetrics ? "Show key items" : "+\(chartable.count - key.count) more") {
+                        showAllMetrics.toggle()
+                    }
+                    .buttonStyle(.plain).font(.caption.weight(.bold)).foregroundStyle(Color.indigo)
+                }
+            }
+        }
+    }
+
+    /// Line-item importance per statement — the same order the web app ranks
+    /// by, so the two clients open on the same rows.
+    static let rankingConfig: [String: [String]] = [
+        "income": [
+            "Total Revenue", "Cost Of Revenue", "Gross Profit", "Operating Expense",
+            "Operating Income", "EBITDA", "EBIT", "Pretax Income", "Tax Provision",
+            "Net Income Common Stockholders", "Net Income", "Normalized Income",
+            "Basic EPS", "Diluted EPS",
+        ],
+        "balance": [
+            "Total Assets", "Current Assets", "Cash And Cash Equivalents", "Receivables",
+            "Inventory", "Total Liabilities Net Minority Interest", "Current Liabilities",
+            "Total Debt", "Net Debt", "Total Equity Gross Minority Interest",
+            "Stockholders Equity", "Common Stock Equity", "Retained Earnings",
+            "Working Capital", "Invested Capital", "Tangible Book Value",
+        ],
+        "cash": [
+            "Operating Cash Flow", "Investing Cash Flow", "Financing Cash Flow",
+            "Capital Expenditure", "Free Cash Flow", "End Cash Position", "Net Income",
+        ],
+        "equity": [
+            "Total Equity Gross Minority Interest", "Stockholders Equity",
+            "Common Stock Equity", "Retained Earnings", "Capital Stock", "Common Stock",
+        ],
+    ]
 
     private func statement(for type: String, _ f: FinancialsResponse) -> FinancialStatement? {
         switch type {
@@ -820,20 +1033,22 @@ struct StockDetailView: View {
         }
     }
 
-    /// Statements now carry ~19 filed years, so every period is shown and the
-    /// table scrolls. The year alone would not identify a column: filed period
-    /// ends are the company's own 52/53-week dates, and two of them can fall in
-    /// one calendar year (Advance Auto Parts closed fiscal years on 2022-01-01
-    /// and 2022-12-31), so the end date sits under the year.
-    private func statementTable(_ s: FinancialStatement) -> some View {
-        ScrollView(.horizontal, showsIndicators: true) {
+    /// Annual statements carry ~19 filed years, so every period is shown and the
+    /// table scrolls. The year alone would not identify an annual column: filed
+    /// period ends are the company's own 52/53-week dates, and two of them can
+    /// fall in one calendar year (Advance Auto Parts closed fiscal years on
+    /// 2022-01-01 and 2022-12-31), so the end date sits under the year. A
+    /// quarter is headed by its month for the same reason.
+    private func statementTable(_ s: FinancialStatement, slots: [String?], colors: [Color]) -> some View {
+        let rows = rankedRows(s)
+        return ScrollView(.horizontal, showsIndicators: true) {
             Grid(alignment: .trailing, horizontalSpacing: 24, verticalSpacing: 12) {
                 GridRow {
                     Text("Metric").gridColumnAlignment(.leading)
                     Text("Trend").gridColumnAlignment(.center)
                     ForEach(Array(s.columns.enumerated()), id: \.offset) { _, c in
                         VStack(alignment: .trailing, spacing: 1) {
-                            Text(String(c.prefix(4)))
+                            Text(statementPeriodLabel(c, viewModel.financialsPeriod))
                             Text(MarketTime.shortDay(c))
                                 .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(.tertiary)
@@ -844,16 +1059,27 @@ struct StockDetailView: View {
 
                 Divider()
 
-                ForEach(Array(s.index.enumerated()), id: \.offset) { i, label in
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    let slot = slots.firstIndex(of: row.label)
                     GridRow {
-                        Text(label).font(.subheadline.weight(.semibold)).lineLimit(1).gridColumnAlignment(.leading)
-                        sparkline(i < s.data.count ? s.data[i].compactMap { $0 } : [])
-                        ForEach(0..<s.columns.count, id: \.self) { j in
-                            let v = (i < s.data.count && j < s.data[i].count) ? s.data[i][j] : nil
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(slot.map { colors[$0 % colors.count] } ?? .clear)
+                                .frame(width: 7, height: 7)
+                            Text(row.label).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        }
+                        .gridColumnAlignment(.leading)
+                        sparkline(row.values.compactMap { $0 })
+                        ForEach(Array(row.values.enumerated()), id: \.offset) { _, v in
                             Text(v.map { compact($0) } ?? "—")
                                 .font(.subheadline).monospacedDigit()
                                 .foregroundStyle((v ?? 0) < 0 ? .red : .primary)
                         }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard row.isChartable else { return }
+                        toggleMetric(row.label, slots)
                     }
                     Divider()
                 }
@@ -891,28 +1117,46 @@ struct StockDetailView: View {
 
     @ViewBuilder private var ratiosTab: some View {
         let history = viewModel.ratios?.historical ?? []
-        if !history.isEmpty || viewModel.trackRecord != nil {
-            VStack(alignment: .leading, spacing: 24) {
+        let period = viewModel.ratiosPeriod
+
+        VStack(alignment: .leading, spacing: 24) {
+            // Chrome first, so the switch survives an empty quarterly answer.
+            HStack(alignment: .center) {
+                Text(period == .quarterly
+                     ? "Measured on the trailing twelve months at each quarter end — the same ratios the annual view reports, sampled four times as often."
+                     : "Measured on each filed fiscal year.")
+                    .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 12)
+                Picker("", selection: Binding(
+                    get: { period },
+                    set: { p in Task { await viewModel.loadRatios(period: p) } }
+                )) {
+                    ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 190)
+            }
+
+            if viewModel.isLoadingRatios {
+                ProgressView().frame(maxWidth: .infinity).padding(40)
+            } else if history.isEmpty && viewModel.trackRecord == nil {
+                ContentUnavailableView("No ratio data", systemImage: "chart.line.uptrend.xyaxis").frame(height: 200)
+            } else {
                 if let record = viewModel.trackRecord { trackRecordPanel(record) }
                 if !history.isEmpty {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
-                        ratioChart("Return on Equity", history, "Return on Equity (ROE) (%)", Color(red: 16/255, green: 185/255, blue: 129/255), isPercent: true)
-                        ratioChart("Gross Margin", history, "Gross Profit Margin (%)", Color(red: 6/255, green: 182/255, blue: 212/255), isPercent: true)
-                        ratioChart("Net Margin", history, "Net Profit Margin (%)", Color(red: 139/255, green: 92/255, blue: 246/255), isPercent: true)
-                        ratioChart("Asset Turnover", history, "Asset Turnover", Color(red: 245/255, green: 158/255, blue: 11/255), isPercent: false)
-                        ratioChart("Return on Invested Capital", history, "Return on Invested Capital (ROIC) (%)", Color(red: 236/255, green: 72/255, blue: 153/255), isPercent: true)
-                        ratioChart("Free Cash Flow Margin", history, "Free Cash Flow Margin (%)", Color(red: 20/255, green: 184/255, blue: 166/255), isPercent: true)
+                        ratioChart("Return on Equity", history, "Return on Equity (ROE) (%)", Color(red: 16/255, green: 185/255, blue: 129/255), isPercent: true, periodType: period)
+                        ratioChart("Gross Margin", history, "Gross Profit Margin (%)", Color(red: 6/255, green: 182/255, blue: 212/255), isPercent: true, periodType: period)
+                        ratioChart("Net Margin", history, "Net Profit Margin (%)", Color(red: 139/255, green: 92/255, blue: 246/255), isPercent: true, periodType: period)
+                        ratioChart("Asset Turnover", history, "Asset Turnover", Color(red: 245/255, green: 158/255, blue: 11/255), isPercent: false, periodType: period)
+                        ratioChart("Return on Invested Capital", history, "Return on Invested Capital (ROIC) (%)", Color(red: 236/255, green: 72/255, blue: 153/255), isPercent: true, periodType: period)
+                        ratioChart("Free Cash Flow Margin", history, "Free Cash Flow Margin (%)", Color(red: 20/255, green: 184/255, blue: 166/255), isPercent: true, periodType: period)
                         // A falling line is the owner's slice growing. Over
                         // nineteen years it is the clearest picture of whether
                         // management returned capital or issued it away.
-                        ratioChart("Diluted Shares Outstanding", history, "Diluted Shares Outstanding", Color(red: 100/255, green: 116/255, blue: 139/255), isPercent: false, isCount: true)
+                        ratioChart("Diluted Shares Outstanding", history, "Diluted Shares Outstanding", Color(red: 100/255, green: 116/255, blue: 139/255), isPercent: false, isCount: true, periodType: period)
                     }
                 }
             }
-        } else if viewModel.isLoadingFinancials {
-            ProgressView().frame(maxWidth: .infinity).padding(40)
-        } else {
-            ContentUnavailableView("No ratio data", systemImage: "chart.line.uptrend.xyaxis").frame(height: 200)
         }
     }
 
@@ -1167,20 +1411,30 @@ struct StockDetailView: View {
         _ key: String,
         _ color: Color,
         isPercent: Bool,
-        isCount: Bool = false
+        isCount: Bool = false,
+        periodType: StatementPeriod = .annual
     ) -> some View {
-        let valid = data.filter { $0[key]?.doubleValue != nil }.reversed()
+        // Parsed once rather than inside the chart body: the hover tooltip needs
+        // the same x-values the marks are drawn at to find the nearest period.
+        let points: [(period: Date, iso: String, value: Double)] = data.reversed().compactMap { item in
+            guard let val = item[key]?.doubleValue,
+                  let dateStr = item["Period"]?.stringValue,
+                  let period = MarketTime.calendarDay(dateStr) else { return nil }
+            return (period, dateStr, val)
+        }
+        // Sixty quarterly points would be a row of touching dots; the line
+        // carries the shape on its own once they stop being distinguishable.
+        let showPoints = points.count <= StatementChartConfig.barToLineThreshold
         return card(title) {
             Chart {
-                ForEach(Array(valid.enumerated()), id: \.offset) { _, item in
-                    if let val = item[key]?.doubleValue, let dateStr = item["Period"]?.stringValue,
-                       let period = MarketTime.calendarDay(dateStr) {
-                        LineMark(x: .value("Period", period), y: .value(title, val))
-                            .foregroundStyle(color).interpolationMethod(.monotone)
-                        AreaMark(x: .value("Period", period), y: .value(title, val))
-                            .foregroundStyle(LinearGradient(colors: [color.opacity(0.3), color.opacity(0.0)], startPoint: .top, endPoint: .bottom))
-                            .interpolationMethod(.monotone)
-                        PointMark(x: .value("Period", period), y: .value(title, val))
+                ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                    LineMark(x: .value("Period", p.period), y: .value(title, p.value))
+                        .foregroundStyle(color).interpolationMethod(.monotone)
+                    AreaMark(x: .value("Period", p.period), y: .value(title, p.value))
+                        .foregroundStyle(LinearGradient(colors: [color.opacity(0.3), color.opacity(0.0)], startPoint: .top, endPoint: .bottom))
+                        .interpolationMethod(.monotone)
+                    if showPoints {
+                        PointMark(x: .value("Period", p.period), y: .value(title, p.value))
                             .foregroundStyle(color)
                     }
                 }
@@ -1190,7 +1444,10 @@ struct StockDetailView: View {
                     AxisGridLine()
                     AxisValueLabel {
                         if let date = value.as(Date.self) {
-                            Text(MarketTime.year(date))
+                            // Four quarters a year would all read "2026".
+                            Text(periodType == .quarterly
+                                 ? MarketTime.monthYear(date)
+                                 : MarketTime.year(date))
                         }
                     }
                 }
@@ -1202,17 +1459,33 @@ struct StockDetailView: View {
                         if let v = value.as(Double.self) {
                             // A raw share count is unreadable on an axis;
                             // 15.00B is the same number said usefully.
-                            if isCount {
-                                Text(compact(v))
-                            } else {
-                                Text(isPercent ? Fmt.percent(v) : Fmt.number(v, fractionDigits: 2))
-                            }
+                            Text(ratioValueLabel(v, isPercent: isPercent, isCount: isCount))
                         }
                     }
                 }
             }
             .frame(height: 200)
+            // Five axis ticks across nineteen filed years leave most periods
+            // unlabelled; the tooltip is how a particular year is read off.
+            .chartHoverTooltip(points.map(\.period)) { i in
+                guard points.indices.contains(i) else { return nil }
+                let p = points[i]
+                return ChartTooltipContent(
+                    title: MarketTime.formatted(p.iso),
+                    rows: [ChartTooltipRow(
+                        color: color,
+                        label: title,
+                        value: ratioValueLabel(p.value, isPercent: isPercent, isCount: isCount)
+                    )]
+                )
+            }
         }
+    }
+
+    /// One ratio rendered the same way on the axis and in the tooltip.
+    private func ratioValueLabel(_ v: Double, isPercent: Bool, isCount: Bool) -> String {
+        if isCount { return compact(v) }
+        return isPercent ? Fmt.percent(v) : Fmt.number(v, fractionDigits: 2)
     }
 
     // MARK: - Valuation

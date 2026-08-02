@@ -32,7 +32,8 @@ try:
         calculate_key_ratios_timeseries,
         calculate_current_valuation_ratios,
         get_comprehensive_intrinsic_value,
-        get_intrinsic_value_for_symbol
+        get_intrinsic_value_for_symbol,
+        to_trailing_twelve_months,
     )
     FINANCIAL_RATIOS_AVAILABLE = True
 except ImportError:
@@ -842,10 +843,18 @@ def get_financials_endpoint(
 @router.get("/ratios/{symbol}")
 def get_ratios_endpoint(
     symbol: str,
+    period_type: str = "annual",
     force: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
 ):
-    """Returns calculated financial ratios for a symbol."""
+    """
+    Returns calculated financial ratios for a symbol.
+
+    `period_type` shapes the historical series only. Quarterly measures the same
+    ratios on trailing-twelve-month flows at each quarter end, so the numbers
+    stay comparable with the annual series and simply arrive four times as
+    often. The current valuation block is point-in-time and is unaffected.
+    """
     if not FINANCIAL_RATIOS_AVAILABLE:
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
@@ -870,11 +879,32 @@ def get_ratios_endpoint(
         cashflow = mdp.get_cashflow(yf_symbol, "annual", force_refresh=force)
 
         # Calculate historical ratios
-        historical_ratios_df = calculate_key_ratios_timeseries(
-            financials, balance_sheet, cashflow
-        )
-        
-        # Calculate current valuation ratios
+        if period_type == "quarterly":
+            # Flows are summed over the trailing four quarters; the balance
+            # sheet stays as filed, since a level has no window.
+            q_financials = mdp.get_financials(yf_symbol, "quarterly", force_refresh=force)
+            q_balance = mdp.get_balance_sheet(yf_symbol, "quarterly", force_refresh=force)
+            q_cashflow = mdp.get_cashflow(yf_symbol, "quarterly", force_refresh=force)
+            historical_ratios_df = calculate_key_ratios_timeseries(
+                to_trailing_twelve_months(q_financials),
+                q_balance,
+                to_trailing_twelve_months(q_cashflow),
+                # Four columns to the year, so the ratios that average a balance
+                # sheet average it over the same year the flow was earned in.
+                periods_per_year=4,
+            )
+            # A filer with too little quarterly history to form a single
+            # trailing year still gets the annual view rather than nothing.
+            if historical_ratios_df is None or historical_ratios_df.empty:
+                historical_ratios_df = calculate_key_ratios_timeseries(
+                    financials, balance_sheet, cashflow
+                )
+        else:
+            historical_ratios_df = calculate_key_ratios_timeseries(
+                financials, balance_sheet, cashflow
+            )
+
+        # Calculate current valuation ratios — point-in-time, so always annual.
         current_valuation = calculate_current_valuation_ratios(info, financials, balance_sheet)
         
         # Format historical ratios

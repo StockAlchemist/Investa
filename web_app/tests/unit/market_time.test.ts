@@ -102,4 +102,34 @@ describe('formatCalendarDate', () => {
         expect(formatCalendarDate('soon')).toBe('soon');
         expect(formatCalendarDate(null)).toBe('');
     });
+
+    // A date belongs to the market, not to the reader's device — the same rule
+    // that pins the zone. A Thai-locale browser defaults to the Buddhist era and
+    // would label a quarter ending March 2026 as 2569, which is not a year any
+    // filing mentions.
+    //
+    // The formatting request has to be read back off the call rather than
+    // rebuilt here: `formatCalendarDate` renders in the *runtime's* locale, so a
+    // test that formats with an explicit 'th-TH' proves only that the platform
+    // can do the right thing when asked. What needs guarding is that Investa
+    // asks.
+    it('names the year in the market’s calendar, not the reader’s', () => {
+        const spy = vi.spyOn(Date.prototype, 'toLocaleDateString');
+        formatCalendarDate('2026-03-31', { month: 'short', year: 'numeric' });
+        expect(spy).toHaveBeenCalledTimes(1);
+        const requested = spy.mock.calls[0][1] as Intl.DateTimeFormatOptions;
+        spy.mockRestore();
+
+        const rendered = new Date('2026-03-31T00:00:00Z').toLocaleDateString('th-TH', requested);
+        expect(rendered).toContain('2026');
+        expect(rendered).not.toContain('2569');
+    });
+
+    it('renders the day in the market’s zone, not the reader’s', () => {
+        const spy = vi.spyOn(Date.prototype, 'toLocaleDateString');
+        formatCalendarDate('2026-01-01');
+        const requested = spy.mock.calls[0][1] as Intl.DateTimeFormatOptions;
+        spy.mockRestore();
+        expect(requested.timeZone).toBe('UTC');
+    });
 });

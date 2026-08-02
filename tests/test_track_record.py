@@ -138,10 +138,14 @@ class TestSplitReconstruction:
 
         class FakeStore:
             def __init__(self):
-                self.by_accession = {}
+                # {tag: [one filing's {period_end: value}, newest filed first]}.
+                # The real store orders these on the filing date; the accession
+                # number cannot be trusted to encode it, because its prefix is
+                # the filing agent's CIK and changes when a company switches.
+                self.by_filing = {}
 
-            def get_tag_series_by_accession(self, cik, tags, as_of=None):
-                return self.by_accession
+            def get_tag_series_by_filing(self, cik, tags, as_of=None):
+                return self.by_filing
 
         fake = FakeStore()
         monkeypatch.setattr(edgar_provider, "get_store", lambda: fake)
@@ -166,11 +170,7 @@ class TestSplitReconstruction:
         import edgar_provider
 
         self._patch_assembled(monkeypatch, {"2017-09-30": 5.25e9, "2018-09-29": 20.0e9})
-        store.by_accession = {
-            SHARES_TAG: {
-                "0000320193-19-000119": {"2017-09-30": 21.0e9, "2018-09-29": 20.0e9}
-            }
-        }
+        store.by_filing = {SHARES_TAG: [{"2017-09-30": 21.0e9, "2018-09-29": 20.0e9}]}
         fixed = edgar_provider.split_consistent_series("0000320193", "shares_diluted")
         # Anchored on the newest value, which is already on today's basis.
         assert fixed["2018-09-29"] == 20.0e9
@@ -185,11 +185,7 @@ class TestSplitReconstruction:
         import edgar_provider
 
         self._patch_assembled(monkeypatch, {"2024-12-31": 800e6, "2025-12-31": 920e6})
-        store.by_accession = {
-            SHARES_TAG: {
-                "0000726728-26-000012": {"2024-12-31": 800e6, "2025-12-31": 920e6}
-            }
-        }
+        store.by_filing = {SHARES_TAG: [{"2024-12-31": 800e6, "2025-12-31": 920e6}]}
         fixed = edgar_provider.split_consistent_series("0000726728", "shares_diluted")
         assert fixed["2024-12-31"] == pytest.approx(800e6)
         assert fixed["2025-12-31"] == pytest.approx(920e6)
@@ -203,9 +199,7 @@ class TestSplitReconstruction:
         import edgar_provider
 
         self._patch_assembled(monkeypatch, {"2016-12-31": 100e6, "2017-12-31": 400e6})
-        store.by_accession = {
-            SHARES_TAG: {"a": {"2016-12-31": 100e6}, "b": {"2017-12-31": 400e6}}
-        }
+        store.by_filing = {SHARES_TAG: [{"2017-12-31": 400e6}, {"2016-12-31": 100e6}]}
         fixed = edgar_provider.split_consistent_series("0000000001", "shares_diluted")
         assert fixed["2016-12-31"] == pytest.approx(100e6)
         assert fixed["2017-12-31"] == pytest.approx(400e6)
@@ -221,18 +215,48 @@ class TestSplitReconstruction:
             monkeypatch,
             {"2022-01-30": 2.5e9, "2023-01-29": 2.5e9, "2024-01-28": 25.0e9},
         )
-        store.by_accession = {
-            SHARES_TAG: {
+        store.by_filing = {
+            SHARES_TAG: [
                 # FY2024 10-K, post 10:1: restates FY2023 but not FY2022.
-                "a": {"2023-01-29": 25.0e9, "2024-01-28": 25.0e9},
+                {"2023-01-29": 25.0e9, "2024-01-28": 25.0e9},
                 # FY2023 10-K, post 4:1 only.
-                "b": {"2022-01-30": 2.5e9, "2023-01-29": 2.5e9},
-            }
+                {"2022-01-30": 2.5e9, "2023-01-29": 2.5e9},
+            ]
         }
         fixed = edgar_provider.split_consistent_series("0001045810", "shares_diluted")
         assert fixed["2024-01-28"] == 25.0e9
         assert fixed["2023-01-29"] == pytest.approx(25.0e9)
         assert fixed["2022-01-30"] == pytest.approx(25.0e9)
+
+    def test_the_newest_filing_settles_a_disagreement(self, store, monkeypatch):
+        """
+        Two 10-Ks report the same prior year differently — a restatement, not a
+        split — and the newest one is the answer. That is the rule the ordering
+        exists to enforce, and the accession number could not enforce it: its
+        prefix is the filing agent's CIK, so for Apple a 2016 filing sorted above
+        a 2025 one and a superseded share count won the ratio.
+
+        Measured shape: a filer whose FY2023 count was restated 75.79m -> 77.37m
+        while both filings agreed FY2024 was 76.74m. Read newest-first the year
+        is a 0.8% buyback; read oldest-first it is a 1.3% issuance.
+        """
+        import edgar_provider
+
+        self._patch_assembled(
+            monkeypatch, {"2023-12-31": 77.367e6, "2024-12-31": 76.741e6}
+        )
+        store.by_filing = {
+            SHARES_TAG: [
+                # filed 2026: the restated FY2023.
+                {"2023-12-31": 77.367e6, "2024-12-31": 76.741e6},
+                # filed 2025: superseded, and it disagrees.
+                {"2023-12-31": 75.785e6, "2024-12-31": 76.741e6},
+            ]
+        }
+        fixed = edgar_provider.split_consistent_series("0000075252", "shares_diluted")
+        # The share count fell, as the newest filing says.
+        assert fixed["2023-12-31"] > fixed["2024-12-31"]
+        assert fixed["2023-12-31"] == pytest.approx(77.367e6, rel=1e-6)
 
     def test_a_single_period_is_returned_unchanged(self, store, monkeypatch):
         import edgar_provider

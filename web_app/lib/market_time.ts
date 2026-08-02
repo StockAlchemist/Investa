@@ -83,6 +83,11 @@ export function isWithinMarketMonths(
  * Rendered in UTC on purpose: the value is a calendar day, not an instant, so
  * letting the browser localize it would slide it to the previous day for anyone
  * west of UTC.
+ *
+ * Pinned to the Gregorian calendar for the same reason the zone is pinned: the
+ * day belongs to the market, not to the reader's device. A browser set to Thai
+ * defaults to the Buddhist era and renders a fiscal quarter ending March 2026
+ * as "2569". Month names stay localized.
  */
 export function formatCalendarDate(
     iso: string | null | undefined,
@@ -92,5 +97,5 @@ export function formatCalendarDate(
     if (!day) return typeof iso === 'string' ? iso : '';
     const d = new Date(`${day}T00:00:00Z`);
     if (isNaN(d.getTime())) return day;
-    return d.toLocaleDateString(undefined, { ...options, timeZone: 'UTC' });
+    return d.toLocaleDateString(undefined, { calendar: 'gregory', ...options, timeZone: 'UTC' });
 }
