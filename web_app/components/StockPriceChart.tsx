@@ -13,6 +13,7 @@ import {
     ComposedChart
 } from 'recharts';
 import PeriodSelector from './PeriodSelector';
+import TradingViewChart from './TradingViewChart';
 
 import {
     fetchStockHistory,
@@ -36,7 +37,12 @@ interface StockPriceChartProps {
     hidePrice?: boolean;
     fxRate?: number;
     accounts?: string[]; // Account filter for transaction/dividend overlays
+    exchange?: string;   // yfinance exchange code, for TradingView symbol mapping
 }
+
+// 'tradingview' hands the whole plot over to TradingView's embedded Advanced
+// Chart; the other two are drawn here from Investa's own history endpoint.
+type ChartView = 'price' | 'return' | 'tradingview';
 
 // Overlay event marker shapes
 type EventKind = 'buy' | 'sell' | 'dividend' | 'earnings';
@@ -69,7 +75,7 @@ interface CustomTooltipProps {
     active?: boolean;
     payload?: Array<{ value?: number; name?: string; color?: string; dataKey?: string | number; payload?: Record<string, unknown> }>;
     label?: string;
-    view: 'price' | 'return';
+    view: ChartView;
     currency: string;
 }
 
@@ -121,8 +127,8 @@ const EventDot = ({ cx, cy, payload, kind }: {
     );
 };
 
-export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, fxRate = 1, accounts }: StockPriceChartProps) {
-    const [view, setView] = useState<'price' | 'return'>('price');
+export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, fxRate = 1, accounts, exchange }: StockPriceChartProps) {
+    const [view, setView] = useState<ChartView>('price');
     const [period, setPeriod] = useState('1y');
     const [showSMA50, setShowSMA50] = useState(false);
     const [showSMA200, setShowSMA200] = useState(false);
@@ -183,6 +189,8 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
     const { data: rawData, isLoading } = useQuery({
         queryKey: ['stock_history', symbol, fetchParams.period, fetchParams.interval, benchmarkParam],
         queryFn: ({ signal }) => fetchStockHistory(symbol, fetchParams.period, fetchParams.interval, benchmarkParam, signal),
+        // TradingView draws from its own feed, so don't keep pulling ours behind it.
+        enabled: view !== 'tradingview',
         placeholderData: keepPreviousData,
         staleTime: period === '1d' ? 60 * 1000 : 5 * 60 * 1000,
         refetchInterval: period === '1d' ? 60 * 1000 : false,
@@ -716,8 +724,9 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
             {/* Header Layout (Matches PerformanceGraph) */}
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-4 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
-                    {/* Price and Stats (Top Left) */}
-                    {stats ? (
+                    {/* Price and Stats (Top Left). Hidden in the TradingView view,
+                        which carries its own quote header over its own data. */}
+                    {stats && view !== 'tradingview' ? (
                         <div className="flex items-baseline gap-3">
                             {!hidePrice && (
                                 <span className="text-3xl font-bold tracking-tight text-foreground">
@@ -759,33 +768,34 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                             )}
 
                             <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0">
-                                <button
-                                    onClick={() => setView('price')}
-                                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'price'
-                                        ? 'bg-[#0097b2] text-white shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
-                                        }`}
-                                >
-                                    Price
-                                </button>
-                                <button
-                                    onClick={() => setView('return')}
-                                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
-                                        ? 'bg-[#0097b2] text-white shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
-                                        }`}
-                                >
-                                    Return %
-                                </button>
+                                {([
+                                    { key: 'price', label: 'Price' },
+                                    { key: 'return', label: 'Return %' },
+                                    { key: 'tradingview', label: 'TradingView' },
+                                ] as const).map(({ key, label }) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => setView(key)}
+                                        className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all whitespace-nowrap ${view === key
+                                            ? 'bg-[#0097b2] text-white shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                                            }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Second Row: Period Selector */}
-                <div className="w-full overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
-                    <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
-                </div>
+                {/* Second Row: Period Selector. TradingView ships its own range
+                    tabs and interval picker, so ours would just be a rival. */}
+                {view !== 'tradingview' && (
+                    <div className="w-full overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+                        <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
+                    </div>
+                )}
 
                 {/* Third Row: Event Overlays (price view only) */}
                 {view === 'price' && (
@@ -842,6 +852,9 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
             </div>
 
             {/* Chart Container */}
+            {view === 'tradingview' ? (
+                <TradingViewChart symbol={symbol} exchange={exchange} height={520} />
+            ) : (
             <div className="h-[400px] w-full relative overflow-visible pb-4">
                 {isLoading && (
                     <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 flex items-center justify-center z-10 rounded-xl">
@@ -1024,6 +1037,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                     </div>
                 )}
             </div>
+            )}
         </div >
     );
 }

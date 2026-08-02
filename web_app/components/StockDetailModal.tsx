@@ -1302,6 +1302,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 fxRate={userPosition?.["fx_rate"]}
                 accounts={filters.accounts}
                 hidePrice={true}
+                exchange={fundamentals?.exchange}
             />
         </div>
     );

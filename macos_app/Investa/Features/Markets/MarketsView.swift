@@ -219,7 +219,10 @@ private struct IndexCard: View {
             .padding(16)
             if index.sparkline.count > 1 {
                 Chart(Array(index.sparkline.enumerated()), id: \.offset) { i, v in
-                    AreaMark(x: .value("i", i), y: .value("v", v))
+                    // Anchored to the domain floor: an index level sits far above
+                    // zero, and `AreaMark(x:y:)` would fill down to zero — well
+                    // past this 72pt frame — washing the card below it.
+                    AreaMark(x: .value("i", i), yStart: .value("Min", sparkDomain.lowerBound), yEnd: .value("v", v))
                         .foregroundStyle(.linearGradient(colors: [accent.opacity(0.3), accent.opacity(0.02)], startPoint: .top, endPoint: .bottom))
                     LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(accent).lineStyle(.init(lineWidth: 2.5)).interpolationMethod(.monotone)
                 }

@@ -285,6 +285,8 @@ struct StockPriceChartView: View {
     var fxRate: Double = 1
     var accounts: [String]?
     var hidePrice = false
+    /// yfinance exchange code, for TradingView symbol mapping.
+    var exchange: String?
 
     @StateObject private var model: StockChartModel
     @State private var view: ChartViewMode = .price
@@ -296,17 +298,21 @@ struct StockPriceChartView: View {
     @State private var showDividends = false
     @State private var showEarnings = false
     @State private var selectedBenchmarks: [String] = []
+    @State private var showTradingViewFullScreen = false
     @State private var customFrom = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
     @State private var customTo = Date()
 
     init(symbol: String, currency: String, avgCost: Double? = nil, fxRate: Double = 1,
-         accounts: [String]? = nil, hidePrice: Bool = false) {
+         accounts: [String]? = nil, hidePrice: Bool = false, exchange: String? = nil) {
         self.symbol = symbol; self.currency = currency; self.avgCost = avgCost
         self.fxRate = fxRate; self.accounts = accounts; self.hidePrice = hidePrice
+        self.exchange = exchange
         _model = StateObject(wrappedValue: StockChartModel(symbol: symbol))
     }
 
-    enum ChartViewMode { case price, return_ }
+    /// `tradingView` hands the whole plot over to TradingView's embedded
+    /// Advanced Chart; the other two are drawn here from Investa's own history.
+    enum ChartViewMode { case price, return_, tradingView }
     private struct Benchmark { let name: String; let key: String; let color: Color }
     private let benchmarks = [
         Benchmark(name: "S&P 500", key: "^GSPC", color: Color(hex: 0xf59e0b)),
@@ -324,9 +330,13 @@ struct StockPriceChartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
-            periodRow
-            if period == "custom" { customDateRow }
-            if view == .price { overlayRow } else { benchmarkRow }
+            // TradingView ships its own range tabs, interval picker and study
+            // menu, so ours would just be a rival set of controls.
+            if view != .tradingView {
+                periodRow
+                if period == "custom" { customDateRow }
+                if view == .price { overlayRow } else { benchmarkRow }
+            }
             chartArea
         }
         .task { await reloadHistory() }
@@ -335,9 +345,14 @@ struct StockPriceChartView: View {
         .onChange(of: customFrom) { _, _ in Task { await reloadHistory() } }
         .onChange(of: customTo) { _, _ in Task { await reloadHistory() } }
         .onChange(of: [showBuys, showSells, showDividends, showEarnings]) { _, _ in Task { await refreshEvents() } }
+        .fullScreenPresentation(isPresented: $showTradingViewFullScreen) {
+            TradingViewFullScreenView(symbol: symbol, exchange: exchange)
+        }
     }
 
     private func reloadHistory() async {
+        // TradingView draws from its own feed — don't pull ours behind it.
+        guard view != .tradingView else { return }
         let names = view == .return_ ? selectedBenchmarks : []
         await model.loadHistory(period: period, fxRate: fxRate, benchmarks: names,
                                 customFrom: period == "custom" ? customFrom : nil,
@@ -371,31 +386,64 @@ struct StockPriceChartView: View {
         return (change, first.value != 0 ? change / first.value * 100 : 0)
     }
 
-    private var headerRow: some View {
-        HStack(alignment: .center) {
-            if let s = stats {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if !hidePrice, let last = pts.last {
-                        Text(Fmt.currency(last.value, code: currency)).font(.title.bold())
-                    }
-                    Text("\(Fmt.currency(s.change, code: currency)) (\(String(format: "%.2f%%", s.pct)))")
-                        .font(.callout.weight(.medium)).foregroundStyle(s.change >= 0 ? .green : .red)
+    /// Stats, moving-average chips and a three-way mode picker do not fit one
+    /// ~390pt phone row, so the picker takes a row of its own there. Crammed
+    /// into one row the stats text is squeezed to near-zero width and wraps
+    /// into a tall column of clipped glyphs, which pushes the chart off screen
+    /// and forces the whole sheet wider than the display.
+    @ViewBuilder private var headerRow: some View {
+        if isPhoneLayout {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center) {
+                    statsView
+                    Spacer()
+                    if view == .price { movingAverageChips }
                 }
-            } else { Color.clear.frame(height: 28) }
-            Spacer()
-            if view == .price {
-                HStack(spacing: 4) {
-                    toggleChip("MA50", showSMA50, Color(hex: 0xf97316)) { showSMA50.toggle() }
-                    toggleChip("MA200", showSMA200, Color(hex: 0x9333ea)) { showSMA200.toggle() }
-                }
+                modePicker.frame(maxWidth: .infinity)
             }
-            Picker("", selection: $view) {
-                Text("Price").tag(ChartViewMode.price)
-                Text("Return %").tag(ChartViewMode.return_)
+        } else {
+            HStack(alignment: .center) {
+                statsView
+                Spacer()
+                if view == .price { movingAverageChips }
+                modePicker.fixedSize()
             }
-            .pickerStyle(.segmented).fixedSize()
-            .onChange(of: view) { _, _ in Task { await reloadHistory() } }
         }
+    }
+
+    @ViewBuilder private var statsView: some View {
+        // Stats are hidden in the TradingView view, which carries its own
+        // quote header over its own data.
+        if let s = stats, view != .tradingView {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if !hidePrice, let last = pts.last {
+                    Text(Fmt.currency(last.value, code: currency)).font(.title.bold())
+                }
+                Text("\(Fmt.currency(s.change, code: currency)) (\(String(format: "%.2f%%", s.pct)))")
+                    .font(.callout.weight(.medium)).foregroundStyle(s.change >= 0 ? .green : .red)
+            }
+            // Never let a tight row wrap this into a multi-line column.
+            .lineLimit(1).minimumScaleFactor(0.7)
+        } else {
+            Color.clear.frame(height: 28)
+        }
+    }
+
+    private var movingAverageChips: some View {
+        HStack(spacing: 4) {
+            toggleChip("MA50", showSMA50, Color(hex: 0xf97316)) { showSMA50.toggle() }
+            toggleChip("MA200", showSMA200, Color(hex: 0x9333ea)) { showSMA200.toggle() }
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("", selection: $view) {
+            Text("Price").tag(ChartViewMode.price)
+            Text("Return %").tag(ChartViewMode.return_)
+            Text("TradingView").tag(ChartViewMode.tradingView)
+        }
+        .pickerStyle(.segmented)
+        .onChange(of: view) { _, _ in Task { await reloadHistory() } }
     }
 
     private var periodRow: some View {
@@ -500,7 +548,24 @@ struct StockPriceChartView: View {
 
     @ViewBuilder private var chartArea: some View {
         ZStack {
-            if model.isLoading && pts.isEmpty {
+            if view == .tradingView {
+                VStack(spacing: 6) {
+                    // The button gets a row to itself: laid over the chart it
+                    // would sit on TradingView's own top-right toolbar button.
+                    // Only offered where there is a chart to enlarge — an
+                    // unmapped symbol shows the "no listing" placeholder.
+                    if TradingViewSymbol.map(symbol, exchange: exchange) != nil {
+                        HStack {
+                            Spacer()
+                            TradingViewFullScreenChip(
+                                title: "Full Screen",
+                                systemImage: "arrow.up.left.and.arrow.down.right"
+                            ) { showTradingViewFullScreen = true }
+                        }
+                    }
+                    TradingViewChartView(symbol: symbol, exchange: exchange, height: 520)
+                }
+            } else if model.isLoading && pts.isEmpty {
                 ProgressView().frame(height: 400)
             } else if pts.isEmpty {
                 ContentUnavailableView("No data available", systemImage: "chart.xyaxis.line").frame(height: 400)
@@ -529,7 +594,7 @@ struct StockPriceChartView: View {
             }
 
             if view == .price {
-                priceChartMarks(xVal: xVal)
+                priceChartMarks(xVal: xVal, lo: lo)
             } else {
                 returnChartMarks(xVal: xVal, off: off)
             }
@@ -569,10 +634,14 @@ struct StockPriceChartView: View {
         }
     }
 
-    @ChartContentBuilder private func priceChartMarks(xVal: @escaping (Date) -> Double) -> some ChartContent {
+    @ChartContentBuilder private func priceChartMarks(xVal: @escaping (Date) -> Double, lo: Double) -> some ChartContent {
         ForEach(pts) { p in
             let x = xVal(p.date)
-            AreaMark(x: .value("X", x), y: .value("Price", p.value))
+            // Anchored to the domain floor, not the scale's zero. A price scale
+            // starts far above zero, so the plain `AreaMark(x:y:)` fills all the
+            // way down to it — past the plot, past the view's own frame — and
+            // stretches this gradient over that whole invisible span.
+            AreaMark(x: .value("X", x), yStart: .value("Base", lo), yEnd: .value("Price", p.value))
                 .foregroundStyle(.linearGradient(colors: [Color(hex: 0x2563eb).opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
             LineMark(x: .value("X", x), y: .value("Price", p.value))
                 .foregroundStyle(Color(hex: 0x2563eb)).lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)

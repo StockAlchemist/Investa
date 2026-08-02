@@ -92,6 +92,19 @@ extension View {
         #endif
     }
 
+    /// Presents `content` as large as the platform allows: a full-screen cover
+    /// on iOS, a sheet on macOS (which has no cover — the sheet sizes itself to
+    /// its content, so that content should ask for the room it wants).
+    @ViewBuilder func fullScreenPresentation<C: View>(
+        isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> C
+    ) -> some View {
+        #if os(iOS)
+        self.fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        self.sheet(isPresented: isPresented, content: content)
+        #endif
+    }
+
     /// Forces the Gregorian calendar for date pickers so they don't render a
     /// locale-specific calendar (e.g. the Buddhist era under a Thai locale).
     /// Transactions are stored as ISO `yyyy-MM-dd`, so the picker should always
