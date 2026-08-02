@@ -21,7 +21,6 @@ def mock_calculate_mtd_adb(current_cash, mtd_transactions, today_date):
     days_in_month_so_far = (today_date - start_of_month).days + 1
     
     # Map dates to net change
-    daily_changes = {}
     if not mtd_transactions.empty:
         # Filter for cash-affecting types if needed, but assuming mtd_transactions are pre-filtered or we filter here
         # For simplicity, assume all relevant.

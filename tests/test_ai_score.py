@@ -4,7 +4,7 @@ import json
 import pytest
 import tempfile
 import shutil
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -67,7 +67,7 @@ def test_process_screener_results_ai_score_basic(mock_app_data_dir):
     res = results[0]
     
     assert res["symbol"] == sym
-    assert res["has_ai_review"] == True
+    assert res["has_ai_review"] is True
     # (8 + 7 + 9 + 6) / 4 = 7.5
     assert res["ai_score"] == 7.5
     assert res["ai_moat"] == 8.0
@@ -105,6 +105,6 @@ def test_process_screener_results_ai_score_missing_fields(mock_app_data_dir):
     # (8.0 + 4.0) / 2 = 6.0
     assert res["ai_score"] == 6.0
     assert res["ai_moat"] == 8.0
-    assert res["ai_financial_strength"] == None
+    assert res["ai_financial_strength"] is None
     assert res["ai_predictability"] == "High"
     assert res["ai_growth"] == 4.0

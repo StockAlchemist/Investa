@@ -322,7 +322,9 @@ class TestExternalFlows:
         assert ok_flow  == pytest.approx(0.0, abs=1e-6)
 
     def test_total_inflows_differ_by_paired_deposit_amount(self):
-        inflows = lambda df: sum(max(0, _net_flow(df, d)) for d in KEY_DATES)
+        def inflows(df):
+            return sum(max(0, _net_flow(df, d)) for d in KEY_DATES)
+
         auto_in  = inflows(_auto_cash_df())
         ok_in    = inflows(_manual_cash_correct_df())
         bad_in   = inflows(_manual_cash_paired_deposits_df())

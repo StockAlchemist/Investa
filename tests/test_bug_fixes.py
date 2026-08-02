@@ -211,7 +211,7 @@ class TestTransferHealing:
     def test_bug05_market_crash_on_transfer_day_preserved(self):
         """A -12% market crash that coincides with a transfer should NOT be zeroed
         if the gain is larger than the flow."""
-        daily_return = -0.12
+        # daily return -0.12 — the crash the docstring names
         net_flow = 100.0      # Small transfer
         daily_gain = -15000.0  # Large market loss
         # BUG-05 condition: only heal if |net_flow| > |daily_gain| * 0.5
@@ -220,7 +220,7 @@ class TestTransferHealing:
 
     def test_bug05_flow_driven_spike_on_transfer_day_healed(self):
         """A 15% spike caused by a large transfer SHOULD be zeroed."""
-        daily_return = 0.15
+        # daily return +0.15 — the spike the docstring names
         net_flow = 50000.0    # Large transfer flow
         daily_gain = 5000.0   # Small actual market gain
         should_heal = abs(net_flow) > abs(daily_gain) * 0.5
@@ -262,11 +262,6 @@ class TestMWRFeeHandling:
             display_currency="USD",
         )
         # Flows: Buy = -1505, Fees = -8 (abs of -8), FinalMV = +1500
-        fee_flow = None
-        for d, f in zip(dates, flows):
-            if d == date(2024, 6, 1):
-                fee_flow = f
-                break
         # If fee_flow doesn't land on its own date (aggregated), check total
         assert any(f < 0 for f in flows[:-1]), "Fee should produce a negative cash flow"
 
@@ -414,7 +409,7 @@ class TestAutoCashParity:
         """Both engines should agree on cash after a buy+sell sequence."""
         try:
             from portfolio_logic import _calculate_daily_holdings_chronological_numba
-            from portfolio_analyzer import _process_numba_core, TYPE_BUY, TYPE_SELL, TYPE_DIVIDEND, TYPE_FEES, TYPE_SPLIT, TYPE_TRANSFER, TYPE_SHORT_SELL, TYPE_BUY_TO_COVER, TYPE_DEPOSIT, TYPE_WITHDRAWAL, TYPE_INTEREST, TYPE_TAX
+            from portfolio_analyzer import _process_numba_core, TYPE_BUY, TYPE_SELL
         except ImportError:
             pytest.skip("Cannot import required modules")
 

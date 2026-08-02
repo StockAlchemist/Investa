@@ -134,10 +134,10 @@ def test_mwr_transfer_logic():
     # Flow 2: Transfer -> Should be 0.
     
     buy_found = False
-    transfer_zero = False
     
     for f in flows_ab:
-        if f == -1000.0: buy_found = True
+        if f == -1000.0:
+            buy_found = True
         
     # Transfer might not appear in flows if 0 (logic usually skips 0 flows).
     # But let's check if there is a 500 or -500.

@@ -19,7 +19,8 @@ the daily-return formula attributes the resulting NAV jump to return).
 The "always external" rule sidesteps this — every Deposit/Withdrawal is a
 flow that cancels its NAV impact symmetrically.
 """
-import sys, os
+import os
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pandas as pd

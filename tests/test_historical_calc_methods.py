@@ -23,17 +23,10 @@ try:
         _calculate_portfolio_value_at_date_unadjusted_python,
         _calculate_portfolio_value_at_date_unadjusted_numba,
         CASH_SYMBOL_CSV,
-        SHORTABLE_SYMBOLS,  # Keep if needed by logic
         _prepare_historical_inputs,  # To get symbols, currencies, splits, etc.
         _unadjust_prices,  # To derive unadjusted prices
     )
     from data_loader import load_and_clean_transactions  # To load real data
-    from market_data import MarketDataProvider  # To fetch real data
-    from finutils import (
-        get_historical_price,
-        get_historical_rate_via_usd_bridge,
-        map_to_yf_symbol,  # Keep if needed, though _prepare might handle it
-    )
 
     # Import config constants if needed, or define mocks
     # from config import ...
@@ -111,9 +104,12 @@ def generate_mock_market_data(start_date, end_date, symbols, fx_pairs):
     for pair in fx_pairs:
         # Simple oscillation around a base rate
         base_rate = 1.0
-        if "THB" in pair: base_rate = 35.0
-        elif "EUR" in pair: base_rate = 0.9
-        elif "JPY" in pair: base_rate = 150.0
+        if "THB" in pair:
+            base_rate = 35.0
+        elif "EUR" in pair:
+            base_rate = 0.9
+        elif "JPY" in pair:
+            base_rate = 150.0
         
         rates = [
             base_rate + (np.sin(i / 20.0) * (base_rate * 0.05))

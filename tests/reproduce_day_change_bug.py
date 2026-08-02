@@ -3,8 +3,7 @@
 import sys
 import os
 import pandas as pd
-import numpy as np
-from datetime import date, datetime
+from datetime import date
 
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))

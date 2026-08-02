@@ -703,9 +703,9 @@ def test_map_to_yf_symbol_dot_to_dash_heuristic():
     assert map_to_yf_symbol("XYZ.B", {}, set()) == "XYZ-B"
 
 def test_map_to_yf_symbol_invalid_inputs():
-    assert map_to_yf_symbol(None, {}, set()) == None
-    assert map_to_yf_symbol("", {}, set()) == None
-    assert map_to_yf_symbol("   ", {}, set()) == None
+    assert map_to_yf_symbol(None, {}, set()) is None
+    assert map_to_yf_symbol("", {}, set()) is None
+    assert map_to_yf_symbol("   ", {}, set()) is None
     # Very long symbol to bypass heuristic
     assert map_to_yf_symbol("TOOLONG.A", {}, set()) == "TOOLONG.A"
 
@@ -715,7 +715,7 @@ def test_map_to_yf_symbol_user_map():
     assert map_to_yf_symbol("BRK.B", user_symbol_map=user_map, user_excluded_symbols=set()) == "BRK-B" # System map still works
     
 def test_map_to_yf_symbol_excluded():
-    assert map_to_yf_symbol("BRK.B", {}, {"BRK.B"}) == None
+    assert map_to_yf_symbol("BRK.B", {}, {"BRK.B"}) is None
 
 
 # --- Tests for calculate_indicated_dividend ---

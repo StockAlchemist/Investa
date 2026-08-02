@@ -74,20 +74,18 @@ def generate_mock_market_data(start_date, end_date, symbols, fx_pairs):
     for pair in fx_pairs:
         # Simple oscillation around a base rate
         base_rate = 1.0
-        if "THB" in pair: base_rate = 35.0
-        elif "EUR" in pair: base_rate = 0.9
-        elif "JPY" in pair: base_rate = 150.0
+        if "THB" in pair:
+            base_rate = 35.0
+        elif "EUR" in pair:
+            base_rate = 0.9
+        elif "JPY" in pair:
+            base_rate = 150.0
         
         rates = [
             base_rate + (np.sin(i / 20.0) * (base_rate * 0.05))
             for i in range(len(dates))
         ]
         df = pd.DataFrame({"price": rates}, index=dates)
-        if pair != "USD":
-            pair_key = f"{pair}=X"
-        else:
-             pair_key = pair 
-        
         if pair == "USD":
              continue 
              
@@ -114,11 +112,9 @@ def test_numba_chrono_vs_python_accuracy_and_speed():
     # 1. Setup Data
     start_date = date(2023, 1, 1)
     end_date = date(2023, 6, 30) # 6 months
-    dates = pd.date_range(start_date, end_date, freq="D")
     
     # Symbols
     symbols = ["AAPL", "MSFT", "TSLA"]
-    accounts = ["Acc1", "Acc2"]
     
     # Create Transactions
     transactions = []
