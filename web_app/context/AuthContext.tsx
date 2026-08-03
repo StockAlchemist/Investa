@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchCurrentUser, logoutRequest, SessionExpiredError, User } from "../lib/api";
 
@@ -37,10 +37,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Read inside the listener below, which is registered once and would
+    // otherwise close over the first render's `user`.
+    const userRef = useRef<User | null>(null);
+    useEffect(() => {
+        userRef.current = user;
+    }, [user]);
+
     // Listen for 401 events dispatched by the API layers so an expired/invalid
     // cookie triggers logout.
+    //
+    // Only when somebody is actually signed in. A 401 while logged out is the
+    // ordinary answer — every provider mounted above the router keeps fetching
+    // on the login and register pages — and treating it as an expiry logged the
+    // visitor out of a session they never had and redirected them to /login.
+    // That made /register unreachable: arriving there logged out is the point of
+    // it, and the deferred watchlist fetch bounced you before you could type.
+    // Guarding the listener rather than the dispatchers is what keeps this
+    // fixed, since any globally mounted fetch would otherwise reintroduce it.
     useEffect(() => {
-        const handleExpired = () => logout();
+        const handleExpired = () => {
+            if (userRef.current) logout();
+        };
         window.addEventListener('auth:expired', handleExpired);
         return () => window.removeEventListener('auth:expired', handleExpired);
         // eslint-disable-next-line react-hooks/exhaustive-deps
