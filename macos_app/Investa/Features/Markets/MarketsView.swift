@@ -290,9 +290,23 @@ private struct IndexGraphSheet: View {
     let index: IndexQuote
     @StateObject private var model = IndexHistoryModel()
     @State private var period = "1y"
+    @State private var view: ViewMode = .return_
+    @State private var showTradingViewFullScreen = false
+
+    /// `tradingView` hands the whole plot over to TradingView's embedded
+    /// Advanced Chart; `return_` is the return-% series drawn from our history.
+    private enum ViewMode { case return_, tradingView }
 
     private var isUp: Bool { (index.change ?? 0) >= 0 }
     private var intradayPeriod: Bool { period == "1d" || period == "5d" }
+    /// The Yahoo symbol behind this index, when TradingView carries it. Both
+    /// hops have to land: an index we know (`.DJI` → `^DJI`) and an instrument
+    /// the free widget will actually draw.
+    private var tvSymbol: String? {
+        guard let yahoo = TradingViewSymbol.benchmark(index.key ?? index.name ?? ""),
+              TradingViewSymbol.map(yahoo) != nil else { return nil }
+        return yahoo
+    }
     private let periods: [(String, String)] = [
         ("1D", "1d"), ("5D", "5d"), ("1M", "1m"), ("3M", "3m"), ("6M", "6m"), ("YTD", "ytd"),
         ("1Y", "1y"), ("3Y", "3y"), ("5Y", "5y"), ("10Y", "10y"), ("All", "all"),
@@ -310,30 +324,68 @@ private struct IndexGraphSheet: View {
                     }
                 }
                 Spacer()
+                // An iPhone's width can't carry the title, the picker and the
+                // close button on one line — there it gets a row of its own.
+                if tvSymbol != nil && !isPhoneLayout { modePicker.fixedSize() }
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).font(.title2).foregroundStyle(.secondary)
             }
+            if tvSymbol != nil && isPhoneLayout { modePicker.frame(maxWidth: .infinity) }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(periods, id: \.1) { label, value in
-                        Button { period = value } label: {
-                            Text(label).font(.caption.weight(.semibold))
-                                .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(period == value ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
-                                .foregroundStyle(period == value ? .white : .secondary)
-                        }.buttonStyle(.plain)
+            // TradingView ships its own range tabs and interval picker, so ours
+            // would just be a rival set of controls.
+            if view == .return_ {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(periods, id: \.1) { label, value in
+                            Button { period = value } label: {
+                                Text(label).font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(period == value ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(period == value ? .white : .secondary)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    Spacer()
+                    TradingViewFullScreenChip(title: "Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") {
+                        showTradingViewFullScreen = true
                     }
                 }
             }
 
-            chart
+            if view == .tradingView, let symbol = tvSymbol {
+                TradingViewChartView(symbol: symbol, height: nil)
+            } else {
+                chart
+            }
         }
         #if os(iOS)
         .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
         #else
-        .padding(24).frame(width: 600, height: 460)
+        // TradingView's chart carries its own toolbars and needs the room; the
+        // return-% plot doesn't.
+        .padding(24).frame(width: view == .tradingView ? 900 : 600,
+                           height: view == .tradingView ? 620 : 460)
         #endif
-        .task(id: period) { await model.load(key: index.key ?? index.name ?? "", period: period) }
+        // TradingView draws from its own feed — don't pull ours behind it.
+        .task(id: [period, view == .tradingView ? "tv" : "ret"]) {
+            guard view == .return_ else { return }
+            await model.load(key: index.key ?? index.name ?? "", period: period)
+        }
+        .fullScreenPresentation(isPresented: $showTradingViewFullScreen) {
+            if let symbol = tvSymbol { TradingViewFullScreenView(symbol: symbol) }
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("", selection: $view) {
+            Text("Return %").tag(ViewMode.return_)
+            Text("TradingView").tag(ViewMode.tradingView)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     @ViewBuilder private var chart: some View {

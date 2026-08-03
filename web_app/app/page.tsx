@@ -93,6 +93,9 @@ export default function Home() {
   const [settingsInitialTab, setSettingsInitialTab] = useState<'overrides' | 'account' | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed]     = useState(false);
   const [isIndexGraphModalOpen, setIsIndexGraphModalOpen] = useState(false);
+  // Which index card opened the graph modal, if any — the header's combined
+  // indices box opens it unfocused.
+  const [indexGraphFocus, setIndexGraphFocus]             = useState<string | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen]   = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen]             = useState(false);
   const [benchmarks, setBenchmarks]                 = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
@@ -634,7 +637,7 @@ export default function Home() {
         ) : (
           <MarketsTab
             indices={indices as unknown as Record<string, MarketIndex>}
-            onIndexClick={() => setIsIndexGraphModalOpen(true)}
+            onIndexClick={(idx) => { setIndexGraphFocus(idx.name ?? null); setIsIndexGraphModalOpen(true); }}
             holdings={holdings}
             currency={currency}
             portfolioSymbols={holdings.map(h => h.Symbol).filter(Boolean)}
@@ -813,7 +816,7 @@ export default function Home() {
           fxRate={cardMetrics?.exchange_rate_to_display as number | undefined}
           availableCurrencies={settingsQuery.data?.available_currencies}
           isFetching={cardRefreshing}
-          onIndexClick={() => setIsIndexGraphModalOpen(true)}
+          onIndexClick={() => { setIndexGraphFocus(null); setIsIndexGraphModalOpen(true); }}
           isMarketOpen={isMarketOpen}
           lastUpdated={Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0) ? new Date(Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0)) : null}
           onMobileMenuOpen={() => setIsMobileNavOpen(true)}
@@ -846,6 +849,7 @@ export default function Home() {
         onClose={() => setIsIndexGraphModalOpen(false)}
         benchmarks={benchmarks}
         currentIndices={indices as unknown as Record<string, MarketIndex> | undefined}
+        focusIndex={indexGraphFocus}
       />
 
       {/* ── Mobile bottom nav ── */}

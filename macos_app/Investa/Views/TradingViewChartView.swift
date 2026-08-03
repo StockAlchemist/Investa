@@ -39,17 +39,51 @@ enum TradingViewSymbol {
     ]
 
     /// Yahoo index/FX/commodity tickers → their TradingView counterparts.
+    ///
+    /// The free embedded widget will not draw a licensed index feed: `SP:SPX`,
+    /// `DJ:DJI`, `NASDAQ:IXIC` and every `TVC:` index answer with "This symbol
+    /// is only available on TradingView" and an empty chart. What it does draw
+    /// are the freely redistributable index CFDs TradingView's own free widgets
+    /// use, so each index maps to the venue that actually renders.
+    ///
+    /// The Nasdaq Composite is the one index with no free feed at any venue, so
+    /// it falls back to the ETF that tracks it — a different scale, but the same
+    /// underlying, and the widget's legend names it. Where nothing free tracks
+    /// the instrument at all (`^TNX`, `^SP500TR`, `^SET.BK`) there is no entry:
+    /// the caller falls back rather than showing a chart that never draws.
     private static let specialSymbol: [String: String] = [
-        "^GSPC": "SP:SPX", "^SP500TR": "SP:SPXTR", "^IXIC": "NASDAQ:IXIC",
-        "^NDX": "NASDAQ:NDX", "^DJI": "DJ:DJI", "^RUT": "TVC:RUT", "^VIX": "TVC:VIX",
-        "^TNX": "TVC:TNX", "^FTSE": "TVC:UKX", "^GDAXI": "XETR:DAX",
-        "^FCHI": "EURONEXT:PX1", "^STOXX50E": "TVC:SX5E", "^N225": "TVC:NI225",
-        "^HSI": "TVC:HSI", "^SET.BK": "SET:SET", "^AXJO": "ASX:XJO",
-        "GC=F": "COMEX:GC1!", "SI=F": "COMEX:SI1!", "CL=F": "NYMEX:CL1!",
-        "NG=F": "NYMEX:NG1!",
+        "^GSPC": "FOREXCOM:SPXUSD",
+        "^IXIC": "NASDAQ:ONEQ",  // Fidelity Nasdaq Composite Index ETF
+        "^NDX": "FOREXCOM:NSXUSD", "^DJI": "FOREXCOM:DJI", "^RUT": "OANDA:US2000USD",
+        "^VIX": "CAPITALCOM:VIX", "^FTSE": "FOREXCOM:UKXGBP", "^GDAXI": "XETR:DAX",
+        "^FCHI": "OANDA:FR40EUR", "^STOXX50E": "CAPITALCOM:EU50", "^N225": "INDEX:NKY",
+        "^HSI": "CAPITALCOM:HK50", "^AXJO": "ASX:XJO",
+        "GC=F": "TVC:GOLD", "SI=F": "TVC:SILVER", "CL=F": "TVC:USOIL",
+        "NG=F": "CAPITALCOM:NATURALGAS",
     ]
 
     private static let quoteCurrencies: Set<String> = ["USD", "USDT", "EUR", "BTC", "ETH", "THB"]
+
+    /// Investa's benchmark display names and `/indices` map keys → Yahoo tickers.
+    ///
+    /// Indices reach the UI under two aliases that are neither Yahoo symbols:
+    /// `/indices` keys them by the backend's own codes (`config.INDICES_FOR_HEADER`)
+    /// and the graph sheets name them the way `config.BENCHMARK_MAPPING` does.
+    private static let benchmarkYahoo: [String: String] = [
+        // `/indices` map keys
+        ".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC",
+        // Display names — INDEX_DISPLAY_NAMES and BENCHMARK_MAPPING
+        "DOW": "^DJI", "DOW JONES": "^DJI", "NASDAQ": "^IXIC", "S&P 500": "^GSPC",
+        "RUSSELL 2000": "^RUT", "S&P 500 TOTAL RETURN": "^SP500TR",
+        "SPY (S&P 500 ETF)": "SPY", "QQQ (NASDAQ 100 ETF)": "QQQ", "DIA (DOW JONES ETF)": "DIA",
+    ]
+
+    /// The Yahoo symbol behind a benchmark name or `/indices` key, or `nil` when
+    /// the label isn't one we carry — the caller then has nothing to chart
+    /// rather than a guess at what "Nikkei" might have meant.
+    static func benchmark(_ nameOrKey: String) -> String? {
+        benchmarkYahoo[nameOrKey.trimmingCharacters(in: .whitespaces).uppercased()]
+    }
 
     /// The TradingView symbol for `symbol`, or `nil` when no confident mapping
     /// exists (cash rows, unknown listing venues, futures we don't carry).
