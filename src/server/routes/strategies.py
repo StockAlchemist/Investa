@@ -39,16 +39,21 @@ async def list_strategies(current_user: User = Depends(get_current_user)):
     any price request resolves.
     """
     payload = [strategy_lib.strategy_payload(s) for s in strategy_lib.list_strategies()]
-    return clean_nans({"strategies": payload, "default": strategy_lib.DEFAULT_STRATEGY_ID})
+    return clean_nans(
+        {"strategies": payload, "default": strategy_lib.DEFAULT_STRATEGY_ID}
+    )
 
 
 @router.get("/trend-signal")
 async def get_trend_signal(
     symbol: str = Query(
-        strategy_lib.MARKET_SIGNAL_SYMBOL, description="Index or ETF to read the trend of"
+        strategy_lib.MARKET_SIGNAL_SYMBOL,
+        description="Index or ETF to read the trend of",
     ),
     sma_months: int = Query(
-        strategy_lib.MARKET_SIGNAL_SMA_MONTHS, ge=2, le=24,
+        strategy_lib.MARKET_SIGNAL_SMA_MONTHS,
+        ge=2,
+        le=24,
         description="Moving-average length, in months",
     ),
     current_user: User = Depends(get_current_user),
@@ -73,10 +78,14 @@ async def get_trend_signal(
         )
 
     try:
-        signal = await _SIGNAL_CACHE.get_or_compute(cache_key, _SIGNAL_TTL_SECONDS, compute)
+        signal = await _SIGNAL_CACHE.get_or_compute(
+            cache_key, _SIGNAL_TTL_SECONDS, compute
+        )
     except Exception as exc:
         logging.error(f"Strategies: signal computation failed: {exc}")
-        raise HTTPException(status_code=503, detail="Could not compute the trend signal")
+        raise HTTPException(
+            status_code=503, detail="Could not compute the trend signal"
+        )
 
     if signal is None:
         raise HTTPException(
@@ -110,7 +119,9 @@ async def get_allocation(
         raise HTTPException(status_code=404, detail=f"Unknown strategy '{strategy_id}'")
 
     try:
-        allocation = await run_in_threadpool(strategy_lib.build_allocation, strategy, capital)
+        allocation = await run_in_threadpool(
+            strategy_lib.build_allocation, strategy, capital
+        )
     except Exception as exc:
         logging.error(f"Strategies: allocation failed for {strategy_id}: {exc}")
         raise HTTPException(status_code=500, detail="Could not build the allocation")

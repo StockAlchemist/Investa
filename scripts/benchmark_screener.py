@@ -9,7 +9,10 @@ sys.path.append(os.path.join(os.getcwd(), "src"))
 from server.screener_service import screen_stocks
 
 # Setup specific logging to see what's happening
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 def benchmark(universe_type):
     print(f"\n--- Benchmarking {universe_type} ---")
@@ -24,7 +27,9 @@ def benchmark(universe_type):
     except Exception as e:
         print(f"FAILED: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     # Test sp400 since that was in the screenshot

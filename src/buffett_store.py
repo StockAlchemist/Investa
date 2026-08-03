@@ -15,6 +15,7 @@ annual periods available, the coverage-derived confidence, and the pillar
 breakdown. "Why is this company ranked fourth" must be answerable from the row
 alone.
 """
+
 from __future__ import annotations
 
 import json
@@ -347,9 +348,13 @@ class BuffettRankStore:
         if run_id is None:
             return pd.DataFrame()
         with self._connect() as conn:
-            rows = [dict(row) for row in conn.execute(
-                "SELECT * FROM rank_scores WHERE run_id = ? ORDER BY rank ASC", (run_id,)
-            )]
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM rank_scores WHERE run_id = ? ORDER BY rank ASC",
+                    (run_id,),
+                )
+            ]
         return pd.DataFrame(rows)
 
     def get_symbol_history(self, symbol: str, limit: int = 24) -> List[Dict[str, Any]]:

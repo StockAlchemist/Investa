@@ -13,6 +13,7 @@
 -------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT
 """
+
 import sqlite3
 import json
 from datetime import datetime, date
@@ -28,6 +29,7 @@ DB_FILENAME = "portfolio.db"
 # Must match the highest migration applied in create_tables() below (currently the
 # v15 migration adding the AI per-dimension analysis columns to screener_cache).
 DB_SCHEMA_VERSION = 15
+
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -169,6 +171,7 @@ def open_screener_db_conn() -> Optional["sqlite3.Connection"]:
 
 _DB_CONN_CACHE = threading.local()
 
+
 def is_path_on_cloud_drive(path: str) -> bool:
     """
     Checks if a given path is likely within a cloud-synced folder (Google Drive, Dropbox, OneDrive).
@@ -183,26 +186,31 @@ def is_path_on_cloud_drive(path: str) -> bool:
         "google drive",
         "dropbox",
         "onedrive",
-        "icloud"
+        "icloud",
     ]
     return any(indicator in path_lower for indicator in cloud_indicators)
 
-def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = True, use_cache: bool = True) -> Optional[sqlite3.Connection]:
+
+def get_db_connection(
+    db_path: Optional[str] = None,
+    check_same_thread: bool = True,
+    use_cache: bool = True,
+) -> Optional[sqlite3.Connection]:
     """Establishes a connection to the SQLite database, with thread-local caching."""
     if db_path is None:
         db_path = get_database_path()
-    
-    # If check_same_thread is False, we typically shouldn't use thread-local cache blindly 
+
+    # If check_same_thread is False, we typically shouldn't use thread-local cache blindly
     # if we intend to share it, but keeping the cache logic simple is fine.
-    # The cache is per-thread. 
-    
+    # The cache is per-thread.
+
     # Include check_same_thread in the cache key to avoid returning a strict connection
     # when a loose one is requested, or vice versa.
     cache_key = (db_path, check_same_thread)
-    
-    if not hasattr(_DB_CONN_CACHE, 'connections'):
+
+    if not hasattr(_DB_CONN_CACHE, "connections"):
         _DB_CONN_CACHE.connections = {}
-    
+
     if use_cache and cache_key in _DB_CONN_CACHE.connections:
         # Verify connection is still open
         try:
@@ -217,32 +225,33 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
             os.makedirs(db_dir, exist_ok=True)
 
         import time
+
         retries = 5
         conn = None
         for i in range(retries):
             try:
                 conn = sqlite3.connect(
-                    db_path, 
-                    timeout=30, 
-                    check_same_thread=check_same_thread
+                    db_path, timeout=30, check_same_thread=check_same_thread
                 )
                 conn.execute("PRAGMA foreign_keys = ON;")
-                
+
                 # Check for cloud-synced paths to avoid WAL mode conflicts (disk I/O error)
                 # Check current journal mode to avoid unnecessary (and lock-inducing) changes
                 try:
                     cursor = conn.cursor()
                     cursor.execute("PRAGMA journal_mode;")
                     current_mode = cursor.fetchone()[0].upper()
-                    
+
                     # Check for cloud-synced paths
                     is_cloud = is_path_on_cloud_drive(db_path)
-                    
+
                     if is_cloud:
-                        # On cloud drives, we PREFER to stay in WAL if already there, 
+                        # On cloud drives, we PREFER to stay in WAL if already there,
                         # because converting WAL -> DELETE requires an EXCLUSIVE lock (fails if readers exist).
                         if current_mode != "WAL":
-                            logging.info(f"Cloud drive detected for {db_path}. Using safe journal mode (DELETE).")
+                            logging.info(
+                                f"Cloud drive detected for {db_path}. Using safe journal mode (DELETE)."
+                            )
                             conn.execute("PRAGMA journal_mode=DELETE;")
                         conn.execute("PRAGMA synchronous=FULL;")
                     else:
@@ -251,23 +260,31 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
                         conn.execute("PRAGMA synchronous=NORMAL;")
                 except sqlite3.OperationalError as e_pragma:
                     if "database is locked" in str(e_pragma).lower():
-                        logging.warning(f"Could not set PRAGMA journal_mode/synchronous on {db_path} (locked). Continuing with current settings.")
+                        logging.warning(
+                            f"Could not set PRAGMA journal_mode/synchronous on {db_path} (locked). Continuing with current settings."
+                        )
                     else:
                         raise e_pragma
-                
+
                 break
             except sqlite3.OperationalError as e:
                 if i < retries - 1:
-                    logging.warning(f"Database access issue ({e}) for {db_path}. Retrying in {0.2 * (i + 1)}s... (attempt {i+1}/{retries})")
+                    logging.warning(
+                        f"Database access issue ({e}) for {db_path}. Retrying in {0.2 * (i + 1)}s... (attempt {i + 1}/{retries})"
+                    )
                     time.sleep(0.2 * (i + 1))
                     continue
-                logging.error(f"Failed to connect to database after {retries} attempts: {db_path} - Error: {e}")
+                logging.error(
+                    f"Failed to connect to database after {retries} attempts: {db_path} - Error: {e}"
+                )
                 raise e
-        
+
         if conn:
             if use_cache:
                 _DB_CONN_CACHE.connections[cache_key] = conn
-            logging.debug(f"Successfully connected to database ({'cached' if use_cache else 'fresh'}): {db_path} (check_same_thread={check_same_thread})")
+            logging.debug(
+                f"Successfully connected to database ({'cached' if use_cache else 'fresh'}): {db_path} (check_same_thread={check_same_thread})"
+            )
             return conn
         return None
     except sqlite3.Error as e:
@@ -365,7 +382,9 @@ def create_transactions_table(conn: sqlite3.Connection):
         cursor.execute(create_watchlist_sql)
 
         if current_db_version < 3:
-            logging.info("Schema version is less than 3. Watchlist table created (if not exists).")
+            logging.info(
+                "Schema version is less than 3. Watchlist table created (if not exists)."
+            )
             # In this case, CREATE TABLE already handled it, so we just update version if needed
             # but usually we want specific migrations if structure changed.
             # For a NEW table, the CREATE TABLE IF NOT EXISTS is enough.
@@ -375,9 +394,11 @@ def create_transactions_table(conn: sqlite3.Connection):
             )
 
         if current_db_version < 4:
-            logging.info("Schema version is less than 4. Applying 'Tags' column migration.")
+            logging.info(
+                "Schema version is less than 4. Applying 'Tags' column migration."
+            )
             try:
-                cursor.execute('ALTER TABLE transactions ADD COLUMN Tags TEXT;')
+                cursor.execute("ALTER TABLE transactions ADD COLUMN Tags TEXT;")
                 logging.info("Added 'Tags' column to transactions table.")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" in str(e):
@@ -386,7 +407,9 @@ def create_transactions_table(conn: sqlite3.Connection):
                     raise
 
         if current_db_version < 5:
-            logging.info("Schema version is less than 5. Applying Multiple Watchlists migration.")
+            logging.info(
+                "Schema version is less than 5. Applying Multiple Watchlists migration."
+            )
             try:
                 # 1. Create watchlists table
                 cursor.execute("""
@@ -396,18 +419,18 @@ def create_transactions_table(conn: sqlite3.Connection):
                         created_at TEXT NOT NULL
                     );
                 """)
-                
+
                 # 2. Create default watchlist if not exists
                 cursor.execute("SELECT count(*) FROM watchlists")
                 if cursor.fetchone()[0] == 0:
-                     cursor.execute(
-                         "INSERT INTO watchlists (name, created_at) VALUES (?, ?)", 
-                         ("My Watchlist", datetime.now().isoformat())
-                     )
-                     default_id = cursor.lastrowid
+                    cursor.execute(
+                        "INSERT INTO watchlists (name, created_at) VALUES (?, ?)",
+                        ("My Watchlist", datetime.now().isoformat()),
+                    )
+                    default_id = cursor.lastrowid
                 else:
-                     cursor.execute("SELECT id FROM watchlists LIMIT 1")
-                     default_id = cursor.fetchone()[0]
+                    cursor.execute("SELECT id FROM watchlists LIMIT 1")
+                    default_id = cursor.fetchone()[0]
 
                 # 3. Create watchlist_items table
                 cursor.execute("""
@@ -420,10 +443,12 @@ def create_transactions_table(conn: sqlite3.Connection):
                         FOREIGN KEY(watchlist_id) REFERENCES watchlists(id) ON DELETE CASCADE
                     );
                 """)
-                
+
                 # 4. Migrate existing data from old 'watchlist' table if it exists
                 # Check if old table exists
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='watchlist';")
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='watchlist';"
+                )
                 if cursor.fetchone():
                     logging.info("Migrating existing watchlist items...")
                     cursor.execute("SELECT Symbol, Note, AddedOn FROM watchlist")
@@ -431,11 +456,13 @@ def create_transactions_table(conn: sqlite3.Connection):
                     for r in rows:
                         cursor.execute(
                             "INSERT INTO watchlist_items (watchlist_id, symbol, note, added_on) VALUES (?, ?, ?, ?)",
-                            (default_id, r[0], r[1], r[2])
+                            (default_id, r[0], r[1], r[2]),
                         )
                     # Drop old table
                     cursor.execute("DROP TABLE watchlist")
-                    logging.info(f"Migrated {len(rows)} items and dropped old watchlist table.")
+                    logging.info(
+                        f"Migrated {len(rows)} items and dropped old watchlist table."
+                    )
 
             except sqlite3.Error as e:
                 logging.error(f"Error during migration v5: {e}")
@@ -449,7 +476,9 @@ def create_transactions_table(conn: sqlite3.Connection):
             logging.info("Updated schema_version to 5 (pending commit).")
 
         if current_db_version < 6:
-            logging.info("Schema version is less than 6. Creating screener_cache table.")
+            logging.info(
+                "Schema version is less than 6. Creating screener_cache table."
+            )
             try:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS screener_cache (
@@ -481,9 +510,11 @@ def create_transactions_table(conn: sqlite3.Connection):
                 raise
 
         if current_db_version < 7:
-            logging.info("Schema version is less than 7. Adding 'universe' column to screener_cache.")
+            logging.info(
+                "Schema version is less than 7. Adding 'universe' column to screener_cache."
+            )
             try:
-                cursor.execute('ALTER TABLE screener_cache ADD COLUMN universe TEXT;')
+                cursor.execute("ALTER TABLE screener_cache ADD COLUMN universe TEXT;")
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                     (7, datetime.now().isoformat()),
@@ -497,11 +528,15 @@ def create_transactions_table(conn: sqlite3.Connection):
                     raise
 
         if current_db_version < 8:
-            logging.info("Schema version is less than 8. Migrating screener_cache to composite PK (symbol, universe).")
+            logging.info(
+                "Schema version is less than 8. Migrating screener_cache to composite PK (symbol, universe)."
+            )
             try:
                 # 1. Rename old table
-                cursor.execute("ALTER TABLE screener_cache RENAME TO screener_cache_old;")
-                
+                cursor.execute(
+                    "ALTER TABLE screener_cache RENAME TO screener_cache_old;"
+                )
+
                 # 2. Create new table with composite PK and universe NOT NULL
                 cursor.execute("""
                     CREATE TABLE screener_cache (
@@ -525,7 +560,7 @@ def create_transactions_table(conn: sqlite3.Connection):
                         PRIMARY KEY (symbol, universe)
                     );
                 """)
-                
+
                 # 3. Copy data, filling NULL universes with 'manual'
                 cursor.execute("""
                     INSERT INTO screener_cache (
@@ -541,10 +576,10 @@ def create_transactions_table(conn: sqlite3.Connection):
                         most_recent_quarter, COALESCE(universe, 'manual'), updated_at
                     FROM screener_cache_old;
                 """)
-                
+
                 # 4. Drop old table
                 cursor.execute("DROP TABLE screener_cache_old;")
-                
+
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                     (8, datetime.now().isoformat()),
@@ -555,9 +590,13 @@ def create_transactions_table(conn: sqlite3.Connection):
                 raise
 
         if current_db_version < 9:
-            logging.info("Schema version is less than 9. Adding 'valuation_details' column to screener_cache.")
+            logging.info(
+                "Schema version is less than 9. Adding 'valuation_details' column to screener_cache."
+            )
             try:
-                cursor.execute('ALTER TABLE screener_cache ADD COLUMN valuation_details TEXT;')
+                cursor.execute(
+                    "ALTER TABLE screener_cache ADD COLUMN valuation_details TEXT;"
+                )
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                     (9, datetime.now().isoformat()),
@@ -571,29 +610,31 @@ def create_transactions_table(conn: sqlite3.Connection):
                     raise
 
         if current_db_version < 10:
-            logging.info("Schema version is less than 10. Adding users table and user_id column.")
+            logging.info(
+                "Schema version is less than 10. Adding users table and user_id column."
+            )
             # Refactored: 'users' table is now in GLOBAL DB. We do NOT create it here for portfolio DB.
             # But we DO need user_id columns for compatibility/verification, even if isolated.
-            
+
             # 1. (Skipped) Create users table - Handled by init_global_db
-            
+
             # 2. Add user_id to transactions
             try:
-                cursor.execute('ALTER TABLE transactions ADD COLUMN user_id INTEGER;')
+                cursor.execute("ALTER TABLE transactions ADD COLUMN user_id INTEGER;")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e):
                     raise
 
             # 3. Add user_id to watchlists
             try:
-                cursor.execute('ALTER TABLE watchlists ADD COLUMN user_id INTEGER;')
+                cursor.execute("ALTER TABLE watchlists ADD COLUMN user_id INTEGER;")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e):
                     raise
 
             # 4. Add user_id to screener_cache
             try:
-                cursor.execute('ALTER TABLE screener_cache ADD COLUMN user_id INTEGER;')
+                cursor.execute("ALTER TABLE screener_cache ADD COLUMN user_id INTEGER;")
             except sqlite3.OperationalError as e:
                 if "duplicate column name" not in str(e):
                     raise
@@ -605,10 +646,14 @@ def create_transactions_table(conn: sqlite3.Connection):
             logging.info("Updated schema_version to 10.")
 
         if current_db_version < 11:
-            logging.info("Schema version is less than 11. Adding 'ExternalID' column to transactions.")
+            logging.info(
+                "Schema version is less than 11. Adding 'ExternalID' column to transactions."
+            )
             try:
-                cursor.execute('ALTER TABLE transactions ADD COLUMN ExternalID TEXT;')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_external_id ON transactions (ExternalID);')
+                cursor.execute("ALTER TABLE transactions ADD COLUMN ExternalID TEXT;")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_external_id ON transactions (ExternalID);"
+                )
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                     (11, datetime.now().isoformat()),
@@ -622,7 +667,9 @@ def create_transactions_table(conn: sqlite3.Connection):
                     raise
 
         if current_db_version < 12:
-            logging.info("Schema version is less than 12. Creating 'pending_transactions' table.")
+            logging.info(
+                "Schema version is less than 12. Creating 'pending_transactions' table."
+            )
             try:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS pending_transactions (
@@ -644,7 +691,9 @@ def create_transactions_table(conn: sqlite3.Connection):
                         user_id INTEGER
                     );
                 """)
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_pending_external_id ON pending_transactions (ExternalID);')
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_pending_external_id ON pending_transactions (ExternalID);"
+                )
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                     (12, datetime.now().isoformat()),
@@ -655,13 +704,21 @@ def create_transactions_table(conn: sqlite3.Connection):
                 raise
 
         if current_db_version < 13:
-            logging.info("Schema version is less than 13. Creating indexes and portfolio_snapshots table.")
+            logging.info(
+                "Schema version is less than 13. Creating indexes and portfolio_snapshots table."
+            )
             try:
                 # Add indexes for transactions table
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions (Symbol);')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (Date);')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions (Account);')
-                
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions (Symbol);"
+                )
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (Date);"
+                )
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions (Account);"
+                )
+
                 # Create portfolio_snapshots table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS portfolio_snapshots (
@@ -677,7 +734,9 @@ def create_transactions_table(conn: sqlite3.Connection):
                         created_at TEXT NOT NULL
                     );
                 """)
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_date_account ON portfolio_snapshots (snapshot_date, account);')
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_date_account ON portfolio_snapshots (snapshot_date, account);"
+                )
 
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
@@ -689,10 +748,16 @@ def create_transactions_table(conn: sqlite3.Connection):
                 raise
 
         if current_db_version < 14:
-            logging.info("Schema version is less than 14. Adding 'ai_sentiment' and 'ai_catalysts' to screener_cache.")
+            logging.info(
+                "Schema version is less than 14. Adding 'ai_sentiment' and 'ai_catalysts' to screener_cache."
+            )
             try:
-                cursor.execute('ALTER TABLE screener_cache ADD COLUMN ai_sentiment REAL;')
-                cursor.execute('ALTER TABLE screener_cache ADD COLUMN ai_catalysts TEXT;')
+                cursor.execute(
+                    "ALTER TABLE screener_cache ADD COLUMN ai_sentiment REAL;"
+                )
+                cursor.execute(
+                    "ALTER TABLE screener_cache ADD COLUMN ai_catalysts TEXT;"
+                )
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                     (14, datetime.now().isoformat()),
@@ -703,7 +768,9 @@ def create_transactions_table(conn: sqlite3.Connection):
                 raise
 
         if current_db_version < 15:
-            logging.info("Schema version is less than 15. Adding AI per-dimension analysis text columns to screener_cache.")
+            logging.info(
+                "Schema version is less than 15. Adding AI per-dimension analysis text columns to screener_cache."
+            )
             for col_def in (
                 "ai_moat_analysis TEXT",
                 "ai_financial_strength_analysis TEXT",
@@ -918,7 +985,17 @@ def load_all_transactions_from_db(
 
 
 _OUTFLOW_TYPES = frozenset(
-    {"buy", "withdrawal", "fees", "fee", "tax", "withholding tax", "split", "stock split", "buy to cover"}
+    {
+        "buy",
+        "withdrawal",
+        "fees",
+        "fee",
+        "tax",
+        "withholding tax",
+        "split",
+        "stock split",
+        "buy to cover",
+    }
 )
 
 
@@ -976,13 +1053,19 @@ def add_transaction_to_db(
     if external_id:
         try:
             cursor = db_conn.cursor()
-            cursor.execute("SELECT id FROM transactions WHERE ExternalID = ?", (external_id,))
+            cursor.execute(
+                "SELECT id FROM transactions WHERE ExternalID = ?", (external_id,)
+            )
             existing = cursor.fetchone()
             if existing:
-                logging.info(f"Transaction with ExternalID {external_id} already exists (ID: {existing[0]}). Skipping.")
+                logging.info(
+                    f"Transaction with ExternalID {external_id} already exists (ID: {existing[0]}). Skipping."
+                )
                 return True, existing[0]
         except sqlite3.Error as e:
-            logging.warning(f"Error checking for existing ExternalID {external_id}: {e}")
+            logging.warning(
+                f"Error checking for existing ExternalID {external_id}: {e}"
+            )
 
     quoted_db_columns = [
         f'"{col}"' if "/" in col or " " in col else col for col in db_column_order
@@ -1011,7 +1094,7 @@ def add_transaction_to_db(
                         break
                     except ValueError:
                         continue
-                
+
                 if valid:
                     # Truncate to YYYY-MM-DD to maintain DB standard
                     data_for_sql_ordered.append(value[:10])
@@ -1057,15 +1140,27 @@ def update_transaction_in_db(
     values_for_sql: Dict[str, Any] = {}
 
     db_columns = {
-        "Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount",
-        "Commission", "Account", "Split Ratio", "Note", "Local Currency",
-        "To Account", "Tags", "ExternalID", "user_id"
+        "Date",
+        "Type",
+        "Symbol",
+        "Quantity",
+        "Price/Share",
+        "Total Amount",
+        "Commission",
+        "Account",
+        "Split Ratio",
+        "Note",
+        "Local Currency",
+        "To Account",
+        "Tags",
+        "ExternalID",
+        "user_id",
     }
 
     for key, value in new_data_dict.items():
         if key not in db_columns:
             continue
-            
+
         placeholder = key.replace("/", "_per_").replace(" ", "_").replace(".", "_")
         set_clauses.append(f'"{key}" = :{placeholder}')
 
@@ -1084,7 +1179,7 @@ def update_transaction_in_db(
                         break
                     except ValueError:
                         continue
-                
+
                 if valid:
                     values_for_sql[placeholder] = value
                 else:
@@ -1205,11 +1300,12 @@ def delete_transaction_from_db(
         return False
 
 
-
-def get_all_watchlists(db_conn: sqlite3.Connection, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+def get_all_watchlists(
+    db_conn: sqlite3.Connection, user_id: Optional[int] = None
+) -> List[Dict[str, Any]]:
     """Fetches all available watchlists in the user-isolated database."""
     sql = "SELECT id, name, created_at FROM watchlists ORDER BY created_at ASC"
-    
+
     try:
         cursor = db_conn.cursor()
         cursor.execute(sql)
@@ -1219,7 +1315,10 @@ def get_all_watchlists(db_conn: sqlite3.Connection, user_id: Optional[int] = Non
         logging.error(f"Error fetching watchlists: {e}")
         return []
 
-def create_watchlist(db_conn: sqlite3.Connection, name: str, user_id: Optional[int] = None) -> Optional[int]:
+
+def create_watchlist(
+    db_conn: sqlite3.Connection, name: str, user_id: Optional[int] = None
+) -> Optional[int]:
     """Creates a new watchlist in the user-isolated database."""
     sql = "INSERT INTO watchlists (name, created_at, user_id) VALUES (?, ?, ?)"
     try:
@@ -1233,7 +1332,13 @@ def create_watchlist(db_conn: sqlite3.Connection, name: str, user_id: Optional[i
         logging.error(f"Error creating watchlist '{name}': {e}")
         return None
 
-def rename_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, new_name: str, user_id: Optional[int] = None) -> bool:
+
+def rename_watchlist(
+    db_conn: sqlite3.Connection,
+    watchlist_id: int,
+    new_name: str,
+    user_id: Optional[int] = None,
+) -> bool:
     """Renames an existing watchlist in the user-isolated database."""
     sql = "UPDATE watchlists SET name = ? WHERE id = ?"
     try:
@@ -1245,7 +1350,10 @@ def rename_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, new_name: s
         logging.error(f"Error renaming watchlist {watchlist_id}: {e}")
         return False
 
-def delete_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, user_id: Optional[int] = None) -> bool:
+
+def delete_watchlist(
+    db_conn: sqlite3.Connection, watchlist_id: int, user_id: Optional[int] = None
+) -> bool:
     """Deletes a watchlist and all its items in the user-isolated database."""
     try:
         cursor = db_conn.cursor()
@@ -1257,34 +1365,48 @@ def delete_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, user_id: Op
         logging.error(f"Error deleting watchlist {watchlist_id}: {e}")
         return False
 
-def add_to_watchlist(db_conn: sqlite3.Connection, symbol: str, note: str = "", watchlist_id: int = 1) -> bool:
+
+def add_to_watchlist(
+    db_conn: sqlite3.Connection, symbol: str, note: str = "", watchlist_id: int = 1
+) -> bool:
     """Adds a symbol to a specific watchlist."""
     # Check if symbol exists in this watchlist
     # Use INSERT OR REPLACE on (watchlist_id, symbol) if unique constraint existed.
-    # Currently we don't strictly enforce unique constraint in CREATE TABLE above, 
+    # Currently we don't strictly enforce unique constraint in CREATE TABLE above,
     # but we should probably avoid duplicates.
     # Let's check first.
     try:
         cursor = db_conn.cursor()
-        cursor.execute("SELECT id FROM watchlist_items WHERE watchlist_id = ? AND symbol = ?", (watchlist_id, symbol))
+        cursor.execute(
+            "SELECT id FROM watchlist_items WHERE watchlist_id = ? AND symbol = ?",
+            (watchlist_id, symbol),
+        )
         if cursor.fetchone():
             # Update existing
             sql = "UPDATE watchlist_items SET note = ?, added_on = ? WHERE watchlist_id = ? AND symbol = ?"
-            cursor.execute(sql, (note, datetime.now().isoformat(), watchlist_id, symbol))
+            cursor.execute(
+                sql, (note, datetime.now().isoformat(), watchlist_id, symbol)
+            )
         else:
             # Insert new
             sql = "INSERT INTO watchlist_items (watchlist_id, symbol, note, added_on) VALUES (?, ?, ?, ?)"
-            cursor.execute(sql, (watchlist_id, symbol, note, datetime.now().isoformat()))
-        
+            cursor.execute(
+                sql, (watchlist_id, symbol, note, datetime.now().isoformat())
+            )
+
         db_conn.commit()
-        logging.info(f"Successfully added/updated {symbol} in watchlist {watchlist_id}.")
+        logging.info(
+            f"Successfully added/updated {symbol} in watchlist {watchlist_id}."
+        )
         return True
     except sqlite3.Error as e:
         logging.error(f"Error adding {symbol} to watchlist {watchlist_id}: {e}")
         return False
 
 
-def remove_from_watchlist(db_conn: sqlite3.Connection, symbol: str, watchlist_id: int = 1) -> bool:
+def remove_from_watchlist(
+    db_conn: sqlite3.Connection, symbol: str, watchlist_id: int = 1
+) -> bool:
     """Removes a symbol from a specific watchlist."""
     sql = "DELETE FROM watchlist_items WHERE watchlist_id = ? AND symbol = ?"
     try:
@@ -1298,11 +1420,13 @@ def remove_from_watchlist(db_conn: sqlite3.Connection, symbol: str, watchlist_id
         return False
 
 
-def get_watchlist(db_conn: sqlite3.Connection, watchlist_id: int = 1) -> List[Dict[str, Any]]:
+def get_watchlist(
+    db_conn: sqlite3.Connection, watchlist_id: int = 1
+) -> List[Dict[str, Any]]:
     """Fetches all items in a specific watchlist."""
-    # We fallback to fetching items from old table ONLY if migration failed? 
+    # We fallback to fetching items from old table ONLY if migration failed?
     # No, migration should have handled it. We assume watchlist_items table exists.
-    
+
     # Check if watchlist_items table exists (safety check during dev/migration)
     # But for prod code, we modify the query.
     sql = "SELECT symbol, note, added_on FROM watchlist_items WHERE watchlist_id = ? ORDER BY added_on DESC"
@@ -1316,7 +1440,10 @@ def get_watchlist(db_conn: sqlite3.Connection, watchlist_id: int = 1) -> List[Di
         logging.error(f"Error fetching watchlist {watchlist_id}: {e}")
         return []
 
-def upsert_screener_results(results: List[Dict[str, Any]], universe: Optional[str] = None):
+
+def upsert_screener_results(
+    results: List[Dict[str, Any]], universe: Optional[str] = None
+):
     """Batch updates/inserts screener results into the global screener cache."""
     if not results:
         return
@@ -1354,34 +1481,40 @@ def upsert_screener_results(results: List[Dict[str, Any]], universe: Optional[st
         updated_at=excluded.updated_at,
         valuation_details=COALESCE(excluded.valuation_details, screener_cache.valuation_details)
     """
-    
+
     now_str = datetime.now().isoformat()
     data = []
     for r in results:
-        data.append((
-            r.get("symbol"),
-            r.get("name"),
-            r.get("price"),
-            r.get("intrinsic_value"),
-            r.get("margin_of_safety"),
-            r.get("pe_ratio"),
-            r.get("market_cap"),
-            r.get("sector"),
-            r.get("ai_moat"),
-            r.get("ai_financial_strength"),
-            r.get("ai_predictability"),
-            r.get("ai_growth"),
-            r.get("ai_summary"),
-            r.get("ai_sentiment"),
-            json.dumps(r.get("ai_catalysts")) if isinstance(r.get("ai_catalysts"), list) else r.get("ai_catalysts"),
-            r.get("last_fiscal_year_end"),
-            r.get("most_recent_quarter"),
-            universe,
-            now_str,
-            # FIX: Serialize valuation_details if it's a dict
-            json.dumps(r.get("valuation_details"), cls=NpEncoder) if isinstance(r.get("valuation_details"), dict) else r.get("valuation_details")
-        ))
-        
+        data.append(
+            (
+                r.get("symbol"),
+                r.get("name"),
+                r.get("price"),
+                r.get("intrinsic_value"),
+                r.get("margin_of_safety"),
+                r.get("pe_ratio"),
+                r.get("market_cap"),
+                r.get("sector"),
+                r.get("ai_moat"),
+                r.get("ai_financial_strength"),
+                r.get("ai_predictability"),
+                r.get("ai_growth"),
+                r.get("ai_summary"),
+                r.get("ai_sentiment"),
+                json.dumps(r.get("ai_catalysts"))
+                if isinstance(r.get("ai_catalysts"), list)
+                else r.get("ai_catalysts"),
+                r.get("last_fiscal_year_end"),
+                r.get("most_recent_quarter"),
+                universe,
+                now_str,
+                # FIX: Serialize valuation_details if it's a dict
+                json.dumps(r.get("valuation_details"), cls=NpEncoder)
+                if isinstance(r.get("valuation_details"), dict)
+                else r.get("valuation_details"),
+            )
+        )
+
     try:
         cursor = db_conn.cursor()
         cursor.executemany(sql, data)
@@ -1395,6 +1528,7 @@ def upsert_screener_results(results: List[Dict[str, Any]], universe: Optional[st
             db_conn.close()
         except Exception:
             pass
+
 
 def refresh_screener_rows_by_symbol(results: List[Dict[str, Any]]):
     """Refresh existing screener_cache rows for the given symbols (any universe).
@@ -1410,7 +1544,9 @@ def refresh_screener_rows_by_symbol(results: List[Dict[str, Any]]):
 
     db_conn = open_screener_db_conn()
     if db_conn is None:
-        logging.error("refresh_screener_rows_by_symbol: could not open global screener DB")
+        logging.error(
+            "refresh_screener_rows_by_symbol: could not open global screener DB"
+        )
         return
 
     sql = """
@@ -1442,33 +1578,41 @@ def refresh_screener_rows_by_symbol(results: List[Dict[str, Any]]):
         sym = r.get("symbol")
         if not sym:
             continue
-        rows_for_update.append((
-            r.get("name"),
-            r.get("price"),
-            r.get("intrinsic_value"),
-            r.get("margin_of_safety"),
-            r.get("pe_ratio"),
-            r.get("market_cap"),
-            r.get("sector"),
-            r.get("ai_moat"),
-            r.get("ai_financial_strength"),
-            r.get("ai_predictability"),
-            r.get("ai_growth"),
-            r.get("ai_summary"),
-            r.get("ai_sentiment"),
-            json.dumps(r.get("ai_catalysts")) if isinstance(r.get("ai_catalysts"), list) else r.get("ai_catalysts"),
-            r.get("last_fiscal_year_end"),
-            r.get("most_recent_quarter"),
-            now_str,
-            json.dumps(r.get("valuation_details"), cls=NpEncoder) if isinstance(r.get("valuation_details"), dict) else r.get("valuation_details"),
-            sym.upper(),
-        ))
+        rows_for_update.append(
+            (
+                r.get("name"),
+                r.get("price"),
+                r.get("intrinsic_value"),
+                r.get("margin_of_safety"),
+                r.get("pe_ratio"),
+                r.get("market_cap"),
+                r.get("sector"),
+                r.get("ai_moat"),
+                r.get("ai_financial_strength"),
+                r.get("ai_predictability"),
+                r.get("ai_growth"),
+                r.get("ai_summary"),
+                r.get("ai_sentiment"),
+                json.dumps(r.get("ai_catalysts"))
+                if isinstance(r.get("ai_catalysts"), list)
+                else r.get("ai_catalysts"),
+                r.get("last_fiscal_year_end"),
+                r.get("most_recent_quarter"),
+                now_str,
+                json.dumps(r.get("valuation_details"), cls=NpEncoder)
+                if isinstance(r.get("valuation_details"), dict)
+                else r.get("valuation_details"),
+                sym.upper(),
+            )
+        )
 
     try:
         cursor = db_conn.cursor()
         cursor.executemany(sql, rows_for_update)
         db_conn.commit()
-        logging.info(f"Refreshed {cursor.rowcount} screener rows by symbol (UPDATE-only).")
+        logging.info(
+            f"Refreshed {cursor.rowcount} screener rows by symbol (UPDATE-only)."
+        )
     except sqlite3.Error as e:
         logging.error(f"Error in refresh_screener_rows_by_symbol: {e}")
         db_conn.rollback()
@@ -1511,9 +1655,13 @@ def get_cached_screener_results(symbols: List[str]) -> Dict[str, Dict[str, Any]]
                 row_dict.get("ai_growth"),
             ]
             valid_scores = [s for s in ai_scores if s is not None]
-            row_dict["ai_score"] = sum(valid_scores) / len(valid_scores) if valid_scores else None
+            row_dict["ai_score"] = (
+                sum(valid_scores) / len(valid_scores) if valid_scores else None
+            )
 
-            if row_dict.get("ai_catalysts") and isinstance(row_dict["ai_catalysts"], str):
+            if row_dict.get("ai_catalysts") and isinstance(
+                row_dict["ai_catalysts"], str
+            ):
                 try:
                     row_dict["ai_catalysts"] = json.loads(row_dict["ai_catalysts"])
                 except Exception:
@@ -1529,6 +1677,7 @@ def get_cached_screener_results(symbols: List[str]) -> Dict[str, Dict[str, Any]]
             conn.close()
         except Exception:
             pass
+
 
 def get_screener_results_by_universe(universe: str) -> List[Dict[str, Any]]:
     """Retrieves all cached screener results for a specific universe tag from the global DB."""
@@ -1551,7 +1700,8 @@ def get_screener_results_by_universe(universe: str) -> List[Dict[str, Any]]:
 
             if "ai_summary" in row_dict:
                 row_dict["has_ai_review"] = (
-                    row_dict["ai_summary"] is not None and len(row_dict["ai_summary"]) > 20
+                    row_dict["ai_summary"] is not None
+                    and len(row_dict["ai_summary"]) > 20
                 )
 
             ai_scores = [
@@ -1561,7 +1711,9 @@ def get_screener_results_by_universe(universe: str) -> List[Dict[str, Any]]:
                 row_dict.get("ai_growth"),
             ]
             valid_scores = [s for s in ai_scores if s is not None]
-            row_dict["ai_score"] = sum(valid_scores) / len(valid_scores) if valid_scores else None
+            row_dict["ai_score"] = (
+                sum(valid_scores) / len(valid_scores) if valid_scores else None
+            )
 
             results.append(row_dict)
         return results
@@ -1573,6 +1725,7 @@ def get_screener_results_by_universe(universe: str) -> List[Dict[str, Any]]:
             conn.close()
         except Exception:
             pass
+
 
 def get_all_distinct_screener_results() -> List[Dict[str, Any]]:
     """
@@ -1601,9 +1754,7 @@ def get_all_distinct_screener_results() -> List[Dict[str, Any]]:
         )
         rows = cursor.fetchall()
         cols = [description[0] for description in cursor.description]
-        results = {
-            row[cols.index('symbol')]: dict(zip(cols, row)) for row in rows
-        }
+        results = {row[cols.index("symbol")]: dict(zip(cols, row)) for row in rows}
     except sqlite3.Error as e:
         logging.error(f"Error fetching distinct screener results: {e}")
         results = {}
@@ -1617,43 +1768,67 @@ def get_all_distinct_screener_results() -> List[Dict[str, Any]]:
     for row_dict in results.values():
         # Cleanup for frontend consistency
         if "ai_summary" in row_dict:
-            row_dict["has_ai_review"] = row_dict["ai_summary"] is not None and len(row_dict["ai_summary"]) > 20
-        
+            row_dict["has_ai_review"] = (
+                row_dict["ai_summary"] is not None and len(row_dict["ai_summary"]) > 20
+            )
+
         # Parse ai_catalysts for consistency
         if row_dict.get("ai_catalysts") and isinstance(row_dict["ai_catalysts"], str):
             try:
                 row_dict["ai_catalysts"] = json.loads(row_dict["ai_catalysts"])
             except (ValueError, TypeError):
                 pass
-        
+
         # Calculate average AI score if available
         ai_scores = [
             row_dict.get("ai_moat"),
             row_dict.get("ai_financial_strength"),
             row_dict.get("ai_predictability"),
-            row_dict.get("ai_growth")
+            row_dict.get("ai_growth"),
         ]
         valid_scores = [s for s in ai_scores if s is not None]
         if valid_scores:
             row_dict["ai_score"] = sum(valid_scores) / len(valid_scores)
         else:
             row_dict["ai_score"] = None
-            
+
         final_list.append(row_dict)
-        
+
     # Sort by Margin of Safety desc
-    final_list.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
+    final_list.sort(
+        key=lambda x: (
+            x.get("margin_of_safety") is not None,
+            x.get("margin_of_safety"),
+        ),
+        reverse=True,
+    )
     return final_list
-_SYNTHETIC_SYMBOLS = frozenset({
-    "PORTFOLIO-WIDE", "CASH-AGGREGATE", "TOTAL", "PORTFOLIO",
-})
+
+
+_SYNTHETIC_SYMBOLS = frozenset(
+    {
+        "PORTFOLIO-WIDE",
+        "CASH-AGGREGATE",
+        "TOTAL",
+        "PORTFOLIO",
+    }
+)
+
 
 def _is_synthetic_symbol(symbol: str) -> bool:
     """Returns True for internal/synthetic symbols that are not real tickers."""
     s = symbol.upper().strip()
-    return s in _SYNTHETIC_SYMBOLS or s.startswith("PORTFOLIO-") or s.startswith("CASH-")
+    return (
+        s in _SYNTHETIC_SYMBOLS or s.startswith("PORTFOLIO-") or s.startswith("CASH-")
+    )
 
-def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Optional[Dict[str, Any]] = None, universe: str = 'manual'):
+
+def update_ai_review_in_cache(
+    symbol: str,
+    ai_data: Dict[str, Any],
+    info: Optional[Dict[str, Any]] = None,
+    universe: str = "manual",
+):
     """
     Updates the AI review portions of the global screener cache.
     Targets ALL universes for the given symbol to keep them in sync.
@@ -1661,8 +1836,11 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
     Also syncs metadata from 'info' if provided.
     """
     if _is_synthetic_symbol(symbol):
-        logging.debug(f"update_ai_review_in_cache: skipping synthetic symbol '{symbol}'")
+        logging.debug(
+            f"update_ai_review_in_cache: skipping synthetic symbol '{symbol}'"
+        )
         return
+
     def do_update(conn, sym, data, inf, univ):
         now_str = datetime.now().isoformat()
         scorecard = data.get("scorecard", {})
@@ -1706,38 +1884,66 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
 
         # Extract extra fields from ai_data
         sentiment = data.get("sentiment")
-        catalysts = json.dumps(data.get("catalysts", [])) if data.get("catalysts") else None
+        catalysts = (
+            json.dumps(data.get("catalysts", [])) if data.get("catalysts") else None
+        )
         iv = data.get("intrinsic_value")
         mos = data.get("margin_of_safety")
-        val_details = json.dumps(data.get("valuation_details", {})) if data.get("valuation_details") else None
+        val_details = (
+            json.dumps(data.get("valuation_details", {}))
+            if data.get("valuation_details")
+            else None
+        )
 
-        moat_text = analysis.get("moat") if isinstance(analysis.get("moat"), str) else None
-        fin_text = analysis.get("financial_strength") if isinstance(analysis.get("financial_strength"), str) else None
-        pred_text = analysis.get("predictability") if isinstance(analysis.get("predictability"), str) else None
-        growth_text = analysis.get("growth_perspective") if isinstance(analysis.get("growth_perspective"), str) else None
+        moat_text = (
+            analysis.get("moat") if isinstance(analysis.get("moat"), str) else None
+        )
+        fin_text = (
+            analysis.get("financial_strength")
+            if isinstance(analysis.get("financial_strength"), str)
+            else None
+        )
+        pred_text = (
+            analysis.get("predictability")
+            if isinstance(analysis.get("predictability"), str)
+            else None
+        )
+        growth_text = (
+            analysis.get("growth_perspective")
+            if isinstance(analysis.get("growth_perspective"), str)
+            else None
+        )
 
         try:
             cursor = conn.cursor()
-            cursor.execute(update_sql, (
-                scorecard.get("moat"),
-                scorecard.get("financial_strength"),
-                scorecard.get("predictability"),
-                scorecard.get("growth"),
-                moat_text,
-                fin_text,
-                pred_text,
-                growth_text,
-                data.get("summary"),
-                sentiment,
-                catalysts,
-                iv,
-                mos,
-                val_details,
-                short_name, price_val, pe_val, mcap_val, sector_val,
-                fy_end_val, mrq_val,
-                now_str,
-                sym.upper()
-            ))
+            cursor.execute(
+                update_sql,
+                (
+                    scorecard.get("moat"),
+                    scorecard.get("financial_strength"),
+                    scorecard.get("predictability"),
+                    scorecard.get("growth"),
+                    moat_text,
+                    fin_text,
+                    pred_text,
+                    growth_text,
+                    data.get("summary"),
+                    sentiment,
+                    catalysts,
+                    iv,
+                    mos,
+                    val_details,
+                    short_name,
+                    price_val,
+                    pe_val,
+                    mcap_val,
+                    sector_val,
+                    fy_end_val,
+                    mrq_val,
+                    now_str,
+                    sym.upper(),
+                ),
+            )
 
             # 2. If no rows affected, create new entry using the provided universe
             if cursor.rowcount == 0:
@@ -1753,28 +1959,36 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
                     last_fiscal_year_end, most_recent_quarter, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
-                cursor.execute(insert_sql, (
-                    sym.upper(),
-                    univ,
-                    scorecard.get("moat"),
-                    scorecard.get("financial_strength"),
-                    scorecard.get("predictability"),
-                    scorecard.get("growth"),
-                    moat_text,
-                    fin_text,
-                    pred_text,
-                    growth_text,
-                    data.get("summary"),
-                    sentiment,
-                    catalysts,
-                    iv,
-                    mos,
-                    val_details,
-                    short_name, price_val, pe_val, mcap_val, sector_val,
-                    fy_end_val, mrq_val,
-                    now_str
-                ))
-            
+                cursor.execute(
+                    insert_sql,
+                    (
+                        sym.upper(),
+                        univ,
+                        scorecard.get("moat"),
+                        scorecard.get("financial_strength"),
+                        scorecard.get("predictability"),
+                        scorecard.get("growth"),
+                        moat_text,
+                        fin_text,
+                        pred_text,
+                        growth_text,
+                        data.get("summary"),
+                        sentiment,
+                        catalysts,
+                        iv,
+                        mos,
+                        val_details,
+                        short_name,
+                        price_val,
+                        pe_val,
+                        mcap_val,
+                        sector_val,
+                        fy_end_val,
+                        mrq_val,
+                        now_str,
+                    ),
+                )
+
             conn.commit()
             return True
         except sqlite3.Error as e:
@@ -1784,7 +1998,9 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
 
     conn = open_screener_db_conn()
     if conn is None:
-        logging.error(f"update_ai_review_in_cache: could not open global screener DB for {symbol}")
+        logging.error(
+            f"update_ai_review_in_cache: could not open global screener DB for {symbol}"
+        )
         return
     try:
         do_update(conn, symbol, ai_data, info, universe)
@@ -1794,6 +2010,7 @@ def update_ai_review_in_cache(symbol: str, ai_data: Dict[str, Any], info: Option
         except Exception:
             pass
 
+
 def update_intrinsic_value_in_cache(
     symbol: str,
     intrinsic_value: Optional[float],
@@ -1801,7 +2018,7 @@ def update_intrinsic_value_in_cache(
     last_fiscal_year_end: Optional[int] = None,
     most_recent_quarter: Optional[int] = None,
     info: Optional[Dict[str, Any]] = None,
-    universe: str = 'manual'
+    universe: str = "manual",
 ):
     """
     Updates intrinsic value and related metrics in the global screener cache.
@@ -1810,11 +2027,14 @@ def update_intrinsic_value_in_cache(
     Also syncs metadata from 'info' if provided.
     """
     if _is_synthetic_symbol(symbol):
-        logging.debug(f"update_intrinsic_value_in_cache: skipping synthetic symbol '{symbol}'")
+        logging.debug(
+            f"update_intrinsic_value_in_cache: skipping synthetic symbol '{symbol}'"
+        )
         return
+
     def do_iv_update(conn, sym, iv, mos, fy_end, qtr, inf, univ):
         now_str = datetime.now().isoformat()
-        
+
         # 1. Update all existing entries
         update_sql = """
         UPDATE screener_cache SET
@@ -1831,30 +2051,39 @@ def update_intrinsic_value_in_cache(
             valuation_details = COALESCE(?, valuation_details)
         WHERE symbol = ?
         """
-        
+
         name_val = inf.get("shortName") if inf else None
         price_val = inf.get("currentPrice") if inf else None
         pe_val = inf.get("trailingPE") if inf else None
         mcap_val = inf.get("marketCap") if inf else None
         sector_val = inf.get("sector") if inf else None
-        
+
         # Check if info contains valuation_details
         valuation_details = inf.get("valuation_details") if inf else None
 
         try:
             cursor = conn.cursor()
-            cursor.execute(update_sql, (
-                iv,
-                mos,
-                fy_end,
-                qtr,
-                name_val, price_val, pe_val, mcap_val, sector_val,
-                now_str,
-                # FIX: Serialize valuation_details if it's a dict
-                json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details,
-                sym.upper()
-            ))
-            
+            cursor.execute(
+                update_sql,
+                (
+                    iv,
+                    mos,
+                    fy_end,
+                    qtr,
+                    name_val,
+                    price_val,
+                    pe_val,
+                    mcap_val,
+                    sector_val,
+                    now_str,
+                    # FIX: Serialize valuation_details if it's a dict
+                    json.dumps(valuation_details, cls=NpEncoder)
+                    if isinstance(valuation_details, dict)
+                    else valuation_details,
+                    sym.upper(),
+                ),
+            )
+
             # 2. If no rows affected, create new entry with provided universe
             if cursor.rowcount == 0:
                 insert_sql = """
@@ -1864,19 +2093,28 @@ def update_intrinsic_value_in_cache(
                     name, price, pe_ratio, market_cap, sector, updated_at, valuation_details
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
-                cursor.execute(insert_sql, (
-                    sym.upper(),
-                    univ,
-                    iv,
-                    mos,
-                    fy_end,
-                    qtr,
-                    name_val, price_val, pe_val, mcap_val, sector_val,
-                    now_str,
-                    # FIX: Serialize valuation_details if it's a dict
-                    json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details
-                ))
-                
+                cursor.execute(
+                    insert_sql,
+                    (
+                        sym.upper(),
+                        univ,
+                        iv,
+                        mos,
+                        fy_end,
+                        qtr,
+                        name_val,
+                        price_val,
+                        pe_val,
+                        mcap_val,
+                        sector_val,
+                        now_str,
+                        # FIX: Serialize valuation_details if it's a dict
+                        json.dumps(valuation_details, cls=NpEncoder)
+                        if isinstance(valuation_details, dict)
+                        else valuation_details,
+                    ),
+                )
+
             conn.commit()
             return True
         except sqlite3.Error as e:
@@ -1886,10 +2124,21 @@ def update_intrinsic_value_in_cache(
 
     conn = open_screener_db_conn()
     if conn is None:
-        logging.error(f"update_intrinsic_value_in_cache: could not open global screener DB for {symbol}")
+        logging.error(
+            f"update_intrinsic_value_in_cache: could not open global screener DB for {symbol}"
+        )
         return
     try:
-        do_iv_update(conn, symbol, intrinsic_value, margin_of_safety, last_fiscal_year_end, most_recent_quarter, info, universe)
+        do_iv_update(
+            conn,
+            symbol,
+            intrinsic_value,
+            margin_of_safety,
+            last_fiscal_year_end,
+            most_recent_quarter,
+            info,
+            universe,
+        )
     finally:
         try:
             conn.close()
@@ -1904,9 +2153,12 @@ def initialize_database(db_path: Optional[str] = None) -> Optional[sqlite3.Conne
         create_transactions_table(conn)
     return conn
 
+
 def initialize_global_database() -> Optional[sqlite3.Connection]:
     """Initializes the Global Database Schema (Users)."""
-    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
+    global_db_path = os.path.join(
+        config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME
+    )
     conn = get_db_connection(global_db_path)
     if conn:
         cursor = conn.cursor()
@@ -1920,7 +2172,7 @@ def initialize_global_database() -> Optional[sqlite3.Connection]:
                 created_at TEXT NOT NULL
             );
         """)
-        
+
         # Migration: Add alias column if not exists
         try:
             cursor.execute("ALTER TABLE users ADD COLUMN alias TEXT;")
@@ -1930,9 +2182,10 @@ def initialize_global_database() -> Optional[sqlite3.Connection]:
                 pass
             else:
                 raise
-        
+
         conn.commit()
     return conn
+
 
 # Alias for backward compatibility if needed
 init_db = initialize_database

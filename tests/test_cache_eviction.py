@@ -19,7 +19,9 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 import config
 import server.dependencies as deps
@@ -41,7 +43,13 @@ def user_root(tmp_path, monkeypatch):
 def _write_gui_config(root, username, payload):
     import json
 
-    path = root / config.USERS_DIR / username / config.CONFIG_DIR / config.GUI_CONFIG_FILENAME
+    path = (
+        root
+        / config.USERS_DIR
+        / username
+        / config.CONFIG_DIR
+        / config.GUI_CONFIG_FILENAME
+    )
     path.write_text(json.dumps(payload))
 
 
@@ -81,7 +89,9 @@ def test_evictors_match_keys_written_under_an_override(user_root, tmp_path):
     ps._PORTFOLIO_HISTORY_CACHE.clear()
     ps._RAW_CALC_CACHE.clear()
 
-    other = os.path.join(str(user_root), config.USERS_DIR, "bob", config.PORTFOLIO_DB_FILENAME)
+    other = os.path.join(
+        str(user_root), config.USERS_DIR, "bob", config.PORTFOLIO_DB_FILENAME
+    )
     ps._PORTFOLIO_SUMMARY_CACHE[("USD", "ALL", db, 1.0, 7)] = "alice"
     ps._PORTFOLIO_SUMMARY_CACHE[("USD", "ALL", other, 1.0, 7)] = "bob"
     ps._RAW_CALC_CACHE.put(("USD", "ALL", db, 1.0), "alice")

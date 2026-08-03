@@ -12,7 +12,9 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 import server.routes.transactions as tx_routes
 from server.routes.transactions import _handle_auto_cash_generation
@@ -80,9 +82,16 @@ def test_sell_principal_excludes_commission(captured):
     """Proceeds must net to 1990 (2000 principal - 10 fee), not 1980."""
     _handle_auto_cash_generation(
         None,
-        _trade(Type="Sell", Symbol="MSFT", Quantity=5.0, **{
-            "Price/Share": 400.0, "Commission": 10.0, "Total Amount": 1990.0,
-        }),
+        _trade(
+            Type="Sell",
+            Symbol="MSFT",
+            Quantity=5.0,
+            **{
+                "Price/Share": 400.0,
+                "Commission": 10.0,
+                "Total Amount": 1990.0,
+            },
+        ),
     )
 
     assert len(captured) == 2
@@ -109,7 +118,9 @@ def test_legacy_total_amount_convention_still_correct(captured):
 
 
 def test_zero_commission_posts_only_principal(captured):
-    _handle_auto_cash_generation(None, _trade(Commission=0.0, **{"Total Amount": -1500.0}))
+    _handle_auto_cash_generation(
+        None, _trade(Commission=0.0, **{"Total Amount": -1500.0})
+    )
 
     assert len(captured) == 1
     assert captured[0]["Quantity"] == pytest.approx(1500.0)
@@ -118,7 +129,9 @@ def test_zero_commission_posts_only_principal(captured):
 def test_missing_price_falls_back_to_total_amount(captured):
     """Batch/PDF imports default Price/Share to 0. The settlement amount then
     carries the commission, so it gets backed out by direction."""
-    _handle_auto_cash_generation(None, _trade(**{"Price/Share": 0.0, "Total Amount": -1505.0}))
+    _handle_auto_cash_generation(
+        None, _trade(**{"Price/Share": 0.0, "Total Amount": -1505.0})
+    )
 
     principal, fee = captured
     assert principal["Quantity"] == pytest.approx(1500.0)
@@ -143,15 +156,16 @@ def test_total_amount_sign_convention(captured):
     """Buy/Withdrawal legs store a negative Total Amount, Sell positive —
     matching what the clients write and what the existing corpus contains."""
     _handle_auto_cash_generation(None, _trade())
-    assert captured[0]["Total Amount"] > 0      # Sell $CASH
-    assert captured[1]["Total Amount"] < 0      # Withdrawal $CASH
+    assert captured[0]["Total Amount"] > 0  # Sell $CASH
+    assert captured[1]["Total Amount"] < 0  # Withdrawal $CASH
 
     captured.clear()
     _handle_auto_cash_generation(
-        None, _trade(Type="Sell", **{"Total Amount": 1495.0}),
+        None,
+        _trade(Type="Sell", **{"Total Amount": 1495.0}),
     )
-    assert captured[0]["Total Amount"] < 0      # Buy $CASH
-    assert captured[1]["Total Amount"] < 0      # Withdrawal $CASH
+    assert captured[0]["Total Amount"] < 0  # Buy $CASH
+    assert captured[1]["Total Amount"] < 0  # Withdrawal $CASH
 
 
 def test_cash_symbol_and_non_trade_types_are_ignored(captured):

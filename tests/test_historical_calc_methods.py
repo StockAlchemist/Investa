@@ -48,7 +48,9 @@ def generate_mappings(transactions_df_effective):
     account_to_id = {account: i for i, account in enumerate(all_accounts)}
     id_to_account = {i: account for account, i in account_to_id.items()}
     all_types = transactions_df_effective["Type"].unique()
-    type_to_id = {str(tx_type).lower().strip(): i for i, tx_type in enumerate(all_types)}
+    type_to_id = {
+        str(tx_type).lower().strip(): i for i, tx_type in enumerate(all_types)
+    }
     all_currencies = transactions_df_effective["Local Currency"].unique()
     currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
     id_to_currency = {i: curr for curr, i in currency_to_id.items()}
@@ -82,8 +84,9 @@ SAMPLE_CSV_PATH_HISTORICAL = os.path.join(
 def generate_mock_market_data(start_date, end_date, symbols, fx_pairs):
     """Generates deterministic mock price and FX data."""
     dates = pd.date_range(start_date, end_date, freq="D").date
-    
+
     import zlib
+
     # Mock Prices
     hist_prices_adj = {}
     for symbol in symbols:
@@ -92,13 +95,14 @@ def generate_mock_market_data(start_date, end_date, symbols, fx_pairs):
         seed = zlib.adler32(symbol.encode("utf-8"))
         base_price = 100.0 + (seed % 50)
         prices = [
-            base_price + (i * 0.1) + (np.sin(i / 10.0) * 5.0) 
-            for i in range(len(dates))
+            base_price + (i * 0.1) + (np.sin(i / 10.0) * 5.0) for i in range(len(dates))
         ]
         df = pd.DataFrame({"price": prices}, index=dates)
         hist_prices_adj[symbol] = df
-        print(f"DEBUG: Generated mock data for {symbol}. Base: {base_price}, Price[0]: {prices[0]}, Price[58] (Feb 28): {prices[58] if len(prices) > 58 else 'N/A'}")
-        
+        print(
+            f"DEBUG: Generated mock data for {symbol}. Base: {base_price}, Price[0]: {prices[0]}, Price[58] (Feb 28): {prices[58] if len(prices) > 58 else 'N/A'}"
+        )
+
     # Mock FX
     hist_fx = {}
     for pair in fx_pairs:
@@ -110,17 +114,19 @@ def generate_mock_market_data(start_date, end_date, symbols, fx_pairs):
             base_rate = 0.9
         elif "JPY" in pair:
             base_rate = 150.0
-        
+
         rates = [
             base_rate + (np.sin(i / 20.0) * (base_rate * 0.05))
             for i in range(len(dates))
         ]
         df = pd.DataFrame({"price": rates}, index=dates)
         hist_fx[pair] = df
-        
+
     return hist_prices_adj, hist_fx
 
+
 # --- Test Function ---
+
 
 def test_compare_python_numba_value_mock_data():
     """
@@ -194,7 +200,7 @@ def test_compare_python_numba_value_mock_data():
     # Populate full map from data
     for _, row in transactions_df_effective.iterrows():
         account_currency_map[row["Account"]] = row["Local Currency"]
-        
+
     default_currency = transactions_df_effective["Local Currency"].iloc[0]
 
     # --- 2. Generate Mock Historical Data ---
@@ -277,12 +283,12 @@ def test_compare_python_numba_value_mock_data():
         # --- Assertions for this date ---
         assert not failed_py, f"Python calculation reported failure for {target_date}"
         assert not failed_nb, f"Numba calculation reported failure for {target_date}"
-        
+
         # Use a slightly looser tolerance for floating point differences in complex calcs
-        assert np.isclose(
-            value_py, value_nb, atol=1e-4, equal_nan=True
-        ), f"Values differ for {target_date}: Python={value_py}, Numba={value_nb}, Diff={value_py-value_nb}"
-        
+        assert np.isclose(value_py, value_nb, atol=1e-4, equal_nan=True), (
+            f"Values differ for {target_date}: Python={value_py}, Numba={value_nb}, Diff={value_py - value_nb}"
+        )
+
         dates_tested += 1
 
     # --- 7. Print Final Timing Comparison ---

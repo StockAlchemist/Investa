@@ -41,7 +41,9 @@ def test_bands_are_ordered_and_median_consistent():
     for p in res["horizons"]:
         assert p["p10"] < p["p25"] < p["median_value"] < p["p75"] < p["p90"]
         # median_return_pct and median_value describe the same point.
-        assert p["median_return_pct"] == pytest.approx((p["median_value"] / 100.0 - 1.0) * 100.0)
+        assert p["median_return_pct"] == pytest.approx(
+            (p["median_value"] / 100.0 - 1.0) * 100.0
+        )
 
 
 def test_parameter_uncertainty_widens_faster_than_sqrt_t():
@@ -74,10 +76,24 @@ def test_more_history_means_less_shrinkage():
     short = _wealth(years=4, mu=0.18, sigma=0.15, seed=4)
     long = _wealth(years=20, mu=0.18, sigma=0.15, seed=4)
     prior = 0.0  # shrink toward zero drift
-    raw_s = math.log(1.0 + compute_projection(short, 100.0)["annual_return_pct"] / 100.0)
+    raw_s = math.log(
+        1.0 + compute_projection(short, 100.0)["annual_return_pct"] / 100.0
+    )
     raw_l = math.log(1.0 + compute_projection(long, 100.0)["annual_return_pct"] / 100.0)
-    sh_s = math.log(1.0 + compute_projection(short, 100.0, benchmark_log_return=prior)["annual_return_pct"] / 100.0)
-    sh_l = math.log(1.0 + compute_projection(long, 100.0, benchmark_log_return=prior)["annual_return_pct"] / 100.0)
+    sh_s = math.log(
+        1.0
+        + compute_projection(short, 100.0, benchmark_log_return=prior)[
+            "annual_return_pct"
+        ]
+        / 100.0
+    )
+    sh_l = math.log(
+        1.0
+        + compute_projection(long, 100.0, benchmark_log_return=prior)[
+            "annual_return_pct"
+        ]
+        / 100.0
+    )
     # Fraction of the raw drift retained after shrinkage is larger for the long history.
     assert (sh_l / raw_l) > (sh_s / raw_s)
 
@@ -93,7 +109,9 @@ def test_annualization_infers_periods_per_year_from_dates():
         wealth = pd.Series(100.0 * np.exp(np.arange(n) * g), index=idx)
         res = compute_projection(wealth, float(wealth.iloc[-1]))
         # 4x over 16y == 9.05%/yr, regardless of daily vs business-day sampling.
-        assert res["annual_return_pct"] == pytest.approx(4 ** (1 / 16) * 100 - 100, abs=0.5)
+        assert res["annual_return_pct"] == pytest.approx(
+            4 ** (1 / 16) * 100 - 100, abs=0.5
+        )
 
 
 def test_no_benchmark_leaves_drift_unshrunk():

@@ -25,6 +25,7 @@ Usage
 -----
     python scripts/migrate_screener_cache_to_global.py [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -47,12 +48,26 @@ from db_utils import (  # noqa: E402
 
 
 COLUMNS = [
-    "symbol", "name", "price", "intrinsic_value", "margin_of_safety",
-    "pe_ratio", "market_cap", "sector",
-    "ai_moat", "ai_financial_strength", "ai_predictability", "ai_growth",
-    "ai_summary", "ai_sentiment", "ai_catalysts",
-    "last_fiscal_year_end", "most_recent_quarter",
-    "universe", "updated_at", "valuation_details",
+    "symbol",
+    "name",
+    "price",
+    "intrinsic_value",
+    "margin_of_safety",
+    "pe_ratio",
+    "market_cap",
+    "sector",
+    "ai_moat",
+    "ai_financial_strength",
+    "ai_predictability",
+    "ai_growth",
+    "ai_summary",
+    "ai_sentiment",
+    "ai_catalysts",
+    "last_fiscal_year_end",
+    "most_recent_quarter",
+    "universe",
+    "updated_at",
+    "valuation_details",
 ]
 
 
@@ -83,9 +98,7 @@ def fetch_user_rows(db_path: str) -> List[dict]:
     try:
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                f"SELECT {', '.join(COLUMNS)} FROM screener_cache"
-            )
+            cursor.execute(f"SELECT {', '.join(COLUMNS)} FROM screener_cache")
         except sqlite3.OperationalError:
             return []
         rows = [dict(r) for r in cursor.fetchall()]
@@ -136,7 +149,7 @@ def merge_into_global(rows: List[dict], dry_run: bool) -> Tuple[int, int]:
             placeholders = ", ".join(["?"] * len(COLUMNS))
             cur.execute(
                 f"""
-                INSERT INTO screener_cache ({', '.join(COLUMNS)})
+                INSERT INTO screener_cache ({", ".join(COLUMNS)})
                 VALUES ({placeholders})
                 ON CONFLICT(symbol, universe) DO UPDATE SET
                     name = excluded.name,

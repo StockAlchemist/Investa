@@ -33,7 +33,9 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 import financial_ratios as fr  # noqa: E402
 import market_data  # noqa: E402
@@ -224,7 +226,11 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     graham_mos = _dist("  Graham alone", [as_mos(r, "graham_iv") for r in equities])
 
     print("\nMODEL DISPERSION — |DCF - Graham| / price, %")
-    both = [r for r in equities if r.get("dcf_iv") is not None and r.get("graham_iv") is not None]
+    both = [
+        r
+        for r in equities
+        if r.get("dcf_iv") is not None and r.get("graham_iv") is not None
+    ]
     spread = _dist(
         "  spread",
         [abs(r["dcf_iv"] - r["graham_iv"]) / r["price"] * 100.0 for r in both],
@@ -262,11 +268,15 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             or r["avg_iv"] < 0.1 * r["price"] * (1 - tol)
         )
     ]
-    print(f"\nABSURD (IV >10x or <0.1x price): {len(absurd)}/{len(equities)} "
-          f"({len(absurd) / max(1, len(equities)):.1%})")
+    print(
+        f"\nABSURD (IV >10x or <0.1x price): {len(absurd)}/{len(equities)} "
+        f"({len(absurd) / max(1, len(equities)):.1%})"
+    )
     for r in sorted(absurd, key=lambda r: -(r["avg_iv"] / r["price"]))[:5]:
-        print(f"    {r['symbol']:<7} price={r['price']:>9.2f} iv={r['avg_iv']:>12.2f} "
-              f"({r['avg_iv'] / r['price']:>7.1f}x)")
+        print(
+            f"    {r['symbol']:<7} price={r['price']:>9.2f} iv={r['avg_iv']:>12.2f} "
+            f"({r['avg_iv'] / r['price']:>7.1f}x)"
+        )
 
     return {
         "n_total": total,

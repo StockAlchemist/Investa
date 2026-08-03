@@ -47,7 +47,7 @@ class SWRCache:
 
     def __init__(self, max_size: int = _CACHE_MAX_SIZE):
         self._store: OrderedDict = OrderedDict()  # key -> (value, computed_at)
-        self._inflight: dict = {}                 # key -> asyncio.Task
+        self._inflight: dict = {}  # key -> asyncio.Task
         self._max_size = max_size
 
     def put(self, key, value):
@@ -125,6 +125,7 @@ class SWRCache:
 def get_mdp():
     """Shared Market Data Provider (one instance per process: shared DB connections + cache)."""
     from market_data import get_shared_mdp
+
     return get_shared_mdp()
 
 

@@ -20,17 +20,17 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 DHEE_DB = BASE / "data/users/dheematan/portfolio.db"
-KIT_DB  = BASE / "data/users/kitmatan/portfolio.db"
+KIT_DB = BASE / "data/users/kitmatan/portfolio.db"
 
-DHEE_USER_ID = 7   # confirmed via SELECT DISTINCT user_id FROM dheematan transactions
+DHEE_USER_ID = 7  # confirmed via SELECT DISTINCT user_id FROM dheematan transactions
 
 # kitmatan account name → canonical dheematan account name
 KIT_SOURCE = {
     "Sharebuilder": "Sharebuilder",
-    "Penson":       "Penson",
-    "SET":          "SET",
-    "Dime!":        "Dime!",
-    "WeBull":       "Webull",
+    "Penson": "Penson",
+    "SET": "SET",
+    "Dime!": "Dime!",
+    "WeBull": "Webull",
 }
 
 INSERT_SQL = """
@@ -59,7 +59,7 @@ def fetch_kit_account(kit_cur, kit_acct: str, dhee_acct: str) -> list[tuple]:
     kit_cur.execute(
         'SELECT Date, Type, Symbol, Quantity, "Price/Share", "Total Amount", '
         'Commission, "Split Ratio", Note, "Local Currency", "To Account", '
-        'Tags, ExternalID FROM transactions WHERE Account=?',
+        "Tags, ExternalID FROM transactions WHERE Account=?",
         (kit_acct,),
     )
     rows = kit_cur.fetchall()
@@ -70,14 +70,30 @@ def fetch_kit_account(kit_cur, kit_acct: str, dhee_acct: str) -> list[tuple]:
         if is_cash_artifact(typ, symbol):
             skipped += 1
             continue
-        kept.append((
-            date, typ, symbol, r[3], r[4], r[5],
-            r[6], dhee_acct, r[7], r[8], r[9],
-            r[10], r[11], r[12], DHEE_USER_ID,
-        ))
+        kept.append(
+            (
+                date,
+                typ,
+                symbol,
+                r[3],
+                r[4],
+                r[5],
+                r[6],
+                dhee_acct,
+                r[7],
+                r[8],
+                r[9],
+                r[10],
+                r[11],
+                r[12],
+                DHEE_USER_ID,
+            )
+        )
 
-    print(f"  {kit_acct:15s}: {len(rows):4d} rows → keeping {len(kept):4d} "
-          f"(dropped {skipped} buy/sell $CASH)")
+    print(
+        f"  {kit_acct:15s}: {len(rows):4d} rows → keeping {len(kept):4d} "
+        f"(dropped {skipped} buy/sell $CASH)"
+    )
     return kept
 
 
@@ -91,7 +107,7 @@ def merge_splits(dhee_cur, kit_cur):
     kit_cur.execute(
         'SELECT Date, Type, Symbol, Quantity, "Price/Share", "Total Amount", '
         'Commission, "Split Ratio", Note, "Local Currency", "To Account", '
-        'Tags, ExternalID FROM transactions WHERE Account=\'All Accounts\''
+        "Tags, ExternalID FROM transactions WHERE Account='All Accounts'"
     )
     to_add = []
     for r in kit_cur.fetchall():
@@ -101,14 +117,30 @@ def merge_splits(dhee_cur, kit_cur):
             continue
         # Normalise type capitalisation to match dheematan convention
         normalised_type = "Split" if typ.lower() == "split" else typ
-        to_add.append((
-            date, normalised_type, symbol, r[3], r[4], r[5],
-            r[6], "All Accounts", r[7], r[8], r[9],
-            r[10], r[11], r[12], DHEE_USER_ID,
-        ))
+        to_add.append(
+            (
+                date,
+                normalised_type,
+                symbol,
+                r[3],
+                r[4],
+                r[5],
+                r[6],
+                "All Accounts",
+                r[7],
+                r[8],
+                r[9],
+                r[10],
+                r[11],
+                r[12],
+                DHEE_USER_ID,
+            )
+        )
 
-    print(f"  All Accounts: adding {len(to_add)} missing splits "
-          f"(skipping {kit_cur.rowcount if kit_cur.rowcount >= 0 else '?'} duplicates)")
+    print(
+        f"  All Accounts: adding {len(to_add)} missing splits "
+        f"(skipping {kit_cur.rowcount if kit_cur.rowcount >= 0 else '?'} duplicates)"
+    )
     return to_add
 
 
@@ -122,9 +154,9 @@ def main(dry_run: bool = False):
         backup(DHEE_DB)
 
     dhee = sqlite3.connect(DHEE_DB)
-    kit  = sqlite3.connect(KIT_DB)
+    kit = sqlite3.connect(KIT_DB)
     dhee_cur = dhee.cursor()
-    kit_cur  = kit.cursor()
+    kit_cur = kit.cursor()
 
     # ── Collect all data to insert ─────────────────────────────────────────
     replacements: dict[str, list[tuple]] = {}
@@ -134,7 +166,7 @@ def main(dry_run: bool = False):
     splits_to_add = merge_splits(dhee_cur, kit_cur)
 
     # ── Summary ────────────────────────────────────────────────────────────
-    total_in  = sum(len(v) for v in replacements.values()) + len(splits_to_add)
+    total_in = sum(len(v) for v in replacements.values()) + len(splits_to_add)
     print(f"\nTotal rows to insert: {total_in}")
 
     if dry_run:
@@ -146,9 +178,7 @@ def main(dry_run: bool = False):
     # ── Apply changes atomically ───────────────────────────────────────────
     with dhee:
         for dhee_acct, rows in replacements.items():
-            dhee_cur.execute(
-                "DELETE FROM transactions WHERE Account=?", (dhee_acct,)
-            )
+            dhee_cur.execute("DELETE FROM transactions WHERE Account=?", (dhee_acct,))
             print(f"  Deleted existing {dhee_acct} rows, inserting {len(rows)}")
             dhee_cur.executemany(INSERT_SQL, rows)
 

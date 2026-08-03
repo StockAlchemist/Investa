@@ -36,6 +36,7 @@ Defaults to --dry-run. Pass --apply to commit. Auto-backs up the DB.
 Targets dheematan's portfolio.db in the repo data submodule by default.
 Pass --db to override.
 """
+
 import argparse
 import re
 import shutil
@@ -213,7 +214,9 @@ def migrate(db_path: Path, symbol_filter: str | None, apply: bool) -> int:
         new_qty = stated
         new_price = round(total / stated, 6)
         fixed += 1
-        samples.append((row["id"], row["Date"][:10], sym, qty, price, new_qty, new_price, factor))
+        samples.append(
+            (row["id"], row["Date"][:10], sym, qty, price, new_qty, new_price, factor)
+        )
 
         if apply:
             cur.execute(
@@ -236,12 +239,16 @@ def migrate(db_path: Path, symbol_filter: str | None, apply: bool) -> int:
     if samples:
         print()
         print("Sample changes (first 15):")
-        print(f"  {'id':>6}  {'date':10}  {'sym':6}  {'oldQty':>10} @ {'oldPx':>8}"
-              f"  ->  {'newQty':>10} @ {'newPx':>8}   x{'f':<4}")
+        print(
+            f"  {'id':>6}  {'date':10}  {'sym':6}  {'oldQty':>10} @ {'oldPx':>8}"
+            f"  ->  {'newQty':>10} @ {'newPx':>8}   x{'f':<4}"
+        )
         for s in samples[:15]:
             sid, sdate, ssym, oq, op, nq, npx, f = s
-            print(f"  {sid:>6}  {sdate:10}  {ssym:6}  {oq:>10.4f} @ {op:>8.4f}"
-                  f"  ->  {nq:>10.4f} @ {npx:>8.4f}   x{f:<.0f}")
+            print(
+                f"  {sid:>6}  {sdate:10}  {ssym:6}  {oq:>10.4f} @ {op:>8.4f}"
+                f"  ->  {nq:>10.4f} @ {npx:>8.4f}   x{f:<.0f}"
+            )
         if len(samples) > 15:
             print(f"  ... and {len(samples) - 15} more")
 
@@ -268,8 +275,12 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--db", type=Path, default=DEFAULT_DB, help="path to portfolio.db")
-    ap.add_argument("--symbol", default=None, help="restrict to one symbol (default: all)")
-    ap.add_argument("--apply", action="store_true", help="commit changes (default: dry run)")
+    ap.add_argument(
+        "--symbol", default=None, help="restrict to one symbol (default: all)"
+    )
+    ap.add_argument(
+        "--apply", action="store_true", help="commit changes (default: dry run)"
+    )
     args = ap.parse_args()
     return migrate(args.db, args.symbol, args.apply)
 

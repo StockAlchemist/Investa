@@ -49,7 +49,9 @@ def market_timezone(info: Dict) -> str:
         try:
             ZoneInfo(tz)
         except (KeyError, ValueError):
-            logging.debug(f"Unknown exchange timezone {tz!r}; using {DEFAULT_MARKET_TIMEZONE}")
+            logging.debug(
+                f"Unknown exchange timezone {tz!r}; using {DEFAULT_MARKET_TIMEZONE}"
+            )
         else:
             return tz
     return DEFAULT_MARKET_TIMEZONE
@@ -122,7 +124,10 @@ def company_name(info: Dict) -> Optional[str]:
 
 
 def next_earnings_event(
-    symbol: str, info: Dict, today: Optional[date] = None, horizon_end: Optional[date] = None
+    symbol: str,
+    info: Dict,
+    today: Optional[date] = None,
+    horizon_end: Optional[date] = None,
 ) -> Optional[dict]:
     """
     Pull the next scheduled earnings report out of a cached fundamentals blob.
@@ -143,7 +148,9 @@ def next_earnings_event(
 
     upcoming = [
         d
-        for d in (epoch_to_market_date(info.get(key), tz) for key in EARNINGS_TIMESTAMP_KEYS)
+        for d in (
+            epoch_to_market_date(info.get(key), tz) for key in EARNINGS_TIMESTAMP_KEYS
+        )
         if d is not None and d >= today
     ]
     if not upcoming:
@@ -192,7 +199,9 @@ def earnings_history(info: Dict) -> Dict[str, dict]:
     return history if isinstance(history, dict) else {}
 
 
-def _surprise_pct(eps_actual: Optional[float], eps_estimate: Optional[float]) -> Optional[float]:
+def _surprise_pct(
+    eps_actual: Optional[float], eps_estimate: Optional[float]
+) -> Optional[float]:
     """
     Beat/miss against consensus, in percent.
 
@@ -282,7 +291,9 @@ def recent_earnings_event(
     else:
         # Nothing printed yet, so the report only counts once its announced
         # moment has passed. Days already over need no such proof; today's does.
-        elapsed = [d for d in past if d < today or _report_moment_passed(info, d, tz, now)]
+        elapsed = [
+            d for d in past if d < today or _report_moment_passed(info, d, tz, now)
+        ]
         if not elapsed:
             return None
         report_date = max(elapsed)
@@ -306,7 +317,9 @@ def recent_earnings_event(
     }
 
 
-def next_dividend_event(symbol: str, info: Dict, today: Optional[date] = None) -> Optional[dict]:
+def next_dividend_event(
+    symbol: str, info: Dict, today: Optional[date] = None
+) -> Optional[dict]:
     """
     The next dividend for one symbol, per share (not scaled by any position).
 
@@ -355,7 +368,11 @@ def next_dividend_event(symbol: str, info: Dict, today: Optional[date] = None) -
         return None
 
     anchor = max(
-        [d for d in (pay_date, ex_date, epoch_to_date(info.get("lastDividendDate"))) if d],
+        [
+            d
+            for d in (pay_date, ex_date, epoch_to_date(info.get("lastDividendDate")))
+            if d
+        ],
         default=None,
     )
     if not anchor:
@@ -367,7 +384,9 @@ def next_dividend_event(symbol: str, info: Dict, today: Optional[date] = None) -
         for _ in range(64):
             if projected >= today:
                 break
-            projected = (pd.Timestamp(projected) + pd.DateOffset(months=freq_months)).date()
+            projected = (
+                pd.Timestamp(projected) + pd.DateOffset(months=freq_months)
+            ).date()
         else:
             return None
     except (ValueError, OverflowError) as e:
@@ -396,7 +415,11 @@ def upcoming_events(
     # event, and it has happened — so look for the next one strictly *after* the
     # reported day rather than dropping the scheduled side outright, which would
     # also hide a next date the company has already announced.
-    if reported and scheduled and reported["earnings_date"] == scheduled["earnings_date"]:
+    if (
+        reported
+        and scheduled
+        and reported["earnings_date"] == scheduled["earnings_date"]
+    ):
         day_after = date.fromisoformat(reported["earnings_date"]) + timedelta(days=1)
         scheduled = next_earnings_event(symbol, info, day_after, horizon_end)
 

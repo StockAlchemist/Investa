@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 -------------------------------------------------------------------------------
@@ -68,8 +67,8 @@ try:
         safe_sum,  # Used by _calculate_aggregate_metrics
         get_currency_symbol_from_code,
         get_historical_rate_via_usd_bridge,  # Added for dividend history
-        get_cash_flows_for_mwr, # Used for overall MWR
-        calculate_indicated_dividend, # NEW: Unified dividend logic
+        get_cash_flows_for_mwr,  # Used for overall MWR
+        calculate_indicated_dividend,  # NEW: Unified dividend logic
     )
 except ImportError:
     logging.critical(
@@ -88,6 +87,8 @@ except ImportError:
 
     def safe_sum(*args):
         return 0.0
+
+
 # --- Numba Constants ---
 TYPE_BUY = 0
 TYPE_SELL = 1
@@ -104,44 +105,59 @@ TYPE_INTEREST = 11
 TYPE_SPIN_OFF = 12
 TYPE_UNKNOWN = -1
 
+
 # --- Helper to map string types to ints ---
 def get_type_id(t):
     t = str(t).lower().strip()
-    if t == 'buy':
+    if t == "buy":
         return TYPE_BUY
-    if t == 'sell':
+    if t == "sell":
         return TYPE_SELL
-    if t == 'deposit':
+    if t == "deposit":
         return TYPE_DEPOSIT
-    if t == 'withdrawal':
+    if t == "withdrawal":
         return TYPE_WITHDRAWAL
-    if t == 'dividend':
+    if t == "dividend":
         return TYPE_DIVIDEND
-    if t in ['fee', 'fees']:
+    if t in ["fee", "fees"]:
         return TYPE_FEES
-    if t in ['split', 'stock split']:
+    if t in ["split", "stock split"]:
         return TYPE_SPLIT
-    if t == 'transfer':
+    if t == "transfer":
         return TYPE_TRANSFER
-    if t == 'short sell':
+    if t == "short sell":
         return TYPE_SHORT_SELL
-    if t == 'buy to cover':
+    if t == "buy to cover":
         return TYPE_BUY_TO_COVER
-    if t in ['tax', 'withholding tax']:
+    if t in ["tax", "withholding tax"]:
         return TYPE_TAX
-    if t == 'interest':
+    if t == "interest":
         return TYPE_INTEREST
-    if t in ['spin off', 'spin-off', 'spinoff']:
+    if t in ["spin off", "spin-off", "spinoff"]:
         return TYPE_SPIN_OFF
     return TYPE_UNKNOWN
 
+
 @jit(nopython=True, cache=True)
 def _process_numba_core(
-    sym_ids, acc_ids, type_ids, qtys, prices, comms, totals, split_ratios, 
-    to_acc_ids, local_curr_ids, fx_rates_hist, 
-    shortable_sym_ids, stock_qty_tol, cash_sym_id,
-    num_tx, num_syms, num_accs,
-    acc_cash_modes
+    sym_ids,
+    acc_ids,
+    type_ids,
+    qtys,
+    prices,
+    comms,
+    totals,
+    split_ratios,
+    to_acc_ids,
+    local_curr_ids,
+    fx_rates_hist,
+    shortable_sym_ids,
+    stock_qty_tol,
+    cash_sym_id,
+    num_tx,
+    num_syms,
+    num_accs,
+    acc_cash_modes,
 ):
     # State Array: (num_syms, num_accs, 14)
     # 0: qty
@@ -159,14 +175,13 @@ def _process_numba_core(
     # 12: realized_gain_display (accumulated at historical FX)
     # 13: taxes_local (separate from commissions; tax withholding on dividends, etc.)
 
-
     state = np.zeros((num_syms, num_accs, 14), dtype=np.float64)
     # Initialize currency ID to -1.0 to detect first use
     state[:, :, 11] = -1.0
-    
+
     # Transfer costs array: index -> unit_cost (NaN if none)
     transfer_costs = np.full(num_tx, np.nan, dtype=np.float64)
-    
+
     for i in range(num_tx):
         sym = sym_ids[i]
         acc = acc_ids[i]
@@ -178,14 +193,14 @@ def _process_numba_core(
         split = split_ratios[i]
         to_acc = to_acc_ids[i]
         curr = local_curr_ids[i]
-        fx_rate = fx_rates_hist[i] 
-        
+        fx_rate = fx_rates_hist[i]
+
         if np.isnan(fx_rate):
-            fx_rate = 1.0 
-            
+            fx_rate = 1.0
+
         # Access state slice
         current_state = state[sym, acc]
-        
+
         # Initialize/Check Currency
         if current_state[11] == -1.0:
             current_state[11] = float(curr)
@@ -218,23 +233,23 @@ def _process_numba_core(
                                 if s_short == sym:
                                     is_shortable = True
                                     break
-                            
+
                             if is_shortable:
                                 if old_qty < -1e-9:
                                     h_data[6] *= split
                                     if abs(h_data[6]) < 1e-9:
                                         h_data[6] = 0.0
-                            
+
                             if abs(h_data[0]) < 1e-9:
                                 h_data[0] = 0.0
-                
+
                 # Apply split fee to specific account
                 if comm != 0:
                     fee_cost = abs(comm)
                     current_state[4] += fee_cost
                     current_state[7] += fee_cost
                     current_state[8] += fee_cost
-            
+
             # Case 2: Target Quantity (Negative Encoded) -> Applies LOCAL to specific account only
             elif split < -1e-9:
                 target_qty = abs(split)
@@ -245,37 +260,37 @@ def _process_numba_core(
                     if abs(old_qty) > 1e-9:
                         # Calculate implied ratio for this specific account
                         ratio = target_qty / old_qty
-                        
+
                         # Apply ratio logic LOCALLY
-                        current_state[0] = target_qty 
-                        
+                        current_state[0] = target_qty
+
                         # Short logic
                         # (Assume target qty is absolute hold count, logic might be complex for short)
                         # For simplicity, scale short original qty by ratio too
                         if abs(current_state[6]) > 1e-9:
-                             current_state[6] *= ratio
-                        
+                            current_state[6] *= ratio
+
                         # Note: We do NOT apply this to other accounts.
                         # This safeguards against "E*TRADE reports 700 shares" blowing up "Sharebuilder" account
-                        
+
                     elif abs(old_qty) < 1e-9 and target_qty > 0:
-                        # We held 0, now we hold target_qty? 
+                        # We held 0, now we hold target_qty?
                         # That's a "Set Quantity" or "Add" event, not really a split.
                         # But strictly for splits usually we hold shares already.
                         # If we had 0, and now have 700, implied ratio is infinite.
                         # Treat as just setting quantity, but cost basis remains 0?
-                        # Probably best to leave as 0 or set as is. 
+                        # Probably best to leave as 0 or set as is.
                         # If it's a split, usually cost basis propagates.
                         # Let's trust the logic that splits happen on existing holdings.
                         pass
-                
-                 # Apply split fee
+
+                # Apply split fee
                 if comm != 0:
                     fee_cost = abs(comm)
                     current_state[4] += fee_cost
                     current_state[7] += fee_cost
                     current_state[8] += fee_cost
-                    
+
             continue
 
         # --- TRANSFER ---
@@ -283,7 +298,7 @@ def _process_numba_core(
             if qty > 1e-9 and to_acc != -1 and to_acc != acc:
                 from_qty = current_state[0]
                 to_state = state[sym, to_acc]
-                
+
                 if sym == cash_sym_id or from_qty >= qty - 1e-9:
                     to_state = state[sym, to_acc]
 
@@ -291,7 +306,7 @@ def _process_numba_core(
                     if to_state[11] == -1.0:
                         to_state[11] = current_state[11]
 
-                    if True: # GLD Fix
+                    if True:  # GLD Fix
                         if sym == cash_sym_id:
                             cost_transferred = qty
                             cost_transferred_hist = qty * fx_rate
@@ -363,10 +378,9 @@ def _process_numba_core(
                 current_state[10] -= current_state[10] * proportion
             continue
 
-
         # --- STANDARD TYPES ---
         qty_abs = abs(qty)
-        
+
         # Short Logic
         # Check shortable
         is_shortable = False
@@ -374,7 +388,7 @@ def _process_numba_core(
             if s_short == sym:
                 is_shortable = True
                 break
-                
+
         if is_shortable and (typ == TYPE_SHORT_SELL or typ == TYPE_BUY_TO_COVER):
             if typ == TYPE_SHORT_SELL:
                 proceeds = (qty_abs * price) - comm
@@ -383,13 +397,15 @@ def _process_numba_core(
                 current_state[6] += qty_abs
                 current_state[4] += comm
                 current_state[8] -= proceeds
-                current_state[10] -= (proceeds * fx_rate)
-                
+                current_state[10] -= proceeds * fx_rate
+
             elif typ == TYPE_BUY_TO_COVER:
-                qty_curr_short = abs(current_state[0]) if current_state[0] < -1e-9 else 0.0
+                qty_curr_short = (
+                    abs(current_state[0]) if current_state[0] < -1e-9 else 0.0
+                )
                 qty_covered = min(qty_abs, qty_curr_short)
                 cost = (qty_covered * price) + comm
-                
+
                 if current_state[6] > 1e-9:
                     # Calculate historical proceeds (negative cost basis) for the covered portion
                     # BEFORE updating the state
@@ -400,12 +416,14 @@ def _process_numba_core(
                         avg_proceeds_display_neg = 0.0
                         avg_proceeds = 0.0
 
-                    proceeds_display_attr = - (avg_proceeds_display_neg * qty_covered) # This is positive value in display currency
-                    
+                    proceeds_display_attr = -(
+                        avg_proceeds_display_neg * qty_covered
+                    )  # This is positive value in display currency
+
                     # Also calculate local proceeds for gain calc (existing logic)
                     proceeds_attr = qty_covered * avg_proceeds
                     gain = proceeds_attr - cost
-                    
+
                     # Update State
                     current_state[0] += qty_covered
                     current_state[5] -= proceeds_attr
@@ -413,20 +431,20 @@ def _process_numba_core(
                     current_state[4] += comm
                     current_state[2] += gain
                     current_state[8] += cost
-                    
+
                     # Update historical cost basis (remove the portion covered)
                     # current_state[10] is negative (proceeds). We want to reduce its magnitude.
                     # proceeds_covered_hist_val = avg_proceeds_display_neg * qty_covered (negative)
                     # current_state[10] -= proceeds_covered_hist_val
-                    current_state[10] -= (avg_proceeds_display_neg * qty_covered)
-                    
+                    current_state[10] -= avg_proceeds_display_neg * qty_covered
+
                     # Realized Gain Display Calculation
                     # Gain = Proceeds (Historical) - Cost (Current)
                     cost_display_cover = cost * fx_rate
                     gain_display = proceeds_display_attr - cost_display_cover
-                    
+
                     current_state[12] += gain_display
-                    
+
                     if abs(current_state[6]) < 1e-9:
                         current_state[5] = 0.0
                         current_state[6] = 0.0
@@ -445,7 +463,7 @@ def _process_numba_core(
             current_state[7] += cost
             current_state[8] += cost
             current_state[9] += cost
-            current_state[10] += (cost * fx_rate)
+            current_state[10] += cost * fx_rate
 
         # Sell / Withdrawal
         elif typ == TYPE_SELL or typ == TYPE_WITHDRAWAL:
@@ -457,11 +475,11 @@ def _process_numba_core(
                 qty_to_deduct = abs(total) if abs(total) > 1e-9 else qty_abs
                 cost_sold = qty_to_deduct * eff_price
                 cost_sold_hist = cost_sold * fx_rate
-                
+
                 proceeds = (qty_to_deduct * eff_price) - comm
                 gain = 0.0
                 gain_display = 0.0
-                
+
                 current_state[0] -= qty_to_deduct
                 current_state[1] -= cost_sold
                 current_state[10] -= cost_sold_hist
@@ -470,34 +488,38 @@ def _process_numba_core(
                 current_state[12] += gain_display
                 current_state[7] -= cost_sold
                 current_state[8] -= proceeds
-                
+
             elif held_qty > 1e-9:
                 qty_sold = min(qty_abs, held_qty)
-                
+
                 cost_sold = 0.0
                 cost_sold_hist = 0.0
                 if abs(current_state[1]) > 1e-9:
                     cost_sold = qty_sold * (current_state[1] / held_qty)
                     cost_sold_hist = qty_sold * (current_state[10] / held_qty)
-                
-                proceeds = abs(total) if abs(total) > 1e-9 else (qty_sold * price) - comm
+
+                proceeds = (
+                    abs(total) if abs(total) > 1e-9 else (qty_sold * price) - comm
+                )
                 gain = proceeds - cost_sold
-                
+
                 # Realized Gain Display Calculation (Long Sell)
                 # Proceeds (Display) = Proceeds_Local * FX_Rate_At_Sell
                 # Cost (Display) = Cost_Sold_Hist (already in display currency)
                 proceeds_display = proceeds * fx_rate
                 gain_display = proceeds_display - cost_sold_hist
-                
+
                 current_state[0] -= qty_sold
                 current_state[1] -= cost_sold
-                current_state[10] -= cost_sold_hist # Update total_cost_display_historical_fx
+                current_state[10] -= (
+                    cost_sold_hist  # Update total_cost_display_historical_fx
+                )
                 current_state[4] += comm
-                current_state[2] += gain # Update realized_gain_local
-                current_state[12] += gain_display # Update realized_gain_display
+                current_state[2] += gain  # Update realized_gain_local
+                current_state[12] += gain_display  # Update realized_gain_display
                 current_state[7] -= cost_sold
                 current_state[8] -= proceeds
-                
+
                 if abs(current_state[0]) < 1e-9:
                     current_state[0] = 0.0
                     current_state[1] = 0.0
@@ -505,16 +527,16 @@ def _process_numba_core(
 
         # Dividend
         elif typ == TYPE_DIVIDEND:
-            div_amt = price 
+            div_amt = price
             div_effect = abs(div_amt)
-            if current_state[0] < -1e-9: # Short
+            if current_state[0] < -1e-9:  # Short
                 div_effect = -div_effect
-            
+
             current_state[3] += div_effect
             current_state[4] += comm
-            current_state[10] -= (div_effect * fx_rate)
-            
-            # Explicit Cash Handling: 
+            current_state[10] -= div_effect * fx_rate
+
+            # Explicit Cash Handling:
             # In Auto-mode, we update balance for explicit cash dividends (e.g. awards).
             # In Manual-mode, we skip this to avoid double-counting or breaking legacy bookkeeping.
             if sym == cash_sym_id and acc_cash_modes[acc] == 1:
@@ -532,14 +554,18 @@ def _process_numba_core(
 
         # Fees / Tax
         elif typ == TYPE_FEES or typ == TYPE_TAX:
-            cost_val = abs(total) if abs(total) > 1e-9 else (abs(comm) if abs(comm) > 1e-9 else abs(price))
+            cost_val = (
+                abs(total)
+                if abs(total) > 1e-9
+                else (abs(comm) if abs(comm) > 1e-9 else abs(price))
+            )
             if typ == TYPE_TAX:
                 current_state[13] += cost_val  # taxes_local (separate bucket)
             else:
-                current_state[4] += cost_val   # commissions_local
+                current_state[4] += cost_val  # commissions_local
             current_state[7] += cost_val
             current_state[8] += cost_val
-            current_state[10] += (cost_val * fx_rate)
+            current_state[10] += cost_val * fx_rate
 
             if sym == cash_sym_id and acc_cash_modes[acc] == 1:
                 current_state[0] -= cost_val
@@ -552,8 +578,8 @@ def _process_numba_core(
             int_amt = abs(total) if abs(total) > 1e-9 else abs(price)
             current_state[3] += int_amt
             current_state[4] += comm
-            current_state[10] -= (int_amt * fx_rate)
-            
+            current_state[10] -= int_amt * fx_rate
+
             if sym == cash_sym_id and acc_cash_modes[acc] == 1:
                 current_state[0] += int_amt
                 current_state[1] += int_amt
@@ -571,24 +597,32 @@ def _process_numba_core(
             # Initialize cash position if needed
             if cash_state[11] == -1.0:
                 cash_state[11] = float(curr)
-            
+
             cash_delta = 0.0
             if typ == TYPE_BUY:
-                cash_delta = - (abs(total) if abs(total) > 1e-9 else (qty_abs * price) + abs(comm))
+                cash_delta = -(
+                    abs(total) if abs(total) > 1e-9 else (qty_abs * price) + abs(comm)
+                )
             elif typ == TYPE_SELL:
-                cash_delta = + (abs(total) if abs(total) > 1e-9 else (qty_abs * price) - abs(comm))
+                cash_delta = +(
+                    abs(total) if abs(total) > 1e-9 else (qty_abs * price) - abs(comm)
+                )
             elif typ == TYPE_DIVIDEND:
-                cash_delta = + abs(price)
+                cash_delta = +abs(price)
             elif typ == TYPE_INTEREST:
-                cash_delta = + (abs(total) if abs(total) > 1e-9 else abs(price))
+                cash_delta = +(abs(total) if abs(total) > 1e-9 else abs(price))
             elif typ == TYPE_FEES or typ == TYPE_TAX:
-                cash_delta = - (abs(total) if abs(total) > 1e-9 else (abs(comm) if abs(comm) > 1e-9 else abs(price)))
+                cash_delta = -(
+                    abs(total)
+                    if abs(total) > 1e-9
+                    else (abs(comm) if abs(comm) > 1e-9 else abs(price))
+                )
             elif typ == TYPE_SHORT_SELL:
-                cash_delta = + ((qty_abs * price) - abs(comm))
+                cash_delta = +((qty_abs * price) - abs(comm))
             elif typ == TYPE_BUY_TO_COVER:
-                cash_delta = - ((qty_abs * price) + abs(comm))
+                cash_delta = -((qty_abs * price) + abs(comm))
             # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
-            
+
             if abs(cash_delta) > 1e-9:
                 cash_state[0] += cash_delta  # qty
                 if cash_delta > 0:
@@ -603,17 +637,17 @@ def _process_numba_core(
                     cash_state[7] -= abs_delta
                     cash_state[8] -= abs_delta
                     cash_state[10] -= abs_delta * fx_rate
-        
 
         # Tax
         elif typ == TYPE_TAX:
             # Tax is usually entered as a positive number representing the cost
             tax_amt = abs(price) if abs(price) > 1e-9 else abs(comm)
-            current_state[13] += tax_amt # Track in tax column
+            current_state[13] += tax_amt  # Track in tax column
             current_state[3] -= tax_amt  # Subtract from dividends for net return calc
-            current_state[10] += (tax_amt * fx_rate) # Add to cost basis (reduces return)
+            current_state[10] += tax_amt * fx_rate  # Add to cost basis (reduces return)
 
     return state, transfer_costs
+
 
 @profile
 def _process_transactions_to_holdings(
@@ -635,7 +669,7 @@ def _process_transactions_to_holdings(
     bool,
 ]:
     logging.debug("Starting Numba-optimized transaction processing (Array-based)...")
-    
+
     if transactions_df.empty:
         return {}, {}, {}, {}, set(), {}, {}, False
 
@@ -644,33 +678,41 @@ def _process_transactions_to_holdings(
 
     # --- Normalize Columns EARLY ---
     # Critical: Normalize strings BEFORE deduplication to ensure matching works
-    transactions_df['Symbol'] = transactions_df['Symbol'].astype(str).str.strip()
+    transactions_df["Symbol"] = transactions_df["Symbol"].astype(str).str.strip()
     # Normalize cash-like symbols (e.g. 'Cash ($)') to the designated CASH_SYMBOL_CSV ($CASH)
-    transactions_df['Symbol'] = transactions_df['Symbol'].apply(lambda x: CASH_SYMBOL_CSV if is_cash_symbol(x) else x)
-    
-    transactions_df['Account'] = transactions_df['Account'].astype(str).str.strip()
-    transactions_df['Type'] = transactions_df['Type'].astype(str).str.strip().str.lower()
+    transactions_df["Symbol"] = transactions_df["Symbol"].apply(
+        lambda x: CASH_SYMBOL_CSV if is_cash_symbol(x) else x
+    )
+
+    transactions_df["Account"] = transactions_df["Account"].astype(str).str.strip()
+    transactions_df["Type"] = (
+        transactions_df["Type"].astype(str).str.strip().str.lower()
+    )
 
     # Create ID mappings
-    all_symbols_list = list(transactions_df['Symbol'].unique())
+    all_symbols_list = list(transactions_df["Symbol"].unique())
     # Ensure $CASH is always in the symbol map for auto-cash accounting
     if CASH_SYMBOL_CSV not in all_symbols_list:
         all_symbols_list.append(CASH_SYMBOL_CSV)
     all_symbols = all_symbols_list
-    all_accounts = set(transactions_df['Account'].unique())
-    if 'To Account' in transactions_df.columns:
-        all_accounts.update(transactions_df['To Account'].dropna().astype(str).str.strip().unique())
+    all_accounts = set(transactions_df["Account"].unique())
+    if "To Account" in transactions_df.columns:
+        all_accounts.update(
+            transactions_df["To Account"].dropna().astype(str).str.strip().unique()
+        )
     all_accounts = list(all_accounts)
-    all_currencies = transactions_df['Local Currency'].astype(str).str.strip().str.upper().unique()
-    
+    all_currencies = (
+        transactions_df["Local Currency"].astype(str).str.strip().str.upper().unique()
+    )
+
     sym_map = {s: i for i, s in enumerate(all_symbols)}
     acc_map = {a: i for i, a in enumerate(all_accounts)}
     curr_map = {c: i for i, c in enumerate(all_currencies)}
-    
+
     rev_sym_map = {i: s for s, i in sym_map.items()}
     rev_acc_map = {i: a for a, i in acc_map.items()}
     rev_curr_map = {i: c for c, i in curr_map.items()}
-    
+
     n = len(transactions_df)
     num_syms = len(all_symbols)
     num_accs = len(all_accounts)
@@ -678,75 +720,115 @@ def _process_transactions_to_holdings(
     df = transactions_df.copy()
 
     # --- Deduplicate Split Transactions (Robustness Fix) ---
-    # Splits currently apply to ALL accounts in the Numba loop. 
+    # Splits currently apply to ALL accounts in the Numba loop.
     # Must ensure we don't process multiple splits for the same symbol/date (e.g. one from 'All Accounts' and one from 'E*TRADE').
-    is_split_mask = df['Type'].isin(['split', 'stock split'])
-    
+    is_split_mask = df["Type"].isin(["split", "stock split"])
+
     if is_split_mask.any():
         # logging.debug("Deduplicating split transactions...")
         splits_df = df[is_split_mask].copy()
         other_df = df[~is_split_mask]
-        
-        # Ensure we can sort. Convert Date to datetime if not already (it should be)
-        if not pd.api.types.is_datetime64_any_dtype(splits_df['Date']):
-            splits_df['Date'] = pd.to_datetime(splits_df['Date'], errors='coerce')
 
-        # Priority: 
+        # Ensure we can sort. Convert Date to datetime if not already (it should be)
+        if not pd.api.types.is_datetime64_any_dtype(splits_df["Date"]):
+            splits_df["Date"] = pd.to_datetime(splits_df["Date"], errors="coerce")
+
+        # Priority:
         # 1. 'All Accounts' (assumed manual override/correct) -> Rank 0
         # 2. Others -> Rank 1
-        splits_df['__split_priority'] = np.where(
-            splits_df['Account'].str.lower() == 'all accounts', 0, 1
+        splits_df["__split_priority"] = np.where(
+            splits_df["Account"].str.lower() == "all accounts", 0, 1
         )
-        
+
         # --- Fuzzy Deduplication (Month-Year) ---
         # Create a Year-Month integer for grouping (Safe for all environments)
         # Year * 100 + Month (e.g. 201406)
-        splits_df['__split_ym'] = (splits_df['Date'].dt.year * 100 + splits_df['Date'].dt.month).astype(np.int64)
-        
+        splits_df["__split_ym"] = (
+            splits_df["Date"].dt.year * 100 + splits_df["Date"].dt.month
+        ).astype(np.int64)
+
         # Sort by Date, Symbol, Priority
         # We want to keep the highest priority (lowest rank) for each symbol/month
-        splits_df.sort_values(by=['Date', 'Symbol', '__split_priority'], inplace=True)
-        
+        splits_df.sort_values(by=["Date", "Symbol", "__split_priority"], inplace=True)
+
         # Drop duplicates based on Symbol and Year-Month
-        deduped_splits = splits_df.drop_duplicates(subset=['__split_ym', 'Symbol', 'Split Ratio'], keep='first').drop(columns=['__split_priority', '__split_ym'])
-        
+        deduped_splits = splits_df.drop_duplicates(
+            subset=["__split_ym", "Symbol", "Split Ratio"], keep="first"
+        ).drop(columns=["__split_priority", "__split_ym"])
+
         # Recombine and sort by date/index to maintain chronology
         # Force a copy and consolidation to avoid internal pandas BlockManager AssertionErrors
-        df = pd.concat([other_df.copy(), deduped_splits.copy()], ignore_index=True).sort_values(by=['Date', 'original_index'])
+        df = pd.concat(
+            [other_df.copy(), deduped_splits.copy()], ignore_index=True
+        ).sort_values(by=["Date", "original_index"])
         # Ensure 'Date' and 'original_index' are used for sorting
-        df.sort_values(by=['Date', 'original_index'], inplace=True)
+        df.sort_values(by=["Date", "original_index"], inplace=True)
         # Force consolidation and new index to avoid Numba memory view issues
         df = df.reset_index(drop=True).copy()
-        n = len(df) # UPDATE: n must reflect the new size after deduplication
+        n = len(df)  # UPDATE: n must reflect the new size after deduplication
         # logging.debug(f"Transactions reduced from {len(transactions_df)} to {len(df)} after split deduplication.")
-    
-    sym_ids = df['Symbol'].map(sym_map).fillna(-1).astype(np.int64).values
-    acc_ids = df['Account'].map(acc_map).fillna(-1).astype(np.int64).values
-    
+
+    sym_ids = df["Symbol"].map(sym_map).fillna(-1).astype(np.int64).values
+    acc_ids = df["Account"].map(acc_map).fillna(-1).astype(np.int64).values
+
     type_map_dict = {
-        'buy': TYPE_BUY, 'sell': TYPE_SELL, 'deposit': TYPE_DEPOSIT, 
-        'withdrawal': TYPE_WITHDRAWAL, 'dividend': TYPE_DIVIDEND,
-        'fee': TYPE_FEES, 'fees': TYPE_FEES,
-        'split': TYPE_SPLIT, 'stock split': TYPE_SPLIT, 'transfer': TYPE_TRANSFER,
-        'short sell': TYPE_SHORT_SELL, 'buy to cover': TYPE_BUY_TO_COVER,
-        'tax': TYPE_TAX, 'withholding tax': TYPE_TAX, 'interest': TYPE_INTEREST,
-        'spin off': TYPE_SPIN_OFF, 'spin-off': TYPE_SPIN_OFF, 'spinoff': TYPE_SPIN_OFF,
+        "buy": TYPE_BUY,
+        "sell": TYPE_SELL,
+        "deposit": TYPE_DEPOSIT,
+        "withdrawal": TYPE_WITHDRAWAL,
+        "dividend": TYPE_DIVIDEND,
+        "fee": TYPE_FEES,
+        "fees": TYPE_FEES,
+        "split": TYPE_SPLIT,
+        "stock split": TYPE_SPLIT,
+        "transfer": TYPE_TRANSFER,
+        "short sell": TYPE_SHORT_SELL,
+        "buy to cover": TYPE_BUY_TO_COVER,
+        "tax": TYPE_TAX,
+        "withholding tax": TYPE_TAX,
+        "interest": TYPE_INTEREST,
+        "spin off": TYPE_SPIN_OFF,
+        "spin-off": TYPE_SPIN_OFF,
+        "spinoff": TYPE_SPIN_OFF,
     }
-    type_ids = df['Type'].str.lower().str.strip().map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
-    
-    qtys = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0.0).astype(np.float64).values
-    
-    raw_prices = pd.to_numeric(df['Price/Share'], errors='coerce').fillna(0.0).astype(np.float64).values
-    raw_totals = pd.to_numeric(df['Total Amount'], errors='coerce').fillna(0.0).astype(np.float64).values
-    
+    type_ids = (
+        df["Type"]
+        .str.lower()
+        .str.strip()
+        .map(type_map_dict)
+        .fillna(TYPE_UNKNOWN)
+        .astype(np.int64)
+        .values
+    )
+
+    qtys = (
+        pd.to_numeric(df["Quantity"], errors="coerce")
+        .fillna(0.0)
+        .astype(np.float64)
+        .values
+    )
+
+    raw_prices = (
+        pd.to_numeric(df["Price/Share"], errors="coerce")
+        .fillna(0.0)
+        .astype(np.float64)
+        .values
+    )
+    raw_totals = (
+        pd.to_numeric(df["Total Amount"], errors="coerce")
+        .fillna(0.0)
+        .astype(np.float64)
+        .values
+    )
+
     # --- Robust Quantity/Price Handling for Cash ---
     # For $CASH, if Total Amount is provided, we should trust it.
     # If Quantity is also provided and matches Total Amount, it means the user
     # entered the amount in both columns (common in manual entries).
     # In this case, we should set Price/Share to 1.0 to avoid squared values in calculations.
-    cash_sym_mask = (df['Symbol'] == CASH_SYMBOL_CSV).values
-    zero_qty_mask = (np.abs(qtys) < 1e-9)
-    has_total_mask = (np.abs(raw_totals) > 1e-9)
+    cash_sym_mask = (df["Symbol"] == CASH_SYMBOL_CSV).values
+    zero_qty_mask = np.abs(qtys) < 1e-9
+    has_total_mask = np.abs(raw_totals) > 1e-9
 
     fix_cash_mask = cash_sym_mask & has_total_mask
     if np.any(fix_cash_mask):
@@ -757,78 +839,106 @@ def _process_transactions_to_holdings(
 
         # Case 2: Qty matches Total, force Price to 1.0
         # (This prevents Dividend logic from doing Qty * Price = Amount * Amount)
-        mask_qty_match = fix_cash_mask & (~zero_qty_mask) & (np.abs(qtys - np.abs(raw_totals)) < 1e-4)
+        mask_qty_match = (
+            fix_cash_mask
+            & (~zero_qty_mask)
+            & (np.abs(qtys - np.abs(raw_totals)) < 1e-4)
+        )
         raw_prices[mask_qty_match] = 1.0
 
     # Use Total Amount for types where Price/Share might be zero (Dividends, Tax, Fees, Interest)
     # OR for any Cash transaction with zero Price/Share OR zero Quantity
-    income_expense_types = (type_ids == TYPE_DIVIDEND) | (type_ids == TYPE_TAX) | (type_ids == TYPE_FEES) | (type_ids == TYPE_INTEREST)
-    mask_use_total = (income_expense_types | cash_sym_mask) & ((np.abs(raw_prices) < 1e-9) | (np.abs(qtys) < 1e-9)) & has_total_mask
+    income_expense_types = (
+        (type_ids == TYPE_DIVIDEND)
+        | (type_ids == TYPE_TAX)
+        | (type_ids == TYPE_FEES)
+        | (type_ids == TYPE_INTEREST)
+    )
+    mask_use_total = (
+        (income_expense_types | cash_sym_mask)
+        & ((np.abs(raw_prices) < 1e-9) | (np.abs(qtys) < 1e-9))
+        & has_total_mask
+    )
     raw_prices[mask_use_total] = raw_totals[mask_use_total]
 
     # Handle Dividends with Quantity (price per share)
     mask_div_calc = (type_ids == TYPE_DIVIDEND) & (~mask_use_total)
     raw_prices[mask_div_calc] = raw_prices[mask_div_calc] * np.abs(qtys[mask_div_calc])
-    
+
     prices = raw_prices
-    
-    comms = pd.to_numeric(df['Commission'], errors='coerce').fillna(0.0).astype(np.float64).values
-    split_ratios = pd.to_numeric(df['Split Ratio'], errors='coerce').fillna(0.0).astype(np.float64).values
+
+    comms = (
+        pd.to_numeric(df["Commission"], errors="coerce")
+        .fillna(0.0)
+        .astype(np.float64)
+        .values
+    )
+    split_ratios = (
+        pd.to_numeric(df["Split Ratio"], errors="coerce")
+        .fillna(0.0)
+        .astype(np.float64)
+        .values
+    )
 
     # --- Fallback: Use Quantity as Split Ratio if Split Ratio is 0 ---
     # Some importers (e.g. Sharebuilder/E*TRADE auto-imports) put the ratio in the Quantity column
     # while leaving the Split Ratio column empty/zero.
-    mask_split_no_ratio = (type_ids == TYPE_SPLIT) & (np.abs(split_ratios) <= 1e-9) & (np.abs(qtys) > 1e-9)
+    mask_split_no_ratio = (
+        (type_ids == TYPE_SPLIT)
+        & (np.abs(split_ratios) <= 1e-9)
+        & (np.abs(qtys) > 1e-9)
+    )
     if np.any(mask_split_no_ratio):
         # logging.debug(f"Processing {np.sum(mask_split_no_ratio)} splits with missing ratio...")
-        
+
         # Case A: Quantity is "Reasonable Ratio" (<= 20). Use as Ratio.
         mask_ratio_fallback = mask_split_no_ratio & (np.abs(qtys) <= 20.0)
         split_ratios[mask_ratio_fallback] = qtys[mask_ratio_fallback]
-        
+
         # Case B: Quantity is "Target Total Quantity" (> 20). Encode as NEGATIVE value.
         # This signals the Numba loop to use "Target Quantity" logic instead of "Ratio" logic.
         mask_target_qty = mask_split_no_ratio & (np.abs(qtys) > 20.0)
         split_ratios[mask_target_qty] = -np.abs(qtys[mask_target_qty])
-        
+
         # if np.any(mask_target_qty):
         #     logging.debug(f"Identified {np.sum(mask_target_qty)} splits where Quantity (>20) is treated as Target Total Quantity.")
-    
+
     to_acc_ids = np.full(n, -1, dtype=np.int64)
-    if 'To Account' in df.columns:
-        df['To Account'] = df['To Account'].astype(str).str.strip()
-        to_acc_ids = df['To Account'].map(acc_map).fillna(-1).astype(np.int64).values
-    
-    df['Local Currency'] = df['Local Currency'].astype(str).str.strip().str.upper()
-    invalid_curr = ~df['Local Currency'].isin(curr_map)
+    if "To Account" in df.columns:
+        df["To Account"] = df["To Account"].astype(str).str.strip()
+        to_acc_ids = df["To Account"].map(acc_map).fillna(-1).astype(np.int64).values
+
+    df["Local Currency"] = df["Local Currency"].astype(str).str.strip().str.upper()
+    invalid_curr = ~df["Local Currency"].isin(curr_map)
     if invalid_curr.any():
         if default_currency not in curr_map:
             curr_map[default_currency] = len(curr_map)
-            rev_curr_map[len(curr_map)-1] = default_currency
-        df.loc[invalid_curr, 'Local Currency'] = default_currency
-    
-    local_curr_ids = df['Local Currency'].map(curr_map).astype(np.int64).values
-    
-    dates = df['Date'].dt.date.values
-    currs = df['Local Currency'].values
-    fx_rates_hist = np.array([
-        historical_fx_lookup.get((d, c), 1.0) 
-        for d, c in zip(dates, currs)
-    ], dtype=np.float64)
-    
+            rev_curr_map[len(curr_map) - 1] = default_currency
+        df.loc[invalid_curr, "Local Currency"] = default_currency
+
+    local_curr_ids = df["Local Currency"].map(curr_map).astype(np.int64).values
+
+    dates = df["Date"].dt.date.values
+    currs = df["Local Currency"].values
+    fx_rates_hist = np.array(
+        [historical_fx_lookup.get((d, c), 1.0) for d, c in zip(dates, currs)],
+        dtype=np.float64,
+    )
+
     shortable_sym_ids_set = set()
     for s in shortable_symbols:
         if s in sym_map:
             shortable_sym_ids_set.add(sym_map[s])
-    
+
     # Numba List for shortable symbols (Set caused import issues)
     from numba.typed import List as NumbaList
+
     # Initialize with dummy int64 to enforce type, then clear
     nb_shortable = NumbaList([int64(0)])
     nb_shortable.clear()
     for sid in shortable_sym_ids_set:
         nb_shortable.append(sid)
-        
+
     cash_sym_id = sym_map.get(CASH_SYMBOL_CSV, -1)
 
     # --- Build acc_cash_modes array (0=Manual, 1=Auto) ---
@@ -838,60 +948,73 @@ def _process_transactions_to_holdings(
     for acc_name, mode_str in normalized_mode_map.items():
         if acc_name in acc_map and mode_str == "Auto":
             acc_cash_modes[acc_map[acc_name]] = 1
-        
+
     final_state, transfer_costs_nb = _process_numba_core(
-        sym_ids, acc_ids, type_ids, qtys, prices, comms, raw_totals, split_ratios,
-        to_acc_ids, local_curr_ids, fx_rates_hist,
-        nb_shortable, STOCK_QUANTITY_CLOSE_TOLERANCE, cash_sym_id,
-        n, num_syms, num_accs,
-        acc_cash_modes
+        sym_ids,
+        acc_ids,
+        type_ids,
+        qtys,
+        prices,
+        comms,
+        raw_totals,
+        split_ratios,
+        to_acc_ids,
+        local_curr_ids,
+        fx_rates_hist,
+        nb_shortable,
+        STOCK_QUANTITY_CLOSE_TOLERANCE,
+        cash_sym_id,
+        n,
+        num_syms,
+        num_accs,
+        acc_cash_modes,
     )
 
     # --- Tags Aggregation (Outside Numba) ---
     tags_map: Dict[Tuple[str, str], Set[str]] = defaultdict(set)
-    if 'Tags' in df.columns:
+    if "Tags" in df.columns:
         # Vectorized approach to collect tags would be complex, simple iteration is fine for metadata
         # or use groupby
         # Let's iterate over rows where Tags is not empty
-        df_tags = df[df['Tags'].notna() & (df['Tags'] != "")]
+        df_tags = df[df["Tags"].notna() & (df["Tags"] != "")]
         for _, row in df_tags.iterrows():
-            sym = row['Symbol']
-            acc = row['Account']
-            t_str = str(row['Tags'])
+            sym = row["Symbol"]
+            acc = row["Account"]
+            t_str = str(row["Tags"])
             # Split by comma if multiple tags
-            for t in t_str.split(','):
+            for t in t_str.split(","):
                 cleaned_t = t.strip()
                 if cleaned_t:
                     tags_map[(sym, acc)].add(cleaned_t)
-            
+
             # Also handle transfer-in side?
             # If it's a transfer, the tag should technically follow?
             # For now, let's just stick to the account on the transaction record.
-    
+
     holdings = {}
     overall_realized_gains_local = defaultdict(float)
     overall_dividends_local = defaultdict(float)
     overall_commissions_local = defaultdict(float)
     overall_taxes_local = defaultdict(float)
-    
+
     # Unpack 3D Array
     # Iterate only over initialized entries
     # We can use np.where to find initialized entries (index 11 != -1)
     # But iterating num_syms * num_accs is fast if they are small.
     # If they are large, np.where is better.
     # Let's use simple loops for now, or np.argwhere.
-    
+
     # Using np.argwhere on the currency channel
     active_indices = np.argwhere(final_state[:, :, 11] != -1.0)
-    
+
     for idx in active_indices:
         s_id, a_id = idx
         val = final_state[s_id, a_id]
-        
+
         sym = rev_sym_map[s_id]
         acc = rev_acc_map[a_id]
         curr = rev_curr_map[int(val[11])]
-        
+
         holdings[(sym, acc)] = {
             "qty": val[0],
             "total_cost_local": val[1],
@@ -914,25 +1037,26 @@ def _process_transactions_to_holdings(
         overall_dividends_local[curr] += val[3]
         overall_commissions_local[curr] += val[4]
         overall_taxes_local[curr] += val[13]
-        
+
     transfer_costs = {}
-    orig_indices = df['original_index'].values
+    orig_indices = df["original_index"].values
     # transfer_costs_nb is array of size n
     # Find indices where it is not nan
     valid_tc_indices = np.where(~np.isnan(transfer_costs_nb))[0]
     for idx in valid_tc_indices:
         if idx < len(orig_indices):
             transfer_costs[orig_indices[idx]] = transfer_costs_nb[idx]
-            
+
     return (
-        holdings, 
-        dict(overall_realized_gains_local), 
-        dict(overall_dividends_local), 
-        dict(overall_commissions_local), 
+        holdings,
+        dict(overall_realized_gains_local),
+        dict(overall_dividends_local),
+        dict(overall_commissions_local),
         dict(overall_taxes_local),
-        set(), {}, 
-        transfer_costs, 
-        False 
+        set(),
+        {},
+        transfer_costs,
+        False,
     )
 
 
@@ -944,7 +1068,7 @@ def _build_summary_rows(
         str, Dict[str, Optional[float]]
     ],  # Data from MarketDataProvider
     current_fx_rates_vs_usd: Dict[str, float],  # Data from MarketDataProvider
-    current_fx_prev_close_vs_usd: Dict[str, float], # NEW: For Asset Change calc
+    current_fx_prev_close_vs_usd: Dict[str, float],  # NEW: For Asset Change calc
     display_currency: str,
     default_currency: str,
     transactions_df: pd.DataFrame,  # Filtered transactions for IRR/fallback
@@ -953,8 +1077,8 @@ def _build_summary_rows(
     user_excluded_symbols: Set[str],
     user_symbol_map: Dict[str, str],  # New: Accept user symbol map
     manual_prices_dict: Dict[str, float],
-    account_interest_rates: Optional[Dict[str, float]] = None, # NEW
-    interest_free_thresholds: Optional[Dict[str, float]] = None, # NEW
+    account_interest_rates: Optional[Dict[str, float]] = None,  # NEW
+    interest_free_thresholds: Optional[Dict[str, float]] = None,  # NEW
     include_accounts: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str], bool, bool]:
     """
@@ -982,7 +1106,7 @@ def _build_summary_rows(
     include_accounts_norm: Optional[Set[str]] = None
     if include_accounts:
         include_accounts_norm = {str(a).strip().upper() for a in include_accounts}
-    
+
     if account_interest_rates is None:
         account_interest_rates = {}
     if interest_free_thresholds is None:
@@ -995,7 +1119,7 @@ def _build_summary_rows(
     # --- Separate cash from stock holdings ---
     cash_holdings_by_currency: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     stock_holdings: Dict[Tuple[str, str], Dict] = {}
-    
+
     for holding_key, data in holdings.items():
         symbol, account = holding_key
         if is_cash_symbol(symbol):
@@ -1114,8 +1238,8 @@ def _build_summary_rows(
             # If quantity is zero, we don't strictly need a price for valuation.
             # We can skip the noisy fallback/warning and just default to 0.
             if abs(current_qty) < 1e-9:
-                 current_price_local = 0.0
-                 price_source += " - Qty 0 (Skip)"
+                current_price_local = 0.0
+                price_source += " - Qty 0 (Skip)"
             else:
                 price_source += (
                     " - No Manual" if "Manual Fallback" not in price_source else ""
@@ -1134,7 +1258,9 @@ def _build_summary_rows(
                         & account_mask
                         & (transactions_df["Price/Share"].notna())
                         & (
-                            pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
+                            pd.to_numeric(
+                                transactions_df["Price/Share"], errors="coerce"
+                            )
                             > 1e-9
                         )
                         & (transactions_df["Date"].dt.date <= report_date)
@@ -1216,7 +1342,9 @@ def _build_summary_rows(
         if indicated_annual_dividend_rate_local > 0:
             # Estimated Annual Income (Local) - Only for long positions
             if pd.notna(current_qty) and current_qty > 1e-9:
-                est_annual_income_local = indicated_annual_dividend_rate_local * current_qty
+                est_annual_income_local = (
+                    indicated_annual_dividend_rate_local * current_qty
+                )
 
             # Dividend Yield on Cost (Local)
             if (
@@ -1249,11 +1377,11 @@ def _build_summary_rows(
             ):
                 div_yield_on_current_pct_local = (
                     dividend_yield_on_current_direct * 100.0
-                    if dividend_yield_on_current_direct < 1.0 # Yahoo usually returns fraction
+                    if dividend_yield_on_current_direct
+                    < 1.0  # Yahoo usually returns fraction
                     else dividend_yield_on_current_direct
                 )
         # --- END Unified Dividend Calculations ---
-
 
         # Convert dividend metrics to display currency
         div_yield_on_cost_pct_display = div_yield_on_cost_pct_local  # Yields are percentages, not currency dependent directly once calculated
@@ -1286,85 +1414,104 @@ def _build_summary_rows(
         # Robust Logic: Market Gain = (Value Today) - (Value Yesterday) - (Net Flow Today)
         # This correctly isolates market movement from capital flows (buys/sells)
         day_change_value_display = np.nan
-        
-        if pd.notna(current_price_local) and pd.notna(fx_rate) and pd.notna(day_change_local):
-             # 1. Calculate Today's Net Flow and Quantity Change for this holding
-             qty_change_today = 0.0
-             net_flow_today_local = 0.0
-             
-             try:
-                 # Filter transactions for this specific holding on the report date
-                 # report_date is a datetime.date
-                 # MODIFIED: Include 'To Account' in filter for incoming transfers
-                 if 'To Account' in transactions_df.columns:
-                     tx_today = transactions_df[
-                         (transactions_df['Symbol'] == symbol) & 
-                         ((transactions_df['Account'] == account) | (transactions_df['To Account'] == account)) & 
-                         (transactions_df['Date'].dt.date == report_date)
-                     ]
-                 else:
-                     tx_today = transactions_df[
-                         (transactions_df['Symbol'] == symbol) & 
-                         (transactions_df['Account'] == account) & 
-                         (transactions_df['Date'].dt.date == report_date)
-                     ]
-                 
-                 if not tx_today.empty:
-                     for _, tx in tx_today.iterrows():
-                         t_type = str(tx['Type']).lower().strip()
-                         t_qty = abs(float(tx['Quantity']))
-                         t_price = float(tx['Price/Share'])
-                         t_comm = float(tx['Commission']) if pd.notna(tx['Commission']) else 0.0
-                         t_acc = str(tx.get('Account', '')).strip()
-                         t_to_acc = str(tx.get('To Account', '')).strip()
-                         
-                         if t_type in ['buy', 'deposit', 'short sell']:
-                             # Buys/Deposits add to quantity (except short sell adds to the short position, which is negative qty)
-                             qty_change_today += t_qty if t_type != 'short sell' else -t_qty
-                             net_flow_today_local += (t_qty * t_price) + t_comm
-                         elif t_type in ['sell', 'withdrawal', 'buy to cover']:
-                             qty_change_today -= t_qty if t_type != 'buy to cover' else -t_qty
-                             net_flow_today_local -= (t_qty * t_price) - t_comm
-                         elif t_type == 'fees':
-                             net_flow_today_local += t_comm
-                         elif t_type == 'transfer':
-                             # Determine direction for this specific account
-                             if t_to_acc == account:
-                                 # Incoming Transfer (Deposit-like)
-                                 qty_change_today += t_qty
-                                 net_flow_today_local += (t_qty * t_price)
-                             elif t_acc == account:
-                                 # Outgoing Transfer (Withdrawal-like)
-                                 qty_change_today -= t_qty
-                                 net_flow_today_local -= (t_qty * t_price)
-             except Exception as e_flow:
-                 logging.warning(f"Error calculating intra-day flow for {symbol}/{account}: {e_flow}")
 
-             # 2. Get FX Previous Close
-             fx_prev = np.nan
-             if local_currency == display_currency:
-                 fx_prev = 1.0
-             else:
-                 fx_prev = get_conversion_rate(
+        if (
+            pd.notna(current_price_local)
+            and pd.notna(fx_rate)
+            and pd.notna(day_change_local)
+        ):
+            # 1. Calculate Today's Net Flow and Quantity Change for this holding
+            qty_change_today = 0.0
+            net_flow_today_local = 0.0
+
+            try:
+                # Filter transactions for this specific holding on the report date
+                # report_date is a datetime.date
+                # MODIFIED: Include 'To Account' in filter for incoming transfers
+                if "To Account" in transactions_df.columns:
+                    tx_today = transactions_df[
+                        (transactions_df["Symbol"] == symbol)
+                        & (
+                            (transactions_df["Account"] == account)
+                            | (transactions_df["To Account"] == account)
+                        )
+                        & (transactions_df["Date"].dt.date == report_date)
+                    ]
+                else:
+                    tx_today = transactions_df[
+                        (transactions_df["Symbol"] == symbol)
+                        & (transactions_df["Account"] == account)
+                        & (transactions_df["Date"].dt.date == report_date)
+                    ]
+
+                if not tx_today.empty:
+                    for _, tx in tx_today.iterrows():
+                        t_type = str(tx["Type"]).lower().strip()
+                        t_qty = abs(float(tx["Quantity"]))
+                        t_price = float(tx["Price/Share"])
+                        t_comm = (
+                            float(tx["Commission"])
+                            if pd.notna(tx["Commission"])
+                            else 0.0
+                        )
+                        t_acc = str(tx.get("Account", "")).strip()
+                        t_to_acc = str(tx.get("To Account", "")).strip()
+
+                        if t_type in ["buy", "deposit", "short sell"]:
+                            # Buys/Deposits add to quantity (except short sell adds to the short position, which is negative qty)
+                            qty_change_today += (
+                                t_qty if t_type != "short sell" else -t_qty
+                            )
+                            net_flow_today_local += (t_qty * t_price) + t_comm
+                        elif t_type in ["sell", "withdrawal", "buy to cover"]:
+                            qty_change_today -= (
+                                t_qty if t_type != "buy to cover" else -t_qty
+                            )
+                            net_flow_today_local -= (t_qty * t_price) - t_comm
+                        elif t_type == "fees":
+                            net_flow_today_local += t_comm
+                        elif t_type == "transfer":
+                            # Determine direction for this specific account
+                            if t_to_acc == account:
+                                # Incoming Transfer (Deposit-like)
+                                qty_change_today += t_qty
+                                net_flow_today_local += t_qty * t_price
+                            elif t_acc == account:
+                                # Outgoing Transfer (Withdrawal-like)
+                                qty_change_today -= t_qty
+                                net_flow_today_local -= t_qty * t_price
+            except Exception as e_flow:
+                logging.warning(
+                    f"Error calculating intra-day flow for {symbol}/{account}: {e_flow}"
+                )
+
+            # 2. Get FX Previous Close
+            fx_prev = np.nan
+            if local_currency == display_currency:
+                fx_prev = 1.0
+            else:
+                fx_prev = get_conversion_rate(
                     local_currency, display_currency, current_fx_prev_close_vs_usd
-                 )
-             
-             if pd.notna(fx_prev):
-                  # 3. Calculate Components
-                  starting_qty = current_qty - qty_change_today
-                  val_today = current_qty * current_price_local * fx_rate
-                  
-                  price_yesterday_local = current_price_local - day_change_local
-                  val_yesterday = starting_qty * price_yesterday_local * fx_prev
-                  
-                  net_flow_today_display = net_flow_today_local * fx_rate
-                  
-                  # 4. Market Day Gain = Today Value - Yesterday Value - Net Flow
-                  day_change_value_display = val_today - val_yesterday - net_flow_today_display
-             else:
-                 # Fallback if FX prev missing: Ignore FX change, just use local change on starting qty
-                 starting_qty = current_qty - qty_change_today
-                 day_change_value_display = starting_qty * day_change_local * fx_rate
+                )
+
+            if pd.notna(fx_prev):
+                # 3. Calculate Components
+                starting_qty = current_qty - qty_change_today
+                val_today = current_qty * current_price_local * fx_rate
+
+                price_yesterday_local = current_price_local - day_change_local
+                val_yesterday = starting_qty * price_yesterday_local * fx_prev
+
+                net_flow_today_display = net_flow_today_local * fx_rate
+
+                # 4. Market Day Gain = Today Value - Yesterday Value - Net Flow
+                day_change_value_display = (
+                    val_today - val_yesterday - net_flow_today_display
+                )
+            else:
+                # Fallback if FX prev missing: Ignore FX change, just use local change on starting qty
+                starting_qty = current_qty - qty_change_today
+                day_change_value_display = starting_qty * day_change_local * fx_rate
         current_price_display = (
             current_price_local * fx_rate
             if pd.notna(current_price_local) and pd.notna(fx_rate)
@@ -1419,22 +1566,20 @@ def _build_summary_rows(
                     unrealized_gain_pct = 0.0
 
         realized_gain_display = (
-            realized_gain_display_from_holdings 
-            if pd.notna(realized_gain_display_from_holdings) 
+            realized_gain_display_from_holdings
+            if pd.notna(realized_gain_display_from_holdings)
             else (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
         )
         realized_gain_display = (
-            realized_gain_display_from_holdings 
-            if pd.notna(realized_gain_display_from_holdings) 
+            realized_gain_display_from_holdings
+            if pd.notna(realized_gain_display_from_holdings)
             else (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
         )
         dividends_display = dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
         commissions_display = (
             commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
-        taxes_display = (
-            taxes_local * fx_rate if pd.notna(fx_rate) else np.nan
-        )
+        taxes_display = taxes_local * fx_rate if pd.notna(fx_rate) else np.nan
         total_cost_invested_display = (
             total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
@@ -1499,16 +1644,16 @@ def _build_summary_rows(
                             cf_dates[i] = datetime.strptime(d, "%Y-%m-%d").date()
                         except ValueError:
                             # Try ISO format or just keep as is if parse fails (will likely fail later)
-                             pass
+                            pass
                     elif isinstance(d, datetime):
                         cf_dates[i] = d.date()
-                
+
                 # --- NEW: Suppress Annualized IRR for short duration (< 1 year) ---
                 # Check actual holding duration including transfers (via Lots)
                 # Removed flawed earliest_lot_date shift logic
 
                 duration_days = (cf_dates[-1] - cf_dates[0]).days
-                
+
                 if duration_days >= 365:
                     stock_irr = calculate_irr(cf_dates, cf_values)
                 else:
@@ -1612,22 +1757,28 @@ def _build_summary_rows(
                 f"Est. Ann. Income ({display_currency})": est_annual_income_display,
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
-                f"Tax ({display_currency})": (data.get("taxes_local", 0.0) * fx_rate) if pd.notna(fx_rate) else 0.0,
+                f"Tax ({display_currency})": (data.get("taxes_local", 0.0) * fx_rate)
+                if pd.notna(fx_rate)
+                else 0.0,
                 "Name": stock_data.get("name", ""),  # Add Company Name
                 "sparkline_7d": stock_data.get("sparkline_7d", []),
                 "exchange": stock_data.get("exchange"),
                 "fullExchangeName": stock_data.get("fullExchangeName"),
                 "quoteType": stock_data.get("quoteType"),
                 "Tags": tags_list,  # Added Tags
-                "Market Value (Local)": market_value_local, # ADDED 
-                "Price (Local)": current_price_local, # ADDED
-                "Avg Cost (Local)": (cost_basis_display_local / current_qty) if abs(current_qty) > 1e-9 else np.nan, # ADDED
-                "fx_rate": fx_rate, # ADDED: Multiplier from Local -> Display
+                "Market Value (Local)": market_value_local,  # ADDED
+                "Price (Local)": current_price_local,  # ADDED
+                "Avg Cost (Local)": (cost_basis_display_local / current_qty)
+                if abs(current_qty) > 1e-9
+                else np.nan,  # ADDED
+                "fx_rate": fx_rate,  # ADDED: Multiplier from Local -> Display
             }
         )
-        
+
         if symbol == "AAPL":
-            logging.info(f"DEBUG_MARKET: AAPL Data -> Exchange: {stock_data.get('exchange')}, Full: {stock_data.get('fullExchangeName')}, MarketOverride: {data.get('Market')}")
+            logging.info(
+                f"DEBUG_MARKET: AAPL Data -> Exchange: {stock_data.get('exchange')}, Full: {stock_data.get('fullExchangeName')}, MarketOverride: {data.get('Market')}"
+            )
     # --- End Stock/ETF Loop ---
 
     # --- Loop 2: Process Cash Holdings (Per Account - No Aggregation) ---
@@ -1641,9 +1792,9 @@ def _build_summary_rows(
             # --- Skip cash rows with zero quantity ---
             if abs(current_qty) < STOCK_QUANTITY_CLOSE_TOLERANCE:
                 continue
-            
+
             account = h.get("account", "Unknown")
-            
+
             realized_gain_local = h.get("realized_gain_local", 0.0)
             dividends_local = h.get("dividends_local", 0.0)
             commissions_local = h.get("commissions_local", 0.0)
@@ -1652,82 +1803,127 @@ def _build_summary_rows(
             total_cost_invested_local = h.get("total_cost_invested_local", 0.0)
             cumulative_investment_local = h.get("cumulative_investment_local", 0.0)
             total_buy_cost_local = h.get("total_buy_cost_local", 0.0)
-            total_cost_display_historical_fx_val = h.get("total_cost_display_historical_fx", np.nan)
-            
+            total_cost_display_historical_fx_val = h.get(
+                "total_cost_display_historical_fx", np.nan
+            )
+
             local_currency = currency
-            
+
             # --- Format cash symbol ---
             currency_symbol_for_display = get_currency_symbol_from_code(local_currency)
             cash_display_symbol = f"Cash ({currency_symbol_for_display})"
-            
+
             price_source = "Internal (Cash)"
             current_price_local = 1.0
             day_change_local = 0.0
             day_change_pct = 0.0
-            
+
             # --- Currency Conversion ---
             fx_rate = get_conversion_rate(
                 local_currency, display_currency, current_fx_rates_vs_usd
             )
-            
-            if pd.isna(fx_rate):
-                 logging.error(f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for cash in {account}.")
-                 has_errors = True
-                 fx_rate = np.nan
-                 
-            est_annual_income_display = 0.0 # Will be populated in post-processing if rate > 0
 
-            market_value_display_for_yield = current_qty * (fx_rate if pd.notna(fx_rate) else 0.0)
+            if pd.isna(fx_rate):
+                logging.error(
+                    f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for cash in {account}."
+                )
+                has_errors = True
+                fx_rate = np.nan
+
+            est_annual_income_display = (
+                0.0  # Will be populated in post-processing if rate > 0
+            )
+
+            market_value_display_for_yield = current_qty * (
+                fx_rate if pd.notna(fx_rate) else 0.0
+            )
 
             if market_value_display_for_yield > 1e-9:
-                 div_yield_on_current_pct_display = (est_annual_income_display / market_value_display_for_yield) * 100.0
+                div_yield_on_current_pct_display = (
+                    est_annual_income_display / market_value_display_for_yield
+                ) * 100.0
             elif est_annual_income_display > 0:
-                 div_yield_on_current_pct_display = float('inf')
+                div_yield_on_current_pct_display = float("inf")
             else:
-                 div_yield_on_current_pct_display = 0.0
-                 
+                div_yield_on_current_pct_display = 0.0
+
             # --- Calculate Display Currency Values ---
             market_value_local = current_qty * current_price_local
-            market_value_display = (market_value_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            
+            market_value_display = (
+                market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
+
             # Asset Change logic
             day_change_value_display = 0.0
             day_change_pct = 0.0
-            if local_currency != display_currency and pd.notna(fx_rate) and pd.notna(current_qty):
-                 fx_prev = get_conversion_rate(local_currency, display_currency, current_fx_prev_close_vs_usd)
-                 if pd.notna(fx_prev):
-                     val_today = current_qty * 1.0 * fx_rate
-                     val_yesterday = current_qty * 1.0 * fx_prev
-                     day_change_value_display = val_today - val_yesterday
-                     if abs(val_yesterday) > 1e-9:
-                         day_change_pct = (day_change_value_display / val_yesterday) * 100.0
-            
-            current_price_display = (current_price_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            if (
+                local_currency != display_currency
+                and pd.notna(fx_rate)
+                and pd.notna(current_qty)
+            ):
+                fx_prev = get_conversion_rate(
+                    local_currency, display_currency, current_fx_prev_close_vs_usd
+                )
+                if pd.notna(fx_prev):
+                    val_today = current_qty * 1.0 * fx_rate
+                    val_yesterday = current_qty * 1.0 * fx_prev
+                    day_change_value_display = val_today - val_yesterday
+                    if abs(val_yesterday) > 1e-9:
+                        day_change_pct = (
+                            day_change_value_display / val_yesterday
+                        ) * 100.0
+
+            current_price_display = (
+                current_price_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
             cost_basis_display = market_value_display
             avg_cost_price_display = current_price_display
-            
+
             unrealized_gain_display = 0.0
             unrealized_gain_pct = 0.0
-            
-            realized_gain_display = (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            dividends_display = (dividends_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            commissions_display = (commissions_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            taxes_display = (taxes_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            total_cost_invested_display = (total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            cumulative_investment_display = (cumulative_investment_local * fx_rate if pd.notna(fx_rate) else np.nan)
-            total_buy_cost_display = (total_buy_cost_local * fx_rate if pd.notna(fx_rate) else np.nan)
+
+            realized_gain_display = (
+                realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
+            dividends_display = (
+                dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
+            commissions_display = (
+                commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
+            taxes_display = taxes_local * fx_rate if pd.notna(fx_rate) else np.nan
+            total_cost_invested_display = (
+                total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
+            cumulative_investment_display = (
+                cumulative_investment_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
+            total_buy_cost_display = (
+                total_buy_cost_local * fx_rate if pd.notna(fx_rate) else np.nan
+            )
 
             taxes_comp = taxes_display if pd.notna(taxes_display) else 0.0
             total_gain_display = np.nan
-            if all(pd.notna(v) for v in [realized_gain_display, dividends_display, commissions_display]):
-                total_gain_display = realized_gain_display + unrealized_gain_display + dividends_display - commissions_display - taxes_comp
-                
+            if all(
+                pd.notna(v)
+                for v in [realized_gain_display, dividends_display, commissions_display]
+            ):
+                total_gain_display = (
+                    realized_gain_display
+                    + unrealized_gain_display
+                    + dividends_display
+                    - commissions_display
+                    - taxes_comp
+                )
+
             total_return_pct = np.nan
             if pd.notna(total_gain_display) and pd.notna(total_buy_cost_display):
                 if abs(total_buy_cost_display) > 1e-9:
                     # Use Total Buy Cost (Cumulative Deposits) as the denominator for cash
                     # This provides a lifetime return on capital deposited.
-                    total_return_pct = (total_gain_display / total_buy_cost_display) * 100.0
+                    total_return_pct = (
+                        total_gain_display / total_buy_cost_display
+                    ) * 100.0
                 elif abs(total_gain_display) <= 1e-9:
                     total_return_pct = 0.0
 
@@ -1740,14 +1936,14 @@ def _build_summary_rows(
                     transactions_df,
                     abs(market_value_local),
                     is_transfer_a_flow=True,
-                    report_date=report_date
+                    report_date=report_date,
                 )
                 if cf_dates and cf_values:
                     for i in range(len(cf_dates)):
                         d = cf_dates[i]
                         if isinstance(d, (str, datetime)):
                             cf_dates[i] = pd.to_datetime(d).date()
-                    
+
                     duration_days = (cf_dates[-1] - cf_dates[0]).days
                     if duration_days >= 365:
                         stock_irr = calculate_irr(cf_dates, cf_values)
@@ -1755,55 +1951,68 @@ def _build_summary_rows(
                 logging.debug(f"IRR skipped for cash {account}: {e_irr_cash}")
 
             div_yield_on_cost_pct_display = np.nan
-            
+
             fx_gain_loss_display_holding = np.nan
             fx_gain_loss_pct_holding = np.nan
-            
+
             if local_currency == display_currency:
                 fx_gain_loss_display_holding = 0.0
                 fx_gain_loss_pct_holding = 0.0
-            elif pd.notna(cost_basis_display) and abs(cost_basis_display) > 1e-9 and pd.notna(total_cost_display_historical_fx_val):
-                 try:
-                     fx_gain_loss_display_holding = cost_basis_display - total_cost_display_historical_fx_val
-                     if abs(total_cost_display_historical_fx_val) > 1e-9:
-                         fx_gain_loss_pct_holding = (fx_gain_loss_display_holding / total_cost_display_historical_fx_val) * 100.0
-                     elif abs(fx_gain_loss_display_holding) < 1e-9:
-                         fx_gain_loss_pct_holding = 0.0
-                 except Exception as e_fx_gl_cash:
-                     logging.error(f"Error calculating FX G/L for cash {account}: {e_fx_gl_cash}")
+            elif (
+                pd.notna(cost_basis_display)
+                and abs(cost_basis_display) > 1e-9
+                and pd.notna(total_cost_display_historical_fx_val)
+            ):
+                try:
+                    fx_gain_loss_display_holding = (
+                        cost_basis_display - total_cost_display_historical_fx_val
+                    )
+                    if abs(total_cost_display_historical_fx_val) > 1e-9:
+                        fx_gain_loss_pct_holding = (
+                            fx_gain_loss_display_holding
+                            / total_cost_display_historical_fx_val
+                        ) * 100.0
+                    elif abs(fx_gain_loss_display_holding) < 1e-9:
+                        fx_gain_loss_pct_holding = 0.0
+                except Exception as e_fx_gl_cash:
+                    logging.error(
+                        f"Error calculating FX G/L for cash {account}: {e_fx_gl_cash}"
+                    )
 
-            portfolio_summary_rows.append({
-                "Account": account,
-                "Symbol": cash_display_symbol,
-                "Quantity": current_qty,
-                f"Avg Cost ({display_currency})": avg_cost_price_display,
-                f"Price ({display_currency})": current_price_display,
-                f"Cost Basis ({display_currency})": cost_basis_display,
-                f"Market Value ({display_currency})": market_value_display,
-                f"Day Change ({display_currency})": day_change_value_display,
-                "Day Change %": day_change_pct,
-                f"Unreal. Gain ({display_currency})": unrealized_gain_display,
-                "Unreal. Gain %": unrealized_gain_pct,
-                f"Realized Gain ({display_currency})": realized_gain_display,
-                f"Dividends ({display_currency})": dividends_display,
-                f"Commissions ({display_currency})": commissions_display,
-                f"Taxes ({display_currency})": taxes_display,
-                f"Total Gain ({display_currency})": total_gain_display,
-                f"Total Cost Invested ({display_currency})": total_cost_invested_display,
-                "Total Return %": total_return_pct,
-                f"Cumulative Investment ({display_currency})": cumulative_investment_display,
-                f"Total Buy Cost ({display_currency})": total_buy_cost_display,
-                "IRR (%)": stock_irr,
-                "Local Currency": local_currency,
-                "Price Source": price_source,
-                "Div. Yield (Current) %": np.nan, # Will be updated in post-processing
-                f"Est. Ann. Income ({display_currency})": 0.0, # Will be updated in post-processing
-                f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
-                "FX Gain/Loss %": fx_gain_loss_pct_holding,
-                "Name": "Cash",
-                "Market Value (Local)": market_value_local,
-                "fx_rate": fx_rate,
-            })
+            portfolio_summary_rows.append(
+                {
+                    "Account": account,
+                    "Symbol": cash_display_symbol,
+                    "Quantity": current_qty,
+                    f"Avg Cost ({display_currency})": avg_cost_price_display,
+                    f"Price ({display_currency})": current_price_display,
+                    f"Cost Basis ({display_currency})": cost_basis_display,
+                    f"Market Value ({display_currency})": market_value_display,
+                    f"Day Change ({display_currency})": day_change_value_display,
+                    "Day Change %": day_change_pct,
+                    f"Unreal. Gain ({display_currency})": unrealized_gain_display,
+                    "Unreal. Gain %": unrealized_gain_pct,
+                    f"Realized Gain ({display_currency})": realized_gain_display,
+                    f"Dividends ({display_currency})": dividends_display,
+                    f"Commissions ({display_currency})": commissions_display,
+                    f"Taxes ({display_currency})": taxes_display,
+                    f"Total Gain ({display_currency})": total_gain_display,
+                    f"Total Cost Invested ({display_currency})": total_cost_invested_display,
+                    "Total Return %": total_return_pct,
+                    f"Cumulative Investment ({display_currency})": cumulative_investment_display,
+                    f"Total Buy Cost ({display_currency})": total_buy_cost_display,
+                    "IRR (%)": stock_irr,
+                    "Local Currency": local_currency,
+                    "Price Source": price_source,
+                    "Div. Yield (Current) %": np.nan,  # Will be updated in post-processing
+                    f"Est. Ann. Income ({display_currency})": 0.0,  # Will be updated in post-processing
+                    f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
+                    "FX Gain/Loss %": fx_gain_loss_pct_holding,
+                    "Name": "Cash",
+                    "Market Value (Local)": market_value_local,
+                    "fx_rate": fx_rate,
+                }
+            )
 
     # --- Post-Process: Apply Cash Yield Interest (Aggregated by Account) ---
     if account_interest_rates:
@@ -1814,56 +2023,56 @@ def _build_summary_rows(
                 acc = row.get("Account")
                 if acc:
                     account_cash_map[acc].append(row)
-        
+
         # 2. Apply Threshold and Calculate Interest
         for acc_name, rows in account_cash_map.items():
             rate_pct = account_interest_rates.get(acc_name, 0.0)
             if rate_pct <= 0:
                 continue
-                
+
             thresh = interest_free_thresholds.get(acc_name, 0.0)
-            
+
             # Extract fx_rate from the first cash row to convert threshold (assumed in USD) to display currency
             fx_rate = 1.0
             if rows and "fx_rate" in rows[0] and pd.notna(rows[0]["fx_rate"]):
                 fx_rate = rows[0]["fx_rate"]
-            
+
             thresh_display = thresh * fx_rate
-            
+
             # Calculate Total Market Value (Display Currency) for this account's cash
-            total_mv_display = sum(r.get(f"Market Value ({display_currency})", 0.0) for r in rows)
-            
+            total_mv_display = sum(
+                r.get(f"Market Value ({display_currency})", 0.0) for r in rows
+            )
+
             # Calculate Effective Balance (Global Threshold Application)
             # Threshold is now properly converted to Display Currency
             effective_balance_display = max(0.0, total_mv_display - thresh_display)
-            
+
             # Calculate Total Expected Annual Income
             total_income_display = effective_balance_display * (rate_pct / 100.0)
-            
+
             # Distribute income back to rows (weighted by MV)
             if total_mv_display > 1e-9:
                 for r in rows:
                     mv = r.get(f"Market Value ({display_currency})", 0.0)
                     weight = mv / total_mv_display
                     allocated_income = total_income_display * weight
-                    
+
                     r[f"Est. Ann. Income ({display_currency})"] = allocated_income
                     if mv > 1e-9:
                         r["Div. Yield (Current) %"] = (allocated_income / mv) * 100.0
             elif total_income_display > 0:
-                 # Edge case: Total MV is 0 or negative but somehow we have income? Unlikely with max(0, ...).
-                 pass
+                # Edge case: Total MV is 0 or negative but somehow we have income? Unlikely with max(0, ...).
+                pass
     # --- End Cash Loop ---
-
-
 
     # --- NEW: Calculate % of Total for all rows ---
     total_mv_display = sum(
-        row.get(f"Market Value ({display_currency})", 0.0) 
-        for row in portfolio_summary_rows 
+        row.get(f"Market Value ({display_currency})", 0.0)
+        for row in portfolio_summary_rows
         if pd.notna(row.get(f"Market Value ({display_currency})"))
     )
-    
+
     for row in portfolio_summary_rows:
         mv = row.get(f"Market Value ({display_currency})", 0.0)
         if pd.notna(mv) and abs(total_mv_display) > 1e-9:
@@ -1871,18 +2080,18 @@ def _build_summary_rows(
         else:
             row["pct_of_total"] = 0.0
     # --- END NEW ---
-    
+
     # --- NEW: Aggregate IRR Calculation (All Accounts View) ---
-    # To fix the artificially low IRR seen when viewing "All Accounts", we calculate a 
+    # To fix the artificially low IRR seen when viewing "All Accounts", we calculate a
     # true aggregate IRR per symbol across all accounts, ignoring internal transfers.
     if portfolio_summary_rows:
         symbol_agg_mvs = defaultdict(float)
         # Sum local market value per symbol. (Assumes local currency is same across accounts for a given symbol)
         for r in portfolio_summary_rows:
-             sym = r.get("Symbol")
-             if sym and not str(sym).startswith("Cash"):
-                 symbol_agg_mvs[sym] += abs(float(r.get("Market Value (Local)", 0.0)))
-        
+            sym = r.get("Symbol")
+            if sym and not str(sym).startswith("Cash"):
+                symbol_agg_mvs[sym] += abs(float(r.get("Market Value (Local)", 0.0)))
+
         agg_irrs = {}
         for sym, total_mv_local in symbol_agg_mvs.items():
             try:
@@ -1893,7 +2102,7 @@ def _build_summary_rows(
                     transactions_df=transactions_df,
                     final_market_value=float(total_mv_local),
                     is_transfer_a_flow=False,
-                    report_date=report_date
+                    report_date=report_date,
                 )
                 if cf_dates and cf_values:
                     for i in range(len(cf_dates)):
@@ -1905,23 +2114,23 @@ def _build_summary_rows(
                                 pass
                         elif isinstance(d, datetime):
                             cf_dates[i] = d.date()
-                            
+
                     duration_days = (cf_dates[-1] - cf_dates[0]).days
                     if duration_days >= 365:
-                         agg_irr = calculate_irr(cf_dates, cf_values)
-                         if pd.notna(agg_irr):
-                             agg_irrs[sym] = agg_irr * 100.0
+                        agg_irr = calculate_irr(cf_dates, cf_values)
+                        if pd.notna(agg_irr):
+                            agg_irrs[sym] = agg_irr * 100.0
             except Exception as e:
                 logging.warning(f"Failed to calculate aggregate IRR for {sym}: {e}")
-                
+
         # Inject aggregate IRR back into the rows
         for r in portfolio_summary_rows:
-             sym = r.get("Symbol")
-             if sym in agg_irrs:
-                 r["Aggregate IRR (%)"] = agg_irrs[sym]
-                 # We override the account's specific IRR with the Aggregate IRR. 
-                 # Account-level IRR for transferred assets is fundamentally flawed without this.
-                 r["IRR (%)"] = agg_irrs[sym]
+            sym = r.get("Symbol")
+            if sym in agg_irrs:
+                r["Aggregate IRR (%)"] = agg_irrs[sym]
+                # We override the account's specific IRR with the Aggregate IRR.
+                # Account-level IRR for transferred assets is fundamentally flawed without this.
+                r["IRR (%)"] = agg_irrs[sym]
     # --- END AGGREGATE IRR ---
 
     # Drop rows belonging to accounts that are NOT in the user's selected
@@ -1954,9 +2163,12 @@ def _calculate_aggregate_metrics(
     include_accounts: Optional[List[str]] = None,  # <-- New param
     all_available_accounts: Optional[List[str]] = None,
     transactions_df: Optional[pd.DataFrame] = None,
-    historical_fx_rates: Optional[Dict[str, pd.DataFrame]] = None, # ADDED: Historical FX Data
-) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]], bool, bool]: # Fixed return type hint
-
+    historical_fx_rates: Optional[
+        Dict[str, pd.DataFrame]
+    ] = None,  # ADDED: Historical FX Data
+) -> Tuple[
+    Dict[str, Any], Dict[str, Dict[str, float]], bool, bool
+]:  # Fixed return type hint
     """
     Calculates account-level and overall portfolio summary metrics.
     (Implementation remains the same as provided previously - relies only on input df and helpers)
@@ -2057,7 +2269,7 @@ def _calculate_aggregate_metrics(
                 account_full_df, f"FX Gain/Loss ({display_currency})"
             )
             metrics_entry["fx_gain_loss_display"] = acc_fx_gain_loss_display
-            
+
             acc_cost_basis_display_for_fx_pct = safe_sum(
                 account_full_df, f"Cost Basis ({display_currency})"
             )
@@ -2072,7 +2284,7 @@ def _calculate_aggregate_metrics(
             metrics_entry["total_market_value_display"] = safe_sum(
                 account_full_df, f"Market Value ({display_currency})"
             )
-            
+
             metrics_entry["total_realized_gain_display"] = safe_sum(
                 account_full_df, f"Realized Gain ({display_currency})"
             )
@@ -2084,9 +2296,11 @@ def _calculate_aggregate_metrics(
             metrics_entry["total_dividends_display"] = safe_sum(
                 account_full_df, f"Dividends ({display_currency})"
             )
-            metrics_entry["total_taxes_display"] = safe_sum(
-                account_full_df, f"Taxes ({display_currency})"
-            ) if f"Taxes ({display_currency})" in account_full_df.columns else 0.0
+            metrics_entry["total_taxes_display"] = (
+                safe_sum(account_full_df, f"Taxes ({display_currency})")
+                if f"Taxes ({display_currency})" in account_full_df.columns
+                else 0.0
+            )
             metrics_entry["total_commissions_display"] = safe_sum(
                 account_full_df, f"Commissions ({display_currency})"
             )
@@ -2094,11 +2308,11 @@ def _calculate_aggregate_metrics(
             metrics_entry["total_gain_display"] = safe_sum(
                 account_full_df, f"Total Gain ({display_currency})"
             )
-            
+
             metrics_entry["total_taxes_display"] = safe_sum(
                 account_full_df, f"Tax ({display_currency})"
             )
-            
+
             # Sum market value of rows identified as Cash
             if "Name" in account_full_df.columns:
                 acc_cash_rows = account_full_df[account_full_df["Name"] == "Cash"]
@@ -2129,14 +2343,20 @@ def _calculate_aggregate_metrics(
             # --- DEBUG LOGGING ---
             # Log the top contributors to Day Change to trace fluctuations
             if abs(acc_total_day_change_display) > 0:
-                day_change_breakdown = account_full_df[[
-                    "Symbol", f"Day Change ({display_currency})", f"Market Value ({display_currency})"
-                ]].copy()
+                day_change_breakdown = account_full_df[
+                    [
+                        "Symbol",
+                        f"Day Change ({display_currency})",
+                        f"Market Value ({display_currency})",
+                    ]
+                ].copy()
                 day_change_breakdown = day_change_breakdown.sort_values(
                     by=f"Day Change ({display_currency})", key=abs, ascending=False
-                ).head(5) # Top 5 movers
-                
-                logging.info(f"Day Change Breakdown for {account}: Total={acc_total_day_change_display}")
+                ).head(5)  # Top 5 movers
+
+                logging.info(
+                    f"Day Change Breakdown for {account}: Total={acc_total_day_change_display}"
+                )
                 for _, row in day_change_breakdown.iterrows():
                     logging.info(
                         f"  > {row['Symbol']}: DayChg={row[f'Day Change ({display_currency})']}, "
@@ -2241,7 +2461,7 @@ def _calculate_aggregate_metrics(
         if col not in df_for_overall_summary.columns:
             logging.warning(f"Warning: Column '{col}' missing for overall aggregation.")
             has_warnings = True
-    
+
     # --- ADDED: Overall FX Gain/Loss ---
     overall_fx_gain_loss_display = safe_sum(df_for_overall_summary, fx_gain_loss_col)
     # --- END ADDED ---
@@ -2249,7 +2469,7 @@ def _calculate_aggregate_metrics(
     # FIX: EXCLUDE FX Gain/Loss from Overall Market Value (Intrinsic)
     raw_sum_mkt = safe_sum(df_for_overall_summary, mkt_val_col)
     overall_market_value_display = raw_sum_mkt
-    
+
     held_mask = pd.Series(False, index=df_for_overall_summary.index)
     if (
         "Quantity" in df_for_overall_summary.columns
@@ -2262,19 +2482,23 @@ def _calculate_aggregate_metrics(
     )
     # FIX: EXCLUDE FX Gain/Loss from Overall Unrealized Gain (Intrinsic)
     overall_unrealized_gain_display = safe_sum(df_for_overall_summary, unreal_gain_col)
-    
+
     overall_realized_gain_display_agg = safe_sum(df_for_overall_summary, real_gain_col)
     overall_dividends_display_agg = safe_sum(df_for_overall_summary, divs_col)
     overall_commissions_display_agg = safe_sum(df_for_overall_summary, comm_col)
-    overall_taxes_display_agg = safe_sum(df_for_overall_summary, taxes_col) if taxes_col in df_for_overall_summary.columns else 0.0
-    
+    overall_taxes_display_agg = (
+        safe_sum(df_for_overall_summary, taxes_col)
+        if taxes_col in df_for_overall_summary.columns
+        else 0.0
+    )
+
     # FIX: EXCLUDE FX Gain/Loss from Overall Total Gain (Intrinsic)
     overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col)
-    
+
     overall_total_taxes_display = safe_sum(
         df_for_overall_summary, f"Tax ({display_currency})"
     )
-    
+
     overall_total_cost_invested_display = safe_sum(
         df_for_overall_summary, cost_invest_col
     )
@@ -2286,7 +2510,6 @@ def _calculate_aggregate_metrics(
     )
     overall_day_change_display = safe_sum(df_for_overall_summary, day_change_col)
     overall_prev_close_mv_display = np.nan
-
 
     # --- ADDED: Overall Estimated Annual Income ---
     est_ann_income_col = f"Est. Ann. Income ({display_currency})"
@@ -2301,9 +2524,7 @@ def _calculate_aggregate_metrics(
         overall_cash_rows = df_for_overall_summary[
             df_for_overall_summary["Name"] == "Cash"
         ]
-        overall_cash_balance_display = safe_sum(
-            overall_cash_rows, mkt_val_col
-        )
+        overall_cash_balance_display = safe_sum(overall_cash_rows, mkt_val_col)
     # --- END ADDED ---
 
     if pd.notna(overall_market_value_display) and pd.notna(overall_day_change_display):
@@ -2326,8 +2547,8 @@ def _calculate_aggregate_metrics(
     overall_total_return_pct = np.nan
     # IMPROVEMENT: Use overall_total_buy_cost_display (Cumulative Deposits) as the denominator
     # for the overall portfolio return to prevent extreme percentages when the remaining balance is small.
-    overall_denominator = overall_total_buy_cost_display 
-    
+    overall_denominator = overall_total_buy_cost_display
+
     if pd.notna(overall_total_gain_display) and pd.notna(overall_denominator):
         if abs(overall_denominator) > 1e-9:
             overall_total_return_pct = (
@@ -2362,7 +2583,7 @@ def _calculate_aggregate_metrics(
 
     # --- ADDED: Overall MWR (IRR) Calculation ---
     overall_mwr = np.nan
-    
+
     # We need to pass the *filtered* transactions relevant to these accounts.
     # df_for_overall_summary is 'Summary' data, not transactions.
     # 'transactions_df' is passed into this function.
@@ -2376,19 +2597,28 @@ def _calculate_aggregate_metrics(
             if "Account" in transactions_df.columns:
                 # FIX: Must include transactions where Account is in list OR To Account is in list (Transfer In)
                 # Case-insensitive matching is CRITICAL
-                
-                include_accounts_upper = [str(a).strip().upper() for a in include_accounts]
-                
+
+                include_accounts_upper = [
+                    str(a).strip().upper() for a in include_accounts
+                ]
+
                 # Check Account col
-                acc_series = transactions_df["Account"].astype(str).str.strip().str.upper()
+                acc_series = (
+                    transactions_df["Account"].astype(str).str.strip().str.upper()
+                )
                 mask = acc_series.isin(include_accounts_upper)
-                
+
                 if "To Account" in transactions_df.columns:
-                    to_acc_series = transactions_df["To Account"].astype(str).str.strip().str.upper()
+                    to_acc_series = (
+                        transactions_df["To Account"]
+                        .astype(str)
+                        .str.strip()
+                        .str.upper()
+                    )
                     mask = mask | to_acc_series.isin(include_accounts_upper)
-                
+
                 tx_for_mwr = transactions_df[mask]
-        
+
         # Calculate Cash Flows (portfolio-level basis: buys/sells/divs are internal, not flows)
         mwr_dates, mwr_flows = get_cash_flows_for_mwr(
             account_transactions=tx_for_mwr,
@@ -2396,25 +2626,35 @@ def _calculate_aggregate_metrics(
             end_date=report_date,
             target_currency=display_currency,
             fx_rates=fx_rates,
-            historical_fx_rates=historical_fx_rates, # ADDED: Historical FX Data
+            historical_fx_rates=historical_fx_rates,  # ADDED: Historical FX Data
             display_currency=display_currency,
-            include_accounts=(include_accounts if include_accounts else all_available_accounts), # PASS SCOPE for Transfer logic
+            include_accounts=(
+                include_accounts if include_accounts else all_available_accounts
+            ),  # PASS SCOPE for Transfer logic
             flow_basis="portfolio",
         )
-        
+
         if mwr_dates and mwr_flows:
-             overall_mwr = calculate_irr(mwr_dates, mwr_flows)
-             if pd.notna(overall_mwr):
-                 overall_mwr = overall_mwr * 100.0 # Convert to percentage
-             else:
-                 logging.debug(f"MWR Calc Failed (Result NaN). Dates: {len(mwr_dates)}, Flows: {len(mwr_flows)}")
+            overall_mwr = calculate_irr(mwr_dates, mwr_flows)
+            if pd.notna(overall_mwr):
+                overall_mwr = overall_mwr * 100.0  # Convert to percentage
+            else:
+                logging.debug(
+                    f"MWR Calc Failed (Result NaN). Dates: {len(mwr_dates)}, Flows: {len(mwr_flows)}"
+                )
         else:
-             logging.debug(f"MWR Prep Failed (No flows). Market Val: {overall_market_value_display}, TX Count: {len(tx_for_mwr) if not tx_for_mwr.empty else 0}")
+            logging.debug(
+                f"MWR Prep Failed (No flows). Market Val: {overall_market_value_display}, TX Count: {len(tx_for_mwr) if not tx_for_mwr.empty else 0}"
+            )
 
     # --- END ADDED ---
 
     # --- ADDED: Account-Level MWR (IRR) Calculation ---
-    if transactions_df is not None and not transactions_df.empty and "Account" in transactions_df.columns:
+    if (
+        transactions_df is not None
+        and not transactions_df.empty
+        and "Account" in transactions_df.columns
+    ):
         # We need to calculate MWR for each account in account_level_metrics
         # Note: account_level_metrics keys are account names.
         for account in account_level_metrics:
@@ -2423,23 +2663,33 @@ def _calculate_aggregate_metrics(
                 # Match account name exactly (including transfers IN where this account is "To Account")
                 # Case-insensitive match
                 account_upper = str(account).strip().upper()
-                
-                acc_series_sub = transactions_df["Account"].astype(str).str.strip().str.upper()
+
+                acc_series_sub = (
+                    transactions_df["Account"].astype(str).str.strip().str.upper()
+                )
                 to_acc_series_sub = pd.Series(False, index=transactions_df.index)
                 if "To Account" in transactions_df.columns:
-                    to_acc_series_sub = transactions_df["To Account"].astype(str).str.strip().str.upper() == account_upper
+                    to_acc_series_sub = (
+                        transactions_df["To Account"]
+                        .astype(str)
+                        .str.strip()
+                        .str.upper()
+                        == account_upper
+                    )
 
                 account_tx = transactions_df[
                     (acc_series_sub == account_upper) | to_acc_series_sub
                 ]
-                
+
                 if account_tx.empty:
                     continue
-                    
+
                 # Get current market value for this account from the metrics we just built
                 # account_level_metrics is a dict of dicts
-                account_mv = account_level_metrics[account].get("total_market_value_display", 0.0)
-                
+                account_mv = account_level_metrics[account].get(
+                    "total_market_value_display", 0.0
+                )
+
                 # Calculate Cash Flows using the helper (portfolio basis for per-account MWR)
                 mwr_dates, mwr_flows = get_cash_flows_for_mwr(
                     account_transactions=account_tx,
@@ -2449,25 +2699,27 @@ def _calculate_aggregate_metrics(
                     fx_rates=fx_rates,
                     historical_fx_rates=historical_fx_rates,
                     display_currency=display_currency,
-                    include_accounts=[account], # PASS SINGLE ACCOUNT SCOPE
+                    include_accounts=[account],  # PASS SINGLE ACCOUNT SCOPE
                     flow_basis="portfolio",
                 )
-                
+
                 if mwr_dates and mwr_flows:
                     account_mwr = calculate_irr(mwr_dates, mwr_flows)
                     if pd.notna(account_mwr):
                         # Update the metric for this account
                         # The dashboard expects 'portfolio_mwr' or 'mwr'
                         account_level_metrics[account]["mwr"] = account_mwr * 100.0
-                        account_level_metrics[account]["portfolio_mwr"] = account_mwr * 100.0 # Map for safety
+                        account_level_metrics[account]["portfolio_mwr"] = (
+                            account_mwr * 100.0
+                        )  # Map for safety
                     else:
                         # Calculation resulted in NaN (no solution or invalid data)
                         pass
             except Exception as e_acct_mwr:
-                logging.warning(f"Failed to calculate MWR for account '{account}': {e_acct_mwr}")
+                logging.warning(
+                    f"Failed to calculate MWR for account '{account}': {e_acct_mwr}"
+                )
     # --- END ACCOUNT MWR ---
-    
-
 
     overall_summary_metrics = {
         "market_value": overall_market_value_display,
@@ -2480,7 +2732,7 @@ def _calculate_aggregate_metrics(
         "total_gain": overall_total_gain_display,
         "total_cost_invested": overall_total_cost_invested_display,
         "total_buy_cost": overall_total_buy_cost_display,
-        "portfolio_mwr": overall_mwr, # Using the calculated value
+        "portfolio_mwr": overall_mwr,  # Using the calculated value
         "day_change_display": overall_day_change_display,
         "day_change_percent": overall_day_change_percent,
         "report_date": report_date.strftime("%Y-%m-%d"),
@@ -2492,7 +2744,7 @@ def _calculate_aggregate_metrics(
         "est_annual_income_display": overall_est_annual_income_display,  # ADDED
         "dividend_yield_pct": overall_dividend_yield_pct,  # ADDED
         "cash_balance": overall_cash_balance_display,  # ADDED
-        "total_taxes": overall_total_taxes_display, # ADDED
+        "total_taxes": overall_total_taxes_display,  # ADDED
     }
     logging.debug(
         f"--- Finished Aggregating Metrics. Overall Market Value: {overall_market_value_display} ---"
@@ -2569,7 +2821,7 @@ def calculate_periodic_returns(
             # --- MODIFIED: Include daily_gain for value change calculation ---
             cols_to_resample = list(valid_gain_cols)
             agg_dict = {col: "last" for col in valid_gain_cols}
-            
+
             # Determine which daily gain column to use (it might be renamed to 'Portfolio Daily Gain')
             target_daily_gain_col = "daily_gain"
             if "Portfolio Daily Gain" in historical_df.columns:
@@ -2578,7 +2830,7 @@ def calculate_periodic_returns(
             if target_daily_gain_col in historical_df.columns:
                 cols_to_resample.append(target_daily_gain_col)
                 agg_dict[target_daily_gain_col] = "sum"
-            
+
             # Check for Cumulative Net Flow to calculate periodic flows
             net_flow_col = "Cumulative Net Flow"
             if net_flow_col in historical_df.columns:
@@ -2589,22 +2841,26 @@ def calculate_periodic_returns(
             resampled_data = (
                 historical_df[cols_to_resample].resample(freq_code).agg(agg_dict)
             )
-            
+
             # Separate factors and value changes
             resampled_factors = resampled_data[valid_gain_cols]
-            resampled_value_change = resampled_data[target_daily_gain_col] if target_daily_gain_col in resampled_data.columns else pd.Series()
-            
+            resampled_value_change = (
+                resampled_data[target_daily_gain_col]
+                if target_daily_gain_col in resampled_data.columns
+                else pd.Series()
+            )
+
             # Calculate periodic net flow
             resampled_net_flow = pd.Series(dtype=float)
             if net_flow_col in resampled_data.columns:
                 # Calculate diff to get flow per period
                 resampled_net_flow = resampled_data[net_flow_col].diff()
                 # Initial period flow is just the cumulative flow at that point (assuming start from 0 or handling disjoint periods)
-                # However, resample('ME') essentially snapshots the cumulative at end. 
+                # However, resample('ME') essentially snapshots the cumulative at end.
                 # If the first period snapshots at X, and prev was 0, then flow is X.
                 # But we must be careful about the very first entry if it's not 0.
                 if not resampled_net_flow.empty:
-                     resampled_net_flow.iloc[0] = resampled_data[net_flow_col].iloc[0]
+                    resampled_net_flow.iloc[0] = resampled_data[net_flow_col].iloc[0]
 
             # --- END MODIFIED ---
 
@@ -2616,7 +2872,7 @@ def calculate_periodic_returns(
                 resampled_factors = resampled_factors[mask]
                 if not resampled_value_change.empty:
                     resampled_value_change = resampled_value_change[mask]
-                
+
                 # Filter Net Flow as well
                 if not resampled_net_flow.empty:
                     resampled_net_flow = resampled_net_flow[mask]
@@ -2624,9 +2880,14 @@ def calculate_periodic_returns(
                 # Filter out US Holidays
                 try:
                     # --- FIX: Ensure index has valid dates to avoid 'float' error ---
-                    if not resampled_factors.empty and pd.notnull(resampled_factors.index.min()):
+                    if not resampled_factors.empty and pd.notnull(
+                        resampled_factors.index.min()
+                    ):
                         cal = USFederalHolidayCalendar()
-                        holidays = cal.holidays(start=resampled_factors.index.min(), end=resampled_factors.index.max())
+                        holidays = cal.holidays(
+                            start=resampled_factors.index.min(),
+                            end=resampled_factors.index.max(),
+                        )
                         mask_hol = ~resampled_factors.index.isin(holidays)
                         resampled_factors = resampled_factors[mask_hol]
                         if not resampled_value_change.empty:
@@ -2650,15 +2911,19 @@ def calculate_periodic_returns(
 
                 # Convert to percentage
                 period_returns_df *= 100.0
-                
+
                 # Add Value Change column
                 if not resampled_value_change.empty:
                     # Align indices just in case
-                    period_returns_df[f"Portfolio {interval_key}-Value"] = resampled_value_change
-                
+                    period_returns_df[f"Portfolio {interval_key}-Value"] = (
+                        resampled_value_change
+                    )
+
                 # Add Net Flow column
                 if not resampled_net_flow.empty:
-                    period_returns_df[f"Portfolio {interval_key}-NetFlow"] = resampled_net_flow
+                    period_returns_df[f"Portfolio {interval_key}-NetFlow"] = (
+                        resampled_net_flow
+                    )
             else:
                 period_returns_df = pd.DataFrame(columns=resampled_factors.columns)
             # --- END MODIFIED ---
@@ -2785,11 +3050,12 @@ def extract_dividend_history(
         return pd.DataFrame()
 
     # Capture both dividends and taxes
-    dividend_mask = (all_transactions_df["Type"].str.lower() == "dividend") | \
-                    ((all_transactions_df["Type"].str.lower() == "interest") & 
-                     (all_transactions_df["Symbol"].str.upper() == "$CASH"))
-    tax_mask = (all_transactions_df["Type"].str.lower().isin(["tax", "withholding tax"]))
-    
+    dividend_mask = (all_transactions_df["Type"].str.lower() == "dividend") | (
+        (all_transactions_df["Type"].str.lower() == "interest")
+        & (all_transactions_df["Symbol"].str.upper() == "$CASH")
+    )
+    tax_mask = all_transactions_df["Type"].str.lower().isin(["tax", "withholding tax"])
+
     dividend_transactions = all_transactions_df[dividend_mask].copy()
     tax_transactions = all_transactions_df[tax_mask].copy()
 
@@ -2991,7 +3257,7 @@ def calculate_fifo_lots_and_gains(
     # Dictionary to store purchase lots: (symbol, account) -> list of lots
     holdings_long: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     realized_gains_records: List[Dict[str, Any]] = []
-    
+
     # Track splits already applied to avoid double-processing (symbol, date, ratio)
     processed_splits: Set[Tuple[str, date, float]] = set()
 
@@ -3000,7 +3266,7 @@ def calculate_fifo_lots_and_gains(
     # To be safe within this function, we operate on the passed df directly if the caller prepared it,
     # or iterate. The caller is responsible for filtering out unwanted rows if any,
     # BUT this function does the main type/symbol filtering.
-    
+
     # We iterate the DataFrame.
     for _, row in transactions_df.iterrows():
         try:
@@ -3137,7 +3403,9 @@ def calculate_fifo_lots_and_gains(
                 for lot in lots:
                     current_basis += lot["qty"] * lot["cost_per_share_local_net"]
                 if current_basis > 1e-9:
-                    reduce_amt = total_amt if total_amt < current_basis else current_basis
+                    reduce_amt = (
+                        total_amt if total_amt < current_basis else current_basis
+                    )
                     factor = 1.0 - (reduce_amt / current_basis)
                     for lot in lots:
                         lot["cost_per_share_local_net"] *= factor
@@ -3237,7 +3505,7 @@ def calculate_fifo_lots_and_gains(
                 realized_gain_display = (
                     total_proceeds_display - total_cost_basis_display_for_this_sale
                 )
-            
+
             # Fallback logic for display gain
             if pd.isna(realized_gain_display) and pd.notna(realized_gain_local):
                 if current_fx_rates_vs_usd:
@@ -3277,7 +3545,7 @@ def calculate_fifo_lots_and_gains(
 
     df_gains = pd.DataFrame(realized_gains_records, columns=output_columns)
     df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
-    
+
     return df_gains, dict(holdings_long)
 
 
@@ -3306,13 +3574,22 @@ def extract_realized_capital_gains_history(
         logging.warning("Capital gains: Input transactions DataFrame is empty.")
         # Return empty DF with correct columns (logic inside calc fn handles this but we need empty input handling)
         return pd.DataFrame(
-             columns=[
-                "Date", "Symbol", "Account", "Type", "Quantity", 
-                "Avg Sale Price (Local)", "Total Proceeds (Local)", 
-                "Total Cost Basis (Local)", "Realized Gain (Local)", 
-                "Sale/Cover FX Rate", "Total Proceeds (Display)", 
-                "Total Cost Basis (Display)", "Realized Gain (Display)", 
-                "LocalCurrency", "original_tx_id"
+            columns=[
+                "Date",
+                "Symbol",
+                "Account",
+                "Type",
+                "Quantity",
+                "Avg Sale Price (Local)",
+                "Total Proceeds (Local)",
+                "Total Cost Basis (Local)",
+                "Realized Gain (Local)",
+                "Sale/Cover FX Rate",
+                "Total Proceeds (Display)",
+                "Total Cost Basis (Display)",
+                "Realized Gain (Display)",
+                "LocalCurrency",
+                "original_tx_id",
             ]
         )
 
@@ -3337,7 +3614,7 @@ def extract_realized_capital_gains_history(
     if include_accounts and isinstance(include_accounts, list):
         include_accounts_upper = [str(acc).upper().strip() for acc in include_accounts]
         if not df_gains.empty:
-             df_gains = df_gains[df_gains["Account"].isin(include_accounts_upper)]
+            df_gains = df_gains[df_gains["Account"].isin(include_accounts_upper)]
 
     # 4. Filter by Date (Tax Year / Custom Range)
     if not df_gains.empty:
@@ -3345,16 +3622,16 @@ def extract_realized_capital_gains_history(
         # It usually comes out as datetime from calculate_fifo_lots_and_gains (from transactions_df)
         # normalize to date for comparison
         if "Date" in df_gains.columns:
-             # Convert to datetime if needed, though likely already is
-             if not pd.api.types.is_datetime64_any_dtype(df_gains["Date"]):
-                 df_gains["Date"] = pd.to_datetime(df_gains["Date"])
-             
-             if from_date:
-                 # pd.Timestamp(from_date) compares well with datetime64
-                 df_gains = df_gains[df_gains["Date"] >= pd.Timestamp(from_date)]
-             
-             if to_date:
-                 df_gains = df_gains[df_gains["Date"] <= pd.Timestamp(to_date)]
+            # Convert to datetime if needed, though likely already is
+            if not pd.api.types.is_datetime64_any_dtype(df_gains["Date"]):
+                df_gains["Date"] = pd.to_datetime(df_gains["Date"])
+
+            if from_date:
+                # pd.Timestamp(from_date) compares well with datetime64
+                df_gains = df_gains[df_gains["Date"] >= pd.Timestamp(from_date)]
+
+            if to_date:
+                df_gains = df_gains[df_gains["Date"] <= pd.Timestamp(to_date)]
 
     logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
     return df_gains
@@ -3472,7 +3749,9 @@ def calculate_rebalancing_trades(
     summary["Estimated Number of Trades"] = len(trades)
     return pd.DataFrame(trades), summary
 
+
 # --- Portfolio Health Analysis ---
+
 
 def calculate_hhi(weights: List[float]) -> float:
     """
@@ -3482,78 +3761,77 @@ def calculate_hhi(weights: List[float]) -> float:
     """
     if not weights:
         return 1.0
-    
+
     # Ensure weights are normalized sum to 1
     total_w = sum(weights)
     if total_w == 0:
         return 0.0
-        
+
     normalized_weights = [w / total_w for w in weights]
     hhi = sum(w**2 for w in normalized_weights)
     return hhi
 
+
 def calculate_health_score(
-    summary_df: pd.DataFrame, 
+    summary_df: pd.DataFrame,
     risk_metrics: Dict[str, float],
-    risk_free_rate: float = 0.02
+    risk_free_rate: float = 0.02,
 ) -> Dict[str, Any]:
     """
     Calculates a comprehensive 'Health Score' for the portfolio.
-    
+
     Components:
     1. Diversification (HHI of asset weights).
     2. Efficiency (Sharpe Ratio).
     3. Volatility Check (Penalty if too high).
     """
     _score_breakdown = {}
-    
+
     # 1. Diversification Score (0-100)
-    # HHI Approach: Lower is better. 
+    # HHI Approach: Lower is better.
     # HHI < 1500 (0.15) is Competitive (Good)
     # HHI 1500-2500 (0.15-0.25) is Moderately Concentrated
     # HHI > 2500 (0.25) is Highly Concentrated
-    
+
     relevant_holdings = pd.DataFrame()
-    
+
     # Identify the Market Value column (it usually has currency like "Market Value (USD)")
-    mv_col = next((c for c in summary_df.columns if c.startswith("Market Value (")), None)
-    
-    if not summary_df.empty and 'Symbol' in summary_df.columns and mv_col:
+    mv_col = next(
+        (c for c in summary_df.columns if c.startswith("Market Value (")), None
+    )
+
+    if not summary_df.empty and "Symbol" in summary_df.columns and mv_col:
         # Robustly handle is_total if it doesn't exist
-        if 'is_total' in summary_df.columns:
-            is_total_mask = summary_df['is_total'].fillna(False)
+        if "is_total" in summary_df.columns:
+            is_total_mask = summary_df["is_total"].fillna(False)
         else:
             is_total_mask = pd.Series(False, index=summary_df.index)
 
         relevant_holdings = summary_df[
-            (summary_df['Symbol'] != 'Total') & 
-            (summary_df[mv_col] > 0) & 
-            (~is_total_mask)
+            (summary_df["Symbol"] != "Total")
+            & (summary_df[mv_col] > 0)
+            & (~is_total_mask)
         ]
-    
+
     if relevant_holdings.empty:
-        return {
-            "overall_score": 0,
-            "components": {},
-            "rating": "N/A"
-        }
-        
+        return {"overall_score": 0, "components": {}, "rating": "N/A"}
+
     weights = relevant_holdings[mv_col].tolist()
     hhi = calculate_hhi(weights)
-    
-    # Convert HHI to Score (Inverse). 
+
+    # Convert HHI to Score (Inverse).
     # Current HHI range is [1/N to 1.0].
-    # Logic: 
+    # Logic:
     # HHI 0.1 (10 equal stocks) -> 90 Score
     # HHI 0.2 (5 equal stocks) -> 70 Score
     # HHI 1.0 (1 stock) -> 10 Score
-    # Formula: 100 * (1 - hhi^0.4) approx? 
+    # Formula: 100 * (1 - hhi^0.4) approx?
     # 0.1^0.4 = 0.39 -> 100*(1-0.39)=61. Too low.
     # Let's use: 100 * (1.0 - (hhi ** 0.5)) but shift it.
     # Actually, a simple linear-ish curve or adjusted power:
-    div_score = 100 * (1.0 - (hhi ** 0.6)) + 10
+    div_score = 100 * (1.0 - (hhi**0.6)) + 10
     div_score = max(0, min(100, div_score))
-    
+
     # 2. Efficiency Score (Sharpe)
     # New Logic:
     # Sharpe 0.0 -> Score 30 (Poor, matching risk-free isn't 'fair' for stocks)
@@ -3561,7 +3839,7 @@ def calculate_health_score(
     # Sharpe 1.5 -> Score 100 (Excellent)
     sharpe = risk_metrics.get("Sharpe Ratio", 0.0)
     if sharpe <= 0:
-        eff_score = max(0, 30 + (sharpe * 10)) # Penalize negative sharpe
+        eff_score = max(0, 30 + (sharpe * 10))  # Penalize negative sharpe
     else:
         # Scale 0 to 1.0 -> 30 to 80
         # Scale 1.0 to 1.5 -> 80 to 100
@@ -3569,9 +3847,9 @@ def calculate_health_score(
             eff_score = 30 + (sharpe * 50)
         else:
             eff_score = 80 + ((sharpe - 1.0) * 40)
-            
+
     eff_score = max(0, min(100, eff_score))
-    
+
     # 3. Volatility Penalty / Score
     # Volatility logic:
     # Vol 0.0 -> Score 50 (Neutral/Insufficient Data)
@@ -3581,17 +3859,17 @@ def calculate_health_score(
     if vol == 0:
         vol_score = 50.0
     elif vol < 0.05:
-        vol_score = 70.0 # Extreme low vol (cash-like)
+        vol_score = 70.0  # Extreme low vol (cash-like)
     elif vol <= 0.25:
-        vol_score = 100.0 # Ideal range
+        vol_score = 100.0  # Ideal range
     else:
         # Penalty for high vol
-        vol_score = max(0, 100 - (vol - 0.25) * 200) # 35% vol -> 80 score
-        
+        vol_score = max(0, 100 - (vol - 0.25) * 200)  # 35% vol -> 80 score
+
     # Composite Score
     # Weighted average: Div 40%, Eff 40%, Vol 20%
     overall = (div_score * 0.4) + (eff_score * 0.4) + (vol_score * 0.2)
-    
+
     # Rating
     if overall >= 80:
         rating = "Excellent"
@@ -3603,28 +3881,29 @@ def calculate_health_score(
         rating = "Poor"
     else:
         rating = "Critical"
-    
+
     return {
         "overall_score": round(overall, 1),
         "rating": rating,
         "components": {
             "diversification": {
                 "score": round(div_score, 1),
-                "metric": round(hhi, 3), 
-                "label": "HHI (Concentration)"
+                "metric": round(hhi, 3),
+                "label": "HHI (Concentration)",
             },
             "efficiency": {
                 "score": round(eff_score, 1),
                 "metric": round(sharpe, 2),
-                "label": "Sharpe Ratio"
+                "label": "Sharpe Ratio",
             },
             "stability": {
                 "score": round(vol_score, 1),
                 "metric": f"{round(vol * 100, 1)}%",
-                "label": "Volatility"
-            }
-        }
+                "label": "Volatility",
+            },
+        },
     }
+
 
 # --- ADDED: Helper to calculate monthly cash interest events (Shared) ---
 def generate_cash_interest_events(
@@ -3633,37 +3912,46 @@ def generate_cash_interest_events(
     thresholds: Dict[str, float],
     start_date: date,
     end_date: date,
-    display_currency: str = "USD"
+    display_currency: str = "USD",
 ) -> List[Dict[str, Any]]:
     """
     Generates estimated monthly cash interest events using pre-calculated summary rows.
     """
     events = []
-    
+
     # 1. Aggregate Cash Balances by Account (from Summary Rows)
     # The summary rows are already in Display Currency (USD) and netted correctly.
     account_usd_balances = defaultdict(float)
-    
-    logging.info(f"GenCashInterest: Processing {len(portfolio_summary_rows)} summary rows. Interest Rates keys: {list(interest_rates.keys())}")
-    
+
+    logging.info(
+        f"GenCashInterest: Processing {len(portfolio_summary_rows)} summary rows. Interest Rates keys: {list(interest_rates.keys())}"
+    )
+
     for row in portfolio_summary_rows:
         # Check if it's a cash row
         sym = row.get("Symbol", "")
         # Add simpler check for safety in case of formatting changes
-        is_cash = sym == "$CASH" or sym.startswith("Cash ") or row.get("Name") == "Cash" or "Cash (" in sym
-        
+        is_cash = (
+            sym == "$CASH"
+            or sym.startswith("Cash ")
+            or row.get("Name") == "Cash"
+            or "Cash (" in sym
+        )
+
         if is_cash:
-             account = row.get("Account")
-             if account:
-                 # ROBUST LOOKUP: Find 'Market Value (...)' key
-                 mv = 0.0
-                 for k, v in row.items():
-                     if k.startswith("Market Value (") and isinstance(v, (int, float)):
-                         mv = v
-                         break
-                 
-                 account_usd_balances[account] += mv
-                 logging.info(f"GenCashInterest: Found cash row for {account}: {sym}, MV={mv}")
+            account = row.get("Account")
+            if account:
+                # ROBUST LOOKUP: Find 'Market Value (...)' key
+                mv = 0.0
+                for k, v in row.items():
+                    if k.startswith("Market Value (") and isinstance(v, (int, float)):
+                        mv = v
+                        break
+
+                account_usd_balances[account] += mv
+                logging.info(
+                    f"GenCashInterest: Found cash row for {account}: {sym}, MV={mv}"
+                )
 
     logging.info(f"GenCashInterest: Aggregated Balances: {dict(account_usd_balances)}")
 
@@ -3671,40 +3959,43 @@ def generate_cash_interest_events(
 
     # --- Generate Events per Account (Consolidated) ---
     for account, balance_usd in account_usd_balances.items():
-            
         # Apply Account Settings
         rate = interest_rates.get(account)
         if not rate or rate <= 0:
             continue
-            
+
         # Apply Threshold (Global per Account)
         threshold = thresholds.get(account, 0.0)
         effective_balance_usd = max(0, balance_usd - threshold)
-        
+
         if effective_balance_usd <= 0:
             continue
-            
+
         # Calculate Annual Interest (USD)
         annual_income_usd = effective_balance_usd * (rate / 100.0)
         monthly_payment_usd = annual_income_usd / 12.0
-        
+
         if monthly_payment_usd > 0.01:
             # Anchor to the current month to ensure we cover all 12 months of the projection window
             iter_date = today.replace(day=1)
-            
-            logging.info(f"GenCashInterest: Projecting for {account}: Rate={rate}%, Bal={balance_usd}, Monthly={monthly_payment_usd:.2f}, Start={iter_date}")
-            
+
+            logging.info(
+                f"GenCashInterest: Projecting for {account}: Rate={rate}%, Bal={balance_usd}, Monthly={monthly_payment_usd:.2f}, Start={iter_date}"
+            )
+
             # Generate monthly events
             while iter_date <= end_date:
-                events.append({
-                    "symbol": "$CASH",
-                    "dividend_date": str(iter_date),
-                    "ex_dividend_date": "",
-                    "amount": monthly_payment_usd,
-                    "status": "estimated",
-                    "account": account,
-                    "name": f"Cash Interest ({account})" # Consolidated Name
-                })
+                events.append(
+                    {
+                        "symbol": "$CASH",
+                        "dividend_date": str(iter_date),
+                        "ex_dividend_date": "",
+                        "amount": monthly_payment_usd,
+                        "status": "estimated",
+                        "account": account,
+                        "name": f"Cash Interest ({account})",  # Consolidated Name
+                    }
+                )
                 iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
-                    
+
     return events

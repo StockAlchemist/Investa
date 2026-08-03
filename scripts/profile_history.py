@@ -13,6 +13,7 @@ Defaults: username=kitmatan, period=max
 Outputs a .prof file under profiles/ and prints the top hotspots by total
 (self) time and cumulative time.
 """
+
 import asyncio
 import cProfile
 import os
@@ -42,12 +43,12 @@ async def run_once(data):
     return await _calculate_historical_performance_internal(
         currency=CURRENCY,
         period=PERIOD,
-        accounts=None,        # all accounts
-        benchmarks=[],        # skip benchmark fetches (network) to isolate compute
+        accounts=None,  # all accounts
+        benchmarks=[],  # skip benchmark fetches (network) to isolate compute
         data=data,
         return_df=True,
         interval="1d",
-        force=True,           # bypass snapshot/result caches -> real compute
+        force=True,  # bypass snapshot/result caches -> real compute
     )
 
 
@@ -68,7 +69,9 @@ def main():
     # run before; any large numba-compiler frames in the output = one-time JIT.
     print(f"Profiled COLD run (period={PERIOD})...")
     os.makedirs(os.path.join(SRC, "..", "profiles"), exist_ok=True)
-    out = os.path.abspath(os.path.join(SRC, "..", "profiles", f"history_{USERNAME}_{PERIOD}.prof"))
+    out = os.path.abspath(
+        os.path.join(SRC, "..", "profiles", f"history_{USERNAME}_{PERIOD}.prof")
+    )
     pr = cProfile.Profile()
     t0 = time.perf_counter()
     pr.enable()

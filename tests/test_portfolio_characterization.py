@@ -56,8 +56,13 @@ class FakeMDP:
     quote dicts with 'price'/'currency', frames with a 'price' column.
     """
 
-    def get_current_quotes(self, internal_stock_symbols, required_currencies,
-                           user_symbol_map, user_excluded_symbols):
+    def get_current_quotes(
+        self,
+        internal_stock_symbols,
+        required_currencies,
+        user_symbol_map,
+        user_excluded_symbols,
+    ):
         quotes = {}
         for s in set(internal_stock_symbols):
             if s in PRICES:
@@ -78,8 +83,10 @@ class FakeMDP:
         return {s: {} for s in yf_symbols}
 
     def _ensure_metadata_batch(self, yf_symbols):
-        return {s: {"currency": CURRENCY.get(s, "USD"), "name": s, "quoteType": "EQUITY"}
-                for s in yf_symbols}
+        return {
+            s: {"currency": CURRENCY.get(s, "USD"), "name": s, "quoteType": "EQUITY"}
+            for s in yf_symbols
+        }
 
     def get_historical_data(self, symbols_yf, start_date, end_date, **kwargs):
         idx = _bdays(start_date, end_date)
@@ -102,7 +109,9 @@ class FakeMDP:
 
 @pytest.fixture(scope="module")
 def loaded_tx():
-    tx, orig, ig_idx, ig_rsn, _, _, _ = load_and_clean_transactions(SAMPLE_CSV, ACC_MAP, "USD")
+    tx, orig, ig_idx, ig_rsn, _, _, _ = load_and_clean_transactions(
+        SAMPLE_CSV, ACC_MAP, "USD"
+    )
     assert tx is not None and len(tx) == 9
     return tx, orig, ig_idx, ig_rsn
 
@@ -163,6 +172,7 @@ def G(x):
 
 # --- calculate_portfolio_summary ---
 
+
 def test_summary_status_and_shapes(summary_result):
     summary, holdings, _, acct, ig_idx, ig_rsn, status = summary_result
     assert status == "Success (All Accounts)"
@@ -201,10 +211,26 @@ def test_summary_holdings_golden(summary_result):
 
     expected = {
         # (Account, Symbol): (Quantity, Avg Cost, Cost Basis, Market Value, Unreal. Gain, Realized Gain, Local Ccy)
-        ("IBKR", "AAPL"):     (10.0,    75.25,  752.5,  1900.0, 1147.5, 117.5, "USD"),
-        ("IBKR", "MSFT"):     (5.0,     251.0,  1255.0, 1750.0, 495.0,  0.0,   "USD"),
-        ("SET", "DELTA.BK"):  (100.0,   2.147142857142857, 214.7142857142857, 228.57142857142856, 13.857142857142861, 0.0, "THB"),
-        ("SET", "Cash (฿)"):  (40000.0, 0.02857142857142857, 1142.857142857143, 1142.857142857143, 0.0, 0.0, "THB"),
+        ("IBKR", "AAPL"): (10.0, 75.25, 752.5, 1900.0, 1147.5, 117.5, "USD"),
+        ("IBKR", "MSFT"): (5.0, 251.0, 1255.0, 1750.0, 495.0, 0.0, "USD"),
+        ("SET", "DELTA.BK"): (
+            100.0,
+            2.147142857142857,
+            214.7142857142857,
+            228.57142857142856,
+            13.857142857142861,
+            0.0,
+            "THB",
+        ),
+        ("SET", "Cash (฿)"): (
+            40000.0,
+            0.02857142857142857,
+            1142.857142857143,
+            1142.857142857143,
+            0.0,
+            0.0,
+            "THB",
+        ),
     }
     assert set(h.index) == set(expected)
     for key, (qty, avg, basis, mv, unreal, realized, ccy) in expected.items():
@@ -223,19 +249,27 @@ def test_summary_time_anchored_metrics_are_sane(summary_result):
     summary = summary_result[0]
     assert math.isfinite(summary["portfolio_mwr"])
     assert summary["portfolio_mwr"] > 0  # this fixture portfolio is profitable
-    assert isinstance(summary["report_date"], str) or hasattr(summary["report_date"], "isoformat")
+    assert isinstance(summary["report_date"], str) or hasattr(
+        summary["report_date"], "isoformat"
+    )
 
 
 # --- calculate_historical_performance ---
+
 
 def test_historical_status_and_shape(hist_result):
     hist_df, raw_prices, raw_fx, status = hist_result
     assert status.startswith("Success (All Accounts)")
     assert hist_df.shape == (531, 8)
     assert list(hist_df.columns) == [
-        "Portfolio Value", "Portfolio Daily Gain", "daily_return",
-        "Portfolio Accumulated Gain", "Absolute Gain ($)", "Absolute ROI (%)",
-        "Cumulative Net Flow", "drawdown",
+        "Portfolio Value",
+        "Portfolio Daily Gain",
+        "daily_return",
+        "Portfolio Accumulated Gain",
+        "Absolute Gain ($)",
+        "Absolute ROI (%)",
+        "Cumulative Net Flow",
+        "drawdown",
     ]
     # First row is the first transaction date; last row is the requested end.
     assert hist_df.index[0].date() == date(2023, 1, 15)
@@ -249,7 +283,9 @@ def test_historical_series_golden(hist_result):
     assert pv.iloc[260] == G(4241.422695556372)
     assert pv.iloc[-1] == G(5015.142857142857)
 
-    assert hist_df["Portfolio Accumulated Gain"].iloc[-1] == G(1.457530416842845)  # TWR factor
+    assert hist_df["Portfolio Accumulated Gain"].iloc[-1] == G(
+        1.457530416842845
+    )  # TWR factor
     assert hist_df["Cumulative Net Flow"].iloc[-1] == G(1138.5714285714287)
     assert hist_df["Absolute Gain ($)"].iloc[-1] == G(3876.5714285714284)
     assert hist_df["drawdown"].min() == G(-25.037449835855707)

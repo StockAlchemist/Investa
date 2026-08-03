@@ -31,6 +31,7 @@ coefficient and is nonetheless the difference between a 17.4% strategy and a
 15.3% one. A signal is judged by the book it produces, not by its average rank
 correlation, and the two can disagree.
 """
+
 from __future__ import annotations
 
 import logging
@@ -209,7 +210,10 @@ def evaluate_gates(company: CompanyMetrics, min_periods: int = 8) -> List[str]:
     # A company with no filings at all is already fully explained by the
     # failure `compute_metrics` recorded; adding "insufficient_history(0y)" on
     # top just makes the exclusion list harder to read.
-    if any(f in ("no_fundamentals", "fundamentals_unavailable") for f in company.gate_failures):
+    if any(
+        f in ("no_fundamentals", "fundamentals_unavailable")
+        for f in company.gate_failures
+    ):
         return failures
 
     if company.period_count < min_periods:

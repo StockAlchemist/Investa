@@ -27,6 +27,7 @@ market-data fetching alone.
 The run is resumable in the sense that fundamentals come from the local EDGAR
 store: re-running after a failure re-reads the database rather than the SEC.
 """
+
 from __future__ import annotations
 
 import logging
@@ -98,7 +99,9 @@ def infer_model_from_facts(cik: str) -> str:
     except Exception:
         return "generic"
 
-    if signals.get("deposits") and (signals.get("loans") or signals.get("net_interest_income")):
+    if signals.get("deposits") and (
+        signals.get("loans") or signals.get("net_interest_income")
+    ):
         return "bank"
     if signals.get("real_estate_net"):
         return "reit"
@@ -235,9 +238,7 @@ def run(
     companies = collect_metrics(filers)
     eligible = [c for c in companies if not c.gate_failures]
     exclusions = _exclusion_records(companies)
-    logging.info(
-        f"Rank: {len(eligible)} eligible, {len(exclusions)} excluded by gates"
-    )
+    logging.info(f"Rank: {len(eligible)} eligible, {len(exclusions)} excluded by gates")
 
     quality_frame = buffett_rank.score_quality(companies)
 

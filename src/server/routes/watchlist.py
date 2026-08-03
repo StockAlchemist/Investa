@@ -16,6 +16,7 @@ Pattern to follow for further extractions (transactions, holdings,
 fundamentals, etc.): one APIRouter per cohesive concern, included into
 the main router in api.py via `router.include_router(...)`.
 """
+
 from __future__ import annotations
 
 import json
@@ -103,7 +104,9 @@ async def rename_watchlist_endpoint(
     """Rename a watchlist."""
     success = rename_watchlist(conn, watchlist_id, item.name)
     if not success:
-        raise HTTPException(status_code=404, detail="Watchlist not found or failed to rename")
+        raise HTTPException(
+            status_code=404, detail="Watchlist not found or failed to rename"
+        )
     return {"status": "success"}
 
 
@@ -116,7 +119,9 @@ async def delete_watchlist_endpoint(
     """Delete a watchlist."""
     success = delete_watchlist(conn, watchlist_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Watchlist not found or failed to delete")
+        raise HTTPException(
+            status_code=404, detail="Watchlist not found or failed to delete"
+        )
     return {"status": "success"}
 
 
@@ -183,7 +188,9 @@ async def get_watchlist_endpoint(
         fundamentals = {}
 
     enriched_items = []
-    ai_cache_dir = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache")
+    ai_cache_dir = os.path.join(
+        config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache"
+    )
 
     for item in db_items:
         symbol = item["Symbol"]
@@ -199,7 +206,11 @@ async def get_watchlist_endpoint(
                 try:
                     with open(ai_cache_path, "r") as f:
                         ai_disk_data = json.load(f)
-                        analysis_obj = ai_disk_data.get("analysis") if "analysis" in ai_disk_data else ai_disk_data
+                        analysis_obj = (
+                            ai_disk_data.get("analysis")
+                            if "analysis" in ai_disk_data
+                            else ai_disk_data
+                        )
                         if not ai_res.get("ai_sentiment"):
                             ai_res["ai_sentiment"] = analysis_obj.get("sentiment")
                         if not ai_res.get("ai_catalysts"):
@@ -211,29 +222,32 @@ async def get_watchlist_endpoint(
 
         sparkline = quote.get("sparkline_7d", [])
 
-        enriched_items.append({
-            **item,
-            "Price": quote.get("price"),
-            "Day Change": quote.get("change"),
-            "Day Change %": quote.get("changesPercentage"),
-            "Name": quote.get("name"),
-            "Currency": quote.get("currency"),
-            "Sparkline": sparkline,
-            "Market Cap": fund.get("marketCap"),
-            "PE Ratio": fund.get("trailingPE") or fund.get("forwardPE"),
-            "Dividend Yield": fund.get("dividendYield"),
-            # Forwarded so the clients can settle Yahoo's fraction-vs-percent
-            # dividendYield encoding against rate/price instead of guessing from
-            # magnitude alone (the two encodings' ranges overlap).
-            "Dividend Rate": fund.get("dividendRate") or fund.get("trailingAnnualDividendRate"),
-            "Trailing Dividend Yield": fund.get("trailingAnnualDividendYield"),
-            "ai_score": ai_res.get("ai_score"),
-            "intrinsic_value": ai_res.get("intrinsic_value"),
-            "margin_of_safety": ai_res.get("margin_of_safety"),
-            "has_ai_review": ai_res.get("has_ai_review"),
-            "ai_sentiment": ai_res.get("ai_sentiment"),
-            "ai_catalysts": ai_res.get("ai_catalysts"),
-        })
+        enriched_items.append(
+            {
+                **item,
+                "Price": quote.get("price"),
+                "Day Change": quote.get("change"),
+                "Day Change %": quote.get("changesPercentage"),
+                "Name": quote.get("name"),
+                "Currency": quote.get("currency"),
+                "Sparkline": sparkline,
+                "Market Cap": fund.get("marketCap"),
+                "PE Ratio": fund.get("trailingPE") or fund.get("forwardPE"),
+                "Dividend Yield": fund.get("dividendYield"),
+                # Forwarded so the clients can settle Yahoo's fraction-vs-percent
+                # dividendYield encoding against rate/price instead of guessing from
+                # magnitude alone (the two encodings' ranges overlap).
+                "Dividend Rate": fund.get("dividendRate")
+                or fund.get("trailingAnnualDividendRate"),
+                "Trailing Dividend Yield": fund.get("trailingAnnualDividendYield"),
+                "ai_score": ai_res.get("ai_score"),
+                "intrinsic_value": ai_res.get("intrinsic_value"),
+                "margin_of_safety": ai_res.get("margin_of_safety"),
+                "has_ai_review": ai_res.get("has_ai_review"),
+                "ai_sentiment": ai_res.get("ai_sentiment"),
+                "ai_catalysts": ai_res.get("ai_catalysts"),
+            }
+        )
 
     return clean_nans(enriched_items)
 
@@ -273,9 +287,13 @@ async def remove_from_watchlist_api(
     """Remove a symbol from a watchlist."""
     allowed = [w["id"] for w in get_all_watchlists(conn)]
     if watchlist_id not in allowed:
-        raise HTTPException(status_code=403, detail="Not authorized to modify this watchlist")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to modify this watchlist"
+        )
 
-    success = remove_from_watchlist(conn, symbol.strip().upper(), watchlist_id=watchlist_id)
+    success = remove_from_watchlist(
+        conn, symbol.strip().upper(), watchlist_id=watchlist_id
+    )
     if not success:
         raise HTTPException(status_code=500, detail="Failed to remove from watchlist")
     return {"success": True}

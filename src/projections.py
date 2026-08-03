@@ -97,8 +97,10 @@ def compute_projection(
     periods_per_year = infer_periods_per_year(returns.index, default=_TRADING_DAYS)
     n_years = len(returns) / periods_per_year
 
-    mu_raw = float(log_ret.mean()) * periods_per_year                 # annual log drift (historical)
-    sigma_log = float(log_ret.std(ddof=1)) * math.sqrt(periods_per_year)  # annual log vol
+    mu_raw = float(log_ret.mean()) * periods_per_year  # annual log drift (historical)
+    sigma_log = float(log_ret.std(ddof=1)) * math.sqrt(
+        periods_per_year
+    )  # annual log vol
 
     if not math.isfinite(mu_raw) or not math.isfinite(sigma_log):
         return {"available": False}
@@ -119,7 +121,11 @@ def compute_projection(
         # so the cumulative drift over t years carries variance t^2*sigma^2/n_years
         # on top of the process variance t*sigma^2. Total: sigma^2 * t*(1 + t/n_years).
         # Without this, the cone is badly overconfident at long horizons (backtested).
-        spread = sigma_log * math.sqrt(t * (1.0 + t / n_years)) if n_years > 0 else sigma_log * math.sqrt(t)
+        spread = (
+            sigma_log * math.sqrt(t * (1.0 + t / n_years))
+            if n_years > 0
+            else sigma_log * math.sqrt(t)
+        )
         median = current_value * math.exp(drift)
         point = {
             "years": t,
@@ -127,7 +133,8 @@ def compute_projection(
             "median_return_pct": (math.exp(drift) - 1.0) * 100.0,
             # Mean of the lognormal sits above the median (uses process variance
             # only, so the central "expected" value stays stable/interpretable).
-            "expected_value": current_value * math.exp(drift + 0.5 * sigma_log * sigma_log * t),
+            "expected_value": current_value
+            * math.exp(drift + 0.5 * sigma_log * sigma_log * t),
         }
         for name, z in _BANDS.items():
             point[name] = current_value * math.exp(drift + z * spread)

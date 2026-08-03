@@ -68,7 +68,9 @@ def test_jwt_roundtrip_returns_claims():
 def test_jwt_expired_token_is_rejected():
     from datetime import timedelta
 
-    token = create_access_token({"sub": "bob", "id": 1}, expires_delta=timedelta(seconds=-1))
+    token = create_access_token(
+        {"sub": "bob", "id": 1}, expires_delta=timedelta(seconds=-1)
+    )
     assert decode_access_token(token) is None
 
 
@@ -81,7 +83,9 @@ def test_jwt_tampered_signature_is_rejected():
 
 def test_jwt_wrong_key_is_rejected():
     # A token signed with a different secret must not validate against ours.
-    foreign = jwt_encode_with_key({"sub": "dave", "id": 3}, "a-different-secret-key-" + "0" * 48)
+    foreign = jwt_encode_with_key(
+        {"sub": "dave", "id": 3}, "a-different-secret-key-" + "0" * 48
+    )
     assert decode_access_token(foreign) is None
 
 
@@ -98,6 +102,7 @@ def jwt_encode_with_key(claims, key):
 
 
 # --- Rate limiter ---
+
 
 def test_limiter_allows_under_limit():
     limiter = SlidingWindowLimiter(max_events=3, window_seconds=60)
@@ -146,6 +151,7 @@ def test_limiter_window_expiry(monkeypatch):
 
 
 # --- Auth secret key resolution ---
+
 
 def test_secret_key_env_var_wins(monkeypatch):
     monkeypatch.setenv("AUTH_SECRET_KEY", "from-env")

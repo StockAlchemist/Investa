@@ -71,9 +71,12 @@ def _isolated_fetch_env(tmp_path_factory):
     instead of its own fixtures.
     """
     cache_dir = tmp_path_factory.mktemp("heatmap-history")
-    with patch("server.routes.market._HEATMAP_RETRY_BACKOFF", 0), patch(
-        "server.routes.market._history_cache_path",
-        side_effect=lambda interval: str(cache_dir / f"{interval}.pkl"),
+    with (
+        patch("server.routes.market._HEATMAP_RETRY_BACKOFF", 0),
+        patch(
+            "server.routes.market._history_cache_path",
+            side_effect=lambda interval: str(cache_dir / f"{interval}.pkl"),
+        ),
     ):
         yield
 
@@ -148,12 +151,18 @@ def _run(
 def _run_with(tmp_path, fetch):
     """`_run`, but with a caller-supplied worker stub so calls can be counted."""
     mdp = MagicMock()
-    mdp._get_symbol_fundamentals_path.side_effect = lambda s: str(tmp_path / f"{s}.json")
-    with patch("market_data._run_isolated_fetch", side_effect=fetch), patch(
-        "server.screener_service.get_sp500_constituents", return_value=CONSTITUENTS
-    ), patch("server.routes.market._get_heatmap_mdp", return_value=mdp), patch(
-        "server.routes.market.get_cached_screener_results", return_value={}
-    ), patch("server.routes.market.get_est_today", return_value=TODAY):
+    mdp._get_symbol_fundamentals_path.side_effect = lambda s: str(
+        tmp_path / f"{s}.json"
+    )
+    with (
+        patch("market_data._run_isolated_fetch", side_effect=fetch),
+        patch(
+            "server.screener_service.get_sp500_constituents", return_value=CONSTITUENTS
+        ),
+        patch("server.routes.market._get_heatmap_mdp", return_value=mdp),
+        patch("server.routes.market.get_cached_screener_results", return_value={}),
+        patch("server.routes.market.get_est_today", return_value=TODAY),
+    ):
         return _build_sp500_heatmap_sync()
 
 
@@ -243,14 +252,29 @@ class TestPerformanceLookbacks:
         # 10-year mark, so the earliest close sits inside the window and the 10Y
         # column silently resolves to None for every stock.
         mdp = MagicMock()
-        mdp.get_current_quotes.return_value = ({"AAPL": {"price": 200.0}}, {}, {}, None, None)
-        mdp._get_symbol_fundamentals_path.side_effect = lambda s: str(tmp_path / f"{s}.json")
+        mdp.get_current_quotes.return_value = (
+            {"AAPL": {"price": 200.0}},
+            {},
+            {},
+            None,
+            None,
+        )
+        mdp._get_symbol_fundamentals_path.side_effect = lambda s: str(
+            tmp_path / f"{s}.json"
+        )
 
-        with patch("market_data._run_isolated_fetch", return_value=_monthly_frame(["AAPL"])) as fetch, \
-             patch("server.screener_service.get_sp500_constituents", return_value=CONSTITUENTS[:1]), \
-             patch("server.routes.market._get_heatmap_mdp", return_value=mdp), \
-             patch("server.routes.market.get_cached_screener_results", return_value={}), \
-             patch("server.routes.market.get_est_today", return_value=TODAY):
+        with (
+            patch(
+                "market_data._run_isolated_fetch", return_value=_monthly_frame(["AAPL"])
+            ) as fetch,
+            patch(
+                "server.screener_service.get_sp500_constituents",
+                return_value=CONSTITUENTS[:1],
+            ),
+            patch("server.routes.market._get_heatmap_mdp", return_value=mdp),
+            patch("server.routes.market.get_cached_screener_results", return_value={}),
+            patch("server.routes.market.get_est_today", return_value=TODAY),
+        ):
             _build_sp500_heatmap_sync()
 
         monthly = [c for c in fetch.call_args_list if c.kwargs.get("interval") == "1mo"]
@@ -293,8 +317,12 @@ class TestHistoryFetch:
     """
 
     def test_routes_through_the_isolated_worker(self, tmp_path):
-        with patch("market_data._run_isolated_fetch", return_value=_monthly_frame(["AAPL"])) as fetch, \
-             patch("yfinance.download") as direct:
+        with (
+            patch(
+                "market_data._run_isolated_fetch", return_value=_monthly_frame(["AAPL"])
+            ) as fetch,
+            patch("yfinance.download") as direct,
+        ):
             _fetch_monthly_closes(["AAPL"], "2016-05-01", "2026-07-31")
         assert fetch.called
         assert not direct.called, "must not call yfinance in-process"
@@ -323,13 +351,17 @@ class TestHistoryFetch:
         # would pin every period column at n/a long after Yahoo recovered.
         # Raising leaves the previous good payload in place.
         symbols = [f"S{i}" for i in range(10)]
-        with patch("market_data._run_isolated_fetch", return_value=_monthly_frame(["S0"])):
+        with patch(
+            "market_data._run_isolated_fetch", return_value=_monthly_frame(["S0"])
+        ):
             with pytest.raises(RuntimeError, match="covered only"):
                 _fetch_monthly_closes(symbols, "2016-05-01", "2026-07-31")
 
     def test_partial_coverage_above_the_floor_still_builds(self):
         symbols = [f"S{i}" for i in range(10)]
-        with patch("market_data._run_isolated_fetch", return_value=_monthly_frame(symbols[:8])):
+        with patch(
+            "market_data._run_isolated_fetch", return_value=_monthly_frame(symbols[:8])
+        ):
             closes = _fetch_monthly_closes(symbols, "2016-05-01", "2026-07-31")
         assert closes.shape[1] == 8
 
@@ -346,13 +378,20 @@ class TestHistoryFetch:
             return _monthly_frame(list(tickers))
 
         mdp = MagicMock()
-        mdp._get_symbol_fundamentals_path.side_effect = lambda s: str(tmp_path / f"{s}.json")
+        mdp._get_symbol_fundamentals_path.side_effect = lambda s: str(
+            tmp_path / f"{s}.json"
+        )
 
-        with patch("market_data._run_isolated_fetch", side_effect=counting), \
-             patch("server.screener_service.get_sp500_constituents", return_value=CONSTITUENTS), \
-             patch("server.routes.market._get_heatmap_mdp", return_value=mdp), \
-             patch("server.routes.market.get_cached_screener_results", return_value={}), \
-             patch("server.routes.market.get_est_today", return_value=TODAY):
+        with (
+            patch("market_data._run_isolated_fetch", side_effect=counting),
+            patch(
+                "server.screener_service.get_sp500_constituents",
+                return_value=CONSTITUENTS,
+            ),
+            patch("server.routes.market._get_heatmap_mdp", return_value=mdp),
+            patch("server.routes.market.get_cached_screener_results", return_value={}),
+            patch("server.routes.market.get_est_today", return_value=TODAY),
+        ):
             _build_sp500_heatmap_sync()
 
         assert sorted(set(calls)) == ["1d", "1mo"], f"unexpected fetches: {calls}"
@@ -390,14 +429,22 @@ class TestHistoryFetch:
         # turns one bad minute into a map where most tiles read n/a, so a fresh
         # fetch is merged over the previous one and can only add coverage.
         symbols = [f"S{i}" for i in range(10)]
-        with patch("market_data._run_isolated_fetch", return_value=_monthly_frame(symbols)):
+        with patch(
+            "market_data._run_isolated_fetch", return_value=_monthly_frame(symbols)
+        ):
             full = _fetch_monthly_closes(symbols, "2016-05-01", "2026-07-31")
         assert full.shape[1] == 10
 
-        with patch("server.routes.market._HISTORY_CACHE_TTL", {"1mo": 0}), \
-             patch("market_data._run_isolated_fetch", return_value=_monthly_frame(["S0"])):
+        with (
+            patch("server.routes.market._HISTORY_CACHE_TTL", {"1mo": 0}),
+            patch(
+                "market_data._run_isolated_fetch", return_value=_monthly_frame(["S0"])
+            ),
+        ):
             after = _fetch_monthly_closes(symbols, "2016-05-01", "2026-07-31")
-        assert after.shape[1] == 10, "a throttled refresh dropped symbols from the frame"
+        assert after.shape[1] == 10, (
+            "a throttled refresh dropped symbols from the frame"
+        )
 
     def test_merging_survives_a_timezone_mismatch(self):
         # The worker returns tz-aware bars for some intervals and naive for
@@ -409,8 +456,12 @@ class TestHistoryFetch:
         with patch("market_data._run_isolated_fetch", return_value=aware):
             _fetch_monthly_closes(symbols, "2016-05-01", "2026-07-31")
 
-        with patch("server.routes.market._HISTORY_CACHE_TTL", {"1mo": 0}), \
-             patch("market_data._run_isolated_fetch", return_value=_monthly_frame(symbols)):
+        with (
+            patch("server.routes.market._HISTORY_CACHE_TTL", {"1mo": 0}),
+            patch(
+                "market_data._run_isolated_fetch", return_value=_monthly_frame(symbols)
+            ),
+        ):
             merged = _fetch_monthly_closes(symbols, "2016-05-01", "2026-07-31")
         assert merged.shape[1] == 2
         assert merged.index.tz is None
@@ -427,9 +478,13 @@ class TestHistoryFetch:
                 raise RuntimeError("worker timeout")
             return _monthly_frame(list(batch))
 
-        with patch("server.routes.market._HEATMAP_HISTORY_CHUNK", 1), \
-             patch("market_data._run_isolated_fetch", side_effect=one_bad):
-            closes = _fetch_monthly_closes(["AAPL", "BBB", "CCC"], "2016-05-01", "2026-07-31")
+        with (
+            patch("server.routes.market._HEATMAP_HISTORY_CHUNK", 1),
+            patch("market_data._run_isolated_fetch", side_effect=one_bad),
+        ):
+            closes = _fetch_monthly_closes(
+                ["AAPL", "BBB", "CCC"], "2016-05-01", "2026-07-31"
+            )
         assert set(closes.columns) == {"BBB", "CCC"}
 
 
@@ -449,20 +504,31 @@ class TestClientParity:
 
     def test_web_client_reads_every_payload_field(self, tmp_path):
         src = (self.ROOT / "web_app" / "lib" / "api.ts").read_text()
-        block = src.split("export interface SP500HeatmapItem {", 1)[1].split("\n}", 1)[0]
+        block = src.split("export interface SP500HeatmapItem {", 1)[1].split("\n}", 1)[
+            0
+        ]
         declared = set(re.findall(r'^\s*"?([a-z0-9_]+)"?\??:', block, re.MULTILINE))
         missing = self._payload_fields(tmp_path) - declared
         assert not missing, f"web SP500HeatmapItem is missing {sorted(missing)}"
 
     def test_swift_client_reads_every_payload_field(self, tmp_path):
-        src = (self.ROOT / "macos_app" / "Investa" / "Models" / "SP500HeatmapItem.swift").read_text()
+        src = (
+            self.ROOT / "macos_app" / "Investa" / "Models" / "SP500HeatmapItem.swift"
+        ).read_text()
         decoded = set(re.findall(r'(?:\bd\(|raw\[)\s*"([a-z0-9_]+)"', src))
         missing = self._payload_fields(tmp_path) - decoded
         assert not missing, f"Swift SP500HeatmapItem is missing {sorted(missing)}"
 
     def test_metric_tables_agree_across_clients(self):
         web = (self.ROOT / "web_app" / "lib" / "metrics.ts").read_text()
-        swift = (self.ROOT / "macos_app" / "Investa" / "Features" / "Markets" / "SP500HeatmapView.swift").read_text()
+        swift = (
+            self.ROOT
+            / "macos_app"
+            / "Investa"
+            / "Features"
+            / "Markets"
+            / "SP500HeatmapView.swift"
+        ).read_text()
 
         web_labels = set(re.findall(r"label:\s*'([^']+)'", web))
         swift_labels = set(re.findall(r'case\s+\w+\s*=\s*"([^"]+)"', swift))
@@ -477,7 +543,9 @@ class TestClientParity:
         table = web.split("export const METRICS", 1)[1].split("\n];", 1)[0]
         fields = set(re.findall(r"field:\s*'([^']+)'", table))
         unknown = fields - self._payload_fields(tmp_path)
-        assert not unknown, f"web METRICS reference fields the API never sends: {sorted(unknown)}"
+        assert not unknown, (
+            f"web METRICS reference fields the API never sends: {sorted(unknown)}"
+        )
 
 
 class TestMarketCapFallback:

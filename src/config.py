@@ -26,7 +26,7 @@ load_dotenv(override=True)
 
 # --- API Keys ---
 # FMP API Key is managed here but can also be overridden by env
-FMP_API_KEY = os.getenv("FMP_API_KEY") # Prioritize ENV
+FMP_API_KEY = os.getenv("FMP_API_KEY")  # Prioritize ENV
 
 # Gemini API Key for AI Stock Analysis
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -41,7 +41,7 @@ IBKR_QUERY_ID = os.getenv("IBKR_QUERY_ID")
 # is generated and persisted under data/config/. There is deliberately no
 # hardcoded fallback — a key in source lets anyone forge auth tokens.
 AUTH_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 30 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days
 
 # httpOnly auth cookie for the web app (keeps the token out of JS-readable
 # localStorage, hardening against XSS token theft). The native macOS/iOS apps
@@ -61,9 +61,13 @@ DAILY_RESULTS_CACHE_PATH_PREFIX = (
     "yf_portfolio_daily_results"  # For daily calculated values
 )
 YFINANCE_CACHE_DURATION_HOURS = 24
-FUNDAMENTALS_CACHE_DURATION_HOURS = 24  # Reduced from 3 months to ensure fresh screening metadata
+FUNDAMENTALS_CACHE_DURATION_HOURS = (
+    24  # Reduced from 3 months to ensure fresh screening metadata
+)
 CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes (prices, fx)
-METADATA_CACHE_FILE_NAME = "yf_metadata_cache.json"  # Long-lived cache for static data (Name, Currency)
+METADATA_CACHE_FILE_NAME = (
+    "yf_metadata_cache.json"  # Long-lived cache for static data (Name, Currency)
+)
 METADATA_CACHE_DURATION_DAYS = 30
 # Schema version for per-symbol metadata cache files.
 # Bump when adding required fields; entries with a lower (or missing) version are
@@ -85,10 +89,10 @@ ORG_NAME = "StockAlchemist"  # Used for cache path consistency
 # --- Directory Names ---
 DB_DIR = "db"
 CACHE_DIR = "cache"
-CONFIG_DIR = "config"          # Canonical location for user config files (<user_dir>/config/)
+CONFIG_DIR = "config"  # Canonical location for user config files (<user_dir>/config/)
 EXPORTS_DIR = "exports"
 USERS_DIR = "users"
-SCREENER_DIR = "screener"      # Dedicated public screener cache directory
+SCREENER_DIR = "screener"  # Dedicated public screener cache directory
 SCREENER_DB_FILENAME = "screener_cache.db"  # Global AI/valuation screener cache
 
 
@@ -100,11 +104,11 @@ def get_app_data_dir() -> str:
     # Use 'data' directory in the project root
     # Project Structure: /src/server/main.py -> project_root/src/server/main.py
     # we want project_root/data
-    
+
     current_file = os.path.abspath(__file__)
     # config.py is in src/, so go up one level to 'Investa' root
     project_root = os.path.dirname(os.path.dirname(current_file))
-    
+
     data_path = os.path.join(project_root, "data")
     try:
         os.makedirs(data_path, exist_ok=True)
@@ -162,8 +166,10 @@ def get_app_cache_dir() -> Optional[str]:
     if system == "Darwin":
         path = os.path.join(home, "Library", "Caches", ORG_NAME, APP_NAME)
     elif system == "Windows":
-        path = os.path.join(os.environ.get("LOCALAPPDATA", home), ORG_NAME, APP_NAME, "Cache")
-    else: # Linux/Other
+        path = os.path.join(
+            os.environ.get("LOCALAPPDATA", home), ORG_NAME, APP_NAME, "Cache"
+        )
+    else:  # Linux/Other
         path = os.path.join(home, ".cache", APP_NAME.lower())
 
     try:
@@ -171,6 +177,7 @@ def get_app_cache_dir() -> Optional[str]:
         return path
     except Exception:
         return None
+
 
 # --- Debugging Flags ---
 HISTORICAL_DEBUG_USD_CONVERSION = False
@@ -195,10 +202,10 @@ YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
 DEFAULT_INDEX_QUERY_SYMBOLS = list(YFINANCE_INDEX_TICKER_MAP.keys())
 
 SYMBOL_MAP_TO_YFINANCE = {
-    "FISV": "FI",      # Fiserv changed to FI in May 2023
-    "FB": "META",      # Facebook changed to Meta
-    "KFT": "KHC",      # Kraft Foods changed to KRFT then KHC
-    "SNA": "SNA",      # Placeholder if needed
+    "FISV": "FI",  # Fiserv changed to FI in May 2023
+    "FB": "META",  # Facebook changed to Meta
+    "KFT": "KHC",  # Kraft Foods changed to KRFT then KHC
+    "SNA": "SNA",  # Placeholder if needed
 }
 
 YFINANCE_EXCLUDED_SYMBOLS = set()
@@ -218,7 +225,9 @@ DEFAULT_CSV = "my_transactions.csv"
 
 # --- Calculation Method Configuration ---
 HISTORICAL_CALC_METHOD = "numba_chrono"  # Options: 'python', 'numba', 'numba_chrono'
-HISTORICAL_COMPARE_METHODS = False  # If true, historical calc will run both methods and log diffs
+HISTORICAL_COMPARE_METHODS = (
+    False  # If true, historical calc will run both methods and log diffs
+)
 
 # --- Position Closing Tolerance ---
 STOCK_QUANTITY_CLOSE_TOLERANCE = (
@@ -537,12 +546,14 @@ INDEX_DISPLAY_NAMES = {
     ".INX": "S&P 500",
     "^DJI": "Dow",
     "^IXIC": "Nasdaq",
-    "^GSPC": "S&P 500"
+    "^GSPC": "S&P 500",
 }
 
 # --- Default Settings ---
 DEFAULT_CURRENCY = "USD"
-DISPLAY_TIMEZONE = "America/New_York"  # Universal display timezone for graphs and metrics
+DISPLAY_TIMEZONE = (
+    "America/New_York"  # Universal display timezone for graphs and metrics
+)
 
 COMMON_CURRENCIES = [  # List of commonly used currency codes
     "USD",
@@ -579,12 +590,12 @@ CURRENCY_SYMBOLS = {
 # These are approximate rates to prevent "CRITICAL ERROR" and keep metrics functional.
 STATIC_FX_FALLBACK = {
     "USD": 1.0,
-    "THB": 34.0,   # Approx THB per 1 USD
-    "SGD": 1.35,   # Approx SGD per 1 USD
-    "EUR": 0.92,   # Approx EUR per 1 USD
-    "GBP": 0.79,   # Approx GBP per 1 USD
+    "THB": 34.0,  # Approx THB per 1 USD
+    "SGD": 1.35,  # Approx SGD per 1 USD
+    "EUR": 0.92,  # Approx EUR per 1 USD
+    "GBP": 0.79,  # Approx GBP per 1 USD
     "JPY": 150.0,  # Approx JPY per 1 USD
-    "HKD": 7.8,    # Approx HKD per 1 USD
+    "HKD": 7.8,  # Approx HKD per 1 USD
     "AUD": 1.5,
     "CAD": 1.35,
     "CHF": 0.88,

@@ -24,6 +24,7 @@ from display_config import (
     DEFAULT_GRAPH_END_DATE,
 )
 
+
 def _default_documents_dir() -> str:
     """Best-effort default directory for the CSV import file picker.
 
@@ -58,11 +59,11 @@ class ConfigManager:
         self.app_data_path = app_data_path
         # Try to locate config files in root first, then config subdir
         config_dir = os.path.join(app_data_path, config.CONFIG_DIR)
-        
+
         # Paths to check for gui_config.json
         root_config = os.path.join(app_data_path, "gui_config.json")
         subdir_config = os.path.join(config_dir, "gui_config.json")
-        
+
         if os.path.exists(root_config):
             self.CONFIG_FILE = root_config
         else:
@@ -77,16 +78,17 @@ class ConfigManager:
             self.MANUAL_OVERRIDES_FILE = root_overrides
         else:
             self.MANUAL_OVERRIDES_FILE = subdir_overrides
-        
+
         # Initialize defaults
         self.gui_config = self._get_default_gui_config()
         self.manual_overrides = self._get_default_manual_overrides()
-        
+
         # Load from disk
         self.load_all()
 
     def _get_default_gui_config(self) -> Dict[str, Any]:
         from db_utils import get_database_path, DB_FILENAME
+
         # Default the transactions DB to THIS ConfigManager's own scope. Web
         # users get a per-user directory (data/users/<name>/) whose portfolio.db
         # is created at registration, so the default must point there. Using the
@@ -96,9 +98,13 @@ class ConfigManager:
         # lookup for the legacy single-user GUI, whose DB lives in a 'db'
         # subfolder rather than directly in app_data_path.
         scoped_db_path = os.path.join(self.app_data_path, DB_FILENAME)
-        default_db_path = scoped_db_path if os.path.exists(scoped_db_path) else get_database_path(DB_FILENAME)
+        default_db_path = (
+            scoped_db_path
+            if os.path.exists(scoped_db_path)
+            else get_database_path(DB_FILENAME)
+        )
         default_display_currency = "USD"
-        
+
         return {
             "transactions_file": default_db_path,
             "transactions_file_csv_fallback": config.DEFAULT_CSV,
@@ -113,7 +119,10 @@ class ConfigManager:
             "graph_end_date": DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d"),
             "graph_interval": config.DEFAULT_GRAPH_INTERVAL,
             "graph_benchmarks": config.DEFAULT_GRAPH_BENCHMARKS,
-            "column_visibility": {col: True for col in get_column_definitions(default_display_currency).keys()},
+            "column_visibility": {
+                col: True
+                for col in get_column_definitions(default_display_currency).keys()
+            },
             "bar_periods_annual": 10,
             "bar_periods_monthly": 12,
             "bar_periods_weekly": 12,
@@ -126,7 +135,7 @@ class ConfigManager:
             "account_closure_dates": {},
             "available_currencies": ["USD", "THB", "EUR", "GBP", "JPY", "CNY"],
             "visible_items": [],
-            "benchmarks": ['S&P 500', 'Dow Jones', 'NASDAQ'],
+            "benchmarks": ["S&P 500", "Dow Jones", "NASDAQ"],
             "active_tab": "performance",
         }
 
@@ -134,12 +143,14 @@ class ConfigManager:
         return {
             "manual_price_overrides": {},
             "user_symbol_map": config.SYMBOL_MAP_TO_YFINANCE.copy(),
-            "user_excluded_symbols": sorted(list(config.YFINANCE_EXCLUDED_SYMBOLS.copy())),
+            "user_excluded_symbols": sorted(
+                list(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
+            ),
             "account_interest_rates": {},
             "interest_free_thresholds": {},
             "valuation_overrides": {},
             "ibkr_token": None,
-            "ibkr_query_id": None
+            "ibkr_query_id": None,
         }
 
     def load_all(self):
@@ -175,7 +186,8 @@ class ConfigManager:
         else:
             # Strip invalid entries — only "Manual" and "Auto" are valid
             self.gui_config["account_cash_mode_map"] = {
-                k: v for k, v in cash_mode_map.items()
+                k: v
+                for k, v in cash_mode_map.items()
                 if isinstance(k, str) and isinstance(v, str) and v in ("Manual", "Auto")
             }
 
@@ -213,9 +225,9 @@ class ConfigManager:
                 with open(tmp_file, "w") as f:
                     json.dump(save_data, f, indent=4)
                     f.flush()
-                    os.fsync(f.fileno()) # Ensure write to disk
+                    os.fsync(f.fileno())  # Ensure write to disk
 
-                os.replace(tmp_file, self.CONFIG_FILE) # Atomic move
+                os.replace(tmp_file, self.CONFIG_FILE)  # Atomic move
             except Exception as e:
                 logging.error(f"Error saving GUI config: {e}")
                 if os.path.exists(tmp_file):
@@ -235,49 +247,67 @@ class ConfigManager:
                     price_overrides = loaded.get("manual_price_overrides", {})
                     if isinstance(price_overrides, dict):
                         self.manual_overrides["manual_price_overrides"] = {
-                            k.upper().strip(): v for k, v in price_overrides.items()
+                            k.upper().strip(): v
+                            for k, v in price_overrides.items()
                             if isinstance(v, (dict, int, float))
                         }
-                    
+
                     # Handle symbol map
                     symbol_map = loaded.get("user_symbol_map", {})
                     if isinstance(symbol_map, dict):
                         self.manual_overrides["user_symbol_map"] = {
-                            k.upper().strip(): v.upper().strip() for k, v in symbol_map.items()
+                            k.upper().strip(): v.upper().strip()
+                            for k, v in symbol_map.items()
                         }
-                    
+
                     # Handle excluded symbols
                     excluded = loaded.get("user_excluded_symbols", [])
                     if isinstance(excluded, list):
-                        self.manual_overrides["user_excluded_symbols"] = sorted(list({
-                            s.upper().strip() for s in excluded if isinstance(s, str)
-                        }))
+                        self.manual_overrides["user_excluded_symbols"] = sorted(
+                            list(
+                                {
+                                    s.upper().strip()
+                                    for s in excluded
+                                    if isinstance(s, str)
+                                }
+                            )
+                        )
             except Exception as e:
                 logging.error(f"Error loading manual overrides: {e}")
-                
+
             # Load Account Interest Rates & Thresholds (ensure they exist even if file didn't have them)
             # This handles migration for existing files
             acc_rates = loaded.get("account_interest_rates", {})
             if isinstance(acc_rates, dict):
                 self.manual_overrides["account_interest_rates"] = {
-                    k.strip(): float(v) for k, v in acc_rates.items() if isinstance(v, (int, float))
+                    k.strip(): float(v)
+                    for k, v in acc_rates.items()
+                    if isinstance(v, (int, float))
                 }
-                
+
             thresholds = loaded.get("interest_free_thresholds", {})
             if isinstance(thresholds, dict):
                 self.manual_overrides["interest_free_thresholds"] = {
-                    k.strip(): float(v) for k, v in thresholds.items() if isinstance(v, (int, float))
+                    k.strip(): float(v)
+                    for k, v in thresholds.items()
+                    if isinstance(v, (int, float))
                 }
-                
+
             val_overrides = loaded.get("valuation_overrides", {})
             if isinstance(val_overrides, dict):
                 self.manual_overrides["valuation_overrides"] = {
-                    k.upper().strip(): v for k, v in val_overrides.items() if isinstance(v, dict)
+                    k.upper().strip(): v
+                    for k, v in val_overrides.items()
+                    if isinstance(v, dict)
                 }
 
             # Load IBKR Credentials
             self.manual_overrides["ibkr_token"] = loaded.get("ibkr_token")
-            self.manual_overrides["ibkr_query_id"] = str(loaded.get("ibkr_query_id")) if loaded.get("ibkr_query_id") else None
+            self.manual_overrides["ibkr_query_id"] = (
+                str(loaded.get("ibkr_query_id"))
+                if loaded.get("ibkr_query_id")
+                else None
+            )
 
     def save_manual_overrides(self, overrides_data: Optional[Dict[str, Any]] = None):
         if overrides_data is not None:
@@ -287,12 +317,16 @@ class ConfigManager:
             # 1. Backup existing
             if os.path.exists(self.MANUAL_OVERRIDES_FILE):
                 try:
-                    shutil.copy2(self.MANUAL_OVERRIDES_FILE, self.MANUAL_OVERRIDES_FILE + ".bak")
+                    shutil.copy2(
+                        self.MANUAL_OVERRIDES_FILE, self.MANUAL_OVERRIDES_FILE + ".bak"
+                    )
                 except Exception as e:
                     logging.warning(f"Failed to create manual overrides backup: {e}")
 
             # 2. Atomic write (unique tmp name — see save_gui_config)
-            tmp_file = f"{self.MANUAL_OVERRIDES_FILE}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+            tmp_file = (
+                f"{self.MANUAL_OVERRIDES_FILE}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+            )
             try:
                 with open(tmp_file, "w", encoding="utf-8") as f:
                     json.dump(self.manual_overrides, f, indent=4, ensure_ascii=False)

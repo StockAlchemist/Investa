@@ -9,6 +9,7 @@ Defaults to 'kitmatan'. Produces:
   - scripts/profile_results/cprofile_stats.prof  (full pstats dump; view with snakeviz)
   - scripts/profile_results/phase_timings.txt    (phase-level wall-clock breakdown)
 """
+
 import cProfile
 import io
 import os
@@ -22,7 +23,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 import logging  # noqa: E402
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 import config  # noqa: E402
 from data_loader import load_and_clean_transactions  # noqa: E402
@@ -34,15 +38,19 @@ from portfolio_history import calculate_historical_performance  # noqa: E402
 # ──────────────────────────────────────────────────────────────
 _phase_timings: list[tuple[str, float]] = []
 
+
 def _timed_wrapper(label, original_fn):
     """Return a wrapper that records wall-clock time for `original_fn`."""
+
     def wrapper(*args, **kwargs):
         t0 = time.perf_counter()
         result = original_fn(*args, **kwargs)
         elapsed = time.perf_counter() - t0
         _phase_timings.append((label, elapsed))
         return result
+
     return wrapper
+
 
 # Patch individual heavy functions
 import portfolio_history as ph  # noqa: E402
@@ -82,9 +90,8 @@ pvk._calculate_holdings_numba = _timed_wrapper(
     pvk._calculate_holdings_numba,
 )
 # Price unadjustment (often large loop)
-ph._unadjust_prices = _timed_wrapper(
-    "Phase 2: _unadjust_prices", ph._unadjust_prices
-)
+ph._unadjust_prices = _timed_wrapper("Phase 2: _unadjust_prices", ph._unadjust_prices)
+
 
 # ──────────────────────────────────────────────────────────────
 # Load data and run
@@ -104,6 +111,7 @@ def main():
     gui_config_path = os.path.join(config_dir, config.GUI_CONFIG_FILENAME)
     if os.path.exists(gui_config_path):
         import json
+
         with open(gui_config_path) as f:
             gui_config = json.load(f)
 
@@ -156,9 +164,9 @@ def main():
         display_currency="USD",
         account_currency_map=account_currency_map,
         default_currency=config.DEFAULT_CURRENCY,
-        use_raw_data_cache=False,      # Force fresh fetch
+        use_raw_data_cache=False,  # Force fresh fetch
         use_daily_results_cache=False,  # Force full recalculation
-        num_processes=1,                # Single-process for clean profiling
+        num_processes=1,  # Single-process for clean profiling
         include_accounts=None,
         worker_signals=None,
         user_symbol_map=dict(gui_config.get("user_symbol_map", {})),

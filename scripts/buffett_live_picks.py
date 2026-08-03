@@ -106,11 +106,14 @@ def load_latest_run(run_id: Optional[int] = None) -> tuple:
                 "WHERE finished_at IS NOT NULL ORDER BY run_id DESC LIMIT 1"
             ).fetchone()
             if not row:
-                raise SystemExit("No completed ranking run found — run the Buffett pipeline first")
+                raise SystemExit(
+                    "No completed ranking run found — run the Buffett pipeline first"
+                )
             run_id, finished_at, ranked = row
         else:
             finished_at, ranked = conn.execute(
-                "SELECT finished_at, ranked_count FROM rank_runs WHERE run_id = ?", (run_id,)
+                "SELECT finished_at, ranked_count FROM rank_runs WHERE run_id = ?",
+                (run_id,),
             ).fetchone()
         frame = pd.read_sql(
             "SELECT * FROM rank_scores WHERE run_id = ? ", conn, params=(run_id,)
@@ -129,7 +132,11 @@ def blend(frame: pd.DataFrame, quality_weight: float) -> pd.Series:
 
 
 def apply_cap(
-    frame: pd.DataFrame, scores: pd.Series, top_n: int, max_per_sector: Optional[int], digits: int
+    frame: pd.DataFrame,
+    scores: pd.Series,
+    top_n: int,
+    max_per_sector: Optional[int],
+    digits: int,
 ) -> pd.DataFrame:
     order = scores.sort_values(ascending=False).index
     sic_map = edgar_sic.get_sic_map()
@@ -199,7 +206,9 @@ def main() -> int:
     )
     print(f"Capital: ${args.capital:,.0f} · target ${per_position:,.0f} per position\n")
 
-    display = picks[["symbol", "name", "industry", "price", "shares", "cost", "weight", "score"]].copy()
+    display = picks[
+        ["symbol", "name", "industry", "price", "shares", "cost", "weight", "score"]
+    ].copy()
     display["name"] = display["name"].str.slice(0, 26)
     print(
         display.to_string(
@@ -218,7 +227,9 @@ def main() -> int:
 
     print("\nIndustry concentration")
     concentration = (
-        picks.groupby("industry")["cost"].sum().sort_values(ascending=False) / args.capital * 100
+        picks.groupby("industry")["cost"].sum().sort_values(ascending=False)
+        / args.capital
+        * 100
     )
     for industry, weight in concentration.items():
         count = int((picks["industry"] == industry).sum())

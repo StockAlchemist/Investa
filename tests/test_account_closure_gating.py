@@ -20,7 +20,9 @@ sys.path.insert(0, SRC_DIR)
 try:
     from server.api import compute_account_closure_state
 except ImportError:
-    pytest.skip("server.api not importable in this environment", allow_module_level=True)
+    pytest.skip(
+        "server.api not importable in this environment", allow_module_level=True
+    )
 
 
 TODAY = date(2025, 6, 1)
@@ -99,8 +101,6 @@ def test_all_selected_closed_with_multiple_accounts():
 
 
 def test_empty_closure_map():
-    closed, all_closed = compute_account_closure_state(
-        ["Sharebuilder"], {}, TODAY
-    )
+    closed, all_closed = compute_account_closure_state(["Sharebuilder"], {}, TODAY)
     assert closed == []
     assert all_closed is False

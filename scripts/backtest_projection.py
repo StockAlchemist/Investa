@@ -37,7 +37,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from projections import compute_projection  # noqa: E402
 
 _TRADING_DAYS = 252
-_P90_Z = 1.2815515594  # the z used for the p90 band, to back out the model's predictive sd
+_P90_Z = (
+    1.2815515594  # the z used for the p90 band, to back out the model's predictive sd
+)
 
 
 def _norm_cdf(z):
@@ -64,7 +66,9 @@ def backtest(
         if use_shrink and benchmark is not None:
             bw = benchmark.reindex(window.index).ffill().dropna()
             if len(bw) > _TRADING_DAYS and float(bw.iloc[0]) > 0:
-                prior = math.log(float(bw.iloc[-1]) / float(bw.iloc[0])) / (len(bw) / _TRADING_DAYS)
+                prior = math.log(float(bw.iloc[-1]) / float(bw.iloc[0])) / (
+                    len(bw) / _TRADING_DAYS
+                )
 
         proj = compute_projection(window, v0, benchmark_log_return=prior)
         if not proj.get("available"):
@@ -75,8 +79,10 @@ def backtest(
             if fut >= len(wealth) or h not in by_year:
                 continue
             pt = by_year[h]
-            mu_h = math.log(pt["median_value"] / v0)             # predictive mean log-return
-            sd_h = (math.log(pt["p90"] / v0) - mu_h) / _P90_Z    # predictive sd the model used
+            mu_h = math.log(pt["median_value"] / v0)  # predictive mean log-return
+            sd_h = (
+                math.log(pt["p90"] / v0) - mu_h
+            ) / _P90_Z  # predictive sd the model used
             if sd_h <= 0:
                 continue
             actual = math.log(float(wealth.iloc[fut]) / v0)
@@ -85,29 +91,54 @@ def backtest(
 
 
 def summarize(df: pd.DataFrame, horizons) -> None:
-    print(f"\n{'h':>4} {'n':>5} {'std_z':>6} {'in80':>6} {'<p10':>6} {'mean_u':>7}   (ideal 1.0 / 0.80 / 0.10 / 0.50)")
+    print(
+        f"\n{'h':>4} {'n':>5} {'std_z':>6} {'in80':>6} {'<p10':>6} {'mean_u':>7}   (ideal 1.0 / 0.80 / 0.10 / 0.50)"
+    )
     for h in horizons:
         g = df[df.h == h]
         if g.empty:
             continue
         u = _norm_cdf(g.z.values)
-        print(f"{h:>3}y {len(g):>5} {g.z.std():>6.2f} {np.mean((u > .1) & (u < .9)):>6.2f} "
-              f"{np.mean(u < .1):>6.2f} {u.mean():>7.2f}")
+        print(
+            f"{h:>3}y {len(g):>5} {g.z.std():>6.2f} {np.mean((u > 0.1) & (u < 0.9)):>6.2f} "
+            f"{np.mean(u < 0.1):>6.2f} {u.mean():>7.2f}"
+        )
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("tickers", nargs="*", default=["^GSPC"], help="ticker(s) to backtest (default ^GSPC)")
-    ap.add_argument("--benchmark", default="^GSPC", help="drift-shrinkage prior ticker (default ^GSPC)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "tickers",
+        nargs="*",
+        default=["^GSPC"],
+        help="ticker(s) to backtest (default ^GSPC)",
+    )
+    ap.add_argument(
+        "--benchmark",
+        default="^GSPC",
+        help="drift-shrinkage prior ticker (default ^GSPC)",
+    )
     ap.add_argument("--start", default="1970-01-01")
-    ap.add_argument("--no-shrink", action="store_true", help="disable benchmark drift shrinkage")
+    ap.add_argument(
+        "--no-shrink", action="store_true", help="disable benchmark drift shrinkage"
+    )
     args = ap.parse_args()
     tickers = args.tickers or ["^GSPC"]
 
     import yfinance as yf
 
-    bench = yf.download(args.benchmark, start=args.start, auto_adjust=True, progress=False)["Close"].dropna().squeeze()
-    px = yf.download(tickers, start=args.start, auto_adjust=True, progress=False)["Close"]
+    bench = (
+        yf.download(args.benchmark, start=args.start, auto_adjust=True, progress=False)[
+            "Close"
+        ]
+        .dropna()
+        .squeeze()
+    )
+    px = yf.download(tickers, start=args.start, auto_adjust=True, progress=False)[
+        "Close"
+    ]
     horizons = (1, 3, 5, 10)
 
     frames = []

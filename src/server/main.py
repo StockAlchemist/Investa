@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     from db_utils import initialize_database, initialize_global_database
     from server.refresh_worker import refresh_loop, index_refresh_loop
     from server.portfolio_service import warm_summary_caches
+
     initialize_database()
     initialize_global_database()
 
@@ -56,15 +57,20 @@ async def lifespan(app: FastAPI):
             except (asyncio.CancelledError, Exception):
                 pass
         from server.portfolio_service import _PRECALC_POOL
+
         _PRECALC_POOL.shutdown(wait=False)
         # Terminate the long-lived market-data fetch workers.
         try:
             from market_data import shutdown_fetch_workers
+
             shutdown_fetch_workers()
         except Exception:
             pass
 
-app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)
+
+app = FastAPI(
+    title="Investa API", description="Backend for Investa PWA", lifespan=lifespan
+)
 
 
 @app.exception_handler(Exception)
@@ -82,12 +88,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     headers = {}
     origin = request.headers.get("origin")
     if origin and (
-        origin == "null" or origin in _extra_origins or re.match(_LOCAL_ORIGIN_REGEX, origin)
+        origin == "null"
+        or origin in _extra_origins
+        or re.match(_LOCAL_ORIGIN_REGEX, origin)
     ):
         headers["Access-Control-Allow-Origin"] = origin
     return JSONResponse(
         status_code=500, content={"detail": "Internal server error"}, headers=headers
     )
+
 
 # CORS: restrict to the origins Investa is actually served from, instead of "*",
 # so a random website can't make API requests. allow_credentials=True is required
@@ -109,7 +118,9 @@ _LOCAL_ORIGIN_REGEX = (
     r"|[\w.-]+\.run\.app"
     r")(:\d+)?$"
 )
-_extra_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()]
+_extra_origins = [
+    o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()
+]
 # Compress large JSON payloads (summary/history/screener) — big win on LAN/Tailscale.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
@@ -122,7 +133,6 @@ app.add_middleware(
 )
 
 
-
 # API Routes
 
 app.include_router(api_router, prefix="/api")
@@ -130,17 +140,30 @@ app.include_router(api_router, prefix="/api")
 # Mount at root as well to handle Tailscale Serve stripping the /api prefix
 app.include_router(api_router)
 
+
 @app.get("/")
 async def root():
     return {"message": "Investa API is running"}
 
+
 if __name__ == "__main__":
     import uvicorn
-    
+
     log_config = uvicorn.config.LOGGING_CONFIG
-    log_config["formatters"]["access"]["fmt"] = "%(asctime)s - " + log_config["formatters"]["access"]["fmt"]
-    log_config["formatters"]["default"]["fmt"] = "%(asctime)s - " + log_config["formatters"]["default"]["fmt"]
+    log_config["formatters"]["access"]["fmt"] = (
+        "%(asctime)s - " + log_config["formatters"]["access"]["fmt"]
+    )
+    log_config["formatters"]["default"]["fmt"] = (
+        "%(asctime)s - " + log_config["formatters"]["default"]["fmt"]
+    )
 
     # reload=False for debugging stability vs potential thread deadlock issues with StatReload
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("server.main:app", host="0.0.0.0", port=port, reload=False, workers=1, log_config=log_config)
+    uvicorn.run(
+        "server.main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=False,
+        workers=1,
+        log_config=log_config,
+    )

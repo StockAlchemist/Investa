@@ -91,7 +91,9 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         logging.debug(f"--- DEBUG VALUE CALC for {target_date} ---")
         logging.debug(f"  Target Currency: {target_currency}")
         logging.debug(f"  Included Accounts: {included_accounts}")
-        logging.debug(f"  Transactions count up to date: {len(transactions_df[transactions_df['Date'].dt.date <= target_date])}")
+        logging.debug(
+            f"  Transactions count up to date: {len(transactions_df[transactions_df['Date'].dt.date <= target_date])}"
+        )
 
     transactions_til_date = transactions_df[
         transactions_df["Date"].dt.date <= target_date
@@ -128,7 +130,16 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         # per-share dividend or fee amount in that column, which would poison
         # the last-known-price fallback and create huge phantom valuation jumps
         # on days where yfinance returns NaN for that symbol.
-        if tx_type in ("buy", "sell", "short sell", "buy to cover", "transfer", "spin off", "spin-off", "spinoff"):
+        if tx_type in (
+            "buy",
+            "sell",
+            "short sell",
+            "buy to cover",
+            "transfer",
+            "spin off",
+            "spin-off",
+            "spinoff",
+        ):
             try:
                 tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
                 if pd.notna(tx_price) and tx_price > 1e-9:
@@ -242,7 +253,9 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
                         # --- ADDED: Propagate last known price to destination ---
                         if holding_key_from_row in last_known_prices:
-                            last_known_prices[to_key] = last_known_prices[holding_key_from_row]
+                            last_known_prices[to_key] = last_known_prices[
+                                holding_key_from_row
+                            ]
                         # --- END ADDED ---
 
                         # This function only calculates market value, not cost basis,
@@ -294,14 +307,22 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
             # If it's a fee or tax transaction
             if type_lower in ["fees", "tax"]:
-                fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if pd.notna(qty) and abs(qty) > 1e-9 else abs(commission))
+                fee_val = (
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (
+                        abs(qty)
+                        if pd.notna(qty) and abs(qty) > 1e-9
+                        else abs(commission)
+                    )
+                )
                 return -fee_val
 
             return (
                 0.0
                 if pd.isna(qty)
+                # Deposit: Increase cash by quantity MINUS commission
                 else (
-                    # Deposit: Increase cash by quantity MINUS commission
                     abs(qty) - commission
                     if type_lower in ["buy", "deposit", "dividend", "interest"]
                     # Withdrawal: Decrease cash by quantity PLUS commission
@@ -350,7 +371,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             )
         if abs(current_qty) < 1e-9:
             continue
-            
+
         # --- ADDED: Filter by included_accounts ---
         # Filter by included_accounts
         if included_accounts and account not in included_accounts_norm:
@@ -426,7 +447,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
         if (pd.isna(current_price_local) or force_fallback) and is_stock:
             # Fallback to last transaction price if still no price, or if yfinance is excluded (and no manual override was applied for it)
-            
+
             # --- ADDED: Check last_known_prices first ---
             if (internal_symbol, account) in last_known_prices:
                 last_known = last_known_prices[(internal_symbol, account)]
@@ -445,7 +466,9 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                         & (transactions_df["Account"] == account)
                         & (transactions_df["Price/Share"].notna())
                         & (
-                            pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
+                            pd.to_numeric(
+                                transactions_df["Price/Share"], errors="coerce"
+                            )
                             > 1e-9
                         )
                         & (transactions_df["Date"].dt.date <= target_date)
@@ -517,7 +540,7 @@ def _calculate_holdings_numba(
     tx_types_np,
     tx_quantities_np,
     tx_prices_np,
-    tx_totals_np,       # Total Amount per tx; primary fallback for cash math
+    tx_totals_np,  # Total Amount per tx; primary fallback for cash math
     tx_commissions_np,
     tx_split_ratios_np,
     tx_local_currencies_np,
@@ -533,15 +556,15 @@ def _calculate_holdings_numba(
     short_sell_type_id,
     buy_to_cover_type_id,  # type: ignore
     transfer_type_id,  # NEW argument
-    spin_off_type_id,   # SPIN-OFF: parent basis reduction + child receipt
+    spin_off_type_id,  # SPIN-OFF: parent basis reduction + child receipt
     fees_type_id,
     dividend_type_id,
     interest_type_id,
-    tax_type_id,        # AUTO CASH
+    tax_type_id,  # AUTO CASH
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
-    acc_cash_modes,     # AUTO CASH: int64 array, 0=Manual, 1=Auto
+    acc_cash_modes,  # AUTO CASH: int64 array, 0=Manual, 1=Auto
 ):
     # Initialize state arrays
     holdings_qty_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
@@ -553,7 +576,7 @@ def _calculate_holdings_numba(
 
     cash_balances_np = np.zeros(num_accounts, dtype=np.float64)
     cash_currency_np = np.full(num_accounts, -1, dtype=np.int64)
-    
+
     # --- NEW: Track last prices ---
     last_prices_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
 
@@ -583,12 +606,21 @@ def _calculate_holdings_numba(
             # convention rationale. Total Amount preferred; falls back to
             # Quantity (Style A) or commission for fee-style rows.
             cash_amt = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
-            if type_id == buy_type_id or type_id == deposit_type_id or type_id == dividend_type_id or type_id == interest_type_id:
+            if (
+                type_id == buy_type_id
+                or type_id == deposit_type_id
+                or type_id == dividend_type_id
+                or type_id == interest_type_id
+            ):
                 cash_balances_np[account_id] += cash_amt - commission
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
                 cash_balances_np[account_id] -= cash_amt + commission
             elif type_id == fees_type_id or type_id == tax_type_id:
-                fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                fee_val = (
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                )
                 cash_balances_np[account_id] -= fee_val
             elif type_id == transfer_type_id:
                 dest_account_id = tx_to_accounts_np[i]
@@ -673,10 +705,12 @@ def _calculate_holdings_numba(
                         holdings_currency_np[symbol_id, dest_account_id] = currency_id
                     holdings_qty_np[symbol_id, dest_account_id] += transfer_qty
                     holdings_cost_np[symbol_id, dest_account_id] += cost_to_transfer
-                    
+
                     # Also copy last price to destination if available
                     if last_prices_np[symbol_id, account_id] > 1e-9:
-                        last_prices_np[symbol_id, dest_account_id] = last_prices_np[symbol_id, account_id]
+                        last_prices_np[symbol_id, dest_account_id] = last_prices_np[
+                            symbol_id, account_id
+                        ]
             continue
 
         # --- Existing Split Logic ---
@@ -693,9 +727,9 @@ def _calculate_holdings_numba(
                                 is_shortable = True
                                 break
                         if holdings_qty_np[symbol_id, acc_idx] < -1e-9 and is_shortable:
-                            holdings_short_orig_qty_np[
-                                symbol_id, acc_idx
-                            ] *= split_ratio
+                            holdings_short_orig_qty_np[symbol_id, acc_idx] *= (
+                                split_ratio
+                            )
 
             if abs(commission) > 1e-9:
                 holdings_cost_np[symbol_id, account_id] += commission
@@ -737,9 +771,9 @@ def _calculate_holdings_numba(
                             holdings_short_proceeds_np[symbol_id, account_id] *= (
                                 1.0 - ratio
                             )
-                            holdings_short_orig_qty_np[
-                                symbol_id, account_id
-                            ] -= qty_covered
+                            holdings_short_orig_qty_np[symbol_id, account_id] -= (
+                                qty_covered
+                            )
             continue
 
         # --- Standard Buy/Sell ---
@@ -774,20 +808,50 @@ def _calculate_holdings_numba(
         if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
             cash_delta = 0.0
             if type_id == buy_type_id:
-                cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price + commission))
+                cash_delta = -(
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (abs(qty) * price + commission)
+                )
             elif type_id == sell_type_id:
-                cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price - commission))
+                cash_delta = +(
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (abs(qty) * price - commission)
+                )
             elif type_id == dividend_type_id:
-                div_amt = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * abs(price) if abs(qty) > 1e-9 and abs(price) > 1e-9 else abs(price))
+                div_amt = (
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (
+                        abs(qty) * abs(price)
+                        if abs(qty) > 1e-9 and abs(price) > 1e-9
+                        else abs(price)
+                    )
+                )
                 cash_delta = +div_amt
             elif type_id == interest_type_id:
-                cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else abs(price))
+                cash_delta = +(
+                    abs(total_amount) if abs(total_amount) > 1e-9 else abs(price)
+                )
             elif type_id == fees_type_id or type_id == tax_type_id:
-                cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(commission) if abs(commission) > 1e-9 else abs(price)))
+                cash_delta = -(
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (abs(commission) if abs(commission) > 1e-9 else abs(price))
+                )
             elif type_id == short_sell_type_id:
-                cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price - commission))
+                cash_delta = +(
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (abs(qty) * price - commission)
+                )
             elif type_id == buy_to_cover_type_id:
-                cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price + commission))
+                cash_delta = -(
+                    abs(total_amount)
+                    if abs(total_amount) > 1e-9
+                    else (abs(qty) * price + commission)
+                )
             # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
 
             if abs(cash_delta) > 1e-9:
@@ -837,15 +901,15 @@ def _calculate_daily_holdings_chronological_numba(
     short_sell_type_id,
     buy_to_cover_type_id,
     transfer_type_id,  # NEW argument
-    spin_off_type_id,   # SPIN-OFF: child share receipt (qty-only here)
-    dividend_type_id,   # AUTO CASH
-    interest_type_id,   # AUTO CASH
-    fees_type_id,       # AUTO CASH
-    tax_type_id,        # AUTO CASH
+    spin_off_type_id,  # SPIN-OFF: child share receipt (qty-only here)
+    dividend_type_id,  # AUTO CASH
+    interest_type_id,  # AUTO CASH
+    fees_type_id,  # AUTO CASH
+    tax_type_id,  # AUTO CASH
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
-    acc_cash_modes,     # AUTO CASH: int64 array, 0=Manual, 1=Auto
+    acc_cash_modes,  # AUTO CASH: int64 array, 0=Manual, 1=Auto
 ):
     """
     Calculates holdings and cash balances chronologically for each day in the target range.
@@ -896,7 +960,12 @@ def _calculate_daily_holdings_chronological_numba(
                 # some manual entries store it in Total Amount (Style B).
                 # Reading both keeps the engine resilient to either.
                 cash_amt = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
-                if type_id == buy_type_id or type_id == deposit_type_id or type_id == dividend_type_id or type_id == interest_type_id:
+                if (
+                    type_id == buy_type_id
+                    or type_id == deposit_type_id
+                    or type_id == dividend_type_id
+                    or type_id == interest_type_id
+                ):
                     current_cash_balances[account_id] += cash_amt - commission
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
                     current_cash_balances[account_id] -= cash_amt + commission
@@ -904,7 +973,11 @@ def _calculate_daily_holdings_chronological_numba(
                     # Account-level fee/tax recorded on $CASH symbol (wire fees,
                     # margin interest, withholding, etc.). Debit cash by Total
                     # Amount (preferred), quantity, or commission as fallback.
-                    fee_val = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                    fee_val = (
+                        abs(total_amount)
+                        if abs(total_amount) > 1e-9
+                        else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                    )
                     current_cash_balances[account_id] -= fee_val
                 elif type_id == transfer_type_id:
                     dest_account_id = tx_to_accounts_np[tx_idx]
@@ -959,12 +1032,14 @@ def _calculate_daily_holdings_chronological_numba(
                         # 2. Add to Destination Account
                         dest_account_id = tx_to_accounts_np[tx_idx]
                         if dest_account_id != -1:
-                            current_holdings_qty[
-                                symbol_id, dest_account_id
-                            ] += transfer_qty
+                            current_holdings_qty[symbol_id, dest_account_id] += (
+                                transfer_qty
+                            )
                             # Also copy last price to destination if available
                             if current_last_prices[symbol_id, account_id] > 1e-9:
-                                current_last_prices[symbol_id, dest_account_id] = current_last_prices[symbol_id, account_id]
+                                current_last_prices[symbol_id, dest_account_id] = (
+                                    current_last_prices[symbol_id, account_id]
+                                )
 
                         # Note: This function only tracks quantity, not cost basis.
                         # The cost basis transfer is handled in _calculate_holdings_numba.
@@ -1000,21 +1075,49 @@ def _calculate_daily_holdings_chronological_numba(
                 if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
                     cash_delta = 0.0
                     if type_id == buy_type_id:
-                        cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price + commission))
+                        cash_delta = -(
+                            abs(total_amount)
+                            if abs(total_amount) > 1e-9
+                            else (abs(qty) * price + commission)
+                        )
                     elif type_id == sell_type_id:
-                        cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * price - commission))
+                        cash_delta = +(
+                            abs(total_amount)
+                            if abs(total_amount) > 1e-9
+                            else (abs(qty) * price - commission)
+                        )
                     elif type_id == dividend_type_id:
                         # Three accepted conventions for Dividend on a stock
                         # symbol: Total=amount (canonical / PDF import), or
                         # Qty=shares & Price=div_per_share (Style A), or
                         # Price=amount with Qty=0 (legacy). Prefer Total, fall
                         # back through qty*price, then bare price.
-                        div_amt = abs(total_amount) if abs(total_amount) > 1e-9 else (abs(qty) * abs(price) if abs(qty) > 1e-9 and abs(price) > 1e-9 else abs(price))
+                        div_amt = (
+                            abs(total_amount)
+                            if abs(total_amount) > 1e-9
+                            else (
+                                abs(qty) * abs(price)
+                                if abs(qty) > 1e-9 and abs(price) > 1e-9
+                                else abs(price)
+                            )
+                        )
                         cash_delta = +div_amt
                     elif type_id == interest_type_id:
-                        cash_delta = +(abs(total_amount) if abs(total_amount) > 1e-9 else abs(price))
+                        cash_delta = +(
+                            abs(total_amount)
+                            if abs(total_amount) > 1e-9
+                            else abs(price)
+                        )
                     elif type_id == fees_type_id or type_id == tax_type_id:
-                        cash_delta = -(abs(total_amount) if abs(total_amount) > 1e-9 else (abs(commission) if abs(commission) > 1e-9 else abs(price)))
+                        cash_delta = -(
+                            abs(total_amount)
+                            if abs(total_amount) > 1e-9
+                            else (
+                                abs(commission)
+                                if abs(commission) > 1e-9
+                                else abs(price)
+                            )
+                        )
                     elif type_id == short_sell_type_id:
                         cash_delta = +(abs(qty) * price - commission)
                     elif type_id == buy_to_cover_type_id:
@@ -1023,7 +1126,7 @@ def _calculate_daily_holdings_chronological_numba(
 
                     if abs(cash_delta) > 1e-9:
                         current_cash_balances[account_id] += cash_delta
-            
+
             tx_idx += 1
 
         for s_id in range(num_symbols):
@@ -1083,7 +1186,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     transactions_til_date.sort_values(
         by=["Date", "original_index"], inplace=True, ascending=True
     )
-    
+
     # --- ADDED: Support Intraday comparison ---
     # If target_date is a full datetime (and not just midnight), use exact comparison
     mask = None
@@ -1097,11 +1200,11 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     else:
         # Fallback for date objects (Legacy Daily)
         mask = transactions_df["Date"].dt.date <= target_date
-        
+
     transactions_til_date = transactions_df[mask].copy()
     if transactions_til_date.empty:
         return 0.0, False
-        
+
     # Re-sort again just in case (though filtered subset should preserve order)
     transactions_til_date.sort_values(
         by=["Date", "original_index"], inplace=True, ascending=True
@@ -1120,9 +1223,9 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     try:
         target_date_ts = pd.Timestamp(target_date)
         if target_date_ts.tz is None:
-            target_date_ts = target_date_ts.tz_localize('UTC')
+            target_date_ts = target_date_ts.tz_localize("UTC")
         target_date_ordinal = target_date_ts.value
-        
+
         # --- FIX: Define tx_types_np earlier for use in debug block ---
         tx_types_series = (
             transactions_til_date["Type"]
@@ -1133,7 +1236,12 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         )
         tx_types_np = tx_types_series.values.astype(np.int64)
 
-        tx_dates_ordinal_np = np.array(pd.to_datetime(transactions_til_date["Date"], utc=True).values.astype('int64'), dtype=np.int64)
+        tx_dates_ordinal_np = np.array(
+            pd.to_datetime(transactions_til_date["Date"], utc=True).values.astype(
+                "int64"
+            ),
+            dtype=np.int64,
+        )
         tx_symbols_series = _normalize_series(transactions_til_date["Symbol"]).map(
             symbol_to_id
         )
@@ -1153,7 +1261,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         else:
             tx_to_accounts_series = pd.Series(-1, index=transactions_til_date.index)
         tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
-    
+
         # --- END ADDED ---
 
         # --- DEBUG BLOCK 2: Check Mapping ---
@@ -1211,7 +1319,9 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         # column (older fixtures) → zeros, which keeps callers backward-compat.
         if "Total Amount" in transactions_til_date.columns:
             tx_totals_np = (
-                transactions_til_date["Total Amount"].fillna(0.0).values.astype(np.float64)
+                transactions_til_date["Total Amount"]
+                .fillna(0.0)
+                .values.astype(np.float64)
             )
         else:
             tx_totals_np = np.zeros(len(transactions_til_date), dtype=np.float64)
@@ -1261,7 +1371,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         return np.nan, True
 
     # --- DEBUG NUMBA INPUTS ---
-    
+
     # --- Call Numba Helper ---
     try:
         (
@@ -1280,7 +1390,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             tx_types_np,
             tx_quantities_np,
             tx_prices_np,
-            tx_totals_np,       # Total Amount for cash-math fallback
+            tx_totals_np,  # Total Amount for cash-math fallback
             tx_commissions_np,
             tx_split_ratios_np,
             tx_local_currencies_np,
@@ -1306,7 +1416,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             shortable_symbol_ids,
             acc_cash_modes_val,
         )
-        
+
     except Exception as e_numba_call:
         logging.error(f"Numba Call Error for {target_date}: {e_numba_call}")
         return np.nan, True
@@ -1317,12 +1427,14 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     any_lookup_nan_on_date = False
 
     # Iterate through stock holdings
-    stock_indices = np.argwhere(np.abs(holdings_qty_np) > STOCK_QUANTITY_CLOSE_TOLERANCE)
-    
+    stock_indices = np.argwhere(
+        np.abs(holdings_qty_np) > STOCK_QUANTITY_CLOSE_TOLERANCE
+    )
+
     for idx_tuple in stock_indices:
         symbol_id = idx_tuple[0]
         account_id = idx_tuple[1]
-        
+
         # --- ADDED: Filter by included_accounts ---
         if included_accounts and account_id not in included_account_ids:
             continue
@@ -1330,10 +1442,10 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
 
         current_qty = holdings_qty_np[symbol_id, account_id]
         last_price = last_prices_np[symbol_id, account_id]
-        
+
         internal_symbol = id_to_symbol[symbol_id]
         account = id_to_account[account_id]
-        
+
         # 3. Get Price
         current_price_local = np.nan
         try:
@@ -1346,13 +1458,13 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             )
         except Exception:
             pass
-            
+
         # --- NEW: Fallback to last transaction price ---
         if pd.isna(current_price_local):
             if last_price > 1e-9:
                 current_price_local = last_price
             else:
-                current_price_local = np.nan # Ensure it's a float/NaN, not None
+                current_price_local = np.nan  # Ensure it's a float/NaN, not None
 
         currency_id = holdings_currency_np[symbol_id, account_id]
         local_currency = id_to_currency.get(currency_id, default_currency)
@@ -1366,54 +1478,58 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             # any_lookup_nan_on_date = True
             # total_market_value_display_curr_agg = np.nan
             # break
-            
+
         if current_price_local is None:
             current_price_local = np.nan
 
         # Calculate local market value
         market_value_local = current_qty * current_price_local
-        
+
         market_value_display = market_value_local * fx_rate
 
         if IS_DEBUG_DATE:
-            logging.debug(f"    Numba Val Agg: Stock {internal_symbol}/{account}, Qty: {current_qty}, Price: {current_price_local}, MV: {market_value_display}")
+            logging.debug(
+                f"    Numba Val Agg: Stock {internal_symbol}/{account}, Qty: {current_qty}, Price: {current_price_local}, MV: {market_value_display}"
+            )
 
         if pd.isna(market_value_display):
             if current_qty == 0:
                 # Zero qty should not cause NaN
                 market_value_display = 0.0
             else:
-                 any_lookup_nan_on_date = True
-                 # Identify which position failed so the outer "Valuation failed
-                 # for date" warning is actionable. Common cause: a Buy/Transfer
-                 # row with Price/Share = 0 (e.g. a stock spinoff entered as
-                 # zero-cost shares) leaves last_prices_np[symbol] = 0, so when
-                 # yfinance also has no historical row for that ticker (delisted
-                 # or short-lived spinoff symbol like KRFT 2012-2015) the
-                 # fallback chain produces NaN and the position drops out of
-                 # the day's total. Naming the symbol points the user straight
-                 # at the offending transaction.
-                 logging.warning(
-                     f"Valuation NaN for {internal_symbol}/{account} on {target_date}: "
-                     f"qty={current_qty:.4f}, yfinance price={current_price_local}, "
-                     f"last_tx_price={last_price}, fx={fx_rate}. "
-                     f"Add a manual price override or enter the acquiring transaction with a non-zero Price/Share."
-                 )
+                any_lookup_nan_on_date = True
+                # Identify which position failed so the outer "Valuation failed
+                # for date" warning is actionable. Common cause: a Buy/Transfer
+                # row with Price/Share = 0 (e.g. a stock spinoff entered as
+                # zero-cost shares) leaves last_prices_np[symbol] = 0, so when
+                # yfinance also has no historical row for that ticker (delisted
+                # or short-lived spinoff symbol like KRFT 2012-2015) the
+                # fallback chain produces NaN and the position drops out of
+                # the day's total. Naming the symbol points the user straight
+                # at the offending transaction.
+                logging.warning(
+                    f"Valuation NaN for {internal_symbol}/{account} on {target_date}: "
+                    f"qty={current_qty:.4f}, yfinance price={current_price_local}, "
+                    f"last_tx_price={last_price}, fx={fx_rate}. "
+                    f"Add a manual price override or enter the acquiring transaction with a non-zero Price/Share."
+                )
         else:
             total_market_value_display_curr_agg += market_value_display
 
     if IS_DEBUG_DATE:
-        logging.debug(f"    Numba Val Agg: Pre-Cash Total: {total_market_value_display_curr_agg}")
+        logging.debug(
+            f"    Numba Val Agg: Pre-Cash Total: {total_market_value_display_curr_agg}"
+        )
 
     # --- ADDED: Aggregate Cash Balances from Numba ---
     # Note: If any_lookup_nan_on_date is true from stocks, we might still want to sum cash?
     # Original logic breaks early. Keep consistent?
     # If we patched stock FX, we likely won't break early.
-    
+
     cash_indices = np.argwhere(np.abs(cash_balances_np) > 1e-9)
     for acc_id_tuple in cash_indices:
         acc_id = acc_id_tuple[0]
-        
+
         # --- ADDED: Filter by included_accounts ---
         if included_accounts and acc_id not in included_account_ids:
             continue
@@ -1430,18 +1546,22 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         fx_rate = get_historical_rate_via_usd_bridge(
             local_currency, target_currency, target_date, historical_fx_yf
         )
-        
+
         if pd.isna(fx_rate):
-             # Hist Fix: Default to 1.0
-             fx_rate = 1.0
+            # Hist Fix: Default to 1.0
+            fx_rate = 1.0
 
         cash_val_display = current_qty * fx_rate
         if IS_DEBUG_DATE:
-            logging.debug(f"    Numba Val Agg: Cash {account}, Qty: {current_qty}, FX: {fx_rate}, MV: {cash_val_display}")
+            logging.debug(
+                f"    Numba Val Agg: Cash {account}, Qty: {current_qty}, FX: {fx_rate}, MV: {cash_val_display}"
+            )
 
         total_market_value_display_curr_agg += cash_val_display
         if IS_DEBUG_DATE:
-            logging.debug(f"    Numba Val Agg: Running Total after Cash {account}: {total_market_value_display_curr_agg}")
+            logging.debug(
+                f"    Numba Val Agg: Running Total after Cash {account}: {total_market_value_display_curr_agg}"
+            )
 
     if IS_DEBUG_DATE:
         logging.debug(
@@ -1514,6 +1634,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
         )
     else:
         import traceback
+
         traceback.print_stack()
         logging.error(
             f"Invalid calculation method specified: {method}. Defaulting to python."

@@ -10,6 +10,7 @@ if current_dir not in sys.path:
 from ai_review_worker import process_ticker_list, _open_screener_conn  # noqa: E402
 from market_data import get_shared_mdp  # noqa: E402
 
+
 def get_missing_reviews():
     """Fetches symbols from all universes that do not have a usable AI summary.
 
@@ -34,31 +35,34 @@ def get_missing_reviews():
         rows = cursor.fetchall()
         missing = {}
         for symbol, universe in rows:
-            missing.setdefault(universe or 'manual', []).append(symbol)
+            missing.setdefault(universe or "manual", []).append(symbol)
         return missing
     finally:
         conn.close()
+
 
 def main():
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler(sys.stdout)]
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
     logging.info("Starting AI Review Worker for Missing Reviews...")
-    
+
     missing = get_missing_reviews()
     total_missing = sum(len(tickers) for tickers in missing.values())
-    logging.info(f"Found {total_missing} stocks missing AI reviews across {len(missing)} universes.")
-    
+    logging.info(
+        f"Found {total_missing} stocks missing AI reviews across {len(missing)} universes."
+    )
+
     if total_missing == 0:
         logging.info("No missing reviews found. Exiting.")
         return
 
     # Get Market Data Provider
     mdp = get_shared_mdp()
-    
+
     try:
         for universe, tickers in missing.items():
             process_ticker_list(mdp, tickers, universe)
@@ -68,6 +72,7 @@ def main():
         sys.exit(0)
     except Exception as e:
         logging.error(f"Global worker exception: {e}", exc_info=True)
+
 
 if __name__ == "__main__":
     main()

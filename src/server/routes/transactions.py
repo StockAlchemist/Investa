@@ -35,7 +35,9 @@ from server.pdf_parser import extract_transactions_from_file
 from server.route_utils import clean_nans
 
 # Project root (…/Investa) for temp upload storage
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+project_root = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 router = APIRouter()
 
@@ -43,13 +45,14 @@ router = APIRouter()
 def reload_data_and_clear_cache(current_user: Optional[User] = None):
     """Proxy to api.reload_data_and_clear_cache (lazy import — api.py includes this router)."""
     from server.portfolio_service import reload_data_and_clear_cache as _impl
+
     return _impl(current_user)
 
 
 @router.get("/transactions")
 def get_transactions(
     accounts: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
 ):
     """
     Returns the list of transactions, optionally filtered by account.
@@ -62,7 +65,7 @@ def get_transactions(
         List[Dict]: A list of transaction records.
     """
     df, _, _, _, _, _, _, _ = data
-    
+
     if df.empty:
         return []
 
@@ -73,23 +76,23 @@ def get_transactions(
 
         # Ensure we include the ID in the response if it's in the index or a column
         if "original_index" in df.columns:
-             # Make sure original_index is available as 'id' for the frontend
-             df["id"] = df["original_index"]
+            # Make sure original_index is available as 'id' for the frontend
+            df["id"] = df["original_index"]
         elif df.index.name == "original_index" or "original_index" in df.index.names:
-             df["id"] = df.index.get_level_values("original_index")
+            df["id"] = df.index.get_level_values("original_index")
 
         # Sort by Date descending, then ID descending
         if "Date" in df.columns and "id" in df.columns:
             df = df.sort_values(by=["Date", "id"], ascending=[False, False])
         elif "Date" in df.columns:
             df = df.sort_values(by="Date", ascending=False)
-            
+
         # Handle NaNs and convert to list of dicts
         df = df.where(pd.notnull(df), None)
-        
+
         records = df.to_dict(orient="records")
         return clean_nans(records)
-        
+
     except Exception as e:
         logging.error(f"Error getting transactions: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -110,7 +113,7 @@ class TransactionInput(BaseModel):
     To_Account: Optional[str] = Field(None, alias="To Account")
     Tags: Optional[str] = None
     Auto_Add_Cash: bool = Field(False, alias="Auto-add Cash")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -146,7 +149,9 @@ def _handle_auto_cash_generation(
     # API call must not be able to corrupt an Auto account's cash balance.
     acc_mode = str((account_cash_mode_map or {}).get(account, "Manual")).strip().lower()
     if acc_mode == "auto":
-        logging.info(f"Skipping auto-cash generation for '{account}': account is in Auto cash mode.")
+        logging.info(
+            f"Skipping auto-cash generation for '{account}': account is in Auto cash mode."
+        )
         return
 
     date_str = tx_data.get("Date")
@@ -169,7 +174,9 @@ def _handle_auto_cash_generation(
         total_amt = tx_data.get("Total Amount")
         if total_amt is not None and pd.notna(total_amt):
             settled = abs(float(total_amt))
-            principal = settled - commission if tx_type == "buy" else settled + commission
+            principal = (
+                settled - commission if tx_type == "buy" else settled + commission
+            )
 
     if principal <= 1e-9:
         logging.warning(
@@ -180,22 +187,31 @@ def _handle_auto_cash_generation(
     def post_leg(leg_type: str, amount: float, note: str):
         """Post one $CASH leg. 'Total Amount' is stored signed, matching the
         convention the clients write: Buy/Withdrawal negative, Sell positive."""
-        add_transaction_to_db(conn, {
-            "Date": date_str,
-            "Type": leg_type,
-            "Symbol": "$CASH",
-            "Quantity": abs(amount),
-            "Price/Share": 1.0,
-            "Total Amount": -abs(amount) if leg_type in ("Buy", "Withdrawal") else abs(amount),
-            "Account": account,
-            "Local Currency": local_currency,
-            "Note": note,
-            "user_id": user_id,
-        })
+        add_transaction_to_db(
+            conn,
+            {
+                "Date": date_str,
+                "Type": leg_type,
+                "Symbol": "$CASH",
+                "Quantity": abs(amount),
+                "Price/Share": 1.0,
+                "Total Amount": -abs(amount)
+                if leg_type in ("Buy", "Withdrawal")
+                else abs(amount),
+                "Account": account,
+                "Local Currency": local_currency,
+                "Note": note,
+                "user_id": user_id,
+            },
+        )
 
     # Funding a buy sells $CASH; proceeds from a sell buy $CASH.
     verb = "Buy" if tx_type == "buy" else "Sell"
-    post_leg("Sell" if tx_type == "buy" else "Buy", principal, f"Auto-cash for {verb} {symbol}")
+    post_leg(
+        "Sell" if tx_type == "buy" else "Buy",
+        principal,
+        f"Auto-cash for {verb} {symbol}",
+    )
     if commission > 0:
         post_leg("Withdrawal", commission, f"Auto-cash Fee for {verb} {symbol}")
 
@@ -204,7 +220,7 @@ def _handle_auto_cash_generation(
 def create_transaction(
     transaction: TransactionInput,
     data: tuple = Depends(get_transaction_data),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Creates a new transaction.
@@ -232,13 +248,17 @@ def create_transaction(
             _handle_auto_cash_generation(conn, tx_data, account_cash_mode_map)
 
         conn.close()
-        
+
         if success:
-            reload_data_and_clear_cache(current_user) # Refresh transaction and summary caches
+            reload_data_and_clear_cache(
+                current_user
+            )  # Refresh transaction and summary caches
             return {"status": "success", "id": new_id, "message": "Transaction added"}
         else:
-            raise HTTPException(status_code=500, detail="Failed to add transaction to database")
-            
+            raise HTTPException(
+                status_code=500, detail="Failed to add transaction to database"
+            )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -251,7 +271,7 @@ def parse_document(
     file: UploadFile = File(...),
     cash_mode: Optional[str] = fastapi.Form(None),
     account_override: Optional[str] = fastapi.Form(None),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Parses a brokerage statement (PDF or Image) and returns extracted transactions.
@@ -262,35 +282,42 @@ def parse_document(
         # Use a safe unique name
         temp_dir = os.path.join(project_root, "data", "temp_uploads")
         os.makedirs(temp_dir, exist_ok=True)
-        temp_file_path = os.path.join(temp_dir, f"{current_user.id}_{int(time.time())}_{file.filename}")
-        
+        temp_file_path = os.path.join(
+            temp_dir, f"{current_user.id}_{int(time.time())}_{file.filename}"
+        )
+
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-            
+
         # Parse the document
         transactions = []
         try:
             transactions = extract_transactions_from_file(
-                temp_file_path, 
-                user_id=current_user.id, 
-                cash_mode=cash_mode, 
-                account_override=account_override
+                temp_file_path,
+                user_id=current_user.id,
+                cash_mode=cash_mode,
+                account_override=account_override,
             )
         finally:
             # Always clean up temp file
             if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
-            
+
         if not transactions:
-            return {"status": "success", "message": "No transactions found in document.", "transactions": [], "count": 0}
-            
+            return {
+                "status": "success",
+                "message": "No transactions found in document.",
+                "transactions": [],
+                "count": 0,
+            }
+
         return {
-            "status": "success", 
-            "message": f"Successfully extracted {len(transactions)} transactions.", 
+            "status": "success",
+            "message": f"Successfully extracted {len(transactions)} transactions.",
             "transactions": transactions,
-            "count": len(transactions)
+            "count": len(transactions),
         }
-            
+
     except Exception as e:
         logging.error(f"Error parsing document: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -300,7 +327,7 @@ def parse_document(
 def add_transactions_batch(
     payload: TransactionBatchInput,
     data: tuple = Depends(get_transaction_data),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Adds a batch of transactions to the database. Used for the Review &
@@ -352,7 +379,7 @@ def add_transactions_batch(
             "status": "success",
             "message": f"Successfully imported {imported_count} transactions.",
             "count": imported_count,
-            "errors": errors
+            "errors": errors,
         }
 
     except Exception as e:
@@ -365,7 +392,7 @@ def update_transaction(
     transaction_id: int,
     transaction: TransactionInput,
     data: tuple = Depends(get_transaction_data),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Updates an existing transaction.
@@ -382,19 +409,21 @@ def update_transaction(
         _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
-             raise HTTPException(status_code=500, detail="Database connection failed")
+            raise HTTPException(status_code=500, detail="Database connection failed")
 
         tx_data = transaction.dict(by_alias=True)
         tx_data["user_id"] = current_user.id
 
         success = update_transaction_in_db(conn, transaction_id, tx_data)
         conn.close()
-        
+
         if success:
             reload_data_and_clear_cache(current_user)
             return {"status": "success", "message": "Transaction updated"}
         else:
-            raise HTTPException(status_code=404, detail="Transaction not found or update failed")
+            raise HTTPException(
+                status_code=404, detail="Transaction not found or update failed"
+            )
 
     except HTTPException:
         raise
@@ -407,7 +436,7 @@ def update_transaction(
 def delete_transaction(
     transaction_id: int,
     data: tuple = Depends(get_transaction_data),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Deletes a transaction.
@@ -423,16 +452,18 @@ def delete_transaction(
         _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
-             raise HTTPException(status_code=500, detail="Database connection failed")
+            raise HTTPException(status_code=500, detail="Database connection failed")
 
         success = delete_transaction_from_db(conn, transaction_id)
         conn.close()
-        
+
         if success:
             reload_data_and_clear_cache(current_user)
             return {"status": "success", "message": "Transaction deleted"}
         else:
-            raise HTTPException(status_code=404, detail="Transaction not found or delete failed")
+            raise HTTPException(
+                status_code=404, detail="Transaction not found or delete failed"
+            )
 
     except HTTPException:
         raise
@@ -453,7 +484,7 @@ class HoldingTagUpdate(BaseModel):
 def update_holding_tags(
     update_data: HoldingTagUpdate,
     data: tuple = Depends(get_transaction_data),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Updates tags for all transactions associated with a specific holding (Symbol + Account).
@@ -462,12 +493,12 @@ def update_holding_tags(
         _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
-             raise HTTPException(status_code=500, detail="Database connection failed")
+            raise HTTPException(status_code=500, detail="Database connection failed")
 
         cursor = conn.cursor()
         # Clean tags
         tags_value = update_data.tags.strip()
-        
+
         # Update all transactions for this symbol and account
         # Note: We probably want to update ALL types (Buy, Sell, Div, etc) so they stay grouped?
         # Or just open positions?
@@ -477,9 +508,12 @@ def update_holding_tags(
         conn.commit()
         rows_affected = cursor.rowcount
         conn.close()
-        
+
         reload_data_and_clear_cache(current_user)
-        return {"status": "success", "message": f"Updated tags for {rows_affected} transactions"}
+        return {
+            "status": "success",
+            "message": f"Updated tags for {rows_affected} transactions",
+        }
 
     except Exception as e:
         logging.error(f"Error updating holding tags: {e}", exc_info=True)
@@ -490,7 +524,7 @@ def update_holding_tags(
 async def sync_ibkr(
     current_user: User = Depends(get_current_user),
     data: tuple = Depends(get_transaction_data),
-    config_manager = Depends(get_config_manager)
+    config_manager=Depends(get_config_manager),
 ):
     """
     Syncs transactions from IBKR via Flex Web Service.
@@ -499,8 +533,10 @@ async def sync_ibkr(
         # Prioritize values from config_manager (persisted in manual_overrides.json)
         # Fall back to config.py (environment variables)
         token = config_manager.manual_overrides.get("ibkr_token") or config.IBKR_TOKEN
-        query_id = config_manager.manual_overrides.get("ibkr_query_id") or config.IBKR_QUERY_ID
-        
+        query_id = (
+            config_manager.manual_overrides.get("ibkr_query_id") or config.IBKR_QUERY_ID
+        )
+
         if not token or not query_id:
             # We check here to provide a clear error to the user via the API
             return JSONResponse(
@@ -508,15 +544,15 @@ async def sync_ibkr(
                 content={
                     "status": "error",
                     "code": "CONFIG_MISSING",
-                    "message": "IBKR API not configured. Please set IBKR Token and Query ID in your settings."
-                }
+                    "message": "IBKR API not configured. Please set IBKR Token and Query ID in your settings.",
+                },
             )
-            
+
         _, _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
-            
+
         connector = IBKRConnector(token=token, query_id=query_id)
         # Flex sync involves network I/O, run in threadpool to avoid blocking event loop
         try:
@@ -527,47 +563,70 @@ async def sync_ibkr(
                 content={
                     "status": "error",
                     "code": "SYNC_FAILED",
-                    "message": str(sync_err)
-                }
+                    "message": str(sync_err),
+                },
             )
-        
+
         if not new_transactions:
-             return {
-                 "status": "success", 
-                 "message": "Sync successful, but no new transactions were found in the report.", 
-                 "added_count": 0
-             }
-             
+            return {
+                "status": "success",
+                "message": "Sync successful, but no new transactions were found in the report.",
+                "added_count": 0,
+            }
+
         staged_count = 0
         duplicate_count = 0
-        
+
         # Helper logic for staging (since we had issues adding it to db_utils)
         def _stage_tx(conn, tx_data, u_id):
             ext_id = tx_data.get("ExternalID")
             cursor = conn.cursor()
             if ext_id:
                 # Check main table
-                cursor.execute("SELECT id FROM transactions WHERE ExternalID = ?", (ext_id,))
+                cursor.execute(
+                    "SELECT id FROM transactions WHERE ExternalID = ?", (ext_id,)
+                )
                 if cursor.fetchone():
                     return False, "duplicate_main"
                 # Check pending table
-                cursor.execute("SELECT id FROM pending_transactions WHERE ExternalID = ?", (ext_id,))
+                cursor.execute(
+                    "SELECT id FROM pending_transactions WHERE ExternalID = ?",
+                    (ext_id,),
+                )
                 if cursor.fetchone():
                     return False, "duplicate_pending"
-            
-            db_cols = ["Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount", "Commission", "Account", "Split Ratio", "Note", "Local Currency", "To Account", "Tags", "ExternalID", "user_id"]
-            placeholders = ", ".join([f":{c.replace('/', '_').replace(' ', '_')}" for c in db_cols])
+
+            db_cols = [
+                "Date",
+                "Type",
+                "Symbol",
+                "Quantity",
+                "Price/Share",
+                "Total Amount",
+                "Commission",
+                "Account",
+                "Split Ratio",
+                "Note",
+                "Local Currency",
+                "To Account",
+                "Tags",
+                "ExternalID",
+                "user_id",
+            ]
+            placeholders = ", ".join(
+                [f":{c.replace('/', '_').replace(' ', '_')}" for c in db_cols]
+            )
             cols_str = ", ".join([f'"{c}"' for c in db_cols])
-            
+
             sql = f"INSERT INTO pending_transactions ({cols_str}) VALUES ({placeholders});"
             sql_data = {}
             for col in db_cols:
                 val = tx_data.get(col) if col != "user_id" else u_id
-                
+
                 # Fallback for Total Amount if missing (or provided as 'Amount')
                 if col == "Total Amount" and val is None:
-                    val = tx_data.get("Amount") # Try alternate key
-                    if val is None: # Calculate
+                    val = tx_data.get("Amount")  # Try alternate key
+                    if val is None:  # Calculate
                         q = tx_data.get("Quantity", 0)
                         p = tx_data.get("Price/Share", 0)
                         c = tx_data.get("Commission", 0)
@@ -579,8 +638,10 @@ async def sync_ibkr(
                     val = val.strip().title()
                 if col == "Date" and isinstance(val, (datetime, date)):
                     val = val.strftime("%Y-%m-%d")
-                sql_data[col.replace('/', '_').replace(' ', '_')] = None if pd.isna(val) else val
-            
+                sql_data[col.replace("/", "_").replace(" ", "_")] = (
+                    None if pd.isna(val) else val
+                )
+
             cursor.execute(sql, sql_data)
             return True, cursor.lastrowid
 
@@ -590,26 +651,28 @@ async def sync_ibkr(
                 staged_count += 1
             elif result in ["duplicate_main", "duplicate_pending"]:
                 duplicate_count += 1
-                    
+
         conn.commit()
         conn.close()
-        
+
         return {
-            "status": "success", 
+            "status": "success",
             "message": f"Sync successful. {staged_count} transactions staged for review ({duplicate_count} skipped as duplicates).",
             "staged_count": staged_count,
-            "duplicate_count": duplicate_count
+            "duplicate_count": duplicate_count,
         }
-        
+
     except Exception as e:
         logging.error(f"Error during IBKR sync: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": str(e)}
+        )
 
 
 @router.get("/sync/ibkr/pending")
 def get_pending_ibkr(
     current_user: User = Depends(get_current_user),
-    conn: sqlite3.Connection = Depends(get_user_db_connection)
+    conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """Fetch pending transactions for review."""
     try:
@@ -624,34 +687,59 @@ def get_pending_ibkr(
 def approve_ibkr(
     ids: List[int],
     current_user: User = Depends(get_current_user),
-    conn: sqlite3.Connection = Depends(get_user_db_connection)
+    conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """Approve and move transactions from staging to main table."""
     try:
         cursor = conn.cursor()
         approved_count = 0
-        
+
         # Columns in pending (exclude ID)
-        cols = ["Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount", "Commission", "Account", "Split Ratio", "Note", "Local Currency", "To Account", "Tags", "ExternalID", "user_id"]
+        cols = [
+            "Date",
+            "Type",
+            "Symbol",
+            "Quantity",
+            "Price/Share",
+            "Total Amount",
+            "Commission",
+            "Account",
+            "Split Ratio",
+            "Note",
+            "Local Currency",
+            "To Account",
+            "Tags",
+            "ExternalID",
+            "user_id",
+        ]
         cols_str = ", ".join([f'"{c}"' for c in cols])
-        
+
         for p_id in ids:
             # Fetch from pending
-            cursor.execute(f"SELECT {cols_str} FROM pending_transactions WHERE id = ?", (p_id,))
+            cursor.execute(
+                f"SELECT {cols_str} FROM pending_transactions WHERE id = ?", (p_id,)
+            )
             row = cursor.fetchone()
             if row:
                 # Insert into main table
                 placeholders = ", ".join(["?"] * len(cols))
-                cursor.execute(f"INSERT INTO transactions ({cols_str}) VALUES ({placeholders})", row)
+                cursor.execute(
+                    f"INSERT INTO transactions ({cols_str}) VALUES ({placeholders})",
+                    row,
+                )
                 # Delete from pending
                 cursor.execute("DELETE FROM pending_transactions WHERE id = ?", (p_id,))
                 approved_count += 1
-        
+
         conn.commit()
         if approved_count > 0:
             reload_data_and_clear_cache(current_user)
-            
-        return {"status": "success", "message": f"Successfully approved {approved_count} transactions.", "count": approved_count}
+
+        return {
+            "status": "success",
+            "message": f"Successfully approved {approved_count} transactions.",
+            "count": approved_count,
+        }
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -661,17 +749,24 @@ def approve_ibkr(
 def reject_ibkr(
     ids: List[int],
     current_user: User = Depends(get_current_user),
-    conn: sqlite3.Connection = Depends(get_user_db_connection)
+    conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """Discard pending transactions."""
     try:
         cursor = conn.cursor()
-        cursor.execute(f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?']*len(ids))})", (*ids,))
+        cursor.execute(
+            f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?'] * len(ids))})",
+            (*ids,),
+        )
         deleted_count = cursor.rowcount
         conn.commit()
         if deleted_count > 0:
             reload_data_and_clear_cache(current_user)
-        return {"status": "success", "message": f"Discarded {deleted_count} transactions.", "count": deleted_count}
+        return {
+            "status": "success",
+            "message": f"Discarded {deleted_count} transactions.",
+            "count": deleted_count,
+        }
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

@@ -30,7 +30,9 @@ from config import (
     SHORTABLE_SYMBOLS,
     STOCK_QUANTITY_CLOSE_TOLERANCE,
 )
-from corporate_actions import deduplicate_split_transactions as _deduplicate_split_transactions
+from corporate_actions import (
+    deduplicate_split_transactions as _deduplicate_split_transactions,
+)
 from finutils import _get_file_hash, is_cash_symbol, map_to_yf_symbol
 from market_data import get_shared_mdp
 
@@ -102,8 +104,6 @@ def _unadjust_prices(
     for yf_symbol, adj_price_df in adjusted_prices_yf.items():
         # --- DEBUG FLAG ---
         IS_DEBUG_SYMBOL = yf_symbol == "AAPL"
-        
-
 
         # --- Handle Empty/Invalid Input DataFrame ---
         # Prefer the UNADJUSTED Close column. yfinance is fetched with
@@ -121,7 +121,7 @@ def _unadjust_prices(
                 col_to_use = "Close"
             elif "Adj Close" in adj_price_df.columns:
                 col_to_use = "Adj Close"
-        
+
         if not col_to_use:
             if IS_DEBUG_SYMBOL:
                 logging.debug(
@@ -131,13 +131,13 @@ def _unadjust_prices(
                 adj_price_df.copy()
             )  # Return copy of input
             continue
-        
+
         # Renaming for internal consistency within this function
         # We will work with a 'price' column locally
         adj_price_df_working = adj_price_df.copy()
         if col_to_use != "price":
             adj_price_df_working["price"] = adj_price_df_working[col_to_use]
-        
+
         # --- END Handle Empty/Invalid Input ---
 
         # --- Get Splits ---
@@ -208,7 +208,7 @@ def _unadjust_prices(
                 # All dates STRICTLY BEFORE the split_date get unadjusted.
                 # The split_date itself uses the already-adjusted (new) price.
                 mask = pd.Series(forward_split_factor.index).dt.date < split_date
-                mask = mask.values # Convert back to numpy mask for index selection
+                mask = mask.values  # Convert back to numpy mask for index selection
                 if IS_DEBUG_SYMBOL and split_date == date(
                     2020, 8, 31
                 ):  # Example debug date
@@ -256,9 +256,10 @@ def _unadjust_prices(
         ):
             unadjusted_count += 1
         # Return DataFrame with only the unadjusted price column, renamed to 'price'
-        result_df = unadj_df[["unadjusted_price"]].rename(columns={"unadjusted_price": "price"})
+        result_df = unadj_df[["unadjusted_price"]].rename(
+            columns={"unadjusted_price": "price"}
+        )
         unadjusted_prices_yf[yf_symbol] = result_df
-        
 
     logging.info(
         f"--- Finished Price Unadjustment ({unadjusted_count} symbols processed with splits) ---"
@@ -389,14 +390,14 @@ def _calculate_daily_metrics_worker(
                     if pd.notna(portfolio_value_main) and pd.notna(portfolio_value_py)
                     else np.nan
                 )
-                
+
                 if diff > 1e-3:  # Log significant differences
                     logging.warning(
-                        f"COMPARE {eval_date}: Numba={portfolio_value_main:.4f} ({end_time_main-start_time:.4f}s), Python={portfolio_value_py:.4f} ({end_time_py-start_time_py:.4f}s), Diff={diff:.4f}"
+                        f"COMPARE {eval_date}: Numba={portfolio_value_main:.4f} ({end_time_main - start_time:.4f}s), Python={portfolio_value_py:.4f} ({end_time_py - start_time_py:.4f}s), Diff={diff:.4f}"
                     )
                 elif eval_date.day == 1:  # Log first day of month for timing check
                     logging.info(
-                        f"COMPARE {eval_date}: Numba={portfolio_value_main:.4f} ({end_time_main-start_time:.4f}s), Python={portfolio_value_py:.4f} ({end_time_py-start_time_py:.4f}s), Diff={diff:.4f}"
+                        f"COMPARE {eval_date}: Numba={portfolio_value_main:.4f} ({end_time_main - start_time:.4f}s), Python={portfolio_value_py:.4f} ({end_time_py - start_time_py:.4f}s), Diff={diff:.4f}"
                     )
 
             except Exception as e_comp:
@@ -565,20 +566,24 @@ def _prepare_historical_inputs(
     else:
         # Normalize the DataFrame's Account columns to ensure consistent matching
         # Generate normalized account sets from the DataFrame
-        df_accounts_normalized = _normalize_series(all_transactions_df["Account"]).unique()
+        df_accounts_normalized = _normalize_series(
+            all_transactions_df["Account"]
+        ).unique()
         available_accounts_in_df = set(df_accounts_normalized)
-        
+
         if "To Account" in all_transactions_df.columns:
-            df_to_accounts_normalized = _normalize_series(
-                all_transactions_df["To Account"]
-            ).dropna().unique()
+            df_to_accounts_normalized = (
+                _normalize_series(all_transactions_df["To Account"]).dropna().unique()
+            )
             available_accounts_in_df.update(df_to_accounts_normalized)
 
         # Normalize include_accounts to match
         normalized_include_accounts = [acc.strip().upper() for acc in include_accounts]
-        
+
         valid_include_accounts = [
-            acc for acc in normalized_include_accounts if acc in available_accounts_in_df
+            acc
+            for acc in normalized_include_accounts
+            if acc in available_accounts_in_df
         ]
         if not valid_include_accounts:
             logging.warning(
@@ -588,7 +593,9 @@ def _prepare_historical_inputs(
 
         # --- Robust Filtering Logic (Matches calculate_portfolio_summary) ---
         # 1. Primary Account Match - use normalized account column
-        from_account_mask = _normalize_series(all_transactions_df["Account"]).isin(valid_include_accounts)
+        from_account_mask = _normalize_series(all_transactions_df["Account"]).isin(
+            valid_include_accounts
+        )
 
         # 2. Destination Account Match (Transfers In) - use normalized to account column
         to_account_mask = pd.Series(False, index=all_transactions_df.index)
@@ -630,14 +637,21 @@ def _prepare_historical_inputs(
         # Splits are corporate actions that affect the stock globally.
         # "All Accounts" acts as a catch-all for global or manual adjustment transactions.
         split_mask = (
-            all_transactions_df["Type"].astype(str).str.lower().isin(["split", "stock split"])
+            all_transactions_df["Type"]
+            .astype(str)
+            .str.lower()
+            .isin(["split", "stock split"])
         )
         all_accounts_mask = (
             _normalize_series(all_transactions_df["Account"]) == "ALL ACCOUNTS"
         )
 
         final_combined_mask = (
-            from_account_mask | to_account_mask | preceding_tx_mask | split_mask | all_accounts_mask
+            from_account_mask
+            | to_account_mask
+            | preceding_tx_mask
+            | split_mask
+            | all_accounts_mask
         )
         transactions_df_included = all_transactions_df[final_combined_mask].copy()
 
@@ -661,14 +675,18 @@ def _prepare_historical_inputs(
             logging.info(
                 f"Hist Prep: Excluding accounts: {', '.join(sorted(valid_exclude_accounts))}"
             )
-            
+
             # FIX: If include_accounts is set, we only exclude accounts that are explicitly in the include list
             # (resolving contradiction). We do NOT exclude dependencies (like transfer sources) that are not in the include list.
             if include_accounts:
-                accounts_to_exclude_really = set(valid_exclude_accounts).intersection(set(valid_include_accounts))
+                accounts_to_exclude_really = set(valid_exclude_accounts).intersection(
+                    set(valid_include_accounts)
+                )
                 if accounts_to_exclude_really:
-                     transactions_df_effective = transactions_df_included[
-                        ~transactions_df_included["Account"].isin(accounts_to_exclude_really)
+                    transactions_df_effective = transactions_df_included[
+                        ~transactions_df_included["Account"].isin(
+                            accounts_to_exclude_really
+                        )
                     ].copy()
                 else:
                     transactions_df_effective = transactions_df_included.copy()
@@ -677,7 +695,7 @@ def _prepare_historical_inputs(
                 transactions_df_effective = transactions_df_included[
                     ~transactions_df_included["Account"].isin(valid_exclude_accounts)
                 ].copy()
-                
+
             excluded_accounts_list_sorted = sorted(valid_exclude_accounts)
             if include_accounts:
                 filter_desc += (
@@ -729,7 +747,7 @@ def _prepare_historical_inputs(
         # This can happen if a split is recorded for multiple accounts.
         # We take the first one found for each day.
         unique_splits = split_transactions.drop_duplicates(subset=["Symbol", "Date"])
-        
+
         splits_by_internal_symbol = {
             symbol: group[["Date", "Split Ratio"]]
             .apply(
@@ -746,13 +764,15 @@ def _prepare_historical_inputs(
     # Symbols for stocks (from effective/filtered transactions)
     # --- SIMPLIFICATION: Include ALL symbols in the effective transaction set ---
     # Previous optimization attempted to only fetch symbols "active" or "held" in the window,
-    # but the "held" check (approximate quantity sum) was fragile and missed edge cases 
-    # (e.g. Dividend Reinvestment not being counted as Buy), leading to missing prices/value 
+    # but the "held" check (approximate quantity sum) was fragile and missed edge cases
+    # (e.g. Dividend Reinvestment not being counted as Buy), leading to missing prices/value
     # for long-term holdings in short-term views (like 1M graph).
     # Since yfinance calls are cached and the number of symbols is usually manageable (<500),
     # it is safer to just include all symbols present in the filtered account's history.
-    
-    all_symbols_internal_effective = transactions_df_effective["Symbol"].unique().tolist()
+
+    all_symbols_internal_effective = (
+        transactions_df_effective["Symbol"].unique().tolist()
+    )
     # -------------------------------------------------------------------------
     symbols_to_fetch_yf_portfolio = []
     internal_to_yf_map: Dict[str, str] = {}  # Ensure type
@@ -835,12 +855,27 @@ def _prepare_historical_inputs(
                     f"Hist Prep: Original CSV path '{original_csv_file_path}' for hash not found. Hashing DataFrame contents instead."
                 )
             _hash_cols = [
-                c for c in ("Date", "Type", "Symbol", "Quantity",
-                            "Price/Share", "Total Amount", "Commission",
-                            "Account", "Local Currency", "To Account")
-                if preloaded_transactions_df is not None and c in preloaded_transactions_df.columns
+                c
+                for c in (
+                    "Date",
+                    "Type",
+                    "Symbol",
+                    "Quantity",
+                    "Price/Share",
+                    "Total Amount",
+                    "Commission",
+                    "Account",
+                    "Local Currency",
+                    "To Account",
+                )
+                if preloaded_transactions_df is not None
+                and c in preloaded_transactions_df.columns
             ]
-            if preloaded_transactions_df is not None and not preloaded_transactions_df.empty and _hash_cols:
+            if (
+                preloaded_transactions_df is not None
+                and not preloaded_transactions_df.empty
+                and _hash_cols
+            ):
                 tx_file_hash_component = hashlib.sha256(
                     pd.util.hash_pandas_object(
                         preloaded_transactions_df[_hash_cols], index=False
@@ -874,9 +909,7 @@ def _prepare_historical_inputs(
         )
         daily_results_cache_key = hashlib.sha256(
             daily_results_cache_key_str_content.encode()
-        ).hexdigest()[
-            :32
-        ]  # Longer hash for more uniqueness
+        ).hexdigest()[:32]  # Longer hash for more uniqueness
 
         daily_results_filename = (
             f"{daily_cache_prefix}_{daily_results_cache_key}.feather"
@@ -941,11 +974,11 @@ def _value_daily_holdings_vectorized(
     num_days, num_symbols, num_accounts = daily_holdings_qty_np.shape
     has_errors = False
     status_msg = ""
-    
+
     # 1. Prepare aligned PRICES array (N_days, N_symbols)
     # Initialize with NaNs
     daily_prices_aligned = np.full((num_days, num_symbols), np.nan, dtype=np.float64)
-    
+
     # Collect price series by sym_id for bulk reindexing (avoids per-symbol
     # .reindex() calls that each iterate the full DatetimeIndex — the #2
     # profiling hotspot at ~0.55s).
@@ -954,7 +987,7 @@ def _value_daily_holdings_vectorized(
         symbol = id_to_symbol.get(sym_id)
         if symbol == CASH_SYMBOL_CSV:
             continue
-            
+
         yf_symbol = internal_to_yf_map.get(symbol)
         if yf_symbol and yf_symbol in historical_prices_yf_unadjusted:
             price_df = historical_prices_yf_unadjusted[yf_symbol]
@@ -966,11 +999,14 @@ def _value_daily_holdings_vectorized(
                     col_to_use = "Close"
                 elif "Adj Close" in price_df.columns:
                     col_to_use = "Adj Close"
-                
+
                 if col_to_use:
                     ps = price_df[col_to_use]
                     # Ensure UTC (may already be done by market_data.py)
-                    if not isinstance(ps.index, pd.DatetimeIndex) or ps.index.tz is None:
+                    if (
+                        not isinstance(ps.index, pd.DatetimeIndex)
+                        or ps.index.tz is None
+                    ):
                         ps = ps.copy()
                         ps.index = pd.to_datetime(ps.index, utc=True)
                     price_series_by_id[sym_id] = ps
@@ -978,7 +1014,7 @@ def _value_daily_holdings_vectorized(
     # Bulk reindex + interpolate in one DataFrame operation
     if price_series_by_id:
         is_intra = any(x in interval for x in ["m", "h", "min"])
-        interp_method = 'time' if is_intra else 'linear'
+        interp_method = "time" if is_intra else "linear"
         price_matrix = (
             pd.DataFrame(price_series_by_id)
             .reindex(date_range)
@@ -988,8 +1024,6 @@ def _value_daily_holdings_vectorized(
         )
         for sym_id in price_series_by_id:
             daily_prices_aligned[:, sym_id] = price_matrix[sym_id].values
-
-
 
     # 2. Check for missing prices and fill with Last Price if valid
     # We will handle fallback during calculation.
@@ -1003,15 +1037,15 @@ def _value_daily_holdings_vectorized(
     account_currency_map_normalized = {
         str(k).upper().strip(): v for k, v in account_currency_map.items()
     }
-    
+
     # Cache FX series to avoid re-fetching for same currency
     currency_fx_series_cache = {}
-    
+
     # Pre-fetch Target Currency Rate vs USD (Series)
     # Target Rate = Target / USD
     target_rate_series = None
     target_curr_upper = target_currency.upper()
-    
+
     if target_curr_upper == "USD":
         target_rate_series = pd.Series(1.0, index=date_range)
     else:
@@ -1021,7 +1055,10 @@ def _value_daily_holdings_vectorized(
         if target_pair not in historical_fx_yf:
             if target_curr_upper == "THB" and "USDTHB=X" in historical_fx_yf:
                 target_pair = "USDTHB=X"
-            elif target_curr_upper != "THB" and f"USD{target_curr_upper}=X" in historical_fx_yf:
+            elif (
+                target_curr_upper != "THB"
+                and f"USD{target_curr_upper}=X" in historical_fx_yf
+            ):
                 target_pair = f"USD{target_curr_upper}=X"
 
         if target_pair in historical_fx_yf:
@@ -1044,41 +1081,48 @@ def _value_daily_holdings_vectorized(
                     t_series.index = pd.to_datetime(t_series.index, utc=True)
 
                     # --- ORIENTATION CHECK ---
-                    # Ensure rate is Local / USD. 
+                    # Ensure rate is Local / USD.
                     # If it's THB=X or USDTHB=X (~35), it's already Local/USD.
                     # If it was returned as a Major pair (e.g. EURUSD=X ~1.08), it's USD/Local -> Invert.
                     # Note: My analysis shows yfinance EUR=X is already EUR/USD (~0.92).
                     # But we keep this check for robustness if a USD... pair was fetched.
-                    if target_pair.endswith("USD=X") and not target_pair.startswith("USD"):
-                         # e.g. EURUSD=X -> USD per EUR -> Invert to get EUR per USD
-                         t_series = 1.0 / t_series
-                    
-                    target_rate_series = t_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
-    
+                    if target_pair.endswith("USD=X") and not target_pair.startswith(
+                        "USD"
+                    ):
+                        # e.g. EURUSD=X -> USD per EUR -> Invert to get EUR per USD
+                        t_series = 1.0 / t_series
+
+                    target_rate_series = (
+                        t_series.reindex(date_range)
+                        .interpolate(method="linear")
+                        .ffill()
+                        .bfill()
+                    )
+
     # If target rate missing, we can't convert anything (unless local==target)
     # Ensure it's not None for math consistency, fill with NaN if missing
     if target_rate_series is None:
-         target_rate_series = pd.Series(np.nan, index=date_range)
+        target_rate_series = pd.Series(np.nan, index=date_range)
 
     for acc_id in range(num_accounts):
         if acc_id not in account_ids_to_include_set:
             continue
-            
+
         acc_name = id_to_account.get(acc_id)
         local_curr = account_currency_map_normalized.get(acc_name, default_currency)
         local_curr_upper = local_curr.upper()
-        
+
         if local_curr in currency_fx_series_cache:
             daily_fx_aligned[:, acc_id] = currency_fx_series_cache[local_curr]
             continue
-            
+
         # Build aligned series
         if local_curr == target_currency:
             rates = np.ones(num_days, dtype=np.float64)
             daily_fx_aligned[:, acc_id] = rates
             currency_fx_series_cache[local_curr] = rates
             continue
-        
+
         # Calculate Cross Rate: (Target / USD) / (Local / USD)
         # We need Local Rate = Local / USD
         local_rate_series = None
@@ -1090,12 +1134,15 @@ def _value_daily_holdings_vectorized(
             if local_pair not in historical_fx_yf:
                 if local_curr_upper == "THB" and "USDTHB=X" in historical_fx_yf:
                     local_pair = "USDTHB=X"
-                elif local_curr_upper != "THB" and f"USD{local_curr_upper}=X" in historical_fx_yf:
+                elif (
+                    local_curr_upper != "THB"
+                    and f"USD{local_curr_upper}=X" in historical_fx_yf
+                ):
                     local_pair = f"USD{local_curr_upper}=X"
 
             if local_pair in historical_fx_yf:
-                 l_df = historical_fx_yf[local_pair]
-                 if not l_df.empty:
+                l_df = historical_fx_yf[local_pair]
+                if not l_df.empty:
                     col_to_use = None
                     if "price" in l_df.columns:
                         col_to_use = "price"
@@ -1105,58 +1152,64 @@ def _value_daily_holdings_vectorized(
                         col_to_use = "Adj Close"
                     elif "rate" in l_df.columns:
                         col_to_use = "rate"
-                    
+
                     if col_to_use:
                         l_series = l_df[col_to_use].copy()
                         # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
                         l_series.index = pd.to_datetime(l_series.index, utc=True)
 
                         # --- ORIENTATION CHECK ---
-                        if local_pair.endswith("USD=X") and not local_pair.startswith("USD"):
-                             l_series = 1.0 / l_series
+                        if local_pair.endswith("USD=X") and not local_pair.startswith(
+                            "USD"
+                        ):
+                            l_series = 1.0 / l_series
 
                         # FIX: Aggressive backfill for local rates too, but smooth it
-                        local_rate_series = l_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
+                        local_rate_series = (
+                            l_series.reindex(date_range)
+                            .interpolate(method="linear")
+                            .ffill()
+                            .bfill()
+                        )
 
         if local_rate_series is None:
-             # Missing local rate data - Default to 1.0 to prevent NaN propagation
-             rates = np.ones(num_days, dtype=np.float64)
-             # logging.warning(f"Hist Val: Missing FX rates for {local_curr}, defaulting to 1.0")
-             has_errors = True
+            # Missing local rate data - Default to 1.0 to prevent NaN propagation
+            rates = np.ones(num_days, dtype=np.float64)
+            # logging.warning(f"Hist Val: Missing FX rates for {local_curr}, defaulting to 1.0")
+            has_errors = True
         else:
-              # Compute cross rate
-              # Handle division by zero or NaN
-              with np.errstate(divide='ignore', invalid='ignore'):
-                  # aligned_target / aligned_local
-                  cross_rates = target_rate_series / local_rate_series
-                  
-                  # Final safety: If any cross rate is STILL NaN, it means one of the series was all NaN 
-                  # or had persistent gaps. Try to bfill again to be sure.
-                  if pd.Series(cross_rates).isna().any():
-                       cross_rates = pd.Series(cross_rates).bfill().ffill().values
-              
-              rates = cross_rates
-              # Check for NaNs and ONLY fill with 1.0 as a catastrophic last resort
-              # if both target and local rates were completely missing.
-              mask_nan_fx = np.isnan(rates)
-              if mask_nan_fx.any():
-                   rates[mask_nan_fx] = 1.0
-        
+            # Compute cross rate
+            # Handle division by zero or NaN
+            with np.errstate(divide="ignore", invalid="ignore"):
+                # aligned_target / aligned_local
+                cross_rates = target_rate_series / local_rate_series
+
+                # Final safety: If any cross rate is STILL NaN, it means one of the series was all NaN
+                # or had persistent gaps. Try to bfill again to be sure.
+                if pd.Series(cross_rates).isna().any():
+                    cross_rates = pd.Series(cross_rates).bfill().ffill().values
+
+            rates = cross_rates
+            # Check for NaNs and ONLY fill with 1.0 as a catastrophic last resort
+            # if both target and local rates were completely missing.
+            mask_nan_fx = np.isnan(rates)
+            if mask_nan_fx.any():
+                rates[mask_nan_fx] = 1.0
+
         daily_fx_aligned[:, acc_id] = rates
         currency_fx_series_cache[local_curr] = rates
-    
-    
+
     # 4. Calculate Market Value (Stocks)
     # Broadcast Arrays to (Days, Syms, Accs)
     # P_3d = (D, S, 1)
     P_3d = daily_prices_aligned[:, :, np.newaxis]
-    
+
     # Handle Price Fallback in 3D
     if daily_last_prices_np is not None:
         # P_full = (D, S, A)
         P_full = np.broadcast_to(P_3d, daily_holdings_qty_np.shape).copy()
         mask_nan = np.isnan(P_full)
-        
+
         # --- NEW: Identify and Log symbols that are missing market data ---
         if mask_nan.any():
             nan_indices = np.where(mask_nan)
@@ -1165,20 +1218,22 @@ def _value_daily_holdings_vectorized(
             for s_id in unique_nan_sym_ids:
                 sym_name = id_to_symbol.get(s_id, "Unknown")
                 if sym_name != CASH_SYMBOL_CSV:
-                    logging.debug(f"Valuation: Symbol '{sym_name}' missing market data. Using fallback.")
-        
+                    logging.debug(
+                        f"Valuation: Symbol '{sym_name}' missing market data. Using fallback."
+                    )
+
         P_full[mask_nan] = daily_last_prices_np[mask_nan]
-        
+
         # --- NEW: Final fallback for symbols with NO market data and NO transaction price ---
         # (Though buy transactions should always have a price)
         # If still NaN, we might have a transfer or split with missing price.
-        # Use 1.0 as a catastrophic fallback to avoid total value NaN if possible, 
+        # Use 1.0 as a catastrophic fallback to avoid total value NaN if possible,
         # but only if quantity > 0. Actually, better to let it be NaN and ffill later.
-        
+
         V_stocks = daily_holdings_qty_np * P_full * daily_fx_aligned[:, np.newaxis, :]
     else:
         V_stocks = daily_holdings_qty_np * P_3d * daily_fx_aligned[:, np.newaxis, :]
-    
+
     # --- CRITICAL FIX: Prevent 0.0 * NaN = NaN ---
     # Ensure zero quantity always results in zero value, regardless of Price or FX NaNs
     V_stocks[daily_holdings_qty_np == 0] = 0.0
@@ -1187,10 +1242,10 @@ def _value_daily_holdings_vectorized(
     acc_mask = np.zeros(num_accounts, dtype=bool)
     for acc_id in account_ids_to_include_set:
         acc_mask[acc_id] = True
-    
+
     # Zeros for excluded
     V_stocks[:, :, ~acc_mask] = 0.0
-    
+
     # Sum over Symbols and Accounts
     total_stock_value = np.sum(V_stocks, axis=(1, 2))
 
@@ -1198,27 +1253,30 @@ def _value_daily_holdings_vectorized(
     V_cash = daily_cash_balances_np * daily_fx_aligned
     # --- CRITICAL FIX: Prevent 0.0 * NaN = NaN for Cash ---
     V_cash[daily_cash_balances_np == 0] = 0.0
-    
+
     V_cash[:, ~acc_mask] = 0.0
-    
+
     total_cash_value = np.sum(V_cash, axis=1)
 
     # 6. Total
     total_value = total_stock_value + total_cash_value
-    
+
     daily_value_series = pd.Series(total_value, index=date_range)
-    
+
     # --- FIX: Avoid zeroing out portfolio value due to missing data ---
-    # We use linear interpolation to spread gains/losses over gaps, 
+    # We use linear interpolation to spread gains/losses over gaps,
     # which prevents "price restoration" spikes from ruining TWR and Volatility.
     if daily_value_series.isna().any():
         # Identify which dates are missing for logging
         missing_dates = daily_value_series.index[daily_value_series.isna()]
-        logging.warning(f"Valuation: Missing data for {len(missing_dates)} days. Using linear interpolation to smooth jumps.")
+        logging.warning(
+            f"Valuation: Missing data for {len(missing_dates)} days. Using linear interpolation to smooth jumps."
+        )
         status_msg += " (partial data interpolated)"
-        daily_value_series = daily_value_series.interpolate(method='linear').ffill().fillna(0.0)
+        daily_value_series = (
+            daily_value_series.interpolate(method="linear").ffill().fillna(0.0)
+        )
 
-    
     return daily_value_series, has_errors, status_msg
 
 
@@ -1311,12 +1369,12 @@ def _load_or_calculate_daily_results(
     """
     # ... (Function body remains unchanged) ...
     import pandas as pd  # Explicit import locally to fix UnboundLocalError
+
     daily_df = pd.DataFrame()
     _t0 = time.time()
     cache_valid_daily_results = False
     status_update = ""
     _dummy_warnings_set = set()
-
 
     # --- Chronological Calculation (numba_chrono) ---
     logging.debug(
@@ -1382,9 +1440,7 @@ def _load_or_calculate_daily_results(
                                     f"Hist WARN (Scope: {filter_desc}): Transactions CSV file '{transactions_csv_file}' (for mtime check) not found, but cache expected one. Recalculating."
                                 )
                                 raise ValueError("CSV file for mtime check not found")
-                        except (
-                            OSError
-                        ) as e_mtime:  # Handles issues with os.path.exists or os.path.getmtime
+                        except OSError as e_mtime:  # Handles issues with os.path.exists or os.path.getmtime
                             logging.warning(
                                 f"Hist WARN (Scope: {filter_desc}): Could not access transactions CSV file '{transactions_csv_file}' for mtime check: {e_mtime}. Recalculating."
                             )
@@ -1426,15 +1482,21 @@ def _load_or_calculate_daily_results(
                     # But if we didn't reset index on save, feather might have saved it if supported.
                     # If it's RangeIndex, this is dangerous, so we log warning.
                     if isinstance(daily_df.index, pd.RangeIndex):
-                         logging.warning("Loaded Feather cache has RangeIndex and no Date column. Cache might be invalid.")
-                         raise ValueError("Invalid cache structure (missing Date index/column)")
-                    
+                        logging.warning(
+                            "Loaded Feather cache has RangeIndex and no Date column. Cache might be invalid."
+                        )
+                        raise ValueError(
+                            "Invalid cache structure (missing Date index/column)"
+                        )
+
                     # Force UTC conversion to ensure compatibility with benchmark data
-                    daily_df.index = pd.to_datetime(daily_df.index, errors="coerce", utc=True)
+                    daily_df.index = pd.to_datetime(
+                        daily_df.index, errors="coerce", utc=True
+                    )
                     daily_df = daily_df[pd.notnull(daily_df.index)]
 
                 daily_df.sort_index(inplace=True)
-                
+
                 # --- FIX: Filter cached data by requested date range ---
                 # The cache might contain more data than requested (e.g. if key collision or logic change)
                 # or if we want to be absolutely sure.
@@ -1502,58 +1564,71 @@ def _load_or_calculate_daily_results(
                 else start_date
             )
             # FIX: ALWAYS calculate from the earliest possible history to ensure
-            # Cumulative Net Flow (COST) and TWR context are preserved, 
+            # Cumulative Net Flow (COST) and TWR context are preserved,
             # even if the user only requested a recent slice.
             calc_start_date = first_tx_date
             calc_end_date = end_date
-            
+
             # Determine calculation frequency range
             # If interval is intraday, we use daily for history and intraday frequency for active range
             valid_intraday = ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]
             is_intraday_request = interval in valid_intraday
             if is_intraday_request:
                 freq_map = {
-                    "1h": "h", "60m": "h",
-                    "1m": "1min", "2m": "2min", "5m": "5min",
-                    "15m": "15min", "30m": "30min", "90m": "90min"
+                    "1h": "h",
+                    "60m": "h",
+                    "1m": "1min",
+                    "2m": "2min",
+                    "5m": "5min",
+                    "15m": "15min",
+                    "30m": "30min",
+                    "90m": "90min",
                 }
                 active_freq = freq_map.get(interval, "D")
-                
+
                 # Use daily for history before start_date
-                range_historical = pd.date_range(start=calc_start_date, end=start_date - timedelta(days=1), freq="D")
+                range_historical = pd.date_range(
+                    start=calc_start_date, end=start_date - timedelta(days=1), freq="D"
+                )
                 # Fix: ensure historical range is UTC aware before append
                 if not range_historical.empty:
-                    range_historical = range_historical.tz_localize('UTC')
+                    range_historical = range_historical.tz_localize("UTC")
 
                 # Use intraday for active range
                 # FIX: Ensure range_active covers the FULL end_date day for intraday intervals
-                ts_end_of_period = pd.Timestamp(calc_end_date, tz='UTC') + timedelta(days=1)
-                
+                ts_end_of_period = pd.Timestamp(calc_end_date, tz="UTC") + timedelta(
+                    days=1
+                )
+
                 # FIX 2: Check current time to prevent generating empty "future" points that get ffilled.
                 # User requested: "Do not plot a flat line where the data are not available yet"
-                now_utc = pd.Timestamp.now(tz='UTC')
+                now_utc = pd.Timestamp.now(tz="UTC")
                 # If the theoretical end of period is in the future, clip it to now (plus small buffer)
                 if ts_end_of_period > now_utc:
                     # Clip to now. Ceil to next interval?
                     # Simply using 'now' works because inclusive='left' in date_range loops until it hits end.
                     # We remove the buffer to strictly stop at 'now' and avoid any future flatline.
-                    # Actually, if we are at 10:00:01, inclusive='left' with freq='2min' 
+                    # Actually, if we are at 10:00:01, inclusive='left' with freq='2min'
                     # starting at 09:30 might generate 10:00:00 tick.
                     # If data for 10:00:00 is not yet available/complete, it gets ffilled.
                     # Safer to lag slightly behind 'now' to ensure we only show fully elapsed intervals.
                     # FORCE CLIP: -5 minutes to guarantee no future flatline.
                     active_end_bound = now_utc - timedelta(minutes=5)
-                    logging.info(f"[_load_or_calculate] 1D Graph Clip: now={now_utc}, bound={active_end_bound}")
+                    logging.info(
+                        f"[_load_or_calculate] 1D Graph Clip: now={now_utc}, bound={active_end_bound}"
+                    )
                 else:
                     active_end_bound = ts_end_of_period
-                
-                _heading_into_future = False # logic no longer needed, we fill what we have
-                
+
+                _heading_into_future = (
+                    False  # logic no longer needed, we fill what we have
+                )
+
                 range_active = pd.date_range(
-                    start=pd.Timestamp(start_date, tz='UTC'), 
-                    end=active_end_bound, 
+                    start=pd.Timestamp(start_date, tz="UTC"),
+                    end=active_end_bound,
                     freq=active_freq,
-                    inclusive='left'
+                    inclusive="left",
                 )
 
                 # FIX for "5D graph showing afterhours":
@@ -1561,40 +1636,42 @@ def _load_or_calculate_daily_results(
                 # Otherwise, ffill() will bridge the overnight gap with a flat line.
                 # Only apply this if we are in an intraday mode that expects market hours.
                 if is_intraday_request and not range_active.empty:
-                     # Convert to NY time to filter by clock time
-                     range_active_ny = range_active.tz_convert('America/New_York')
-                     keep_mask = range_active_ny.indexer_between_time("09:30", "16:00")
-                     range_active = range_active[keep_mask]
-                
+                    # Convert to NY time to filter by clock time
+                    range_active_ny = range_active.tz_convert("America/New_York")
+                    keep_mask = range_active_ny.indexer_between_time("09:30", "16:00")
+                    range_active = range_active[keep_mask]
+
                 if range_historical.empty and range_active.empty:
-                     date_range_for_calc = pd.DatetimeIndex([])
+                    date_range_for_calc = pd.DatetimeIndex([])
                 elif range_historical.empty:
-                     date_range_for_calc = range_active
+                    date_range_for_calc = range_active
                 elif range_active.empty:
-                     date_range_for_calc = range_historical
+                    date_range_for_calc = range_historical
                 else:
-                     # Append and unique handles UTC-aware indices correctly now
-                     date_range_for_calc = range_historical.append(range_active).unique().sort_values()
+                    # Append and unique handles UTC-aware indices correctly now
+                    date_range_for_calc = (
+                        range_historical.append(range_active).unique().sort_values()
+                    )
             else:
                 date_range_for_calc = pd.date_range(
                     start=calc_start_date, end=calc_end_date, freq="D"
-                ).tz_localize('UTC')
-            
+                ).tz_localize("UTC")
+
             # Final check - ensure UTC
             if date_range_for_calc.tz is None:
-                date_range_for_calc = date_range_for_calc.tz_localize('UTC')
+                date_range_for_calc = date_range_for_calc.tz_localize("UTC")
             # logging.debug(f"DEBUG HIST: calc_start_date={calc_start_date}, first_tx_date={first_tx_date}, range_len={len(date_range_for_calc)}")
 
             # Determine which set of holdings to use (L1 cached or calculate now)
             # L1 Cache is purely DAILY. We cannot use it if we are calculating Intraday (mismatch in array length/mapping).
             is_intraday = interval in valid_intraday
             use_l1_cache = (
-                all_holdings_qty is not None 
+                all_holdings_qty is not None
                 and all_cash_balances is not None
-                and not is_intraday # DISABLE L1 cache for intraday
+                and not is_intraday  # DISABLE L1 cache for intraday
                 and not included_accounts_list  # Only use cache if no account filtering
             )
-        
+
             daily_holdings_qty_to_use = None
             daily_cash_balances_to_use = None
             daily_last_prices_to_use = None
@@ -1604,66 +1681,112 @@ def _load_or_calculate_daily_results(
                     f"Hist Daily (Scope: {filter_desc}): Using L1 cached holdings..."
                 )
                 status_update = " Using pre-calculated daily values..."
-            
+
                 # Calculate offset if we are starting later than the first transaction
                 # FIX: Use passed all_holdings_start_date if available (covers expanded ranges)
                 l1_cache_start_date = (
-                    all_holdings_start_date 
-                    if all_holdings_start_date 
+                    all_holdings_start_date
+                    if all_holdings_start_date
                     else transactions_df_effective["Date"].min().date()
                 )
                 l1_offset = (calc_start_date - l1_cache_start_date).days
                 if l1_offset < 0:
                     l1_offset = 0
-            
+
                 # Slice L1 cache
                 # Ensure we don't go out of bounds
                 len_needed = len(date_range_for_calc)
-                daily_holdings_qty_to_use = all_holdings_qty[l1_offset : l1_offset + len_needed]
-                daily_cash_balances_to_use = all_cash_balances[l1_offset : l1_offset + len_needed]
+                daily_holdings_qty_to_use = all_holdings_qty[
+                    l1_offset : l1_offset + len_needed
+                ]
+                daily_cash_balances_to_use = all_cash_balances[
+                    l1_offset : l1_offset + len_needed
+                ]
                 if all_last_prices is not None:
-                    daily_last_prices_to_use = all_last_prices[l1_offset : l1_offset + len_needed]
-            
-                logging.info(f"Hist Daily: Using L1 cache with offset {l1_offset} days.")
+                    daily_last_prices_to_use = all_last_prices[
+                        l1_offset : l1_offset + len_needed
+                    ]
+
+                logging.info(
+                    f"Hist Daily: Using L1 cache with offset {l1_offset} days."
+                )
             else:
                 logging.info(
                     f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
                 )
                 status_update = " Calculating daily values (chrono)..."
                 status_update = " Calculating daily values (chrono)..."
-                sorted_df = transactions_df_effective.sort_values(by=["Date", "original_index"]).copy()
+                sorted_df = transactions_df_effective.sort_values(
+                    by=["Date", "original_index"]
+                ).copy()
 
                 # Prepare inputs for chronological Numba function
                 # Use nanosecond timestamps (np.int64) for sub-daily precision support
                 # date_range_for_calc is already UTC-aware Timestamps
-                date_ordinals_np = np.array(date_range_for_calc.values.astype('int64'), dtype=np.int64)
-                
-                tx_dates_ordinal_np = np.array(pd.to_datetime(sorted_df["Date"], utc=True).values.astype('int64'), dtype=np.int64)
-                tx_symbols_np = sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
-            
-                account_ids_series = _normalize_series(sorted_df["Account"]).map(account_to_id)
+                date_ordinals_np = np.array(
+                    date_range_for_calc.values.astype("int64"), dtype=np.int64
+                )
+
+                tx_dates_ordinal_np = np.array(
+                    pd.to_datetime(sorted_df["Date"], utc=True).values.astype("int64"),
+                    dtype=np.int64,
+                )
+                tx_symbols_np = (
+                    sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
+                )
+
+                account_ids_series = _normalize_series(sorted_df["Account"]).map(
+                    account_to_id
+                )
                 if account_ids_series.isna().any():
                     valid_mask = account_ids_series.notna()
                     sorted_df = sorted_df[valid_mask]
                     account_ids_series = account_ids_series[valid_mask]
 
                 tx_accounts_np = account_ids_series.values.astype(np.int64)
-            
+
                 if "To Account" in sorted_df.columns:
-                    tx_to_accounts_series = _normalize_series(sorted_df["To Account"]).map(account_to_id)
+                    tx_to_accounts_series = _normalize_series(
+                        sorted_df["To Account"]
+                    ).map(account_to_id)
                 else:
                     tx_to_accounts_series = pd.Series(-1, index=sorted_df.index)
-                tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
-            
-                tx_types_np = sorted_df["Type"].str.lower().str.strip().map(type_to_id).fillna(-1).values.astype(np.int64)
-                tx_quantities_np = sorted_df["Quantity"].fillna(0.0).values.astype(np.float64)
-                tx_commissions_np = sorted_df["Commission"].fillna(0.0).values.astype(np.float64)
-                tx_split_ratios_np = sorted_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
-            
-                price_col = "Price/Share" if "Price/Share" in sorted_df.columns else "Price"
-                tx_prices_np = sorted_df[price_col].fillna(0.0).values.astype(np.float64) if price_col in sorted_df.columns else np.zeros(len(sorted_df), dtype=np.float64)
+                tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(
+                    np.int64
+                )
+
+                tx_types_np = (
+                    sorted_df["Type"]
+                    .str.lower()
+                    .str.strip()
+                    .map(type_to_id)
+                    .fillna(-1)
+                    .values.astype(np.int64)
+                )
+                tx_quantities_np = (
+                    sorted_df["Quantity"].fillna(0.0).values.astype(np.float64)
+                )
+                tx_commissions_np = (
+                    sorted_df["Commission"].fillna(0.0).values.astype(np.float64)
+                )
+                tx_split_ratios_np = (
+                    sorted_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
+                )
+
+                price_col = (
+                    "Price/Share" if "Price/Share" in sorted_df.columns else "Price"
+                )
+                tx_prices_np = (
+                    sorted_df[price_col].fillna(0.0).values.astype(np.float64)
+                    if price_col in sorted_df.columns
+                    else np.zeros(len(sorted_df), dtype=np.float64)
+                )
                 # BUG-06 FIX: Prepare Total Amount for Auto Cash delta alignment
-                tx_totals_np = sorted_df["Total Amount"].fillna(0.0).values.astype(np.float64) if "Total Amount" in sorted_df.columns else np.zeros(len(sorted_df), dtype=np.float64)
+                tx_totals_np = (
+                    sorted_df["Total Amount"].fillna(0.0).values.astype(np.float64)
+                    if "Total Amount" in sorted_df.columns
+                    else np.zeros(len(sorted_df), dtype=np.float64)
+                )
 
                 split_type_id = type_to_id.get("split", -1)
                 stock_split_type_id = type_to_id.get("stock split", -1)
@@ -1677,7 +1800,10 @@ def _load_or_calculate_daily_results(
                 spin_off_type_id = type_to_id.get("spin off", -1)  # SPIN-OFF
                 cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
-                shortable_symbol_ids = np.array([symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id], dtype=np.int64)
+                shortable_symbol_ids = np.array(
+                    [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
+                    dtype=np.int64,
+                )
                 num_symbols = len(symbol_to_id)
                 num_accounts = len(account_to_id)
 
@@ -1694,14 +1820,18 @@ def _load_or_calculate_daily_results(
                     _acc_upper = _acc_name.upper().strip()
                     if _acc_upper in account_to_id and _mode_str == "Auto":
                         acc_cash_modes_np[account_to_id[_acc_upper]] = 1
-            
+
                 # Call Numba function
-                daily_holdings_qty_to_use, daily_cash_balances_to_use, daily_last_prices_to_use = _calculate_daily_holdings_chronological_numba(
+                (
+                    daily_holdings_qty_to_use,
+                    daily_cash_balances_to_use,
+                    daily_last_prices_to_use,
+                ) = _calculate_daily_holdings_chronological_numba(
                     date_ordinals_np,
                     tx_dates_ordinal_np,
                     tx_symbols_np,
-                    tx_to_accounts_np, # DEST
-                    tx_accounts_np,    # SOURCE
+                    tx_to_accounts_np,  # DEST
+                    tx_accounts_np,  # SOURCE
                     tx_types_np,
                     tx_quantities_np,
                     tx_commissions_np,
@@ -1729,11 +1859,13 @@ def _load_or_calculate_daily_results(
                     shortable_symbol_ids,
                     acc_cash_modes_np,
                 )
-                
-        
+
             # Determine included account IDs
             if included_accounts_list:
-                account_ids_to_include_set = {account_to_id.get(str(acc).upper().strip()) for acc in included_accounts_list}
+                account_ids_to_include_set = {
+                    account_to_id.get(str(acc).upper().strip())
+                    for acc in included_accounts_list
+                }
                 account_ids_to_include_set.discard(None)
             else:
                 # Include ALL accounts if list is empty (Global Scope)
@@ -1745,32 +1877,41 @@ def _load_or_calculate_daily_results(
             # To avoid 7x/4x spikes, we must "un-adjust" historical prices by multiplying
             # them by the cumulative split factor that occurs AFTER each historical point.
             historical_prices_yf_raw = {}
-            split_txs = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip().isin(["split", "stock split"])]
-            
+            split_txs = transactions_df_effective[
+                transactions_df_effective["Type"]
+                .str.lower()
+                .str.strip()
+                .isin(["split", "stock split"])
+            ]
+
             # --- DEDUPLICATE SPLITS (Match Numba core logic) ---
             if not split_txs.empty:
                 split_txs = split_txs.copy()
                 # Priority 0 for 'All Accounts', 1 for others
-                split_txs['__split_priority'] = np.where(split_txs['Account'].astype(str).str.lower() == 'all accounts', 0, 1)
+                split_txs["__split_priority"] = np.where(
+                    split_txs["Account"].astype(str).str.lower() == "all accounts", 0, 1
+                )
                 # Group by Symbol and Month for fuzzy deduplication
-                split_txs['__ym'] = pd.to_datetime(split_txs['Date']).dt.to_period('M')
-                
-                sort_cols = ['Symbol', '__ym', '__split_priority']
-                if 'original_index' in split_txs.columns:
-                    sort_cols.append('original_index')
-                
+                split_txs["__ym"] = pd.to_datetime(split_txs["Date"]).dt.to_period("M")
+
+                sort_cols = ["Symbol", "__ym", "__split_priority"]
+                if "original_index" in split_txs.columns:
+                    sort_cols.append("original_index")
+
                 split_txs = split_txs.sort_values(by=sort_cols)
-                split_txs = split_txs.drop_duplicates(subset=['Symbol', '__ym', 'Split Ratio'])
+                split_txs = split_txs.drop_duplicates(
+                    subset=["Symbol", "__ym", "Split Ratio"]
+                )
 
             for yf_sym, price_df in historical_prices_yf_unadjusted.items():
                 if price_df.empty:
                     historical_prices_yf_raw[yf_sym] = price_df
                     continue
-                
+
                 # Find ledger symbol(s) matching this YF ticker
                 ledger_syms = [k for k, v in internal_to_yf_map.items() if v == yf_sym]
                 sym_splits = split_txs[split_txs["Symbol"].isin(ledger_syms)]
-                
+
                 if sym_splits.empty:
                     historical_prices_yf_raw[yf_sym] = price_df
                 else:
@@ -1780,62 +1921,70 @@ def _load_or_calculate_daily_results(
                     sorted_splits = sym_splits.sort_values(by="Date", ascending=False)
                     for _, split_row in sorted_splits.iterrows():
                         s_date = pd.to_datetime(split_row["Date"], utc=True)
-                        ratio = pd.to_numeric(split_row.get("Split Ratio"), errors='coerce')
-                        qty = pd.to_numeric(split_row.get("Quantity"), errors='coerce')
-                        
+                        ratio = pd.to_numeric(
+                            split_row.get("Split Ratio"), errors="coerce"
+                        )
+                        qty = pd.to_numeric(split_row.get("Quantity"), errors="coerce")
+
                         # Fallback: Ratio might be in Quantity column for some importers
-                        if (ratio is None or ratio <= 1e-9) and (qty is not None and 0 < qty <= 20.0):
+                        if (ratio is None or ratio <= 1e-9) and (
+                            qty is not None and 0 < qty <= 20.0
+                        ):
                             ratio = qty
-                            
+
                         if ratio and ratio > 1e-9:
                             factors.index = pd.to_datetime(factors.index, utc=True)
                             factors.loc[factors.index < s_date] *= ratio
-                    
+
                     for col in ["price", "Close", "Adj Close", "Open", "High", "Low"]:
                         if col in new_df.columns:
                             new_df[col] = new_df[col] * factors
                     historical_prices_yf_raw[yf_sym] = new_df
 
             # --- VECTORIZED VALUATION ---
-            daily_value_series, val_errors, val_status = _value_daily_holdings_vectorized(
-                date_range=date_range_for_calc,
-                daily_holdings_qty_np=daily_holdings_qty_to_use,
-                daily_last_prices_np=daily_last_prices_to_use,
-                daily_cash_balances_np=daily_cash_balances_to_use,
-                historical_prices_yf_unadjusted=historical_prices_yf_raw, # USE RAW
-                historical_fx_yf=historical_fx_yf,
-                target_currency=display_currency,
-                account_currency_map=account_currency_map,
-                id_to_symbol=id_to_symbol,
-                id_to_account=id_to_account,
-                internal_to_yf_map=internal_to_yf_map,
-                account_ids_to_include_set=account_ids_to_include_set,
-                default_currency=default_currency,
-                interval=interval,
+            daily_value_series, val_errors, val_status = (
+                _value_daily_holdings_vectorized(
+                    date_range=date_range_for_calc,
+                    daily_holdings_qty_np=daily_holdings_qty_to_use,
+                    daily_last_prices_np=daily_last_prices_to_use,
+                    daily_cash_balances_np=daily_cash_balances_to_use,
+                    historical_prices_yf_unadjusted=historical_prices_yf_raw,  # USE RAW
+                    historical_fx_yf=historical_fx_yf,
+                    target_currency=display_currency,
+                    account_currency_map=account_currency_map,
+                    id_to_symbol=id_to_symbol,
+                    id_to_account=id_to_account,
+                    internal_to_yf_map=internal_to_yf_map,
+                    account_ids_to_include_set=account_ids_to_include_set,
+                    default_currency=default_currency,
+                    interval=interval,
+                )
             )
             if val_errors:
                 status_update += val_status
 
             # --- VECTORIZED CASH FLOW ---
-            daily_net_flow_series, flow_errors = _calculate_daily_net_cash_flow_vectorized(
-                date_range=date_range_for_calc,
-                transactions_df=transactions_df_effective,
-                target_currency=display_currency,
-                historical_fx_yf=historical_fx_yf,
-                default_currency=default_currency,
-                included_accounts=included_accounts_list,
-                historical_prices_yf_unadjusted=historical_prices_yf_raw, # USE RAW
-                internal_to_yf_map=internal_to_yf_map,
+            daily_net_flow_series, flow_errors = (
+                _calculate_daily_net_cash_flow_vectorized(
+                    date_range=date_range_for_calc,
+                    transactions_df=transactions_df_effective,
+                    target_currency=display_currency,
+                    historical_fx_yf=historical_fx_yf,
+                    default_currency=default_currency,
+                    included_accounts=included_accounts_list,
+                    historical_prices_yf_unadjusted=historical_prices_yf_raw,  # USE RAW
+                    internal_to_yf_map=internal_to_yf_map,
+                )
             )
             if flow_errors:
                 status_update += " (flow errors)"
-        
+
             # --- CONSTRUCT DAILY DF ---
-            daily_df = pd.DataFrame({
-                "value": daily_value_series,
-                "net_flow": daily_net_flow_series
-            }, index=date_range_for_calc)
-        
+            daily_df = pd.DataFrame(
+                {"value": daily_value_series, "net_flow": daily_net_flow_series},
+                index=date_range_for_calc,
+            )
+
         if daily_df.empty:
             status_update = " Calculating daily values..."
             # FIX: Ensure fallback calculation also uses full history for Cumulative context
@@ -1843,15 +1992,16 @@ def _load_or_calculate_daily_results(
                 calc_start_date = transactions_df_effective["Date"].min().date()
             else:
                 calc_start_date = start_date
-            
+
             calc_end_date = end_date
             market_day_source_symbol = "SPY"
             if "SPY" not in historical_prices_yf_adjusted:
                 if historical_prices_yf_adjusted:
-                    market_day_source_symbol = next(iter(historical_prices_yf_adjusted.keys()))
+                    market_day_source_symbol = next(
+                        iter(historical_prices_yf_adjusted.keys())
+                    )
                 else:
                     market_day_source_symbol = None
-            
 
             market_days_index = pd.Index([], dtype="object")
             logging.debug(
@@ -1867,12 +2017,24 @@ def _load_or_calculate_daily_results(
                 ):  # ADDED: Check if index is valid before conversion
                     try:
                         # Ensure index is datetime first
-                        datetime_index = pd.to_datetime(bench_df.index, errors="coerce", utc=True)
+                        datetime_index = pd.to_datetime(
+                            bench_df.index, errors="coerce", utc=True
+                        )
                         valid_datetime_index = datetime_index.dropna()
                         if not valid_datetime_index.empty:
                             # --- MODIFIED: Preserve intraday resolution if interval implies it ---
-                            if interval in ["1m", "5m", "15m", "30m", "60m", "1h", "90m"]:
-                                market_days_index = valid_datetime_index.unique() # Keep Timestamps
+                            if interval in [
+                                "1m",
+                                "5m",
+                                "15m",
+                                "30m",
+                                "60m",
+                                "1h",
+                                "90m",
+                            ]:
+                                market_days_index = (
+                                    valid_datetime_index.unique()
+                                )  # Keep Timestamps
                             else:
                                 market_days_index = pd.Index(
                                     valid_datetime_index.date
@@ -1915,7 +2077,11 @@ def _load_or_calculate_daily_results(
                 logging.error(
                     f"Hist ERROR (Scope: {filter_desc}): No calculation dates found in range {calc_start_date} to {calc_end_date}."
                 )
-                return pd.DataFrame(), False, status_update + " No calculation dates found."
+                return (
+                    pd.DataFrame(),
+                    False,
+                    status_update + " No calculation dates found.",
+                )
             logging.info(
                 f"Hist Daily (Scope: {filter_desc}): Determined {len(all_dates_to_process)} calculation dates from {min(all_dates_to_process)} to {max(all_dates_to_process)}"
             )
@@ -1965,7 +2131,7 @@ def _load_or_calculate_daily_results(
 
             try:
                 chunksize = max(1, len(all_dates_to_process) // (num_processes * 4))
-            
+
                 # --- ADDED: Progress Reporting ---
                 total_dates = len(all_dates_to_process)
                 last_reported_percent = -1
@@ -2023,7 +2189,9 @@ def _load_or_calculate_daily_results(
                                 pool.close()
                                 pool.join()
                             except Exception as e_pool_shutdown:
-                                logging.warning(f"Pool shutdown warning: {e_pool_shutdown}")
+                                logging.warning(
+                                    f"Pool shutdown warning: {e_pool_shutdown}"
+                                )
                                 try:
                                     pool.terminate()
                                 except Exception:
@@ -2059,7 +2227,9 @@ def _load_or_calculate_daily_results(
                 # Log first failure
                 for r in daily_results_list:
                     if r.get("worker_error", False):
-                        logging.error(f"Worker Error Sample: {r.get('error_message', 'Unknown Error')}")
+                        logging.error(
+                            f"Worker Error Sample: {r.get('error_message', 'Unknown Error')}"
+                        )
                         break
             if not successful_results:
                 # --- ADDED: Log why results are empty ---
@@ -2096,11 +2266,15 @@ def _load_or_calculate_daily_results(
                     )
 
             except Exception as e_proc_res:
-                 logging.error(
+                logging.error(
                     f"Hist ERROR (Scope: {filter_desc}): Post-processing failed: {e_proc_res}"
-                 )
-                 traceback.print_exc()
-                 return pd.DataFrame(), False, status_update + " Error processing results."
+                )
+                traceback.print_exc()
+                return (
+                    pd.DataFrame(),
+                    False,
+                    status_update + " Error processing results.",
+                )
 
     # --- SHARED: Derived Metrics (Gain/Return) ---
     # Runs for both Numba and Python paths, provided daily_df is not empty.
@@ -2108,7 +2282,10 @@ def _load_or_calculate_daily_results(
     if not daily_df.empty:
         # Check if derived cols missing (e.g. from Numba path or stale cache)
         # Or force recalculation if we suspect stale cache
-        if "daily_gain" not in daily_df.columns or "daily_return" not in daily_df.columns:
+        if (
+            "daily_gain" not in daily_df.columns
+            or "daily_return" not in daily_df.columns
+        ):
             try:
                 previous_value = daily_df["value"].shift(1)
                 net_flow_filled = daily_df["net_flow"].fillna(0.0)
@@ -2116,46 +2293,56 @@ def _load_or_calculate_daily_results(
                     daily_df["value"] - previous_value - net_flow_filled
                 )
                 daily_df["daily_return"] = np.nan
-            
+
                 # FIX: Adjusted Denominator for TWR
                 # Treat positive net flows (Deposits) as Start-of-Day (participating in gain)
                 # Treat negative net flows (Withdrawals) as End-of-Day (capital was at risk)
                 # Denom = PrevValue + max(0, NetFlow)
                 adjusted_prev_value = previous_value + net_flow_filled.clip(lower=0.0)
-            
+
                 # Robustness: We ignore returns if capital at risk is too small (e.g. < 10 cents)
                 # to prevent division-by-nothing blowups.
                 valid_denom_mask = adjusted_prev_value.notna() & (
                     abs(adjusted_prev_value) > 0.1
                 )
-                
+
                 # --- NEW: Log ignored days for transparency ---
                 if (~valid_denom_mask).any():
                     ignored_count = (~valid_denom_mask).sum()
                     if ignored_count > 0:
-                        logging.debug(f"TWR: Ignoring {ignored_count} days where capital at risk was too small (<$0.10) — likely pre-funding period.")
+                        logging.debug(
+                            f"TWR: Ignoring {ignored_count} days where capital at risk was too small (<$0.10) — likely pre-funding period."
+                        )
 
                 daily_df.loc[valid_denom_mask, "daily_return"] = (
                     daily_df.loc[valid_denom_mask, "daily_gain"]
                     / adjusted_prev_value.loc[valid_denom_mask]
                 )
-                
+
                 # --- BUG-04 FIX: Contextual Spike Guard ---
                 # Only cap returns that are clearly flow-driven artifacts, NOT legitimate market moves.
                 # A spike is flow-driven if: portfolio value is small AND net flow is large relative to value.
                 spike_threshold = 0.5
-                spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
+                spike_mask = (daily_df["daily_return"] > spike_threshold) | (
+                    daily_df["daily_return"] < -spike_threshold
+                )
                 if spike_mask.any():
                     net_flow_filled_abs = daily_df["net_flow"].fillna(0.0).abs()
                     portfolio_value_abs = daily_df["value"].abs()
                     # Only cap if: value < $1000 AND |net_flow| > 50% of value (flow-driven spike)
                     flow_driven_mask = spike_mask & (
-                        (portfolio_value_abs < 1000.0) & (net_flow_filled_abs > portfolio_value_abs * 0.5)
+                        (portfolio_value_abs < 1000.0)
+                        & (net_flow_filled_abs > portfolio_value_abs * 0.5)
                     )
                     if flow_driven_mask.any():
                         try:
-                            spike_info = [f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return']*100:.1f}%)" for d in daily_df.index[flow_driven_mask]]
-                            logging.warning(f"BUG-04 FIX: Capped {len(spike_info)} FLOW-DRIVEN TWR spikes (> {spike_threshold*100:.0f}%): {', '.join(spike_info[:12])}{'...' if len(spike_info) > 12 else ''}")
+                            spike_info = [
+                                f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return'] * 100:.1f}%)"
+                                for d in daily_df.index[flow_driven_mask]
+                            ]
+                            logging.warning(
+                                f"BUG-04 FIX: Capped {len(spike_info)} FLOW-DRIVEN TWR spikes (> {spike_threshold * 100:.0f}%): {', '.join(spike_info[:12])}{'...' if len(spike_info) > 12 else ''}"
+                            )
                         except Exception as e:
                             logging.error(f"Failed to log spike info: {e}")
                         daily_df.loc[flow_driven_mask, "daily_return"] = 0.0
@@ -2164,53 +2351,81 @@ def _load_or_calculate_daily_results(
                     market_spikes = spike_mask & ~flow_driven_mask
                     if market_spikes.any():
                         try:
-                            market_info = [f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return']*100:.1f}%)" for d in daily_df.index[market_spikes]]
-                            logging.info(f"BUG-04 FIX: Preserved {len(market_info)} legitimate market-driven returns (> {spike_threshold*100:.0f}%): {', '.join(market_info[:12])}{'...' if len(market_info) > 12 else ''}")
+                            market_info = [
+                                f"{d.strftime('%Y-%m-%d')} ({daily_df.at[d, 'daily_return'] * 100:.1f}%)"
+                                for d in daily_df.index[market_spikes]
+                            ]
+                            logging.info(
+                                f"BUG-04 FIX: Preserved {len(market_info)} legitimate market-driven returns (> {spike_threshold * 100:.0f}%): {', '.join(market_info[:12])}{'...' if len(market_info) > 12 else ''}"
+                            )
                         except Exception:
                             pass
 
                 # --- BUG-05 FIX: Flow-Aware Transfer Healing ---
                 # Only heal transfer-day spikes when the spike is clearly caused by the flow, not the market.
-                high_vol_mask = (daily_df["daily_return"] > 0.1) | (daily_df["daily_return"] < -0.1)
+                high_vol_mask = (daily_df["daily_return"] > 0.1) | (
+                    daily_df["daily_return"] < -0.1
+                )
                 if high_vol_mask.any():
-                    transfer_days = transactions_df_effective[transactions_df_effective["Type"].str.lower().str.strip() == "transfer"]["Date"].unique()
+                    transfer_days = transactions_df_effective[
+                        transactions_df_effective["Type"].str.lower().str.strip()
+                        == "transfer"
+                    ]["Date"].unique()
                     transfer_days_dt = pd.to_datetime(transfer_days).date
                     for idx, row in daily_df[high_vol_mask].iterrows():
-                         if idx.date() in transfer_days_dt:
-                             # BUG-05 FIX: Only heal if the net flow magnitude exceeds the daily gain
-                             net_flow_val = abs(row.get("net_flow", 0.0)) if pd.notna(row.get("net_flow")) else 0.0
-                             daily_gain_val = abs(row.get("daily_gain", 0.0)) if pd.notna(row.get("daily_gain")) else 0.0
-                             if net_flow_val > daily_gain_val * 0.5:
-                                 logging.info(f"TWR HEALING: Zeroed flow-driven artifact on {idx.date()} (Return: {row['daily_return']*100:.1f}%, NetFlow: {net_flow_val:.0f}, Gain: {daily_gain_val:.0f}).")
-                                 daily_df.at[idx, "daily_return"] = 0.0
+                        if idx.date() in transfer_days_dt:
+                            # BUG-05 FIX: Only heal if the net flow magnitude exceeds the daily gain
+                            net_flow_val = (
+                                abs(row.get("net_flow", 0.0))
+                                if pd.notna(row.get("net_flow"))
+                                else 0.0
+                            )
+                            daily_gain_val = (
+                                abs(row.get("daily_gain", 0.0))
+                                if pd.notna(row.get("daily_gain"))
+                                else 0.0
+                            )
+                            if net_flow_val > daily_gain_val * 0.5:
+                                logging.info(
+                                    f"TWR HEALING: Zeroed flow-driven artifact on {idx.date()} (Return: {row['daily_return'] * 100:.1f}%, NetFlow: {net_flow_val:.0f}, Gain: {daily_gain_val:.0f})."
+                                )
+                                daily_df.at[idx, "daily_return"] = 0.0
 
                 anomalies = daily_df[
-                    (daily_df["value"] < 1.0) & 
-                    (daily_df["net_flow"] > 1000.0) & 
-                    (daily_df["daily_return"] < -0.99)
+                    (daily_df["value"] < 1.0)
+                    & (daily_df["net_flow"] > 1000.0)
+                    & (daily_df["daily_return"] < -0.99)
                 ]
                 if not anomalies.empty:
-                    logging.warning("CRITICAL TWR ANOMALY DETECTED: Deposits made but Portfolio Value is Zero.")
-                    logging.warning(anomalies[["value", "net_flow", "daily_return"]].head().to_string())
+                    logging.warning(
+                        "CRITICAL TWR ANOMALY DETECTED: Deposits made but Portfolio Value is Zero."
+                    )
+                    logging.warning(
+                        anomalies[["value", "net_flow", "daily_return"]]
+                        .head()
+                        .to_string()
+                    )
                 zero_gain_mask = daily_df["daily_gain"].notna() & (
                     abs(daily_df["daily_gain"]) < 1e-9
                 )
                 zero_prev_value_mask = previous_value.notna() & (
                     abs(previous_value) <= 1e-9
                 )
-                daily_df.loc[zero_gain_mask & zero_prev_value_mask, "daily_return"] = 0.0
+                daily_df.loc[zero_gain_mask & zero_prev_value_mask, "daily_return"] = (
+                    0.0
+                )
                 if not daily_df.empty:
                     first_idx = daily_df.index[0]
                     daily_df.loc[first_idx, "daily_gain"] = np.nan
                     daily_df.loc[first_idx, "daily_return"] = np.nan
-                
+
                 # Validation
                 if (
                     "daily_gain" not in daily_df.columns
                     or "daily_return" not in daily_df.columns
                 ):
-                        logging.error("Failed to calculate derived daily metrics.")
-                        
+                    logging.error("Failed to calculate derived daily metrics.")
+
                 # Don't fail the whole thing, but log error
             except Exception as e_deriv:
                 logging.error(f"Error calculating derived metrics: {e_deriv}")
@@ -2274,7 +2489,9 @@ def _load_or_calculate_daily_results(
 _HOLDINGS_CACHE_MAX_AGE_DAYS = 7
 
 
-def _prune_holdings_cache(holdings_cache_dir: str, max_age_days: int = _HOLDINGS_CACHE_MAX_AGE_DAYS):
+def _prune_holdings_cache(
+    holdings_cache_dir: str, max_age_days: int = _HOLDINGS_CACHE_MAX_AGE_DAYS
+):
     """Deletes L1 holdings-cache files older than max_age_days.
 
     Runs only on cache-miss saves (roughly once per user per day), so a full
@@ -2314,9 +2531,7 @@ def _get_or_calculate_all_daily_holdings(
         pd.util.hash_pandas_object(all_transactions_df, index=True).values
     ).hexdigest()
     # Version bump for cache key - Now linked to global CURRENT_HIST_VERSION
-    cache_key = (
-        f"ALL_HOLDINGS_{CURRENT_HIST_VERSION}_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
-    )
+    cache_key = f"ALL_HOLDINGS_{CURRENT_HIST_VERSION}_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
 
     cache_dir_base = config.get_app_cache_dir()
     if cache_dir_base:
@@ -2359,13 +2574,18 @@ def _get_or_calculate_all_daily_holdings(
 
     # Create date range for calculation - Daily freq for this L1 cache
     date_range_for_calc = pd.date_range(start=start_date, end=end_date, freq="D")
-    
+
     # Standardize range to UTC
     if date_range_for_calc.tz is None:
-        date_range_for_calc = date_range_for_calc.tz_localize('UTC')
-    date_ordinals_np = np.array(date_range_for_calc.values.astype('int64'), dtype=np.int64)
-    
-    tx_dates_ordinal_np = np.array(pd.to_datetime(sorted_tx_df["Date"], utc=True).values.astype('int64'), dtype=np.int64)
+        date_range_for_calc = date_range_for_calc.tz_localize("UTC")
+    date_ordinals_np = np.array(
+        date_range_for_calc.values.astype("int64"), dtype=np.int64
+    )
+
+    tx_dates_ordinal_np = np.array(
+        pd.to_datetime(sorted_tx_df["Date"], utc=True).values.astype("int64"),
+        dtype=np.int64,
+    )
     tx_symbols_np = (
         sorted_tx_df["Symbol"].map(symbol_to_id).fillna(-1).values.astype(np.int64)
     )
@@ -2430,16 +2650,16 @@ def _get_or_calculate_all_daily_holdings(
     buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
     transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
     spin_off_type_id = type_to_id.get("spin off", -1)  # SPIN-OFF
-    dividend_type_id = type_to_id.get("dividend", -1)    # AUTO CASH
-    interest_type_id = type_to_id.get("interest", -1)    # AUTO CASH
-    fees_type_id = type_to_id.get("fees", -1)            # AUTO CASH
-    tax_type_id = type_to_id.get("tax", -1)              # AUTO CASH
+    dividend_type_id = type_to_id.get("dividend", -1)  # AUTO CASH
+    interest_type_id = type_to_id.get("interest", -1)  # AUTO CASH
+    fees_type_id = type_to_id.get("fees", -1)  # AUTO CASH
+    tax_type_id = type_to_id.get("tax", -1)  # AUTO CASH
     cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
     # AUTO CASH: Build acc_cash_modes array
     num_symbols = len(symbol_to_id)
     num_accounts = len(account_to_id)
-    
+
     _acm2 = account_cash_mode_map if account_cash_mode_map else {}
     acc_cash_modes_np2 = np.zeros(num_accounts, dtype=np.int64)
     for _acc_name2, _mode_str2 in _acm2.items():
@@ -2457,8 +2677,8 @@ def _get_or_calculate_all_daily_holdings(
             date_ordinals_np,
             tx_dates_ordinal_np,
             tx_symbols_np,
-            tx_to_accounts_np, # DEST (Arg 4)
-            tx_accounts_np,    # SOURCE (Arg 5)
+            tx_to_accounts_np,  # DEST (Arg 4)
+            tx_accounts_np,  # SOURCE (Arg 5)
             tx_types_np,
             tx_quantities_np,
             tx_commissions_np,
@@ -2559,8 +2779,8 @@ def _calculate_accumulated_gains_and_resample(
         # We replace factors near 0.0 with 1.0 (neutral 0% return) to bridge these data gaps/errors.
         zero_factor_mask = gain_factors_portfolio < 1e-6
         if zero_factor_mask.any():
-             gain_factors_portfolio[zero_factor_mask] = 1.0
-        
+            gain_factors_portfolio[zero_factor_mask] = 1.0
+
         results_df["Portfolio Accumulated Gain Daily"] = (
             gain_factors_portfolio.cumprod()
         )
@@ -2568,19 +2788,25 @@ def _calculate_accumulated_gains_and_resample(
             results_df.iloc[
                 0, results_df.columns.get_loc("Portfolio Accumulated Gain Daily")
             ] = np.nan
-        
+
         # --- MODIFIED: Calculate final_twr_factor ONLY for the requested range ---
         if not results_df.empty:
             ts_start = pd.Timestamp(start_date_filter).tz_localize(results_df.index.tz)
-            ts_end = pd.Timestamp(end_date_filter).tz_localize(results_df.index.tz) + pd.Timedelta(hours=23, minutes=59)
-            
+            ts_end = pd.Timestamp(end_date_filter).tz_localize(
+                results_df.index.tz
+            ) + pd.Timedelta(hours=23, minutes=59)
+
             # Slice the gain factors for the requested period
             period_gain_factors = gain_factors_portfolio.loc[ts_start:ts_end]
             if not period_gain_factors.empty:
                 final_twr_factor = period_gain_factors.prod()
             else:
                 # Fallback to the last point if slicing yielded nothing (shouldn't happen with valid data)
-                final_twr_factor = results_df["Portfolio Accumulated Gain Daily"].dropna().iloc[-1] if not results_df.empty else np.nan
+                final_twr_factor = (
+                    results_df["Portfolio Accumulated Gain Daily"].dropna().iloc[-1]
+                    if not results_df.empty
+                    else np.nan
+                )
 
         for bm_symbol in benchmark_symbols_yf:
             price_col = f"{bm_symbol} Price"
@@ -2610,7 +2836,9 @@ def _calculate_accumulated_gains_and_resample(
         # --- NEW: Calculate Absolute Gain / ROI on Daily Basis ---
         # This provides a money-weighted perspective for all views.
         if "value" in results_df.columns and "net_flow" in results_df.columns:
-            results_df["Cumulative Net Flow"] = results_df["net_flow"].fillna(0.0).cumsum()
+            results_df["Cumulative Net Flow"] = (
+                results_df["net_flow"].fillna(0.0).cumsum()
+            )
             results_df["Absolute Gain ($)"] = (
                 results_df["value"] - results_df["Cumulative Net Flow"]
             )
@@ -2627,7 +2855,9 @@ def _calculate_accumulated_gains_and_resample(
             running_max = results_df["Portfolio Accumulated Gain Daily"].cummax()
             # 2. Drawdown = (Current / Running Max) - 1
             # Handle potential NaNs or zeros if needed (though cummax usually safe)
-            results_df["drawdown"] = (results_df["Portfolio Accumulated Gain Daily"] / running_max) - 1
+            results_df["drawdown"] = (
+                results_df["Portfolio Accumulated Gain Daily"] / running_max
+            ) - 1
             # 3. Convert to percentage? Frontend expects percentage number (e.g. -5.5 for -5.5%)?
             # Looking at PerformanceGraph.tsx, it renders `dataPoint.drawdown.toFixed(2) + '%'`.
             # If the value is -0.05 (for -5%), then * 100
@@ -2650,21 +2880,23 @@ def _calculate_accumulated_gains_and_resample(
                     final_df_resampled.rename(
                         columns={accum_col_daily: accum_col_final}, inplace=True
                     )
-            
+
             # --- FIX: Shift timestamp to Market Close (16:00 EST) ---
             # Standard YF data is 00:00 UTC, which equals 19:00 EST of the PREVIOUS day.
             # This causes the frontend to display Tuesday's data as Monday.
             # We shift it to 16:00 EST (21:00 UTC) so it falls correctly on the trading day.
             if not final_df_resampled.empty:
-                 try:
-                     dates = final_df_resampled.index.date
-                     naive_dti = pd.DatetimeIndex(dates)
-                     ny_midnight = naive_dti.tz_localize('America/New_York')
-                     ny_close = ny_midnight + pd.Timedelta(hours=16)
-                     final_df_resampled.index = ny_close.tz_convert('UTC')
-                     logging.info("Shifted Daily index to 16:00 EST to correct visual date alignment.")
-                 except Exception as e_shift:
-                     logging.error(f"Failed to shift daily index: {e_shift}")
+                try:
+                    dates = final_df_resampled.index.date
+                    naive_dti = pd.DatetimeIndex(dates)
+                    ny_midnight = naive_dti.tz_localize("America/New_York")
+                    ny_close = ny_midnight + pd.Timedelta(hours=16)
+                    final_df_resampled.index = ny_close.tz_convert("UTC")
+                    logging.info(
+                        "Shifted Daily index to 16:00 EST to correct visual date alignment."
+                    )
+                except Exception as e_shift:
+                    logging.error(f"Failed to shift daily index: {e_shift}")
 
         elif (
             interval in ["W", "M", "ME"] and not results_df.empty
@@ -2711,8 +2943,10 @@ def _calculate_accumulated_gains_and_resample(
                 # --- FIX: Use Daily Accumulated Gain directly ---
                 # This ensures TWR is consistent across all timeframes.
                 final_df_resampled.rename(
-                    columns={"Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"},
-                    inplace=True
+                    columns={
+                        "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
+                    },
+                    inplace=True,
                 )
                 for bm_symbol in benchmark_symbols_yf:
                     accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
@@ -2723,16 +2957,18 @@ def _calculate_accumulated_gains_and_resample(
                         )
 
                 # --- NEW: NO LONGER recalculating Absolute ROI here, it's summed/lasted from daily ---
-                # But we do need to handle ROI on resampled data because simply taking 'last' ROI 
+                # But we do need to handle ROI on resampled data because simply taking 'last' ROI
                 # or summing ROI doesn't make sense.
                 # However, Absolute Gain is additive (if using sum of gains) or 'last' (if using cumulative flow).
                 # Actually, using 'last' for Absolute Gain and Cumulative Flow IS correct because they are status-at-time.
                 # But let's re-calculate ROI on the resampled values to be perfectly accurate.
-                denom_roi_res = final_df_resampled["Cumulative Net Flow"].replace(0, np.nan)
-                final_df_resampled["Absolute ROI (%)"] = (
-                    (final_df_resampled["Absolute Gain ($)"] / denom_roi_res.abs()) * 100.0
+                denom_roi_res = final_df_resampled["Cumulative Net Flow"].replace(
+                    0, np.nan
                 )
-                
+                final_df_resampled["Absolute ROI (%)"] = (
+                    final_df_resampled["Absolute Gain ($)"] / denom_roi_res.abs()
+                ) * 100.0
+
                 status_update += f" Resampled to '{interval}' with Absolute metrics."
             except Exception as e_resample:
                 logging.warning(
@@ -2773,12 +3009,12 @@ def _calculate_accumulated_gains_and_resample(
                 columns_to_keep.append(price_col)
             if accum_col_final in final_df_resampled.columns:
                 columns_to_keep.append(accum_col_final)
-        
+
         # Ensure we only keep columns that actually exist
         columns_to_keep = [
             col for col in columns_to_keep if col in final_df_resampled.columns
         ]
-        
+
         final_df_output = final_df_resampled[columns_to_keep].copy()
         final_df_output.rename(
             columns={"value": "Portfolio Value", "daily_gain": "Portfolio Daily Gain"},
@@ -2798,81 +3034,103 @@ def _calculate_accumulated_gains_and_resample(
         if start_date_filter and end_date_filter:
             try:
                 pd_start = pd.Timestamp(start_date_filter)
-                pd_end = pd.Timestamp(end_date_filter) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-                
+                pd_end = pd.Timestamp(end_date_filter) + pd.Timedelta(
+                    hours=23, minutes=59, seconds=59
+                )
+
                 # Ensure index is timezone-naive before comparison if needed
                 if final_df_output.index.tz is not None:
                     final_df_output.index = final_df_output.index.tz_localize(None)
                 # --- NEW BASELINE LOGIC ($t_{-1}$) ---
-                # Instead of normalizing by the first visible point (t0), 
+                # Instead of normalizing by the first visible point (t0),
                 # we want to normalize by the point immediately preceding it (t-1).
                 # This ensures the first point (t0) already shows the return of that first day.
-                
+
                 # 1. Prepare a TZ-naive copy of the full resampled data for lookup
                 resampled_naive = final_df_resampled.copy()
                 if resampled_naive.index.tz is not None:
                     resampled_naive.index = resampled_naive.index.tz_localize(None)
-                
+
                 # 2. Identify first date in the visible range
                 available_dates = final_df_output.index.sort_values()
-                visible_mask = (available_dates >= pd_start) & (available_dates <= pd_end)
+                visible_mask = (available_dates >= pd_start) & (
+                    available_dates <= pd_end
+                )
                 visible_dates = available_dates[visible_mask]
-                
+
                 if not visible_dates.empty:
                     # 3. Find the normalization baseline
                     for col in final_df_output.columns:
                         if "Accumulated Gain" in col:
                             divisor = 0.0
                             found_valid = False
-                            
+
                             # --- QUICK CHECK: If entire column is NaN or zero, skip search ---
                             col_data = final_df_output[col]
                             if col_data.isna().all() or (col_data == 0).all():
-                                logging.debug(f"Normalization skipped for {col}: Column is empty or all zeros.")
+                                logging.debug(
+                                    f"Normalization skipped for {col}: Column is empty or all zeros."
+                                )
                                 continue
-                            
+
                             # BUG-10 FIX: Try t-1 (last point BEFORE visible range) from full data
                             if col in resampled_naive.columns:
-                                pre_range_data = resampled_naive.loc[resampled_naive.index < visible_dates[0], col].dropna()
+                                pre_range_data = resampled_naive.loc[
+                                    resampled_naive.index < visible_dates[0], col
+                                ].dropna()
                                 if not pre_range_data.empty:
                                     t_minus_1_val = pre_range_data.iloc[-1]
                                     if pd.notnull(t_minus_1_val) and t_minus_1_val != 0:
                                         divisor = t_minus_1_val
                                         found_valid = True
-                                        logging.debug(f"BUG-10 FIX: Using t-1 baseline for {col}: {divisor}")
-                            
+                                        logging.debug(
+                                            f"BUG-10 FIX: Using t-1 baseline for {col}: {divisor}"
+                                        )
+
                             # Fallback: t0 if t-1 not available
                             if not found_valid:
                                 t0_val = final_df_output.loc[visible_dates[0], col]
                                 if pd.notnull(t0_val) and t0_val != 0:
                                     divisor = t0_val
                                     found_valid = True
-                                    logging.debug(f"BUG-10 FIX: Fallback to t0 baseline for {col}: {divisor}")
+                                    logging.debug(
+                                        f"BUG-10 FIX: Fallback to t0 baseline for {col}: {divisor}"
+                                    )
                                 else:
                                     # t0 is invalid, search forwards
-                                    logging.debug(f"t0 baseline invalid for {col} (val={t0_val}). Searching forward...")
+                                    logging.debug(
+                                        f"t0 baseline invalid for {col} (val={t0_val}). Searching forward..."
+                                    )
                                     for d in visible_dates:
                                         val = final_df_output.loc[d, col]
                                         if pd.notnull(val) and val != 0:
                                             divisor = val
                                             found_valid = True
-                                            logging.debug(f"Found valid baseline for {col} at {d}: {divisor}")
+                                            logging.debug(
+                                                f"Found valid baseline for {col} at {d}: {divisor}"
+                                            )
                                             break
-                            
+
                             if found_valid and divisor != 0:
                                 # --- FIX: Safety check for massive spikes due to near-zero divisor ---
-                                # If the divisor is extremely small (e.g. 0.0001), it will amplify the 
+                                # If the divisor is extremely small (e.g. 0.0001), it will amplify the
                                 # whole series by 10,000x. We set a threshold for validity.
                                 if abs(divisor) < 1e-4:
-                                     logging.warning(f"Normalization divisor for {col} is too small ({divisor}). Skipping normalization to prevent spikes.")
+                                    logging.warning(
+                                        f"Normalization divisor for {col} is too small ({divisor}). Skipping normalization to prevent spikes."
+                                    )
                                 else:
-                                     final_df_output[col] = final_df_output[col] / divisor
+                                    final_df_output[col] = (
+                                        final_df_output[col] / divisor
+                                    )
                             else:
-                                logging.warning(f"Could not find ANY valid normalization baseline for {col} in range.")
+                                logging.warning(
+                                    f"Could not find ANY valid normalization baseline for {col} in range."
+                                )
 
                 # finally slice the output
                 final_df_output = final_df_output.loc[pd_start:pd_end]
-                
+
                 logging.debug(
                     f"Filtered and normalized final output to range: {start_date_filter} - {end_date_filter}"
                 )
@@ -2915,7 +3173,7 @@ def calculate_historical_performance(
     # ADDED: original_csv_file_path for daily_results_cache_key hash generation
     # This is needed because we no longer pass the CSV path directly to this function for loading
     original_csv_file_path: Optional[str] = None,
-    calc_method: Optional[str] = None, # ADDED for benchmarking
+    calc_method: Optional[str] = None,  # ADDED for benchmarking
     account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[
     pd.DataFrame,  # daily_df
@@ -2927,8 +3185,10 @@ def calculate_historical_performance(
 ]:
     # --- CRITICAL FIX: Deduplicate split transactions to prevent double-multiplication ---
     # This ensures both holdings and price unadjustment see the same consistent set of splits.
-    all_transactions_df_cleaned = _deduplicate_split_transactions(all_transactions_df_cleaned)
-    
+    all_transactions_df_cleaned = _deduplicate_split_transactions(
+        all_transactions_df_cleaned
+    )
+
     # -------------------------------
     start_time_hist = time.time()
     has_errors = False
@@ -2978,7 +3238,21 @@ def calculate_historical_performance(
         return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
     if start_date >= end_date:
         return pd.DataFrame(), {}, {}, "Error: Start date must be before end date."
-    if interval not in ["D", "W", "M", "ME", "1d", "1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
+    if interval not in [
+        "D",
+        "W",
+        "M",
+        "ME",
+        "1d",
+        "1h",
+        "1m",
+        "2m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "90m",
+    ]:
         return pd.DataFrame(), {}, {}, f"Error: Invalid interval '{interval}'."
 
     clean_benchmark_symbols_yf = (
@@ -3004,9 +3278,11 @@ def calculate_historical_performance(
     # If using daily results cache, we MUST have the file path to generate a valid hash
     # that changes when the file (DB or CSV) changes.
     if use_daily_results_cache and not original_csv_file_path:
-        logging.critical("CRITICAL WARNING: `calculate_historical_performance` called with `use_daily_results_cache=True` but NO `original_csv_file_path`. Disabling cache to prevent stale data.")
+        logging.critical(
+            "CRITICAL WARNING: `calculate_historical_performance` called with `use_daily_results_cache=True` but NO `original_csv_file_path`. Disabling cache to prevent stale data."
+        )
         use_daily_results_cache = False
-    
+
     # --- 1. Prepare Inputs (Uses preloaded DataFrame) ---
     prep_result = _prepare_historical_inputs(
         preloaded_transactions_df=all_transactions_df_cleaned,  # PASS DF
@@ -3079,17 +3355,19 @@ def calculate_historical_performance(
 
         # FIX: Ensure full_start_date covers the requested start_date
         # This prevents shape mismatch in _value_daily_holdings_vectorized when L1 cache is used.
-        full_start_date = min(start_date, transactions_df_effective["Date"].min().date())
+        full_start_date = min(
+            start_date, transactions_df_effective["Date"].min().date()
+        )
         # Ensure we have at least a few days of history for benchmarks and normalization
         # specially for intraday where we need the previous close.
         if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
             full_start_date = full_start_date - timedelta(days=3)
-        
+
         full_end_date_tx = transactions_df_effective["Date"].max().date()
         # FIX REVERTED: MarketDataProvider handles +1 day for yfinance exclusivity.
         # We pass the INCLUSIVE end date (today).
         fetch_end_date = max(end_date, full_end_date_tx)
-        
+
         logging.info(
             f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date} (requested start_date: {start_date}, interval: {interval})."
         )
@@ -3105,41 +3383,49 @@ def calculate_historical_performance(
     # AND there are no transactions forcing us to show that future date.
     clamped_end_date = end_date
     if interval in ["D", "1d", "W", "M", "ME"]:
-         latest_trading = get_latest_trading_date()
-         if end_date > latest_trading and full_end_date_tx <= latest_trading:
-             logging.info(f"Clamping end_date from {end_date} to {latest_trading} (Latest Trading Date).")
-             clamped_end_date = latest_trading
-    
+        latest_trading = get_latest_trading_date()
+        if end_date > latest_trading and full_end_date_tx <= latest_trading:
+            logging.info(
+                f"Clamping end_date from {end_date} to {latest_trading} (Latest Trading Date)."
+            )
+            clamped_end_date = latest_trading
+
     # fetch_end_date must be at least clamped_end_date + 1 day (because YF is exclusive)
     # AND cover any transactions
-    _min_fetch_end = max(clamped_end_date + timedelta(days=1), full_end_date_tx + timedelta(days=1))
+    _min_fetch_end = max(
+        clamped_end_date + timedelta(days=1), full_end_date_tx + timedelta(days=1)
+    )
     # We also respect the original end_date if it was larger (e.g. for some reason needed?)
     # But usually we just need to cover the clamped range + buffer.
     # Let's just ensure we capture up to 'today' if needed for checking.
     # Actually, simplistic logic:
-    fetch_end_date = max(end_date, date.today()) # Ensure we fetch up to today to populate cache correctly?
+    fetch_end_date = max(
+        end_date, date.today()
+    )  # Ensure we fetch up to today to populate cache correctly?
     # Better:
     fetch_end_date = max(end_date, full_end_date_tx)
     if fetch_end_date <= clamped_end_date:
-         fetch_end_date = clamped_end_date + timedelta(days=1)
-    
-    logging.info(f"Date Range Config: Request={start_date}..{end_date}, ClampedEnd={clamped_end_date}, FetchEnd={fetch_end_date}")
+        fetch_end_date = clamped_end_date + timedelta(days=1)
 
-    market_provider = get_shared_mdp(
-        hist_data_cache_dir_name="historical_data_cache"
+    logging.info(
+        f"Date Range Config: Request={start_date}..{end_date}, ClampedEnd={clamped_end_date}, FetchEnd={fetch_end_date}"
     )
+
+    market_provider = get_shared_mdp(hist_data_cache_dir_name="historical_data_cache")
 
     # This calculates daily holdings purely from transactions (no market data yet), or loads L1 cache
     # But it returns just the arrays/maps needed for *daily* scope.
     # For intraday, we might re-calculate inside _load_or_calculate if needed (cache miss logic handles it).
-    all_holdings_qty, all_cash_balances, all_last_prices = _get_or_calculate_all_daily_holdings(
-        all_transactions_df=all_transactions_df_cleaned,
-        start_date=full_start_date,
-        end_date=fetch_end_date,
-        symbol_to_id=symbol_to_id,
-        account_to_id=account_to_id,
-        type_to_id=type_to_id,
-        account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
+    all_holdings_qty, all_cash_balances, all_last_prices = (
+        _get_or_calculate_all_daily_holdings(
+            all_transactions_df=all_transactions_df_cleaned,
+            start_date=full_start_date,
+            end_date=fetch_end_date,
+            symbol_to_id=symbol_to_id,
+            account_to_id=account_to_id,
+            type_to_id=type_to_id,
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
+        )
     )
 
     if all_holdings_qty is None:
@@ -3148,7 +3434,7 @@ def calculate_historical_performance(
 
     # --- NEW: Identify Currently Held Symbols for Integrity Check Optimization ---
     # We only care about integrity (drifts/splits) for symbols we actually hold today,
-    # or benchmarks we track. For symbols we no longer hold, small historical 
+    # or benchmarks we track. For symbols we no longer hold, small historical
     # drift doesn't justify a full history re-fetch during routine background syncs.
     active_symbols_yf = set(clean_benchmark_symbols_yf)
     try:
@@ -3163,35 +3449,43 @@ def calculate_historical_performance(
                     yf_sym = internal_to_yf_map.get(internal_sym)
                     if yf_sym:
                         active_symbols_yf.add(yf_sym)
-        logging.info(f"Integrity check restricted to {len(active_symbols_yf)} active symbols.")
+        logging.info(
+            f"Integrity check restricted to {len(active_symbols_yf)} active symbols."
+        )
     except Exception as e_active:
-        logging.warning(f"Failed to determine active symbols for integrity check: {e_active}")
-        active_symbols_yf = None # Fallback to checking everything if determination fails
+        logging.warning(
+            f"Failed to determine active symbols for integrity check: {e_active}"
+        )
+        active_symbols_yf = (
+            None  # Fallback to checking everything if determination fails
+        )
     # ----------------------------------------------------------------------------
-
-
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
     # We always fetch daily data for the FULL range to support valuation baseline.
-    historical_prices_yf_adjusted, fetch_failed_prices = market_provider.get_historical_data(
-        symbols_yf=symbols_for_stocks_and_benchmarks_yf,
-        start_date=full_start_date,
-        end_date=fetch_end_date,
-        interval="1d",
-        # Force DISABLE raw cache for intraday intervals to ensure we get fresh daily close/open for the day
-        use_cache=use_raw_data_cache if interval == "1d" else False,
-        # Append fetch_end_date to key to ensure we don't use stale cache for different fetch range
-        cache_key=f"{raw_data_cache_key}_{fetch_end_date.isoformat()}",
-        integrity_check_symbols=active_symbols_yf, # Pass the optimized list
+    historical_prices_yf_adjusted, fetch_failed_prices = (
+        market_provider.get_historical_data(
+            symbols_yf=symbols_for_stocks_and_benchmarks_yf,
+            start_date=full_start_date,
+            end_date=fetch_end_date,
+            interval="1d",
+            # Force DISABLE raw cache for intraday intervals to ensure we get fresh daily close/open for the day
+            use_cache=use_raw_data_cache if interval == "1d" else False,
+            # Append fetch_end_date to key to ensure we don't use stale cache for different fetch range
+            cache_key=f"{raw_data_cache_key}_{fetch_end_date.isoformat()}",
+            integrity_check_symbols=active_symbols_yf,  # Pass the optimized list
+        )
     )
-    
+
     # --- INTRADAY PATCH: Fetch high-res data for active range ---
-    # If the user requested an intraday interval (e.g. 5m), we must ensure 
+    # If the user requested an intraday interval (e.g. 5m), we must ensure
     # historical_prices_yf_adjusted contains these intraday timestamps for the active period.
     # Otherwise, the calculation loop (which runs at 5m resolution) will just find the same
     # 'daily' price for every 5m step, resulting in a flat line for the day.
     if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
-        logging.info(f"Intraday interval '{interval}' detected. Fetching coverage for {len(symbols_for_stocks_and_benchmarks_yf)} symbols...")
+        logging.info(
+            f"Intraday interval '{interval}' detected. Fetching coverage for {len(symbols_for_stocks_and_benchmarks_yf)} symbols..."
+        )
         try:
             # Fetch intraday data. yfinance handles 60d limit for 5m, 730d for 1h etc.
             # We use start_date from the request to capture the relevant active window.
@@ -3199,62 +3493,74 @@ def calculate_historical_performance(
             # we must extend it by 1 day.
             intraday_end_date = fetch_end_date
             if intraday_end_date >= get_est_today():
-                 intraday_end_date = get_est_today() + timedelta(days=1)
+                intraday_end_date = get_est_today() + timedelta(days=1)
 
             intraday_prices_adj, _ = market_provider.get_historical_data(
                 symbols_yf=symbols_for_stocks_and_benchmarks_yf,
-                start_date=max(start_date, get_est_today() - timedelta(days=59)) if "m" in interval else start_date,
+                start_date=max(start_date, get_est_today() - timedelta(days=59))
+                if "m" in interval
+                else start_date,
                 end_date=intraday_end_date,
                 interval=interval,
-                use_cache=False, # FORCE FALSE for intraday patch to ensure live data
+                use_cache=False,  # FORCE FALSE for intraday patch to ensure live data
             )
-            
+
             if intraday_prices_adj:
-                logging.info(f"Merging {len(intraday_prices_adj)} intraday price series into main price history...")
+                logging.info(
+                    f"Merging {len(intraday_prices_adj)} intraday price series into main price history..."
+                )
                 for sym, intra_df in intraday_prices_adj.items():
                     if intra_df is None or intra_df.empty:
                         continue
-                        
+
                     # 1. Normalize Intraday Index to UTC
-                    if not isinstance(intra_df.index, pd.DatetimeIndex) or intra_df.index.tz is None:
+                    if (
+                        not isinstance(intra_df.index, pd.DatetimeIndex)
+                        or intra_df.index.tz is None
+                    ):
                         intra_df.index = pd.to_datetime(intra_df.index, utc=True)
-                    
+
                     # 2. Merge into existing Daily DF
-                    # We combine them. If index overlaps, we prefer Intraday? 
+                    # We combine them. If index overlaps, we prefer Intraday?
                     # Actually, Daily data is at 00:00 UTC (usually). Intraday is at 09:30, 09:35 etc.
                     # So they don't overlap in time. We can just concat and sort.
                     # This gives the "step" function for history (daily) and "curve" for active day (intraday).
                     if sym in historical_prices_yf_adjusted:
                         daily_df_sym = historical_prices_yf_adjusted[sym]
-                         # Normalize Daily Index to UTC if not already
-                        if not isinstance(daily_df_sym.index, pd.DatetimeIndex) or daily_df_sym.index.tz is None:
-                            daily_df_sym.index = pd.to_datetime(daily_df_sym.index, utc=True)
-                        
+                        # Normalize Daily Index to UTC if not already
+                        if (
+                            not isinstance(daily_df_sym.index, pd.DatetimeIndex)
+                            or daily_df_sym.index.tz is None
+                        ):
+                            daily_df_sym.index = pd.to_datetime(
+                                daily_df_sym.index, utc=True
+                            )
+
                         # Concat and Sort
                         # Filter out intraday range from daily to avoid duplication if daily has 'today' row?
                         # Daily usually has 'today' 00:00 or similar.
                         # Safest is to keep daily history OLDER than intraday start, and append full intraday.
                         intra_start = intra_df.index.min()
                         daily_mask = daily_df_sym.index < intra_start
-                        
+
                         merged_df = pd.concat([daily_df_sym.loc[daily_mask], intra_df])
-                        merged_df = merged_df[~merged_df.index.duplicated(keep='last')].sort_index()
-                        
+                        merged_df = merged_df[
+                            ~merged_df.index.duplicated(keep="last")
+                        ].sort_index()
+
                         # --- FIX: Ensure the merged series has NO leading NaNs for the day ---
                         # This prevents the 'jump' from zero if today's first point is missing
                         if not merged_df.empty:
                             merged_df = merged_df.ffill().bfill()
-                        
+
                         historical_prices_yf_adjusted[sym] = merged_df
                     else:
                         historical_prices_yf_adjusted[sym] = intra_df.ffill().bfill()
         except Exception as e_intra:
             logging.error(f"Failed to fetch/merge intraday data: {e_intra}")
 
-
     # BUG-11 FIX: Removed duplicate intraday fetch block that was here.
     # The intraday fetch and merge is already handled by the block above (lines ~6540-6600).
-
 
     logging.info(
         f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."
@@ -3267,11 +3573,11 @@ def calculate_historical_performance(
         use_cache=use_raw_data_cache,
         cache_key=raw_data_cache_key,
     )
-    
+
     if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
         intraday_fx, _ = market_provider.get_historical_fx_rates(
             fx_pairs_yf=fx_pairs_for_api_yf,
-            start_date=start_date, # Let provider clip
+            start_date=start_date,  # Let provider clip
             end_date=fetch_end_date,
             interval=interval,
             use_cache=use_raw_data_cache,
@@ -3280,15 +3586,19 @@ def calculate_historical_performance(
             if p in historical_fx_yf:
                 d_df = historical_fx_yf[p]
                 d_df.index = pd.to_datetime(d_df.index, utc=True)
-                
+
                 h_df_proc = h_df.copy()
                 h_df_proc.index = pd.to_datetime(h_df_proc.index, utc=True)
-                
+
                 if not h_df_proc.empty:
                     h_start_ts = h_df_proc.index.min()
-                    
-                    combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
-                    historical_fx_yf[p] = combined[~combined.index.duplicated(keep='last')]
+
+                    combined = pd.concat(
+                        [d_df[d_df.index < h_start_ts], h_df_proc]
+                    ).sort_index()
+                    historical_fx_yf[p] = combined[
+                        ~combined.index.duplicated(keep="last")
+                    ]
             else:
                 historical_fx_yf[p] = h_df
 
@@ -3297,7 +3607,9 @@ def calculate_historical_performance(
         # has_errors = True  # Treat critical fetch error as overall error
         # RELAXED: Don't fail the whole graph just because some symbols (e.g. BLV, DAL) are missing.
         # We want to show partial data.
-        logging.warning("History: Some symbols failed to fetch, but proceeding with available data.")
+        logging.warning(
+            "History: Some symbols failed to fetch, but proceeding with available data."
+        )
         has_errors = False
     status_parts.append("Raw adjusted data loaded/fetched")
 
@@ -3318,42 +3630,44 @@ def calculate_historical_performance(
         )
 
     # --- GLOBAL STANDARDIZATION: Ensure ALL dataframes have UTC index and are backfilled ---
-    # This prevents massive TWR spikes when data starts late by backfilling the first known 
+    # This prevents massive TWR spikes when data starts late by backfilling the first known
     # value to the very beginning of the portfolio history.
-    full_start_ts = pd.Timestamp(full_start_date, tz='UTC')
+    full_start_ts = pd.Timestamp(full_start_date, tz="UTC")
     for s_map in [historical_prices_yf_adjusted, historical_fx_yf]:
-        for k, v in list(s_map.items()): # Use list to avoid mutation issues
+        for k, v in list(s_map.items()):  # Use list to avoid mutation issues
             if not isinstance(v.index, pd.DatetimeIndex) or v.index.tz is None:
                 v.index = pd.to_datetime(v.index, utc=True)
-            
+
             # STABILIZATION: Use linear interpolation for smoothness, fallback to bfill/ffill for edges
             if v is not None and not v.empty:
                 min_idx = v.index.min()
                 if min_idx > full_start_ts:
-                    logging.info(f"STABILIZATION: Smart-Filling {k} from {min_idx} to {full_start_ts}")
+                    logging.info(
+                        f"STABILIZATION: Smart-Filling {k} from {min_idx} to {full_start_ts}"
+                    )
                     # Create a copy with the extended index
                     new_index = pd.Index([full_start_ts]).union(v.index)
                     v = v.reindex(new_index).sort_index()
-                    
+
                     # Interpolate gaps linearly (requires numerical/time index)
-                    # Limit direction both fills leading gaps too? No, it handles interpolation. 
+                    # Limit direction both fills leading gaps too? No, it handles interpolation.
                     # If we only have extensive future data and 1 start point, interpolate creates a line.
                     # But if start point is NaN (from reindex), we can't interpolate from nothing.
                     # So we use bfill() BUT we might check if the gap is "too large".
                     # However, to avoid "Jumps", backfilling constant price is better than 0.
                     # The "Jump" issue (Step 72) showed 120k jump.
-                    
-                    # Revised Strategy: 
+
+                    # Revised Strategy:
                     # 1. Interpolate internal gaps (method='time').
                     # 2. bfill() leading edge to ensure valid price exists, so value != 0.
                     # 3. ffill() trailing edge.
-                    v = v.interpolate(method='time').bfill().ffill()
-                    
+                    v = v.interpolate(method="time").bfill().ffill()
+
                     s_map[k] = v
 
     # --- 5 & 6. Load or Calculate Daily Results ---
     # If it's None (e.g., data loaded from DB), the mtime check in daily results cache will be skipped or handled.
-    
+
     # 1. Attempt Load from Cache
     daily_results_cache_file_path = (
         daily_results_cache_file if daily_results_cache_file else None
@@ -3388,8 +3702,19 @@ def calculate_historical_performance(
             all_holdings_qty=all_holdings_qty,
             all_cash_balances=all_cash_balances,
             all_last_prices=all_last_prices,
-            all_holdings_start_date=full_start_date, # PASS the expanded start date
-            use_daily_results_cache=use_daily_results_cache and interval not in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"], # DISABLE CACHE if intraday
+            all_holdings_start_date=full_start_date,  # PASS the expanded start date
+            use_daily_results_cache=use_daily_results_cache
+            and interval
+            not in [
+                "1m",
+                "2m",
+                "5m",
+                "15m",
+                "30m",
+                "60m",
+                "90m",
+                "1h",
+            ],  # DISABLE CACHE if intraday
             included_accounts_list=include_accounts,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
@@ -3418,17 +3743,19 @@ def calculate_historical_performance(
         if not isinstance(daily_df.index, pd.DatetimeIndex):
             daily_df.index = pd.to_datetime(daily_df.index, utc=True)
         if daily_df.index.tz is None:
-            daily_df.index = daily_df.index.tz_localize('UTC')
-            
+            daily_df.index = daily_df.index.tz_localize("UTC")
+
         # DEDUPLICATION: Ensure portfolio index is unique before benchmark alignment
         if daily_df.index.duplicated().any():
-            logging.info(f"Deduplicating portfolio daily_df.index: {len(daily_df)} -> {len(daily_df[~daily_df.index.duplicated()])}")
-            daily_df = daily_df[~daily_df.index.duplicated(keep='last')]
+            logging.info(
+                f"Deduplicating portfolio daily_df.index: {len(daily_df)} -> {len(daily_df[~daily_df.index.duplicated()])}"
+            )
+            daily_df = daily_df[~daily_df.index.duplicated(keep="last")]
         # FIX: For intraday intervals, don't fetch from full_start_date (too long)
         # Instead, fetch from start_date - 1 day to get a baseline for returns.
         benchmark_fetch_start = full_start_date
         if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
-             benchmark_fetch_start = max(full_start_date, start_date - timedelta(days=5))
+            benchmark_fetch_start = max(full_start_date, start_date - timedelta(days=5))
 
         # Use the same market_provider instance
         bench_prices_adj, _ = market_provider.get_historical_data(
@@ -3439,13 +3766,15 @@ def calculate_historical_performance(
             interval=interval,  # FIX: Pass interval to ensure intraday data is fetched for 1d view
             # We don't pass a monolithic cache_key here, allowing per-symbol caching
         )
-        
+
         if bench_prices_adj:
-            logging.info(f"Fetched {len(bench_prices_adj)} benchmarks. Keys: {list(bench_prices_adj.keys())}")
+            logging.info(
+                f"Fetched {len(bench_prices_adj)} benchmarks. Keys: {list(bench_prices_adj.keys())}"
+            )
             for bm in clean_benchmark_symbols_yf:
                 if bm in bench_prices_adj:
                     bm_df = bench_prices_adj[bm]
-                    
+
                     if bm_df is not None and not bm_df.empty:
                         col_to_use = None
                         if "price" in bm_df.columns:
@@ -3454,52 +3783,83 @@ def calculate_historical_performance(
                             col_to_use = "Adj Close"
                         elif "Close" in bm_df.columns:
                             col_to_use = "Close"
-                        
+
                         if col_to_use:
-                            logging.info(f"Benchmark {bm}: Using col '{col_to_use}', count={len(bm_df)}, first={bm_df.index[0]}")
+                            logging.info(
+                                f"Benchmark {bm}: Using col '{col_to_use}', count={len(bm_df)}, first={bm_df.index[0]}"
+                            )
                             bm_series = bm_df[col_to_use].copy()
                         bm_series.name = f"{bm} Price"
-                        
+
                         # Ensure index is datetime for merging
-                        if not isinstance(bm_series.index, pd.DatetimeIndex) or bm_series.index.tz is None:
+                        if (
+                            not isinstance(bm_series.index, pd.DatetimeIndex)
+                            or bm_series.index.tz is None
+                        ):
                             bm_series.index = pd.to_datetime(bm_series.index, utc=True)
-                        
+
                         # DEDUPLICATION: Ensure benchmark series index is unique before reindexing
                         if bm_series.index.duplicated().any():
-                            logging.info(f"Deduplicating benchmark {bm} index: {len(bm_series)} -> {len(bm_series[~bm_series.index.duplicated()])}")
-                            bm_series = bm_series[~bm_series.index.duplicated(keep='last')]
+                            logging.info(
+                                f"Deduplicating benchmark {bm} index: {len(bm_series)} -> {len(bm_series[~bm_series.index.duplicated()])}"
+                            )
+                            bm_series = bm_series[
+                                ~bm_series.index.duplicated(keep="last")
+                            ]
                         # Merge into daily_df using reindex with 'ffill' to handle timestamp mismatches
                         # and overnight gaps. method='nearest' with tight tolerance often misses morning data.
                         try:
                             # Use generous tolerance to bridge overnight/weekend gaps
                             # MLK Day holiday requires > 72h (Fri 4pm to Tue 9:30am is ~90h)
-                            tol = pd.Timedelta('120h')
+                            tol = pd.Timedelta("120h")
 
                             # --- FIX: Ensure TZ alignment for reindexing ---
-                            if bm_series.index.tz is None and daily_df.index.tz is not None:
-                                bm_series.index = bm_series.index.tz_localize(daily_df.index.tz)
-                            elif bm_series.index.tz is not None and daily_df.index.tz is None:
+                            if (
+                                bm_series.index.tz is None
+                                and daily_df.index.tz is not None
+                            ):
+                                bm_series.index = bm_series.index.tz_localize(
+                                    daily_df.index.tz
+                                )
+                            elif (
+                                bm_series.index.tz is not None
+                                and daily_df.index.tz is None
+                            ):
                                 bm_series.index = bm_series.index.tz_localize(None)
 
                             is_intra = any(x in interval for x in ["m", "h", "min"])
                             if is_intra:
-                                bm_series_aligned = bm_series.reindex(daily_df.index).interpolate(method='time').ffill().bfill()
+                                bm_series_aligned = (
+                                    bm_series.reindex(daily_df.index)
+                                    .interpolate(method="time")
+                                    .ffill()
+                                    .bfill()
+                                )
                             else:
                                 bm_series_aligned = bm_series.reindex(
-                                    daily_df.index, 
-                                    method='ffill', 
-                                    tolerance=tol
+                                    daily_df.index, method="ffill", tolerance=tol
                                 )
                             daily_df[f"{bm} Price"] = bm_series_aligned
                             # ADDED: Diagnostic logging for Tuesday data
-                            num_tuesday = daily_df.loc[daily_df.index.date == date(2026, 1, 20), f"{bm} Price"].notna().sum()
-                            logging.info(f"Benchmark {bm}: Aligned. Tuesday points: {num_tuesday}")
-                            
+                            num_tuesday = (
+                                daily_df.loc[
+                                    daily_df.index.date == date(2026, 1, 20),
+                                    f"{bm} Price",
+                                ]
+                                .notna()
+                                .sum()
+                            )
+                            logging.info(
+                                f"Benchmark {bm}: Aligned. Tuesday points: {num_tuesday}"
+                            )
+
                         except Exception as e_align:
-                            logging.warning(f"Benchmark alignment failed for {bm}: {e_align}. Falling back to strict join.")
+                            logging.warning(
+                                f"Benchmark alignment failed for {bm}: {e_align}. Falling back to strict join."
+                            )
                             # Fallback to strict alignment (will likely be NaN if mismatch exists)
                             daily_df[f"{bm} Price"] = bm_series
-                        
+
                     else:
                         logging.warning(f"No price data found for benchmark {bm}")
                         daily_df[f"{bm} Price"] = np.nan
@@ -3509,12 +3869,14 @@ def calculate_historical_performance(
     # --- 7. Resample and Calculate Final TWR & Absolute Metrics ---
     # This call handles TWR, benchmarks, resampling, normalization, and absolute metrics.
     # It replaces the manual filtering and calculation that was previously here.
-    daily_df, final_twr_factor, status_update_resample = _calculate_accumulated_gains_and_resample(
-        daily_df=daily_df,
-        benchmark_symbols_yf=clean_benchmark_symbols_yf,
-        interval=interval,
-        start_date_filter=start_date,
-        end_date_filter=clamped_end_date,
+    daily_df, final_twr_factor, status_update_resample = (
+        _calculate_accumulated_gains_and_resample(
+            daily_df=daily_df,
+            benchmark_symbols_yf=clean_benchmark_symbols_yf,
+            interval=interval,
+            start_date_filter=start_date,
+            end_date_filter=clamped_end_date,
+        )
     )
     if status_update_resample:
         status_parts.append(status_update_resample.strip())
@@ -3531,13 +3893,11 @@ def calculate_historical_performance(
         final_status_prefix = "Finished with Errors"
     elif has_warnings:
         final_status_prefix = "Finished with Warnings"
-    
-    final_status_str = (
-        f"{final_status_prefix} ({filter_desc})"
-    )
+
+    final_status_str = f"{final_status_prefix} ({filter_desc})"
     if status_parts:
         final_status_str += f" [{'; '.join(status_parts)}]"
-    
+
     # Ensure TWR factor is correctly formatted in status string for UI components
     final_status_str += (
         f"|||TWR_FACTOR:{final_twr_factor:.6f}"

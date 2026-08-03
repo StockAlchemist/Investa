@@ -53,17 +53,30 @@ from portfolio_analyzer import calculate_fifo_lots_and_gains
 # ── constants ─────────────────────────────────────────────────────────────────
 ACCOUNT = "TestBrokerage"
 USD = "USD"
-TESTX_PRICE = 70.0   # constant price used for valuation assertions
+TESTX_PRICE = 70.0  # constant price used for valuation assertions
 TARGET_DATE = date(2022, 12, 31)
 
 _COLS = [
-    "Date", "Type", "Symbol", "Quantity", "Price/Share",
-    "Total Amount", "Commission", "Account", "Split Ratio",
-    "Note", "Local Currency", "To Account", "Tags", "ExternalID", "user_id",
+    "Date",
+    "Type",
+    "Symbol",
+    "Quantity",
+    "Price/Share",
+    "Total Amount",
+    "Commission",
+    "Account",
+    "Split Ratio",
+    "Note",
+    "Local Currency",
+    "To Account",
+    "Tags",
+    "ExternalID",
+    "user_id",
 ]
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _tx(date_str, typ, symbol, qty, price, total=None, commission=0.0):
     if total is None:
@@ -115,14 +128,18 @@ def _mappings(df: pd.DataFrame):
     id_to_currency = {i: c for c, i in currency_to_id.items()}
 
     return (
-        symbol_to_id, id_to_symbol,
-        account_to_id, id_to_account,
+        symbol_to_id,
+        id_to_symbol,
+        account_to_id,
+        id_to_account,
         type_to_id,
-        currency_to_id, id_to_currency,
+        currency_to_id,
+        id_to_currency,
     )
 
 
 # ── transaction sets ──────────────────────────────────────────────────────────
+
 
 def _auto_cash_df() -> pd.DataFrame:
     """
@@ -132,13 +149,15 @@ def _auto_cash_df() -> pd.DataFrame:
     Dividend convention (auto-cash): qty=0, Price/Share = total dividend amount.
     The engine uses abs(Price/Share) as the cash delta for dividends.
     """
-    return _build_df([
-        _tx("2022-01-05", "deposit",    CASH_SYMBOL_CSV, 10000, 1.0),
-        _tx("2022-01-10", "buy",        "TESTX",           100, 50.0, total=5000),
-        _tx("2022-03-15", "sell",       "TESTX",            50, 70.0, total=3500),
-        _tx("2022-06-01", "dividend",   "TESTX",             0, 200.0, total=200),
-        _tx("2022-08-01", "withdrawal", CASH_SYMBOL_CSV,  2000, 1.0),
-    ])
+    return _build_df(
+        [
+            _tx("2022-01-05", "deposit", CASH_SYMBOL_CSV, 10000, 1.0),
+            _tx("2022-01-10", "buy", "TESTX", 100, 50.0, total=5000),
+            _tx("2022-03-15", "sell", "TESTX", 50, 70.0, total=3500),
+            _tx("2022-06-01", "dividend", "TESTX", 0, 200.0, total=200),
+            _tx("2022-08-01", "withdrawal", CASH_SYMBOL_CSV, 2000, 1.0),
+        ]
+    )
 
 
 def _manual_cash_correct_df() -> pd.DataFrame:
@@ -149,21 +168,23 @@ def _manual_cash_correct_df() -> pd.DataFrame:
     This means no paired deposits appear as external flows.
     TWR should be identical to auto-cash.
     """
-    return _build_df([
-        # Real external deposit
-        _tx("2022-01-05", "deposit",  CASH_SYMBOL_CSV, 10000, 1.0),
-        # Buy TESTX: pay with "sell $CASH" (type=sell, NOT deposit)
-        _tx("2022-01-10", "buy",  "TESTX",           100, 50.0, total=5000),
-        _tx("2022-01-10", "sell", CASH_SYMBOL_CSV,  5000, 1.0),
-        # Sell TESTX: receive via "buy $CASH" (type=buy, NOT deposit)
-        _tx("2022-03-15", "sell", "TESTX",           50, 70.0, total=3500),
-        _tx("2022-03-15", "buy",  CASH_SYMBOL_CSV, 3500, 1.0),
-        # Dividend: receive via "buy $CASH" (type=buy, NOT deposit)
-        _tx("2022-06-01", "dividend", "TESTX",      200, 1.0),
-        _tx("2022-06-01", "buy",  CASH_SYMBOL_CSV,  200, 1.0),
-        # Real external withdrawal
-        _tx("2022-08-01", "withdrawal", CASH_SYMBOL_CSV, 2000, 1.0),
-    ])
+    return _build_df(
+        [
+            # Real external deposit
+            _tx("2022-01-05", "deposit", CASH_SYMBOL_CSV, 10000, 1.0),
+            # Buy TESTX: pay with "sell $CASH" (type=sell, NOT deposit)
+            _tx("2022-01-10", "buy", "TESTX", 100, 50.0, total=5000),
+            _tx("2022-01-10", "sell", CASH_SYMBOL_CSV, 5000, 1.0),
+            # Sell TESTX: receive via "buy $CASH" (type=buy, NOT deposit)
+            _tx("2022-03-15", "sell", "TESTX", 50, 70.0, total=3500),
+            _tx("2022-03-15", "buy", CASH_SYMBOL_CSV, 3500, 1.0),
+            # Dividend: receive via "buy $CASH" (type=buy, NOT deposit)
+            _tx("2022-06-01", "dividend", "TESTX", 200, 1.0),
+            _tx("2022-06-01", "buy", CASH_SYMBOL_CSV, 200, 1.0),
+            # Real external withdrawal
+            _tx("2022-08-01", "withdrawal", CASH_SYMBOL_CSV, 2000, 1.0),
+        ]
+    )
 
 
 def _manual_cash_paired_deposits_df() -> pd.DataFrame:
@@ -172,24 +193,27 @@ def _manual_cash_paired_deposits_df() -> pd.DataFrame:
     Those paired deposits are type='deposit', so the TWR engine counts them
     as external inflows, inflating the denominator and suppressing TWR.
     """
-    return _build_df([
-        # Real external deposit
-        _tx("2022-01-05", "deposit",  CASH_SYMBOL_CSV, 10000, 1.0),
-        # BUG: extra 'deposit' paired with buy (should be 'sell $CASH' instead)
-        _tx("2022-01-10", "deposit", CASH_SYMBOL_CSV,  5000, 1.0),  # ← incorrect
-        _tx("2022-01-10", "buy",     "TESTX",           100, 50.0, total=5000),
-        _tx("2022-01-10", "sell",    CASH_SYMBOL_CSV,  5000, 1.0),
-        # Sell and dividend: correct
-        _tx("2022-03-15", "sell", "TESTX",           50, 70.0, total=3500),
-        _tx("2022-03-15", "buy",  CASH_SYMBOL_CSV, 3500, 1.0),
-        _tx("2022-06-01", "dividend", "TESTX",      200, 1.0),
-        _tx("2022-06-01", "buy",  CASH_SYMBOL_CSV,  200, 1.0),
-        # Real external withdrawal
-        _tx("2022-08-01", "withdrawal", CASH_SYMBOL_CSV, 2000, 1.0),
-    ])
+    return _build_df(
+        [
+            # Real external deposit
+            _tx("2022-01-05", "deposit", CASH_SYMBOL_CSV, 10000, 1.0),
+            # BUG: extra 'deposit' paired with buy (should be 'sell $CASH' instead)
+            _tx("2022-01-10", "deposit", CASH_SYMBOL_CSV, 5000, 1.0),  # ← incorrect
+            _tx("2022-01-10", "buy", "TESTX", 100, 50.0, total=5000),
+            _tx("2022-01-10", "sell", CASH_SYMBOL_CSV, 5000, 1.0),
+            # Sell and dividend: correct
+            _tx("2022-03-15", "sell", "TESTX", 50, 70.0, total=3500),
+            _tx("2022-03-15", "buy", CASH_SYMBOL_CSV, 3500, 1.0),
+            _tx("2022-06-01", "dividend", "TESTX", 200, 1.0),
+            _tx("2022-06-01", "buy", CASH_SYMBOL_CSV, 200, 1.0),
+            # Real external withdrawal
+            _tx("2022-08-01", "withdrawal", CASH_SYMBOL_CSV, 2000, 1.0),
+        ]
+    )
 
 
 # ── external flow helper ──────────────────────────────────────────────────────
+
 
 def _net_flow(df: pd.DataFrame, target: date) -> float:
     flow, _ = _calculate_daily_net_cash_flow(
@@ -209,11 +233,19 @@ def _net_flow(df: pd.DataFrame, target: date) -> float:
 
 # ── portfolio value helper ────────────────────────────────────────────────────
 
+
 def _portfolio_value(df: pd.DataFrame, cash_mode: str) -> float:
     """Run the Numba valuation at TARGET_DATE using a fixed TESTX price."""
     maps = _mappings(df)
-    (symbol_to_id, id_to_symbol, account_to_id, id_to_account,
-     type_to_id, currency_to_id, id_to_currency) = maps
+    (
+        symbol_to_id,
+        id_to_symbol,
+        account_to_id,
+        id_to_account,
+        type_to_id,
+        currency_to_id,
+        id_to_currency,
+    ) = maps
 
     unadjusted = {
         "TESTX": pd.DataFrame(
@@ -248,6 +280,7 @@ def _portfolio_value(df: pd.DataFrame, cash_mode: str) -> float:
 
 # ── realized gains helper ─────────────────────────────────────────────────────
 
+
 def _total_realized_gain(df: pd.DataFrame) -> float:
     """FIFO realized gain in USD."""
     gains_df, _ = calculate_fifo_lots_and_gains(
@@ -281,31 +314,51 @@ class TestExternalFlows:
     """
 
     def test_deposit_day_same_in_both_modes(self):
-        assert _net_flow(_auto_cash_df(), date(2022, 1, 5)) == pytest.approx(10_000, rel=1e-6)
-        assert _net_flow(_manual_cash_correct_df(), date(2022, 1, 5)) == pytest.approx(10_000, rel=1e-6)
+        assert _net_flow(_auto_cash_df(), date(2022, 1, 5)) == pytest.approx(
+            10_000, rel=1e-6
+        )
+        assert _net_flow(_manual_cash_correct_df(), date(2022, 1, 5)) == pytest.approx(
+            10_000, rel=1e-6
+        )
 
     def test_buy_day_zero_flow_in_correct_manual_cash(self):
         """'sell $CASH' (type=sell) does NOT register as an external flow."""
-        assert _net_flow(_auto_cash_df(), date(2022, 1, 10)) == pytest.approx(0.0, abs=1e-6)
-        assert _net_flow(_manual_cash_correct_df(), date(2022, 1, 10)) == pytest.approx(0.0, abs=1e-6)
+        assert _net_flow(_auto_cash_df(), date(2022, 1, 10)) == pytest.approx(
+            0.0, abs=1e-6
+        )
+        assert _net_flow(_manual_cash_correct_df(), date(2022, 1, 10)) == pytest.approx(
+            0.0, abs=1e-6
+        )
 
     def test_sell_day_zero_flow(self):
         """'buy $CASH' (type=buy) does NOT register as an external flow."""
-        assert _net_flow(_auto_cash_df(), date(2022, 3, 15)) == pytest.approx(0.0, abs=1e-6)
-        assert _net_flow(_manual_cash_correct_df(), date(2022, 3, 15)) == pytest.approx(0.0, abs=1e-6)
+        assert _net_flow(_auto_cash_df(), date(2022, 3, 15)) == pytest.approx(
+            0.0, abs=1e-6
+        )
+        assert _net_flow(_manual_cash_correct_df(), date(2022, 3, 15)) == pytest.approx(
+            0.0, abs=1e-6
+        )
 
     def test_dividend_day_zero_flow(self):
         """Dividend 'buy $CASH' does NOT register as an external flow."""
-        assert _net_flow(_auto_cash_df(), date(2022, 6, 1)) == pytest.approx(0.0, abs=1e-6)
-        assert _net_flow(_manual_cash_correct_df(), date(2022, 6, 1)) == pytest.approx(0.0, abs=1e-6)
+        assert _net_flow(_auto_cash_df(), date(2022, 6, 1)) == pytest.approx(
+            0.0, abs=1e-6
+        )
+        assert _net_flow(_manual_cash_correct_df(), date(2022, 6, 1)) == pytest.approx(
+            0.0, abs=1e-6
+        )
 
     def test_withdrawal_day_same_in_both_modes(self):
-        assert _net_flow(_auto_cash_df(), date(2022, 8, 1)) == pytest.approx(-2_000, rel=1e-6)
-        assert _net_flow(_manual_cash_correct_df(), date(2022, 8, 1)) == pytest.approx(-2_000, rel=1e-6)
+        assert _net_flow(_auto_cash_df(), date(2022, 8, 1)) == pytest.approx(
+            -2_000, rel=1e-6
+        )
+        assert _net_flow(_manual_cash_correct_df(), date(2022, 8, 1)) == pytest.approx(
+            -2_000, rel=1e-6
+        )
 
     def test_all_dates_match_auto_vs_correct_manual(self):
         for d in KEY_DATES:
-            auto_flow   = _net_flow(_auto_cash_df(), d)
+            auto_flow = _net_flow(_auto_cash_df(), d)
             manual_flow = _net_flow(_manual_cash_correct_df(), d)
             assert auto_flow == pytest.approx(manual_flow, abs=1e-4), (
                 f"Flow mismatch on {d}: auto={auto_flow}, manual={manual_flow}"
@@ -317,22 +370,23 @@ class TestExternalFlows:
         as a $5,000 external inflow — which correct recording avoids.
         """
         bad_flow = _net_flow(_manual_cash_paired_deposits_df(), date(2022, 1, 10))
-        ok_flow  = _net_flow(_manual_cash_correct_df(), date(2022, 1, 10))
+        ok_flow = _net_flow(_manual_cash_correct_df(), date(2022, 1, 10))
         assert bad_flow == pytest.approx(5_000, rel=1e-6)
-        assert ok_flow  == pytest.approx(0.0, abs=1e-6)
+        assert ok_flow == pytest.approx(0.0, abs=1e-6)
 
     def test_total_inflows_differ_by_paired_deposit_amount(self):
         def inflows(df):
             return sum(max(0, _net_flow(df, d)) for d in KEY_DATES)
 
-        auto_in  = inflows(_auto_cash_df())
-        ok_in    = inflows(_manual_cash_correct_df())
-        bad_in   = inflows(_manual_cash_paired_deposits_df())
-        assert auto_in == pytest.approx(ok_in, rel=1e-6)           # same ✓
-        assert bad_in  == pytest.approx(ok_in + 5_000, rel=1e-6)   # $5k extra ✗
+        auto_in = inflows(_auto_cash_df())
+        ok_in = inflows(_manual_cash_correct_df())
+        bad_in = inflows(_manual_cash_paired_deposits_df())
+        assert auto_in == pytest.approx(ok_in, rel=1e-6)  # same ✓
+        assert bad_in == pytest.approx(ok_in + 5_000, rel=1e-6)  # $5k extra ✗
 
 
 # ── Tests: portfolio value (cash + stocks) ────────────────────────────────────
+
 
 class TestPortfolioValue:
     """
@@ -344,16 +398,20 @@ class TestPortfolioValue:
     the extra 'deposit $CASH' leaves $5,000 of phantom cash in the account.
     """
 
-    EXPECTED = 50 * TESTX_PRICE + 6_700.0   # $10,200
+    EXPECTED = 50 * TESTX_PRICE + 6_700.0  # $10,200
 
     def test_auto_cash_value(self):
-        assert _portfolio_value(_auto_cash_df(), "Auto") == pytest.approx(self.EXPECTED, rel=1e-4)
+        assert _portfolio_value(_auto_cash_df(), "Auto") == pytest.approx(
+            self.EXPECTED, rel=1e-4
+        )
 
     def test_correct_manual_cash_value(self):
-        assert _portfolio_value(_manual_cash_correct_df(), "Manual") == pytest.approx(self.EXPECTED, rel=1e-4)
+        assert _portfolio_value(_manual_cash_correct_df(), "Manual") == pytest.approx(
+            self.EXPECTED, rel=1e-4
+        )
 
     def test_auto_equals_correct_manual(self):
-        val_auto   = _portfolio_value(_auto_cash_df(), "Auto")
+        val_auto = _portfolio_value(_auto_cash_df(), "Auto")
         val_manual = _portfolio_value(_manual_cash_correct_df(), "Manual")
         assert val_auto == pytest.approx(val_manual, rel=1e-4)
 
@@ -368,11 +426,12 @@ class TestPortfolioValue:
         Bad value:     $15,200  (paired-deposit manual-cash)
         """
         val_auto = _portfolio_value(_auto_cash_df(), "Auto")
-        val_bad  = _portfolio_value(_manual_cash_paired_deposits_df(), "Manual")
+        val_bad = _portfolio_value(_manual_cash_paired_deposits_df(), "Manual")
         assert val_bad == pytest.approx(val_auto + 5_000, rel=1e-4)
 
 
 # ── Tests: realized gains ─────────────────────────────────────────────────────
+
 
 class TestRealizedGains:
     """
@@ -383,18 +442,23 @@ class TestRealizedGains:
     EXPECTED_GAIN = 1_000.0
 
     def test_auto_cash_realized_gain(self):
-        assert _total_realized_gain(_auto_cash_df()) == pytest.approx(self.EXPECTED_GAIN, rel=1e-4)
+        assert _total_realized_gain(_auto_cash_df()) == pytest.approx(
+            self.EXPECTED_GAIN, rel=1e-4
+        )
 
     def test_correct_manual_cash_realized_gain(self):
-        assert _total_realized_gain(_manual_cash_correct_df()) == pytest.approx(self.EXPECTED_GAIN, rel=1e-4)
+        assert _total_realized_gain(_manual_cash_correct_df()) == pytest.approx(
+            self.EXPECTED_GAIN, rel=1e-4
+        )
 
     def test_paired_deposit_does_not_change_realized_gain(self):
         gain_auto = _total_realized_gain(_auto_cash_df())
-        gain_bad  = _total_realized_gain(_manual_cash_paired_deposits_df())
+        gain_bad = _total_realized_gain(_manual_cash_paired_deposits_df())
         assert gain_auto == pytest.approx(gain_bad, rel=1e-4)
 
 
 # ── Tests: TWR formula impact (analytical) ────────────────────────────────────
+
 
 class TestTWRImpact:
     """
@@ -417,15 +481,15 @@ class TestTWRImpact:
         curr_value = 10_000.0
 
         def sub_period(net_flow):
-            gain  = curr_value - prev_value - net_flow
+            gain = curr_value - prev_value - net_flow
             denom = prev_value + max(0.0, net_flow)
             return gain / denom if denom > 0.1 else 0.0
 
         r_correct = sub_period(0.0)
-        r_bad     = sub_period(5_000.0)
+        r_bad = sub_period(5_000.0)
 
         assert r_correct == pytest.approx(0.0, abs=1e-9)
-        assert r_bad     == pytest.approx(-5_000 / 15_000, rel=1e-6)
+        assert r_bad == pytest.approx(-5_000 / 15_000, rel=1e-6)
         assert r_bad < r_correct
 
     def test_twr_suppression_compounds_with_multiple_buys(self):
@@ -435,15 +499,15 @@ class TestTWRImpact:
         Incorrect: each day multiplied by (1 - 5000/15000) = 10/15
         After 5 days: (10/15)^5 ≈ 0.132 → TWR ≈ −86.8%
         """
-        n_buys   = 5
+        n_buys = 5
         buy_size = 5_000.0
-        V        = 10_000.0
+        V = 10_000.0
 
         factor_correct = 1.0
-        factor_bad     = (1.0 - buy_size / (V + buy_size)) ** n_buys
+        factor_bad = (1.0 - buy_size / (V + buy_size)) ** n_buys
 
-        twr_correct = factor_correct - 1   # 0%
-        twr_bad     = factor_bad - 1
+        twr_correct = factor_correct - 1  # 0%
+        twr_bad = factor_bad - 1
 
         assert twr_correct == pytest.approx(0.0, abs=1e-9)
         assert twr_bad < twr_correct

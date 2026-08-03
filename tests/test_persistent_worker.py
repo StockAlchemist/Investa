@@ -19,7 +19,7 @@ from market_data import _PersistentFetchWorker, _WORKER_RESULT_MARKER
 # A minimal stand-in for market_data_worker.py --serve. Speaks the same
 # marker-prefixed, newline-delimited JSON protocol.
 _FAKE_WORKER = textwrap.dedent(
-    f'''
+    f"""
     import sys, json, os, time
     MARKER = {_WORKER_RESULT_MARKER!r}
     while True:
@@ -37,7 +37,7 @@ _FAKE_WORKER = textwrap.dedent(
         resp = {{"status": "success", "pid": os.getpid(), "echo": req.get("n")}}
         sys.stdout.write(MARKER + json.dumps(resp) + "\\n")
         sys.stdout.flush()
-    '''
+    """
 )
 
 
@@ -46,7 +46,9 @@ def fake_worker(monkeypatch):
     fd, path = tempfile.mkstemp(suffix="_fake_worker.py")
     os.write(fd, _FAKE_WORKER.encode())
     os.close(fd)
-    monkeypatch.setattr(market_data, "_build_worker_command", lambda: [sys.executable, path])
+    monkeypatch.setattr(
+        market_data, "_build_worker_command", lambda: [sys.executable, path]
+    )
     worker = _PersistentFetchWorker()
     yield worker
     worker._kill()

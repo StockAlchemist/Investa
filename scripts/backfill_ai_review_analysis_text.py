@@ -66,7 +66,9 @@ def load_analysis(path: str) -> Optional[dict]:
 
 
 def backfill(dry_run: bool) -> None:
-    cache_dir = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache")
+    cache_dir = os.path.join(
+        config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache"
+    )
     conn = open_screener_db_conn()
     if conn is None:
         log.error("Could not open global screener DB")
@@ -133,7 +135,11 @@ def backfill(dry_run: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="Report what would change without writing.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would change without writing.",
+    )
     args = parser.parse_args()
     backfill(dry_run=args.dry_run)
 

@@ -56,9 +56,9 @@ def test_load_clean_basic_success(tmp_path):
 
     # --- Assertions ---
     assert not has_errors, "Should not have critical errors on valid data"
-    assert (
-        has_warnings
-    ), "Should have warnings because Local Currency is assigned"  # MODIFIED
+    assert has_warnings, (
+        "Should have warnings because Local Currency is assigned"
+    )  # MODIFIED
     assert isinstance(df, pd.DataFrame), "Result should be a DataFrame"
     assert not df.empty, "DataFrame should not be empty"
     assert len(df) == 5, "Should have 5 valid rows"
@@ -81,9 +81,9 @@ def test_load_clean_basic_success(tmp_path):
         "To Account",
         "Tags",
     }  # original_index is added after mapping
-    assert (
-        set(df.columns) == expected_cols
-    ), f"DataFrame columns mismatch. Got: {set(df.columns)}"
+    assert set(df.columns) == expected_cols, (
+        f"DataFrame columns mismatch. Got: {set(df.columns)}"
+    )
 
     expected_header_map = {
         "Date (MMM DD, YYYY)": "Date",  # Original header -> Cleaned header
@@ -104,9 +104,9 @@ def test_load_clean_basic_success(tmp_path):
     assert isinstance(  # type: ignore
         original_to_cleaned_header_map, dict
     ), "Header map should be a dictionary"
-    assert pd.api.types.is_datetime64_any_dtype(
-        df["Date"]
-    ), "'Date' column should be datetime"
+    assert pd.api.types.is_datetime64_any_dtype(df["Date"]), (
+        "'Date' column should be datetime"
+    )
     assert pd.api.types.is_float_dtype(df["Quantity"]) or pd.api.types.is_integer_dtype(
         df["Quantity"]
     ), "'Quantity' should be numeric"
@@ -119,9 +119,9 @@ def test_load_clean_basic_success(tmp_path):
         df.loc[df["Account"] == "Sharebuilder", "Local Currency"].iloc[0]
         == DEFAULT_CURRENCY
     )
-    assert df["original_index"].tolist() == list(
-        range(5)
-    ), "Original index should match row numbers"
+    assert df["original_index"].tolist() == list(range(5)), (
+        "Original index should match row numbers"
+    )
 
 
 def test_load_clean_column_rename(tmp_path):
@@ -186,9 +186,9 @@ def test_load_clean_date_parsing_formats(tmp_path):
 
     assert not has_errors
     # has_warnings might be true if date inference logs warnings, but data should be correct
-    assert (
-        len(df) == 5
-    ), f"All valid dates should be parsed. Got {len(df)}. Ignored: {ignored_idx}"
+    assert len(df) == 5, (
+        f"All valid dates should be parsed. Got {len(df)}. Ignored: {ignored_idx}"
+    )
     assert ignored_idx == set()
     assert df["Date"].tolist() == [
         pd.Timestamp("2023-01-15"),
@@ -228,9 +228,9 @@ def test_ignore_missing_qty_price_buy_sell(tmp_path):
     assert not has_errors, "Should not have critical errors"
     # has_warnings might be true if numeric conversion fails for empty strings
     assert len(df) == 3, "All rows should be loaded"
-    assert (
-        ignored_idx == set()
-    ), "No rows should be ignored by load_and_clean for these reasons"
+    assert ignored_idx == set(), (
+        "No rows should be ignored by load_and_clean for these reasons"
+    )
 
     # Check that Quantity for SYM1 is NaN
     assert pd.isna(df[df["Symbol"] == "SYM1"]["Quantity"].iloc[0])
@@ -268,9 +268,9 @@ def test_ignore_missing_dividend_amount(tmp_path):
     # It should convert missing/invalid numeric fields to NaN.
     assert not has_errors, "Should not have critical errors"
     assert len(df) == 3, "All rows should be loaded"
-    assert (
-        ignored_idx == set()
-    ), "No rows should be ignored by load_and_clean for these reasons"
+    assert ignored_idx == set(), (
+        "No rows should be ignored by load_and_clean for these reasons"
+    )
 
     # Check that Total Amount and Price/Share for AAPL are NaN
     aapl_row = df[df["Symbol"] == "AAPL"]
@@ -301,9 +301,9 @@ def test_load_empty_csv(tmp_path):
     assert warn1
     assert df1.empty  # MODIFIED: Expect empty DataFrame, not None
     assert ignored1 == set()
-    assert (
-        original_to_cleaned_header_map1 == {}
-    ), "Header map should be empty for empty data error"
+    assert original_to_cleaned_header_map1 == {}, (
+        "Header map should be empty for empty data error"
+    )
 
     temp_header_file = tmp_path / "header_only.csv"
     temp_header_file.write_text(csv_data_header)
@@ -333,9 +333,9 @@ def test_load_empty_csv(tmp_path):
         "original_index": "original_index",  # Added: Reflects current behavior
         "Note": "Note",
     }
-    assert (
-        header_map2 == expected_header_map_for_header_only
-    ), "Header map mismatch for header-only file"
+    assert header_map2 == expected_header_map_for_header_only, (
+        "Header map mismatch for header-only file"
+    )
 
 
 # Add more tests as needed for edge cases, specific cleaning rules, etc.

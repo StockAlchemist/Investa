@@ -19,8 +19,10 @@ the daily-return formula attributes the resulting NAV jump to return).
 The "always external" rule sidesteps this — every Deposit/Withdrawal is a
 flow that cancels its NAV impact symmetrically.
 """
+
 import os
 import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pandas as pd
@@ -45,18 +47,43 @@ def test_auto_generated_deposit_is_still_external():
     # Trading-account convention: any Deposit at face value is external,
     # even when tagged "Auto-generated:" by the import tool. This prevents
     # phantom TWR spikes in early-portfolio years.
-    assert is_external_flow_row("$CASH", "Deposit", "Auto-generated: Cash deposit for SPY buy") is True
-    assert is_external_flow_row("$CASH", "deposit", "auto-generated: cash deposit for AAPL buy") is True
+    assert (
+        is_external_flow_row(
+            "$CASH", "Deposit", "Auto-generated: Cash deposit for SPY buy"
+        )
+        is True
+    )
+    assert (
+        is_external_flow_row(
+            "$CASH", "deposit", "auto-generated: cash deposit for AAPL buy"
+        )
+        is True
+    )
 
 
 def test_auto_generated_withdrawal_is_still_external():
-    assert is_external_flow_row("$CASH", "Withdrawal", "Auto-generated: Cash withdrawal from MSFT sell") is True
+    assert (
+        is_external_flow_row(
+            "$CASH", "Withdrawal", "Auto-generated: Cash withdrawal from MSFT sell"
+        )
+        is True
+    )
 
 
 def test_cash_buy_sell_settlement_is_internal():
     # $CASH buy/sell (manual-mode settlement) — Type not in {Deposit, Withdrawal}.
-    assert is_external_flow_row("$CASH", "Buy", "Auto-generated: Cash received from QQQ sell") is False
-    assert is_external_flow_row("$CASH", "Sell", "Auto-generated: Cash settlement for QQQ buy") is False
+    assert (
+        is_external_flow_row(
+            "$CASH", "Buy", "Auto-generated: Cash received from QQQ sell"
+        )
+        is False
+    )
+    assert (
+        is_external_flow_row(
+            "$CASH", "Sell", "Auto-generated: Cash settlement for QQQ buy"
+        )
+        is False
+    )
     assert is_external_flow_row("$CASH", "buy", "") is False
     assert is_external_flow_row("$CASH", "sell", None) is False
 
@@ -85,7 +112,9 @@ def test_commission_notes_are_still_external_if_typed_as_deposit_withdrawal():
     # Note prefix is NOT inspected. If your data encodes commissions as
     # Type=Withdrawal, the classifier treats them as external — fix at the
     # data layer by retyping to Type=Fees instead.
-    assert is_external_flow_row("$CASH", "Withdrawal", "Commission for MSFT Buy") is True
+    assert (
+        is_external_flow_row("$CASH", "Withdrawal", "Commission for MSFT Buy") is True
+    )
     assert is_external_flow_row("$CASH", "Withdrawal", "Fee on buying AMZN") is True
 
 
@@ -106,26 +135,36 @@ def test_non_string_inputs_are_safe():
 
 
 def test_vectorized_mask_matches_per_row():
-    df = pd.DataFrame([
-        # External: real ACH
-        {"Symbol": "$CASH", "Type": "Deposit", "Note": "ACH from bank"},
-        # External: real withdrawal, no note
-        {"Symbol": "$CASH", "Type": "Withdrawal", "Note": ""},
-        # External: auto-generated still external under always-external convention
-        {"Symbol": "$CASH", "Type": "Deposit", "Note": "Auto-generated: Cash deposit for SPY buy"},
-        # Internal: $CASH buy/sell settlement (wrong Type)
-        {"Symbol": "$CASH", "Type": "Buy", "Note": "settlement"},
-        {"Symbol": "$CASH", "Type": "Sell", "Note": "settlement"},
-        # Internal: $CASH dividend/interest/fees/tax (wrong Type)
-        {"Symbol": "$CASH", "Type": "Dividend", "Note": "MM div"},
-        {"Symbol": "$CASH", "Type": "Fees", "Note": "Wire fee"},
-        # Internal: stock trades
-        {"Symbol": "AAPL", "Type": "Buy", "Note": ""},
-        {"Symbol": "QQQ", "Type": "Sell", "Note": ""},
-        {"Symbol": "VTI", "Type": "Dividend", "Note": ""},
-        # External: Withdrawal with commission-like note (note ignored)
-        {"Symbol": "$CASH", "Type": "Withdrawal", "Note": "Commission for MSFT Buy"},
-    ])
+    df = pd.DataFrame(
+        [
+            # External: real ACH
+            {"Symbol": "$CASH", "Type": "Deposit", "Note": "ACH from bank"},
+            # External: real withdrawal, no note
+            {"Symbol": "$CASH", "Type": "Withdrawal", "Note": ""},
+            # External: auto-generated still external under always-external convention
+            {
+                "Symbol": "$CASH",
+                "Type": "Deposit",
+                "Note": "Auto-generated: Cash deposit for SPY buy",
+            },
+            # Internal: $CASH buy/sell settlement (wrong Type)
+            {"Symbol": "$CASH", "Type": "Buy", "Note": "settlement"},
+            {"Symbol": "$CASH", "Type": "Sell", "Note": "settlement"},
+            # Internal: $CASH dividend/interest/fees/tax (wrong Type)
+            {"Symbol": "$CASH", "Type": "Dividend", "Note": "MM div"},
+            {"Symbol": "$CASH", "Type": "Fees", "Note": "Wire fee"},
+            # Internal: stock trades
+            {"Symbol": "AAPL", "Type": "Buy", "Note": ""},
+            {"Symbol": "QQQ", "Type": "Sell", "Note": ""},
+            {"Symbol": "VTI", "Type": "Dividend", "Note": ""},
+            # External: Withdrawal with commission-like note (note ignored)
+            {
+                "Symbol": "$CASH",
+                "Type": "Withdrawal",
+                "Note": "Commission for MSFT Buy",
+            },
+        ]
+    )
 
     expected = [True, True, True, False, False, False, False, False, False, False, True]
     mask = compute_external_flow_mask(df)
@@ -133,11 +172,13 @@ def test_vectorized_mask_matches_per_row():
 
 
 def test_vectorized_mask_handles_missing_note_column():
-    df = pd.DataFrame([
-        {"Symbol": "$CASH", "Type": "Deposit"},
-        {"Symbol": "$CASH", "Type": "Buy"},
-        {"Symbol": "AAPL", "Type": "Buy"},
-    ])
+    df = pd.DataFrame(
+        [
+            {"Symbol": "$CASH", "Type": "Deposit"},
+            {"Symbol": "$CASH", "Type": "Buy"},
+            {"Symbol": "AAPL", "Type": "Buy"},
+        ]
+    )
     mask = compute_external_flow_mask(df)
     assert list(mask) == [True, False, False]
 

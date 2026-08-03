@@ -18,7 +18,9 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 from finutils import _RAW_YIELD_FRACTION_CUTOFF, robust_dividend_yield
 
@@ -28,21 +30,25 @@ from finutils import _RAW_YIELD_FRACTION_CUTOFF, robust_dividend_yield
 
 def test_rate_over_price_wins_over_a_percent_encoded_raw_value():
     """VICI: raw 6.71 is a percent, and rate/price says so."""
-    out = robust_dividend_yield({
-        "dividendRate": 1.8,
-        "currentPrice": 26.83,
-        "dividendYield": 6.71,
-    })
+    out = robust_dividend_yield(
+        {
+            "dividendRate": 1.8,
+            "currentPrice": 26.83,
+            "dividendYield": 6.71,
+        }
+    )
     assert out == pytest.approx(0.0671, abs=1e-4)
 
 
 def test_rate_over_price_wins_over_a_fraction_encoded_raw_value():
     """SCHD: raw 0.033 is a fraction. Same answer, opposite encoding."""
-    out = robust_dividend_yield({
-        "dividendRate": 0.88,
-        "currentPrice": 26.67,
-        "dividendYield": 0.033,
-    })
+    out = robust_dividend_yield(
+        {
+            "dividendRate": 0.88,
+            "currentPrice": 26.67,
+            "dividendYield": 0.033,
+        }
+    )
     assert out == pytest.approx(0.033, abs=1e-3)
 
 
@@ -50,20 +56,24 @@ def test_monthly_distributor_still_resolves(monkeypatch):
     """IDBOX, a monthly-paying bond fund: `dividendRate` is the *monthly*
     distribution, so rate/price is 12x low. The encoding still resolves,
     because the two readings sit 100x apart and 12x cannot bridge that."""
-    out = robust_dividend_yield({
-        "yield": 0.030299999,
-        "dividendYield": 3.03,
-        "dividendRate": 0.0290781,
-        "regularMarketPrice": 10.41,
-    })
+    out = robust_dividend_yield(
+        {
+            "yield": 0.030299999,
+            "dividendYield": 3.03,
+            "dividendRate": 0.0290781,
+            "regularMarketPrice": 10.41,
+        }
+    )
     assert out == pytest.approx(0.0303, abs=1e-4)
 
 
 def test_trailing_yield_used_when_price_is_missing():
-    out = robust_dividend_yield({
-        "trailingAnnualDividendYield": 0.0665,
-        "dividendYield": 6.71,
-    })
+    out = robust_dividend_yield(
+        {
+            "trailingAnnualDividendYield": 0.0665,
+            "dividendYield": 6.71,
+        }
+    )
     assert out == pytest.approx(0.0665)
 
 
@@ -82,20 +92,26 @@ def test_result_is_always_a_fraction():
 # --- Magnitude fallback (no corroborating signal) ------------------------
 
 
-@pytest.mark.parametrize("raw,expected", [
-    (0.033, 0.033),      # fraction -> 3.3%
-    (0.0007, 0.0007),    # fraction -> 0.07%
-    (0.05, 0.05),        # fraction -> 5%
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (0.033, 0.033),  # fraction -> 3.3%
+        (0.0007, 0.0007),  # fraction -> 0.07%
+        (0.05, 0.05),  # fraction -> 5%
+    ],
+)
 def test_small_raw_values_are_read_as_fractions(raw, expected):
     assert robust_dividend_yield({"dividendYield": raw}) == pytest.approx(expected)
 
 
-@pytest.mark.parametrize("raw,expected", [
-    (6.71, 0.0671),      # percent -> 6.71%
-    (0.47, 0.0047),      # percent -> 0.47%
-    (68.18, 0.6818),     # percent -> 68.18% (real corpus maximum)
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (6.71, 0.0671),  # percent -> 6.71%
+        (0.47, 0.0047),  # percent -> 0.47%
+        (68.18, 0.6818),  # percent -> 68.18% (real corpus maximum)
+    ],
+)
 def test_larger_raw_values_are_read_as_percentages(raw, expected):
     assert robust_dividend_yield({"dividendYield": raw}) == pytest.approx(expected)
 
@@ -115,20 +131,25 @@ def test_previous_cutoff_regression():
 # --- Degenerate input ----------------------------------------------------
 
 
-@pytest.mark.parametrize("info", [
-    {},
-    None,
-    {"dividendYield": 0},
-    {"dividendYield": None},
-    {"dividendYield": "n/a"},
-    {"dividendRate": 0, "currentPrice": 0},
-])
+@pytest.mark.parametrize(
+    "info",
+    [
+        {},
+        None,
+        {"dividendYield": 0},
+        {"dividendYield": None},
+        {"dividendYield": "n/a"},
+        {"dividendRate": 0, "currentPrice": 0},
+    ],
+)
 def test_unusable_input_returns_none(info):
     assert robust_dividend_yield(info) is None
 
 
 def test_zero_price_does_not_divide_by_zero():
-    out = robust_dividend_yield({"dividendRate": 1.8, "currentPrice": 0, "dividendYield": 6.71})
+    out = robust_dividend_yield(
+        {"dividendRate": 1.8, "currentPrice": 0, "dividendYield": 6.71}
+    )
     assert out == pytest.approx(0.0671, abs=1e-4)
 
 
@@ -143,7 +164,9 @@ CACHE_DIR = os.path.join(
 def _reference_fraction(info):
     """An independent yield estimate, as a fraction, or None."""
     try:
-        rate = float(info.get("dividendRate") or info.get("trailingAnnualDividendRate") or 0)
+        rate = float(
+            info.get("dividendRate") or info.get("trailingAnnualDividendRate") or 0
+        )
         price = float(
             info.get("currentPrice")
             or info.get("regularMarketPrice")
@@ -161,7 +184,9 @@ def _reference_fraction(info):
         return None
 
 
-@pytest.mark.skipif(not os.path.isdir(CACHE_DIR), reason="fundamentals cache not present")
+@pytest.mark.skipif(
+    not os.path.isdir(CACHE_DIR), reason="fundamentals cache not present"
+)
 def test_corpus_output_never_disagrees_with_its_reference_by_100x():
     """Run every cached record through the function and check the output sits
     in the same order of magnitude as an independent estimate.
@@ -200,7 +225,13 @@ def test_corpus_output_never_disagrees_with_its_reference_by_100x():
         ratio = out / reference
         if not (1 / 30.0 < ratio < 30.0):
             off_by_a_factor_of_100.append(
-                (os.path.basename(path), info.get("dividendYield"), out, reference, round(ratio, 2))
+                (
+                    os.path.basename(path),
+                    info.get("dividendYield"),
+                    out,
+                    reference,
+                    round(ratio, 2),
+                )
             )
 
     assert checked > 100, f"corpus too small to be meaningful ({checked})"

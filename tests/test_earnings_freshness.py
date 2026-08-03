@@ -86,7 +86,9 @@ def test_a_post_close_report_is_matched_on_the_market_clock():
         "earningsTimestamp": _ts(report),
         "_earnings_history": {"2026-07-20": {"eps_actual": 2.1, "eps_estimate": 1.95}},
     }
-    assert report.astimezone(timezone.utc).date().isoformat() == "2026-07-20"  # same UTC day here
+    assert (
+        report.astimezone(timezone.utc).date().isoformat() == "2026-07-20"
+    )  # same UTC day here
     default_until = now + timedelta(hours=24)
     assert fundamentals_valid_until(info, now, default_until) == default_until
 
@@ -102,7 +104,9 @@ def test_a_post_close_report_is_matched_on_the_market_clock():
 def test_polling_gives_up_after_the_watch_window():
     """Some names simply never get a figure attached — the poll must not run
     forever on them."""
-    info = {"earningsTimestamp": _ts(NOW - timedelta(days=POST_EARNINGS_WATCH_DAYS + 1))}
+    info = {
+        "earningsTimestamp": _ts(NOW - timedelta(days=POST_EARNINGS_WATCH_DAYS + 1))
+    }
     assert fundamentals_valid_until(info, NOW, DEFAULT_UNTIL) == DEFAULT_UNTIL
 
 
@@ -118,8 +122,14 @@ def test_a_recent_report_and_a_far_future_one_still_poll():
 
 
 def test_blobs_without_a_schedule_keep_the_standard_ttl():
-    for info in ({}, {"earningsTimestamp": None}, {"earningsTimestamp": 0},
-                 {"earningsTimestamp": "soon"}, {"earningsTimestamp": True}, None):
+    for info in (
+        {},
+        {"earningsTimestamp": None},
+        {"earningsTimestamp": 0},
+        {"earningsTimestamp": "soon"},
+        {"earningsTimestamp": True},
+        None,
+    ):
         assert fundamentals_valid_until(info, NOW, DEFAULT_UNTIL) == DEFAULT_UNTIL
 
 
@@ -238,10 +248,18 @@ def test_the_history_survives_a_minimal_batch_overwrite(tmp_path):
     assert saved["data"]["_earnings_history"] == {"2026-07-30": {"eps_actual": 2.02}}
     # A fetch that *does* carry the figures still wins.
     provider._save_fundamentals_cache(
-        {"AAPL": {"ticker_info": minimal | {"_earnings_history": {"2026-07-30": {"eps_actual": 2.10}}}}}
+        {
+            "AAPL": {
+                "ticker_info": minimal
+                | {"_earnings_history": {"2026-07-30": {"eps_actual": 2.10}}}
+            }
+        }
     )
     with open(path) as f:
-        assert json.load(f)["data"]["_earnings_history"]["2026-07-30"]["eps_actual"] == 2.10
+        assert (
+            json.load(f)["data"]["_earnings_history"]["2026-07-30"]["eps_actual"]
+            == 2.10
+        )
 
 
 def test_a_reported_quarter_with_no_figures_is_backfilled(tmp_path, monkeypatch):
@@ -283,12 +301,19 @@ def test_a_reported_quarter_with_no_figures_is_backfilled(tmp_path, monkeypatch)
     assert calls == ["earnings_dates"]
 
 
-def test_the_backfill_does_not_re_ask_for_a_table_yahoo_has_not_filled_in(tmp_path, monkeypatch):
+def test_the_backfill_does_not_re_ask_for_a_table_yahoo_has_not_filled_in(
+    tmp_path, monkeypatch
+):
     import market_data
     from market_data import MarketDataProvider
 
     provider = MarketDataProvider(fundamentals_cache_dir=str(tmp_path))
-    info = {"symbol": "X", "earningsTimestamp": int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp())}
+    info = {
+        "symbol": "X",
+        "earningsTimestamp": int(
+            (datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()
+        ),
+    }
 
     calls = []
 

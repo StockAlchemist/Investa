@@ -5,9 +5,14 @@ import logging
 import json
 import os
 import sys
-import threading # Added for _SHARED_MDP_LOCK
+import threading  # Added for _SHARED_MDP_LOCK
 from datetime import datetime, timedelta, date, timezone  # Added UTC
-from utils_time import get_est_today, get_latest_trading_date, is_market_open, get_nyse_calendar # Added for holiday/timezone awareness
+from utils_time import (
+    get_est_today,
+    get_latest_trading_date,
+    is_market_open,
+    get_nyse_calendar,
+)  # Added for holiday/timezone awareness
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
 import random
@@ -17,8 +22,6 @@ import subprocess
 import tempfile
 import queue
 from market_db import MarketDatabase
-
-
 
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
@@ -38,6 +41,7 @@ import config
 yf = None
 YFINANCE_AVAILABLE = None
 
+
 def _ensure_yfinance():
     global yf, YFINANCE_AVAILABLE
     # Fast path: already initialised (no lock needed — only written once)
@@ -50,6 +54,7 @@ def _ensure_yfinance():
             return YFINANCE_AVAILABLE
         try:
             import yfinance as _yf
+
             yf = _yf
             YFINANCE_AVAILABLE = True
         except ImportError:
@@ -71,6 +76,7 @@ def _ensure_yfinance():
             yf = DummyYFinance()
 
     return YFINANCE_AVAILABLE
+
 
 # --- Import constants from config.py ---
 try:
@@ -107,12 +113,13 @@ except ImportError:
         "yf_portfolio_hist_raw_adjusted"  # Keep as prefix for basename construction
     )
 
+
 # --- Robust MultiIndex Helper ---
 def _extract_ticker_from_df(df, ticker):
     """Robustly extracts columns for a specific ticker from a yfinance DataFrame."""
     if df.empty:
         return pd.DataFrame()
-    
+
     # CASE 1: Single Ticker (Flat index or simple column name)
     if not isinstance(df.columns, pd.MultiIndex):
         if ticker in df.columns:
@@ -125,7 +132,7 @@ def _extract_ticker_from_df(df, ticker):
         if "Close" in df.columns or "Price" in df.columns:
             return df
         return pd.DataFrame()
-    
+
     # CASE 2: MultiIndex (group_by='ticker' or multiple symbols)
     # yfinance alternates between [Ticker, Price] and [Price, Ticker] (at Level 0 or 1)
     levels = df.columns.nlevels
@@ -139,8 +146,9 @@ def _extract_ticker_from_df(df, ticker):
                     return extracted
             except Exception:
                 continue
-                
+
     return pd.DataFrame()
+
 
 INVALID_SYMBOLS_CACHE_FILE = "invalid_symbols_cache.json"
 INVALID_SYMBOLS_DURATION = 4 * 60 * 60  # 4 hours in seconds (Reduced from 24h)
@@ -150,13 +158,106 @@ PERSISTENT_FX_DURATION_HOURS = 24
 # Symbols that are extremely reliable and should never be marked as invalid
 # even if a transient fetch failure occurs.
 RELIABLE_SYMBOLS = {
-    "AAPL", "MSFT", "GOOG", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "BRK-B",
-    "VZ", "BHP", "BBW", "TSM", "ASML", "UNH", "BAC", "NOW", "KO", "CVX", "JPM", "XLE", "VTI", "SPY", "QQQ", "DIA",
-    "AXP", "BLV", "BND", "C", "DAL", "DPZ", "EFA", "EPP", "GLD", "GS", "IBM", "JNJ", "LQD", "MA", "NFLX", "NKE", "NLY", "PLTR", "QSR", "SCHG", "SPGI", "VDE", "VGK", "VHT", "VWO",
-    "DIS", "MCD", "V", "PYPL", "CRM", "COST", "PEP", "ABT", "CSCO", "ACN", "AVGO", "ADBE", "LIN", "TMO", "PFE", "ABBV", "DHR", "NEE", "TM", "SAP",
-    "THB=X", "USDTHB=X", "HKD=X", "SGD=X", "EUR=X", "GBP=X", "JPY=X", "CNY=X", "CAD=X", "AUD=X", "INR=X",
-    "^GSPC", "^DJI", "^IXIC", "^RUT", "^VIX", "^FTSE", "^N225", "^HSI", "^GDAXI", "^FCHI",
-    "BTC-USD", "ETH-USD", "GC=F", "CL=F", "EURUSD=X", "JPY=X", "GBPUSD=X", "CNYUSD=X", "AUDUSD=X"
+    "AAPL",
+    "MSFT",
+    "GOOG",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "NVDA",
+    "BRK-B",
+    "VZ",
+    "BHP",
+    "BBW",
+    "TSM",
+    "ASML",
+    "UNH",
+    "BAC",
+    "NOW",
+    "KO",
+    "CVX",
+    "JPM",
+    "XLE",
+    "VTI",
+    "SPY",
+    "QQQ",
+    "DIA",
+    "AXP",
+    "BLV",
+    "BND",
+    "C",
+    "DAL",
+    "DPZ",
+    "EFA",
+    "EPP",
+    "GLD",
+    "GS",
+    "IBM",
+    "JNJ",
+    "LQD",
+    "MA",
+    "NFLX",
+    "NKE",
+    "NLY",
+    "PLTR",
+    "QSR",
+    "SCHG",
+    "SPGI",
+    "VDE",
+    "VGK",
+    "VHT",
+    "VWO",
+    "DIS",
+    "MCD",
+    "V",
+    "PYPL",
+    "CRM",
+    "COST",
+    "PEP",
+    "ABT",
+    "CSCO",
+    "ACN",
+    "AVGO",
+    "ADBE",
+    "LIN",
+    "TMO",
+    "PFE",
+    "ABBV",
+    "DHR",
+    "NEE",
+    "TM",
+    "SAP",
+    "THB=X",
+    "USDTHB=X",
+    "HKD=X",
+    "SGD=X",
+    "EUR=X",
+    "GBP=X",
+    "JPY=X",
+    "CNY=X",
+    "CAD=X",
+    "AUD=X",
+    "INR=X",
+    "^GSPC",
+    "^DJI",
+    "^IXIC",
+    "^RUT",
+    "^VIX",
+    "^FTSE",
+    "^N225",
+    "^HSI",
+    "^GDAXI",
+    "^FCHI",
+    "BTC-USD",
+    "ETH-USD",
+    "GC=F",
+    "CL=F",
+    "EURUSD=X",
+    "JPY=X",
+    "GBPUSD=X",
+    "CNYUSD=X",
+    "AUDUSD=X",
 }
 
 # --- Import helpers from finutils.py ---
@@ -200,16 +301,16 @@ SPDX-License-Identifier: MIT
 
 # --- Global Locks ---
 _SHARED_MDP_LOCK = threading.Lock()
-_YFINANCE_INIT_LOCK = threading.Lock()   # Guards lazy yfinance import
-_RATE_LIMIT_LOCK = threading.Lock()       # Guards _LAST_RATE_LIMIT_TIME read/write
+_YFINANCE_INIT_LOCK = threading.Lock()  # Guards lazy yfinance import
+_RATE_LIMIT_LOCK = threading.Lock()  # Guards _LAST_RATE_LIMIT_TIME read/write
 # Semaphore to limit concurrent isolated fetches (subprocesses)
 # Critical for preventing OOM on memory-constrained systems
 # PERF FIX (BN-04): Increased from 1→2 to allow parallel independent fetches
 # (e.g. price history + FX rates can run concurrently). Kept at 2 (not 3+)
 # to avoid file descriptor exhaustion on macOS.
 _FETCH_SEMAPHORE = threading.Semaphore(2)
-_LAST_RATE_LIMIT_TIME = 0.0 # Track when we last saw a 429
-_RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
+_LAST_RATE_LIMIT_TIME = 0.0  # Track when we last saw a 429
+_RATE_LIMIT_COOLDOWN = 60.0  # Wait 60s after a 429
 
 # --- Persistent fetch workers ---
 # Each yfinance fetch used to spawn a fresh `python market_data_worker.py`
@@ -219,7 +320,7 @@ _RATE_LIMIT_COOLDOWN = 60.0 # Wait 60s after a 429
 # while preserving the crash/OOM isolation that motivated the subprocess design.
 # Set INVESTA_PERSISTENT_WORKER=0 to fall back to one-shot subprocesses.
 _PERSISTENT_WORKER_ENABLED = os.environ.get("INVESTA_PERSISTENT_WORKER", "1") != "0"
-_WORKER_POOL_SIZE = 2          # matches _FETCH_SEMAPHORE concurrency
+_WORKER_POOL_SIZE = 2  # matches _FETCH_SEMAPHORE concurrency
 _MAX_REQUESTS_PER_WORKER = 150  # recycle to bound memory growth (OOM safety)
 # Sentinel prefix the worker writes before each JSON response so stray stdout
 # (library warnings/progress) can never desync the protocol. MUST match the
@@ -231,7 +332,9 @@ _WORKER_POOL_LOCK = threading.Lock()
 
 def _build_worker_command():
     """Command that launches one persistent worker process (overridable in tests)."""
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py")
+    script_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py"
+    )
     return [sys.executable, script_path, "--serve"]
 
 
@@ -276,7 +379,7 @@ class _PersistentFetchWorker:
                 if not line:
                     break  # EOF — worker exited
                 if line.startswith(_WORKER_RESULT_MARKER):
-                    q.put(line[len(_WORKER_RESULT_MARKER):])
+                    q.put(line[len(_WORKER_RESULT_MARKER) :])
                 # else: stray stdout (warnings/progress) — ignore
         except Exception:
             pass
@@ -309,18 +412,24 @@ class _PersistentFetchWorker:
         try:
             line = self._queue.get(timeout=timeout)
         except queue.Empty:
-            logging.error(f"Persistent worker timed out after {timeout}s; restarting worker.")
+            logging.error(
+                f"Persistent worker timed out after {timeout}s; restarting worker."
+            )
             self._kill()
             return None
 
         if line is None:  # reader hit EOF — worker died mid-request
-            logging.error("Persistent worker exited unexpectedly; will restart on next call.")
+            logging.error(
+                "Persistent worker exited unexpectedly; will restart on next call."
+            )
             self._kill()
             return None
 
         self._served += 1
         if self._served >= _MAX_REQUESTS_PER_WORKER:
-            logging.info(f"Recycling persistent fetch worker after {self._served} requests.")
+            logging.info(
+                f"Recycling persistent fetch worker after {self._served} requests."
+            )
             self._kill()
 
         try:
@@ -358,12 +467,14 @@ def shutdown_fetch_workers():
         w._kill()
         _WORKER_POOL.put(w)
 
+
 # Window after a 429 during which we keep using the heavy inter-batch throttle.
 _RATE_LIMIT_BACKOFF_WINDOW = 120.0
 
 
-def _adaptive_throttle_seconds(calm_min: float, calm_max: float,
-                               busy_min: float, busy_max: float) -> float:
+def _adaptive_throttle_seconds(
+    calm_min: float, calm_max: float, busy_min: float, busy_max: float
+) -> float:
     """Inter-batch throttle that adapts to recent rate-limit pressure.
 
     Yahoo flags rapid sequential batch requests as robotic, so we always pause
@@ -374,7 +485,9 @@ def _adaptive_throttle_seconds(calm_min: float, calm_max: float,
     window (the global cool-down still applies separately on the 429 itself).
     """
     with _RATE_LIMIT_LOCK:
-        recently_limited = (time.time() - _LAST_RATE_LIMIT_TIME) < _RATE_LIMIT_BACKOFF_WINDOW
+        recently_limited = (
+            time.time() - _LAST_RATE_LIMIT_TIME
+        ) < _RATE_LIMIT_BACKOFF_WINDOW
     if recently_limited:
         return random.uniform(busy_min, busy_max)
     return random.uniform(calm_min, calm_max)
@@ -520,7 +633,9 @@ def _has_reported_eps(info: dict, moment: datetime) -> bool:
     return isinstance(row, dict) and row.get("eps_actual") is not None
 
 
-def fundamentals_valid_until(info: dict, as_of: datetime, default_until: datetime) -> datetime:
+def fundamentals_valid_until(
+    info: dict, as_of: datetime, default_until: datetime
+) -> datetime:
     """
     When a fundamentals blob written at `as_of` stops being trustworthy.
 
@@ -559,7 +674,9 @@ def fundamentals_valid_until(info: dict, as_of: datetime, default_until: datetim
         latest = max(past)
         within_watch = as_of - latest <= timedelta(days=POST_EARNINGS_WATCH_DAYS)
         if within_watch and not _has_reported_eps(info, latest):
-            valid_until = min(valid_until, as_of + timedelta(hours=POST_EARNINGS_POLL_HOURS))
+            valid_until = min(
+                valid_until, as_of + timedelta(hours=POST_EARNINGS_POLL_HOURS)
+            )
 
     # Guard against a clock skew or a bogus timestamp pinning expiry before the
     # blob was even written, which would re-fetch on every single request.
@@ -594,7 +711,16 @@ def _maybe_enrich_with_fmp(meta_entry: dict, symbol: str) -> None:
         return
 
     filled = []
-    for key in ("country", "sector", "industry", "currency", "exchange", "fullExchangeName", "quoteType", "name"):
+    for key in (
+        "country",
+        "sector",
+        "industry",
+        "currency",
+        "exchange",
+        "fullExchangeName",
+        "quoteType",
+        "name",
+    ):
         if not meta_entry.get(key) and profile.get(key):
             meta_entry[key] = profile[key]
             filled.append(key)
@@ -604,7 +730,16 @@ def _maybe_enrich_with_fmp(meta_entry: dict, symbol: str) -> None:
         logging.info(f"FMP enriched {symbol}: filled {', '.join(filled)}")
 
 
-def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="history", period=None, timeout=180, **kwargs):
+def _run_isolated_fetch(
+    tickers,
+    start=None,
+    end=None,
+    interval="1d",
+    task="history",
+    period=None,
+    timeout=180,
+    **kwargs,
+):
     """
     Runs yfinance fetch in a separate process using file I/O to prevent crashing the main server.
 
@@ -619,7 +754,9 @@ def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="hist
     # _FETCH_SEMAPHORE is defined at module level to prevent race conditions.
 
     with _FETCH_SEMAPHORE:
-        return _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeout=timeout, **kwargs)
+        return _run_isolated_fetch_impl(
+            tickers, start, end, interval, task, period, timeout=timeout, **kwargs
+        )
 
 
 def _subprocess_transport(payload, timeout):
@@ -629,7 +766,9 @@ def _subprocess_transport(payload, timeout):
     (non-zero exit, OOM kill, or unparseable metadata). A timeout raises
     ``subprocess.TimeoutExpired``, handled by the caller.
     """
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py")
+    script_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py"
+    )
     result = subprocess.run(
         [sys.executable, script_path],
         input=json.dumps(payload),
@@ -651,7 +790,9 @@ def _subprocess_transport(payload, timeout):
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:
-        logging.error(f"Isolated fetch returned invalid JSON metadata: {result.stdout[:200]}")
+        logging.error(
+            f"Isolated fetch returned invalid JSON metadata: {result.stdout[:200]}"
+        )
         return None
 
 
@@ -679,7 +820,11 @@ def _handle_worker_response(response, temp_output, task):
             # Empty result path
             if os.path.exists(temp_output):
                 os.remove(temp_output)
-            return pd.DataFrame() if task not in ["info", "calendar", "statements_batch"] else {}
+            return (
+                pd.DataFrame()
+                if task not in ["info", "calendar", "statements_batch"]
+                else {}
+            )
 
         # Load results from file
         file_path = response.get("file")
@@ -691,28 +836,38 @@ def _handle_worker_response(response, temp_output, task):
                     return data_loaded.get("data", {})
                 elif task == "dividends":
                     # Series orient='split'
-                    df = pd.read_json(file_path, orient='split')
+                    df = pd.read_json(file_path, orient="split")
                     # Convert to Series if it's 1-column
                     if not df.empty:
                         return df.iloc[:, 0]
                     return pd.Series()
                 else:
                     # history or statement (DataFrame orient='split')
-                    df = pd.read_json(file_path, orient='split')
+                    df = pd.read_json(file_path, orient="split")
                     if not df.empty and task == "history":
-                        logging.info(f"Isolated fetch: Deserialized raw result columns: {list(df.columns[:5])} (Type: {type(df.columns[0]) if not df.empty else 'N/A'})")
+                        logging.info(
+                            f"Isolated fetch: Deserialized raw result columns: {list(df.columns[:5])} (Type: {type(df.columns[0]) if not df.empty else 'N/A'})"
+                        )
                         df.index = pd.to_datetime(df.index, utc=True)
                         # Reconstruct MultiIndex if it was flattened to tuples during JSON serialization
-                        if len(df.columns) > 0 and isinstance(df.columns[0], (list, tuple)):
+                        if len(df.columns) > 0 and isinstance(
+                            df.columns[0], (list, tuple)
+                        ):
                             try:
                                 df.columns = pd.MultiIndex.from_tuples(df.columns)
-                                logging.info("Isolated fetch: Reconstructed MultiIndex successfully.")
+                                logging.info(
+                                    "Isolated fetch: Reconstructed MultiIndex successfully."
+                                )
                             except Exception as e_mi:
-                                logging.warning(f"Isolated fetch: Could not reconstruct MultiIndex: {e_mi}")
+                                logging.warning(
+                                    f"Isolated fetch: Could not reconstruct MultiIndex: {e_mi}"
+                                )
                     return df
 
             except Exception as e_read:
-                logging.error(f"Error reading isolated fetch result file ({task}): {e_read}")
+                logging.error(
+                    f"Error reading isolated fetch result file ({task}): {e_read}"
+                )
                 return {} if task in ["info", "calendar"] else pd.DataFrame()
             finally:
                 # Clean up
@@ -722,11 +877,17 @@ def _handle_worker_response(response, temp_output, task):
             # "data": None case or file missing
             if os.path.exists(temp_output):
                 os.remove(temp_output)
-            return {} if task in ["info", "calendar"] else (pd.Series() if task == "dividends" else pd.DataFrame())
+            return (
+                {}
+                if task in ["info", "calendar"]
+                else (pd.Series() if task == "dividends" else pd.DataFrame())
+            )
     else:
-        msg = response.get('message', 'Unknown error')
+        msg = response.get("message", "Unknown error")
         if "Too Many Requests" in msg or "429" in msg or "Rate Limit" in msg:
-            logging.error(f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Triggering 60s Global Cool-down.")
+            logging.error(
+                f"Isolated fetch worker reported RATE LIMIT (429): {msg}. Triggering 60s Global Cool-down."
+            )
             with _RATE_LIMIT_LOCK:
                 _LAST_RATE_LIMIT_TIME = time.time()
         else:
@@ -734,10 +895,16 @@ def _handle_worker_response(response, temp_output, task):
 
         if os.path.exists(temp_output):
             os.remove(temp_output)
-        return {} if task in ["info", "calendar", "statements_batch"] else (pd.Series() if task == "dividends" else pd.DataFrame())
+        return (
+            {}
+            if task in ["info", "calendar", "statements_batch"]
+            else (pd.Series() if task == "dividends" else pd.DataFrame())
+        )
 
 
-def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeout=180, **kwargs):
+def _run_isolated_fetch_impl(
+    tickers, start, end, interval, task, period, timeout=180, **kwargs
+):
     """
     Actual implementation of the isolated fetch. Routes through the persistent
     worker pool (default) or a one-shot subprocess (INVESTA_PERSISTENT_WORKER=0);
@@ -748,7 +915,9 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
         elapsed_since_429 = time.time() - _LAST_RATE_LIMIT_TIME
         wait_time = max(0.0, _RATE_LIMIT_COOLDOWN - elapsed_since_429)
     if wait_time > 0:
-        logging.warning(f"GLOBAL COOL-DOWN ACTIVE: Yahoo Finance rate limited us. Waiting {wait_time:.1f}s more before trying {task} batch...")
+        logging.warning(
+            f"GLOBAL COOL-DOWN ACTIVE: Yahoo Finance rate limited us. Waiting {wait_time:.1f}s more before trying {task} batch..."
+        )
         time.sleep(wait_time)
 
     temp_output = None
@@ -764,7 +933,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, timeou
             "end": str(end) if end else None,
             "interval": interval,
             "period": period,
-            "output_file": temp_output
+            "output_file": temp_output,
         }
         # Add any extra kwargs (like statement_type, period_type)
         payload.update(kwargs)
@@ -861,7 +1030,10 @@ def _load_cik_map_from_disk() -> Tuple[Optional[Dict[str, str]], float]:
         blob = _safe_json_load(path)
         if not isinstance(blob, dict) or not isinstance(blob.get("map"), dict):
             return None, 0.0
-        age = max(0.0, datetime.now(timezone.utc).timestamp() - float(blob.get("fetched_at", 0)))
+        age = max(
+            0.0,
+            datetime.now(timezone.utc).timestamp() - float(blob.get("fetched_at", 0)),
+        )
         return {str(k): str(v) for k, v in blob["map"].items()}, age
     except Exception as exc:
         logging.debug(f"EDGAR: ticker->CIK disk cache unreadable: {exc}")
@@ -966,7 +1138,9 @@ def _edgar_annual_statements(cik: str) -> Dict[str, pd.DataFrame]:
 
     with _edgar_statement_lock:
         if len(_edgar_statement_cache) >= _EDGAR_STATEMENT_CACHE_MAX:
-            oldest = min(_edgar_statement_cache, key=lambda k: _edgar_statement_cache[k][0])
+            oldest = min(
+                _edgar_statement_cache, key=lambda k: _edgar_statement_cache[k][0]
+            )
             _edgar_statement_cache.pop(oldest, None)
         _edgar_statement_cache[cik] = (now, statements)
     return statements
@@ -1001,7 +1175,9 @@ def _edgar_quarterly_statements(cik: str) -> Dict[str, pd.DataFrame]:
 
     with _edgar_statement_lock:
         if len(_edgar_quarterly_cache) >= _EDGAR_STATEMENT_CACHE_MAX:
-            oldest = min(_edgar_quarterly_cache, key=lambda k: _edgar_quarterly_cache[k][0])
+            oldest = min(
+                _edgar_quarterly_cache, key=lambda k: _edgar_quarterly_cache[k][0]
+            )
             _edgar_quarterly_cache.pop(oldest, None)
         _edgar_quarterly_cache[cik] = (now, statements)
     return statements
@@ -1120,16 +1296,16 @@ class MarketDataProvider:
         hist_data_cache_dir_name="historical_data_cache",  # Name of the subdirectory for historical data
         current_cache_file=None,  # Default to None, path constructed if not absolute
         fundamentals_cache_dir="fundamentals_cache",  # Changed to directory name
-        db_path=None, # Persistent SQL database
+        db_path=None,  # Persistent SQL database
     ):
         self.db = MarketDatabase(db_path)
         self.hist_data_cache_dir_name = (
             hist_data_cache_dir_name  # Store historical cache subdirectory name
         )
         self._session = None
-        self.historical_fx_for_fallback: Dict[str, pd.DataFrame] = (
-            {}
-        )  # Store recently fetched historical FX
+        self.historical_fx_for_fallback: Dict[
+            str, pd.DataFrame
+        ] = {}  # Store recently fetched historical FX
 
         # Get centralized app data directory (cache subfolder)
         app_data_dir = config.get_app_data_dir()
@@ -1155,21 +1331,23 @@ class MarketDataProvider:
 
         # Ensure directory exists
         os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
-        
+
         # Construct full path for metadata_cache_dir
         self.metadata_cache_dir = os.path.join(cache_dir, "metadata_cache")
         os.makedirs(self.metadata_cache_dir, exist_ok=True)
-        
+
         # Construct path for static_prices_dir (User-defined overrides)
         self.static_prices_dir = os.path.join(app_data_dir, "static_prices")
         os.makedirs(self.static_prices_dir, exist_ok=True)
-        
+
         # logging.info("MarketDataProvider initialized.")
 
     def _get_historical_cache_dir(self) -> str:
         """Constructs and returns the full path to the historical data cache subdirectory."""
         app_data_dir = config.get_app_data_dir()
-        hist_dir = os.path.join(app_data_dir, config.CACHE_DIR, self.hist_data_cache_dir_name)
+        hist_dir = os.path.join(
+            app_data_dir, config.CACHE_DIR, self.hist_data_cache_dir_name
+        )
         os.makedirs(hist_dir, exist_ok=True)
         return hist_dir
 
@@ -1199,7 +1377,9 @@ class MarketDataProvider:
 
     def _get_symbol_metadata_path(self, yf_symbol: str) -> str:
         """Returns the full path for an individual symbol's metadata file."""
-        safe_sym = "".join(c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol)
+        safe_sym = "".join(
+            c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol
+        )
         return os.path.join(self.metadata_cache_dir, f"{safe_sym}.json")
 
     def _load_static_prices(self, symbol: str) -> Optional[pd.DataFrame]:
@@ -1220,9 +1400,8 @@ class MarketDataProvider:
         return None
 
     def _load_metadata_cache(self) -> Dict[str, Dict]:
-
         """Loads the metadata cache. Now just a shell for compatibility or return empty."""
-        return {} # Force empty to signal we need to check per-symbol files
+        return {}  # Force empty to signal we need to check per-symbol files
 
     def _save_metadata_cache(self, cache: Dict[str, Dict]):
         """Saves the metadata cache. Now saves per-symbol files."""
@@ -1236,32 +1415,43 @@ class MarketDataProvider:
 
     def _get_persistent_fx_cache_path(self) -> str:
         """Returns the full path to the persistent FX cache file."""
-        return os.path.join(config.get_app_data_dir(), config.CACHE_DIR, PERSISTENT_FX_CACHE_FILE)
+        return os.path.join(
+            config.get_app_data_dir(), config.CACHE_DIR, PERSISTENT_FX_CACHE_FILE
+        )
 
-    def _load_persistent_fx_cache(self, allow_stale: bool = True) -> Tuple[Dict[str, float], Dict[str, float]]:
+    def _load_persistent_fx_cache(
+        self, allow_stale: bool = True
+    ) -> Tuple[Dict[str, float], Dict[str, float]]:
         """Loads the persistent FX cache from disk."""
         path = self._get_persistent_fx_cache_path()
         content = _safe_json_load(path)
         if content:
-                ts_str = content.get("timestamp")
-                if ts_str:
-                    ts = datetime.fromisoformat(ts_str)
-                    age_seconds = (datetime.now(timezone.utc) - ts).total_seconds()
-                    # Return if within 24h OR if we explicitly allow stale data
-                    if allow_stale or age_seconds < PERSISTENT_FX_DURATION_HOURS * 3600:
-                        if allow_stale and age_seconds >= PERSISTENT_FX_DURATION_HOURS * 3600:
-                            logging.info(f"FX: Using STALE persistent cache (age: {age_seconds/3600:.1f}h)")
-                        return content.get("fx_rates", {}), content.get("fx_prev_close", {})
+            ts_str = content.get("timestamp")
+            if ts_str:
+                ts = datetime.fromisoformat(ts_str)
+                age_seconds = (datetime.now(timezone.utc) - ts).total_seconds()
+                # Return if within 24h OR if we explicitly allow stale data
+                if allow_stale or age_seconds < PERSISTENT_FX_DURATION_HOURS * 3600:
+                    if (
+                        allow_stale
+                        and age_seconds >= PERSISTENT_FX_DURATION_HOURS * 3600
+                    ):
+                        logging.info(
+                            f"FX: Using STALE persistent cache (age: {age_seconds / 3600:.1f}h)"
+                        )
+                    return content.get("fx_rates", {}), content.get("fx_prev_close", {})
         return {}, {}
 
-    def _save_persistent_fx_cache(self, fx_rates: Dict[str, float], fx_prev_close: Dict[str, float]):
+    def _save_persistent_fx_cache(
+        self, fx_rates: Dict[str, float], fx_prev_close: Dict[str, float]
+    ):
         """Saves the persistent FX cache to disk."""
         path = self._get_persistent_fx_cache_path()
         try:
             content = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "fx_rates": fx_rates,
-                "fx_prev_close": fx_prev_close
+                "fx_prev_close": fx_prev_close,
             }
             with open(path, "w") as f:
                 json.dump(content, f, indent=2)
@@ -1278,12 +1468,12 @@ class MarketDataProvider:
         results = {}
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
-        
+
         # 1. Check fragmented cache first
         for sym in yf_symbols:
             meta_path = self._get_symbol_metadata_path(sym)
             cached_meta = _safe_json_load(meta_path)
-            
+
             if cached_meta:
                 ts_str = cached_meta.get("timestamp")
                 if ts_str:
@@ -1294,8 +1484,16 @@ class MarketDataProvider:
                             # Entries below the current schema version are stale, UNLESS they
                             # already have all the v3-required keys (legacy entries get grandfathered).
                             entry_version = cached_meta.get("schema_version", 0)
-                            v3_keys = ("exchange", "country", "sector", "industry", "quoteType")
-                            if entry_version >= METADATA_SCHEMA_VERSION or all(k in cached_meta for k in v3_keys):
+                            v3_keys = (
+                                "exchange",
+                                "country",
+                                "sector",
+                                "industry",
+                                "quoteType",
+                            )
+                            if entry_version >= METADATA_SCHEMA_VERSION or all(
+                                k in cached_meta for k in v3_keys
+                            ):
                                 results[sym] = cached_meta
                                 continue
                             else:
@@ -1305,7 +1503,7 @@ class MarketDataProvider:
                                 )
                     except ValueError:
                         pass
-            
+
             missing_symbols.append(sym)
 
         if not missing_symbols:
@@ -1316,7 +1514,9 @@ class MarketDataProvider:
         if not YFINANCE_AVAILABLE:
             return results
 
-        logging.info(f"Metadata Cache: Fetching missing metadata for {len(missing_symbols)} symbols...")
+        logging.info(
+            f"Metadata Cache: Fetching missing metadata for {len(missing_symbols)} symbols..."
+        )
         try:
             # REDUCED: Was 50. Smaller chunks prevent "poison" tickers from failing large groups.
             chunk_size = 20
@@ -1325,14 +1525,18 @@ class MarketDataProvider:
                 # small when calm, full 2-5s only after a recent rate limit).
                 if i > 0:
                     wait = _adaptive_throttle_seconds(0.3, 1.0, 2.0, 5.0)
-                    logging.info(f"Metadata Throttling: Waiting {wait:.1f}s before next chunk...")
+                    logging.info(
+                        f"Metadata Throttling: Waiting {wait:.1f}s before next chunk..."
+                    )
                     time.sleep(wait)
-                    
-                chunk = missing_symbols[i:i+chunk_size]
-                logging.info(f"Metadata Fetch: Processing batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
-                
+
+                chunk = missing_symbols[i : i + chunk_size]
+                logging.info(
+                    f"Metadata Fetch: Processing batch {i // chunk_size + 1}. Symbols: {len(chunk)}"
+                )
+
                 info_batch = _run_isolated_fetch(chunk, task="info")
-                
+
                 for sym in chunk:
                     info = info_batch.get(sym)
                     meta_entry = None
@@ -1343,7 +1547,9 @@ class MarketDataProvider:
                             "currency": info.get("currency"),
                             "sector": info.get("sector"),
                             "industry": info.get("industry"),
-                            "country": info.get("country"),  # PERF FIX (BN-07): Added for batch sector enrichment
+                            "country": info.get(
+                                "country"
+                            ),  # PERF FIX (BN-07): Added for batch sector enrichment
                             "exchange": info.get("exchange"),
                             "fullExchangeName": info.get("fullExchangeName"),
                             "quoteType": info.get("quoteType"),
@@ -1353,7 +1559,7 @@ class MarketDataProvider:
                         # Fallback: if yfinance left country/sector/industry empty,
                         # try FMP. Common for ADRs (ASML, TSM) and thin coverage.
                         _maybe_enrich_with_fmp(meta_entry, sym)
-                        
+
                         # PERF FIX (BN-05): Also pre-populate fundamentals cache from same info fetch.
                         # This eliminates the redundant second _run_isolated_fetch(task="info")
                         # that get_fundamental_data_batch would otherwise trigger.
@@ -1361,19 +1567,25 @@ class MarketDataProvider:
                             div_rate = info.get("dividendRate", 0.0)
                             fund_entry = {
                                 "dividendRate": div_rate if div_rate else 0.0,
-                                "trailingAnnualDividendRate": info.get("trailingAnnualDividendRate") or div_rate or 0.0,
+                                "trailingAnnualDividendRate": info.get(
+                                    "trailingAnnualDividendRate"
+                                )
+                                or div_rate
+                                or 0.0,
                                 "dividendYield": info.get("dividendYield", 0.0) or 0.0,
                                 "exDividendDate": info.get("exDividendDate"),
                                 "lastDividendValue": info.get("lastDividendValue", 0.0),
                                 "lastDividendDate": info.get("lastDividendDate"),
                                 "timestamp": now_ts.isoformat(),
-                                "ticker_info": info
+                                "ticker_info": info,
                             }
                             self._save_fundamentals_cache({sym: fund_entry})
                         except Exception:
                             pass  # Non-critical: fundamentals will be fetched on demand if needed
                     else:
-                        logging.warning(f"Failed to fetch metadata for {sym}. Using placeholders.")
+                        logging.warning(
+                            f"Failed to fetch metadata for {sym}. Using placeholders."
+                        )
                         meta_entry = {
                             "name": sym,
                             "currency": None,
@@ -1388,7 +1600,7 @@ class MarketDataProvider:
                         }
                         # yfinance fully failed — try FMP from scratch
                         _maybe_enrich_with_fmp(meta_entry, sym)
-                    
+
                     if meta_entry:
                         results[sym] = meta_entry
                         # Save immediately to fragmented cache
@@ -1399,7 +1611,7 @@ class MarketDataProvider:
                             pass
         except Exception as e_batch:
             logging.error(f"Error in metadata batch fetch: {e_batch}")
-            
+
         return results
 
     def _get_fundamentals_cache_path(self) -> str:
@@ -1408,7 +1620,9 @@ class MarketDataProvider:
 
     def _get_symbol_fundamentals_path(self, yf_symbol: str) -> str:
         """Returns the full path for an individual symbol's fundamentals file."""
-        safe_sym = "".join(c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol)
+        safe_sym = "".join(
+            c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol
+        )
         return os.path.join(self.fundamentals_cache_dir, f"{safe_sym}.json")
 
     def _load_fundamentals_cache(self) -> Dict[str, Dict]:
@@ -1420,7 +1634,9 @@ class MarketDataProvider:
         for sym, entry in cache.items():
             path = self._get_symbol_fundamentals_path(sym)
             try:
-                ticker_info = entry.get("ticker_info") if isinstance(entry, dict) else None
+                ticker_info = (
+                    entry.get("ticker_info") if isinstance(entry, dict) else None
+                )
 
                 # Skip persisting sparse yfinance responses — the detail reader
                 # treats <=8-key "data" as poisoned and would purge this file on
@@ -1433,7 +1649,10 @@ class MarketDataProvider:
 
                 # If existing is a legacy format (raw data directly), wrap it
                 if "data" not in existing:
-                    existing = {"data": existing, "timestamp": datetime.now(timezone.utc).isoformat()}
+                    existing = {
+                        "data": existing,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
 
                 # Mirror the full ticker info into "data" so the per-symbol detail
                 # reader (which only looks at "data") sees substantive content
@@ -1447,7 +1666,9 @@ class MarketDataProvider:
                 # The rows are settled history keyed by report day, so an older
                 # copy is never wrong, only shorter.
                 previous_history = (existing.get("data") or {}).get("_earnings_history")
-                if isinstance(previous_history, dict) and not ticker_info.get("_earnings_history"):
+                if isinstance(previous_history, dict) and not ticker_info.get(
+                    "_earnings_history"
+                ):
                     ticker_info = {**ticker_info, "_earnings_history": previous_history}
 
                 existing["data"] = ticker_info
@@ -1463,14 +1684,18 @@ class MarketDataProvider:
             except Exception as e:
                 logging.warning(f"Error saving fundamentals for {sym}: {e}")
 
-    def get_earnings_history(self, yf_symbol: str, quarters: int = EARNINGS_BACKFILL_QUARTERS) -> Dict[str, dict]:
+    def get_earnings_history(
+        self, yf_symbol: str, quarters: int = EARNINGS_BACKFILL_QUARTERS
+    ) -> Dict[str, dict]:
         """
         Reported quarters for one symbol, keyed by market-local report day, fetched
         from Yahoo now. Same shape as the `_earnings_history` the full info fetch
         stashes on the fundamentals blob.
         """
         try:
-            df = _run_isolated_fetch([yf_symbol], task="earnings_dates", limit=quarters, timeout=60)
+            df = _run_isolated_fetch(
+                [yf_symbol], task="earnings_dates", limit=quarters, timeout=60
+            )
             return _earnings_history_from_frame(df)
         except Exception as e:
             logging.warning(f"Earnings history fetch failed for {yf_symbol}: {e}")
@@ -1496,7 +1721,9 @@ class MarketDataProvider:
         except Exception as e:
             logging.debug(f"Could not stash earnings history for {yf_symbol}: {e}")
 
-    def with_reported_earnings(self, yf_symbol: str, info: Dict[str, Any]) -> Dict[str, Any]:
+    def with_reported_earnings(
+        self, yf_symbol: str, info: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         `info` with the figures for a just-reported quarter attached.
 
@@ -1521,7 +1748,9 @@ class MarketDataProvider:
 
         with _EARNINGS_BACKFILL_LOCK:
             last_try = _EARNINGS_BACKFILL_ATTEMPTS.get(yf_symbol)
-            if last_try and now - last_try < timedelta(minutes=EARNINGS_BACKFILL_COOLDOWN_MINUTES):
+            if last_try and now - last_try < timedelta(
+                minutes=EARNINGS_BACKFILL_COOLDOWN_MINUTES
+            ):
                 return info
             _EARNINGS_BACKFILL_ATTEMPTS[yf_symbol] = now
 
@@ -1534,7 +1763,9 @@ class MarketDataProvider:
         existing = info.get("_earnings_history")
         merged = {**existing, **history} if isinstance(existing, dict) else history
         self._stash_earnings_history(yf_symbol, merged)
-        logging.info(f"Backfilled reported earnings for {yf_symbol} ({len(history)} quarters).")
+        logging.info(
+            f"Backfilled reported earnings for {yf_symbol} ({len(history)} quarters)."
+        )
         return {**info, "_earnings_history": merged}
 
     def get_fundamental_data_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
@@ -1544,7 +1775,7 @@ class MarketDataProvider:
         results = {}
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
-        
+
         # 1. Check fragmented cache
         for sym in yf_symbols:
             path = self._get_symbol_fundamentals_path(sym)
@@ -1570,16 +1801,20 @@ class MarketDataProvider:
         if not YFINANCE_AVAILABLE:
             return results
 
-        logging.info(f"Fundamentals: Fetching missing data for {len(missing_symbols)} symbols...")
+        logging.info(
+            f"Fundamentals: Fetching missing data for {len(missing_symbols)} symbols..."
+        )
         try:
             # REDUCED: Was 50. Smaller chunks prevent "poison" tickers from failing large groups.
             chunk_size = 20
             for i in range(0, len(missing_symbols), chunk_size):
-                chunk = list(missing_symbols)[i:i+chunk_size]
-                logging.info(f"Fundamentals Fetch: Processing batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
-                
+                chunk = list(missing_symbols)[i : i + chunk_size]
+                logging.info(
+                    f"Fundamentals Fetch: Processing batch {i // chunk_size + 1}. Symbols: {len(chunk)}"
+                )
+
                 info_batch = _run_isolated_fetch(chunk, task="info")
-                
+
                 market_closed_now = not is_market_open()
                 for sym in chunk:
                     info = info_batch.get(sym)
@@ -1589,13 +1824,17 @@ class MarketDataProvider:
 
                         entry = {
                             "dividendRate": div_rate if div_rate else 0.0,
-                            "trailingAnnualDividendRate": info.get("trailingAnnualDividendRate") or div_rate or 0.0,
+                            "trailingAnnualDividendRate": info.get(
+                                "trailingAnnualDividendRate"
+                            )
+                            or div_rate
+                            or 0.0,
                             "dividendYield": div_yield if div_yield else 0.0,
                             "exDividendDate": info.get("exDividendDate"),
                             "lastDividendValue": info.get("lastDividendValue", 0.0),
                             "lastDividendDate": info.get("lastDividendDate"),
                             "timestamp": now_ts.isoformat(),
-                            "ticker_info": info # Store full info if we fetched it anyway
+                            "ticker_info": info,  # Store full info if we fetched it anyway
                         }
                         results[sym] = entry
                         # Save fragmented
@@ -1604,13 +1843,19 @@ class MarketDataProvider:
                         # Reliable symbols after-hours: yfinance often returns no
                         # info during the data-refresh window. Cached entries (if
                         # any) are still used; demote the noise to INFO.
-                        if market_closed_now and (sym in RELIABLE_SYMBOLS or sym.startswith("^")):
-                            logging.info(f"Failed to fetch fundamentals for {sym} (isolated, after-hours — using cache).")
+                        if market_closed_now and (
+                            sym in RELIABLE_SYMBOLS or sym.startswith("^")
+                        ):
+                            logging.info(
+                                f"Failed to fetch fundamentals for {sym} (isolated, after-hours — using cache)."
+                            )
                         else:
-                            logging.warning(f"Failed to fetch fundamentals for {sym} (isolated).")
+                            logging.warning(
+                                f"Failed to fetch fundamentals for {sym} (isolated)."
+                            )
         except Exception as e_batch:
             logging.error(f"Error in fundamentals batch fetch: {e_batch}")
-            
+
         return results
 
     def get_ticker_details_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
@@ -1620,7 +1865,7 @@ class MarketDataProvider:
         results = {}
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
-        
+
         # 1. Check fragmented cache
         for sym in yf_symbols:
             path = self._get_symbol_fundamentals_path(sym)
@@ -1630,7 +1875,7 @@ class MarketDataProvider:
                     # Ticker info might be in "data" (singular fetch) or directly in entry (batch fetch)
                     info = entry.get("ticker_info") or entry.get("data")
                     ts_str = entry.get("timestamp")
-                    
+
                     if info and ts_str:
                         entry_ts = datetime.fromisoformat(ts_str)
                         if (now_ts - entry_ts).days < 1:
@@ -1641,17 +1886,21 @@ class MarketDataProvider:
             missing_symbols.append(sym)
 
         if missing_symbols:
-            logging.info(f"TickerDetails: Fetching for {len(missing_symbols)} symbols...")
+            logging.info(
+                f"TickerDetails: Fetching for {len(missing_symbols)} symbols..."
+            )
             try:
                 # Keep batch size small to avoid huge memory in result reconstruction
                 chunk_size = 25
                 yf_symbols_list = list(missing_symbols)
                 for i in range(0, len(yf_symbols_list), chunk_size):
-                    chunk = yf_symbols_list[i:i+chunk_size]
-                    logging.info(f"TickerDetails Fetch: Processing isolated batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
+                    chunk = yf_symbols_list[i : i + chunk_size]
+                    logging.info(
+                        f"TickerDetails Fetch: Processing isolated batch {i // chunk_size + 1}. Symbols: {len(chunk)}"
+                    )
                     # Use minimal=True to avoid OOM on large batches (skips analyst/ETF details)
                     info_batch = _run_isolated_fetch(chunk, task="info", minimal=True)
-                    
+
                     for sym in chunk:
                         info = info_batch.get(sym)
                         if info:
@@ -1660,61 +1909,85 @@ class MarketDataProvider:
                             entry = {
                                 "ticker_info": info,
                                 "timestamp": now_ts.isoformat(),
-                                "trailingAnnualDividendRate": info.get("dividendRate", 0.0),
-                                "dividendYield": info.get("dividendYield", 0.0)
+                                "trailingAnnualDividendRate": info.get(
+                                    "dividendRate", 0.0
+                                ),
+                                "dividendYield": info.get("dividendYield", 0.0),
                             }
                             self._save_fundamentals_cache({sym: entry})
             except Exception as e:
                 logging.error(f"Error in ticker details fetch: {e}")
-            
+
         return results
 
-    def get_financial_statements_batch(self, yf_symbols: List[str], frequency: str = "annual") -> Dict[str, Dict[str, pd.DataFrame]]:
+    def get_financial_statements_batch(
+        self, yf_symbols: List[str], frequency: str = "annual"
+    ) -> Dict[str, Dict[str, pd.DataFrame]]:
         """
         Fetches Financials, Balance Sheet, and Cash Flow for a batch of symbols using consolidated isolated fetches.
         Returns a nested dictionary: {symbol: {'financials': df, 'balance_sheet': df, 'cashflow': df}}
         """
-        results = {sym: {'financials': None, 'balance_sheet': None, 'cashflow': None} for sym in yf_symbols}
-        
+        results = {
+            sym: {"financials": None, "balance_sheet": None, "cashflow": None}
+            for sym in yf_symbols
+        }
+
         # Ensure yfinance is available
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
             return results
-            
+
         period_type = "quarterly" if frequency == "quarterly" else "annual"
-        logging.info(f"Batch fetching financial statements ({period_type}) for {len(yf_symbols)} symbols...")
-        
+        logging.info(
+            f"Batch fetching financial statements ({period_type}) for {len(yf_symbols)} symbols..."
+        )
+
         # Chunking to keep memory manageable while reducing process startups
-        chunk_size = 10 # Financials are large, keep chunks small
+        chunk_size = 10  # Financials are large, keep chunks small
         yf_symbols_list = list(yf_symbols)
-        
+
         for i in range(0, len(yf_symbols_list), chunk_size):
             chunk = yf_symbols_list[i : i + chunk_size]
-            logging.info(f"Statements Fetch: Processing batch {i//chunk_size + 1}/{len(yf_symbols_list)//chunk_size + 1} (Size: {len(chunk)})")
-            
+            logging.info(
+                f"Statements Fetch: Processing batch {i // chunk_size + 1}/{len(yf_symbols_list) // chunk_size + 1} (Size: {len(chunk)})"
+            )
+
             try:
                 # Use the new consolidated task
-                batch_data = _run_isolated_fetch(chunk, task="statements_batch", period_type=period_type)
-                
+                batch_data = _run_isolated_fetch(
+                    chunk, task="statements_batch", period_type=period_type
+                )
+
                 if batch_data:
                     for sym, sym_data in batch_data.items():
                         if sym_data:
                             processed_sym_data = {}
-                            for stmt_type in ['financials', 'balance_sheet', 'cashflow']:
+                            for stmt_type in [
+                                "financials",
+                                "balance_sheet",
+                                "cashflow",
+                            ]:
                                 json_str = sym_data.get(stmt_type)
                                 if json_str:
                                     try:
                                         from io import StringIO
-                                        processed_sym_data[stmt_type] = pd.read_json(StringIO(json_str), orient='split')
+
+                                        processed_sym_data[stmt_type] = pd.read_json(
+                                            StringIO(json_str), orient="split"
+                                        )
                                     except Exception as e_parse:
-                                        logging.warning(f"Error parsing {stmt_type} for {sym}: {e_parse}")
+                                        logging.warning(
+                                            f"Error parsing {stmt_type} for {sym}: {e_parse}"
+                                        )
                                         processed_sym_data[stmt_type] = pd.DataFrame()
                                 else:
                                     processed_sym_data[stmt_type] = pd.DataFrame()
                             results[sym] = processed_sym_data
             except Exception as e_batch:
-                logging.error(f"Error in statements batch {i//chunk_size + 1}: {e_batch}")
-                    
+                logging.error(
+                    f"Error in statements batch {i // chunk_size + 1}: {e_batch}"
+                )
+
         return results
 
     @profile
@@ -1733,11 +2006,11 @@ class MarketDataProvider:
         logging.info(
             f"Getting current quotes for {len(internal_stock_symbols)} symbols and FX for {len(required_currencies)} symbols."
         )
-        
+
         # Ensure yfinance is available
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
-            return {}, {}, {}, True, True # Treat as error
+            return {}, {}, {}, True, True  # Treat as error
 
         has_warnings = False
         has_errors = False
@@ -1756,7 +2029,9 @@ class MarketDataProvider:
                 yf_symbols_to_fetch.add(yf_symbol)
                 internal_to_yf_map_local[internal_symbol] = yf_symbol
             else:
-                logging.debug(f"Symbol '{internal_symbol}' excluded or unmappable. Skipping.")
+                logging.debug(
+                    f"Symbol '{internal_symbol}' excluded or unmappable. Skipping."
+                )
                 has_warnings = True
 
         if not yf_symbols_to_fetch:
@@ -1780,8 +2055,11 @@ class MarketDataProvider:
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
                         cache_ttl_minutes = 1 if is_market_open() else 60
-                        if datetime.now(timezone.utc) - cache_timestamp < timedelta(
-                            minutes=cache_ttl_minutes # BN-06: Adaptive 1min/60min cache
+                        if (
+                            datetime.now(timezone.utc) - cache_timestamp
+                            < timedelta(
+                                minutes=cache_ttl_minutes  # BN-06: Adaptive 1min/60min cache
+                            )
                         ):
                             cached_quotes = cache_data.get("quotes")
                             cached_fx = cache_data.get("fx_rates")
@@ -1798,13 +2076,13 @@ class MarketDataProvider:
             return cached_quotes, cached_fx, cached_fx_prev, False, has_warnings
 
         # --- 3. FETCHING FRESH DATA (Optimized) ---
-        
+
         # 3a. Ensure Metadata (Name, Currency) - Long-lived cache
         # PERF FIX (BN-05): This now also pre-populates fundamentals cache,
         # so the separate get_fundamental_data_batch call below will find
         # all data already cached and skip its own subprocess fetch.
         metadata_map = self._ensure_metadata_batch(yf_symbols_to_fetch)
-        
+
         # 3c. Fetch Fundamentals (Dividends) - Cached
         # After BN-05, this will mostly be cache hits (populated by metadata fetch above).
         fundamentals_map = self.get_fundamental_data_batch(yf_symbols_to_fetch)
@@ -1813,7 +2091,9 @@ class MarketDataProvider:
         stock_data_yf = {}
         if yf_symbols_to_fetch:
             # --- 3b. Batch Fetch Sparklines (and fallback prices) using yf.download ---
-            logging.info(f"Batch fetching sparklines/history for {len(yf_symbols_to_fetch)} symbols...")
+            logging.info(
+                f"Batch fetching sparklines/history for {len(yf_symbols_to_fetch)} symbols..."
+            )
             try:
                 # Use chunked download for reliability and to avoid process/memory limits with 500+ symbols
                 all_dfs = []
@@ -1822,21 +2102,20 @@ class MarketDataProvider:
                 # REDUCED: Was 100. Smaller chunk size to further limit peak memory spike per subprocess.
                 # REDUCED: Was 50. Smaller chunks for better isolation of problematic tickers.
                 chunk_size = 20
-                
+
                 for i in range(0, len(yf_symbols_list), chunk_size):
-                    chunk = yf_symbols_list[i:i+chunk_size]
-                    logging.info(f"Batch Quote Fetch: Processing chunk {i//chunk_size + 1} ({len(chunk)} symbols)")
-                    
-                    df_chunk = _run_isolated_fetch(
-                        chunk,
-                        period="10d",
-                        interval="1d",
-                        task="history"
+                    chunk = yf_symbols_list[i : i + chunk_size]
+                    logging.info(
+                        f"Batch Quote Fetch: Processing chunk {i // chunk_size + 1} ({len(chunk)} symbols)"
                     )
-                    
+
+                    df_chunk = _run_isolated_fetch(
+                        chunk, period="10d", interval="1d", task="history"
+                    )
+
                     if not df_chunk.empty:
                         all_dfs.append(df_chunk)
-                
+
                 # During after-hours, sparkline empties for reliable symbols are
                 # expected (yfinance often has gaps between session close and the
                 # daily refresh) — log at INFO instead of WARN to keep logs clean.
@@ -1848,7 +2127,9 @@ class MarketDataProvider:
                 if not all_dfs:
                     msg = "Batch price fetch returned empty DataFrames for all chunks."
                     if quiet_empty:
-                        logging.info(f"{msg} (after-hours, reliable symbols — expected)")
+                        logging.info(
+                            f"{msg} (after-hours, reliable symbols — expected)"
+                        )
                     else:
                         logging.warning(msg)
                     df = pd.DataFrame()
@@ -1860,81 +2141,89 @@ class MarketDataProvider:
                 if df.empty:
                     msg = "Combined batch price fetch resulted in empty DataFrame."
                     if quiet_empty:
-                        logging.info(f"{msg} (after-hours, reliable symbols — expected)")
+                        logging.info(
+                            f"{msg} (after-hours, reliable symbols — expected)"
+                        )
                     else:
                         logging.warning(msg)
                 else:
                     # Current UTC date for filtering
                     now_utc = datetime.now(timezone.utc).date()
-                    
+
                     # Process results
                     for internal_sym, yf_sym in internal_to_yf_map_local.items():
                         try:
                             price = None
                             prev_close = None
                             sparkline = []
-                            
+
                             # Handle yf.download structure using robust helper
                             sym_df = _extract_ticker_from_df(df, yf_sym)
-                            
+
                             if not sym_df.empty:
                                 # Check for Close or Price column
-                                col_name = "Close" if "Close" in sym_df.columns else sym_df.columns[0]
-                                
+                                col_name = (
+                                    "Close"
+                                    if "Close" in sym_df.columns
+                                    else sym_df.columns[0]
+                                )
+
                                 valid_days = sym_df.dropna(subset=[col_name])
                                 if not valid_days.empty:
                                     # 1. Determine Stable Previous Close (Always Yesterday or earlier)
                                     # Filter for dates strictly less than today (UTC)
-                                    # Note: Determining 'Today' is tricky with timezones. 
+                                    # Note: Determining 'Today' is tricky with timezones.
                                     # Ideally use the last available data point that is NOT today.
                                     # If the last point is today, use the one before it.
                                     # If the last point is older than today, use it? No, that's current price.
-                                    
+
                                     # Let's simplify: Take the last 2 points.
                                     vals = valid_days[col_name].tolist()
                                     dates_idx = valid_days.index.to_list()
-                                    
+
                                     # Build sparkline
                                     sparkline = [float(v) for v in vals]
                                     if len(sparkline) > 7:
-                                        sparkline = sparkline[-7:] # Tail 7
-                                    
+                                        sparkline = sparkline[-7:]  # Tail 7
+
                                     if len(vals) > 0:
                                         last_val = float(vals[-1])
                                         last_date = dates_idx[-1]
-                                        if hasattr(last_date, 'date'):
+                                        if hasattr(last_date, "date"):
                                             last_date = last_date.date()
-                                        
+
                                         # Default assumptions
                                         price = last_val
-                                        
+
                                         # To find prev_close, we look for the last point BEFORE last_date
                                         # OR if last_date is today, we definitely want the one before it.
                                         # If last_date is NOT today (stale), then that IS the close of that day,
                                         # and prev_close should be the one before THAT.
-                                        
+
                                         # Logic:
                                         # If the last data point's date is strictly LESS than today (in UTC context),
                                         # it means we have NO data for today yet (market closed or delayed).
                                         # In this case, Price = YesterdayClose.
                                         # To avoid showing "Yesterday's Change" as "Today's Change", we set Change = 0.
                                         # This is done by setting prev_close = price.
-                                        
+
                                         # However, if last_date == today, then:
                                         # Price = TodayCurrent.
                                         # PrevClose = The point before it (Yesterday).
-                                        
-                                        is_today = (last_date == now_utc)
-                                        # Allow for timezone diffs (e.g. Asia vs UTC). 
+
+                                        is_today = last_date == now_utc
+                                        # Allow for timezone diffs (e.g. Asia vs UTC).
                                         # If last_date is AHEAD of now_utc (tomorrow?), treat as today.
                                         if last_date >= now_utc:
                                             is_today = True
-                                            
+
                                         if is_today:
                                             if len(vals) >= 2:
                                                 prev_close = float(vals[-2])
                                             else:
-                                                prev_close = last_val # No history, change=0
+                                                prev_close = (
+                                                    last_val  # No history, change=0
+                                                )
                                         else:
                                             # Stale data (Yesterday's close is the latest we have)
                                             # User Request (Step 2730): "If the market is closed, show the day's gain/loss for the latest day when the market is open."
@@ -1942,21 +2231,33 @@ class MarketDataProvider:
                                             if len(vals) >= 2:
                                                 prev_close = float(vals[-2])
                                             else:
-                                                prev_close = last_val # No history, change=0
-                                            
-                                        logging.debug(f"{yf_sym} Download: LastDate={last_date}, IsToday={is_today}, Price={price}, Prev={prev_close}")
+                                                prev_close = (
+                                                    last_val  # No history, change=0
+                                                )
+
+                                        logging.debug(
+                                            f"{yf_sym} Download: LastDate={last_date}, IsToday={is_today}, Price={price}, Prev={prev_close}"
+                                        )
 
                             # Retrieve metadata
                             meta = metadata_map.get(yf_sym, {})
                             currency = meta.get("currency")
                             name = meta.get("name")
-                            
+
                             # Retrieve fundamentals
                             fund = fundamentals_map.get(yf_sym, {})
-                            
+
                             if price is not None and currency:
-                                change = (price - prev_close) if (price and prev_close) else 0.0
-                                change_pct = ((change / prev_close) * 100.0) if (change and prev_close) else 0.0
+                                change = (
+                                    (price - prev_close)
+                                    if (price and prev_close)
+                                    else 0.0
+                                )
+                                change_pct = (
+                                    ((change / prev_close) * 100.0)
+                                    if (change and prev_close)
+                                    else 0.0
+                                )
                                 stock_data_yf[internal_sym] = {
                                     "price": price,
                                     "change": change,
@@ -1966,30 +2267,40 @@ class MarketDataProvider:
                                     "exchange": meta.get("exchange"),
                                     "fullExchangeName": meta.get("fullExchangeName"),
                                     "quoteType": meta.get("quoteType"),
-                                    "source": "yf_batch_download_stale_safe" if not is_today else "yf_batch_download",
+                                    "source": "yf_batch_download_stale_safe"
+                                    if not is_today
+                                    else "yf_batch_download",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "dividendRate": fund.get("dividendRate", 0),
-                                    "trailingAnnualDividendRate": fund.get("trailingAnnualDividendRate", 0),
-                                    "lastDividendValue": fund.get("lastDividendValue", 0),
+                                    "trailingAnnualDividendRate": fund.get(
+                                        "trailingAnnualDividendRate", 0
+                                    ),
+                                    "lastDividendValue": fund.get(
+                                        "lastDividendValue", 0
+                                    ),
                                     "dividendYield": fund.get("dividendYield", 0),
-                                    "sparkline_7d": sparkline
+                                    "sparkline_7d": sparkline,
                                 }
                             else:
                                 # Don't warn yet, fast_info might fix it
                                 pass
 
                         except Exception as e_sym:
-                            logging.warning(f"Error processing batch result for {yf_sym}: {e_sym}")
-                            
+                            logging.warning(
+                                f"Error processing batch result for {yf_sym}: {e_sym}"
+                            )
+
             except Exception as e_down:
                 logging.error(f"Batch download failed: {e_down}")
                 # Don't set error yet, try fast_info
 
             # --- 3c. Batch Real-Time Price Fetch (Optimized) ---
             # Replace sequential fast_info (slow/flakey) with batched 1m download
-            logging.info(f"Batch fetching 1m intraday data for {len(yf_symbols_to_fetch)} symbols (Real-Time)...")
+            logging.info(
+                f"Batch fetching 1m intraday data for {len(yf_symbols_to_fetch)} symbols (Real-Time)..."
+            )
             try:
-                # Download 1m data for the last 1 day. 
+                # Download 1m data for the last 1 day.
                 # This gives us the very latest traded price (Close of last minute bar).
                 # Much faster than 50 HTTP requests for fast_info.
                 # Use isolated fetch for 1m intraday data
@@ -1997,92 +2308,118 @@ class MarketDataProvider:
                     list(yf_symbols_to_fetch),
                     period="1d",
                     interval="1m",
-                    task="history"
+                    task="history",
                 )
-                
+
                 if not df_rt.empty:
                     # Parse 1m results
-                    has_multilevel_rt = getattr(df_rt.columns, 'nlevels', 1) > 1
-                    
+                    has_multilevel_rt = getattr(df_rt.columns, "nlevels", 1) > 1
+
                     for internal_sym, yf_sym in internal_to_yf_map_local.items():
                         try:
                             price_rt = None
-                            
+
                             # Extract 1m Series
                             sym_df_rt = pd.DataFrame()
                             if len(yf_symbols_to_fetch) > 1:
-                                if has_multilevel_rt and yf_sym in df_rt.columns.get_level_values(0):
+                                if (
+                                    has_multilevel_rt
+                                    and yf_sym in df_rt.columns.get_level_values(0)
+                                ):
                                     sym_df_rt = df_rt[yf_sym]
-                                elif not has_multilevel_rt and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df_rt.columns):
-                                     cols_for_sym = [c for c in df_rt.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper()]
-                                     sym_df_rt = df_rt[cols_for_sym]
-                                     sym_df_rt.columns = [c[1] for c in sym_df_rt.columns]
+                                elif not has_multilevel_rt and any(
+                                    isinstance(c, (tuple, list))
+                                    and c[0].upper() == yf_sym.upper()
+                                    for c in df_rt.columns
+                                ):
+                                    cols_for_sym = [
+                                        c
+                                        for c in df_rt.columns
+                                        if isinstance(c, (tuple, list))
+                                        and c[0].upper() == yf_sym.upper()
+                                    ]
+                                    sym_df_rt = df_rt[cols_for_sym]
+                                    sym_df_rt.columns = [
+                                        c[1] for c in sym_df_rt.columns
+                                    ]
                             else:
                                 if not has_multilevel_rt:
-                                    sym_df_rt = df_rt 
-                            
+                                    sym_df_rt = df_rt
+
                             if not sym_df_rt.empty and "Close" in sym_df_rt.columns:
                                 # Get last valid price
                                 last_row = sym_df_rt.iloc[-1]
                                 price_rt = float(last_row["Close"])
-                                
+
                                 # Check if 1m data is actually from today (UTC) to avoid applying stale intraday noise
-                                last_rt_date = last_row.name.date() if hasattr(last_row.name, "date") else last_row.name
+                                last_rt_date = (
+                                    last_row.name.date()
+                                    if hasattr(last_row.name, "date")
+                                    else last_row.name
+                                )
                                 if last_rt_date < now_utc:
-                                     # Stale 1m data (Yesterday). Skip update to preserve "Change=0" from Daily Logic.
-                                     price_rt = None
-                            
+                                    # Stale 1m data (Yesterday). Skip update to preserve "Change=0" from Daily Logic.
+                                    price_rt = None
+
                             if price_rt and price_rt > 0:
                                 entry = stock_data_yf.get(internal_sym)
                                 if entry:
                                     # We have an existing entry from Daily download (containing Sparkline/PrevClose/Meta)
                                     # We just update the Price and Change.
-                                    
+
                                     # Recalculate Change using the stable PrevClose we already have
                                     # The existing entry['change'] was 0.00 or based on daily.
                                     # But entry['price'] might be stale (Yesterday).
-                                    
+
                                     # We need to dig out the 'prev_close' implicated in the Daily logic?
                                     # Actually, let's re-derive prev_close from the existing 'stock_data_yf' logic?
                                     # No, stock_data_yf only stores final values.
-                                    
+
                                     # However, we can trust that Daily Download (10d) finding 'Previous Close' is reasonably robust
                                     # IF we correctly identified "Today" vs "Yesterday".
                                     # Ah, my previous fix SET prev_close = price (change=0) if data was stale.
                                     # Now we have FRESH price (price_rt).
                                     # So we can try to recover the TRUE prev_close.
-                                    
+
                                     # But wait, if Daily data was stale (Yesterday), then 'price' was YesterdayClose.
                                     # And I forced 'prev_close' = YesterdayClose.
                                     # So now I have price_rt (Today).
                                     # So PrevClose IS technically that "Stale Price" (YesterdayClose)!
-                                    
+
                                     # So: True PrevClose = entry['price'] (which came from the "Stale" Daily Bar logic).
                                     # BUT only if the Daily logic marked it as stale?
                                     # If Daily logic marked it as "Current" (Today), then entry['price'] is ALREADY Today's Daily Close (or live).
                                     # Then entry['change'] is correct.
-                                    
+
                                     # Let's assume price_rt is SUPERIOR.
                                     # And let's assume entry['price'] (from Daily) is "Close of Yesterday" if Daily was stale,
                                     # OR "Current" if Daily was live.
-                                    
+
                                     # Issue: We lost the distinction in the dict.
                                     # But we can assume:
                                     # New Change = price_rt - entry['price'] + entry['change'] ?
                                     # No.
                                     # Old Price = P_old. Old Change = C_old. Old Prev = P_old - C_old.
-                                    prev_close_derived = entry["price"] - entry["change"]
-                                    
+                                    prev_close_derived = (
+                                        entry["price"] - entry["change"]
+                                    )
+
                                     # Recalculate with New Price
                                     change_new = price_rt - prev_close_derived
-                                    change_pct_new = (change_new / prev_close_derived) * 100.0 if prev_close_derived else 0.0
-                                    
+                                    change_pct_new = (
+                                        (change_new / prev_close_derived) * 100.0
+                                        if prev_close_derived
+                                        else 0.0
+                                    )
+
                                     entry["price"] = price_rt
                                     entry["change"] = change_new
                                     entry["changesPercentage"] = change_pct_new
                                     entry["source"] = "yf_batch_1m_intraday"
-                                    entry["timestamp"] = datetime.now(timezone.utc).isoformat()
-                                    
+                                    entry["timestamp"] = datetime.now(
+                                        timezone.utc
+                                    ).isoformat()
+
                                     stock_data_yf[internal_sym] = entry
                                 else:
                                     # No daily entry? (Maybe failed daily but succeeded intraday?)
@@ -2092,10 +2429,10 @@ class MarketDataProvider:
                         except Exception:
                             # logging.warning(f"Error extracting RT data for {internal_sym}: {e_sym_rt}")
                             pass
-                            
+
             except Exception as e_rt_batch:
                 logging.warning(f"Batch real-time 1m fetch failed: {e_rt_batch}")
-            
+
             # Legacy Fast Info Loop REMOVED (Replaced by Batch 1m)
             pass
             pass
@@ -2103,10 +2440,10 @@ class MarketDataProvider:
         # --- 4. Fetch FX Rates ---
         fx_rates_vs_usd = {"USD": 1.0}
         fx_prev_close_vs_usd = {"USD": 1.0}
-        
+
         if "USD" not in required_currencies:
             required_currencies.add("USD")
-            
+
         # Map currencies to YF pairs
         # For THB, we fetch both USDTHB=X and THB=X for maximum reliability
         fx_pairs = []
@@ -2119,72 +2456,96 @@ class MarketDataProvider:
             else:
                 fx_pairs.append(f"{c}=X")
 
-        
         if fx_pairs:
             logging.info(f"Fetching FX for {len(fx_pairs)} pairs using history...")
             try:
                 # Use history fetch for FX as it is more reliable than info/metadata
                 fx_history_df = _run_isolated_fetch(
-                    fx_pairs, 
-                    period="5d", # Fetch last 5 days to ensure we get a valid close (even over weekends)
+                    fx_pairs,
+                    period="5d",  # Fetch last 5 days to ensure we get a valid close (even over weekends)
                     interval="1d",
-                    task="history"
+                    task="history",
                 )
-                
+
                 if not fx_history_df.empty:
                     for yf_symbol in fx_pairs:
                         try:
                             price = None
                             prev = None
-                            
+
                             # Use robust helper for extraction
-                            sym_df_fx = _extract_ticker_from_df(fx_history_df, yf_symbol)
-                            
+                            sym_df_fx = _extract_ticker_from_df(
+                                fx_history_df, yf_symbol
+                            )
+
                             if not sym_df_fx.empty:
-                                close_col = "Close" if "Close" in sym_df_fx.columns else (sym_df_fx.columns[0] if len(sym_df_fx.columns) > 0 else None)
-                                
+                                close_col = (
+                                    "Close"
+                                    if "Close" in sym_df_fx.columns
+                                    else (
+                                        sym_df_fx.columns[0]
+                                        if len(sym_df_fx.columns) > 0
+                                        else None
+                                    )
+                                )
+
                                 if close_col:
                                     # Get valid rows
                                     valid_rows = sym_df_fx[close_col].dropna()
                                     if not valid_rows.empty:
                                         # Use last available close as current price
                                         price = float(valid_rows.iloc[-1])
-                                        
+
                                         # Try to get previous close
                                         if len(valid_rows) >= 2:
                                             prev = float(valid_rows.iloc[-2])
                                         else:
-                                            prev = price # Fallback
+                                            prev = price  # Fallback
 
                             base_curr_from_symbol = yf_symbol.replace("=X", "").upper()
                             # Handle 6-char pairs like USDTHB=X
-                            if len(base_curr_from_symbol) == 6 and base_curr_from_symbol.startswith("USD"):
+                            if len(
+                                base_curr_from_symbol
+                            ) == 6 and base_curr_from_symbol.startswith("USD"):
                                 base_curr_from_symbol = base_curr_from_symbol[3:]
-                                
+
                             if price and price > 0:
-                                # If this currency already has a rate (e.g. from USDTHB=X), 
+                                # If this currency already has a rate (e.g. from USDTHB=X),
                                 # we only update if this one is somehow better or the previous was missing.
                                 # Actually, prioritize USDTHB=X if we got it.
-                                if base_curr_from_symbol not in fx_rates_vs_usd or "USD" in yf_symbol:
+                                if (
+                                    base_curr_from_symbol not in fx_rates_vs_usd
+                                    or "USD" in yf_symbol
+                                ):
                                     fx_rates_vs_usd[base_curr_from_symbol] = price
                                     if prev and prev > 0:
-                                        fx_prev_close_vs_usd[base_curr_from_symbol] = prev
+                                        fx_prev_close_vs_usd[base_curr_from_symbol] = (
+                                            prev
+                                        )
                             else:
                                 if base_curr_from_symbol not in fx_rates_vs_usd:
                                     # yfinance FX history often has gaps during after-hours;
                                     # persistent FX cache supplies the fallback rate below.
                                     if not is_market_open():
-                                        logging.info(f"FX Fetch: Empty history for {yf_symbol} (after-hours — expected, using cache fallback)")
+                                        logging.info(
+                                            f"FX Fetch: Empty history for {yf_symbol} (after-hours — expected, using cache fallback)"
+                                        )
                                     else:
-                                        logging.warning(f"FX Fetch: Invalid/Empty history for {yf_symbol}")
+                                        logging.warning(
+                                            f"FX Fetch: Invalid/Empty history for {yf_symbol}"
+                                        )
                                         has_warnings = True
 
                         except Exception as e_fx_sym:
-                            logging.warning(f"Error extracting FX for {yf_symbol}: {e_fx_sym}")
-                            
+                            logging.warning(
+                                f"Error extracting FX for {yf_symbol}: {e_fx_sym}"
+                            )
+
                 else:
                     if not is_market_open():
-                        logging.info("FX Fetch: History returned empty DataFrame (after-hours — expected, using cache fallback).")
+                        logging.info(
+                            "FX Fetch: History returned empty DataFrame (after-hours — expected, using cache fallback)."
+                        )
                     else:
                         logging.warning("FX Fetch: History returned empty DataFrame.")
                         has_warnings = True
@@ -2194,7 +2555,9 @@ class MarketDataProvider:
 
             # Fallback to persistent cache for any missing currencies
             # Try fresh first, then allow stale
-            persistent_fx, persistent_prev = self._load_persistent_fx_cache(allow_stale=True)
+            persistent_fx, persistent_prev = self._load_persistent_fx_cache(
+                allow_stale=True
+            )
             if persistent_fx:
                 for curr in required_currencies:
                     if curr not in fx_rates_vs_usd and curr in persistent_fx:
@@ -2208,24 +2571,21 @@ class MarketDataProvider:
             if has_non_usd:
                 self._save_persistent_fx_cache(fx_rates_vs_usd, fx_prev_close_vs_usd)
 
-
-        
-
         # --- 5. Save Cache ---
         if not has_errors:
             try:
                 # Populate results from stock_data_yf
                 for internal_sym, data in stock_data_yf.items():
                     results[internal_sym] = data
-                    
+
                 cache_content = {
                     "cache_key": cache_key,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "quotes": results, 
+                    "quotes": results,
                     "fx_rates": fx_rates_vs_usd,
                     "fx_prev_close": fx_prev_close_vs_usd,
                 }
-                
+
                 with open(self.current_cache_file, "w") as f:
                     json.dump(cache_content, f, indent=2)
             except Exception as e:
@@ -2235,10 +2595,10 @@ class MarketDataProvider:
         return results, fx_rates_vs_usd, fx_prev_close_vs_usd, has_errors, has_warnings
 
     def get_fundamentals_batch(
-        self, 
+        self,
         symbols: List[str],
         user_symbol_map: Dict[str, str] = None,
-        user_excluded_symbols: Set[str] = None
+        user_excluded_symbols: Set[str] = None,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Fetches fundamental data (Market Cap, PE, Dividend Yield) for a batch of symbols.
@@ -2247,7 +2607,7 @@ class MarketDataProvider:
         _ensure_yfinance()
         if not yf:
             return {}
-            
+
         user_symbol_map = user_symbol_map or {}
         user_excluded_symbols = user_excluded_symbols or set()
 
@@ -2257,93 +2617,112 @@ class MarketDataProvider:
         results = {}
         symbols_to_fetch = []
         now = datetime.now(timezone.utc)
-        
+
         # Check cache
         for sym in symbols:
-            yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols) or sym
+            yf_sym = (
+                map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols) or sym
+            )
             cache_file = os.path.join(self.fundamentals_cache_dir, f"{yf_sym}.json")
-            
+
             loaded = False
             if os.path.exists(cache_file):
                 try:
                     with open(cache_file, "r") as f:
                         data = json.load(f)
-                        ts = datetime.fromisoformat(data['timestamp'])
+                        ts = datetime.fromisoformat(data["timestamp"])
                         # Check version (default 0 if missing)
-                        ver = data.get('version', 0)
-                        
+                        ver = data.get("version", 0)
+
                         # If valid (age check AND version check)
-                        if ver == CACHE_VERSION and (now - ts).total_seconds() < config.FUNDAMENTALS_CACHE_DURATION_HOURS * 3600:
+                        if (
+                            ver == CACHE_VERSION
+                            and (now - ts).total_seconds()
+                            < config.FUNDAMENTALS_CACHE_DURATION_HOURS * 3600
+                        ):
                             # Use FULL data directly for result (extract what we need)
-                            info = data['data']
+                            info = data["data"]
                             results[sym] = {
                                 "marketCap": info.get("marketCap"),
                                 "trailingPE": info.get("trailingPE"),
                                 "forwardPE": info.get("forwardPE"),
                                 "dividendYield": info.get("dividendYield"),
                                 "dividendRate": info.get("dividendRate"),
-                                "currency": info.get("currency")
+                                "currency": info.get("currency"),
                             }
                             loaded = True
                 except Exception:
-                     pass
-            
+                    pass
+
             if not loaded:
                 symbols_to_fetch.append(sym)
-                
+
         # Fetch remaining
         if symbols_to_fetch:
-             # Construct YF symbols
-             yf_map = { (map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols) or s): s for s in symbols_to_fetch } # yf -> internal
-             try:
-                 now_ts = datetime.now(timezone.utc)
-                 # Use isolated batch fetch for fundamentals (Tickers replacement)
-                 info_batch = _run_isolated_fetch(list(yf_map.keys()), task="info")
-                 for yf_sym, info in info_batch.items():
-                     if info:
-                         internal_sym = yf_map.get(yf_sym, yf_sym)
-                         
-                         if is_cash_symbol(internal_sym):
-                             continue
- 
-                         try:
-                             # info is already the dict from _run_isolated_fetch
+            # Construct YF symbols
+            yf_map = {
+                (map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols) or s): s
+                for s in symbols_to_fetch
+            }  # yf -> internal
+            try:
+                now_ts = datetime.now(timezone.utc)
+                # Use isolated batch fetch for fundamentals (Tickers replacement)
+                info_batch = _run_isolated_fetch(list(yf_map.keys()), task="info")
+                for yf_sym, info in info_batch.items():
+                    if info:
+                        internal_sym = yf_map.get(yf_sym, yf_sym)
 
-                             # Derive dividend yield (a fraction) from trustworthy
-                             # fields rather than Yahoo's unreliable raw value.
-                             try:
-                                 div_yield = robust_dividend_yield(info)
-                             except Exception as e_norm:
-                                 logging.warning(f"Error normalizing yield for {yf_sym}: {e_norm}")
-                                 div_yield = info.get("dividendYield")
+                        if is_cash_symbol(internal_sym):
+                            continue
 
-                             # Update info with normalized yield
-                             if div_yield is not None:
-                                 info["dividendYield"] = div_yield
- 
-                             # Save FULL info to cache (Unified Cache)
-                             with open(os.path.join(self.fundamentals_cache_dir, f"{yf_sym}.json"), "w") as f:
-                                 json.dump({
-                                     "timestamp": now_ts.isoformat(),
-                                     "version": CACHE_VERSION,
-                                     "data": info
-                                 }, f)
-                                 
-                             results[internal_sym] = {
-                                 "marketCap": info.get("marketCap"),
-                                 "trailingPE": info.get("trailingPE"),
-                                 "forwardPE": info.get("forwardPE"),
-                                 "dividendYield": div_yield,
-                                 "dividendRate": info.get("dividendRate"),
-                                 "currency": info.get("currency")
-                             }
-                         except Exception as e_sym:
-                             logging.warning(f"Error processing fundamentals for {yf_sym}: {e_sym}")
-             except Exception as e_batch:
-                 logging.error(f"Error in fundamentals batch fetch loop: {e_batch}")
+                        try:
+                            # info is already the dict from _run_isolated_fetch
 
+                            # Derive dividend yield (a fraction) from trustworthy
+                            # fields rather than Yahoo's unreliable raw value.
+                            try:
+                                div_yield = robust_dividend_yield(info)
+                            except Exception as e_norm:
+                                logging.warning(
+                                    f"Error normalizing yield for {yf_sym}: {e_norm}"
+                                )
+                                div_yield = info.get("dividendYield")
 
-                 
+                            # Update info with normalized yield
+                            if div_yield is not None:
+                                info["dividendYield"] = div_yield
+
+                            # Save FULL info to cache (Unified Cache)
+                            with open(
+                                os.path.join(
+                                    self.fundamentals_cache_dir, f"{yf_sym}.json"
+                                ),
+                                "w",
+                            ) as f:
+                                json.dump(
+                                    {
+                                        "timestamp": now_ts.isoformat(),
+                                        "version": CACHE_VERSION,
+                                        "data": info,
+                                    },
+                                    f,
+                                )
+
+                            results[internal_sym] = {
+                                "marketCap": info.get("marketCap"),
+                                "trailingPE": info.get("trailingPE"),
+                                "forwardPE": info.get("forwardPE"),
+                                "dividendYield": div_yield,
+                                "dividendRate": info.get("dividendRate"),
+                                "currency": info.get("currency"),
+                            }
+                        except Exception as e_sym:
+                            logging.warning(
+                                f"Error processing fundamentals for {yf_sym}: {e_sym}"
+                            )
+            except Exception as e_batch:
+                logging.error(f"Error in fundamentals batch fetch loop: {e_batch}")
+
         return results
 
     @profile
@@ -2372,11 +2751,11 @@ class MarketDataProvider:
         logging.debug(
             f"Fetching current quotes for {len(index_symbols)} index symbols..."
         )
-        
+
         # Ensure yfinance is available
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
-             return {}
+            return {}
 
         results = {}
         cached_data_used = False
@@ -2475,19 +2854,19 @@ class MarketDataProvider:
                     period="7d",
                     interval="1d",
                     task="history",
-                    timeout=30
+                    timeout=30,
                 )
 
                 # Loop over ALL requested tickers, not just those that returned info
                 for yf_symbol in yf_tickers_to_fetch:
                     ticker_info = index_info_batch.get(yf_symbol, {})
-                    
+
                     # Initialize variables
                     price = None
                     change = None
                     change_pct = None
                     name = None
-                    
+
                     # 1. Try to get data from 'info' first
                     if ticker_info:
                         price = (
@@ -2502,21 +2881,25 @@ class MarketDataProvider:
                             or ticker_info.get("shortName")
                             or ticker_info.get("longName")
                         )
-                    
+
                     # 2. Fallback to History if price is missing
                     if price is None and not index_hist_df.empty:
                         try:
                             # Use robust helper for extraction
                             sym_df = _extract_ticker_from_df(index_hist_df, yf_symbol)
-                                
+
                             if not sym_df.empty:
-                                close_col = "Close" if "Close" in sym_df.columns else sym_df.columns[0]
+                                close_col = (
+                                    "Close"
+                                    if "Close" in sym_df.columns
+                                    else sym_df.columns[0]
+                                )
                                 hist_series = sym_df[close_col].dropna()
-                                
+
                                 if not hist_series.empty:
                                     # Get latest price
                                     price = float(hist_series.iloc[-1])
-                                    
+
                                     # Calculate change if we have at least 2 days
                                     if len(hist_series) >= 2:
                                         prev_close = float(hist_series.iloc[-2])
@@ -2525,20 +2908,24 @@ class MarketDataProvider:
                                     else:
                                         change = 0.0
                                         change_pct = 0.0
-                                        
-                                    logging.debug(f"Using history fallback for {yf_symbol}: Price={price}, Change={change}")
+
+                                    logging.debug(
+                                        f"Using history fallback for {yf_symbol}: Price={price}, Change={change}"
+                                    )
                         except Exception as e_fallback:
-                            logging.warning(f"Error using history fallback for {yf_symbol}: {e_fallback}")
+                            logging.warning(
+                                f"Error using history fallback for {yf_symbol}: {e_fallback}"
+                            )
 
                     # 3. Finalize Name
                     if not name:
-                         name = INDEX_DISPLAY_NAMES.get(yf_symbol, yf_symbol)
+                        name = INDEX_DISPLAY_NAMES.get(yf_symbol, yf_symbol)
 
                     # 4. Construct Result
                     internal_result_key = internal_to_yf_index_map.get(
                         yf_symbol, yf_symbol
                     )
-                    
+
                     if price is not None:
                         results[internal_result_key] = {
                             "price": price,
@@ -2547,42 +2934,61 @@ class MarketDataProvider:
                                 change_pct if change_pct is not None else 0.0
                             ),
                             "name": name,
-                            "source": "yf_info" if ticker_info.get("regularMarketPrice") else "yf_history_fallback",
+                            "source": "yf_info"
+                            if ticker_info.get("regularMarketPrice")
+                            else "yf_history_fallback",
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
-                        
+
                         # Extract sparkline from history (same logic as before)
                         if not index_hist_df.empty:
                             try:
                                 # Reuse the extraction logic or re-extract
                                 # Simplified re-extraction for safety/clarity within this block scope
                                 spk_df = pd.DataFrame()
-                                has_multilevel = getattr(index_hist_df.columns, 'nlevels', 1) > 1
+                                has_multilevel = (
+                                    getattr(index_hist_df.columns, "nlevels", 1) > 1
+                                )
                                 if len(yf_tickers_to_fetch) > 1:
-                                    if has_multilevel and yf_symbol in index_hist_df.columns.get_level_values(0):
+                                    if (
+                                        has_multilevel
+                                        and yf_symbol
+                                        in index_hist_df.columns.get_level_values(0)
+                                    ):
                                         spk_df = index_hist_df[yf_symbol]
                                     elif not has_multilevel:
-                                         cols_for_sym = [c for c in index_hist_df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper()]
-                                         if cols_for_sym:
+                                        cols_for_sym = [
+                                            c
+                                            for c in index_hist_df.columns
+                                            if isinstance(c, (tuple, list))
+                                            and c[0].upper() == yf_symbol.upper()
+                                        ]
+                                        if cols_for_sym:
                                             spk_df = index_hist_df[cols_for_sym]
-                                            spk_df.columns = [c[1] for c in spk_df.columns]
+                                            spk_df.columns = [
+                                                c[1] for c in spk_df.columns
+                                            ]
                                 else:
                                     spk_df = index_hist_df
 
                                 if not spk_df.empty:
-                                    c_col = "Close" if "Close" in spk_df.columns else spk_df.columns[0]
+                                    c_col = (
+                                        "Close"
+                                        if "Close" in spk_df.columns
+                                        else spk_df.columns[0]
+                                    )
                                     sparkline = spk_df[c_col].dropna().tolist()
-                                    results[internal_result_key]["sparkline"] = sparkline
+                                    results[internal_result_key]["sparkline"] = (
+                                        sparkline
+                                    )
                             except Exception as e_hist:
-                                logging.warning(f"Error extracting sparkline for {yf_symbol}: {e_hist}")
-
-
-
+                                logging.warning(
+                                    f"Error extracting sparkline for {yf_symbol}: {e_hist}"
+                                )
 
             except Exception as e_indices:
                 logging.error(f"Error fetching index quotes batch: {e_indices}")
                 return cached_results or {}
-
 
             # --- Save to Cache ---
             if results:  # Only save if we got some results
@@ -2612,7 +3018,9 @@ class MarketDataProvider:
 
     def _get_invalid_symbols_cache_path(self) -> str:
         """Returns the full path to the invalid symbols cache file."""
-        return os.path.join(self._get_historical_cache_dir(), INVALID_SYMBOLS_CACHE_FILE)
+        return os.path.join(
+            self._get_historical_cache_dir(), INVALID_SYMBOLS_CACHE_FILE
+        )
 
     def _load_invalid_symbols_cache(self) -> Dict[str, float]:
         """Loads the map of invalid symbols and their discovery timestamp."""
@@ -2637,7 +3045,12 @@ class MarketDataProvider:
 
     @profile
     def _fetch_yf_historical_data(
-        self, symbols_yf: List[str], start_date: date, end_date: date, interval: str = "1d", use_cache: bool = True
+        self,
+        symbols_yf: List[str],
+        start_date: date,
+        end_date: date,
+        interval: str = "1d",
+        use_cache: bool = True,
     ) -> Dict[str, pd.DataFrame]:
         """
         Internal helper to fetch historical 'Close' data (adjusted) using yfinance.download.
@@ -2646,13 +3059,13 @@ class MarketDataProvider:
         # Normalize interval for yfinance
         if interval == "D":
             interval = "1d"
-        
+
         # NORMALIZATION HELPER
         def normalize_df(df_raw, sym):
             if df_raw is None or df_raw.empty:
                 return df_raw
             df_clean = df_raw.copy()
-            
+
             # Always prefer raw 'Close' (the actual historical price). The
             # worker fetches with auto_adjust=False so 'Close' is unadjusted,
             # which is what portfolio valuation needs. 'Adj Close' folds in
@@ -2663,23 +3076,27 @@ class MarketDataProvider:
             _ = is_intraday_local  # kept for diagnostic logging below
             primary = "Close"
             secondary = "Adj Close"
-            
+
             if primary in df_clean.columns and df_clean[primary].notna().any():
                 df_clean["price"] = df_clean[primary]
             elif secondary in df_clean.columns and df_clean[secondary].notna().any():
                 df_clean["price"] = df_clean[secondary]
-            elif primary in df_clean.columns: # fallback if all NaN but column exists
+            elif primary in df_clean.columns:  # fallback if all NaN but column exists
                 df_clean["price"] = df_clean[primary]
             elif secondary in df_clean.columns:
                 df_clean["price"] = df_clean[secondary]
-            
+
             # --- SMART ANCHOR: Keep 'Open' for intraday initialization ---
             if "Open" in df_clean.columns:
                 df_clean["open_price"] = df_clean["Open"]
             # --- END SMART ANCHOR ---
-            
-            num_nans = df_clean["price"].isna().sum() if "price" in df_clean.columns else "N/A"
-            logging.info(f"Hist Fetch Helper: Normalized symbol {sym} (Intraday={is_intraday_local}) with {len(df_clean)} rows. NaNs: {num_nans}. Source: {primary if 'price' in df_clean.columns and df_clean['price'].equals(df_clean.get(primary)) else secondary}")
+
+            num_nans = (
+                df_clean["price"].isna().sum() if "price" in df_clean.columns else "N/A"
+            )
+            logging.info(
+                f"Hist Fetch Helper: Normalized symbol {sym} (Intraday={is_intraday_local}) with {len(df_clean)} rows. NaNs: {num_nans}. Source: {primary if 'price' in df_clean.columns and df_clean['price'].equals(df_clean.get(primary)) else secondary}"
+            )
             return df_clean
 
         _ensure_yfinance()
@@ -2707,12 +3124,14 @@ class MarketDataProvider:
         symbols_to_fetch = []
         filtered_count = 0
         cache_needs_update = False
-        
+
         for s in symbols_yf:
             if s in invalid_cache:
                 timestamp = invalid_cache[s]
                 if now_ts - timestamp < INVALID_SYMBOLS_DURATION:
-                    logging.debug(f"Hist Fetch Helper: Skipping cached invalid symbol: {s}")
+                    logging.debug(
+                        f"Hist Fetch Helper: Skipping cached invalid symbol: {s}"
+                    )
                     filtered_count += 1
                     continue  # Skip this symbol
                 else:
@@ -2725,9 +3144,11 @@ class MarketDataProvider:
             self._save_invalid_symbols_cache(invalid_cache)
 
         if filtered_count > 0:
-            logging.info(f"Hist Fetch Helper: Skipped {filtered_count} known invalid/delisted symbols (cache active).")
-        
-        symbols_yf = symbols_to_fetch # Update the list to process
+            logging.info(
+                f"Hist Fetch Helper: Skipped {filtered_count} known invalid/delisted symbols (cache active)."
+            )
+
+        symbols_yf = symbols_to_fetch  # Update the list to process
         # --- END OPTIMIZATION ---
 
         # Ensure inputs are normalized to date objects first
@@ -2735,7 +3156,7 @@ class MarketDataProvider:
             start_date = pd.to_datetime(start_date).date()
         elif isinstance(start_date, pd.Timestamp):
             start_date = start_date.date()
-            
+
         if isinstance(end_date, str):
             end_date = pd.to_datetime(end_date).date()
         elif isinstance(end_date, pd.Timestamp):
@@ -2753,29 +3174,35 @@ class MarketDataProvider:
         # --- CACHE READ (After-Hours/Weekend) ---
         # If market is closed, try to load from local DB to avoid API latency
         if use_cache and is_intraday and not is_market_open():
-            logging.info(f"Hist Fetch Helper: Market closed. Checking Intraday DB Cache for {len(symbols_yf)} symbols...")
+            logging.info(
+                f"Hist Fetch Helper: Market closed. Checking Intraday DB Cache for {len(symbols_yf)} symbols..."
+            )
             symbols_to_fetch_remote = []
-            
+
             # Use timestamps for DB query
             # yf_start_date is date, need datetime. Combine with min/max time.
             ts_start = datetime.combine(yf_start_date, datetime.min.time())
-            ts_end = datetime.combine(yf_end_date, datetime.min.time()) # yf_end_date is usually exclusive/next day, effectively covers full range
+            ts_end = datetime.combine(
+                yf_end_date, datetime.min.time()
+            )  # yf_end_date is usually exclusive/next day, effectively covers full range
 
             for s in symbols_yf:
                 cached_df = self.db.get_intraday(s, ts_start, ts_end, interval)
-                
+
                 is_cache_valid = False
                 if not cached_df.empty:
                     # VALIDATION: Check if cache covers the latest trading session
                     last_trading = get_latest_trading_date()
-                    
+
                     # Convert max timestamp to EST date/time for comparison
                     max_ts_utc = cached_df.index.max()
                     if max_ts_utc.tzinfo:
                         max_ts_est = max_ts_utc.tz_convert("America/New_York")
                     else:
-                        max_ts_est = max_ts_utc.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=-5)))
-                        
+                        max_ts_est = max_ts_utc.replace(tzinfo=timezone.utc).astimezone(
+                            timezone(timedelta(hours=-5))
+                        )
+
                     # 1. Date check
                     if max_ts_est.date() > last_trading:
                         # Future data or error in clock, refetch
@@ -2786,41 +3213,52 @@ class MarketDataProvider:
                     else:
                         # Same day as last_trading. Now check for SESSION COMPLETENESS.
                         if last_trading < today:
-                            # It's a past trading day (e.g. yesterday). 
+                            # It's a past trading day (e.g. yesterday).
                             # Session must extend near market close (e.g. after 15:45 EST) to be "complete".
-                            if max_ts_est.hour > 15 or (max_ts_est.hour == 15 and max_ts_est.minute >= 45):
+                            if max_ts_est.hour > 15 or (
+                                max_ts_est.hour == 15 and max_ts_est.minute >= 45
+                            ):
                                 is_cache_valid = True
                             else:
-                                logging.info(f"Hist Fetch Helper: Cache for {s} is Jan 20 but incomplete (ends {max_ts_est.time()}). Refetching.")
+                                logging.info(
+                                    f"Hist Fetch Helper: Cache for {s} is Jan 20 but incomplete (ends {max_ts_est.time()}). Refetching."
+                                )
                         else:
                             # It's today's trading day. Refetch if cache is older than 15 mins.
                             # We check the actual retrieval time (sync_metadata) or just the max point
                             # Usually, we want real-time-ish data for today.
                             time_diff = datetime.now(timezone.utc) - max_ts_utc
-                            if time_diff.total_seconds() < 900: # 15 mins
+                            if time_diff.total_seconds() < 900:  # 15 mins
                                 is_cache_valid = True
                             else:
-                                logging.info(f"Hist Fetch Helper: Cache for {s} is today but {time_diff.total_seconds()/60:.1f}m old. Refetching.")
+                                logging.info(
+                                    f"Hist Fetch Helper: Cache for {s} is today but {time_diff.total_seconds() / 60:.1f}m old. Refetching."
+                                )
 
                     if is_cache_valid:
                         historical_data[s] = normalize_df(cached_df, s)
-                
+
                 if not is_cache_valid:
                     symbols_to_fetch_remote.append(s)
-            
+
             if len(historical_data) > 0:
-                logging.info(f"Hist Fetch Helper: Loaded {len(historical_data)} symbols from Intraday DB Cache.")
-            
+                logging.info(
+                    f"Hist Fetch Helper: Loaded {len(historical_data)} symbols from Intraday DB Cache."
+                )
+
             if not symbols_to_fetch_remote:
-                 logging.info("Hist Fetch Helper: All symbols found in cache. Skipping remote fetch.")
-                 return historical_data
-            
+                logging.info(
+                    "Hist Fetch Helper: All symbols found in cache. Skipping remote fetch."
+                )
+                return historical_data
+
             # Update list to only fetch missing
             symbols_yf = symbols_to_fetch_remote
 
-        
         if not is_intraday and yf_start_date > today:
-            logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is in the future. Skipping fetch.")
+            logging.info(
+                f"Hist Fetch Helper: Requested start date {yf_start_date} is in the future. Skipping fetch."
+            )
             return {}
 
         # --- FIX: Prevent fetching future dates (Intraday) ---
@@ -2828,83 +3266,93 @@ class MarketDataProvider:
         if is_intraday:
             latest_trading = get_latest_trading_date()
             if yf_start_date > latest_trading:
-                logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is after latest trading date {latest_trading}. Market not open yet. Skipping.")
+                logging.info(
+                    f"Hist Fetch Helper: Requested start date {yf_start_date} is after latest trading date {latest_trading}. Market not open yet. Skipping."
+                )
                 return {}
-
 
         # --- SAFETY CLIP: YFinance 1h data limit is 730 days ---
         if interval == "1h":
             limit_start = today - timedelta(days=729)
             if yf_start_date < limit_start:
-                logging.warning(f"Hist Fetch Helper: Clipping 1h start date from {yf_start_date} to {limit_start} (YF limit).")
+                logging.warning(
+                    f"Hist Fetch Helper: Clipping 1h start date from {yf_start_date} to {limit_start} (YF limit)."
+                )
                 yf_start_date = limit_start
                 if yf_start_date >= yf_end_date:
-                     return {}
-        elif interval == "1m": # 1-minute data limit is 30 days
-            limit_start = today - timedelta(days=29) # Safe buffer
+                    return {}
+        elif interval == "1m":  # 1-minute data limit is 30 days
+            limit_start = today - timedelta(days=29)  # Safe buffer
             if yf_start_date < limit_start:
-                logging.warning(f"Hist Fetch Helper: Clipping 1m start date from {yf_start_date} to {limit_start} (YF limit).")
+                logging.warning(
+                    f"Hist Fetch Helper: Clipping 1m start date from {yf_start_date} to {limit_start} (YF limit)."
+                )
                 yf_start_date = limit_start
                 if yf_start_date >= yf_end_date:
-                     return {}
-        
+                    return {}
+
         # --- END FIX ---
 
         # --- FIX: Stop clamping end_date to today for daily data ---
-        # We want to allow yfinance to return today's partially closed bar 
+        # We want to allow yfinance to return today's partially closed bar
         # so that TWR and YTD metrics can update during the day.
         # We only clamp if we are truly in the future (e.g. asking for next month).
         if not is_intraday and yf_end_date > today + timedelta(days=1):
-             yf_end_date = today + timedelta(days=1)
+            yf_end_date = today + timedelta(days=1)
         # --- END FIX ---
 
         # --- FIX: Check for business days to avoid YFPricesMissingError on weekends ---
         # This check happens AFTER clamping to today, to ensure we don't try to fetch
         # ranges that become Saturday-Sunday after clamping.
         try:
-             # Use the holiday-aware calendar for counting business days
-             cal = get_nyse_calendar()
-             # --- FIX: Ensure end_date for schedule is at least start_date ---
-             schedule_end = yf_end_date - timedelta(days=1)
-             if schedule_end < yf_start_date:
-                  # If the range is empty (e.g. today is Sunday, end_date=Sunday, start_date=Sunday)
-                  # then we technically have 0 business days in the requested (exclusive) range.
-                  bus_days = 0
-             else:
-                  schedule = cal.schedule(start_date=yf_start_date, end_date=schedule_end)
-                  bus_days = len(schedule)
-             
-             if bus_days == 0:
-                 # FIX: If 0 business days (e.g. holiday/weekend) but we want intraday data,
-                 # shift START date back to include the last trading session.
-                 if "m" in interval or "h" in interval:
-                     # For intraday, we want to see the last session's chart
-                     last_trading = get_latest_trading_date()
-                     if yf_start_date > last_trading:
-                         logging.info(f"Hist Fetch Helper: 0 bus days for {yf_start_date}-{yf_end_date}. Shifting start to {last_trading} to capture last session.")
-                         yf_start_date = last_trading
-                     else:
-                         # Already at/before last trading but still 0 bus days? 
-                         # Maybe it's a long holiday. Back up more.
-                         yf_start_date = yf_start_date - timedelta(days=3)
-                 else:
-                     logging.info(f"Hist Fetch Helper: Skipping fetch for {yf_start_date} to {yf_end_date} (0 business days).")
-                     return {}
-                 
+            # Use the holiday-aware calendar for counting business days
+            cal = get_nyse_calendar()
+            # --- FIX: Ensure end_date for schedule is at least start_date ---
+            schedule_end = yf_end_date - timedelta(days=1)
+            if schedule_end < yf_start_date:
+                # If the range is empty (e.g. today is Sunday, end_date=Sunday, start_date=Sunday)
+                # then we technically have 0 business days in the requested (exclusive) range.
+                bus_days = 0
+            else:
+                schedule = cal.schedule(start_date=yf_start_date, end_date=schedule_end)
+                bus_days = len(schedule)
+
+            if bus_days == 0:
+                # FIX: If 0 business days (e.g. holiday/weekend) but we want intraday data,
+                # shift START date back to include the last trading session.
+                if "m" in interval or "h" in interval:
+                    # For intraday, we want to see the last session's chart
+                    last_trading = get_latest_trading_date()
+                    if yf_start_date > last_trading:
+                        logging.info(
+                            f"Hist Fetch Helper: 0 bus days for {yf_start_date}-{yf_end_date}. Shifting start to {last_trading} to capture last session."
+                        )
+                        yf_start_date = last_trading
+                    else:
+                        # Already at/before last trading but still 0 bus days?
+                        # Maybe it's a long holiday. Back up more.
+                        yf_start_date = yf_start_date - timedelta(days=3)
+                else:
+                    logging.info(
+                        f"Hist Fetch Helper: Skipping fetch for {yf_start_date} to {yf_end_date} (0 business days)."
+                    )
+                    return {}
+
         except Exception as e_bus:
-             logging.warning(f"Hist Fetch Helper: Error in business day check: {e_bus}. Find logic fallthrough.")
+            logging.warning(
+                f"Hist Fetch Helper: Error in business day check: {e_bus}. Find logic fallthrough."
+            )
         # --- END FIX ---
         # --- END FIX ---
         # Reduce batch size for intraday data to prevent OOM/Crash
         if "m" in interval or "h" in interval:
-             fetch_batch_size = 5
+            fetch_batch_size = 5
         else:
-             fetch_batch_size = 25 # Reduced from 50 to avoid being flagged as robot
-
+            fetch_batch_size = 25  # Reduced from 50 to avoid being flagged as robot
 
         # --- ADDED: Retry logic parameters for increased network robustness ---
         # --- ADDED: Retry logic parameters for increased network robustness ---
-        retries = 4 # Increased to 4 to handle potential DNS flakiness
+        retries = 4  # Increased to 4 to handle potential DNS flakiness
         # --- END ADDED ---
 
         all_missing_symbols = []
@@ -2915,12 +3363,14 @@ class MarketDataProvider:
             # limited (see _adaptive_throttle_seconds).
             if i > 0:
                 wait = _adaptive_throttle_seconds(0.5, 1.5, 3.0, 10.0)
-                logging.info(f"Historical Throttling: Waiting {wait:.1f}s before next chunk...")
+                logging.info(
+                    f"Historical Throttling: Waiting {wait:.1f}s before next chunk..."
+                )
                 time.sleep(wait)
-                
+
             batch_symbols = symbols_yf[i : i + fetch_batch_size]
             data = pd.DataFrame()  # Initialize empty DataFrame for the batch
-            
+
             # --- Attempt Batch Fetch ---
             for attempt in range(retries):
                 try:
@@ -2931,23 +3381,27 @@ class MarketDataProvider:
                         chunk_dfs = []
                         curr_chunk_start = yf_start_date
                         while curr_chunk_start < yf_end_date:
-                            curr_chunk_end = min(curr_chunk_start + timedelta(days=7), yf_end_date)
+                            curr_chunk_end = min(
+                                curr_chunk_start + timedelta(days=7), yf_end_date
+                            )
                             if curr_chunk_start >= curr_chunk_end:
                                 break
-                                
+
                             try:
                                 chunk_df = _run_isolated_fetch(
                                     tickers=batch_symbols,
                                     start=curr_chunk_start,
                                     end=curr_chunk_end,
                                     interval=interval,
-                                    task="history" # Added task
+                                    task="history",  # Added task
                                 )
                                 if not chunk_df.empty:
                                     chunk_dfs.append(chunk_df)
                             except Exception as e_chunk:
-                                logging.warning(f"  Hist Fetch Helper WARN (Chunk {curr_chunk_start}): {e_chunk}")
-                                
+                                logging.warning(
+                                    f"  Hist Fetch Helper WARN (Chunk {curr_chunk_start}): {e_chunk}"
+                                )
+
                             curr_chunk_start = curr_chunk_end
 
                         if chunk_dfs:
@@ -2961,15 +3415,21 @@ class MarketDataProvider:
                             start=yf_start_date,
                             end=yf_end_date,
                             interval=interval,
-                            task="history" # Added task
+                            task="history",  # Added task
                         )
-                    
-                    logging.info(f"  Hist Fetch Helper: Batch result for {batch_symbols[:3]}...: Shape={data.shape}, Columns={list(data.columns[:5])}, Types={type(data.columns)}")
+
+                    logging.info(
+                        f"  Hist Fetch Helper: Batch result for {batch_symbols[:3]}...: Shape={data.shape}, Columns={list(data.columns[:5])}, Types={type(data.columns)}"
+                    )
                     if not data.empty:
-                        logging.info(f"  Hist Fetch Helper: Index Range: {data.index[0]} to {data.index[-1]}")
-                    
+                        logging.info(
+                            f"  Hist Fetch Helper: Index Range: {data.index[0]} to {data.index[-1]}"
+                        )
+
                     elapsed = time.time() - t0
-                    logging.debug(f"  Batch fetch took {elapsed:.2f}s for {len(batch_symbols)} symbols (Attempt {attempt + 1}).")
+                    logging.debug(
+                        f"  Batch fetch took {elapsed:.2f}s for {len(batch_symbols)} symbols (Attempt {attempt + 1})."
+                    )
                     # yfinance prints its own errors for failed tickers. If the whole batch fails,
                     # it might return an empty DataFrame.
                     if data.empty and len(batch_symbols) > 0:
@@ -2979,30 +3439,41 @@ class MarketDataProvider:
                             cal = get_nyse_calendar()
                             # Check if at least one day in the range was a trading day
                             # yf_end_date is exclusive, so we check up to yf_end_date - 1d
-                            sch_check = cal.schedule(start_date=yf_start_date, end_date=yf_end_date - timedelta(days=1))
+                            sch_check = cal.schedule(
+                                start_date=yf_start_date,
+                                end_date=yf_end_date - timedelta(days=1),
+                            )
                             is_trading_range = not sch_check.empty
                         except Exception:
-                            is_trading_range = True # Assume it might be trading if calendar fails
-                            
+                            is_trading_range = (
+                                True  # Assume it might be trading if calendar fails
+                            )
+
                         if not is_trading_range:
-                            logging.info(f"  Hist Fetch Helper: No trading days in range {yf_start_date} to {yf_end_date}. Avoiding retries.")
-                            break # Exit retry loop, return empty
-                            
+                            logging.info(
+                                f"  Hist Fetch Helper: No trading days in range {yf_start_date} to {yf_end_date}. Avoiding retries."
+                            )
+                            break  # Exit retry loop, return empty
+
                         # --- IMPROVED: Check if all symbols in batch are reliable and market is closed ---
-                        is_all_reliable = all(s in RELIABLE_SYMBOLS for s in batch_symbols)
+                        is_all_reliable = all(
+                            s in RELIABLE_SYMBOLS for s in batch_symbols
+                        )
                         market_closed = not is_market_open()
-                        
+
                         if is_all_reliable and market_closed:
-                             # If we are closed and it's a reliable symbol, an empty result is likely 
-                             # just yfinance not having the 'today' data yet. No need for alarm or heavy retries.
-                             logging.info(f"  Hist Fetch Helper: Reliable batch {batch_symbols[:3]} returned empty during after-hours. Skipping further retries.")
-                             break
+                            # If we are closed and it's a reliable symbol, an empty result is likely
+                            # just yfinance not having the 'today' data yet. No need for alarm or heavy retries.
+                            logging.info(
+                                f"  Hist Fetch Helper: Reliable batch {batch_symbols[:3]} returned empty during after-hours. Skipping further retries."
+                            )
+                            break
 
                         logging.warning(
                             f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}) for symbols {batch_symbols[:3]}...: yf.download returned empty DataFrame. Retrying (Potential transient error)..."
                         )
                         time.sleep(1)
-                        continue # FORCE RETRY
+                        continue  # FORCE RETRY
 
                     # If we get here, the download was successful for at least some symbols.
                     logging.info(
@@ -3012,7 +3483,9 @@ class MarketDataProvider:
                 except Exception as e_batch:
                     # Skip noise for 429 errors which are handled by global cooldown
                     if "429" in str(e_batch):
-                        logging.error("  Hist Fetch Helper: Rate limited (429). Stopping batch retries.")
+                        logging.error(
+                            "  Hist Fetch Helper: Rate limited (429). Stopping batch retries."
+                        )
                         break
 
                     logging.warning(
@@ -3034,76 +3507,93 @@ class MarketDataProvider:
             # Check if we broke out due to valid empty result
             is_valid_empty_batch = False
             if data.empty and len(batch_symbols) > 0:
-                 is_all_reliable = all(s in RELIABLE_SYMBOLS for s in batch_symbols)
-                 if is_all_reliable and market_closed:
-                      is_valid_empty_batch = True
-                      logging.info(f"  Hist Fetch Helper: Batch {batch_symbols[:3]} identified as validly empty (Closed Market + Reliable). Skipping recovery.")
+                is_all_reliable = all(s in RELIABLE_SYMBOLS for s in batch_symbols)
+                if is_all_reliable and market_closed:
+                    is_valid_empty_batch = True
+                    logging.info(
+                        f"  Hist Fetch Helper: Batch {batch_symbols[:3]} identified as validly empty (Closed Market + Reliable). Skipping recovery."
+                    )
 
             if data.empty:
                 if not is_valid_empty_batch:
                     # If batch failed completely and isn't a known 'valid empty' case,
                     # queue for individual recovery to isolate potential ticker issues.
-                    logging.info(f"  Hist Fetch Helper: Batch returned empty (potential error). Queueing for recovery: {', '.join(batch_symbols[:5])}...")
+                    logging.info(
+                        f"  Hist Fetch Helper: Batch returned empty (potential error). Queueing for recovery: {', '.join(batch_symbols[:5])}..."
+                    )
                     missing_symbols_in_batch = batch_symbols
                 else:
                     # Valid empty: we don't treat them as 'missing' for recovery
                     missing_symbols_in_batch = []
             else:
-
                 for symbol in batch_symbols:
                     try:
                         df_symbol = None
                         found_in_batch = False
-                        
+
                         # Symbols to try (original and stripped caret)
                         symbols_to_try = [symbol]
                         if symbol.startswith("^"):
-                             symbols_to_try.append(symbol[1:])
-                        
+                            symbols_to_try.append(symbol[1:])
+
                         # Use robust helper for extraction
                         df_symbol = _extract_ticker_from_df(data, symbol)
                         if not df_symbol.empty:
                             found_in_batch = True
                         elif symbol.startswith("^"):
-                             # Try without caret
-                             stripped_sym = symbol[1:]
-                             df_symbol = _extract_ticker_from_df(data, stripped_sym)
-                             if not df_symbol.empty:
-                                 found_in_batch = True
+                            # Try without caret
+                            stripped_sym = symbol[1:]
+                            df_symbol = _extract_ticker_from_df(data, stripped_sym)
+                            if not df_symbol.empty:
+                                found_in_batch = True
                         if not found_in_batch:
                             # Flat Index matching fallback
                             for s_to_try in symbols_to_try:
                                 matching_cols = []
                                 for c in data.columns:
                                     if isinstance(c, (list, tuple)):
-                                         if len(c) > 1 and c[1] == s_to_try:
-                                              matching_cols.append(c)
-                                         elif c[0] == s_to_try:
-                                              matching_cols.append(c)
+                                        if len(c) > 1 and c[1] == s_to_try:
+                                            matching_cols.append(c)
+                                        elif c[0] == s_to_try:
+                                            matching_cols.append(c)
                                     elif isinstance(c, str):
-                                         # Match stringified tuple or simple name
-                                         if s_to_try in c:
-                                              matching_cols.append(c)
-                                
+                                        # Match stringified tuple or simple name
+                                        if s_to_try in c:
+                                            matching_cols.append(c)
+
                                 if matching_cols:
                                     df_symbol = data[matching_cols]
                                     # Rename columns
                                     new_cols = []
                                     for c in df_symbol.columns:
-                                         if isinstance(c, (list, tuple)):
-                                              new_cols.append(c[1] if c[1] != s_to_try else c[0])
-                                         elif isinstance(c, str) and "(" in c and "," in c:
-                                              parts = c.replace("(","").replace(")","").replace("'","").replace("\"","").split(",")
-                                              p0, p1 = parts[0].strip(), parts[1].strip()
-                                              new_cols.append(p0 if p1 == s_to_try else p1)
-                                         else:
-                                              new_cols.append(c)
+                                        if isinstance(c, (list, tuple)):
+                                            new_cols.append(
+                                                c[1] if c[1] != s_to_try else c[0]
+                                            )
+                                        elif (
+                                            isinstance(c, str) and "(" in c and "," in c
+                                        ):
+                                            parts = (
+                                                c.replace("(", "")
+                                                .replace(")", "")
+                                                .replace("'", "")
+                                                .replace('"', "")
+                                                .split(",")
+                                            )
+                                            p0, p1 = parts[0].strip(), parts[1].strip()
+                                            new_cols.append(
+                                                p0 if p1 == s_to_try else p1
+                                            )
+                                        else:
+                                            new_cols.append(c)
                                     df_symbol.columns = new_cols
                                     found_in_batch = True
                                     break
 
                         if not found_in_batch or df_symbol is None or df_symbol.empty:
-                            logging.warning(f"  Hist Fetch Helper: {symbol} NOT found or empty in batch result.")
+                            logging.warning(
+                                f"  Hist Fetch Helper: {symbol} NOT found or empty in batch result."
+                            )
                             missing_symbols_in_batch.append(symbol)
                             continue
 
@@ -3111,46 +3601,68 @@ class MarketDataProvider:
                         # 1. Ensure 'price' column exists
                         df_norm = normalize_df(df_symbol, symbol)
                         if df_norm is None or "price" not in df_norm.columns:
-                            logging.warning(f"  Hist Fetch Helper: Could not normalize {symbol}. Columns: {list(df_norm.columns if df_norm is not None else [])}")
+                            logging.warning(
+                                f"  Hist Fetch Helper: Could not normalize {symbol}. Columns: {list(df_norm.columns if df_norm is not None else [])}"
+                            )
                             missing_symbols_in_batch.append(symbol)
                             continue
 
                         # 2. Filter for requested range after localizing to NY
-                        # This avoids the "UTC roll-over" bug where 8:00 PM EST 
+                        # This avoids the "UTC roll-over" bug where 8:00 PM EST
                         # becomes the next day in UTC and gets filtered out incorrectly.
                         df_norm_est = df_norm.copy()
                         try:
                             if df_norm_est.index.tz is None:
                                 # Assume naive is UTC if it's from YF (usually is) or logic suggests so
-                                df_norm_est.index = df_norm_est.index.tz_localize("UTC").tz_convert("America/New_York")
+                                df_norm_est.index = df_norm_est.index.tz_localize(
+                                    "UTC"
+                                ).tz_convert("America/New_York")
                             else:
-                                df_norm_est.index = df_norm_est.index.tz_convert("America/New_York")
+                                df_norm_est.index = df_norm_est.index.tz_convert(
+                                    "America/New_York"
+                                )
                         except Exception as e_tz:
-                            logging.debug(f"  Hist Fetch Helper: Timezone localization skipped for {symbol}: {e_tz}")
-                        
-                        mask = (df_norm_est.index.date >= start_date) & (df_norm_est.index.date <= end_date)
-                        df_filtered = df_norm.loc[mask].copy() # Apply mask back to original or normalized version
+                            logging.debug(
+                                f"  Hist Fetch Helper: Timezone localization skipped for {symbol}: {e_tz}"
+                            )
+
+                        mask = (df_norm_est.index.date >= start_date) & (
+                            df_norm_est.index.date <= end_date
+                        )
+                        df_filtered = df_norm.loc[
+                            mask
+                        ].copy()  # Apply mask back to original or normalized version
 
                         # 3. Final cleanup (numeric, NaNs, zero-prices)
                         if not df_filtered.empty and "price" in df_filtered.columns:
-                            df_filtered["price"] = pd.to_numeric(df_filtered["price"], errors="coerce")
+                            df_filtered["price"] = pd.to_numeric(
+                                df_filtered["price"], errors="coerce"
+                            )
                             df_filtered.dropna(subset=["price"], inplace=True)
                             df_filtered = df_filtered[df_filtered["price"] > 1e-6]
 
                         if not df_filtered.empty:
                             historical_data[symbol] = df_filtered.sort_index()
-                            logging.info(f"  Hist Fetch Helper: Successfully extracted & cleaned {symbol} ({len(df_filtered)} rows).")
+                            logging.info(
+                                f"  Hist Fetch Helper: Successfully extracted & cleaned {symbol} ({len(df_filtered)} rows)."
+                            )
                         else:
                             # After-hours empties for reliable symbols are expected
                             # (yfinance often returns sparse intraday between sessions).
                             if symbol in RELIABLE_SYMBOLS and market_closed:
-                                logging.info(f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup (after-hours, reliable — expected).")
+                                logging.info(
+                                    f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup (after-hours, reliable — expected)."
+                                )
                             else:
-                                logging.warning(f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup.")
+                                logging.warning(
+                                    f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup."
+                                )
                             missing_symbols_in_batch.append(symbol)
 
                     except Exception as e_sym:
-                        logging.error(f"  Hist Fetch Helper ERROR: Failed to process {symbol}: {e_sym}")
+                        logging.error(
+                            f"  Hist Fetch Helper ERROR: Failed to process {symbol}: {e_sym}"
+                        )
                         missing_symbols_in_batch.append(symbol)
 
             # --- Collect Missing Symbols for Final Cleanup ---
@@ -3161,9 +3673,11 @@ class MarketDataProvider:
         if all_missing_symbols:
             # Deduplicate
             all_missing_symbols = list(set(all_missing_symbols))
-            logging.info(f"  Hist Fetch Helper: Attempting final isolated recovery for {len(all_missing_symbols)} missing symbols...")
-            
-            # Use smaller chunks for recovery to maximize success 
+            logging.info(
+                f"  Hist Fetch Helper: Attempting final isolated recovery for {len(all_missing_symbols)} missing symbols..."
+            )
+
+            # Use smaller chunks for recovery to maximize success
             recovery_batch_size = 5
             for i in range(0, len(all_missing_symbols), recovery_batch_size):
                 rec_batch = all_missing_symbols[i : i + recovery_batch_size]
@@ -3173,98 +3687,143 @@ class MarketDataProvider:
                         start=yf_start_date,
                         end=yf_end_date,
                         interval=interval,
-                        task="history"
+                        task="history",
                     )
-                    
+
                     if not data_rec.empty:
                         for symbol in rec_batch:
                             df_rec = None
                             found_rec = False
                             if isinstance(data_rec.columns, pd.MultiIndex):
                                 if symbol in data_rec.columns.get_level_values(1):
-                                    df_rec = data_rec.xs(symbol, axis=1, level=1, drop_level=True)
+                                    df_rec = data_rec.xs(
+                                        symbol, axis=1, level=1, drop_level=True
+                                    )
                                     found_rec = True
                                 elif symbol in data_rec.columns.get_level_values(0):
                                     df_rec = data_rec[symbol]
                                     found_rec = True
                             else:
-                                matching_cols = [c for c in data_rec.columns if (isinstance(c, (list, tuple)) and c[0] == symbol) or (isinstance(c, str) and c.startswith(f"{symbol}"))]
+                                matching_cols = [
+                                    c
+                                    for c in data_rec.columns
+                                    if (isinstance(c, (list, tuple)) and c[0] == symbol)
+                                    or (
+                                        isinstance(c, str) and c.startswith(f"{symbol}")
+                                    )
+                                ]
                                 if matching_cols:
                                     df_rec = data_rec[matching_cols]
                                     if isinstance(matching_cols[0], (list, tuple)):
                                         df_rec.columns = [c[1] for c in df_rec.columns]
                                     found_rec = True
                                 elif symbol in data_rec.columns:
-                                    df_rec = data_rec[[symbol]].rename(columns={symbol: "Close"})
+                                    df_rec = data_rec[[symbol]].rename(
+                                        columns={symbol: "Close"}
+                                    )
                                     found_rec = True
                                 elif len(rec_batch) == 1:
                                     df_rec = data_rec
                                     found_rec = True
 
                             if found_rec and df_rec is not None and not df_rec.empty:
-                                if "Close" not in df_rec.columns and len(df_rec.columns) == 1:
+                                if (
+                                    "Close" not in df_rec.columns
+                                    and len(df_rec.columns) == 1
+                                ):
                                     df_rec.columns = ["Close"]
-                                
+
                                 if "Close" in df_rec.columns:
-                                    mask = (df_rec.index.date >= start_date) & (df_rec.index.date <= end_date)
+                                    mask = (df_rec.index.date >= start_date) & (
+                                        df_rec.index.date <= end_date
+                                    )
                                     df_filt = df_rec.loc[mask]
                                     if not df_filt.empty:
                                         df_cln = df_filt[["Close"]].copy()
-                                        df_cln.rename(columns={"Close": "price"}, inplace=True)
-                                        df_cln["price"] = pd.to_numeric(df_cln["price"], errors="coerce")
+                                        df_cln.rename(
+                                            columns={"Close": "price"}, inplace=True
+                                        )
+                                        df_cln["price"] = pd.to_numeric(
+                                            df_cln["price"], errors="coerce"
+                                        )
                                         df_cln.dropna(subset=["price"], inplace=True)
                                         df_cln = df_cln[df_cln["price"] > 1e-6]
                                         if not df_cln.empty:
-                                            historical_data[symbol] = df_cln.sort_index()
+                                            historical_data[symbol] = (
+                                                df_cln.sort_index()
+                                            )
 
                 except Exception as e_rec:
-                    logging.warning(f"  Hist Fetch Helper recovery failed for {rec_batch[0]}...: {e_rec}")
+                    logging.warning(
+                        f"  Hist Fetch Helper recovery failed for {rec_batch[0]}...: {e_rec}"
+                    )
 
             # --- IDENTIFY STILL MISSING SYMBOLS & MARK INVALID ---
             final_missing = [s for s in all_missing_symbols if s not in historical_data]
             if final_missing:
-                all_reliable_missing = all(s in RELIABLE_SYMBOLS or s.startswith("^") for s in final_missing)
+                all_reliable_missing = all(
+                    s in RELIABLE_SYMBOLS or s.startswith("^") for s in final_missing
+                )
                 market_closed_now = not is_market_open()
 
                 # Quiet expected after-hours empties for reliable symbols; otherwise warn.
                 if all_reliable_missing and market_closed_now:
-                    logging.info(f"  Hist Fetch Helper: {len(final_missing)} reliable symbols returned no data (after-hours, expected): {final_missing[:10]}...")
+                    logging.info(
+                        f"  Hist Fetch Helper: {len(final_missing)} reliable symbols returned no data (after-hours, expected): {final_missing[:10]}..."
+                    )
                 else:
-                    logging.warning(f"  Hist Fetch Helper: {len(final_missing)} symbols failed recovery: {final_missing[:10]}...")
+                    logging.warning(
+                        f"  Hist Fetch Helper: {len(final_missing)} symbols failed recovery: {final_missing[:10]}..."
+                    )
 
                 # --- SAFETY: High failure rate protection ---
                 # If a large percentage of symbols fail at once, it's likely a systematic issue (rate limit, API down, network, or market closed)
                 # rather than all of them actually being invalid symbols.
                 if len(final_missing) > len(symbols_yf) * 0.5 and len(symbols_yf) > 5:
                     if all_reliable_missing and market_closed_now:
-                        logging.info(f"  Hist Fetch Helper: Systematic absence of data for {len(final_missing)} reliable symbols during after-hours. This is expected.")
+                        logging.info(
+                            f"  Hist Fetch Helper: Systematic absence of data for {len(final_missing)} reliable symbols during after-hours. This is expected."
+                        )
                     else:
-                        logging.warning(f"  Hist Fetch Helper: High failure rate detected ({len(final_missing)}/{len(symbols_yf)}). Skipping cache invalidation to avoid false positives.")
+                        logging.warning(
+                            f"  Hist Fetch Helper: High failure rate detected ({len(final_missing)}/{len(symbols_yf)}). Skipping cache invalidation to avoid false positives."
+                        )
 
-                    final_missing = [] # Emptying this prevents the loop below from marking them as invalid
-                
+                    final_missing = []  # Emptying this prevents the loop below from marking them as invalid
+
                 # Check for rate limit indicators in logs of current execution
                 # If we were rate limited, don't mark anything as invalid.
-                rate_limit_detected = any("429" in msg or "Too Many Requests" in msg for msg in str(all_missing_symbols)) # Heuristic
+                rate_limit_detected = any(
+                    "429" in msg or "Too Many Requests" in msg
+                    for msg in str(all_missing_symbols)
+                )  # Heuristic
                 if rate_limit_detected:
-                    logging.info("  Hist Fetch Helper: Rate limit detected in batch. Skipping cache invalidation.")
+                    logging.info(
+                        "  Hist Fetch Helper: Rate limit detected in batch. Skipping cache invalidation."
+                    )
                     final_missing = []
-                
+
                 for s in final_missing:
                     # SAFETY: Don't mark reliable symbols as invalid based on a transient failure
                     if s.upper() in RELIABLE_SYMBOLS or s.startswith("^"):
-                        logging.info(f"  Hist Fetch Helper: {s} is in RELIABLE_SYMBOLS whitelist. Skipping invalidation.")
+                        logging.info(
+                            f"  Hist Fetch Helper: {s} is in RELIABLE_SYMBOLS whitelist. Skipping invalidation."
+                        )
                         continue
-                    
+
                     # SAFETY: Don't mark as invalid if rate limiting was detected earlier in the loop
                     # Note: all_missing_symbols was built from responses that might have 429s.
-                    
-                    logging.warning(f"  Hist Fetch Helper: Marking {s} as invalid (cached for {INVALID_SYMBOLS_DURATION // 3600}h).")
+
+                    logging.warning(
+                        f"  Hist Fetch Helper: Marking {s} as invalid (cached for {INVALID_SYMBOLS_DURATION // 3600}h)."
+                    )
                     invalid_cache[s] = now_ts
                     cache_needs_update = True
 
         if cache_needs_update:
-            logging.info(f"Hist Fetch Helper: Saving updated invalid symbols cache (Total: {len(invalid_cache)}).")
+            logging.info(
+                f"Hist Fetch Helper: Saving updated invalid symbols cache (Total: {len(invalid_cache)})."
+            )
             self._save_invalid_symbols_cache(invalid_cache)
 
         # --- CACHE WRITE (Intraday) ---
@@ -3276,53 +3835,72 @@ class MarketDataProvider:
                 for sym, df in historical_data.items():
                     self.db.upsert_intraday(sym, df, interval)
             except Exception as e_db_save:
-                logging.error(f"Hist Fetch Helper: Error saving to Intraday DB: {e_db_save}")
+                logging.error(
+                    f"Hist Fetch Helper: Error saving to Intraday DB: {e_db_save}"
+                )
 
         # --- SMART ANCHOR: Inject Daily Open into Intraday gaps ---
         if is_intraday and historical_data:
-            logging.info(f"Hist Fetch Helper: Applying Smart Anchor (Daily-Open Injection) for {len(historical_data)} symbols...")
+            logging.info(
+                f"Hist Fetch Helper: Applying Smart Anchor (Daily-Open Injection) for {len(historical_data)} symbols..."
+            )
             try:
                 # Fetch daily data (1d) for the same symbols and period to get official Open prices
-                # We use recursion but with interval="1d" to bypass this block. 
+                # We use recursion but with interval="1d" to bypass this block.
                 # We also force use_cache=True to make it as fast as possible.
                 daily_data = self._fetch_yf_historical_data(
                     symbols_yf=list(historical_data.keys()),
                     start_date=start_date,
                     end_date=end_date,
                     interval="1d",
-                    use_cache=True
+                    use_cache=True,
                 )
-                
+
                 inject_count = 0
                 for sym, df_intra in historical_data.items():
                     if df_intra.empty:
                         continue
-                        
+
                     # Process each day in the intraday range
                     intra_dates = df_intra.index.normalize().unique()
                     for d in intra_dates:
                         # NY Market Open Time: 09:30 AM
-                        anchor_ts = pd.Timestamp(datetime.combine(d, datetime.strptime("09:30", "%H:%M").time())).tz_localize("America/New_York").tz_convert("UTC")
-                        
+                        anchor_ts = (
+                            pd.Timestamp(
+                                datetime.combine(
+                                    d, datetime.strptime("09:30", "%H:%M").time()
+                                )
+                            )
+                            .tz_localize("America/New_York")
+                            .tz_convert("UTC")
+                        )
+
                         if anchor_ts not in df_intra.index:
                             open_val = None
-                            
+
                             # 1. Try to get from daily_data fetch
                             if sym in daily_data:
                                 df_daily = daily_data[sym]
-                                daily_date_mask = df_daily.index.normalize() == pd.Timestamp(d).normalize()
+                                daily_date_mask = (
+                                    df_daily.index.normalize()
+                                    == pd.Timestamp(d).normalize()
+                                )
                                 if daily_date_mask.any():
                                     row_daily = df_daily[daily_date_mask]
-                                    if "open_price" in row_daily.columns and pd.notna(row_daily["open_price"].iloc[0]):
+                                    if "open_price" in row_daily.columns and pd.notna(
+                                        row_daily["open_price"].iloc[0]
+                                    ):
                                         open_val = row_daily["open_price"].iloc[0]
                                     else:
                                         open_val = row_daily["price"].iloc[0]
-                            
+
                             # 2. Fallback to Ticker.info for 'today' if daily fetch failed (common for active sessions)
                             if open_val is None and d.date() == today:
                                 try:
                                     t_obj = yf.Ticker(sym)
-                                    open_val = t_obj.info.get("regularMarketOpen") or t_obj.info.get("open")
+                                    open_val = t_obj.info.get(
+                                        "regularMarketOpen"
+                                    ) or t_obj.info.get("open")
                                 except Exception:
                                     pass
 
@@ -3332,14 +3910,18 @@ class MarketDataProvider:
                                     df_intra["price"] = np.nan
                                 df_intra.at[anchor_ts, "price"] = open_val
                                 inject_count += 1
-                
+
                 if inject_count > 0:
-                    logging.info(f"Hist Fetch Helper: Injected {inject_count} anchor points (Daily Open) into intraday series.")
+                    logging.info(
+                        f"Hist Fetch Helper: Injected {inject_count} anchor points (Daily Open) into intraday series."
+                    )
                     # Re-sort after injection
                     for sym in historical_data:
                         historical_data[sym] = historical_data[sym].sort_index()
             except Exception as e_anchor:
-                logging.warning(f"Hist Fetch Helper: Smart Anchor injection failed: {e_anchor}")
+                logging.warning(
+                    f"Hist Fetch Helper: Smart Anchor injection failed: {e_anchor}"
+                )
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."
@@ -3390,20 +3972,22 @@ class MarketDataProvider:
 
         loaded_manifest_content = _safe_json_load(manifest_path)
         if loaded_manifest_content:
-                if (
-                    not isinstance(loaded_manifest_content, dict)
-                    or loaded_manifest_content.get("global_version") != "1.2"
-                ):  # Check for new version
-                    logging.warning(
-                        f"Hist Cache Load ({data_type}): Manifest file '{manifest_path}' is old version or invalid structure. Ignoring cache and rebuilding."
-                    )
-                    # Optionally, delete the old manifest here to force a clean save later
-                    return loaded_symbol_data, False
-                manifest = loaded_manifest_content
+            if (
+                not isinstance(loaded_manifest_content, dict)
+                or loaded_manifest_content.get("global_version") != "1.2"
+            ):  # Check for new version
+                logging.warning(
+                    f"Hist Cache Load ({data_type}): Manifest file '{manifest_path}' is old version or invalid structure. Ignoring cache and rebuilding."
+                )
+                # Optionally, delete the old manifest here to force a clean save later
+                return loaded_symbol_data, False
+            manifest = loaded_manifest_content
         else:
             # If manifest exists but safe_load failed (corrupt), delete it
             if os.path.exists(manifest_path):
-                logging.error(f"Hist Cache Load ({data_type}): Manifest '{manifest_path}' is corrupt. Deleting.")
+                logging.error(
+                    f"Hist Cache Load ({data_type}): Manifest '{manifest_path}' is corrupt. Deleting."
+                )
                 try:
                     os.remove(manifest_path)
                 except Exception:
@@ -3485,7 +4069,7 @@ class MarketDataProvider:
         cache_key_to_save: str,
         data_to_save_map: Dict[str, pd.DataFrame],
         data_type: str = "price",
-        interval: str = "1d"
+        interval: str = "1d",
     ):
         """Saves individual symbol historical data files and updates the manifest.json."""
         manifest_path = self._get_historical_manifest_path()
@@ -3510,19 +4094,21 @@ class MarketDataProvider:
             try:
                 # Serialize DataFrame to JSON string
                 json_str = df_data.to_json(orient="split", date_format="iso")
-                
+
                 # ATOMIC WRITE: Write to UNIQUE temp file first, then rename
                 # Use tempfile.NamedTemporaryFile in the same directory to ensure atomic move
                 target_dir = os.path.dirname(symbol_file_path)
-                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=target_dir, delete=False) as tf:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", dir=target_dir, delete=False
+                ) as tf:
                     temp_file_path = tf.name
                     tf.write(json_str)
                     tf.flush()
-                    os.fsync(tf.fileno()) # Ensure write to disk
-                
+                    os.fsync(tf.fileno())  # Ensure write to disk
+
                 # Atomic replace
                 os.replace(temp_file_path, symbol_file_path)
-                
+
                 current_manifest_symbol_entries[yf_symbol] = (
                     True  # Could store mtime or hash here later
                 )
@@ -3575,14 +4161,16 @@ class MarketDataProvider:
         try:
             # ATOMIC WRITE: Write to UNIQUE temp file first, then rename
             target_dir = os.path.dirname(manifest_path)
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=target_dir, delete=False) as tf:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=target_dir, delete=False
+            ) as tf:
                 temp_manifest_path = tf.name
-                json.dump(full_manifest_content, tf, indent=2) 
+                json.dump(full_manifest_content, tf, indent=2)
                 tf.flush()
-                os.fsync(tf.fileno()) # Ensure write to disk
-            
+                os.fsync(tf.fileno())  # Ensure write to disk
+
             os.replace(temp_manifest_path, manifest_path)
-            
+
             # CORRECTED: Use full_manifest_content (Logic preserved from original block)
             logging.info(
                 f"Hist Cache Save ({data_type}): Manifest updated at {manifest_path}"
@@ -3599,24 +4187,24 @@ class MarketDataProvider:
             return df
         try:
             # Using StringIO as pd.read_json expects a file-like object or path for string input
-            df_temp = pd.read_json(
-                StringIO(data_json_str), orient="split", dtype=None 
-            )
+            df_temp = pd.read_json(StringIO(data_json_str), orient="split", dtype=None)
             df_temp.index = pd.to_datetime(df_temp.index, errors="coerce", utc=True)
-            
+
             # --- FIX: Support legacy cache keys (Close/Adj Close) ---
             if "price" not in df_temp.columns and not df_temp.empty:
-                 if "Close" in df_temp.columns:
-                     df_temp.rename(columns={"Close": "price"}, inplace=True)
-                 elif "Adj Close" in df_temp.columns:
-                     df_temp.rename(columns={"Adj Close": "price"}, inplace=True)
-                 elif len(df_temp.columns) == 1:
-                     # Fallback to first column
-                     df_temp.rename(columns={df_temp.columns[0]: "price"}, inplace=True)
+                if "Close" in df_temp.columns:
+                    df_temp.rename(columns={"Close": "price"}, inplace=True)
+                elif "Adj Close" in df_temp.columns:
+                    df_temp.rename(columns={"Adj Close": "price"}, inplace=True)
+                elif len(df_temp.columns) == 1:
+                    # Fallback to first column
+                    df_temp.rename(columns={df_temp.columns[0]: "price"}, inplace=True)
 
             if "price" in df_temp.columns:
                 df_temp["price"] = pd.to_numeric(df_temp["price"], errors="coerce")
-                df_temp = df_temp.dropna(subset=["price"])  # Ensure 'price' column has valid data
+                df_temp = df_temp.dropna(
+                    subset=["price"]
+                )  # Ensure 'price' column has valid data
             df_temp = df_temp[pd.notnull(df_temp.index)]  # Ensure index is valid dates
             if not df_temp.empty:
                 df = df_temp.sort_index()
@@ -3666,26 +4254,36 @@ class MarketDataProvider:
         return deserialized_dict
 
     @profile
-    def _sync_to_db(self, symbols: List[str], start_date: date, end_date: date, data_type: str = "price", interval: str = "1d", integrity_check_symbols: Optional[Set[str]] = None):
+    def _sync_to_db(
+        self,
+        symbols: List[str],
+        start_date: date,
+        end_date: date,
+        data_type: str = "price",
+        interval: str = "1d",
+        integrity_check_symbols: Optional[Set[str]] = None,
+    ):
         """
         Internal helper to synchronize YF data to the persistent DB.
         Implements the 'Overlapping Refresh' logic for data integrity.
         """
-        is_fx = (data_type == "fx")
+        is_fx = data_type == "fx"
         if interval != "1d":
             # Extra safety, though caller should handle this
-            return self._fetch_yf_historical_data(symbols, start_date, end_date, interval=interval)
+            return self._fetch_yf_historical_data(
+                symbols, start_date, end_date, interval=interval
+            )
 
         # 0. Sync Throttling (Batched)
         now = datetime.now()
         sync_needed = []
-        
+
         if not symbols:
             return
 
         # Batch 1: Get Last Synced Times
         last_synced_map = self.db.get_sync_metadata_batch(symbols)
-        
+
         # Determine which symbols *might* need sync based on time threshold
         potential_sync = []
         for sym in symbols:
@@ -3695,23 +4293,31 @@ class MarketDataProvider:
                     last_ts = datetime.fromisoformat(last_ts_str)
                     elapsed = now - last_ts
                     is_stale = elapsed >= timedelta(hours=4)
-                    
-                    # RELAXATION: If synced today, allow 15-min staleness during market hours 
+
+                    # RELAXATION: If synced today, allow 15-min staleness during market hours
                     # to keep the 'Today' daily bar fresh for TWR/YTD calculations.
-                    if not is_stale and last_ts.date() == now.date() and is_market_open():
+                    if (
+                        not is_stale
+                        and last_ts.date() == now.date()
+                        and is_market_open()
+                    ):
                         if elapsed >= timedelta(minutes=15):
                             is_stale = True
-                    
+
                     # If synced yesterday but market is now open today, force a sync to get 'Today' row
-                    if not is_stale and last_ts.date() < now.date() and is_market_open():
+                    if (
+                        not is_stale
+                        and last_ts.date() < now.date()
+                        and is_market_open()
+                    ):
                         is_stale = True
-                        
+
                     if not is_stale:
                         continue
                 except (ValueError, TypeError):
-                    pass # Corrupt timestamp, sync anyway
+                    pass  # Corrupt timestamp, sync anyway
             potential_sync.append(sym)
-            
+
         if not potential_sync:
             return
 
@@ -3719,14 +4325,14 @@ class MarketDataProvider:
         table_name = "daily_ohlcv" if not is_fx else "daily_fx"
         last_db_dates_map = self.db.get_last_dates(potential_sync, table=table_name)
         first_db_dates_map = self.db.get_first_dates(potential_sync, table=table_name)
-        
+
         for sym in potential_sync:
             last_db_date = last_db_dates_map.get(sym)
             first_db_date = first_db_dates_map.get(sym)
-            
+
             fetch_start = start_date
             needs_sync = False
-            
+
             if not last_db_date:
                 needs_sync = True
             else:
@@ -3735,7 +4341,7 @@ class MarketDataProvider:
                     needs_sync = True
                     # 5-day overlap for integrity
                     fetch_start = min(start_date, last_db_date - timedelta(days=5))
-                
+
                 # Check for Backward Gap (Missing older history)
                 if first_db_date and start_date < first_db_date:
                     needs_sync = True
@@ -3750,45 +4356,63 @@ class MarketDataProvider:
 
         # 2. Perform fetches
         from collections import defaultdict
+
         by_start = defaultdict(list)
         for s, start in sync_needed:
             by_start[start].append(s)
-            
+
         for start, syms in by_start.items():
-            logging.info(f"Syncing {len(syms)} {data_type} symbols to DB from {start} to {end_date}...")
+            logging.info(
+                f"Syncing {len(syms)} {data_type} symbols to DB from {start} to {end_date}..."
+            )
             if not is_fx:
-                fetched = self._fetch_yf_historical_data(syms, start, end_date, interval=interval)
+                fetched = self._fetch_yf_historical_data(
+                    syms, start, end_date, interval=interval
+                )
                 for s, df in fetched.items():
                     if not df.empty:
                         # OPTIMIZATION: Only perform expensive integrity check (and potential full re-fetch)
                         # for high-priority or currently held symbols.
-                        should_check = (integrity_check_symbols is None) or (s in integrity_check_symbols)
-                        
+                        should_check = (integrity_check_symbols is None) or (
+                            s in integrity_check_symbols
+                        )
+
                         consistent = True
                         if should_check:
                             consistent, reason = self.db.check_integrity(s, df)
-                            
+
                         if not consistent:
-                            logging.warning(f"Market DB Integrity: {reason}. Triggering full re-fetch for {s}.")
+                            logging.warning(
+                                f"Market DB Integrity: {reason}. Triggering full re-fetch for {s}."
+                            )
                             inception = date(2000, 1, 1)
-                            full_df_map = self._fetch_yf_historical_data([s], inception, end_date, interval=interval)
+                            full_df_map = self._fetch_yf_historical_data(
+                                [s], inception, end_date, interval=interval
+                            )
                             if s in full_df_map:
-                                self.db.upsert_ohlcv(s, full_df_map[s], interval=interval)
+                                self.db.upsert_ohlcv(
+                                    s, full_df_map[s], interval=interval
+                                )
                         else:
                             self.db.upsert_ohlcv(s, df, interval=interval)
             else:
-                fetched_fx = self._fetch_yf_historical_data(syms, start, end_date, interval=interval)
+                fetched_fx = self._fetch_yf_historical_data(
+                    syms, start, end_date, interval=interval
+                )
                 for s, df in fetched_fx.items():
                     if not df.empty:
                         self.db.upsert_fx(s, df, interval=interval)
-        
+
         # 3. Update metadata
         with self.db._get_connection() as conn:
             for sym in symbols:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO sync_metadata (symbol, last_synced)
                     VALUES (?, ?)
-                """, (sym, now.isoformat()))
+                """,
+                    (sym, now.isoformat()),
+                )
             conn.commit()
 
     def get_historical_data(
@@ -3810,11 +4434,15 @@ class MarketDataProvider:
         if interval == "D":
             interval = "1d"
 
-        logging.info(f"Hist Prices (DB): Fetching {len(symbols_yf)} symbols ({start_date} to {end_date})...")
+        logging.info(
+            f"Hist Prices (DB): Fetching {len(symbols_yf)} symbols ({start_date} to {end_date})..."
+        )
 
         # 0. Bypass DB for intraday data
         if interval != "1d":
-            return self._fetch_yf_historical_data(symbols_yf, start_date, end_date, interval=interval, use_cache=use_cache), False
+            return self._fetch_yf_historical_data(
+                symbols_yf, start_date, end_date, interval=interval, use_cache=use_cache
+            ), False
 
         # 0.5 Check for Static Prices (User overrides)
         static_data: Dict[str, pd.DataFrame] = {}
@@ -3823,78 +4451,112 @@ class MarketDataProvider:
             df_static = self._load_static_prices(sym)
             if df_static is not None:
                 # Mask to requested range
-                mask = (df_static.index.date >= start_date) & (df_static.index.date <= end_date)
+                mask = (df_static.index.date >= start_date) & (
+                    df_static.index.date <= end_date
+                )
                 static_data[sym] = df_static.loc[mask]
-                logging.info(f"Hist Prices: Loaded {len(static_data[sym])} rows from STATIC price table for {sym}")
+                logging.info(
+                    f"Hist Prices: Loaded {len(static_data[sym])} rows from STATIC price table for {sym}"
+                )
             else:
                 non_static_symbols.append(sym)
 
         # 1. Sync missing range to DB (with 5-day overlap for integrity)
         if use_cache and non_static_symbols:
             try:
-                self._sync_to_db(symbols_yf, start_date, end_date, data_type="price", interval=interval, integrity_check_symbols=integrity_check_symbols)
+                self._sync_to_db(
+                    symbols_yf,
+                    start_date,
+                    end_date,
+                    data_type="price",
+                    interval=interval,
+                    integrity_check_symbols=integrity_check_symbols,
+                )
             except Exception as e:
                 logging.error(f"Error syncing to Market DB: {e}")
                 # Continue anyway, we'll try to pull from DB what we have or YF directly if needed
 
         # 2. Pull everything from DB (Batched)
         historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-        
-        db_results = self.db.get_ohlcv_batch(symbols_yf, start_date, end_date, interval=interval)
+
+        db_results = self.db.get_ohlcv_batch(
+            symbols_yf, start_date, end_date, interval=interval
+        )
         if db_results:
-             # Normalize columns to match expected 'price' format
-             for sym, df_db in db_results.items():
-                 if df_db.empty:
-                     continue
-                 
-                 # Prefer raw Close (the historical price the user saw). Adj
-                 # Close folds in future dividends and produces phantom
-                 # day-1 losses on every buy of a dividend-paying asset.
-                 price_series = None
-                 if "Close" in df_db.columns:
-                     price_series = df_db["Close"]
-                 elif "Adj Close" in df_db.columns:
-                     price_series = df_db["Adj Close"]
-                
-                 if price_series is not None:
-                     df_clean = price_series.to_frame(name="price")
-                     if "Volume" in df_db.columns:
-                         df_clean["Volume"] = df_db["Volume"]
-                     # Normalize index to UTC once at the source so downstream
-                     # code (valuation, standardization) doesn't repeat this.
-                     if not isinstance(df_clean.index, pd.DatetimeIndex) or df_clean.index.tz is None:
-                         df_clean.index = pd.to_datetime(df_clean.index, utc=True)
-                     historical_prices_yf_adjusted[sym] = df_clean
-                     
+            # Normalize columns to match expected 'price' format
+            for sym, df_db in db_results.items():
+                if df_db.empty:
+                    continue
+
+                # Prefer raw Close (the historical price the user saw). Adj
+                # Close folds in future dividends and produces phantom
+                # day-1 losses on every buy of a dividend-paying asset.
+                price_series = None
+                if "Close" in df_db.columns:
+                    price_series = df_db["Close"]
+                elif "Adj Close" in df_db.columns:
+                    price_series = df_db["Adj Close"]
+
+                if price_series is not None:
+                    df_clean = price_series.to_frame(name="price")
+                    if "Volume" in df_db.columns:
+                        df_clean["Volume"] = df_db["Volume"]
+                    # Normalize index to UTC once at the source so downstream
+                    # code (valuation, standardization) doesn't repeat this.
+                    if (
+                        not isinstance(df_clean.index, pd.DatetimeIndex)
+                        or df_clean.index.tz is None
+                    ):
+                        df_clean.index = pd.to_datetime(df_clean.index, utc=True)
+                    historical_prices_yf_adjusted[sym] = df_clean
+
         # Merge static data back in
         historical_prices_yf_adjusted.update(static_data)
-                     
+
         # 3. Validation and fallback
         fetch_failed = False
-        missing = [s for s in symbols_yf if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty]
-        
+        missing = [
+            s
+            for s in symbols_yf
+            if s not in historical_prices_yf_adjusted
+            or historical_prices_yf_adjusted[s].empty
+        ]
+
         if missing:
-            logging.warning(f"Hist Prices: {len(missing)} symbols missing from DB after sync: {missing}")
+            logging.warning(
+                f"Hist Prices: {len(missing)} symbols missing from DB after sync: {missing}"
+            )
             # Try direct fetch as fallback
             # We fetch directly using the helper which bypasses DB read but does standard processing
-            if use_cache: 
-                logging.info(f"Hist Prices: Triggering direct fallback fetch for {len(missing)} missing symbols...")
-                fallback_data = self._fetch_yf_historical_data(missing, start_date, end_date, interval=interval)
-                
+            if use_cache:
+                logging.info(
+                    f"Hist Prices: Triggering direct fallback fetch for {len(missing)} missing symbols..."
+                )
+                fallback_data = self._fetch_yf_historical_data(
+                    missing, start_date, end_date, interval=interval
+                )
+
                 # Merge fallback results
                 for sym, df in fallback_data.items():
                     if not df.empty:
                         historical_prices_yf_adjusted[sym] = df
                         # Optional: could update DB here, but _sync_to_db already tried and presumably failed or skipped
                         # Maybe we don't spam attempts to write if it just failed.
-                        
+
                 # Re-check missing
-                still_missing = [s for s in missing if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty]
+                still_missing = [
+                    s
+                    for s in missing
+                    if s not in historical_prices_yf_adjusted
+                    or historical_prices_yf_adjusted[s].empty
+                ]
                 if still_missing:
-                     fetch_failed = True
-                     logging.warning(f"Hist Prices: Still missing {len(still_missing)} symbols after fallback: {still_missing}")
+                    fetch_failed = True
+                    logging.warning(
+                        f"Hist Prices: Still missing {len(still_missing)} symbols after fallback: {still_missing}"
+                    )
                 else:
-                     fetch_failed = False # Recovered
+                    fetch_failed = False  # Recovered
             else:
                 fetch_failed = True
 
@@ -3905,7 +4567,9 @@ class MarketDataProvider:
         for yf_symbol, df in data_map.items():
             if df is None or df.empty:
                 continue
-            symbol_file_path = self._get_historical_symbol_data_path(yf_symbol, data_type=data_type, interval=interval)
+            symbol_file_path = self._get_historical_symbol_data_path(
+                yf_symbol, data_type=data_type, interval=interval
+            )
             try:
                 df.to_json(symbol_file_path, orient="split", date_format="iso")
             except Exception as e:
@@ -3930,14 +4594,24 @@ class MarketDataProvider:
             interval = "1d"
 
         if interval != "1d":
-            return self._fetch_yf_historical_data(fx_pairs_yf, start_date, end_date, interval=interval, use_cache=use_cache), False
+            return self._fetch_yf_historical_data(
+                fx_pairs_yf,
+                start_date,
+                end_date,
+                interval=interval,
+                use_cache=use_cache,
+            ), False
 
-        logging.info(f"Hist FX (DB): Fetching {len(fx_pairs_yf)} pairs ({start_date} to {end_date})...")
+        logging.info(
+            f"Hist FX (DB): Fetching {len(fx_pairs_yf)} pairs ({start_date} to {end_date})..."
+        )
 
         # 1. Sync missing range to DB
         if use_cache:
             try:
-                self._sync_to_db(fx_pairs_yf, start_date, end_date, data_type="fx", interval=interval)
+                self._sync_to_db(
+                    fx_pairs_yf, start_date, end_date, data_type="fx", interval=interval
+                )
             except Exception as e:
                 logging.error(f"Error syncing FX to Market DB: {e}")
 
@@ -3950,15 +4624,23 @@ class MarketDataProvider:
 
         # 3. Validation
         fetch_failed = False
-        missing = [p for p in fx_pairs_yf if p not in historical_fx_yf or historical_fx_yf[p].empty]
+        missing = [
+            p
+            for p in fx_pairs_yf
+            if p not in historical_fx_yf or historical_fx_yf[p].empty
+        ]
         if missing:
-            logging.warning(f"Hist FX: {len(missing)} pairs missing from DB after sync: {missing}")
+            logging.warning(
+                f"Hist FX: {len(missing)} pairs missing from DB after sync: {missing}"
+            )
             fetch_failed = True
 
         return historical_fx_yf, fetch_failed
 
     @profile
-    def get_fundamental_data(self, yf_symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
+    def get_fundamental_data(
+        self, yf_symbol: str, force_refresh: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Fetches fundamental data (ticker.info) for a given Yahoo Finance symbol.
         Uses a directory of JSON files for caching (one file per symbol).
@@ -3979,7 +4661,9 @@ class MarketDataProvider:
             logging.warning(f"Invalid yf_symbol provided for fundamentals: {yf_symbol}")
             return None
 
-        logging.debug(f"Requesting fundamental data for YF symbol: {yf_symbol} (force_refresh={force_refresh})")
+        logging.debug(
+            f"Requesting fundamental data for YF symbol: {yf_symbol} (force_refresh={force_refresh})"
+        )
 
         # --- Construct cache file path for this specific symbol ---
         # Ensure the cache directory exists (already done in __init__, but safe to repeat)
@@ -4001,7 +4685,7 @@ class MarketDataProvider:
                     cache_timestamp_str = symbol_cache_entry.get("timestamp")
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                        
+
                         # --- SMART CACHING ---
                         # Expiry is re-derived from the entry itself rather than
                         # read back from `valid_until`. That stored value is only
@@ -4015,7 +4699,8 @@ class MarketDataProvider:
                         valid_until = fundamentals_valid_until(
                             entry_data,
                             cache_timestamp,
-                            cache_timestamp + timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS),
+                            cache_timestamp
+                            + timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS),
                         )
                         is_valid = datetime.now(timezone.utc) < valid_until
                         if not is_valid:
@@ -4027,32 +4712,50 @@ class MarketDataProvider:
                             cached_data = symbol_cache_entry.get("data")
                             # CRITICAL: Reject "empty" or "poisoned" cache entries
                             is_poisoned = cached_data is None or len(cached_data) <= 8
-                            if cached_data and cached_data.get("quoteType", "").upper() == "EQUITY":
+                            if (
+                                cached_data
+                                and cached_data.get("quoteType", "").upper() == "EQUITY"
+                            ):
                                 # If missing both identifiers, it's likely a poisoned lookup
-                                if not cached_data.get("lastFiscalYearEnd") and not cached_data.get("mostRecentQuarter"):
+                                if not cached_data.get(
+                                    "lastFiscalYearEnd"
+                                ) and not cached_data.get("mostRecentQuarter"):
                                     is_poisoned = True
-                                    
+
                             if not is_poisoned:
                                 cache_valid = True
-                                logging.debug(f"Using valid fundamentals cache for {yf_symbol} from file")
+                                logging.debug(
+                                    f"Using valid fundamentals cache for {yf_symbol} from file"
+                                )
                             else:
-                                logging.info(f"Rejecting poisoned/empty/incomplete fundamentals cache for {yf_symbol} (Keys: {len(cached_data) if cached_data else 0}). PURGING FILE.")
+                                logging.info(
+                                    f"Rejecting poisoned/empty/incomplete fundamentals cache for {yf_symbol} (Keys: {len(cached_data) if cached_data else 0}). PURGING FILE."
+                                )
                                 cache_valid = False
                                 try:
                                     os.remove(symbol_cache_file)
-                                    logging.info(f"Purged corrupt cache file: {symbol_cache_file}")
+                                    logging.info(
+                                        f"Purged corrupt cache file: {symbol_cache_file}"
+                                    )
                                 except Exception as e_del:
-                                    logging.error(f"Failed to purge corrupt cache file {symbol_cache_file}: {e_del}")
+                                    logging.error(
+                                        f"Failed to purge corrupt cache file {symbol_cache_file}: {e_del}"
+                                    )
 
                     # --- ETF CACHE FRESHNESS CHECK ---
                     if cache_valid and cached_data:
-                         qt = str(cached_data.get('quoteType', '')).upper()
-                         if qt in ('ETF', 'MUTUALFUND') and 'etf_data' not in cached_data:
-                             # If cache is valid (within 24h) but missing ETF data, force refresh
-                             age = datetime.now(timezone.utc) - cache_timestamp
-                             if age > timedelta(minutes=5):
-                                 logging.info(f"Cache valid but missing ETF data for {yf_symbol} ({qt}). Forcing refresh (age: {age}).")
-                                 cache_valid = False
+                        qt = str(cached_data.get("quoteType", "")).upper()
+                        if (
+                            qt in ("ETF", "MUTUALFUND")
+                            and "etf_data" not in cached_data
+                        ):
+                            # If cache is valid (within 24h) but missing ETF data, force refresh
+                            age = datetime.now(timezone.utc) - cache_timestamp
+                            if age > timedelta(minutes=5):
+                                logging.info(
+                                    f"Cache valid but missing ETF data for {yf_symbol} ({qt}). Forcing refresh (age: {age})."
+                                )
+                                cache_valid = False
                     # ---------------------------------
                     else:
                         if not cache_valid:
@@ -4070,7 +4773,9 @@ class MarketDataProvider:
                 if _ry is not None:
                     cached_data["dividendYield"] = _ry
             except Exception as _e_ry:
-                logging.debug(f"robust_dividend_yield (cache hit) failed for {yf_symbol}: {_e_ry}")
+                logging.debug(
+                    f"robust_dividend_yield (cache hit) failed for {yf_symbol}: {_e_ry}"
+                )
             return cached_data
 
         # --- Isolated Fetching Logic ---
@@ -4081,7 +4786,7 @@ class MarketDataProvider:
             # Use isolated fetch for single symbol info
             info_result = _run_isolated_fetch([yf_symbol], task="info")
             data = info_result.get(yf_symbol, {})
-            
+
             if not data:
                 logging.warning(
                     f"No fundamental data returned by isolated fetch for {yf_symbol}."
@@ -4091,11 +4796,10 @@ class MarketDataProvider:
             # --- ETF DATA EXTRACTION (Isolated) ---
             # _run_isolated_fetch for 'info' now returns etf_data inside the 'info' dict.
             # No need for direct Ticker instantiation here.
-            etf_data = data.get('etf_data')
+            etf_data = data.get("etf_data")
             if etf_data:
                 logging.info(f"Using ETF data from isolated fetch for {yf_symbol}")
             # --- END ETF DATA EXTRACTION ---
-
 
             # --- NORMALIZE YIELD IN PLACE (Consistency with Watchlist) ---
             # Define CACHE_VERSION here too if needed, or import. Using 2.
@@ -4105,12 +4809,17 @@ class MarketDataProvider:
                 if div_yield is not None:
                     data["dividendYield"] = div_yield
             except Exception as e_norm_detail:
-                logging.warning(f"Error normalizing yield in detail fetch for {yf_symbol}: {e_norm_detail}")
+                logging.warning(
+                    f"Error normalizing yield in detail fetch for {yf_symbol}: {e_norm_detail}"
+                )
             # --- END NORMALIZATION ---
 
             # --- FIX: Populate expenseRatio from netExpenseRatio if missing ---
             # yfinance often returns expenseRatio as None for ETFs, but netExpenseRatio acts as the value.
-            if data.get("expenseRatio") is None and data.get("netExpenseRatio") is not None:
+            if (
+                data.get("expenseRatio") is None
+                and data.get("netExpenseRatio") is not None
+            ):
                 data["expenseRatio"] = data.get("netExpenseRatio")
 
             # --- SMART CACHING CALCULATION ---
@@ -4125,12 +4834,14 @@ class MarketDataProvider:
                         f"(standard would be {default_until.isoformat()})"
                     )
             except Exception as e_smart:
-                logging.warning(f"Error calculating smart cache expiry for {yf_symbol}: {e_smart}")
+                logging.warning(
+                    f"Error calculating smart cache expiry for {yf_symbol}: {e_smart}"
+                )
                 valid_until = default_until
 
-            # Use data.get('_fetch_timestamp') if provided, else use now. 
+            # Use data.get('_fetch_timestamp') if provided, else use now.
             # In this isolated fetch context, we just fetched it.
-            data['_fetch_timestamp'] = now_ts.isoformat()
+            data["_fetch_timestamp"] = now_ts.isoformat()
 
             # Save to cache (only this symbol's file)
             # CRITICAL: Validate data before saving to prevent cache poisoning
@@ -4158,7 +4869,9 @@ class MarketDataProvider:
                         f"Failed to write fundamentals cache file for {yf_symbol} ('{symbol_cache_file}'): {e_cache_write}"
                     )
             else:
-                logging.warning(f"Not saving fundamentals for {yf_symbol} - insufficient data (poison check failed)")
+                logging.warning(
+                    f"Not saving fundamentals for {yf_symbol} - insufficient data (poison check failed)"
+                )
 
             return data
         except Exception as e_fetch:
@@ -4195,17 +4908,21 @@ class MarketDataProvider:
             if cache_timestamp_str:
                 cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
                 data_json_str = cached_entry.get("data_df_json")
-                
+
                 # Determine cache duration based on data content
                 # If data is empty, use a short cache (15 mins) to allow retries
                 is_empty_data = False
-                if not data_json_str or data_json_str == "{}" or '"data":[]' in data_json_str:
+                if (
+                    not data_json_str
+                    or data_json_str == "{}"
+                    or '"data":[]' in data_json_str
+                ):
                     is_empty_data = True
-                
+
                 cache_duration = timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS)
                 if is_empty_data:
                     cache_duration = timedelta(minutes=15)
-                    
+
                 if datetime.now(timezone.utc) - cache_timestamp < cache_duration:
                     if data_json_str:
                         # Deserialize DataFrame from JSON string
@@ -4218,7 +4935,9 @@ class MarketDataProvider:
                         # return empty DF if within short cache window
                         return pd.DataFrame()
                 else:
-                    logging.debug(f"Cache expired for {period_type} {statement_type} of {yf_symbol} (Empty: {is_empty_data})")
+                    logging.debug(
+                        f"Cache expired for {period_type} {statement_type} of {yf_symbol} (Empty: {is_empty_data})"
+                    )
         return None
 
     def _save_statement_data_to_cache(
@@ -4264,7 +4983,11 @@ class MarketDataProvider:
             )
 
     def _fetch_statement_data(
-        self, yf_symbol: str, statement_type: str, period_type: str = "annual", force_refresh: bool = False
+        self,
+        yf_symbol: str,
+        statement_type: str,
+        period_type: str = "annual",
+        force_refresh: bool = False,
     ) -> Optional[pd.DataFrame]:
         """
         Generic helper to fetch statement data, checking cache first (unless forced).
@@ -4304,11 +5027,11 @@ class MarketDataProvider:
                     [yf_symbol],
                     task="statement",
                     statement_type=statement_type,
-                    period_type=period_type
+                    period_type=period_type,
                 )
-                
-                if df is None:  
-                    df = pd.DataFrame() 
+
+                if df is None:
+                    df = pd.DataFrame()
 
                 self._save_statement_data_to_cache(
                     yf_symbol, statement_type, period_type, df
@@ -4338,7 +5061,9 @@ class MarketDataProvider:
         self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
         """Income Statement, extended with SEC-filed history for annual periods."""
-        df = self._fetch_statement_data(yf_symbol, "financials", period_type, force_refresh)
+        df = self._fetch_statement_data(
+            yf_symbol, "financials", period_type, force_refresh
+        )
         return _with_edgar_history(yf_symbol, "financials", period_type, df)
 
     @profile
@@ -4346,7 +5071,9 @@ class MarketDataProvider:
         self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
         """Balance Sheet, extended with SEC-filed history for annual periods."""
-        df = self._fetch_statement_data(yf_symbol, "balance_sheet", period_type, force_refresh)
+        df = self._fetch_statement_data(
+            yf_symbol, "balance_sheet", period_type, force_refresh
+        )
         return _with_edgar_history(yf_symbol, "balance_sheet", period_type, df)
 
     @profile
@@ -4354,7 +5081,9 @@ class MarketDataProvider:
         self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
         """Cash Flow Statement, extended with SEC-filed history for annual periods."""
-        df = self._fetch_statement_data(yf_symbol, "cashflow", period_type, force_refresh)
+        df = self._fetch_statement_data(
+            yf_symbol, "cashflow", period_type, force_refresh
+        )
         return _with_edgar_history(yf_symbol, "cashflow", period_type, df)
 
     def get_exchange_for_symbol(self, yf_symbol: str) -> Optional[str]:
@@ -4423,9 +5152,8 @@ class MarketDataProvider:
                 tickers=[yf_symbol],
                 period=fetch_period,
                 interval=interval,
-                task="history"
+                task="history",
             )
-
 
             if data.empty:
                 logging.warning(
@@ -4477,6 +5205,7 @@ class MarketDataProvider:
 _SHARED_MDP = None
 _MDP_LOCK = threading.Lock()
 
+
 def get_shared_mdp(hist_data_cache_dir_name="historical_data_cache"):
     """
     Returns a singleton instance of MarketDataProvider.
@@ -4485,6 +5214,7 @@ def get_shared_mdp(hist_data_cache_dir_name="historical_data_cache"):
     with _MDP_LOCK:
         if _SHARED_MDP is None:
             # Import here to avoid circular imports if any
-            _SHARED_MDP = MarketDataProvider(hist_data_cache_dir_name=hist_data_cache_dir_name)
+            _SHARED_MDP = MarketDataProvider(
+                hist_data_cache_dir_name=hist_data_cache_dir_name
+            )
     return _SHARED_MDP
-

@@ -72,20 +72,24 @@ class TestUnits:
         assert m["roa"] == 0.27
 
     def test_leverage_ratios_are_percent_points(self):
-        m = _metrics(facts={
-            "LongTermDebtNoncurrent": {"2026-03-31": 300.0},
-            "StockholdersEquity": {"2026-03-31": 600.0},
-        })
-        assert m["debt_equity"] == 45.0        # Yahoo's, passed through
-        assert m["lt_debt_equity"] == 50.0     # filed, scaled to match
+        m = _metrics(
+            facts={
+                "LongTermDebtNoncurrent": {"2026-03-31": 300.0},
+                "StockholdersEquity": {"2026-03-31": 600.0},
+            }
+        )
+        assert m["debt_equity"] == 45.0  # Yahoo's, passed through
+        assert m["lt_debt_equity"] == 50.0  # filed, scaled to match
 
     def test_negative_book_equity_reports_no_leverage_ratio(self):
         # The ratio flips sign rather than growing, so a number here would be
         # actively misleading.
-        m = _metrics(facts={
-            "LongTermDebtNoncurrent": {"2026-03-31": 300.0},
-            "StockholdersEquity": {"2026-03-31": -600.0},
-        })
+        m = _metrics(
+            facts={
+                "LongTermDebtNoncurrent": {"2026-03-31": 300.0},
+                "StockholdersEquity": {"2026-03-31": -600.0},
+            }
+        )
         assert m["lt_debt_equity"] is None
 
 
@@ -126,9 +130,9 @@ class TestFiledHistory:
         assert m["pe_ratio"] == 20.0
 
     def test_growth_through_a_loss_is_not_reported(self):
-        m = _metrics(facts={
-            "EarningsPerShareDiluted": {"2023-03-31": -1.0, "2026-03-31": 4.0}
-        })
+        m = _metrics(
+            facts={"EarningsPerShareDiluted": {"2023-03-31": -1.0, "2026-03-31": 4.0}}
+        )
         assert m["eps_growth_3y"] is None
 
 
@@ -136,10 +140,14 @@ class TestEarnings:
     def test_eps_surprise_is_converted_to_a_fraction(self):
         # Yahoo stashes this one in percent points; everything else on the wire
         # is a fraction.
-        m = _metrics({"_earnings_history": {
-            "2025-12-31": {"eps_actual": 1.0, "surprise_pct": 4.0},
-            "2026-03-31": {"eps_actual": 2.0, "surprise_pct": 6.74},
-        }})
+        m = _metrics(
+            {
+                "_earnings_history": {
+                    "2025-12-31": {"eps_actual": 1.0, "surprise_pct": 4.0},
+                    "2026-03-31": {"eps_actual": 2.0, "surprise_pct": 6.74},
+                }
+            }
+        )
         assert m["eps_surprise"] == 0.0674
 
     def test_days_to_earnings_counts_from_the_given_market_day(self):
@@ -207,15 +215,20 @@ class TestClientParity:
         # Performance metrics come off the heatmap payload, which carries price
         # history this per-symbol block deliberately does not.
         panel = [
-            line for line in table.splitlines()
+            line
+            for line in table.splitlines()
             if "group: 'Performance'" not in line and "field:" in line
         ]
         fields = {re.search(r"field:\s*'([^']+)'", line).group(1) for line in panel}
         unknown = fields - self._block_fields()
-        assert not unknown, f"the detail panel reads fields the API never sends: {sorted(unknown)}"
+        assert not unknown, (
+            f"the detail panel reads fields the API never sends: {sorted(unknown)}"
+        )
 
     def test_the_swift_client_reads_every_field_of_the_block(self):
-        src = (ROOT / "macos_app" / "Investa" / "Models" / "StockKeyMetrics.swift").read_text()
+        src = (
+            ROOT / "macos_app" / "Investa" / "Models" / "StockKeyMetrics.swift"
+        ).read_text()
         read = set(re.findall(r'field:\s*"([a-z0-9_]+)"', src))
         missing = self._block_fields() - read
         assert not missing, f"macOS/iOS never reads {sorted(missing)}"
@@ -224,7 +237,9 @@ class TestClientParity:
         """A metric judged against different midpoints reads as a different
         company on each client — the same figure, one green and one red."""
         web = (ROOT / "web_app" / "lib" / "metrics.ts").read_text()
-        swift = (ROOT / "macos_app" / "Investa" / "Models" / "StockKeyMetrics.swift").read_text()
+        swift = (
+            ROOT / "macos_app" / "Investa" / "Models" / "StockKeyMetrics.swift"
+        ).read_text()
 
         web_scales = {}
         table = web.split("export const METRICS", 1)[1].split("\n];", 1)[0]
@@ -237,7 +252,7 @@ class TestClientParity:
             web_scales[field] = (mid, clamp, "inverted: true" in line)
 
         swift_scales = {}
-        for block in re.findall(r'\.init\(field:.*?\),\n', swift, re.DOTALL):
+        for block in re.findall(r"\.init\(field:.*?\),\n", swift, re.DOTALL):
             field = re.search(r'field:\s*"([^"]+)"', block).group(1)
             mid = float(re.search(r"mid:\s*([-\d.e]+)", block).group(1))
             clamp = float(re.search(r"clamp:\s*([\d.e]+)", block).group(1))

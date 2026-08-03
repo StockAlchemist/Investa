@@ -1,11 +1,13 @@
 from unittest.mock import patch, MagicMock
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from market_fallback import fetch_data_fallback, fetch_info_fallback
 
-@patch('market_fallback.requests.get')
+
+@patch("market_fallback.requests.get")
 def test_fetch_data_fallback_success(mock_get):
     """
     Test that fetch_data_fallback correctly parses an Alpha Vantage daily response
@@ -25,16 +27,16 @@ def test_fetch_data_fallback_success(mock_get):
                 "2. high": "152.00",
                 "3. low": "149.00",
                 "4. close": "151.00",
-                "5. volume": "1000000"
+                "5. volume": "1000000",
             },
             "2026-02-19": {
                 "1. open": "148.00",
                 "2. high": "151.00",
                 "3. low": "147.00",
                 "4. close": "150.00",
-                "5. volume": "900000"
-            }
-        }
+                "5. volume": "900000",
+            },
+        },
     }
     mock_response.raise_for_status.return_value = None
     mock_get.return_value = mock_response
@@ -53,7 +55,8 @@ def test_fetch_data_fallback_success(mock_get):
     assert df.loc["2026-02-20", "Close"] == 151.0
     assert df.loc["2026-02-20", "Volume"] == 1000000.0
 
-@patch('market_fallback.requests.get')
+
+@patch("market_fallback.requests.get")
 def test_fetch_data_fallback_api_limit(mock_get):
     """
     Test that fetch_data_fallback detects Alpha Vantage rate limits and handles it gracefully.
@@ -70,24 +73,25 @@ def test_fetch_data_fallback_api_limit(mock_get):
     # Assuming we change the condition slightly or "Information" isn't a "Time Series" match
     assert df is None
 
-@patch('market_fallback.requests.get')
+
+@patch("market_fallback.requests.get")
 def test_fetch_info_fallback_success(mock_get, monkeypatch):
     """
     Test that fetch_info_fallback correctly parses a Finnhub quote response.
     """
     # Ensure FINNHUB_API_KEY is conditionally active for the mock test
-    monkeypatch.setattr('market_fallback.FINNHUB_API_KEY', "test_key")
+    monkeypatch.setattr("market_fallback.FINNHUB_API_KEY", "test_key")
 
     mock_response = MagicMock()
     mock_response.json.return_value = {
-        "c": 261.74, # Current
-        "d": 1.88,   # Change
-        "dp": 0.723, # Percent change
-        "h": 263.31, # High
-        "l": 260.68, # Low
-        "o": 261.07, # Open
-        "pc": 259.86,# Previous Close
-        "t": 1582641000
+        "c": 261.74,  # Current
+        "d": 1.88,  # Change
+        "dp": 0.723,  # Percent change
+        "h": 263.31,  # High
+        "l": 260.68,  # Low
+        "o": 261.07,  # Open
+        "pc": 259.86,  # Previous Close
+        "t": 1582641000,
     }
     mock_response.raise_for_status.return_value = None
     mock_get.return_value = mock_response

@@ -4,7 +4,7 @@ import pytest
 import pandas as pd
 from datetime import date
 import os
-import sys # Added for sys.path modification
+import sys  # Added for sys.path modification
 
 # --- Get the directory of the current test file ---
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +32,7 @@ except ImportError:
             calculate_portfolio_summary,
             calculate_historical_performance,
         )
+
         LOGIC_IMPORTED = True
     except ImportError as e:
         print(f"ERROR: Could not import from portfolio_logic.py: {e}")
@@ -105,29 +106,35 @@ def test_calculate_portfolio_summary_basic(
     assert loaded_tx_df is not None, "Test setup: Failed to load sample transactions"
 
     # --- Call the function under test ---
-    summary_metrics, holdings_df, _, account_metrics, ignored_idx, ignored_rsn, status = (
-        calculate_portfolio_summary(
-            all_transactions_df_cleaned=loaded_tx_df,
-            original_transactions_df_for_ignored=loaded_orig_df,
-            ignored_indices_from_load=loaded_ignored_indices,
-            ignored_reasons_from_load=loaded_ignored_reasons,
-            display_currency=display_currency,
-            show_closed_positions=show_closed,
-            include_accounts=include_accounts,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map={},  # Pass empty dict instead of None
-            user_excluded_symbols=set(),  # Pass empty set instead of None
-            # Pass other args like cache_file_path if needed by the current signature
-        )
+    (
+        summary_metrics,
+        holdings_df,
+        _,
+        account_metrics,
+        ignored_idx,
+        ignored_rsn,
+        status,
+    ) = calculate_portfolio_summary(
+        all_transactions_df_cleaned=loaded_tx_df,
+        original_transactions_df_for_ignored=loaded_orig_df,
+        ignored_indices_from_load=loaded_ignored_indices,
+        ignored_reasons_from_load=loaded_ignored_reasons,
+        display_currency=display_currency,
+        show_closed_positions=show_closed,
+        include_accounts=include_accounts,
+        manual_overrides_dict=manual_overrides,
+        user_symbol_map={},  # Pass empty dict instead of None
+        user_excluded_symbols=set(),  # Pass empty set instead of None
+        # Pass other args like cache_file_path if needed by the current signature
     )
     # Add assertions for the new arguments if they affect the output in a testable way
     # For now, just ensuring the call signature is correct.
 
     # --- Assertions ---
     assert "Error" not in status, f"Status indicates error: {status}"
-    assert isinstance(
-        summary_metrics, dict
-    ), "Overall summary metrics should be a dictionary"
+    assert isinstance(summary_metrics, dict), (
+        "Overall summary metrics should be a dictionary"
+    )
     assert isinstance(holdings_df, pd.DataFrame), "Holdings should be a DataFrame"
     assert isinstance(account_metrics, dict), "Account metrics should be a dictionary"
     assert isinstance(ignored_idx, set), "Ignored indices should be a set"
@@ -157,13 +164,14 @@ def test_calculate_portfolio_summary_basic(
     assert not holdings_df.empty, "Holdings DataFrame should not be empty"
     # Basic check that we have some rows
     assert len(holdings_df) > 0
-    
+
     # Assert Dividend Yield features are present
     assert "dividend_yield_pct" in summary_metrics
     assert "est_annual_income_display" in summary_metrics
     # Yield should be non-negative
     assert summary_metrics["dividend_yield_pct"] >= 0
     assert summary_metrics["est_annual_income_display"] >= 0
+
 
 def test_calculate_portfolio_summary_transfers(
     sample_csv_filepath, default_account_map, default_base_currency
@@ -178,22 +186,22 @@ def test_calculate_portfolio_summary_transfers(
         "Type": ["Buy", "Transfer"],
         "Symbol": ["AAPL", "AAPL"],
         "Quantity": [10.0, 10.0],
-        "Price/Share": [100.0, 0.0], # Transfer usually has 0 price in raw data
+        "Price/Share": [100.0, 0.0],  # Transfer usually has 0 price in raw data
         "Total Amount": [1000.0, 0.0],
         "Commission": [5.0, 0.0],
         "Account": ["Acc1", "Acc1"],
-        "To Account": [None, "Acc2"], # Transfer to Acc2
+        "To Account": [None, "Acc2"],  # Transfer to Acc2
         "Local Currency": ["USD", "USD"],
         "original_index": [1, 2],
         "Split Ratio": [None, None],
-        "Note": ["", ""]
+        "Note": ["", ""],
     }
     df = pd.DataFrame(data)
-    
+
     # Mock ignored sets
     ignored_indices = set()
     ignored_reasons = {}
-    
+
     summary_metrics, holdings_df, _, _, _, _, status = calculate_portfolio_summary(
         all_transactions_df_cleaned=df,
         original_transactions_df_for_ignored=df,
@@ -201,10 +209,10 @@ def test_calculate_portfolio_summary_transfers(
         ignored_reasons_from_load=ignored_reasons,
         display_currency="USD",
         show_closed_positions=True,
-        include_accounts=None, # All accounts
-        default_currency="USD"
+        include_accounts=None,  # All accounts
+        default_currency="USD",
     )
-    
+
     assert "Error" not in status
     # Check if Acc2 has the holding
     acc2_holdings = holdings_df[holdings_df["Account"] == "Acc2"]
@@ -214,6 +222,7 @@ def test_calculate_portfolio_summary_transfers(
     # Note: Exact logic depends on how transfer cost is calculated in _process_transactions
     # But it should NOT be 0.
     assert acc2_holdings.iloc[0]["Avg Cost (USD)"] > 0
+
 
 def test_calculate_portfolio_summary_filtering(
     sample_csv_filepath, default_account_map, default_base_currency
@@ -234,10 +243,10 @@ def test_calculate_portfolio_summary_filtering(
         "Local Currency": ["USD", "USD"],
         "original_index": [1, 2],
         "Split Ratio": [None, None],
-        "Note": ["", ""]
+        "Note": ["", ""],
     }
     df = pd.DataFrame(data)
-    
+
     # Filter for Acc1
     summary_metrics, holdings_df, _, _, _, _, _ = calculate_portfolio_summary(
         all_transactions_df_cleaned=df,
@@ -246,13 +255,13 @@ def test_calculate_portfolio_summary_filtering(
         ignored_reasons_from_load={},
         display_currency="USD",
         include_accounts=["Acc1"],
-        default_currency="USD"
+        default_currency="USD",
     )
-    
+
     assert len(holdings_df) == 1
     assert holdings_df.iloc[0]["Account"] == "Acc1"
     assert holdings_df.iloc[0]["Symbol"] == "AAPL"
-    
+
     # Filter for Acc2
     summary_metrics, holdings_df, _, _, _, _, _ = calculate_portfolio_summary(
         all_transactions_df_cleaned=df,
@@ -261,14 +270,12 @@ def test_calculate_portfolio_summary_filtering(
         ignored_reasons_from_load={},
         display_currency="USD",
         include_accounts=["Acc2"],
-        default_currency="USD"
+        default_currency="USD",
     )
-    
+
     assert len(holdings_df) == 1
     assert holdings_df.iloc[0]["Account"] == "Acc2"
     assert holdings_df.iloc[0]["Symbol"] == "MSFT"
-
-
 
 
 # --- Test calculate_historical_performance ---
@@ -300,9 +307,9 @@ def test_calculate_historical_performance_basic(
     ) = load_and_clean_transactions(
         sample_csv_filepath, default_account_map, default_base_currency
     )
-    assert (
-        loaded_tx_df is not None
-    ), "Test setup: Failed to load sample transactions for historical test"
+    assert loaded_tx_df is not None, (
+        "Test setup: Failed to load sample transactions for historical test"
+    )
 
     # --- Call the function under test ---
     # Note: This will perform actual yfinance downloads unless mocked
@@ -341,23 +348,23 @@ def test_calculate_historical_performance_basic(
     ]
 
     # Assertions on the filtered DataFrame
-    assert (
-        not hist_df_filtered.empty
-    ), "Filtered historical DataFrame should not be empty for the requested range"
+    assert not hist_df_filtered.empty, (
+        "Filtered historical DataFrame should not be empty for the requested range"
+    )
 
     # Check index type and range
-    assert isinstance(
-        hist_df_filtered.index, pd.DatetimeIndex
-    ), "Filtered index should be DatetimeIndex"
-    assert (
-        hist_df_filtered.index.min().date() >= start_date_hist
-    ), "First date should be >= start date"
+    assert isinstance(hist_df_filtered.index, pd.DatetimeIndex), (
+        "Filtered index should be DatetimeIndex"
+    )
+    assert hist_df_filtered.index.min().date() >= start_date_hist, (
+        "First date should be >= start date"
+    )
     # For monthly, last date might be end of month containing last transaction
     # The resampling might push the last date to the end of the month,
     # so we check if the month and year are within the end_date_hist's month and year.
-    assert (
-        hist_df_filtered.index.max().year <= end_date_hist.year
-    ), "Last year should be <= end date year"
+    assert hist_df_filtered.index.max().year <= end_date_hist.year, (
+        "Last year should be <= end date year"
+    )
     assert not (
         hist_df_filtered.index.max().year == end_date_hist.year
         and hist_df_filtered.index.max().month > end_date_hist.month

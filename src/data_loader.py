@@ -13,6 +13,7 @@
 -------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT
 """
+
 import pandas as pd
 import numpy as np
 import os
@@ -599,29 +600,17 @@ def load_and_clean_transactions(
     text_cols = ["Symbol", "Account", "Note", "Local Currency"]
     for col in text_cols:
         if col in df.columns:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.strip()
-                .replace("None", "", regex=False)
-            )
+            df[col] = df[col].astype(str).str.strip().replace("None", "", regex=False)
 
     # Standardize Type to Lowercase (e.g., 'Buy' -> 'buy')
     if "Type" in df.columns:
-        df["Type"] = (
-            df["Type"]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-        )
+        df["Type"] = df["Type"].astype(str).str.strip().str.lower()
 
         # Canonicalize corporate-action spelling variants to the single key the
         # engine dispatches on. The three clients label spin-offs "Spin-off"
         # (-> 'spin-off') while the IBKR importer emits "Spin Off" (-> 'spin
         # off'); both must resolve to the "spin off" the JIT kernels key on.
-        df["Type"] = df["Type"].replace(
-            {"spin-off": "spin off", "spinoff": "spin off"}
-        )
+        df["Type"] = df["Type"].replace({"spin-off": "spin off", "spinoff": "spin off"})
 
         # Surface corporate-action types the engine recognises but does NOT
         # yet apply. The rows are kept (won't be filtered) but the user
@@ -629,6 +618,7 @@ def load_and_clean_transactions(
         # JIT dispatchers are extended. See src/corporate_actions.py.
         try:
             from corporate_actions import RESERVED_CORPORATE_ACTION_TYPES
+
             reserved_mask = df["Type"].isin(RESERVED_CORPORATE_ACTION_TYPES)
             if reserved_mask.any():
                 counts = df.loc[reserved_mask, "Type"].value_counts().to_dict()
@@ -650,14 +640,16 @@ def load_and_clean_transactions(
     # --- Normalize Cash Symbol ---
     if "Symbol" in df.columns:
         # 1. explicit "Cash" or "USD" -> $CASH
-        df.loc[df["Symbol"].str.upper().isin(["CASH", "USD"]), "Symbol"] = CASH_SYMBOL_CSV
-        
+        df.loc[df["Symbol"].str.upper().isin(["CASH", "USD"]), "Symbol"] = (
+            CASH_SYMBOL_CSV
+        )
+
         # 2. Deposit/Withdrawal with empty/null/nan symbol -> $CASH
         if "Type" in df.columns:
             df.loc[
-                (df["Type"].str.lower().isin(["deposit", "withdrawal"])) & 
-                (df["Symbol"].str.lower().isin(["", "nan", "none", "<na>"])), 
-                "Symbol"
+                (df["Type"].str.lower().isin(["deposit", "withdrawal"]))
+                & (df["Symbol"].str.lower().isin(["", "nan", "none", "<na>"])),
+                "Symbol",
             ] = CASH_SYMBOL_CSV
 
     # --- Local Currency Assignment (crucial) ---

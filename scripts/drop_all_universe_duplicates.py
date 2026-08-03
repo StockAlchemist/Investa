@@ -19,6 +19,7 @@ Usage
 -----
     python scripts/drop_all_universe_duplicates.py [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,7 +42,9 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
     logging.info("Global screener DB: %s", get_global_screener_db_path())
 
     conn = open_screener_db_conn()
@@ -63,7 +66,10 @@ def main() -> int:
             """
         )
         orphans = [r[0] for r in cur.fetchall()]
-        logging.info("Symbols whose only row is 'all' (will be promoted to 'manual'): %d", len(orphans))
+        logging.info(
+            "Symbols whose only row is 'all' (will be promoted to 'manual'): %d",
+            len(orphans),
+        )
         if orphans:
             for sym in orphans[:20]:
                 logging.info("  orphan: %s", sym)
@@ -74,7 +80,12 @@ def main() -> int:
         cur.execute("SELECT count(*) FROM screener_cache WHERE universe = 'all'")
         all_count = cur.fetchone()[0]
         to_delete = all_count - len(orphans)
-        logging.info("'all' rows: %d total, %d will be deleted, %d promoted.", all_count, to_delete, len(orphans))
+        logging.info(
+            "'all' rows: %d total, %d will be deleted, %d promoted.",
+            all_count,
+            to_delete,
+            len(orphans),
+        )
 
         if args.dry_run:
             logging.info("Dry-run: no changes made.")

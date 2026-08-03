@@ -27,6 +27,7 @@ per quarter whose `sub.txt` carries cik→sic for every filer that quarter. A fe
 quarters cover effectively the whole active universe, which is far cheaper than
 the 5 MB-per-company submissions API (~28 GB for this universe).
 """
+
 from __future__ import annotations
 
 import io
@@ -40,7 +41,9 @@ from typing import Dict, List, Optional
 import config
 from edgar_http import sec_get
 
-_DERA_URL = "https://www.sec.gov/files/dera/data/financial-statement-data-sets/{quarter}.zip"
+_DERA_URL = (
+    "https://www.sec.gov/files/dera/data/financial-statement-data-sets/{quarter}.zip"
+)
 _CACHE_FILENAME = "cik_sic.json"
 
 # --- SIC ranges -------------------------------------------------------------
@@ -171,8 +174,10 @@ def build_sic_map(quarters: Optional[List[str]] = None) -> Dict[str, int]:
         quarter_map = _parse_sub_file(payload)
         for cik, sic in quarter_map.items():
             merged.setdefault(cik, sic)
-        logging.info(f"SIC: {quarter} contributed {len(quarter_map)} filers "
-                     f"({len(merged)} cumulative)")
+        logging.info(
+            f"SIC: {quarter} contributed {len(quarter_map)} filers "
+            f"({len(merged)} cumulative)"
+        )
 
     if merged:
         try:

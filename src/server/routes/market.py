@@ -23,7 +23,11 @@ from db_utils import get_cached_screener_results, update_intrinsic_value_in_cach
 from finutils import is_cash_symbol
 from market_data import map_to_yf_symbol
 from server.ai_analyzer import generate_stock_review
-from server.dependencies import get_config_manager, get_transaction_data, get_user_db_connection
+from server.dependencies import (
+    get_config_manager,
+    get_transaction_data,
+    get_user_db_connection,
+)
 from server.route_utils import SWRCache, _lru_get, _lru_put, clean_nans, get_mdp
 from utils_time import get_est_today, is_market_open
 
@@ -35,9 +39,12 @@ try:
         get_intrinsic_value_for_symbol,
         to_trailing_twelve_months,
     )
+
     FINANCIAL_RATIOS_AVAILABLE = True
 except ImportError:
-    logging.warning("financial_ratios.py not found or import failed. Ratios will be disabled.")
+    logging.warning(
+        "financial_ratios.py not found or import failed. Ratios will be disabled."
+    )
     FINANCIAL_RATIOS_AVAILABLE = False
 
 router = APIRouter()
@@ -69,9 +76,7 @@ async def get_indices():
     """
     try:
         mdp = get_mdp()
-        data = await asyncio.to_thread(
-            mdp.get_index_quotes, config.INDICES_FOR_HEADER
-        )
+        data = await asyncio.to_thread(mdp.get_index_quotes, config.INDICES_FOR_HEADER)
         return data or {}
     except Exception as e:
         logging.warning(f"Failed to fetch index quotes: {e}")
@@ -83,6 +88,7 @@ def search_symbols(q: str = Query("", min_length=1)):
     """Symbol / name autocomplete using yfinance Search."""
     try:
         import yfinance as yf
+
         results = yf.Search(q, max_results=8).quotes
         out = []
         for r in results:
@@ -138,18 +144,19 @@ def get_market_news(
             # Convert unix timestamp to ISO-8601
             ts = n.get("providerPublishTime", 0)
             pub_date = (
-                datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-                if ts else ""
+                datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else ""
             )
-            out.append({
-                "title": title,
-                "summary": "",
-                "url": n.get("link", ""),
-                "thumbnail": thumb,
-                "provider": n.get("publisher", ""),
-                "pub_date": pub_date,
-                "symbol": symbol,
-            })
+            out.append(
+                {
+                    "title": title,
+                    "summary": "",
+                    "url": n.get("link", ""),
+                    "thumbnail": thumb,
+                    "provider": n.get("publisher", ""),
+                    "pub_date": pub_date,
+                    "symbol": symbol,
+                }
+            )
         return out
 
     def _fetch_rss(symbol: str, rss_limit: int = 20) -> list:
@@ -176,15 +183,17 @@ def get_market_news(
                         pub_date = parsedate_to_datetime(pub_date_str).isoformat()
                     except Exception:
                         pub_date = pub_date_str
-                out.append({
-                    "title": title,
-                    "summary": item.findtext("description", "").strip(),
-                    "url": link,
-                    "thumbnail": None,
-                    "provider": "Yahoo Finance",
-                    "pub_date": pub_date,
-                    "symbol": symbol,
-                })
+                out.append(
+                    {
+                        "title": title,
+                        "summary": item.findtext("description", "").strip(),
+                        "url": link,
+                        "thumbnail": None,
+                        "provider": "Yahoo Finance",
+                        "pub_date": pub_date,
+                        "symbol": symbol,
+                    }
+                )
             return out
         except Exception:
             return []
@@ -226,13 +235,15 @@ def get_market_history(
 
     try:
         from utils_time import get_est_today, get_latest_trading_date
-        
+
         # MAPPING: Convert benchmark display names to YF tickers (reuse logic from history)
         mapped_benchmarks = []
         ticker_to_name = {}
         bm_mapping_lower = {k.lower(): v for k, v in config.BENCHMARK_MAPPING.items()}
-        yf_map_lower = {k.lower(): v for k, v in config.YFINANCE_INDEX_TICKER_MAP.items()}
-        
+        yf_map_lower = {
+            k.lower(): v for k, v in config.YFINANCE_INDEX_TICKER_MAP.items()
+        }
+
         for b in benchmarks:
             b_lower = b.lower()
             if b_lower in bm_mapping_lower:
@@ -245,11 +256,11 @@ def get_market_history(
                 ticker_to_name[ticker] = b
             else:
                 mapped_benchmarks.append(b)
-        
+
         # Determine date range (simplified logic from history)
         end_date = get_est_today() + timedelta(days=1)
         if period == "1d":
-            interval = "2m" # Force Intraday
+            interval = "2m"  # Force Intraday
             start_date = get_latest_trading_date()
         elif period == "5d" or period == "7d":
             start_date = end_date - timedelta(days=7)
@@ -270,7 +281,7 @@ def get_market_history(
         elif period == "ytd":
             start_date = date(end_date.year, 1, 1)
         elif period == "all" or period == "max":
-            start_date = date(1980, 1, 1) # Return full history
+            start_date = date(1980, 1, 1)  # Return full history
         else:
             start_date = end_date - timedelta(days=365)
 
@@ -279,9 +290,9 @@ def get_market_history(
             symbols_yf=mapped_benchmarks,
             start_date=start_date,
             end_date=end_date,
-            interval=interval
+            interval=interval,
         )
-        
+
         if not hist_data:
             return []
 
@@ -290,44 +301,44 @@ def get_market_history(
         dfs = []
         for ticker in mapped_benchmarks:
             if ticker in hist_data and not hist_data[ticker].empty:
-                df = hist_data[ticker][['price']].copy()
+                df = hist_data[ticker][["price"]].copy()
                 # Normalize returns relative to first point
-                first_price = df['price'].iloc[0]
+                first_price = df["price"].iloc[0]
                 display_name = ticker_to_name.get(ticker, ticker)
                 if first_price != 0:
-                    df[display_name] = (df['price'] / first_price - 1) * 100
+                    df[display_name] = (df["price"] / first_price - 1) * 100
                 else:
                     df[display_name] = 0.0
-                
+
                 # Keep the price column but rename it so it doesn't conflict
-                df[f"{display_name}_price"] = df['price']
-                
-                dfs.append(df.drop(columns=['price']))
-        
+                df[f"{display_name}_price"] = df["price"]
+
+                dfs.append(df.drop(columns=["price"]))
+
         if not dfs:
             return []
-            
+
         # Combine all indices into one DataFrame
         combined_df = pd.concat(dfs, axis=1)
         combined_df = combined_df.sort_index()
-        
+
         # Reset index to get dates as a column
-        combined_df.index.name = 'date'
+        combined_df.index.name = "date"
         combined_df = combined_df.reset_index()
-        
+
         # Convert dates to string (using pd.to_datetime to be safe if types differ)
-        combined_df['date'] = pd.to_datetime(combined_df['date'])
-        
+        combined_df["date"] = pd.to_datetime(combined_df["date"])
+
         is_intraday_local = any(x in interval for x in ["m", "h"])
         if is_intraday_local:
-             combined_df['date'] = combined_df['date'].dt.strftime("%Y-%m-%d %H:%M:%S")
+            combined_df["date"] = combined_df["date"].dt.strftime("%Y-%m-%d %H:%M:%S")
         else:
-             combined_df['date'] = combined_df['date'].dt.strftime("%Y-%m-%d")
+            combined_df["date"] = combined_df["date"].dt.strftime("%Y-%m-%d")
 
         result = clean_nans(combined_df.to_dict(orient="records"))
-        
+
         _lru_put(_MARKET_HISTORY_CACHE, cache_key, (result, now_ts_cache + 900))
-        
+
         return result
 
     except Exception as e:
@@ -345,7 +356,7 @@ def get_stock_history(
     period: str = "1y",
     interval: str = "1d",
     benchmarks: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
 ):
     """
     Returns historical price data for a single stock, with optional benchmarks.
@@ -353,12 +364,12 @@ def get_stock_history(
     try:
         _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
         mdp = get_mdp()
-        
+
         # 1. Map Symbol
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
         if not yf_symbol:
             # Try as direct ticker if not found in map (e.g. for benchmarks or unheld stocks)
-            yf_symbol = symbol 
+            yf_symbol = symbol
 
         # 2. Map Benchmarks
         mapped_benchmarks = []
@@ -368,17 +379,17 @@ def get_stock_history(
                     mapped_benchmarks.append(config.BENCHMARK_MAPPING[b])
                 else:
                     mapped_benchmarks.append(b)
-        
+
         # 3. Determine Date Range
         # Using helper logic similar to _calculate_historical_performance_internal
         from utils_time import get_est_today, get_latest_trading_date
-        
+
         # End Date: Today + 1 (exclusive) to ensure we get today's data
         end_date = get_est_today() + timedelta(days=1)
-        
+
         # Start Date
         if period == "1d":
-            interval = "2m" # Force Intraday
+            interval = "2m"  # Force Intraday
             # For 1D, we want the last trading session.
             # If today is trading, get today. If weekend, get Friday.
             latest_trading = get_latest_trading_date()
@@ -387,11 +398,13 @@ def get_stock_history(
             # But let's be explicit: start at latest_trading, end at latest_trading + 1
             end_date = latest_trading + timedelta(days=1)
         elif period == "5d":
-            start_date = end_date - timedelta(days=7) # Go back a week to cover 5 trading days
-            interval = "15m" # Higher res for 5d
+            start_date = end_date - timedelta(
+                days=7
+            )  # Go back a week to cover 5 trading days
+            interval = "15m"  # Higher res for 5d
         elif period == "1m":
             start_date = end_date - timedelta(days=30)
-            interval = "1d" # Daily is fine, or 60m? Daily is standard for 1M.
+            interval = "1d"  # Daily is fine, or 60m? Daily is standard for 1M.
         elif period == "3m":
             start_date = end_date - timedelta(days=90)
         elif period == "6m":
@@ -399,37 +412,34 @@ def get_stock_history(
         elif period == "1y":
             start_date = end_date - timedelta(days=365)
         elif period == "3y":
-            start_date = end_date - timedelta(days=365*3)
+            start_date = end_date - timedelta(days=365 * 3)
         elif period == "5y":
-            start_date = end_date - timedelta(days=365*5)
+            start_date = end_date - timedelta(days=365 * 5)
         elif period == "10y":
-            start_date = end_date - timedelta(days=365*10)
+            start_date = end_date - timedelta(days=365 * 10)
         elif period == "ytd":
-            # start_date = date(end_date.year, 1, 1) 
+            # start_date = date(end_date.year, 1, 1)
             # Better YTD: Start of current year
             today = get_est_today()
             start_date = date(today.year, 1, 1)
         elif period == "max" or period == "all":
-             # Arbitrary long history
-             start_date = date(1980, 1, 1)
+            # Arbitrary long history
+            start_date = date(1980, 1, 1)
         else:
             # Default to 1y if unknown
             start_date = end_date - timedelta(days=365)
 
         # 4. Fetch Data (Main Symbol + Benchmarks)
         symbols_to_fetch = [yf_symbol] + mapped_benchmarks
-        
+
         # Use get_historical_data (handles DB sync and cache)
         # Note: For intraday (1m, 5m etc), get_historical_data bypasses DB write usually/reads from special table
         # We need to make sure interval is passed correct.
-        
+
         hist_data, _ = mdp.get_historical_data(
-            symbols_to_fetch,
-            start_date,
-            end_date,
-            interval=interval
+            symbols_to_fetch, start_date, end_date, interval=interval
         )
-        
+
         if yf_symbol not in hist_data or hist_data[yf_symbol].empty:
             # Fallback: Maybe it's a crypto or something that failed mapping?
             # Or just no data.
@@ -438,10 +448,10 @@ def get_stock_history(
         # 5. Align and Process
         # We want a single list of dicts: { date, price, volume, bm1, bm2... }
         # Merge on index (Date)
-        
+
         main_df = hist_data[yf_symbol].copy()
         main_df.rename(columns={"price": "value", "Volume": "volume"}, inplace=True)
-        
+
         if "value" not in main_df.columns:
             # Fallback if rename failed or price missing
             if "price" in main_df.columns:
@@ -451,7 +461,7 @@ def get_stock_history(
                 if not main_df.empty:
                     main_df["value"] = main_df.iloc[:, 0]
                 else:
-                    return [] # Should be caught above
+                    return []  # Should be caught above
 
         if "volume" not in main_df.columns:
             main_df["volume"] = 0.0
@@ -461,10 +471,12 @@ def get_stock_history(
             try:
                 # Ensure index is timezone-aware. yfinance usually returns tz-aware (America/New_York) for intraday.
                 if main_df.index.tz is None:
-                    main_df.index = main_df.index.tz_localize("America/New_York", ambiguous='infer')
+                    main_df.index = main_df.index.tz_localize(
+                        "America/New_York", ambiguous="infer"
+                    )
                 else:
                     main_df.index = main_df.index.tz_convert("America/New_York")
-                
+
                 # Filter strictly between 09:30 and 16:00
                 main_df = main_df.between_time("09:30", "16:00")
             except Exception as e:
@@ -477,11 +489,11 @@ def get_stock_history(
                 main_df["return_pct"] = (main_df["value"] / first_val - 1) * 100
             else:
                 main_df["return_pct"] = 0.0
-                
+
         # Join Benchmarks
         cols_to_keep = ["value", "volume", "return_pct"]
         result_df = main_df[cols_to_keep].copy()
-        
+
         for bm in mapped_benchmarks:
             if bm in hist_data and not hist_data[bm].empty:
                 bm_df = hist_data[bm].copy()
@@ -489,24 +501,28 @@ def get_stock_history(
                 if "price" in bm_df.columns:
                     bm_start = bm_df["price"].iloc[0]
                     if bm_start and bm_start > 0:
-                         bm_series = (bm_df["price"] / bm_start - 1) * 100
+                        bm_series = (bm_df["price"] / bm_start - 1) * 100
                     else:
-                         bm_series = 0.0
-                         
+                        bm_series = 0.0
+
                     # Reindex to match main_df (ffill for missing days if mismatched trading cals)
-                    aligned_bm = bm_series.reindex(result_df.index, method='ffill')
+                    aligned_bm = bm_series.reindex(result_df.index, method="ffill")
                     result_df[bm] = aligned_bm
 
         # 6. Format for JSON
         # Reset index to get Date/timestamp column
         result_df = result_df.reset_index()
         # Rename index col to 'date' usually
-        date_col = "date" if "date" in result_df.columns else ("Date" if "Date" in result_df.columns else "index")
+        date_col = (
+            "date"
+            if "date" in result_df.columns
+            else ("Date" if "Date" in result_df.columns else "index")
+        )
         result_df.rename(columns={date_col: "date"}, inplace=True)
-        
+
         # Convert date to isoformat
         result_df["date"] = result_df["date"].apply(lambda x: x.isoformat())
-        
+
         records = result_df.to_dict(orient="records")
         return clean_nans(records)
 
@@ -517,9 +533,7 @@ def get_stock_history(
 
 @router.get("/earnings_dates/{symbol}")
 def get_earnings_dates(
-    symbol: str,
-    limit: int = 24,
-    data: tuple = Depends(get_transaction_data)
+    symbol: str, limit: int = 24, data: tuple = Depends(get_transaction_data)
 ):
     """
     Returns historical (and upcoming) earnings report dates for a single stock,
@@ -529,7 +543,9 @@ def get_earnings_dates(
 
     try:
         _, _, user_symbol_map, user_excluded_symbols, _, _, _, _ = data
-        yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
+        yf_symbol = (
+            map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
+        )
 
         df = _run_isolated_fetch([yf_symbol], task="earnings_dates", limit=limit)
         if df is None or getattr(df, "empty", True):
@@ -571,33 +587,40 @@ def get_stock_analysis(
     symbol: str,
     force: bool = Query(False),
     data: tuple = Depends(get_transaction_data),
-    db_conn: sqlite3.Connection = Depends(get_user_db_connection)
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """
     Returns AI-powered stock analysis for a given symbol.
     """
     try:
         (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
-        yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
-        
+        yf_symbol = (
+            map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
+        )
+
         mdp = get_mdp()
         # 1. Fetch Fundamentals
         fund_data = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         if not fund_data:
             fund_data = {}
-            
+
         # 2. Fetch Release Statements and calculate ratios
         financials_df = mdp.get_financials(yf_symbol, "annual", force_refresh=force)
-        balance_sheet_df = mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force)
+        balance_sheet_df = mdp.get_balance_sheet(
+            yf_symbol, "annual", force_refresh=force
+        )
         cashflow_df = mdp.get_cashflow(yf_symbol, "annual", force_refresh=force)
-        
+
         ratios = {}
-        if financials_df is not None and not financials_df.empty and balance_sheet_df is not None and not balance_sheet_df.empty:
+        if (
+            financials_df is not None
+            and not financials_df.empty
+            and balance_sheet_df is not None
+            and not balance_sheet_df.empty
+        ):
             try:
                 ratios_df = calculate_key_ratios_timeseries(
-                    financials_df,
-                    balance_sheet_df,
-                    cashflow_df
+                    financials_df, balance_sheet_df, cashflow_df
                 )
                 if not ratios_df.empty:
                     # Take the most recent period ratios
@@ -617,34 +640,40 @@ def get_stock_analysis(
                     cached_results = get_cached_screener_results([symbol])
                     if symbol in cached_results:
                         cached_entry = cached_results[symbol]
-                        
+
                         # Extract cached metadata
                         cached_fy_end = cached_entry.get("last_fiscal_year_end")
                         cached_mrq = cached_entry.get("most_recent_quarter")
                         cached_val_details_str = cached_entry.get("valuation_details")
-                        
+
                         current_fy_end = fund_data.get("lastFiscalYearEnd")
                         current_mrq = fund_data.get("mostRecentQuarter")
-                        
+
                         # Validate if cache is fresh enough (Timestamps match)
                         is_fresh = True
                         if current_fy_end and cached_fy_end != current_fy_end:
                             is_fresh = False
                         if current_mrq and cached_mrq != current_mrq:
                             is_fresh = False
-                            
+
                         # Also ensure we actually have the detailed JSON stored
                         if is_fresh and cached_val_details_str:
-                             logging.info(f"Using cached Intrinsic Value for {symbol} (Freshness verified)")
-                             try:
-                                 iv_results = json.loads(cached_val_details_str)
-                                 # Ensure top-level metrics match cache (consistency check)
-                                 # (optional, but good for safety)
-                             except json.JSONDecodeError:
-                                 logging.warning(f"Failed to decode cached valuation details for {symbol}")
-                                 iv_results = None
+                            logging.info(
+                                f"Using cached Intrinsic Value for {symbol} (Freshness verified)"
+                            )
+                            try:
+                                iv_results = json.loads(cached_val_details_str)
+                                # Ensure top-level metrics match cache (consistency check)
+                                # (optional, but good for safety)
+                            except json.JSONDecodeError:
+                                logging.warning(
+                                    f"Failed to decode cached valuation details for {symbol}"
+                                )
+                                iv_results = None
                 except Exception as e_cache_read:
-                    logging.warning(f"Error checking IV cache for {symbol}: {e_cache_read}")
+                    logging.warning(
+                        f"Error checking IV cache for {symbol}: {e_cache_read}"
+                    )
 
             if iv_results is None:
                 # We calculate this ON THE FLY to ensure the frontend gets the detailed value
@@ -653,10 +682,10 @@ def get_stock_analysis(
                 iv_results = get_comprehensive_intrinsic_value(
                     fund_data, financials_df, balance_sheet_df, cashflow_df
                 )
-                
+
                 # Serialize the entire result for storage
                 iv_json = json.dumps(iv_results, default=str)
-                
+
                 # Inject into info dict so it gets picked up by update_intrinsic_value_in_cache
                 # We copy it to avoid mutating the original fund_data for other uses if any
                 info_for_update = fund_data.copy()
@@ -669,14 +698,16 @@ def get_stock_analysis(
                     iv_results.get("margin_of_safety_pct"),
                     fund_data.get("lastFiscalYearEnd"),
                     fund_data.get("mostRecentQuarter"),
-                    info=info_for_update
+                    info=info_for_update,
                 )
-            
+
             # Inject into response so frontend event can carry it
             analysis["intrinsic_value_data"] = iv_results
 
         except Exception as iv_e:
-            logging.error(f"Failed to calculate IV during stock analysis for {symbol}: {iv_e}")
+            logging.error(
+                f"Failed to calculate IV during stock analysis for {symbol}: {iv_e}"
+            )
 
         return clean_nans(analysis)
     except Exception as e:
@@ -686,9 +717,7 @@ def get_stock_analysis(
 
 @router.get("/fundamentals/{symbol}")
 def get_fundamentals_endpoint(
-    symbol: str,
-    force: bool = Query(False),
-    data: tuple = Depends(get_transaction_data)
+    symbol: str, force: bool = Query(False), data: tuple = Depends(get_transaction_data)
 ):
     """Returns fundamental data (ticker.info) for a symbol."""
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
@@ -705,20 +734,27 @@ def get_fundamentals_endpoint(
             "marketCap": 0,
             "dividendYield": 0.0,
             "trailingPE": None,
-            "forwardPE": None
+            "forwardPE": None,
         }
 
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
-             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
-        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
-    
+            raise HTTPException(
+                status_code=400,
+                detail=f"Symbol {symbol} is currently in the exclusion list.",
+            )
+        raise HTTPException(
+            status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol."
+        )
+
     try:
         mdp = get_mdp()
         fundamental_data = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         if fundamental_data is None:
-             raise HTTPException(status_code=404, detail=f"No fundamental data found for {yf_symbol}")
+            raise HTTPException(
+                status_code=404, detail=f"No fundamental data found for {yf_symbol}"
+            )
 
         # Best-effort live price piggyback: read the existing current-quotes cache file
         # (populated by the dashboard's batch fetch) without triggering a new subprocess.
@@ -735,8 +771,11 @@ def get_fundamentals_endpoint(
                     try:
                         _ts = datetime.fromisoformat(_ts_str)
                         from utils_time import is_market_open
+
                         _ttl_min = 5 if is_market_open() else 240
-                        if datetime.now(timezone.utc) - _ts < timedelta(minutes=_ttl_min):
+                        if datetime.now(timezone.utc) - _ts < timedelta(
+                            minutes=_ttl_min
+                        ):
                             _fresh = True
                     except Exception:
                         pass
@@ -747,9 +786,13 @@ def get_fundamentals_endpoint(
                         fundamental_data["regularMarketPrice"] = _price
                         fundamental_data["currentPrice"] = _price
                         if "day_change" in _live:
-                            fundamental_data["regularMarketChange"] = _live["day_change"]
+                            fundamental_data["regularMarketChange"] = _live[
+                                "day_change"
+                            ]
                         if "day_change_percent" in _live:
-                            fundamental_data["regularMarketChangePercent"] = _live["day_change_percent"]
+                            fundamental_data["regularMarketChangePercent"] = _live[
+                                "day_change_percent"
+                            ]
         except Exception as e_live:
             logging.debug(f"Live price piggyback skipped for {symbol}: {e_live}")
 
@@ -765,16 +808,22 @@ def get_fundamentals_endpoint(
             fundamental_data = mdp.with_reported_earnings(yf_symbol, fundamental_data)
             # No `today` argument: the horizon is reckoned on the exchange's own
             # clock, not this server's.
-            fundamental_data["upcoming_events"] = upcoming_events(symbol, fundamental_data)
+            fundamental_data["upcoming_events"] = upcoming_events(
+                symbol, fundamental_data
+            )
         except Exception as e_events:
-            logging.debug(f"Upcoming-events derivation skipped for {symbol}: {e_events}")
+            logging.debug(
+                f"Upcoming-events derivation skipped for {symbol}: {e_events}"
+            )
 
         # The valuation / earnings / profitability / market block the detail
         # window shows. Derived from the blob already in hand plus one indexed
         # read of the local EDGAR store, so it costs no fetch; a symbol with no
         # filings gets the same block with the filed-history fields absent.
         try:
-            fundamental_data["key_metrics"] = _key_metrics_for_symbol(symbol, fundamental_data)
+            fundamental_data["key_metrics"] = _key_metrics_for_symbol(
+                symbol, fundamental_data
+            )
         except Exception as e_metrics:
             logging.debug(f"Key-metrics derivation skipped for {symbol}: {e_metrics}")
 
@@ -789,25 +838,38 @@ def get_financials_endpoint(
     symbol: str,
     period_type: str = "annual",
     force: bool = Query(False),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
 ):
     """Returns historical financial statements for a symbol."""
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
-        return {"symbol": symbol, "period": period_type, "income_statement": [], "balance_sheet": [], "cash_flow": []}
+        return {
+            "symbol": symbol,
+            "period": period_type,
+            "income_statement": [],
+            "balance_sheet": [],
+            "cash_flow": [],
+        }
 
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
-             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
-        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
-    
+            raise HTTPException(
+                status_code=400,
+                detail=f"Symbol {symbol} is currently in the exclusion list.",
+            )
+        raise HTTPException(
+            status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol."
+        )
+
     try:
         mdp = get_mdp()
         financials = mdp.get_financials(yf_symbol, period_type, force_refresh=force)
-        balance_sheet = mdp.get_balance_sheet(yf_symbol, period_type, force_refresh=force)
+        balance_sheet = mdp.get_balance_sheet(
+            yf_symbol, period_type, force_refresh=force
+        )
         cashflow = mdp.get_cashflow(yf_symbol, period_type, force_refresh=force)
-        
+
         # Convert DataFrames to dicts for JSON serialization
         def df_to_dict(df):
             if df is None or df.empty:
@@ -816,25 +878,35 @@ def get_financials_endpoint(
 
         # Extract Shareholders' Equity from Balance Sheet if possible
         equity_items = [
-            "Stockholders Equity", "Total Equity Gross Minority Interest", 
-            "Common Stock Equity", "Retained Earnings", "Capital Stock", 
-            "Common Stock", "Other Equity Adjustments", 
+            "Stockholders Equity",
+            "Total Equity Gross Minority Interest",
+            "Common Stock Equity",
+            "Retained Earnings",
+            "Capital Stock",
+            "Common Stock",
+            "Other Equity Adjustments",
             "Gains Losses Not Affecting Retained Earnings",
-            "Treasury Shares Number", "Ordinary Shares Number", "Share Issued"
+            "Treasury Shares Number",
+            "Ordinary Shares Number",
+            "Share Issued",
         ]
         shareholders_equity = None
         if balance_sheet is not None and not balance_sheet.empty:
             # Filter rows that exist in the balance sheet index
-            existing_equity_items = [item for item in equity_items if item in balance_sheet.index]
+            existing_equity_items = [
+                item for item in equity_items if item in balance_sheet.index
+            ]
             if existing_equity_items:
                 shareholders_equity = balance_sheet.loc[existing_equity_items]
 
-        return clean_nans({
-            "financials": df_to_dict(financials),
-            "balance_sheet": df_to_dict(balance_sheet),
-            "cashflow": df_to_dict(cashflow),
-            "shareholders_equity": df_to_dict(shareholders_equity)
-        })
+        return clean_nans(
+            {
+                "financials": df_to_dict(financials),
+                "balance_sheet": df_to_dict(balance_sheet),
+                "cashflow": df_to_dict(cashflow),
+                "shareholders_equity": df_to_dict(shareholders_equity),
+            }
+        )
     except Exception as e:
         logging.error(f"Error fetching financials for {yf_symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -845,7 +917,7 @@ def get_ratios_endpoint(
     symbol: str,
     period_type: str = "annual",
     force: bool = Query(False),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
 ):
     """
     Returns calculated financial ratios for a symbol.
@@ -856,7 +928,9 @@ def get_ratios_endpoint(
     often. The current valuation block is point-in-time and is unaffected.
     """
     if not FINANCIAL_RATIOS_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Financial ratios module not available.")
+        raise HTTPException(
+            status_code=501, detail="Financial ratios module not available."
+        )
 
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
@@ -865,9 +939,14 @@ def get_ratios_endpoint(
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
-             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
-        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
-    
+            raise HTTPException(
+                status_code=400,
+                detail=f"Symbol {symbol} is currently in the exclusion list.",
+            )
+        raise HTTPException(
+            status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol."
+        )
+
     try:
         mdp = get_mdp()
         # Fetch data needed for ratios
@@ -882,8 +961,12 @@ def get_ratios_endpoint(
         if period_type == "quarterly":
             # Flows are summed over the trailing four quarters; the balance
             # sheet stays as filed, since a level has no window.
-            q_financials = mdp.get_financials(yf_symbol, "quarterly", force_refresh=force)
-            q_balance = mdp.get_balance_sheet(yf_symbol, "quarterly", force_refresh=force)
+            q_financials = mdp.get_financials(
+                yf_symbol, "quarterly", force_refresh=force
+            )
+            q_balance = mdp.get_balance_sheet(
+                yf_symbol, "quarterly", force_refresh=force
+            )
             q_cashflow = mdp.get_cashflow(yf_symbol, "quarterly", force_refresh=force)
             historical_ratios_df = calculate_key_ratios_timeseries(
                 to_trailing_twelve_months(q_financials),
@@ -905,22 +988,26 @@ def get_ratios_endpoint(
             )
 
         # Calculate current valuation ratios — point-in-time, so always annual.
-        current_valuation = calculate_current_valuation_ratios(info, financials, balance_sheet)
-        
+        current_valuation = calculate_current_valuation_ratios(
+            info, financials, balance_sheet
+        )
+
         # Format historical ratios
         def df_to_dict(df):
             if df is None or df.empty:
                 return {}
             # Reset index to include 'Period'
             df_reset = df.reset_index()
-            if 'Period' in df_reset.columns:
-                df_reset['Period'] = df_reset['Period'].astype(str)
+            if "Period" in df_reset.columns:
+                df_reset["Period"] = df_reset["Period"].astype(str)
             return df_reset.to_dict(orient="records")
 
-        return clean_nans({
-            "historical": df_to_dict(historical_ratios_df),
-            "valuation": current_valuation
-        })
+        return clean_nans(
+            {
+                "historical": df_to_dict(historical_ratios_df),
+                "valuation": current_valuation,
+            }
+        )
     except Exception as e:
         logging.error(f"Error calculating ratios for {yf_symbol}: {e}")
         logging.error(traceback.format_exc())
@@ -933,34 +1020,51 @@ def get_intrinsic_value_endpoint(
     force: bool = Query(False),
     data: tuple = Depends(get_transaction_data),
     config_manager: ConfigManager = Depends(get_config_manager),
-    db_conn: sqlite3.Connection = Depends(get_user_db_connection)
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
     """Returns calculated intrinsic value results for a symbol."""
-    logging.info(f"CALCULATING INTRINSIC VALUE FOR {symbol} - CODE VERSION: 1.1 (CAPS ENABLED)")
+    logging.info(
+        f"CALCULATING INTRINSIC VALUE FOR {symbol} - CODE VERSION: 1.1 (CAPS ENABLED)"
+    )
     if not FINANCIAL_RATIOS_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Financial ratios module not available.")
+        raise HTTPException(
+            status_code=501, detail="Financial ratios module not available."
+        )
 
     (_, _, user_symbol_map, user_excluded_symbols, _, _, _, _) = data
     if is_cash_symbol(symbol):
-        return {"symbol": symbol, "intrinsic_value": 1.0, "current_price": 1.0, "upside_potential": 0.0, "is_cash": True}
+        return {
+            "symbol": symbol,
+            "intrinsic_value": 1.0,
+            "current_price": 1.0,
+            "upside_potential": 0.0,
+            "is_cash": True,
+        }
 
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
-             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
-        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
-    
+            raise HTTPException(
+                status_code=400,
+                detail=f"Symbol {symbol} is currently in the exclusion list.",
+            )
+        raise HTTPException(
+            status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol."
+        )
+
     try:
         mdp = get_mdp()
-        results = get_intrinsic_value_for_symbol(symbol, mdp, config_manager, force_refresh=force)
-        
+        results = get_intrinsic_value_for_symbol(
+            symbol, mdp, config_manager, force_refresh=force
+        )
+
         if "error" in results:
-             raise HTTPException(status_code=500, detail=results["error"])
-        
+            raise HTTPException(status_code=500, detail=results["error"])
+
         # We still need info for the sync function below
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
         info = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
-        
+
         # Sync to global screener cache
         try:
             if info:
@@ -971,10 +1075,12 @@ def get_intrinsic_value_endpoint(
                 results.get("margin_of_safety_pct"),
                 info.get("lastFiscalYearEnd") if info else None,
                 info.get("mostRecentQuarter") if info else None,
-                info=info
+                info=info,
             )
         except Exception as e_sync:
-            logging.warning(f"Failed to sync intrinsic value to cache for {symbol}: {e_sync}")
+            logging.warning(
+                f"Failed to sync intrinsic value to cache for {symbol}: {e_sync}"
+            )
 
         return clean_nans(results)
     except Exception as e:
@@ -982,25 +1088,27 @@ def get_intrinsic_value_endpoint(
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # FX rate cache: {currency_code: (rate, expiry_timestamp)}
 _FX_RATE_CACHE: dict = {}
 _FX_RATE_TTL = 300  # 5 minutes
+
 
 def _fetch_fx_rate_sync(currency_code: str) -> float | None:
     """Fetch FX rate via yfinance (blocking I/O)."""
     import yfinance as yf
     import time
-    
+
     ticker = f"{currency_code}=X"
     if currency_code == "USD":
         return 1.0
-        
+
     now = time.time()
     if currency_code in _FX_RATE_CACHE:
         rate, expiry = _FX_RATE_CACHE[currency_code]
         if now < expiry:
             return rate
-            
+
     try:
         tkr = yf.Ticker(ticker)
         data = tkr.history(period="1d", interval="1d")
@@ -1012,6 +1120,7 @@ def _fetch_fx_rate_sync(currency_code: str) -> float | None:
         print(f"Error fetching fx rate for {currency_code}: {e}")
     return None
 
+
 @router.get("/fx_rate/{currency}")
 async def get_fx_rate(currency: str):
     """
@@ -1019,13 +1128,15 @@ async def get_fx_rate(currency: str):
     """
     if currency.upper() == "USD":
         return {"rate": 1.0}
-        
+
     if not re.match(r"^[A-Z]{3}$", currency.upper()):
         raise HTTPException(status_code=400, detail="Invalid currency code format")
-        
+
     rate = await asyncio.to_thread(_fetch_fx_rate_sync, currency.upper())
     if rate is None:
-        raise HTTPException(status_code=404, detail=f"Exchange rate not found for {currency}")
+        raise HTTPException(
+            status_code=404, detail=f"Exchange rate not found for {currency}"
+        )
     return {"rate": rate}
 
 
@@ -1132,7 +1243,9 @@ def _naive_index(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-def _fetch_closes(symbols: list, start, end, interval: str, min_coverage: float) -> pd.DataFrame:
+def _fetch_closes(
+    symbols: list, start, end, interval: str, min_coverage: float
+) -> pd.DataFrame:
     """Adjusted closes per symbol, fetched through the isolated worker.
 
     Deliberately NOT a direct ``yf.download``. yfinance keeps module-level state
@@ -1158,7 +1271,9 @@ def _fetch_closes(symbols: list, start, end, interval: str, min_coverage: float)
                 if df is not None and not df.empty:
                     frames.append(df)
             except Exception as e:
-                logging.warning(f"Heatmap history chunk {i // _HEATMAP_HISTORY_CHUNK} failed: {e}")
+                logging.warning(
+                    f"Heatmap history chunk {i // _HEATMAP_HISTORY_CHUNK} failed: {e}"
+                )
         return frames
 
     def _to_closes(frames: list) -> dict:
@@ -1176,7 +1291,9 @@ def _fetch_closes(symbols: list, start, end, interval: str, min_coverage: float)
             # Adjusted where available so the returns are total returns; the
             # worker requests auto_adjust=False, which keeps both columns. The
             # raw close rides along because it is the price a user recognises.
-            adj_col = next((c for c in ("Adj Close", "Close") if c in sym_df.columns), None)
+            adj_col = next(
+                (c for c in ("Adj Close", "Close") if c in sym_df.columns), None
+            )
             if adj_col is None:
                 continue
             series = sym_df[adj_col].dropna()
@@ -1195,7 +1312,9 @@ def _fetch_closes(symbols: list, start, end, interval: str, min_coverage: float)
     if stragglers and len(stragglers) < len(symbols):
         # Back off first. Empty chunks usually mean Yahoo throttled us, and an
         # immediate retry just collects the same 429.
-        logging.info(f"Heatmap: retrying {interval} history for {len(stragglers)} symbols")
+        logging.info(
+            f"Heatmap: retrying {interval} history for {len(stragglers)} symbols"
+        )
         time.sleep(_HEATMAP_RETRY_BACKOFF)
         closes.update(_to_closes(_fetch(stragglers)))
 
@@ -1221,7 +1340,9 @@ def _fetch_closes(symbols: list, start, end, interval: str, min_coverage: float)
 
 def _history_cache_path(interval: str) -> str:
     return os.path.join(
-        config.get_app_data_dir(), config.CACHE_DIR, f"sp500_heatmap_history_{interval}.pkl"
+        config.get_app_data_dir(),
+        config.CACHE_DIR,
+        f"sp500_heatmap_history_{interval}.pkl",
     )
 
 
@@ -1238,7 +1359,9 @@ def _load_cached_history(interval: str):
         # Frames written before the index was normalised may still be tz-aware.
         return _naive_index(adjusted), _naive_index(raw), age
     except Exception as e:
-        logging.warning(f"Heatmap {interval} history cache unreadable ({e}); refetching")
+        logging.warning(
+            f"Heatmap {interval} history cache unreadable ({e}); refetching"
+        )
         return None
 
 
@@ -1253,7 +1376,9 @@ def _get_history(symbols: list, start, end, interval: str, min_coverage: float):
     cached = _load_cached_history(interval)
     if cached is not None:
         adjusted, raw, age = cached
-        covered = len([s for s in symbols if s in adjusted.columns]) / max(len(symbols), 1)
+        covered = len([s for s in symbols if s in adjusted.columns]) / max(
+            len(symbols), 1
+        )
         if age < _HISTORY_CACHE_TTL.get(interval, 3600) and covered >= min_coverage:
             logging.info(
                 f"Heatmap: reusing {interval} history ({covered:.0%} of symbols, {age / 60:.0f}m old)"
@@ -1265,8 +1390,12 @@ def _get_history(symbols: list, start, end, interval: str, min_coverage: float):
     if cached is not None:
         prev_adj, prev_raw, _ = cached
         # New values win; the previous frame fills only what this fetch missed.
-        fresh_adj = fresh_adj.combine_first(prev_adj) if not fresh_adj.empty else prev_adj
-        fresh_raw = fresh_raw.combine_first(prev_raw) if not fresh_raw.empty else prev_raw
+        fresh_adj = (
+            fresh_adj.combine_first(prev_adj) if not fresh_adj.empty else prev_adj
+        )
+        fresh_raw = (
+            fresh_raw.combine_first(prev_raw) if not fresh_raw.empty else prev_raw
+        )
 
     keep = [s for s in symbols if s in fresh_adj.columns]
     covered = len(keep) / max(len(symbols), 1)
@@ -1285,7 +1414,9 @@ def _get_history(symbols: list, start, end, interval: str, min_coverage: float):
 
 def _fetch_monthly_closes(symbols: list, start, end) -> pd.DataFrame:
     """Long-horizon monthly closes. Load-bearing: the build fails without them."""
-    adjusted, _ = _get_history(symbols, start, end, "1mo", _HEATMAP_MIN_HISTORY_COVERAGE)
+    adjusted, _ = _get_history(
+        symbols, start, end, "1mo", _HEATMAP_MIN_HISTORY_COVERAGE
+    )
     return adjusted
 
 
@@ -1347,7 +1478,9 @@ def _edgar_annual_facts(constituents: list) -> dict:
                 [*tags, *by_cik],
             ).fetchall()
     except Exception as e:
-        logging.warning(f"Heatmap: EDGAR facts unavailable ({e}); filed-history metrics will be n/a")
+        logging.warning(
+            f"Heatmap: EDGAR facts unavailable ({e}); filed-history metrics will be n/a"
+        )
         return {}
 
     out: dict = {}
@@ -1381,7 +1514,11 @@ def _cagr_over(series: list, years: int):
     target = pd.Timestamp(end_date) - pd.DateOffset(years=years)
     # Nearest filed annual on or before the target, tolerating a ragged fiscal
     # calendar by allowing a quarter of slack.
-    candidates = [(d, v) for d, v in series[:-1] if pd.Timestamp(d) <= target + pd.DateOffset(months=3)]
+    candidates = [
+        (d, v)
+        for d, v in series[:-1]
+        if pd.Timestamp(d) <= target + pd.DateOffset(months=3)
+    ]
     if not candidates:
         return None
     start_date, start_val = candidates[-1]
@@ -1431,7 +1568,9 @@ def _days_to_earnings(info: dict, today):
     return (when - today).days
 
 
-def _fundamental_metrics(info: dict, facts: dict, *, market_cap, pe_ratio, price, today) -> dict:
+def _fundamental_metrics(
+    info: dict, facts: dict, *, market_cap, pe_ratio, price, today
+) -> dict:
     """Valuation / earnings / profitability / market readings for one company.
 
     Shared by the S&P 500 heatmap and the per-symbol detail window so the two can
@@ -1534,7 +1673,11 @@ def _key_metrics_for_symbol(symbol: str, info: dict) -> dict:
     same either side of a click.
     """
     cik = _cik_for_symbol(symbol)
-    facts = _edgar_annual_facts([{"symbol": symbol, "cik": cik}]).get(symbol, {}) if cik else {}
+    facts = (
+        _edgar_annual_facts([{"symbol": symbol, "cik": cik}]).get(symbol, {})
+        if cik
+        else {}
+    )
 
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     # Days-to-earnings is a "days from now" a user reads, so it is counted on the
@@ -1692,9 +1835,17 @@ def _build_sp500_heatmap_sync() -> list:
         # The last daily bar is today's once the session opens, so this tracks
         # the live price the same way the batch quote path did.
         raw_bars = daily_raw[sym].dropna() if sym in daily_raw.columns else None
-        price = float(raw_bars.iloc[-1]) if raw_bars is not None and not raw_bars.empty else None
+        price = (
+            float(raw_bars.iloc[-1])
+            if raw_bars is not None and not raw_bars.empty
+            else None
+        )
         if not price:
-            price = screen.get("price") or info.get("currentPrice") or info.get("regularMarketPrice")
+            price = (
+                screen.get("price")
+                or info.get("currentPrice")
+                or info.get("regularMarketPrice")
+            )
         if not price:
             continue
 
@@ -1746,11 +1897,21 @@ def _build_sp500_heatmap_sync() -> list:
                 "mtd_change_pct": _daily_change("mtd"),
                 "3m_change_pct": _daily_change("3m"),
                 "6m_change_pct": _daily_change("6m"),
-                "ytd_change_pct": _pct_change(current_adj, _price_at(column, masks["ytd"])),
-                "1y_change_pct": _pct_change(current_adj, _price_at(column, masks["1y"])),
-                "3y_change_pct": _pct_change(current_adj, _price_at(column, masks["3y"])),
-                "5y_change_pct": _pct_change(current_adj, _price_at(column, masks["5y"])),
-                "10y_change_pct": _pct_change(current_adj, _price_at(column, masks["10y"])),
+                "ytd_change_pct": _pct_change(
+                    current_adj, _price_at(column, masks["ytd"])
+                ),
+                "1y_change_pct": _pct_change(
+                    current_adj, _price_at(column, masks["1y"])
+                ),
+                "3y_change_pct": _pct_change(
+                    current_adj, _price_at(column, masks["3y"])
+                ),
+                "5y_change_pct": _pct_change(
+                    current_adj, _price_at(column, masks["5y"])
+                ),
+                "10y_change_pct": _pct_change(
+                    current_adj, _price_at(column, masks["10y"])
+                ),
                 # Zero or below by construction; the high is an upper bound.
                 "drawdown_52w": _pct_change(price, high_52w) if high_52w else None,
                 "gain_from_52w_low": _pct_change(price, low_52w) if low_52w else None,
@@ -1799,7 +1960,9 @@ async def get_sp500_heatmap():
         # last built rather than making the failure the user's problem.
         stale = _SP500_HEATMAP_CACHE.peek("sp500_heatmap")
         if stale:
-            logging.warning("SP500 heatmap: serving the last good payload after a failed rebuild")
+            logging.warning(
+                "SP500 heatmap: serving the last good payload after a failed rebuild"
+            )
             return clean_nans(stale)
         raise HTTPException(
             status_code=503, detail="S&P 500 heatmap is temporarily unavailable"

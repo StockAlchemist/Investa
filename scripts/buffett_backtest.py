@@ -88,11 +88,17 @@ def _cache_dir() -> str:
 # --- prices -----------------------------------------------------------------
 
 
-def _download_prices(symbols: Sequence[str], start: str, end: str) -> Dict[str, pd.DataFrame]:
+def _download_prices(
+    symbols: Sequence[str], start: str, end: str
+) -> Dict[str, pd.DataFrame]:
     """Monthly OHLC + actions for the whole candidate list, in batches."""
     import yfinance as yf
 
-    frames: Dict[str, List[pd.DataFrame]] = {"Close": [], "Adj Close": [], "Stock Splits": []}
+    frames: Dict[str, List[pd.DataFrame]] = {
+        "Close": [],
+        "Adj Close": [],
+        "Stock Splits": [],
+    }
     symbols = sorted(set(symbols))
     batch_size = 200
 
@@ -112,7 +118,9 @@ def _download_prices(symbols: Sequence[str], start: str, end: str) -> Dict[str, 
                 )
                 break
             except Exception as exc:
-                logging.warning(f"Prices: batch {start_index} attempt {attempt + 1} failed: {exc}")
+                logging.warning(
+                    f"Prices: batch {start_index} attempt {attempt + 1} failed: {exc}"
+                )
                 time.sleep(5)
         else:
             continue
@@ -133,7 +141,9 @@ def _download_prices(symbols: Sequence[str], start: str, end: str) -> Dict[str, 
     }
 
 
-def load_prices(symbols: Sequence[str], start: str, end: str, refresh: bool = False) -> Dict[str, pd.DataFrame]:
+def load_prices(
+    symbols: Sequence[str], start: str, end: str, refresh: bool = False
+) -> Dict[str, pd.DataFrame]:
     """Cached monthly price panel. Columns are symbols, index is month start."""
     path = os.path.join(_cache_dir(), "monthly_prices.pkl")
     if not refresh and os.path.exists(path):
@@ -186,7 +196,11 @@ def rank_universe(
         companies: List[CompanyMetrics] = []
         for cik, entry in filers:
             sic = sic_map.get(cik)
-            model = edgar_sic.model_for_sic(sic) if sic is not None else infer_model_from_facts(cik)
+            model = (
+                edgar_sic.model_for_sic(sic)
+                if sic is not None
+                else infer_model_from_facts(cik)
+            )
             company = compute_metrics(cik, entry.symbol, entry.name, model)
             company.gate_failures.extend(
                 buffett_rank.evaluate_gates(company, min_periods=min_periods)
@@ -196,18 +210,25 @@ def rank_universe(
         # A company with no quote on the rebalance date could not have been
         # bought, so it is dropped rather than ranked on quality alone.
         eligible = [
-            c for c in companies if not c.gate_failures and prices.get(c.symbol) is not None
+            c
+            for c in companies
+            if not c.gate_failures and prices.get(c.symbol) is not None
         ]
 
         market: Dict[str, Dict[str, Any]] = {}
         for company in eligible:
             shares = _shares_as_of(company)
             if shares:
-                market[company.symbol] = {"price": prices[company.symbol], "shares": shares}
+                market[company.symbol] = {
+                    "price": prices[company.symbol],
+                    "shares": shares,
+                }
 
         quality_frame = buffett_rank.score_quality(companies)
         value_frame = buffett_value.build_value_frame(eligible, market)
-        value_scores = buffett_value.score_value(value_frame) if not value_frame.empty else None
+        value_scores = (
+            buffett_value.score_value(value_frame) if not value_frame.empty else None
+        )
 
     if value_frame is not None and not value_frame.empty:
         carry = [
@@ -334,9 +355,13 @@ def main() -> int:
     parser.add_argument("--end", type=int, default=2025)
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--min-periods", type=int, default=BACKTEST_MIN_PERIODS)
-    parser.add_argument("--limit", type=int, default=None, help="cap the universe (for a smoke run)")
+    parser.add_argument(
+        "--limit", type=int, default=None, help="cap the universe (for a smoke run)"
+    )
     parser.add_argument("--refresh-prices", action="store_true")
-    parser.add_argument("--rerank", action="store_true", help="ignore cached per-year rankings")
+    parser.add_argument(
+        "--rerank", action="store_true", help="ignore cached per-year rankings"
+    )
     parser.add_argument("--out", default=None, help="write results as JSON")
     args = parser.parse_args()
 
@@ -351,17 +376,24 @@ def main() -> int:
     for cik, listings in sorted(grouped.items()):
         if cik not in with_facts:
             continue
-        filers.append((cik, sorted(listings, key=lambda e: (len(e.symbol), e.symbol))[0]))
+        filers.append(
+            (cik, sorted(listings, key=lambda e: (len(e.symbol), e.symbol))[0])
+        )
     if args.limit:
         filers = filers[: args.limit]
     print(f"Universe: {len(filers)} filers with EDGAR fundamentals")
 
     symbols = [entry.symbol for _cik, entry in filers]
     panel = load_prices(
-        symbols, start=f"{args.start - 2}-01-01", end=f"{args.end + 1}-12-31", refresh=args.refresh_prices
+        symbols,
+        start=f"{args.start - 2}-01-01",
+        end=f"{args.end + 1}-12-31",
+        refresh=args.refresh_prices,
     )
     close, adjusted = panel["Close"], panel["Adj Close"]
-    factors = split_factors(panel["Stock Splits"].reindex(columns=close.columns).fillna(0.0))
+    factors = split_factors(
+        panel["Stock Splits"].reindex(columns=close.columns).fillna(0.0)
+    )
     # The price actually quoted at the time: today's split-adjusted close scaled
     # back up by every split that has happened since.
     actual = close * factors.reindex_like(close).fillna(1.0)
@@ -386,9 +418,7 @@ def main() -> int:
             prices = {s: float(v) for s, v in row.items() if pd.notna(v) and v > 0}
 
             started = time.time()
-            ranked = rank_universe(
-                filers, sic_map, as_of, prices, args.min_periods
-            )
+            ranked = rank_universe(filers, sic_map, as_of, prices, args.min_periods)
             ranked.to_csv(cache_path)
             print(
                 f"{year}: ranked {len(ranked)} companies as of {as_of} "
@@ -405,20 +435,30 @@ def main() -> int:
     curves = {"Strategy": strategy}
     for symbol in BENCHMARKS:
         if symbol in adjusted.columns:
-            series = adjusted[symbol].loc[f"{years[0] - 1}-12-01" : f"{years[-1]}-12-01"].dropna()
+            series = (
+                adjusted[symbol]
+                .loc[f"{years[0] - 1}-12-01" : f"{years[-1]}-12-01"]
+                .dropna()
+            )
             curves[BENCHMARKS[symbol]] = series / series.iloc[0]
 
     # --- report -------------------------------------------------------------
     print(f"\n{'=' * 78}")
-    print(f"Top-{args.top} Buffett/value ranking, rebalanced each January, {years[0]}-{years[-1]}")
+    print(
+        f"Top-{args.top} Buffett/value ranking, rebalanced each January, {years[0]}-{years[-1]}"
+    )
     print("=" * 78)
 
-    table = pd.DataFrame({name: annual_returns(curve, years) for name, curve in curves.items()})
+    table = pd.DataFrame(
+        {name: annual_returns(curve, years) for name, curve in curves.items()}
+    )
     print("\nCalendar-year returns (%)")
     print((table * 100).round(1).to_string())
 
     print("\nSummary")
-    summary = pd.DataFrame({name: statistics_for(curve) for name, curve in curves.items()}).T
+    summary = pd.DataFrame(
+        {name: statistics_for(curve) for name, curve in curves.items()}
+    ).T
     formatted = summary.copy()
     for column in ("total_return", "cagr", "volatility", "max_drawdown"):
         formatted[column] = (summary[column] * 100).round(1)
@@ -435,9 +475,15 @@ def main() -> int:
             "years": years,
             "top": args.top,
             "holdings": holdings,
-            "annual_returns": {k: {str(y): v for y, v in annual_returns(c, years).items()} for k, c in curves.items()},
+            "annual_returns": {
+                k: {str(y): v for y, v in annual_returns(c, years).items()}
+                for k, c in curves.items()
+            },
             "summary": {k: statistics_for(c) for k, c in curves.items()},
-            "curves": {k: {str(i.date()): float(v) for i, v in c.items()} for k, c in curves.items()},
+            "curves": {
+                k: {str(i.date()): float(v) for i, v in c.items()}
+                for k, c in curves.items()
+            },
         }
         with open(args.out, "w") as handle:
             json.dump(payload, handle, indent=2)

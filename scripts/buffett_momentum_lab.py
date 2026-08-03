@@ -60,14 +60,14 @@ def _cache_dir() -> str:
 
 @dataclass(frozen=True)
 class MomentumStrategy:
-    quality_pct: float = 0.30          # keep this share of the year's table, by quality
+    quality_pct: float = 0.30  # keep this share of the year's table, by quality
     top_n: int = 20
-    buffer_n: int = 40                 # incumbent survives until it drops below this rank
+    buffer_n: int = 40  # incumbent survives until it drops below this rank
     min_market_cap: float = 0.0
-    cost_bps: float = 15.0             # one-way, charged on turnover
-    sma_months: Optional[int] = None   # crash filter on SPY; None disables
-    momentum_blend: float = 1.0        # 1.0 = rank purely on momentum inside the gate;
-                                       # less blends the quality percentile back in
+    cost_bps: float = 15.0  # one-way, charged on turnover
+    sma_months: Optional[int] = None  # crash filter on SPY; None disables
+    momentum_blend: float = 1.0  # 1.0 = rank purely on momentum inside the gate;
+    # less blends the quality percentile back in
     label_extra: str = ""
 
     def label(self) -> str:
@@ -83,7 +83,9 @@ class MomentumStrategy:
         return " ".join(parts)
 
 
-def month_index(adjusted: pd.DataFrame, start_year: int, end_year: int) -> List[pd.Timestamp]:
+def month_index(
+    adjusted: pd.DataFrame, start_year: int, end_year: int
+) -> List[pd.Timestamp]:
     """Month rows to be *held* — entry is the close of the previous row."""
     stamps = [s for s in adjusted.index if start_year <= s.year <= end_year]
     return sorted(stamps)
@@ -132,14 +134,17 @@ def run_monthly(
 
     for offset, month in enumerate(months):
         row = position + offset
-        formation = adjusted.index[row - 1]          # close of M-1: information edge
-        lookback = adjusted.index[row - 13]          # close of M-13
+        formation = adjusted.index[row - 1]  # close of M-1: information edge
+        lookback = adjusted.index[row - 13]  # close of M-13
         year_gate, quality_pct = gates.get(month.year, ([], {}))
 
         in_cash = False
         if strategy.sma_months:
             window = spy.iloc[max(0, row - strategy.sma_months) : row]
-            if len(window.dropna()) >= strategy.sma_months and spy.loc[formation] < window.mean():
+            if (
+                len(window.dropna()) >= strategy.sma_months
+                and spy.loc[formation] < window.mean()
+            ):
                 in_cash = True
 
         if in_cash:
@@ -155,14 +160,15 @@ def run_monthly(
                 score = momentum.rank(pct=True) * 100.0
                 if strategy.momentum_blend < 1.0:
                     quality_series = pd.Series(quality_pct).reindex(score.index)
-                    score = (
-                        score * strategy.momentum_blend
-                        + quality_series.fillna(0.0) * (1.0 - strategy.momentum_blend)
-                    )
+                    score = score * strategy.momentum_blend + quality_series.fillna(
+                        0.0
+                    ) * (1.0 - strategy.momentum_blend)
                 ordered = score.sort_values(ascending=False)
                 ranks = {s: i + 1 for i, s in enumerate(ordered.index)}
                 # Incumbents first: keep anything still inside the buffer.
-                target = [s for s in holdings if ranks.get(s, 10**9) <= strategy.buffer_n]
+                target = [
+                    s for s in holdings if ranks.get(s, 10**9) <= strategy.buffer_n
+                ]
                 for symbol in ordered.index:
                     if len(target) >= strategy.top_n:
                         break
@@ -184,7 +190,9 @@ def run_monthly(
         if target:
             entry = adjusted.loc[formation, target]
             exit_ = adjusted.loc[month, target]
-            returns = (exit_ / entry - 1.0).fillna(0.0)   # NaN exit: frozen at last quote
+            returns = (exit_ / entry - 1.0).fillna(
+                0.0
+            )  # NaN exit: frozen at last quote
             capital *= 1.0 + float(returns.mean())
         holdings = target
         curve[month] = capital
@@ -206,7 +214,9 @@ def run_annual_baseline(
     """The existing annual-rebalance rule, for comparison, with annual costs."""
     from buffett_backtest import simulate
 
-    holdings = {year: select(tables[year], strategy) for year in years if year in tables}
+    holdings = {
+        year: select(tables[year], strategy) for year in years if year in tables
+    }
     return simulate(holdings, adjusted, years)
 
 
@@ -221,7 +231,9 @@ def index_trend_reference(
         row = position + offset
         formation = adjusted.index[row - 1]
         window = series.iloc[max(0, row - sma) : row]
-        invested = len(window.dropna()) >= sma and series.loc[formation] >= window.mean()
+        invested = (
+            len(window.dropna()) >= sma and series.loc[formation] >= window.mean()
+        )
         if invested:
             capital *= float(series.loc[month] / series.loc[formation])
         curve[month] = capital
@@ -232,11 +244,16 @@ def index_trend_reference(
 def window_stats(curve: pd.Series, start_year: int, end_year: int) -> Dict[str, float]:
     window = curve.loc[f"{start_year - 1}-12-01" : f"{end_year}-12-01"]
     if len(window) < 12:
-        return {k: float("nan") for k in ("total_return", "cagr", "volatility", "max_drawdown", "sharpe")}
+        return {
+            k: float("nan")
+            for k in ("total_return", "cagr", "volatility", "max_drawdown", "sharpe")
+        }
     return statistics_for(window / window.iloc[0])
 
 
-def annual_returns_from_curve(curve: pd.Series, years: Sequence[int]) -> Dict[int, float]:
+def annual_returns_from_curve(
+    curve: pd.Series, years: Sequence[int]
+) -> Dict[int, float]:
     out = {}
     for year in years:
         try:
@@ -252,7 +269,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start", type=int, default=2013)
     parser.add_argument("--end", type=int, default=2025)
-    parser.add_argument("--split", type=int, default=2019, help="last year of the training window")
+    parser.add_argument(
+        "--split", type=int, default=2019, help="last year of the training window"
+    )
     parser.add_argument("--min-periods", type=int, default=5)
     parser.add_argument("--cost-bps", type=float, default=15.0)
     parser.add_argument("--out", default=None, help="write results as JSON")
@@ -278,11 +297,19 @@ def main() -> int:
         MomentumStrategy(quality_pct=0.20, cost_bps=args.cost_bps),
         MomentumStrategy(quality_pct=0.30, cost_bps=args.cost_bps),
         MomentumStrategy(quality_pct=0.50, cost_bps=args.cost_bps),
-        MomentumStrategy(quality_pct=1.00, cost_bps=args.cost_bps, label_extra="nogate"),
+        MomentumStrategy(
+            quality_pct=1.00, cost_bps=args.cost_bps, label_extra="nogate"
+        ),
         # Concentration axis.
-        MomentumStrategy(quality_pct=0.30, top_n=10, buffer_n=20, cost_bps=args.cost_bps),
-        MomentumStrategy(quality_pct=0.30, top_n=15, buffer_n=30, cost_bps=args.cost_bps),
-        MomentumStrategy(quality_pct=0.30, top_n=30, buffer_n=60, cost_bps=args.cost_bps),
+        MomentumStrategy(
+            quality_pct=0.30, top_n=10, buffer_n=20, cost_bps=args.cost_bps
+        ),
+        MomentumStrategy(
+            quality_pct=0.30, top_n=15, buffer_n=30, cost_bps=args.cost_bps
+        ),
+        MomentumStrategy(
+            quality_pct=0.30, top_n=30, buffer_n=60, cost_bps=args.cost_bps
+        ),
         # Market-cap floor.
         MomentumStrategy(quality_pct=0.30, min_market_cap=1e9, cost_bps=args.cost_bps),
         MomentumStrategy(quality_pct=0.30, min_market_cap=1e10, cost_bps=args.cost_bps),
@@ -293,7 +320,12 @@ def main() -> int:
         MomentumStrategy(quality_pct=0.30, sma_months=10, cost_bps=args.cost_bps),
         MomentumStrategy(quality_pct=0.20, sma_months=10, cost_bps=args.cost_bps),
         # No buffer, as a control for how much the buffer is worth after costs.
-        MomentumStrategy(quality_pct=0.30, buffer_n=20, cost_bps=args.cost_bps, label_extra="nobuffer"),
+        MomentumStrategy(
+            quality_pct=0.30,
+            buffer_n=20,
+            cost_bps=args.cost_bps,
+            label_extra="nobuffer",
+        ),
     ]
 
     rows = []
@@ -318,7 +350,9 @@ def main() -> int:
             }
         )
 
-    print(f"\nQuality gate + monthly momentum, {args.start}-{args.end}, costs {args.cost_bps:g} bps one-way")
+    print(
+        f"\nQuality gate + monthly momentum, {args.start}-{args.end}, costs {args.cost_bps:g} bps one-way"
+    )
     print("=" * 100)
     print(pd.DataFrame(rows).round(2).to_string(index=False))
 
@@ -327,7 +361,9 @@ def main() -> int:
     print("=" * 100)
     reference_rows = []
 
-    annual_curve = run_annual_baseline(Strategy(quality_weight=0.8, top_n=20), tables, adjusted, years)
+    annual_curve = run_annual_baseline(
+        Strategy(quality_weight=0.8, top_n=20), tables, adjusted, years
+    )
     curves["annual 80/20 top20 (prior best)"] = annual_curve
     reference_rows.append(("annual 80/20 top20 (prior best)", annual_curve))
 
@@ -337,7 +373,11 @@ def main() -> int:
 
     for symbol, name in BENCHMARKS.items():
         if symbol in adjusted.columns:
-            series = adjusted[symbol].loc[f"{args.start - 1}-12-01" : f"{args.end}-12-01"].dropna()
+            series = (
+                adjusted[symbol]
+                .loc[f"{args.start - 1}-12-01" : f"{args.end}-12-01"]
+                .dropna()
+            )
             curves[name] = series / series.iloc[0]
             reference_rows.append((name, curves[name]))
 
@@ -361,7 +401,10 @@ def main() -> int:
     if args.out:
         payload = {
             "months": [str(m.date()) for m in months],
-            "curves": {k: {str(i.date()): float(v) for i, v in c.items()} for k, c in curves.items()},
+            "curves": {
+                k: {str(i.date()): float(v) for i, v in c.items()}
+                for k, c in curves.items()
+            },
             "turnover": turnovers,
             "annual_returns": {
                 k: {str(y): v for y, v in annual_returns_from_curve(c, years).items()}

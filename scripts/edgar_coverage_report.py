@@ -73,11 +73,15 @@ def measure(ciks: List[str], models: Dict[str, str]) -> Dict:
     banks. What matters is whether a bank has deposits.
     """
     chains = all_concepts()
-    present: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    present: Dict[str, collections.Counter] = collections.defaultdict(
+        collections.Counter
+    )
     depths: Dict[str, Dict[str, List[int]]] = collections.defaultdict(
         lambda: collections.defaultdict(list)
     )
-    tag_hits: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    tag_hits: Dict[str, collections.Counter] = collections.defaultdict(
+        collections.Counter
+    )
     totals: collections.Counter = collections.Counter()
 
     for index, cik in enumerate(ciks, start=1):
@@ -156,7 +160,11 @@ def render(results: Dict) -> None:
     section("Core (a gap here disqualifies a company)", CORE_CONCEPTS)
     generic = [c for c in chains if c not in sector_concepts and c not in CORE_CONCEPTS]
     section("Generic model", sorted(generic), model="generic")
-    section("Banks & insurers — measured within banks only", sorted(BANK_CONCEPTS), model="bank")
+    section(
+        "Banks & insurers — measured within banks only",
+        sorted(BANK_CONCEPTS),
+        model="bank",
+    )
     section("REITs — measured within REITs only", sorted(REIT_CONCEPTS), model="reit")
 
     print()

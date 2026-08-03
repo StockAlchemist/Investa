@@ -10,6 +10,7 @@ the supporting transaction types are introduced.
 Keeping these as pure DataFrame functions (no class state, no IO) makes
 them straightforward to unit-test in isolation.
 """
+
 from __future__ import annotations
 
 import re
@@ -24,33 +25,44 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Types the engine currently understands end-to-end (data loader, all three
 # JIT dispatchers in portfolio_logic.py).
-SUPPORTED_TYPES = frozenset({
-    "buy", "sell",
-    "deposit", "withdrawal",
-    "dividend", "interest", "tax", "fees",
-    "split", "stock split",
-    "short sell", "buy to cover",
-    "transfer",
-    # Spin-off is applied end-to-end by the JIT holdings dispatchers. It is
-    # imported as two "spin off" legs sharing a date (see apply_spin_off):
-    #   - child receipt  (Quantity > 0): adds the new symbol at its allocated
-    #     cost basis, cash-neutral.
-    #   - parent basis reduction (Quantity == 0): reduces the parent symbol's
-    #     cost basis by the amount allocated to the child, cash-neutral.
-    "spin off",
-})
+SUPPORTED_TYPES = frozenset(
+    {
+        "buy",
+        "sell",
+        "deposit",
+        "withdrawal",
+        "dividend",
+        "interest",
+        "tax",
+        "fees",
+        "split",
+        "stock split",
+        "short sell",
+        "buy to cover",
+        "transfer",
+        # Spin-off is applied end-to-end by the JIT holdings dispatchers. It is
+        # imported as two "spin off" legs sharing a date (see apply_spin_off):
+        #   - child receipt  (Quantity > 0): adds the new symbol at its allocated
+        #     cost basis, cash-neutral.
+        #   - parent basis reduction (Quantity == 0): reduces the parent symbol's
+        #     cost basis by the amount allocated to the child, cash-neutral.
+        "spin off",
+    }
+)
 
 # Types the engine recognises as valid corporate actions but does NOT yet
 # apply mathematically. Rows of these types pass data-loader validation
 # (no warning spam) but no holding state is mutated. The math is defined
 # below as pure functions; wiring those into the JIT inner loops is the
 # remaining work for this epic.
-RESERVED_CORPORATE_ACTION_TYPES = frozenset({
-    "return of capital",   # apply_return_of_capital
-    "stock dividend",      # apply_stock_dividend
-    # Multi-symbol action still deferred (needs a separate transaction shape):
-    "merger",
-})
+RESERVED_CORPORATE_ACTION_TYPES = frozenset(
+    {
+        "return of capital",  # apply_return_of_capital
+        "stock dividend",  # apply_stock_dividend
+        # Multi-symbol action still deferred (needs a separate transaction shape):
+        "merger",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +74,7 @@ RESERVED_CORPORATE_ACTION_TYPES = frozenset({
 # dispatcher when the integration is wired up. Until then they are exercised
 # only by unit tests.
 # ---------------------------------------------------------------------------
+
 
 def apply_return_of_capital(
     current_qty: float,
@@ -275,7 +288,7 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     # Safely de-fragment the DataFrame before ANY slicing or copying.
-    # The incoming DataFrame often arrives with "Gaps in blk ref_locs" block manager 
+    # The incoming DataFrame often arrives with "Gaps in blk ref_locs" block manager
     # corruption from upstream concatenations, which causes ~is_split or .copy() to crash.
     try:
         df = pd.DataFrame({c: df[c].to_numpy() for c in df.columns}, index=df.index)
@@ -283,7 +296,7 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
         original_index = df.index
         df = pd.DataFrame(df.to_dict("records"))
         df.index = original_index
-        
+
     other_txs = df[~is_split]
     splits_df = df[is_split].copy()
 
@@ -291,7 +304,9 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     acc_col = "Account"
     if acc_col in splits_df.columns:
         splits_df["__split_priority"] = np.where(
-            splits_df[acc_col].astype(str).str.lower().str.strip() == "all accounts", 0, 1
+            splits_df[acc_col].astype(str).str.lower().str.strip() == "all accounts",
+            0,
+            1,
         )
     else:
         splits_df["__split_priority"] = 1
@@ -301,7 +316,9 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
 
     # Normalize Split Ratio so 7.0 and 7 don't get treated as different splits.
     splits_df["Split Ratio"] = (
-        pd.to_numeric(splits_df["Split Ratio"], errors="coerce").fillna(1.0).astype(float)
+        pd.to_numeric(splits_df["Split Ratio"], errors="coerce")
+        .fillna(1.0)
+        .astype(float)
     )
 
     sort_cols = ["Symbol", "__split_ym", "__split_priority"]
@@ -313,7 +330,7 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     deduped_splits = splits_df.drop_duplicates(
         subset=["Symbol", "__split_ym", "Split Ratio"], keep="first"
     )
-    
+
     # We must explicitly select original columns and make a deep copy, since
     # dropping columns can again cause block manager issues during concat.
     deduped_splits = deduped_splits[list(df.columns)].copy()
@@ -323,7 +340,7 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     frames = [f for f in [other_txs, deduped_splits] if not f.empty]
     if not frames:
         return df.iloc[:0].copy()
-    
+
     if len(frames) == 1:
         result = frames[0].copy()
     else:

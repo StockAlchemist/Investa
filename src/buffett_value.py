@@ -40,6 +40,7 @@ Both scored metrics are ranked as sector-relative percentiles (P6). An earnings
 yield that is ordinary for a bank is exceptional for a software company, and
 comparing the two directly would just re-rank the market by industry.
 """
+
 from __future__ import annotations
 
 import logging
@@ -128,7 +129,14 @@ def compute_market_metrics(
     # --- classic multiples --------------------------------------------------
     concepts = edgar_provider.get_concept_values(
         company.cik,
-        ["revenue", "equity", "pretax_income", "interest_expense", "net_income", "cash"],
+        [
+            "revenue",
+            "equity",
+            "pretax_income",
+            "interest_expense",
+            "net_income",
+            "cash",
+        ],
     )
     latest = company.latest_period
     if not latest:

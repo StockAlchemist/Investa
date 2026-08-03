@@ -17,6 +17,7 @@ Reports:
 
 Run: python scripts/reconcile_twr_irr_flows.py dheematan
 """
+
 import sys
 import sqlite3
 import pandas as pd
@@ -45,7 +46,9 @@ for c in ("Quantity", "price", "Commission", "total"):
     df[c] = pd.to_numeric(df[c], errors="coerce")
 
 # Scope = ALL accounts (the "All Accounts" dashboard view)
-included = set(df["Account"].unique()) | set(df.loc[df["to_acct"] != "", "to_acct"].unique())
+included = set(df["Account"].unique()) | set(
+    df.loc[df["to_acct"] != "", "to_acct"].unique()
+)
 included.discard("")
 
 
@@ -155,21 +158,40 @@ print(f"Total IRR flows (sum): ${irr_total:>14,.2f}")
 print(f"Total Delta (IRR-TWR): ${df['delta'].sum():>14,.2f}\n")
 
 # Delta by year
-yr = df.groupby("year").agg(twr_sum=("twr", "sum"), irr_sum=("irr", "sum"), delta=("delta", "sum"))
+yr = df.groupby("year").agg(
+    twr_sum=("twr", "sum"), irr_sum=("irr", "sum"), delta=("delta", "sum")
+)
 yr = yr[(yr["delta"].abs() > 1.0)].sort_index()
-print(f"Year-by-year delta (rows with |delta|>$1):\n{yr.to_string(float_format='%.0f')}\n")
+print(
+    f"Year-by-year delta (rows with |delta|>$1):\n{yr.to_string(float_format='%.0f')}\n"
+)
 
 # Delta by transaction type
-by_type = df.groupby("Type").agg(
-    n=("delta", "count"),
-    twr_sum=("twr", "sum"),
-    irr_sum=("irr", "sum"),
-    delta_sum=("delta", "sum"),
-).sort_values("delta_sum", key=abs, ascending=False)
+by_type = (
+    df.groupby("Type")
+    .agg(
+        n=("delta", "count"),
+        twr_sum=("twr", "sum"),
+        irr_sum=("irr", "sum"),
+        delta_sum=("delta", "sum"),
+    )
+    .sort_values("delta_sum", key=abs, ascending=False)
+)
 print("Delta by transaction type:\n", by_type.to_string(float_format="%.0f"), "\n")
 
 # Top 20 single-row deltas
 print("Top 20 single-row deltas:\n")
 top = df.reindex(df["delta"].abs().sort_values(ascending=False).index).head(20)
-cols = ["Date", "Account", "Symbol", "Type", "Quantity", "price", "total", "twr", "irr", "delta"]
+cols = [
+    "Date",
+    "Account",
+    "Symbol",
+    "Type",
+    "Quantity",
+    "price",
+    "total",
+    "twr",
+    "irr",
+    "delta",
+]
 print(top[cols].to_string(index=False, float_format="%.2f"))

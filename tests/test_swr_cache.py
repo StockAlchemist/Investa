@@ -53,8 +53,8 @@ def test_stale_hit_serves_stale_then_refreshes_in_background():
         return served, refreshed
 
     served, refreshed = asyncio.run(scenario())
-    assert served == "v1"          # caller never waited for the recompute
-    assert refreshed == "v2"       # next reader will see fresh data
+    assert served == "v1"  # caller never waited for the recompute
+    assert refreshed == "v2"  # next reader will see fresh data
 
 
 def test_concurrent_cold_callers_coalesce():

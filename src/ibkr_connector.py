@@ -10,14 +10,16 @@ from datetime import datetime
 
 # --- Constants ---
 FLEX_SEND_REQUEST_URL = "https://www.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest"
-# Note: The actual URL to get the statement comes from the SendRequest response, 
+# Note: The actual URL to get the statement comes from the SendRequest response,
 # but it usually points to the FlexStatementService.GetStatement servlet.
+
 
 class IBKRConnector:
     """
     Handles communication with the Interactive Brokers Flex Web Service.
     Supports requesting Activity Flex Queries and parsing the resulting XML.
     """
+
     def __init__(self, token: Optional[str] = None, query_id: Optional[str] = None):
         self.token = token or IBKR_TOKEN
         self.query_id = query_id or IBKR_QUERY_ID
@@ -42,12 +44,8 @@ class IBKRConnector:
             self.logger.error("IBKR Token or Query ID not configured.")
             return None, None
 
-        params = {
-            "t": self.token,
-            "q": self.query_id,
-            "v": "3"
-        }
-        
+        params = {"t": self.token, "q": self.query_id, "v": "3"}
+
         max_retries = 3
         for attempt in range(max_retries):
             xml_resp = self._make_request(FLEX_SEND_REQUEST_URL, params)
@@ -56,23 +54,38 @@ class IBKRConnector:
 
             try:
                 root = ET.fromstring(xml_resp)
-                status = root.find("Status").text if root.find("Status") is not None else "Fail"
-                
+                status = (
+                    root.find("Status").text
+                    if root.find("Status") is not None
+                    else "Fail"
+                )
+
                 if status == "Success":
                     reference_code = root.find("ReferenceCode").text
                     url = root.find("Url").text
-                    self.logger.info(f"IBKR Report request successful. Ref: {reference_code}")
+                    self.logger.info(
+                        f"IBKR Report request successful. Ref: {reference_code}"
+                    )
                     return reference_code, url
                 else:
-                    err_msg = root.find("ErrorMessage").text if root.find("ErrorMessage") is not None else "Unknown Error"
-                    
-                    if "try again shortly" in err_msg.lower() or "statement could not be generated" in err_msg.lower():
+                    err_msg = (
+                        root.find("ErrorMessage").text
+                        if root.find("ErrorMessage") is not None
+                        else "Unknown Error"
+                    )
+
+                    if (
+                        "try again shortly" in err_msg.lower()
+                        or "statement could not be generated" in err_msg.lower()
+                    ):
                         if attempt < max_retries - 1:
                             wait_time = 15
-                            self.logger.warning(f"IBKR Report generation busy: {err_msg}. Retrying in {wait_time}s...")
+                            self.logger.warning(
+                                f"IBKR Report generation busy: {err_msg}. Retrying in {wait_time}s..."
+                            )
                             time.sleep(wait_time)
                             continue
-                            
+
                     self.logger.error(f"IBKR Report request failed: {err_msg}")
                     raise Exception(f"IBKR API Error: {err_msg}")
             except Exception as e:
@@ -80,17 +93,13 @@ class IBKRConnector:
                     raise e
                 self.logger.error(f"Failed to parse IBKR SendRequest response: {e}")
                 raise Exception(f"Failed to initiate IBKR sync: {str(e)}")
-                
+
         return None, None
 
     def download_report(self, reference_code: str, url: str) -> Optional[str]:
         """Downloads the actual report XML using the reference code."""
-        params = {
-            "t": self.token,
-            "q": reference_code,
-            "v": "3"
-        }
-        
+        params = {"t": self.token, "q": reference_code, "v": "3"}
+
         # Sometimes IBKR needs a few seconds to prepare the report
         # Increased retries and wait time as first-time reports can be slow
         max_retries = 6
@@ -98,25 +107,37 @@ class IBKRConnector:
             xml_content = self._make_request(url, params)
             if xml_content:
                 # Check if it's an actual report (FlexQueryResponse or FlexStatementResponse)
-                if "<FlexQueryResponse" in xml_content or "<FlexStatementResponse" in xml_content:
-                     return xml_content
-                
+                if (
+                    "<FlexQueryResponse" in xml_content
+                    or "<FlexStatementResponse" in xml_content
+                ):
+                    return xml_content
+
                 # Log the unexpected content for debugging
-                self.logger.warning(f"Unexpected IBKR response (Attempt {i+1}): {xml_content[:200]}...")
-                
+                self.logger.warning(
+                    f"Unexpected IBKR response (Attempt {i + 1}): {xml_content[:200]}..."
+                )
+
                 # If we got a status=Warn or code=1018, it's still being prepared
                 try:
-                    if "<Status>Warn</Status>" in xml_content or "<ErrorCode>1018</ErrorCode>" in xml_content:
-                         self.logger.warning("IBKR Report still preparing, waiting 10s...")
-                         time.sleep(10)
-                         continue
+                    if (
+                        "<Status>Warn</Status>" in xml_content
+                        or "<ErrorCode>1018</ErrorCode>" in xml_content
+                    ):
+                        self.logger.warning(
+                            "IBKR Report still preparing, waiting 10s..."
+                        )
+                        time.sleep(10)
+                        continue
                 except Exception:
                     pass
-            
-            self.logger.error(f"Failed to download IBKR report (Attempt {i+1})")
+
+            self.logger.error(f"Failed to download IBKR report (Attempt {i + 1})")
             time.sleep(5)
-            
-        raise Exception("Failed to download IBKR report after 6 attempts. IBKR might be experiencing delays, or your query is still being generated. Please wait 1-2 minutes and try again.")
+
+        raise Exception(
+            "Failed to download IBKR report after 6 attempts. IBKR might be experiencing delays, or your query is still being generated. Please wait 1-2 minutes and try again."
+        )
 
     def parse_activity_flex_xml(self, xml_content: str) -> List[Dict[str, Any]]:
         """
@@ -128,9 +149,9 @@ class IBKRConnector:
         transactions = []
         try:
             root = ET.fromstring(xml_content)
-            # IBKR Flex XML is deeply nested. 
+            # IBKR Flex XML is deeply nested.
             # Structure: FlexStatementResponse -> FlexStatements -> FlexStatement -> [Sections]
-            
+
             statements = root.findall(".//FlexStatement")
             if not statements:
                 self.logger.warning("No FlexStatement found in XML.")
@@ -170,29 +191,31 @@ class IBKRConnector:
 
         except Exception as e:
             self.logger.error(f"Error parsing IBKR Activity Flex XML: {e}")
-            
+
         return transactions
 
-    def _map_trade_to_internal(self, trade_elem: ET.Element) -> Optional[Dict[str, Any]]:
+    def _map_trade_to_internal(
+        self, trade_elem: ET.Element
+    ) -> Optional[Dict[str, Any]]:
         """Maps a <Trade> element to our internal transaction format."""
         try:
             # IBKR fields: symbol, dateTime, quantity, tradePrice, ibCommission, currency, buySell
             symbol = trade_elem.get("symbol")
-            dt_str = trade_elem.get("dateTime") # formats: YYYYMMDD;HHMMSS
+            dt_str = trade_elem.get("dateTime")  # formats: YYYYMMDD;HHMMSS
             qty = float(trade_elem.get("quantity", 0))
             price = float(trade_elem.get("tradePrice", 0))
             comm = abs(float(trade_elem.get("ibCommission", 0)))
             currency = trade_elem.get("currency")
-            side = trade_elem.get("buySell") # 'BUY' or 'SELL'
-            asset_category = trade_elem.get("assetCategory") # STK, OPT, etc.
+            side = trade_elem.get("buySell")  # 'BUY' or 'SELL'
+            asset_category = trade_elem.get("assetCategory")  # STK, OPT, etc.
             trade_id = trade_elem.get("tradeID")
-            
-            if not symbol or asset_category != "STK": # For now only stocks/ETFs
+
+            if not symbol or asset_category != "STK":  # For now only stocks/ETFs
                 return None
 
             # Standardize type
             tx_type = "BUY" if side == "BUY" else "SELL"
-            
+
             # Parse date (IBKR format 20240130;201500)
             try:
                 dt = datetime.strptime(dt_str.split(";")[0], "%Y%m%d")
@@ -206,17 +229,20 @@ class IBKRConnector:
                 "Quantity": abs(qty),
                 "Price/Share": price,
                 "Commission": comm,
-                "Total Amount": abs(qty * price) + (comm if tx_type == "BUY" else -comm),
+                "Total Amount": abs(qty * price)
+                + (comm if tx_type == "BUY" else -comm),
                 "Local Currency": currency,
                 "Account": "IBKR",
                 "ExternalID": f"IBKR_TRADE_{trade_id}" if trade_id else None,
-                "Source": "IBKR_API"
+                "Source": "IBKR_API",
             }
         except Exception as e:
             self.logger.warning(f"Failed to map IBKR trade: {e}")
             return None
 
-    def _map_cash_transaction_to_internal(self, ctx_elem: ET.Element) -> Optional[Dict[str, Any]]:
+    def _map_cash_transaction_to_internal(
+        self, ctx_elem: ET.Element
+    ) -> Optional[Dict[str, Any]]:
         """Maps a <CashTransaction> element (Dividends, etc.) to internal format."""
         try:
             # IBKR types: Dividends, Withholding Tax, Payment In Lieu of Dividend, Broker Interest Paid, etc.
@@ -238,7 +264,7 @@ class IBKRConnector:
                 internal_type = "TAX"
             elif "Fee" in ib_type or "Commission" in ib_type:
                 internal_type = "FEE"
-            
+
             if not internal_type:
                 return None
 
@@ -249,9 +275,11 @@ class IBKRConnector:
 
             tx_qty = 1.0
             tx_price = amount
-            
+
             if internal_type == "DIVIDEND":
-                match = re.search(r"(\d+(?:\.\d+)?)\s*per Share", description, re.IGNORECASE)
+                match = re.search(
+                    r"(\d+(?:\.\d+)?)\s*per Share", description, re.IGNORECASE
+                )
                 if match:
                     try:
                         div_per_share = float(match.group(1))
@@ -273,7 +301,7 @@ class IBKRConnector:
                 "Account": "IBKR",
                 "Description": description,
                 "ExternalID": f"IBKR_CASH_{transaction_id}" if transaction_id else None,
-                "Source": "IBKR_API"
+                "Source": "IBKR_API",
             }
         except Exception as e:
             self.logger.warning(f"Failed to map IBKR cash transaction: {e}")
@@ -315,8 +343,14 @@ class IBKRConnector:
 
             currency = ca_elem.get("currency") or "USD"
             legs = build_spinoff_legs(
-                parent, child, qty, date_str, "IBKR", user_id=0,
-                allocated_basis=basis_map.get(child, 0.0), ratio=ratio,
+                parent,
+                child,
+                qty,
+                date_str,
+                "IBKR",
+                user_id=0,
+                allocated_basis=basis_map.get(child, 0.0),
+                ratio=ratio,
                 currency=currency,
             )
             # Match the connector's row conventions (no user_id; carry Source /
@@ -326,9 +360,7 @@ class IBKRConnector:
                 leg.pop("user_id", None)
                 leg["Account"] = "IBKR"
                 leg["Source"] = "IBKR_API"
-                leg["ExternalID"] = (
-                    f"IBKR_CA_{action_id}_{i}" if action_id else None
-                )
+                leg["ExternalID"] = f"IBKR_CA_{action_id}_{i}" if action_id else None
             return legs
         except Exception as e:
             self.logger.warning(f"Failed to map IBKR corporate action: {e}")
@@ -339,6 +371,6 @@ class IBKRConnector:
         ref_code, url = self.request_report()
         # Give it a moment for IBKR to finalize the report
         time.sleep(3)
-        
+
         xml_content = self.download_report(ref_code, url)
         return self.parse_activity_flex_xml(xml_content)

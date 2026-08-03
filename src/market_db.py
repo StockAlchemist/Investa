@@ -7,11 +7,13 @@ import threading
 import config
 from db_utils import get_db_connection
 
+
 class MarketDatabase:
     """
     Manages a persistent SQLite database for historical market data.
     Provides methods for upserting, querying, and checking data integrity.
     """
+
     # Class-level lock to serialize WRITES across threadpool workers.
     # When market_data.db lives on a cloud-synced path (e.g. Google Drive),
     # db_utils forces journal_mode=DELETE, which requires exclusive locking
@@ -23,7 +25,9 @@ class MarketDatabase:
 
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
-            db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, "market_data.db")
+            db_path = os.path.join(
+                config.get_app_data_dir(), config.DB_DIR, "market_data.db"
+            )
         self.db_path = db_path
         self._init_db()
 
@@ -35,7 +39,7 @@ class MarketDatabase:
         """Initializes the database schema if it doesn't exist."""
         with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
-            
+
             # Historical OHLCV Table (Daily)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS daily_ohlcv (
@@ -91,7 +95,7 @@ class MarketDatabase:
             """)
             conn.commit()
 
-    def upsert_ohlcv(self, symbol: str, df: pd.DataFrame, interval: str = '1d'):
+    def upsert_ohlcv(self, symbol: str, df: pd.DataFrame, interval: str = "1d"):
         """
         Upserts OHLCV data from a DataFrame.
         DataFrame must have a DatetimeIndex.
@@ -109,10 +113,10 @@ class MarketDatabase:
         # fall back to the old per-element logic for non-datetime indexes.
         idx = df.index
         if isinstance(idx, pd.DatetimeIndex):
-            date_strs = idx.strftime('%Y-%m-%d').tolist()
+            date_strs = idx.strftime("%Y-%m-%d").tolist()
         else:
             date_strs = [
-                ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts)[:10]
+                ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
                 for ts in idx
             ]
 
@@ -121,50 +125,73 @@ class MarketDatabase:
             `col` is a column name (str) or None when the column is absent."""
             if col is None or col not in df.columns:
                 return [None] * n
-            vals = pd.to_numeric(df[col], errors='coerce').to_numpy(dtype='float64').tolist()
+            vals = (
+                pd.to_numeric(df[col], errors="coerce")
+                .to_numpy(dtype="float64")
+                .tolist()
+            )
             return [None if v != v else v for v in vals]  # v != v -> NaN
 
-        opens = clean_floats('Open')
-        highs = clean_floats('High')
-        lows = clean_floats('Low')
+        opens = clean_floats("Open")
+        highs = clean_floats("High")
+        lows = clean_floats("Low")
         # close: prefer 'Close', else 'price' column (column-level fallback).
-        closes = clean_floats('Close' if 'Close' in df.columns else 'price')
+        closes = clean_floats("Close" if "Close" in df.columns else "price")
         # adj_close: prefer 'Adj Close', else fall back to the cleaned close.
-        adj = clean_floats('Adj Close') if 'Adj Close' in df.columns else list(closes)
+        adj = clean_floats("Adj Close") if "Adj Close" in df.columns else list(closes)
 
-        if 'Volume' in df.columns:
-            vnum = pd.to_numeric(df['Volume'], errors='coerce').to_numpy(dtype='float64').tolist()
+        if "Volume" in df.columns:
+            vnum = (
+                pd.to_numeric(df["Volume"], errors="coerce")
+                .to_numpy(dtype="float64")
+                .tolist()
+            )
             vols = [0 if v != v else int(v) for v in vnum]
         else:
             vols = [0] * n
 
         params = [
-            (symbol, date_strs[i], opens[i], highs[i], lows[i],
-             closes[i], adj[i], vols[i], interval)
+            (
+                symbol,
+                date_strs[i],
+                opens[i],
+                highs[i],
+                lows[i],
+                closes[i],
+                adj[i],
+                vols[i],
+                interval,
+            )
             for i in range(n)
         ]
 
         with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
             try:
-                cursor.executemany("""
+                cursor.executemany(
+                    """
                     INSERT OR REPLACE INTO daily_ohlcv
                     (symbol, date, open, high, low, close, adj_close, volume, interval)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, params)
+                """,
+                    params,
+                )
             except Exception as e_ins:
                 logging.error(f"DB Upsert Error for {symbol} ({n} rows): {e_ins}")
 
             conn.commit()
-            
+
             # Update sync metadata
             now = datetime.now().isoformat()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO sync_metadata (symbol, last_synced) VALUES (?, ?)
-            """, (symbol, now))
+            """,
+                (symbol, now),
+            )
             conn.commit()
 
-    def upsert_fx(self, pair: str, df: pd.DataFrame, interval: str = '1d'):
+    def upsert_fx(self, pair: str, df: pd.DataFrame, interval: str = "1d"):
         """
         Upserts FX rate data from a DataFrame.
         DataFrame must have a DatetimeIndex and a column 'Close' or 'rate'.
@@ -172,22 +199,35 @@ class MarketDatabase:
         if df.empty:
             return
 
-        col = 'Close' if 'Close' in df.columns else (df.columns[0] if not df.empty else None)
+        col = (
+            "Close"
+            if "Close" in df.columns
+            else (df.columns[0] if not df.empty else None)
+        )
         if not col:
             return
 
         with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
             for timestamp, row in df.iterrows():
-                date_str = timestamp.strftime('%Y-%m-%d') if hasattr(timestamp, 'strftime') else str(timestamp)[:10]
-                cursor.execute("""
+                date_str = (
+                    timestamp.strftime("%Y-%m-%d")
+                    if hasattr(timestamp, "strftime")
+                    else str(timestamp)[:10]
+                )
+                cursor.execute(
+                    """
                     INSERT OR REPLACE INTO daily_fx
                     (pair, date, rate, interval)
                     VALUES (?, ?, ?, ?)
-                """, (pair, date_str, row[col], interval))
+                """,
+                    (pair, date_str, row[col], interval),
+                )
             conn.commit()
 
-    def get_ohlcv(self, symbol: str, start_date: date, end_date: date, interval: str = '1d') -> pd.DataFrame:
+    def get_ohlcv(
+        self, symbol: str, start_date: date, end_date: date, interval: str = "1d"
+    ) -> pd.DataFrame:
         """Retrieves OHLCV data for a symbol within a date range."""
         query = """
             SELECT date, open, high, low, close, adj_close, volume 
@@ -196,57 +236,68 @@ class MarketDatabase:
             ORDER BY date ASC
         """
         with self._get_connection() as conn:
-            df = pd.read_sql_query(query, conn, params=(symbol, interval, str(start_date), str(end_date)))
-        
+            df = pd.read_sql_query(
+                query, conn, params=(symbol, interval, str(start_date), str(end_date))
+            )
+
         if not df.empty:
-            df['date'] = pd.to_datetime(df['date'])
-            df.set_index('date', inplace=True)
+            df["date"] = pd.to_datetime(df["date"])
+            df.set_index("date", inplace=True)
             # Rename columns to standard YF format for compatibility
-            df.columns = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
-            
+            df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
+
             # FORCE NUMERIC TYPES
-            # This is critical because if 'Open' contains None (which sqlite returns for NULL), 
+            # This is critical because if 'Open' contains None (which sqlite returns for NULL),
             # pandas treats the column as 'object', causing interpolation to fail/warn.
-            cols_to_numeric = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+            cols_to_numeric = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
             for c in cols_to_numeric:
-                df[c] = pd.to_numeric(df[c], errors='coerce')
-                
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+
         return df
 
-    def get_ohlcv_batch(self, symbols: List[str], start_date: date, end_date: date, interval: str = '1d') -> Dict[str, pd.DataFrame]:
+    def get_ohlcv_batch(
+        self, symbols: List[str], start_date: date, end_date: date, interval: str = "1d"
+    ) -> Dict[str, pd.DataFrame]:
         """Retrieves OHLCV data for multiple symbols in a collection of DataFrames."""
         if not symbols:
             return {}
-            
-        placeholders = ', '.join(['?'] * len(symbols))
+
+        placeholders = ", ".join(["?"] * len(symbols))
         query = f"""
             SELECT symbol, date, open, high, low, close, adj_close, volume 
             FROM daily_ohlcv 
             WHERE symbol IN ({placeholders}) AND interval = ? AND date BETWEEN ? AND ?
             ORDER BY symbol, date ASC
         """
-        
+
         results = {}
         with self._get_connection() as conn:
             # We must pass the list of symbols first, then other params
             params = symbols + [interval, str(start_date), str(end_date)]
             df_all = pd.read_sql_query(query, conn, params=params)
-        
+
         if not df_all.empty:
-            df_all['date'] = pd.to_datetime(df_all['date'])
+            df_all["date"] = pd.to_datetime(df_all["date"])
             # Group by symbol and process each
-            for sym, group in df_all.groupby('symbol'):
-                df = group.drop(columns=['symbol'])
-                df.set_index('date', inplace=True)
-                df.columns = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
-                
+            for sym, group in df_all.groupby("symbol"):
+                df = group.drop(columns=["symbol"])
+                df.set_index("date", inplace=True)
+                df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
+
                 # FORCE NUMERIC
-                cols_to_numeric = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+                cols_to_numeric = [
+                    "Open",
+                    "High",
+                    "Low",
+                    "Close",
+                    "Adj Close",
+                    "Volume",
+                ]
                 for c in cols_to_numeric:
-                    df[c] = pd.to_numeric(df[c], errors='coerce')
-                
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+
                 results[sym] = df
-                
+
         return results
 
     def upsert_intraday(self, symbol: str, df: pd.DataFrame, interval: str):
@@ -263,7 +314,7 @@ class MarketDatabase:
             for timestamp, row in df.iterrows():
                 # Store full timestamp ISO string
                 ts_str = timestamp.isoformat()
-                
+
                 # Helper to clean NaNs
                 def clean(val):
                     if pd.isna(val):
@@ -271,36 +322,45 @@ class MarketDatabase:
                     return float(val)
 
                 # Normalize columns
-                open_val = clean(row.get('Open'))
-                high_val = clean(row.get('High'))
-                low_val = clean(row.get('Low'))
-                close_val = clean(row.get('Close', row.get('price')))
+                open_val = clean(row.get("Open"))
+                high_val = clean(row.get("High"))
+                low_val = clean(row.get("Low"))
+                close_val = clean(row.get("Close", row.get("price")))
                 # Intraday usually doesn't have Adj Close diffs, but store if present
-                adj_close_val = clean(row.get('Adj Close', close_val))
-                volume_val = int(row.get('Volume', 0)) if pd.notna(row.get('Volume', 0)) else 0
+                adj_close_val = clean(row.get("Adj Close", close_val))
+                volume_val = (
+                    int(row.get("Volume", 0)) if pd.notna(row.get("Volume", 0)) else 0
+                )
 
                 try:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         INSERT OR REPLACE INTO intraday_ohlcv 
                         (symbol, timestamp, open, high, low, close, adj_close, volume, interval)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        symbol, 
-                        ts_str, 
-                        open_val, 
-                        high_val, 
-                        low_val, 
-                        close_val, 
-                        adj_close_val, 
-                        volume_val,
-                        interval
-                    ))
+                    """,
+                        (
+                            symbol,
+                            ts_str,
+                            open_val,
+                            high_val,
+                            low_val,
+                            close_val,
+                            adj_close_val,
+                            volume_val,
+                            interval,
+                        ),
+                    )
                 except Exception as e_ins:
-                    logging.error(f"DB Intraday Upsert Error for {symbol} on {ts_str}: {e_ins}")
-            
+                    logging.error(
+                        f"DB Intraday Upsert Error for {symbol} on {ts_str}: {e_ins}"
+                    )
+
             conn.commit()
 
-    def get_intraday(self, symbol: str, start_ts: datetime, end_ts: datetime, interval: str) -> pd.DataFrame:
+    def get_intraday(
+        self, symbol: str, start_ts: datetime, end_ts: datetime, interval: str
+    ) -> pd.DataFrame:
         """Retrieves Intraday OHLCV data for a symbol within a timestamp range."""
         query = """
             SELECT timestamp, open, high, low, close, adj_close, volume 
@@ -311,29 +371,35 @@ class MarketDatabase:
         # Convert search bounds to ISO strings for comparison
         start_str = start_ts.isoformat()
         end_str = end_ts.isoformat()
-        
+
         with self._get_connection() as conn:
-            df = pd.read_sql_query(query, conn, params=(symbol, interval, start_str, end_str))
-        
+            df = pd.read_sql_query(
+                query, conn, params=(symbol, interval, start_str, end_str)
+            )
+
         if not df.empty:
             # Fix for parsing mixed format ISO strings with timezone info
             # "YYYY-MM-DDTHH:MM:SS+00:00" might fail with default parser in some pandas versions
             # Enforce utc=True to avoid mixed naive/aware comparisons and FutureWarnings
-            df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce', utc=True)
-            df.set_index('timestamp', inplace=True)
-            df.index.name = "Date" # Standardize name for portfolio_logic compatibility
-            
+            df["timestamp"] = pd.to_datetime(
+                df["timestamp"], format="ISO8601", errors="coerce", utc=True
+            )
+            df.set_index("timestamp", inplace=True)
+            df.index.name = "Date"  # Standardize name for portfolio_logic compatibility
+
             # Rename columns to standard YF format
-            df.columns = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
-            
+            df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
+
             # FORCE NUMERIC TYPES
-            cols_to_numeric = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+            cols_to_numeric = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
             for c in cols_to_numeric:
-                df[c] = pd.to_numeric(df[c], errors='coerce')
-                
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+
         return df
 
-    def get_fx(self, pair: str, start_date: date, end_date: date, interval: str = '1d') -> pd.DataFrame:
+    def get_fx(
+        self, pair: str, start_date: date, end_date: date, interval: str = "1d"
+    ) -> pd.DataFrame:
         """Retrieves FX rate data for a pair within a date range."""
         query = """
             SELECT date, rate 
@@ -342,12 +408,16 @@ class MarketDatabase:
             ORDER BY date ASC
         """
         with self._get_connection() as conn:
-            df = pd.read_sql_query(query, conn, params=(pair, interval, str(start_date), str(end_date)))
-        
+            df = pd.read_sql_query(
+                query, conn, params=(pair, interval, str(start_date), str(end_date))
+            )
+
         if not df.empty:
-            df['date'] = pd.to_datetime(df['date'])
-            df.set_index('date', inplace=True)
-            df.columns = ['price'] # Map to 'price' which is expected by portfolio_logic
+            df["date"] = pd.to_datetime(df["date"])
+            df.set_index("date", inplace=True)
+            df.columns = [
+                "price"
+            ]  # Map to 'price' which is expected by portfolio_logic
         return df
 
     def get_last_date(self, symbol: str, table: str = "daily_ohlcv") -> Optional[date]:
@@ -357,42 +427,46 @@ class MarketDatabase:
         with self._get_connection() as conn:
             res = conn.execute(query, (symbol,)).fetchone()
             if res and res[0]:
-                return datetime.strptime(res[0], '%Y-%m-%d').date()
+                return datetime.strptime(res[0], "%Y-%m-%d").date()
         return None
 
-    def get_last_dates(self, symbols: List[str], table: str = "daily_ohlcv") -> Dict[str, date]:
+    def get_last_dates(
+        self, symbols: List[str], table: str = "daily_ohlcv"
+    ) -> Dict[str, date]:
         """Returns a dict of {symbol: last_date} for a list of symbols."""
         col = "symbol" if table == "daily_ohlcv" else "pair"
-        placeholders = ', '.join(['?'] * len(symbols))
+        placeholders = ", ".join(["?"] * len(symbols))
         query = f"SELECT {col}, MAX(date) FROM {table} WHERE {col} IN ({placeholders}) GROUP BY {col}"
-        
+
         results = {}
         with self._get_connection() as conn:
             cursor = conn.execute(query, symbols)
             for row in cursor:
                 if row[1]:
-                    results[row[0]] = datetime.strptime(row[1], '%Y-%m-%d').date()
+                    results[row[0]] = datetime.strptime(row[1], "%Y-%m-%d").date()
         return results
 
-    def get_first_dates(self, symbols: List[str], table: str = "daily_ohlcv") -> Dict[str, date]:
+    def get_first_dates(
+        self, symbols: List[str], table: str = "daily_ohlcv"
+    ) -> Dict[str, date]:
         """Returns a dict of {symbol: first_date} for a list of symbols."""
         col = "symbol" if table == "daily_ohlcv" else "pair"
-        placeholders = ', '.join(['?'] * len(symbols))
+        placeholders = ", ".join(["?"] * len(symbols))
         query = f"SELECT {col}, MIN(date) FROM {table} WHERE {col} IN ({placeholders}) GROUP BY {col}"
-        
+
         results = {}
         with self._get_connection() as conn:
             cursor = conn.execute(query, symbols)
             for row in cursor:
                 if row[1]:
-                    results[row[0]] = datetime.strptime(row[1], '%Y-%m-%d').date()
+                    results[row[0]] = datetime.strptime(row[1], "%Y-%m-%d").date()
         return results
 
     def get_sync_metadata_batch(self, symbols: List[str]) -> Dict[str, datetime]:
         """Returns a dict of {symbol: last_synced_datetime} for a list of symbols."""
-        placeholders = ', '.join(['?'] * len(symbols))
+        placeholders = ", ".join(["?"] * len(symbols))
         query = f"SELECT symbol, last_synced FROM sync_metadata WHERE symbol IN ({placeholders})"
-        
+
         results = {}
         with self._get_connection() as conn:
             cursor = conn.execute(query, symbols)
@@ -404,44 +478,49 @@ class MarketDatabase:
                         pass
         return results
 
-    def check_integrity(self, symbol: str, new_df: pd.DataFrame) -> Tuple[bool, Optional[str]]:
+    def check_integrity(
+        self, symbol: str, new_df: pd.DataFrame
+    ) -> Tuple[bool, Optional[str]]:
         """
         Compares new_df with existing DB data for overlapping dates.
         Returns (is_consistent, reason).
-        If inconsistencies are found (e.g., adj_close differed significantly), 
+        If inconsistencies are found (e.g., adj_close differed significantly),
         it suggests a re-fetch of history.
         """
         if new_df.empty:
             return True, None
 
-        overlap_dates = new_df.index.strftime('%Y-%m-%d').tolist()
-        placeholders = ', '.join(['?'] * len(overlap_dates))
-        
+        overlap_dates = new_df.index.strftime("%Y-%m-%d").tolist()
+        placeholders = ", ".join(["?"] * len(overlap_dates))
+
         query = f"""
             SELECT date, adj_close 
             FROM daily_ohlcv 
             WHERE symbol = ? AND date IN ({placeholders})
         """
-        
+
         with self._get_connection() as conn:
             db_data = pd.read_sql_query(query, conn, params=[symbol] + overlap_dates)
-        
-        if db_data.empty:
-            return True, None # No overlap, no conflict
 
-        db_data.set_index('date', inplace=True)
-        
+        if db_data.empty:
+            return True, None  # No overlap, no conflict
+
+        db_data.set_index("date", inplace=True)
+
         for idx, row in new_df.iterrows():
-            date_str = idx.strftime('%Y-%m-%d')
+            date_str = idx.strftime("%Y-%m-%d")
             if date_str in db_data.index:
-                db_val = db_data.loc[date_str, 'adj_close']
-                new_val = row.get('Adj Close', row.get('Close'))
-                
+                db_val = db_data.loc[date_str, "adj_close"]
+                new_val = row.get("Adj Close", row.get("Close"))
+
                 if db_val and new_val:
                     # Check for significant diff (e.g. > 0.1%)
                     # This could be a split or dividend adjustment
                     diff = abs(db_val - new_val) / db_val
                     if diff > 0.001:
-                        return False, f"Inconsistency detected on {date_str}: DB={db_val}, New={new_val} (diff={diff:.4%})"
-        
+                        return (
+                            False,
+                            f"Inconsistency detected on {date_str}: DB={db_val}, New={new_val} (diff={diff:.4%})",
+                        )
+
         return True, None

@@ -97,7 +97,9 @@ def _cache_dir() -> str:
     return os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "backtest")
 
 
-def load_rank_tables(years: Sequence[int], min_periods: int = 5) -> Dict[int, pd.DataFrame]:
+def load_rank_tables(
+    years: Sequence[int], min_periods: int = 5
+) -> Dict[int, pd.DataFrame]:
     tables = {}
     for year in years:
         path = os.path.join(_cache_dir(), f"rank_{year}_{min_periods}p.csv")
@@ -133,9 +135,15 @@ def select(table: pd.DataFrame, strategy: Strategy) -> List[str]:
     if strategy.exclude_models:
         frame = frame[~frame["model"].isin(strategy.exclude_models)]
     if strategy.min_market_cap > 0:
-        frame = frame[pd.to_numeric(frame.get("market_cap"), errors="coerce") >= strategy.min_market_cap]
+        frame = frame[
+            pd.to_numeric(frame.get("market_cap"), errors="coerce")
+            >= strategy.min_market_cap
+        ]
     if strategy.momentum_floor is not None:
-        frame = frame[pd.to_numeric(frame.get("momentum"), errors="coerce") >= strategy.momentum_floor]
+        frame = frame[
+            pd.to_numeric(frame.get("momentum"), errors="coerce")
+            >= strategy.momentum_floor
+        ]
     if frame.empty:
         return []
 
@@ -154,20 +162,26 @@ def select(table: pd.DataFrame, strategy: Strategy) -> List[str]:
         # A company with no value score keeps its quality score rather than being
         # dropped, which is what `buffett_rank.combine` does.
         blended = quality.where(
-            value.isna(), quality * strategy.quality_weight + value * (1 - strategy.quality_weight)
+            value.isna(),
+            quality * strategy.quality_weight + value * (1 - strategy.quality_weight),
         )
 
     if strategy.momentum_weight:
         # Re-ranked within the surviving candidate set, so the percentile means
         # "relative to what this strategy would actually consider buying".
-        momentum = pd.to_numeric(frame["momentum"], errors="coerce").rank(pct=True) * 100.0
+        momentum = (
+            pd.to_numeric(frame["momentum"], errors="coerce").rank(pct=True) * 100.0
+        )
         blended = blended.where(
             momentum.isna(),
-            blended * (1 - strategy.momentum_weight) + momentum * strategy.momentum_weight,
+            blended * (1 - strategy.momentum_weight)
+            + momentum * strategy.momentum_weight,
         )
 
     if strategy.use_confidence:
-        blended = blended * pd.to_numeric(frame["confidence"], errors="coerce").fillna(1.0)
+        blended = blended * pd.to_numeric(frame["confidence"], errors="coerce").fillna(
+            1.0
+        )
 
     ordered = blended.sort_values(ascending=False)
     if not strategy.max_per_sector:
@@ -227,18 +241,30 @@ def evaluate(
     adjusted: pd.DataFrame,
     years: Sequence[int],
 ) -> Dict[str, float]:
-    holdings = {year: select(tables[year], strategy) for year in years if year in tables}
+    holdings = {
+        year: select(tables[year], strategy) for year in years if year in tables
+    }
     curve = simulate(holdings, adjusted, years)
     if curve.empty or len(curve) < 12:
-        return {"cagr": float("nan"), "sharpe": float("nan"), "max_drawdown": float("nan")}
+        return {
+            "cagr": float("nan"),
+            "sharpe": float("nan"),
+            "max_drawdown": float("nan"),
+        }
     return statistics_for(curve)
 
 
-def benchmark_curves(adjusted: pd.DataFrame, years: Sequence[int]) -> Dict[str, pd.Series]:
+def benchmark_curves(
+    adjusted: pd.DataFrame, years: Sequence[int]
+) -> Dict[str, pd.Series]:
     curves = {}
     for symbol, name in BENCHMARKS.items():
         if symbol in adjusted.columns:
-            series = adjusted[symbol].loc[f"{years[0] - 1}-12-01" : f"{years[-1]}-12-01"].dropna()
+            series = (
+                adjusted[symbol]
+                .loc[f"{years[0] - 1}-12-01" : f"{years[-1]}-12-01"]
+                .dropna()
+            )
             if not series.empty:
                 curves[name] = series / series.iloc[0]
     return curves
@@ -248,7 +274,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start", type=int, default=2013)
     parser.add_argument("--end", type=int, default=2025)
-    parser.add_argument("--split", type=int, default=2019, help="last year of the training window")
+    parser.add_argument(
+        "--split", type=int, default=2019, help="last year of the training window"
+    )
     parser.add_argument("--min-periods", type=int, default=5)
     parser.add_argument("--top-show", type=int, default=15)
     parser.add_argument("--rec-quality", type=float, default=0.8)
@@ -259,7 +287,9 @@ def main() -> int:
     tables = load_rank_tables(years, args.min_periods)
     missing = [y for y in years if y not in tables]
     if missing:
-        print(f"No cached ranking for {missing} — run buffett_backtest.py for those years first")
+        print(
+            f"No cached ranking for {missing} — run buffett_backtest.py for those years first"
+        )
         years = [y for y in years if y in tables]
 
     panel = pd.read_pickle(os.path.join(_cache_dir(), "monthly_prices.pkl"))
@@ -270,7 +300,13 @@ def main() -> int:
     test = [y for y in years if y > args.split]
 
     grid = [
-        Strategy(quality_weight=q, top_n=n, min_market_cap=m, momentum_weight=mw, momentum_floor=mf)
+        Strategy(
+            quality_weight=q,
+            top_n=n,
+            min_market_cap=m,
+            momentum_weight=mw,
+            momentum_floor=mf,
+        )
         for q, n, m, (mw, mf) in itertools.product(
             (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
             (5, 10, 15, 20, 30, 50),
@@ -294,22 +330,38 @@ def main() -> int:
                 "cagr": full["cagr"],
                 "sharpe": full["sharpe"],
                 "max_drawdown": full["max_drawdown"],
-                "train_cagr": evaluate(strategy, tables, adjusted, train)["cagr"] if train else np.nan,
-                "test_cagr": evaluate(strategy, tables, adjusted, test)["cagr"] if test else np.nan,
+                "train_cagr": evaluate(strategy, tables, adjusted, train)["cagr"]
+                if train
+                else np.nan,
+                "test_cagr": evaluate(strategy, tables, adjusted, test)["cagr"]
+                if test
+                else np.nan,
             }
         )
     results = pd.DataFrame(rows)
 
     benchmarks = benchmark_curves(adjusted, years)
     print("\nBenchmarks over the full window")
-    bench_stats = pd.DataFrame({name: statistics_for(c) for name, c in benchmarks.items()}).T
-    print((bench_stats[["cagr", "sharpe", "max_drawdown"]] * [100, 1, 100]).round(2).to_string())
+    bench_stats = pd.DataFrame(
+        {name: statistics_for(c) for name, c in benchmarks.items()}
+    ).T
+    print(
+        (bench_stats[["cagr", "sharpe", "max_drawdown"]] * [100, 1, 100])
+        .round(2)
+        .to_string()
+    )
 
     print("\n" + "=" * 78)
     print("MARGINAL EFFECT OF EACH KNOB (median CAGR %, across all other settings)")
     print("A knob is only interesting if it points the same way in both windows.")
     print("=" * 78)
-    for knob in ("quality_weight", "top_n", "min_market_cap", "momentum_weight", "momentum_floor"):
+    for knob in (
+        "quality_weight",
+        "top_n",
+        "min_market_cap",
+        "momentum_weight",
+        "momentum_floor",
+    ):
         grouped = results.groupby(results[knob].fillna(-99), dropna=False)
         summary = pd.DataFrame(
             {
@@ -322,10 +374,14 @@ def main() -> int:
         print(summary.to_string())
 
     print("\n" + "=" * 78)
-    print(f"BEST ON TRAINING WINDOW {train[0]}-{train[-1]}, MEASURED ON {test[0]}-{test[-1]}")
+    print(
+        f"BEST ON TRAINING WINDOW {train[0]}-{train[-1]}, MEASURED ON {test[0]}-{test[-1]}"
+    )
     print("=" * 78)
     ranked = results.sort_values("train_cagr", ascending=False).head(args.top_show)
-    show = ranked[["label", "train_cagr", "test_cagr", "cagr", "sharpe", "max_drawdown"]].copy()
+    show = ranked[
+        ["label", "train_cagr", "test_cagr", "cagr", "sharpe", "max_drawdown"]
+    ].copy()
     for column in ("train_cagr", "test_cagr", "cagr", "max_drawdown"):
         show[column] = (show[column] * 100).round(1)
     show["sharpe"] = show["sharpe"].round(2)
@@ -341,7 +397,9 @@ def main() -> int:
     print("BEST OVER THE FULL WINDOW (in-sample — read as an upper bound)")
     print("=" * 78)
     best = results.sort_values("cagr", ascending=False).head(args.top_show)
-    show = best[["label", "cagr", "sharpe", "max_drawdown", "train_cagr", "test_cagr"]].copy()
+    show = best[
+        ["label", "cagr", "sharpe", "max_drawdown", "train_cagr", "test_cagr"]
+    ].copy()
     for column in ("cagr", "max_drawdown", "train_cagr", "test_cagr"):
         show[column] = (show[column] * 100).round(1)
     show["sharpe"] = show["sharpe"].round(2)
@@ -362,7 +420,9 @@ def main() -> int:
         Strategy(quality_gate_pct=0.20, top_n=20, min_market_cap=1e9),
         Strategy(quality_gate_pct=0.20, top_n=20, momentum_floor=0.0),
         Strategy(quality_weight=0.6, top_n=20, exclude_models=("reit",)),
-        Strategy(quality_weight=0.6, top_n=20, exclude_models=("reit", "bank", "insurer")),
+        Strategy(
+            quality_weight=0.6, top_n=20, exclude_models=("reit", "bank", "insurer")
+        ),
         Strategy(quality_weight=0.8, top_n=20, min_market_cap=1e9),
         Strategy(quality_weight=0.8, top_n=20, momentum_weight=0.25),
         Strategy(quality_weight=0.8, top_n=20, max_per_sector=1, sector_digits=3),
@@ -389,8 +449,10 @@ def main() -> int:
     print(pd.DataFrame(rows).round(2).to_string(index=False))
 
     print("\n" + "=" * 78)
-    print(f"RECOMMENDED RULE, YEAR BY YEAR (quality {args.rec_quality:.0%} / value "
-          f"{1 - args.rec_quality:.0%}, top {args.rec_top})")
+    print(
+        f"RECOMMENDED RULE, YEAR BY YEAR (quality {args.rec_quality:.0%} / value "
+        f"{1 - args.rec_quality:.0%}, top {args.rec_top})"
+    )
     print("=" * 78)
     recommended = Strategy(quality_weight=args.rec_quality, top_n=args.rec_top)
     holdings = {year: select(tables[year], recommended) for year in years}
@@ -401,10 +463,14 @@ def main() -> int:
     )
     curves.update(benchmarks)
 
-    table = pd.DataFrame({name: annual_returns(curve, years) for name, curve in curves.items()})
+    table = pd.DataFrame(
+        {name: annual_returns(curve, years) for name, curve in curves.items()}
+    )
     print((table * 100).round(1).to_string())
     print()
-    summary = pd.DataFrame({name: statistics_for(curve) for name, curve in curves.items()}).T
+    summary = pd.DataFrame(
+        {name: statistics_for(curve) for name, curve in curves.items()}
+    ).T
     formatted = summary.copy()
     for column in ("total_return", "cagr", "volatility", "max_drawdown"):
         formatted[column] = (summary[column] * 100).round(1)

@@ -72,7 +72,9 @@ def test_estimated_flag_and_date_range_are_surfaced():
 
 def test_today_counts_as_upcoming():
     info = {"earningsTimestamp": _ts(TODAY)}
-    assert next_earnings_event("NVDA", info, TODAY, HORIZON)["earnings_date"] == str(TODAY)
+    assert next_earnings_event("NVDA", info, TODAY, HORIZON)["earnings_date"] == str(
+        TODAY
+    )
 
 
 def test_past_only_and_beyond_horizon_yield_nothing():
@@ -84,7 +86,12 @@ def test_past_only_and_beyond_horizon_yield_nothing():
 
 
 def test_company_name_falls_back_across_yahoo_name_fields():
-    assert company_name({"shortName": "Alphabet Inc.", "longName": "Alphabet Incorporated"}) == "Alphabet Inc."
+    assert (
+        company_name(
+            {"shortName": "Alphabet Inc.", "longName": "Alphabet Incorporated"}
+        )
+        == "Alphabet Inc."
+    )
     assert company_name({"longName": "Alphabet Inc."}) == "Alphabet Inc."
     assert company_name({"displayName": "Alphabet"}) == "Alphabet"
     # Blank/absent names must be dropped rather than rendered as an empty line.
@@ -93,12 +100,17 @@ def test_company_name_falls_back_across_yahoo_name_fields():
 
 
 def test_missing_or_garbage_timestamps_yield_nothing():
-    for info in ({}, {"earningsTimestamp": None}, {"earningsTimestamp": 0},
-                 {"earningsTimestamp": "soon"}):
+    for info in (
+        {},
+        {"earningsTimestamp": None},
+        {"earningsTimestamp": 0},
+        {"earningsTimestamp": "soon"},
+    ):
         assert next_earnings_event("VOO", info, TODAY, HORIZON) is None
 
 
 # ── Dividends ────────────────────────────────────────────────────────────────
+
 
 def test_announced_dividend_is_reported_as_confirmed():
     pay = TODAY + timedelta(days=40)
@@ -137,7 +149,10 @@ def test_stale_pay_date_projects_the_next_payment():
 
 def test_non_payers_have_no_dividend_event():
     assert next_dividend_event("NVDA", {}, TODAY) is None
-    assert next_dividend_event("NVDA", {"dividendRate": 0, "lastDividendValue": 0}, TODAY) is None
+    assert (
+        next_dividend_event("NVDA", {"dividendRate": 0, "lastDividendValue": 0}, TODAY)
+        is None
+    )
 
 
 def test_upcoming_events_bundles_every_side():
@@ -146,7 +161,9 @@ def test_upcoming_events_bundles_every_side():
         "dividendDate": _ts(TODAY + timedelta(days=20)),
         "dividendRate": 2.0,
         "lastDividendValue": 0.5,
-        "_earnings_history": {str(TODAY - timedelta(days=2)): {"eps_actual": 1.2, "eps_estimate": 1.0}},
+        "_earnings_history": {
+            str(TODAY - timedelta(days=2)): {"eps_actual": 1.2, "eps_estimate": 1.0}
+        },
     }
     both = upcoming_events("KO", info, TODAY)
     assert both["earnings"]["earnings_date"] == str(TODAY + timedelta(days=5))
@@ -161,13 +178,18 @@ def test_upcoming_events_bundles_every_side():
 
 # ── Just-reported quarters ───────────────────────────────────────────────────
 
+
 def test_reported_quarter_carries_what_was_printed():
     reported_on = TODAY - timedelta(days=1)
     info = {
         "earningsTimestamp": _ts(reported_on),
         "shortName": "Netflix, Inc.",
         "_earnings_history": {
-            str(reported_on): {"eps_actual": 2.10, "eps_estimate": 1.95, "surprise_pct": 999},
+            str(reported_on): {
+                "eps_actual": 2.10,
+                "eps_estimate": 1.95,
+                "surprise_pct": 999,
+            },
         },
     }
     event = recent_earnings_event("NFLX", info, TODAY)
@@ -181,8 +203,12 @@ def test_reported_quarter_carries_what_was_printed():
 
 
 def test_a_miss_is_reported_as_a_negative_surprise():
-    info = {"_earnings_history": {str(TODAY): {"eps_actual": 0.80, "eps_estimate": 1.00}}}
-    assert recent_earnings_event("X", info, TODAY)["surprise_pct"] == pytest.approx(-20.0)
+    info = {
+        "_earnings_history": {str(TODAY): {"eps_actual": 0.80, "eps_estimate": 1.00}}
+    }
+    assert recent_earnings_event("X", info, TODAY)["surprise_pct"] == pytest.approx(
+        -20.0
+    )
 
 
 def test_report_still_appears_before_the_figures_land():
@@ -209,15 +235,22 @@ def test_a_merely_projected_past_date_is_not_a_report():
     assert recent_earnings_event("X", info, TODAY) is None
 
     # …but once it shows up in the history table, it is a real report.
-    info["_earnings_history"] = {str(TODAY - timedelta(days=2)): {"eps_actual": 3.0, "eps_estimate": 2.9}}
+    info["_earnings_history"] = {
+        str(TODAY - timedelta(days=2)): {"eps_actual": 3.0, "eps_estimate": 2.9}
+    }
     assert recent_earnings_event("X", info, TODAY)["eps_actual"] == 3.0
 
 
 def test_reports_older_than_the_lookback_are_dropped():
     old = TODAY - timedelta(days=9)
-    info = {"earningsTimestamp": _ts(old), "_earnings_history": {str(old): {"eps_actual": 1.0}}}
+    info = {
+        "earningsTimestamp": _ts(old),
+        "_earnings_history": {str(old): {"eps_actual": 1.0}},
+    }
     assert recent_earnings_event("X", info, TODAY) is None
-    assert recent_earnings_event("X", info, TODAY, lookback_days=10)["earnings_date"] == str(old)
+    assert recent_earnings_event("X", info, TODAY, lookback_days=10)[
+        "earnings_date"
+    ] == str(old)
 
 
 def test_the_newest_report_wins_when_history_holds_several():
@@ -254,7 +287,11 @@ def test_a_report_today_is_not_also_listed_as_upcoming():
 
 
 def test_a_future_report_is_not_a_reported_one():
-    info = {"_earnings_history": {str(TODAY + timedelta(days=2)): {"eps_actual": None, "eps_estimate": 1.0}}}
+    info = {
+        "_earnings_history": {
+            str(TODAY + timedelta(days=2)): {"eps_actual": None, "eps_estimate": 1.0}
+        }
+    }
     assert recent_earnings_event("X", info, TODAY) is None
     assert recent_earnings_event("X", {}, TODAY) is None
 
@@ -265,7 +302,9 @@ def test_a_report_due_later_today_has_not_reported_yet():
     and suppress the scheduled row (with its consensus estimate) that belongs there."""
     tz = ZoneInfo("America/New_York")
     midnight = datetime(TODAY.year, TODAY.month, TODAY.day, 0, 23, tzinfo=tz)
-    before_open = int(datetime(TODAY.year, TODAY.month, TODAY.day, 8, 30, tzinfo=tz).timestamp())
+    before_open = int(
+        datetime(TODAY.year, TODAY.month, TODAY.day, 8, 30, tzinfo=tz).timestamp()
+    )
     info = {
         "exchangeTimezoneName": "America/New_York",
         "earningsTimestamp": before_open,
@@ -275,11 +314,15 @@ def test_a_report_due_later_today_has_not_reported_yet():
     }
     assert recent_earnings_event("ABBV", info, TODAY, now=midnight) is None
     # It is still the next scheduled report, which is what the panel should show.
-    assert next_earnings_event("ABBV", info, TODAY, HORIZON)["earnings_date"] == str(TODAY)
+    assert next_earnings_event("ABBV", info, TODAY, HORIZON)["earnings_date"] == str(
+        TODAY
+    )
 
     # Once the announced time has gone by, it is a report — figures or not.
     after = midnight.replace(hour=9, minute=0)
-    assert recent_earnings_event("ABBV", info, TODAY, now=after)["earnings_date"] == str(TODAY)
+    assert recent_earnings_event("ABBV", info, TODAY, now=after)[
+        "earnings_date"
+    ] == str(TODAY)
 
 
 def test_the_day_with_figures_beats_a_projected_timestamp():
@@ -290,7 +333,9 @@ def test_the_day_with_figures_beats_a_projected_timestamp():
     info = {
         "earningsTimestamp": _ts(TODAY - timedelta(days=1)),
         "isEarningsDateEstimate": True,
-        "_earnings_history": {str(printed_on): {"eps_actual": 2.64, "eps_estimate": 2.60}},
+        "_earnings_history": {
+            str(printed_on): {"eps_actual": 2.64, "eps_estimate": 2.60}
+        },
     }
     event = recent_earnings_event("ADP", info, TODAY)
     assert event["earnings_date"] == str(printed_on)
@@ -298,6 +343,7 @@ def test_the_day_with_figures_beats_a_projected_timestamp():
 
 
 # ── Market-local reckoning ───────────────────────────────────────────────────
+
 
 def _freeze(monkeypatch, moment: datetime) -> None:
     """Pin `datetime.now(tz)` inside calendar_events to one instant."""
@@ -312,11 +358,16 @@ def _freeze(monkeypatch, moment: datetime) -> None:
 
 def test_market_timezone_comes_from_the_exchange():
     assert market_timezone({"exchangeTimezoneName": "Asia/Bangkok"}) == "Asia/Bangkok"
-    assert market_timezone({"exchangeTimezoneName": " Europe/London "}) == "Europe/London"
+    assert (
+        market_timezone({"exchangeTimezoneName": " Europe/London "}) == "Europe/London"
+    )
     # Absent, blank, or unknown to the tz database → the US default.
     assert market_timezone({}) == DEFAULT_MARKET_TIMEZONE
     assert market_timezone({"exchangeTimezoneName": "  "}) == DEFAULT_MARKET_TIMEZONE
-    assert market_timezone({"exchangeTimezoneName": "Mars/Olympus"}) == DEFAULT_MARKET_TIMEZONE
+    assert (
+        market_timezone({"exchangeTimezoneName": "Mars/Olympus"})
+        == DEFAULT_MARKET_TIMEZONE
+    )
     assert market_timezone({"exchangeTimezoneName": 1234}) == DEFAULT_MARKET_TIMEZONE
 
 
@@ -324,7 +375,9 @@ def test_market_today_follows_the_exchange_not_the_server(monkeypatch):
     """09:00 Bangkok on Jul 30 is still 22:00 New York on Jul 29."""
     _freeze(monkeypatch, datetime(2026, 7, 30, 2, 0, tzinfo=timezone.utc))
     assert market_today({}) == date(2026, 7, 29)
-    assert market_today({"exchangeTimezoneName": "America/New_York"}) == date(2026, 7, 29)
+    assert market_today({"exchangeTimezoneName": "America/New_York"}) == date(
+        2026, 7, 29
+    )
     assert market_today({"exchangeTimezoneName": "Asia/Bangkok"}) == date(2026, 7, 30)
 
 
@@ -336,7 +389,9 @@ def test_us_event_today_is_not_dropped_from_a_bangkok_evening(monkeypatch):
         "exchangeTimezoneName": "America/New_York",
         # 16:00 ET on Jul 29 — after the close, so already Jul 30 in UTC.
         "earningsTimestamp": int(
-            datetime(2026, 7, 29, 16, 0, tzinfo=ZoneInfo("America/New_York")).timestamp()
+            datetime(
+                2026, 7, 29, 16, 0, tzinfo=ZoneInfo("America/New_York")
+            ).timestamp()
         ),
     }
     event = next_earnings_event("MSFT", info)
@@ -347,9 +402,14 @@ def test_us_event_today_is_not_dropped_from_a_bangkok_evening(monkeypatch):
 def test_earnings_timestamp_is_read_on_the_market_clock():
     """A post-close report has already tipped into the next UTC day; the date the
     user cares about is the one on the exchange's wall clock."""
-    ts = int(datetime(2026, 8, 5, 20, 30, tzinfo=ZoneInfo("America/New_York")).timestamp())
+    ts = int(
+        datetime(2026, 8, 5, 20, 30, tzinfo=ZoneInfo("America/New_York")).timestamp()
+    )
     info = {"exchangeTimezoneName": "America/New_York", "earningsTimestampStart": ts}
-    assert next_earnings_event("X", info, date(2026, 8, 1))["earnings_date"] == "2026-08-05"
+    assert (
+        next_earnings_event("X", info, date(2026, 8, 1))["earnings_date"]
+        == "2026-08-05"
+    )
 
 
 def test_dividend_dates_stay_utc_calendar_days():

@@ -12,6 +12,7 @@ that returns a dict normalised to the same field names yfinance uses, or
 None on any failure. Errors are logged but never raised — callers should
 treat FMP as a best-effort enrichment layer.
 """
+
 from __future__ import annotations
 
 import json
@@ -79,7 +80,9 @@ def _normalise_country(code: Optional[str]) -> Optional[str]:
     return _COUNTRY_CODES.get(code.upper(), code)
 
 
-def get_company_profile(symbol: str, api_key: str, timeout: int = _DEFAULT_TIMEOUT) -> Optional[dict]:
+def get_company_profile(
+    symbol: str, api_key: str, timeout: int = _DEFAULT_TIMEOUT
+) -> Optional[dict]:
     """
     Fetch FMP company profile for `symbol`. Returns a dict with the same keys
     yfinance uses (sector, industry, country, exchange, currency, quoteType,

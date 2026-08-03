@@ -72,14 +72,14 @@ HASH_ERROR_UNEXPECTED = "HASHING_ERROR_UNEXPECTED"
 # --- File Hashing Helper ---
 def _get_file_hash(filepath: str) -> str:
     """Calculates the SHA256 hash of a file.
-    
+
     If the file is a SQLite database (ends in .db, .sqlite, .sqlite3),
     it also checks for associated Write-Ahead Log (-wal) and Shared Memory (-shm) files.
     If found, their hashes are combined with the main file hash to ensure
     any pending changes in the WAL are captured in the cache key.
     """
     hasher = hashlib.sha256()
-    
+
     # Helper to hash a single file into the main hasher
     def _update_hash_with_file(path: str):
         try:
@@ -88,8 +88,7 @@ def _get_file_hash(filepath: str) -> str:
                     hasher.update(chunk)
             return True
         except FileNotFoundError:
-            return False # Ignore if disappeared (e.g. checkpointed)
-
+            return False  # Ignore if disappeared (e.g. checkpointed)
 
     try:
         # 1. Hash the main file
@@ -104,14 +103,14 @@ def _get_file_hash(filepath: str) -> str:
         if lower_path.endswith((".db", ".sqlite", ".sqlite3")):
             wal_path = filepath + "-wal"
             shm_path = filepath + "-shm"
-            
+
             if os.path.exists(wal_path):
-                 _update_hash_with_file(wal_path)
-                 # logging.debug(f"Hashed WAL file: {wal_path}")
-            
+                _update_hash_with_file(wal_path)
+                # logging.debug(f"Hashed WAL file: {wal_path}")
+
             if os.path.exists(shm_path):
-                 _update_hash_with_file(shm_path)
-                 # logging.debug(f"Hashed SHM file: {shm_path}")
+                _update_hash_with_file(shm_path)
+                # logging.debug(f"Hashed SHM file: {shm_path}")
 
         return hasher.hexdigest()
 
@@ -148,25 +147,25 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
     """
     if not info:
         return {"frequency_months": 3, "indicated_annual_rate": 0.0}
-        
+
     last_div_val = float(info.get("lastDividendValue", 0.0) or 0.0)
-    
+
     try:
         div_rate = float(info.get("dividendRate", 0.0) or 0.0)
     except (ValueError, TypeError):
         div_rate = 0.0
-        
+
     try:
         trailing_rate = float(info.get("trailingAnnualDividendRate", 0.0) or 0.0)
     except (ValueError, TypeError):
         trailing_rate = 0.0
-    
+
     if div_rate <= 0:
         div_rate = trailing_rate if trailing_rate else 0.0
-    
+
     if last_div_val <= 0 and div_rate <= 0:
         return {"frequency_months": 3, "indicated_annual_rate": 0.0}
-        
+
     freq = 4
     consistent = False
     if last_div_val > 0 and div_rate > 0:
@@ -174,7 +173,12 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
         # Map the annual-rate / last-paid ratio to a payment cadence. A match
         # also means the two fields agree; no match means they disagree (e.g. a
         # recent dividend change) and we keep the default quarterly cadence.
-        for lo, hi, f in ((10.0, 14.5, 12), (3.4, 5.8, 4), (1.4, 2.6, 2), (0.7, 1.3, 1)):
+        for lo, hi, f in (
+            (10.0, 14.5, 12),
+            (3.4, 5.8, 4),
+            (1.4, 2.6, 2),
+            (0.7, 1.3, 1),
+        ):
             if lo <= ratio <= hi:
                 freq = f
                 consistent = True
@@ -196,12 +200,13 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
     else:
         indicated_rate = float(div_rate)
     freq_months = 12 // freq
-    
+
     return {
         "frequency_months": freq_months,
         "indicated_annual_rate": indicated_rate,
-        "last_dividend_value": last_div_val
+        "last_dividend_value": last_div_val,
     }
+
 
 def calculate_indicated_dividend(info: Dict[str, Any]) -> float:
     """Convenience wrapper for backward compatibility."""
@@ -288,6 +293,7 @@ def robust_dividend_yield(info: Dict[str, Any]) -> Optional[float]:
 
 
 # --- Cash Symbol Helpers ---
+
 
 def is_cash_symbol(symbol: str) -> bool:
     """Checks if a symbol is a cash symbol (e.g., '$CASH', 'Cash ($)')."""
@@ -376,9 +382,8 @@ def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     symbol_upper = df["Symbol"].astype(str).str.upper()
     type_lower = df["Type"].astype(str).str.lower().str.strip()
 
-    return (
-        (symbol_upper == CASH_SYMBOL_CSV.upper())
-        & (type_lower.isin(["deposit", "withdrawal"]))
+    return (symbol_upper == CASH_SYMBOL_CSV.upper()) & (
+        type_lower.isin(["deposit", "withdrawal"])
     )
 
 
@@ -449,16 +454,16 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
                 else:
                     denominator = base**time_delta_years
             except (ValueError, OverflowError):
-                 denominator = np.nan
+                denominator = np.nan
 
             if denominator == 0.0:
                 # If denominator is zero, term is +/- infinity (magnified at rate -> -1)
                 if cash_flows[i] > 0:
-                    npv += 1e150 
+                    npv += 1e150
                 elif cash_flows[i] < 0:
                     npv -= 1e150
                 continue
-                
+
             if not np.isfinite(denominator) or np.isnan(denominator):
                 # If denominator is infinite (huge rate), term is effectively 0
                 # unless it's the first term (t=0)
@@ -514,14 +519,14 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     first_idx = 0
     while first_idx < len(cash_flows) and abs(cash_flows[first_idx]) < 1e-9:
         first_idx += 1
-    
+
     last_idx = len(cash_flows) - 1
     while last_idx > first_idx and abs(cash_flows[last_idx]) < 1e-9:
         last_idx -= 1
-        
+
     if last_idx - first_idx < 1:
         return np.nan
-        
+
     dates = dates[first_idx : last_idx + 1]
     cash_flows = cash_flows[first_idx : last_idx + 1]
 
@@ -531,7 +536,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     _first_non_zero_idx = -1
     non_zero_cfs_list = []
     max_abs_flow = 0.0  # Tracks max magnitude for normalization
-    
+
     for idx, cf in enumerate(cash_flows):
         abs_cf = abs(cf)
         if abs_cf > 1e-9:
@@ -573,9 +578,9 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     # Solver can fail with very large numbers (e.g. JPY, VND).
     # Scaling flows does not change IRR.
     # We scale down by max_abs_flow to keep numbers around [-1, 1].
-    
+
     solver_flows = cash_flows
-    if max_abs_flow > 1e6: # Only scale if numbers are somewhat large (1M+)
+    if max_abs_flow > 1e6:  # Only scale if numbers are somewhat large (1M+)
         scale_factor = max_abs_flow
         solver_flows = [cf / scale_factor for cf in cash_flows]
         # logging.debug(f"DEBUG IRR: Scaled flows by {scale_factor}. First Flow: {solver_flows[0]}")
@@ -602,7 +607,11 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
             for x0 in [0.1, 0.0, -0.2, 0.5, -0.5]:
                 try:
                     res = optimize.newton(
-                        calculate_npv, x0=x0, args=(dates, solver_flows), tol=1e-6, maxiter=50
+                        calculate_npv,
+                        x0=x0,
+                        args=(dates, solver_flows),
+                        tol=1e-6,
+                        maxiter=50,
                     )
                     if np.isfinite(res) and res > -1.0 and res < 1000.0:
                         npv_check = calculate_npv(res, dates, solver_flows)
@@ -675,25 +684,30 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         and irr_result > -1.0
     ):
         # Format flows for readability
-        readable_flows = [f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in zip(dates, solver_flows)]
+        readable_flows = [
+            f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in zip(dates, solver_flows)
+        ]
         # Truncate if too long
         if len(readable_flows) > 100:
             flow_str = f"[{', '.join(readable_flows[:10])} ... {', '.join(readable_flows[-10:])}] ({len(readable_flows)} flows)"
         else:
             flow_str = f"[{', '.join(readable_flows)}]"
-            
-             
+
         logging.warning(f"IRR Calculation Failed. Flows used: {flow_str}")
         return np.nan
-        
+
     # --- DIAGNOSTIC LOGGING for extreme results ---
-    if irr_result > 10.0: # > 1000% p.a.
-        logging.warning(f"Extreme IRR detected ({irr_result*100:.1f}%). Investigating flows...")
+    if irr_result > 10.0:  # > 1000% p.a.
+        logging.warning(
+            f"Extreme IRR detected ({irr_result * 100:.1f}%). Investigating flows..."
+        )
         # Log top 10 largest absolute flows for debugging
-        top_flows = sorted(list(zip(dates, solver_flows)), key=lambda x: abs(x[1]), reverse=True)[:10]
+        top_flows = sorted(
+            list(zip(dates, solver_flows)), key=lambda x: abs(x[1]), reverse=True
+        )[:10]
         readable_top = [f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in top_flows]
         logging.warning(f"Top Flows contributing to IRR: [{', '.join(readable_top)}]")
-        
+
     return irr_result
 
 
@@ -740,23 +754,26 @@ def get_cash_flows_for_symbol_account(
             (transactions_df["Symbol"] == symbol)
         ]
     elif "To Account" in transactions_df.columns:
-        account_mask = (
-            (transactions_df["Account"] == account)
-            | (transactions_df["To Account"] == account)
+        account_mask = (transactions_df["Account"] == account) | (
+            transactions_df["To Account"] == account
         )
         # --- ADDED: Check Note for account name (handles legacy transfers where Account col is misaligned) ---
         if "Note" in transactions_df.columns:
-             account_mask |= (transactions_df["Note"].str.contains(account, case=False, na=False) & (transactions_df["Type"].str.lower() == "transfer"))
-        
+            account_mask |= transactions_df["Note"].str.contains(
+                account, case=False, na=False
+            ) & (transactions_df["Type"].str.lower() == "transfer")
+
         symbol_account_tx_filtered = transactions_df[
             (transactions_df["Symbol"] == symbol) & account_mask
         ]
     else:
         # If 'To Account' is missing, fallback to filtering only by 'Account'
-        account_mask = (transactions_df["Account"] == account)
+        account_mask = transactions_df["Account"] == account
         if "Note" in transactions_df.columns:
-             account_mask |= (transactions_df["Note"].str.contains(account, case=False, na=False) & (transactions_df["Type"].str.lower() == "transfer"))
-             
+            account_mask |= transactions_df["Note"].str.contains(
+                account, case=False, na=False
+            ) & (transactions_df["Type"].str.lower() == "transfer")
+
         symbol_account_tx_filtered = transactions_df[
             (transactions_df["Symbol"] == symbol) & account_mask
         ]
@@ -783,16 +800,18 @@ def get_cash_flows_for_symbol_account(
             0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
         )
         total_amount_local = pd.to_numeric(total_amount_val, errors="coerce")
-        
+
         if pd.notna(price_local) and price_local > 1e-9:
-             last_seen_price = price_local
+            last_seen_price = price_local
         elif pd.notna(total_amount_local) and pd.notna(qty) and abs(qty) > 1e-9:
-             last_seen_price = abs(total_amount_local / qty)
+            last_seen_price = abs(total_amount_local / qty)
         tx_date = row["Date"].date()
         cash_flow_local = 0.0
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
 
-        total_amount_abs = abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
+        total_amount_abs = (
+            abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
+        )
         qty_val_abs = abs(qty) if pd.notna(qty) else 0.0
         cash_amt = total_amount_abs if total_amount_abs > 1e-9 else qty_val_abs
 
@@ -800,7 +819,7 @@ def get_cash_flows_for_symbol_account(
             if tx_type == "buy" or tx_type == "deposit":
                 cash_flow_local = -(cash_amt + commission_local)
             elif tx_type == "sell" or tx_type == "withdrawal":
-                cash_flow_local = (cash_amt - commission_local)
+                cash_flow_local = cash_amt - commission_local
         else:
             if tx_type == "buy" or tx_type == "deposit":
                 if pd.notna(qty) and qty > 0 and pd.notna(price_local):
@@ -814,28 +833,30 @@ def get_cash_flows_for_symbol_account(
             # and an outgoing transfer is like a "sell" (inflow of cash as asset is disposed).
             # We determine if it's incoming or outgoing based on the 'To Account' column.
             to_account = str(row.get("To Account", "")).strip()
-            
+
             if symbol == CASH_SYMBOL_CSV:
                 flow = cash_amt
             else:
                 # Fallback for missing price in transfers
                 price_to_use = price_local
-                if (pd.isna(price_to_use) or price_to_use <= 1e-9) and last_seen_price is not None:
+                if (
+                    pd.isna(price_to_use) or price_to_use <= 1e-9
+                ) and last_seen_price is not None:
                     price_to_use = last_seen_price
-                
+
                 flow = qty * price_to_use if pd.notna(price_to_use) else 0.0
-            
+
             # Determine direction if Account matches but To Account doesn't, or vice-versa, or Note matches
             acct_col = str(row.get("Account", "")).strip()
             note = str(row.get("Note", "")).lower()
-            
+
             # Refined direction detection
-            is_from_note = (f"from {account.lower()}" in note)
-            is_to_note = (f"to {account.lower()}" in note)
-            
+            is_from_note = f"from {account.lower()}" in note
+            is_to_note = f"to {account.lower()}" in note
+
             is_incoming = (to_account == account) or is_to_note
             is_outgoing = (acct_col == account) or is_from_note
-            
+
             if is_incoming and not is_outgoing:
                 # This is a transfer IN to the specified account. Treat as a cash outflow (like a buy).
                 cash_flow_local = -flow
@@ -928,8 +949,12 @@ def get_cash_flows_for_mwr(
     target_currency: str,
     fx_rates: Optional[Dict[str, float]],  # Expects standard 'FROM/TO' -> rate format
     display_currency: str,  # Used for warning msg only (REMOVED - fx_rates needed)
-    historical_fx_rates: Optional[Dict[Tuple[date, str], float]] = None, # ADDED: Historical FX Data
-    include_accounts: Optional[List[str]] = None, # ADDED: To determine transfer direction
+    historical_fx_rates: Optional[
+        Dict[Tuple[date, str], float]
+    ] = None,  # ADDED: Historical FX Data
+    include_accounts: Optional[
+        List[str]
+    ] = None,  # ADDED: To determine transfer direction
     flow_basis: str = "per_trade",  # "per_trade" (legacy/symbol-level) or "portfolio"
 ) -> Tuple[List[date], List[float]]:
     """
@@ -938,11 +963,11 @@ def get_cash_flows_for_mwr(
     Processes transactions for a single account, calculating the cash flow impact of each
     transaction (buys, sells, dividends, fees, cash deposits/withdrawals) in its local currency.
     Converts these local currency flows to the `target_currency`.
-    
-    CRITICAL CHANGE: Uses `historical_fx_rates` (if available) to convert flows using a pre-calculated 
-    rate specific to the transaction date. The `historical_fx_rates` dict is expected to map 
+
+    CRITICAL CHANGE: Uses `historical_fx_rates` (if available) to convert flows using a pre-calculated
+    rate specific to the transaction date. The `historical_fx_rates` dict is expected to map
     (date, local_currency) -> conversion_rate_to_target.
-    This ensures accurate IRR for non-USD currencies by capturing FX fluctuations. 
+    This ensures accurate IRR for non-USD currencies by capturing FX fluctuations.
     Falls back to `fx_rates` (current/static) if historical data is missing.
 
     Args:
@@ -953,7 +978,7 @@ def get_cash_flows_for_mwr(
         target_currency (str): The target currency for the MWR calculation.
         fx_rates (Optional[Dict[str, float]]): Current FX rates (fallback).
         display_currency (str): The display currency (informational).
-        historical_fx_rates (Optional[Dict[Tuple[date, str], float]]): Dictionary mapping (Date, LocalCurrency) 
+        historical_fx_rates (Optional[Dict[Tuple[date, str], float]]): Dictionary mapping (Date, LocalCurrency)
             to the conversion rate to the target currency.
 
     Returns:
@@ -990,7 +1015,7 @@ def get_cash_flows_for_mwr(
             0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
         )
         tx_date = row["Date"].date()
-        
+
         # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
         if tx_date > end_date:
             continue
@@ -1004,7 +1029,7 @@ def get_cash_flows_for_mwr(
         # Only $CASH deposit/withdrawal and scope-crossing transfers contribute flows.
         # Under "per_trade" basis (default, used by symbol-level IRR), every trade is a
         # flow from that symbol/account's perspective.
-        portfolio_basis = (flow_basis == "portfolio")
+        portfolio_basis = flow_basis == "portfolio"
 
         if symbol != CASH_SYMBOL_CSV:
             if portfolio_basis:
@@ -1021,7 +1046,9 @@ def get_cash_flows_for_mwr(
 
                     if is_outbound and not is_inbound:
                         if pd.notna(qty) and pd.notna(price_local):
-                            cash_flow_local = (abs(qty) * price_local) - abs(commission_local)
+                            cash_flow_local = (abs(qty) * price_local) - abs(
+                                commission_local
+                            )
                     elif not is_outbound and is_inbound:
                         if pd.notna(qty) and pd.notna(price_local):
                             cash_flow_local = -(abs(qty) * price_local)
@@ -1029,11 +1056,15 @@ def get_cash_flows_for_mwr(
             elif tx_type == "buy" or tx_type == "deposit":
                 # External asset contribution or purchase
                 if pd.notna(qty) and pd.notna(price_local):
-                    cash_flow_local = -( (qty_abs * price_local) + commission_local ) # OUT from pocket (-)
+                    cash_flow_local = -(
+                        (qty_abs * price_local) + commission_local
+                    )  # OUT from pocket (-)
             elif tx_type == "sell" or tx_type == "withdrawal":
                 # External asset removal or sale
                 if pd.notna(qty) and pd.notna(price_local):
-                    cash_flow_local = (qty_abs * price_local) - commission_local # IN to pocket (+)
+                    cash_flow_local = (
+                        qty_abs * price_local
+                    ) - commission_local  # IN to pocket (+)
             elif tx_type == "dividend":
                 dividend_amount_local_cf = 0.0
                 if pd.notna(total_amount_local):
@@ -1053,7 +1084,9 @@ def get_cash_flows_for_mwr(
                 if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
                     cash_flow_local = -((qty_abs * price_local) + commission_local)
             elif tx_type == "fees":
-                cash_flow_local = -abs(commission_local)  # BUG-08 FIX: Use abs() consistently
+                cash_flow_local = -abs(
+                    commission_local
+                )  # BUG-08 FIX: Use abs() consistently
             elif tx_type == "transfer":
                 # Asset Transfer logic
                 is_outbound = False
@@ -1069,14 +1102,18 @@ def get_cash_flows_for_mwr(
                 if is_outbound and not is_inbound:
                     # Asset leaving scope -> Withdrawal -> Positive MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):
-                        cash_flow_local = (abs(qty) * price_local) - abs(commission_local)  # BUG-09 FIX: Subtract commission (broker takes it)
+                        cash_flow_local = (abs(qty) * price_local) - abs(
+                            commission_local
+                        )  # BUG-09 FIX: Subtract commission (broker takes it)
                 elif not is_outbound and is_inbound:
                     # Asset entering scope -> Deposit -> Negative MWR Flow
                     if pd.notna(qty) and pd.notna(price_local):
                         cash_flow_local = -(abs(qty) * price_local)
 
         elif symbol == CASH_SYMBOL_CSV:
-            total_amount_abs = abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
+            total_amount_abs = (
+                abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
+            )
             qty_val_abs = abs(qty) if pd.notna(qty) else 0.0
             cash_amt = total_amount_abs if total_amount_abs > 1e-9 else qty_val_abs
 
@@ -1096,14 +1133,14 @@ def get_cash_flows_for_mwr(
                     if tx_type == "deposit":
                         cash_flow_local = -(cash_amt + commission_local)
                     elif tx_type == "withdrawal":
-                        cash_flow_local = (cash_amt - commission_local)
+                        cash_flow_local = cash_amt - commission_local
                 # else: 0 (internal trade rotation, synthetic, or income on cash)
             elif tx_type in ["deposit", "buy"]:
                 # External cash deposit (legacy per_trade)
-                cash_flow_local = -(cash_amt + commission_local) # OUT from pocket (-)
+                cash_flow_local = -(cash_amt + commission_local)  # OUT from pocket (-)
             elif tx_type in ["withdrawal", "sell"]:
                 # External cash withdrawal (legacy per_trade)
-                cash_flow_local = (cash_amt - commission_local) # IN to pocket (+)
+                cash_flow_local = cash_amt - commission_local  # IN to pocket (+)
             elif tx_type in ["dividend", "interest"]:
                 # Internal interest/dividends on cash are NOT external flows
                 cash_flow_local = 0.0
@@ -1118,10 +1155,10 @@ def get_cash_flows_for_mwr(
                     is_outbound = True
                 if to_acct and to_acct in included_set:
                     is_inbound = True
-                
+
                 if is_outbound and not is_inbound:
                     # Money leaving the scope -> Withdrawal -> Positive MWR Flow
-                    cash_flow_local = (cash_amt - commission_local)
+                    cash_flow_local = cash_amt - commission_local
                 elif not is_outbound and is_inbound:
                     # Money entering the scope -> Deposit -> Negative MWR Flow
                     cash_flow_local = -(cash_amt + commission_local)
@@ -1132,20 +1169,24 @@ def get_cash_flows_for_mwr(
                 rate = np.nan
                 # Try Historical Lookup
                 if historical_fx_rates:
-                   lookup_date = tx_date
-                   if isinstance(lookup_date, pd.Timestamp):
-                       lookup_date = lookup_date.date()
-                   elif isinstance(lookup_date, datetime):
-                       lookup_date = lookup_date.date()
-                   if (lookup_date, local_currency) in historical_fx_rates:
-                       rate = historical_fx_rates[(lookup_date, local_currency)]
+                    lookup_date = tx_date
+                    if isinstance(lookup_date, pd.Timestamp):
+                        lookup_date = lookup_date.date()
+                    elif isinstance(lookup_date, datetime):
+                        lookup_date = lookup_date.date()
+                    if (lookup_date, local_currency) in historical_fx_rates:
+                        rate = historical_fx_rates[(lookup_date, local_currency)]
 
                 # Fallback to Current Rate
                 if pd.isna(rate):
-                    rate = get_conversion_rate(local_currency, target_currency, fx_rates)
-                
+                    rate = get_conversion_rate(
+                        local_currency, target_currency, fx_rates
+                    )
+
                 if pd.isna(rate):
-                    logging.warning(f"MWR calc conversion failed for {local_currency} on {tx_date}. Skipping.")
+                    logging.warning(
+                        f"MWR calc conversion failed for {local_currency} on {tx_date}. Skipping."
+                    )
                     cash_flow_target = 0.0
                 else:
                     cash_flow_target = cash_flow_local * rate
@@ -1156,7 +1197,7 @@ def get_cash_flows_for_mwr(
     sorted_dates = sorted(dates_flows.keys())
     if not sorted_dates and abs(final_account_market_value) < 1e-9:
         return [], []
-        
+
     final_dates = list(sorted_dates)
     final_flows = [dates_flows[d] for d in final_dates]
     final_market_value_target = (
@@ -1178,7 +1219,7 @@ def get_cash_flows_for_mwr(
 
     if len(final_dates) < 2:
         return [], []
-    
+
     non_zero_final_flows = [cf for cf in final_flows if abs(cf) > 1e-9]
     if (
         not non_zero_final_flows
@@ -1244,8 +1285,8 @@ def get_conversion_rate(
     if pd.isna(rate_A_per_USD) and hasattr(config, "STATIC_FX_FALLBACK"):
         rate_A_per_USD = config.STATIC_FX_FALLBACK.get(from_curr_upper)
         if pd.notna(rate_A_per_USD):
-             logging.info(f"FX Fallback: Using STATIC rate for {from_curr_upper}")
-             
+            logging.info(f"FX Fallback: Using STATIC rate for {from_curr_upper}")
+
     # Added debug log for lookup
     logging.debug(
         f"get_conversion_rate: Looking up {from_curr_upper}/USD (key '{from_curr_upper}'): {rate_A_per_USD}"
@@ -1260,7 +1301,7 @@ def get_conversion_rate(
     if pd.isna(rate_B_per_USD) and hasattr(config, "STATIC_FX_FALLBACK"):
         rate_B_per_USD = config.STATIC_FX_FALLBACK.get(to_curr_upper)
         if pd.notna(rate_B_per_USD):
-             logging.info(f"FX Fallback: Using STATIC rate for {to_curr_upper}")
+            logging.info(f"FX Fallback: Using STATIC rate for {to_curr_upper}")
     # --------------------------------------
 
     # Added debug log for lookup
@@ -1316,116 +1357,122 @@ def get_historical_price(
                before it). Returns np.nan if the symbol is not found, the date is before
                the first available price point, or an error occurs during lookup.
     """
-    if target_date is None or not isinstance(target_date, (date, datetime, pd.Timestamp)):
+    if target_date is None or not isinstance(
+        target_date, (date, datetime, pd.Timestamp)
+    ):
         return np.nan
-    
+
     if symbol_key not in prices_dict or prices_dict[symbol_key].empty:
         # logging.debug(f"get_historical_price: {symbol_key} missing or empty.")
         return np.nan
-    
+
     # Avoid modifying the original DataFrame in prices_dict (it might be shared)
     df = prices_dict[symbol_key]
-    
+
     # DEBUG: Trace THB calls - REMOVED
 
     try:
         # Optimization: Use asof for efficient lookup
         # If not sorted, sort into a NEW object (do not modify inplace)
         if not df.index.is_monotonic_increasing:
-             df = df.sort_index()
-        
+            df = df.sort_index()
+
         # Try asof with original target_date
         try:
-             # Force target_date to Timestamp for more reliable awareness checks in pandas
-             target_ts = pd.Timestamp(target_date)
-             
-             # Align awareness and type BEFORE calling asof
-             if isinstance(df.index, pd.DatetimeIndex):
-                 idx_tz = df.index.tz
-                 target_tz = target_ts.tz
-                 
-                 if idx_tz is not None and target_tz is None:
-                     target_ts = target_ts.tz_localize(idx_tz)
-                 elif idx_tz is None and target_tz is not None:
-                     target_ts = target_ts.tz_localize(None)
-                 elif idx_tz is not None and target_tz is not None:
-                     target_ts = target_ts.tz_convert(idx_tz)
-             elif len(df.index) > 0 and isinstance(df.index[0], date) and not isinstance(df.index[0], datetime):
-                 # index is likely date objects, asof(Timestamp) might fail.
-                 # Convert target_ts back to date for lookup if index is date objects.
-                 target_ts = target_ts.date()
-                       
-             res = df.asof(target_ts)
-            
+            # Force target_date to Timestamp for more reliable awareness checks in pandas
+            target_ts = pd.Timestamp(target_date)
 
-            
+            # Align awareness and type BEFORE calling asof
+            if isinstance(df.index, pd.DatetimeIndex):
+                idx_tz = df.index.tz
+                target_tz = target_ts.tz
+
+                if idx_tz is not None and target_tz is None:
+                    target_ts = target_ts.tz_localize(idx_tz)
+                elif idx_tz is None and target_tz is not None:
+                    target_ts = target_ts.tz_localize(None)
+                elif idx_tz is not None and target_tz is not None:
+                    target_ts = target_ts.tz_convert(idx_tz)
+            elif (
+                len(df.index) > 0
+                and isinstance(df.index[0], date)
+                and not isinstance(df.index[0], datetime)
+            ):
+                # index is likely date objects, asof(Timestamp) might fail.
+                # Convert target_ts back to date for lookup if index is date objects.
+                target_ts = target_ts.date()
+
+            res = df.asof(target_ts)
+
         except (TypeError, ValueError) as e_asof:
-             logging.debug(f"AsOf initial fail for {symbol_key} on {target_date}: {e_asof}")
-             # Fallback: Try converting to Timestamp
-             ts_target = pd.Timestamp(target_date)
-             
-             # Handle Timezone if index is tz-aware
-             if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
-                 if ts_target.tz is None:
-                     ts_target = ts_target.tz_localize(df.index.tz)
-             
-             res = df.asof(ts_target)
+            logging.debug(
+                f"AsOf initial fail for {symbol_key} on {target_date}: {e_asof}"
+            )
+            # Fallback: Try converting to Timestamp
+            ts_target = pd.Timestamp(target_date)
+
+            # Handle Timezone if index is tz-aware
+            if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
+                if ts_target.tz is None:
+                    ts_target = ts_target.tz_localize(df.index.tz)
+
+            res = df.asof(ts_target)
 
         # Extract price from result
         price = np.nan
         if isinstance(res, pd.Series):
-             price = res.get('price')
-             if price is None or pd.isna(price):
-                 price = res.get('Adj Close')
-             if price is None or pd.isna(price):
-                 price = res.get('Close')
-        elif isinstance(res, pd.DataFrame): 
-             # Duplicate index case
-             if not res.empty:
-                 if 'price' in res.columns:
-                     price = res['price'].iloc[-1]
-                 elif 'Adj Close' in res.columns:
-                     price = res['Adj Close'].iloc[-1]
-                 elif 'Close' in res.columns:
-                     price = res['Close'].iloc[-1]
+            price = res.get("price")
+            if price is None or pd.isna(price):
+                price = res.get("Adj Close")
+            if price is None or pd.isna(price):
+                price = res.get("Close")
+        elif isinstance(res, pd.DataFrame):
+            # Duplicate index case
+            if not res.empty:
+                if "price" in res.columns:
+                    price = res["price"].iloc[-1]
+                elif "Adj Close" in res.columns:
+                    price = res["Adj Close"].iloc[-1]
+                elif "Close" in res.columns:
+                    price = res["Close"].iloc[-1]
         elif pd.notna(res):
-             pass # Scalar?
+            pass  # Scalar?
 
         if price is None or pd.isna(price):
-             # Check if target_date is before the start of the data (Backfill Strategy)
-             # Use Timestamps for robust comparison
-             try:
-                 first_ts = pd.Timestamp(df.index[0])
-                 target_ts_eval = pd.Timestamp(target_date)
-                 
-                 # Align awareness for comparison
-                 if first_ts.tz is not None and target_ts_eval.tz is None:
-                     target_ts_eval = target_ts_eval.tz_localize(first_ts.tz)
-                 elif first_ts.tz is None and target_ts_eval.tz is not None:
-                     target_ts_eval = target_ts_eval.tz_localize(None)
-                 
-                 if target_ts_eval < first_ts:
-                     col = 'price'
-                     if 'price' not in df.columns:
-                         if 'Adj Close' in df.columns:
-                             col = 'Adj Close'
-                         elif 'Close' in df.columns:
-                             col = 'Close'
-                     
-                     backfill_price = df[col].iloc[0]
-                     if pd.notna(backfill_price):
-                         # logging.debug(f"BACKFILL: {symbol_key} using {backfill_price} for {target_date}")
-                         return float(backfill_price)
-             except Exception as e_comp:
-                 logging.debug(f"Comparison fail in get_historical_price: {e_comp}")
+            # Check if target_date is before the start of the data (Backfill Strategy)
+            # Use Timestamps for robust comparison
+            try:
+                first_ts = pd.Timestamp(df.index[0])
+                target_ts_eval = pd.Timestamp(target_date)
+
+                # Align awareness for comparison
+                if first_ts.tz is not None and target_ts_eval.tz is None:
+                    target_ts_eval = target_ts_eval.tz_localize(first_ts.tz)
+                elif first_ts.tz is None and target_ts_eval.tz is not None:
+                    target_ts_eval = target_ts_eval.tz_localize(None)
+
+                if target_ts_eval < first_ts:
+                    col = "price"
+                    if "price" not in df.columns:
+                        if "Adj Close" in df.columns:
+                            col = "Adj Close"
+                        elif "Close" in df.columns:
+                            col = "Close"
+
+                    backfill_price = df[col].iloc[0]
+                    if pd.notna(backfill_price):
+                        # logging.debug(f"BACKFILL: {symbol_key} using {backfill_price} for {target_date}")
+                        return float(backfill_price)
+            except Exception as e_comp:
+                logging.debug(f"Comparison fail in get_historical_price: {e_comp}")
 
         return float(price) if pd.notna(price) else np.nan
 
     except Exception as e:
-        logging.error(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}")
+        logging.error(
+            f"ERROR getting historical price for {symbol_key} on {target_date}: {e}"
+        )
         return np.nan
-
-
 
 
 def get_historical_rate_via_usd_bridge(
@@ -1561,7 +1608,9 @@ def map_to_yf_symbol(
         return None
 
     if normalized_symbol in user_excluded_symbols:
-        logging.debug(f"  map_to_yf_symbol: Symbol '{normalized_symbol}' is in EXCLUSION list. Returning None.")
+        logging.debug(
+            f"  map_to_yf_symbol: Symbol '{normalized_symbol}' is in EXCLUSION list. Returning None."
+        )
         return None
 
     # --- 2. Check Explicit Map (if not excluded) ---
@@ -1569,7 +1618,7 @@ def map_to_yf_symbol(
     normalized_map = {
         k.upper().strip(): v.upper().strip() for k, v in user_symbol_map.items()
     }  # Use user-defined map
-    
+
     # ADDED: Default system mappings for common problematic tickers
     SYSTEM_MAP = {
         "BRK.B": "BRK-B",
@@ -1580,15 +1629,13 @@ def map_to_yf_symbol(
         "RDS.B": "RDS-B",
     }
 
-
-    
     if normalized_symbol in normalized_map:
         mapped_symbol = normalized_map[normalized_symbol]
         logging.debug(
             f"  Found in explicit map: '{normalized_symbol}' -> '{mapped_symbol}'"
         )
         return mapped_symbol
-    
+
     if normalized_symbol in SYSTEM_MAP:
         mapped_symbol = SYSTEM_MAP[normalized_symbol]
         logging.debug(
@@ -1609,7 +1656,7 @@ def map_to_yf_symbol(
         return f"{base_symbol.upper()}.BK"
 
     # --- 4. Sanitization and Heuristics ---
-    
+
     # Rule 4a: Replace dots with dashes for short US-style tickers (e.g. BRK.B -> BRK-B)
     # This catches variations not in the explicit SYSTEM_MAP.
     if "." in normalized_symbol and len(normalized_symbol) <= 6:
@@ -1619,19 +1666,22 @@ def map_to_yf_symbol(
             # Explicitly skip known valid exchange suffixes like .BK
             if parts[1].upper() not in ["BK", "L", "TO", "V"]:
                 converted = normalized_symbol.replace(".", "-")
-                logging.debug(f"  Applied DOT-to-DASH heuristic: '{normalized_symbol}' -> '{converted}'")
+                logging.debug(
+                    f"  Applied DOT-to-DASH heuristic: '{normalized_symbol}' -> '{converted}'"
+                )
                 return converted
 
     # Rule 4b: Skip obviously invalid tickers (Custom names, fund tags, etc.)
     # Valid tickers typically only contain letters, numbers, and very few special chars (. - :)
     import re
+
     # Allowing : for BKK (handled above) and ^ for indices
     if not re.match(r"^[A-Z0-9\.\-\^:]+$", normalized_symbol):
         logging.warning(
             f"map_to_yf_symbol: Skipping symbol with invalid characters: {internal_symbol}"
         )
         return None
-    
+
     # Rule 4c: Extremely long symbols (likely descriptive names or mutual fund tags)
     if len(normalized_symbol) > 15:
         logging.warning(
@@ -1749,11 +1799,11 @@ def format_large_number_display(
     try:
         val_float = float(value)
         if val_float >= 1e12:
-            return f"{currency_symbol}{val_float/1e12:,.{decimals}f} T"
+            return f"{currency_symbol}{val_float / 1e12:,.{decimals}f} T"
         elif val_float >= 1e9:
-            return f"{currency_symbol}{val_float/1e9:,.{decimals}f} B"
+            return f"{currency_symbol}{val_float / 1e9:,.{decimals}f} B"
         elif val_float >= 1e6:
-            return f"{currency_symbol}{val_float/1e6:,.{decimals}f} M"
+            return f"{currency_symbol}{val_float / 1e6:,.{decimals}f} M"
         else:
             return f"{currency_symbol}{val_float:,.{decimals}f}"  # Default to standard currency format
     except (ValueError, TypeError):

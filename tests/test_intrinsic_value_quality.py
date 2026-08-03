@@ -12,7 +12,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 import financial_ratios as fr  # noqa: E402
 
@@ -26,7 +28,13 @@ def _statements(fcf_by_year, revenue=1e10, ebit=1.2e9):
     )
     financials = pd.DataFrame(
         {y: [revenue, ebit, 8e8, 2e8, 1e9] for y in years},
-        index=["Total Revenue", "Operating Income", "Net Income", "Tax Provision", "Pretax Income"],
+        index=[
+            "Total Revenue",
+            "Operating Income",
+            "Net Income",
+            "Tax Provision",
+            "Pretax Income",
+        ],
     )
     balance = pd.DataFrame(
         {y: [2e10] for y in years}, index=["Total Stockholder Equity"]
@@ -86,7 +94,9 @@ def test_estimate_growth_rate_still_measures_raw_history():
     fin = pd.DataFrame(
         {"2022-12-31": [100.0], "2023-12-31": [120.0]}, index=["Net Income"]
     )
-    assert fr.estimate_growth_rate(fin, item_name="Net Income") == pytest.approx(0.20, abs=0.01)
+    assert fr.estimate_growth_rate(fin, item_name="Net Income") == pytest.approx(
+        0.20, abs=0.01
+    )
 
 
 # --- normalized cash flow --------------------------------------------------
@@ -201,7 +211,9 @@ def test_epv_is_reported_as_a_floor_not_blended_in():
     fin, bal, cf = _statements([1e9] * 5)
     res = fr.get_comprehensive_intrinsic_value(_info(), fin, bal, cf, iterations=200)
     assert "epv" in res["models"]
-    assert set(res["model_weights"]) <= {"dcf", "graham"}, "EPV must stay out of the blend"
+    assert set(res["model_weights"]) <= {"dcf", "graham"}, (
+        "EPV must stay out of the blend"
+    )
     if res["models"]["epv"].get("intrinsic_value"):
         assert res["earnings_power_floor"] > 0
 
@@ -218,15 +230,17 @@ def test_terminal_value_share_is_reported():
 
 def test_monte_carlo_models_downside():
     """The old floor of 0% growth meant the 'bear' case had no bear in it."""
-    mc = fr.run_monte_carlo_dcf(_info(), base_fcf=1e9, base_growth=0.05,
-                                base_discount=0.10, iterations=4000)
+    mc = fr.run_monte_carlo_dcf(
+        _info(), base_fcf=1e9, base_growth=0.05, base_discount=0.10, iterations=4000
+    )
     assert mc["bear"] < mc["base"] < mc["bull"]
 
 
 def test_monte_carlo_uncertainty_does_not_vanish_at_low_growth():
     """Relative sigma gave a 2%-growth firm near-certainty; absolute sigma doesn't."""
-    low = fr.run_monte_carlo_dcf(_info(), base_fcf=1e9, base_growth=0.02,
-                                 base_discount=0.10, iterations=4000)
+    low = fr.run_monte_carlo_dcf(
+        _info(), base_fcf=1e9, base_growth=0.02, base_discount=0.10, iterations=4000
+    )
     spread = (low["bull"] - low["bear"]) / low["base"]
     assert spread > 0.25, f"distribution is implausibly tight: {spread:.2%}"
 

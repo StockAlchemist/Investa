@@ -12,6 +12,7 @@
 -------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT
 """
+
 import pandas as pd
 import numpy as np
 import logging
@@ -53,8 +54,8 @@ MAX_DISCOUNT_RATE = 0.20
 MAX_COST_OF_DEBT = 0.25  # above this the "interest / debt" ratio is a data error
 # Small caps carry real financing and liquidity risk that beta does not capture.
 SIZE_PREMIUM_BANDS: List[Tuple[float, float]] = [
-    (3e8, 0.045),   # < $300M
-    (2e9, 0.025),   # < $2B
+    (3e8, 0.045),  # < $300M
+    (2e9, 0.025),  # < $2B
     (1e10, 0.010),  # < $10B
 ]
 
@@ -296,12 +297,14 @@ def calculate_key_ratios_timeseries(
                 financials_df, "Net Income From Continuing Ops", period_str_fin
             )
 
-        total_equity = _get_statement_value(
-            balance_sheet_df, "Stockholders Equity", period_str_bs
-        ) or _get_statement_value(
-            balance_sheet_df, "Total Stockholder Equity", period_str_bs
-        ) or _get_statement_value(
-            balance_sheet_df, "Total Equity Gross Minority Interest", period_str_bs
+        total_equity = (
+            _get_statement_value(balance_sheet_df, "Stockholders Equity", period_str_bs)
+            or _get_statement_value(
+                balance_sheet_df, "Total Stockholder Equity", period_str_bs
+            )
+            or _get_statement_value(
+                balance_sheet_df, "Total Equity Gross Minority Interest", period_str_bs
+            )
         )
         total_assets = _get_statement_value(
             balance_sheet_df, "Total Assets", period_str_bs
@@ -381,11 +384,17 @@ def calculate_key_ratios_timeseries(
         )
 
         # Solvency
-        total_liab = _get_statement_value(
-            balance_sheet_df, "Total Liabilities Net Minority Interest", period_str_bs
-        ) or _get_statement_value(
-            balance_sheet_df, "Total Liab", period_str_bs
-        ) or _get_statement_value(balance_sheet_df, "Total Liabilities", period_str_bs)
+        total_liab = (
+            _get_statement_value(
+                balance_sheet_df,
+                "Total Liabilities Net Minority Interest",
+                period_str_bs,
+            )
+            or _get_statement_value(balance_sheet_df, "Total Liab", period_str_bs)
+            or _get_statement_value(
+                balance_sheet_df, "Total Liabilities", period_str_bs
+            )
+        )
         current_ratios["Debt-to-Equity Ratio"] = (
             total_liab / total_equity
             if total_equity and total_equity != 0 and total_liab is not None
@@ -426,7 +435,9 @@ def calculate_key_ratios_timeseries(
         roic = np.nan
         if pretax is not None and total_equity:
             operating_earnings = pretax + (interest_exp or 0.0)
-            tax_rate = (tax / pretax) if pretax and pretax > 0 and tax is not None else None
+            tax_rate = (
+                (tax / pretax) if pretax and pretax > 0 and tax is not None else None
+            )
             if tax_rate is None or not (0.0 <= tax_rate <= 0.6):
                 tax_rate = 0.21  # US statutory; filers with odd effective rates
             nopat = operating_earnings * (1.0 - tax_rate)
@@ -542,7 +553,7 @@ def calculate_wacc(
     balance_sheet_df: Optional[pd.DataFrame] = None,
     risk_free_rate: float = RISK_FREE_RATE,
     market_return: float = EQUITY_MARKET_RETURN,
-    default_tax_rate: float = 0.21
+    default_tax_rate: float = 0.21,
 ) -> Dict[str, Any]:
     """
     Calculates the Weighted Average Cost of Capital (WACC).
@@ -571,20 +582,26 @@ def calculate_wacc(
         cost_of_equity += size_premium
 
         # 2. Cost of Debt
-        cost_of_debt = 0.05 # Default 5%
+        cost_of_debt = 0.05  # Default 5%
         tax_rate = default_tax_rate
 
         total_debt = ticker_info.get("totalDebt")
         interest_expense = None
         income_tax_expense = None
         pretax_income = None
-        
+
         if financials_df is not None and not financials_df.empty:
             latest_period = financials_df.columns[0]
-            interest_expense = _get_statement_value(financials_df, "Interest Expense", latest_period)
-            income_tax_expense = _get_statement_value(financials_df, "Tax Provision", latest_period)
-            pretax_income = _get_statement_value(financials_df, "Pretax Income", latest_period)
-            
+            interest_expense = _get_statement_value(
+                financials_df, "Interest Expense", latest_period
+            )
+            income_tax_expense = _get_statement_value(
+                financials_df, "Tax Provision", latest_period
+            )
+            pretax_income = _get_statement_value(
+                financials_df, "Pretax Income", latest_period
+            )
+
             if interest_expense and total_debt and total_debt > 0:
                 implied = abs(interest_expense) / total_debt
                 # A tiny debt balance against a full year of interest expense
@@ -598,7 +615,9 @@ def calculate_wacc(
         market_cap = ticker_info.get("marketCap")
         if not market_cap:
             return {
-                "wacc": float(np.clip(cost_of_equity, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)),
+                "wacc": float(
+                    np.clip(cost_of_equity, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
+                ),
                 "cost_of_equity": cost_of_equity,
                 "beta": beta,
                 "size_premium": size_premium,
@@ -609,7 +628,9 @@ def calculate_wacc(
         weight_equity = market_cap / total_value
         weight_debt = (total_debt or 0) / total_value
 
-        wacc = (weight_equity * cost_of_equity) + (weight_debt * cost_of_debt * (1 - tax_rate))
+        wacc = (weight_equity * cost_of_equity) + (
+            weight_debt * cost_of_debt * (1 - tax_rate)
+        )
         wacc = float(np.clip(wacc, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE))
 
         return {
@@ -621,7 +642,7 @@ def calculate_wacc(
             "weight_debt": weight_debt,
             "beta": beta,
             "size_premium": size_premium,
-            "method": "WACC"
+            "method": "WACC",
         }
     except Exception as e:
         logging.error(f"Error calculating WACC: {e}")
@@ -632,11 +653,11 @@ def estimate_growth_rate(
     financials_df: Optional[pd.DataFrame],
     ticker_info: Optional[Dict[str, Any]] = None,
     item_name: str = "Net Income",
-    years: int = GROWTH_HISTORY_YEARS
+    years: int = GROWTH_HISTORY_YEARS,
 ) -> float:
     """Attempts to estimate a historical growth rate for a financial item."""
     _values = []
-    
+
     # 1. Try to get ANALYST EXPECTED GROWTH (Priority)
     if ticker_info:
         # Check for our injected analyst data
@@ -653,11 +674,11 @@ def estimate_growth_rate(
                             expected_rates.append(g_val)
                     except (ValueError, TypeError):
                         pass
-            
+
             if expected_rates:
                 avg_expected = sum(expected_rates) / len(expected_rates)
                 return avg_expected
-        
+
         # Fallback to standard info fields if specific estimates missing
         g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth")
         if g is not None:
@@ -673,31 +694,33 @@ def estimate_growth_rate(
     if financials_df is not None and not financials_df.empty:
         try:
             # Sort columns to be chronological
-            cols = sorted(financials_df.columns, key=lambda x: pd.to_datetime(x, errors="coerce"))
+            cols = sorted(
+                financials_df.columns, key=lambda x: pd.to_datetime(x, errors="coerce")
+            )
             recent_dated = []
             for col in cols:
                 val = _get_statement_value(financials_df, item_name, col)
                 if val is not None and val > 0:
                     recent_dated.append((pd.to_datetime(col), val))
-            
+
             if len(recent_dated) >= 2:
                 # Target window: last 3 years
                 end_date, end_val = recent_dated[-1]
-                
+
                 # Find the starting point ~3 years before the end point
                 start_idx = 0
                 for i in range(len(recent_dated) - 2, -1, -1):
                     d, v = recent_dated[i]
                     years_diff = (end_date - d).days / 365.25
-                    if years_diff >= 2.5: # approx 3 years
+                    if years_diff >= 2.5:  # approx 3 years
                         start_idx = i
                         break
-                
+
                 start_date, start_val = recent_dated[start_idx]
-                
+
                 # Calculate CAGR
                 n_years = (end_date - start_date).days / 365.25
-                if n_years > 0.5: 
+                if n_years > 0.5:
                     res = (end_val / start_val) ** (1 / n_years) - 1
                     # Protect against NaN or Infinity
                     if np.isnan(res) or np.isinf(res):
@@ -837,58 +860,88 @@ def _enrich_ticker_info(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame],
     balance_sheet_df: Optional[pd.DataFrame],
-    cashflow_df: Optional[pd.DataFrame]
+    cashflow_df: Optional[pd.DataFrame],
 ) -> Dict[str, Any]:
     """
     Fills in missing critical data in ticker_info using financial statements.
     Ensures DCF/Graham models have necessary inputs even if 'info' is sparse.
     """
     enriched = ticker_info.copy()
-    
+
     # Check 1: Shares Outstanding
     if not enriched.get("sharesOutstanding"):
         # Try Balance Sheet (Ordinary Shares Number or Share Issued)
         if balance_sheet_df is not None and not balance_sheet_df.empty:
             latest_col = balance_sheet_df.columns[0]
-            shares = _get_statement_value(balance_sheet_df, "Ordinary Shares Number", latest_col)
+            shares = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", latest_col
+            )
             if not shares:
-                shares = _get_statement_value(balance_sheet_df, "Share Issued", latest_col)
-            
+                shares = _get_statement_value(
+                    balance_sheet_df, "Share Issued", latest_col
+                )
+
             if shares:
                 enriched["sharesOutstanding"] = shares
-        
+
         # Try Income Statement (Average Shares)
-        if not enriched.get("sharesOutstanding") and financials_df is not None and not financials_df.empty:
+        if (
+            not enriched.get("sharesOutstanding")
+            and financials_df is not None
+            and not financials_df.empty
+        ):
             latest_col = financials_df.columns[0]
-            shares = _get_statement_value(financials_df, "Diluted Average Shares", latest_col)
+            shares = _get_statement_value(
+                financials_df, "Diluted Average Shares", latest_col
+            )
             if not shares:
-                shares = _get_statement_value(financials_df, "Basic Average Shares", latest_col)
-            
+                shares = _get_statement_value(
+                    financials_df, "Basic Average Shares", latest_col
+                )
+
             if shares:
                 enriched["sharesOutstanding"] = shares
 
     # Check 2: Total Revenue
-    if not enriched.get("totalRevenue") and financials_df is not None and not financials_df.empty:
+    if (
+        not enriched.get("totalRevenue")
+        and financials_df is not None
+        and not financials_df.empty
+    ):
         latest_col = financials_df.columns[0]
         rev = _get_statement_value(financials_df, "Total Revenue", latest_col)
         if rev:
             enriched["totalRevenue"] = rev
 
     # Check 3: Total Cash / Debt
-    if enriched.get("totalCash") is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+    if (
+        enriched.get("totalCash") is None
+        and balance_sheet_df is not None
+        and not balance_sheet_df.empty
+    ):
         latest_col = balance_sheet_df.columns[0]
-        cash = _get_statement_value(balance_sheet_df, "Cash And Cash Equivalents", latest_col)
+        cash = _get_statement_value(
+            balance_sheet_df, "Cash And Cash Equivalents", latest_col
+        )
         if cash:
             enriched["totalCash"] = cash
 
-    if enriched.get("totalDebt") is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+    if (
+        enriched.get("totalDebt") is None
+        and balance_sheet_df is not None
+        and not balance_sheet_df.empty
+    ):
         latest_col = balance_sheet_df.columns[0]
         debt = _get_statement_value(balance_sheet_df, "Total Debt", latest_col)
         if debt:
             enriched["totalDebt"] = debt
 
     # Check 4: EPS (Trailing)
-    if not enriched.get("trailingEps") and financials_df is not None and not financials_df.empty:
+    if (
+        not enriched.get("trailingEps")
+        and financials_df is not None
+        and not financials_df.empty
+    ):
         latest_col = financials_df.columns[0]
         eps = _get_statement_value(financials_df, "Diluted EPS", latest_col)
         if eps:
@@ -896,10 +949,11 @@ def _enrich_ticker_info(
 
     return enriched
 
+
 def estimate_fcf_margin(
     financials_df: Optional[pd.DataFrame],
     cashflow_df: Optional[pd.DataFrame],
-    years: int = 5
+    years: int = 5,
 ) -> float:
     """
     Estimates a normalized Free Cash Flow margin based on historical data.
@@ -916,15 +970,15 @@ def estimate_fcf_margin(
         # Find common columns/periods
         common_cols = sorted(
             list(set(financials_df.columns).intersection(set(cashflow_df.columns))),
-            key=lambda x: pd.to_datetime(x, errors="coerce")
+            key=lambda x: pd.to_datetime(x, errors="coerce"),
         )
-        
+
         margins = []
-        for col in common_cols[-years:]: # Look at last N years
+        for col in common_cols[-years:]:  # Look at last N years
             rev = _get_statement_value(financials_df, "Total Revenue", col)
             ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", col)
             capex = _get_statement_value(cashflow_df, "Capital Expenditure", col)
-            
+
             if rev and rev > 0 and ocf is not None and capex is not None:
                 # Capex is usually negative
                 fcf = ocf + capex
@@ -1110,6 +1164,7 @@ def normalized_base_fcf(
         "normalized": False,
     }
 
+
 def run_monte_carlo_dcf(
     ticker_info: Dict[str, Any],
     base_fcf: float,
@@ -1117,7 +1172,7 @@ def run_monte_carlo_dcf(
     base_discount: float,
     projection_years: int = 10,
     terminal_growth: float = 0.02,
-    iterations: int = 10000
+    iterations: int = 10000,
 ) -> Dict[str, Any]:
     """Runs a vectorized Monte Carlo simulation for DCF."""
     try:
@@ -1154,15 +1209,22 @@ def run_monte_carlo_dcf(
         # 2. Vectorized Projections
         # Shape: (iterations, projection_years)
         years = np.arange(1, projection_years + 1)
-        
+
         # Linear Fade: Growth trends from growth_sample to terminal_growth over projection period
-        fade_factors = (years - 1) / (projection_years - 1) if projection_years > 1 else np.array([0])
+        fade_factors = (
+            (years - 1) / (projection_years - 1)
+            if projection_years > 1
+            else np.array([0])
+        )
         # yearly_growths shape: (iterations, projection_years)
-        yearly_growths = growth_samples[:, None] - (growth_samples[:, None] - terminal_growth) * fade_factors
-        
+        yearly_growths = (
+            growth_samples[:, None]
+            - (growth_samples[:, None] - terminal_growth) * fade_factors
+        )
+
         # Calculate FCF for each year: base_fcf * cumprod(1 + g_i)
         fcf_projections = base_fcf * np.cumprod(1 + yearly_growths, axis=1)
-        
+
         # 3. Present Value of FCFs
         # PV = FCF / (1 + r)^n
         pv_projections = fcf_projections / (1 + discount_samples[:, None]) ** years
@@ -1171,9 +1233,13 @@ def run_monte_carlo_dcf(
         # 4. Terminal Value
         # TV = (FCF_last * (1 + g_term)) / (r - g_term)
         last_fcf = fcf_projections[:, -1]
-        terminal_values = (last_fcf * (1 + terminal_growth)) / (discount_samples - terminal_growth)
+        terminal_values = (last_fcf * (1 + terminal_growth)) / (
+            discount_samples - terminal_growth
+        )
         # PV of TV
-        pv_terminal_values = terminal_values / (1 + discount_samples) ** projection_years
+        pv_terminal_values = (
+            terminal_values / (1 + discount_samples) ** projection_years
+        )
 
         # 5. Equity Value to Intrinsic Value
         cash = ticker_info.get("totalCash") or 0
@@ -1185,11 +1251,11 @@ def run_monte_carlo_dcf(
         # 6. Generate Histogram for Probability Plot
         counts, edges = np.histogram(intrinsic_values, bins=40)
         midpoints = (edges[:-1] + edges[1:]) / 2
-        
+
         # Apply Gaussian smoothing to make it look like a "bell curve"
         # 7-point Gaussian kernel for better smoothness
         kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
-        smoothed_counts = np.convolve(counts, kernel, mode='same')
+        smoothed_counts = np.convolve(counts, kernel, mode="same")
 
         histogram = [
             {"price": float(p), "count": float(c)}
@@ -1206,7 +1272,7 @@ def run_monte_carlo_dcf(
             "base": float(np.percentile(intrinsic_values, 50)),
             "bull": float(np.percentile(intrinsic_values, 90)),
             "std_dev": float(np.std(intrinsic_values)),
-            "histogram": histogram
+            "histogram": histogram,
         }
     except Exception as e:
         logging.error(f"Monte Carlo DCF failed: {e}")
@@ -1214,19 +1280,20 @@ def run_monte_carlo_dcf(
 
 
 def run_monte_carlo_graham(
-    eps: float,
-    base_growth: float,
-    base_bond_yield: float,
-    iterations: int = 10000
+    eps: float, base_growth: float, base_bond_yield: float, iterations: int = 10000
 ) -> Dict[str, Any]:
     """Runs a vectorized Monte Carlo simulation for Graham's Formula."""
     try:
         # 1. Stochastic Variables
         # Growth Rate: 20% relative std dev
-        growth_samples = np.random.normal(base_growth, abs(base_growth) * 0.2, iterations)
+        growth_samples = np.random.normal(
+            base_growth, abs(base_growth) * 0.2, iterations
+        )
         # Bond Yield: 10% relative std dev
-        yield_samples = np.random.normal(base_bond_yield, abs(base_bond_yield) * 0.1, iterations)
-        
+        yield_samples = np.random.normal(
+            base_bond_yield, abs(base_bond_yield) * 0.1, iterations
+        )
+
         # Floor for stability
         growth_samples = np.maximum(0.0, growth_samples)
         yield_samples = np.maximum(0.5, yield_samples)
@@ -1238,10 +1305,10 @@ def run_monte_carlo_graham(
         # 3. Generate Histogram
         counts, edges = np.histogram(intrinsic_values, bins=40)
         midpoints = (edges[:-1] + edges[1:]) / 2
-        
+
         # Apply smoothing
         kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
-        smoothed_counts = np.convolve(counts, kernel, mode='same')
+        smoothed_counts = np.convolve(counts, kernel, mode="same")
 
         histogram = [
             {"price": float(p), "count": float(c)}
@@ -1254,7 +1321,7 @@ def run_monte_carlo_graham(
             "base": float(np.percentile(intrinsic_values, 50)),
             "bull": float(np.percentile(intrinsic_values, 90)),
             "std_dev": float(np.std(intrinsic_values)),
-            "histogram": histogram
+            "histogram": histogram,
         }
     except Exception as e:
         logging.error(f"Monte Carlo Graham failed: {e}")
@@ -1271,7 +1338,7 @@ def calculate_intrinsic_value_dcf(
     projection_years: int = 10,
     terminal_growth_rate: float = 0.02,
     target_fcf_margin: Optional[float] = None,
-    fcf: Optional[float] = None
+    fcf: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Performs a Discounted Cash Flow (DCF) valuation.
@@ -1279,7 +1346,7 @@ def calculate_intrinsic_value_dcf(
     try:
         current_revenue = ticker_info.get("totalRevenue")
         model_method = "DCF"
-        
+
         # 1. Base FCF — a normalized figure, not one fiscal year.
         fcf_method = "caller-supplied FCF"
         fcf_history: List[float] = []
@@ -1302,7 +1369,9 @@ def calculate_intrinsic_value_dcf(
                 target_fcf_margin = estimate_fcf_margin(financials_df, cashflow_df)
 
             positive_years = sum(1 for v in fcf_history if v > 0)
-            has_track_record = len(fcf_history) >= 3 and positive_years >= len(fcf_history) / 2
+            has_track_record = (
+                len(fcf_history) >= 3 and positive_years >= len(fcf_history) / 2
+            )
 
             if target_fcf_margin > 0 and has_track_record:
                 fcf = current_revenue * target_fcf_margin
@@ -1332,7 +1401,7 @@ def calculate_intrinsic_value_dcf(
         else:
             # Apply stability floor even to provided discount rate
             discount_rate = max(0.075, discount_rate)
-            
+
         # 3. Growth Rate — shrunk toward a base rate before it is compounded.
         growth_method = "caller-supplied growth"
         growth_signals: Dict[str, float] = {}
@@ -1353,33 +1422,39 @@ def calculate_intrinsic_value_dcf(
         projected_fcf = []
         pv_fcf = []
         current_fcf = fcf
-        
+
         for y in range(1, projection_years + 1):
             # Linear Fade: Growth trends from applied_growth to terminal_rate over projection period
-            fade_factor = (y - 1) / (projection_years - 1) if projection_years > 1 else 0
-            yearly_growth = applied_growth - (applied_growth - terminal_growth_rate) * fade_factor
-            
+            fade_factor = (
+                (y - 1) / (projection_years - 1) if projection_years > 1 else 0
+            )
+            yearly_growth = (
+                applied_growth - (applied_growth - terminal_growth_rate) * fade_factor
+            )
+
             next_fcf = current_fcf * (1 + yearly_growth)
             projected_fcf.append(next_fcf)
             pv_fcf.append(next_fcf / ((1 + discount_rate) ** y))
             current_fcf = next_fcf
-            
+
         # 5. Terminal Value
         # Ensure denominator is positive
         safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
-        terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (safe_discount - terminal_growth_rate)
+        terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (
+            safe_discount - terminal_growth_rate
+        )
         pv_terminal_value = terminal_value / ((1 + discount_rate) ** projection_years)
-        
+
         # 6. Enterprise Value to Equity Value
         enterprise_value = sum(pv_fcf) + pv_terminal_value
         cash = ticker_info.get("totalCash") or 0
         debt = ticker_info.get("totalDebt") or 0
         equity_value = enterprise_value + cash - debt
-        
+
         shares_outstanding = ticker_info.get("sharesOutstanding")
         if not shares_outstanding:
             return {"error": "Missing shares outstanding"}
-            
+
         intrinsic_value = equity_value / shares_outstanding
 
         # Protect against NaN in final DCF result
@@ -1397,7 +1472,10 @@ def calculate_intrinsic_value_dcf(
         if intrinsic_value <= 0:
             return {
                 "error": "Net debt exceeds discounted cash flows (no residual equity value)",
-                "diagnostics": {"equity_value": equity_value, "enterprise_value": enterprise_value},
+                "diagnostics": {
+                    "equity_value": equity_value,
+                    "enterprise_value": enterprise_value,
+                },
             }
 
         res = {
@@ -1415,13 +1493,11 @@ def calculate_intrinsic_value_dcf(
                 "growth_method": growth_method,
                 "growth_signals": growth_signals,
                 "terminal_value_share": tv_share,
-            }
+            },
         }
         notes = [f"Linear growth fade over {projection_years}y toward terminal rate"]
         if growth_rate > MAX_PROJECTED_GROWTH:
-            notes.append(
-                f"growth clamped {growth_rate:.1%} -> {applied_growth:.1%}"
-            )
+            notes.append(f"growth clamped {growth_rate:.1%} -> {applied_growth:.1%}")
         if tv_share is not None and tv_share > 0.75:
             notes.append(f"{tv_share:.0%} of value is terminal — low confidence")
         res["parameters"]["note"] = "; ".join(notes)
@@ -1436,7 +1512,7 @@ def calculate_intrinsic_value_graham(
     balance_sheet_df: Optional[pd.DataFrame] = None,
     growth_rate: Optional[float] = None,
     eps: Optional[float] = None,
-    bond_yield: Optional[float] = None
+    bond_yield: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Calculates intrinsic value using Benjamin Graham's Revised Formula:
@@ -1472,8 +1548,13 @@ def calculate_intrinsic_value_graham(
         book_value = None
         if balance_sheet_df is not None and not balance_sheet_df.empty:
             latest_bs_period = balance_sheet_df.columns[0]
-            total_equity = _get_statement_value(balance_sheet_df, "Total Stockholder Equity", latest_bs_period) or \
-                           _get_statement_value(balance_sheet_df, "Total Equity Gross Minority Interest", latest_bs_period)
+            total_equity = _get_statement_value(
+                balance_sheet_df, "Total Stockholder Equity", latest_bs_period
+            ) or _get_statement_value(
+                balance_sheet_df,
+                "Total Equity Gross Minority Interest",
+                latest_bs_period,
+            )
             shares = ticker_info.get("sharesOutstanding")
             if total_equity and shares and shares > 0:
                 book_value = total_equity / shares
@@ -1511,10 +1592,12 @@ def calculate_intrinsic_value_graham(
                 "growth_method": growth_method,
                 "book_value_per_share": book_value,
                 "implied_pe": intrinsic_value / eps if eps else None,
-            }
+            },
         }
         if growth_rate > 15.0:
-            res["parameters"]["note"] = "Growth capped at 15% — Graham's 'g' is a long-run rate"
+            res["parameters"]["note"] = (
+                "Growth capped at 15% — Graham's 'g' is a long-run rate"
+            )
 
         return res
     except Exception as e:
@@ -1580,8 +1663,12 @@ def calculate_earnings_power_value(
                 tax_rate = float(np.clip(tax / pretax, 0.0, 0.5))
 
         if discount_rate is None:
-            discount_rate = calculate_wacc(ticker_info, financials_df, balance_sheet_df)["wacc"]
-        discount_rate = float(np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE))
+            discount_rate = calculate_wacc(
+                ticker_info, financials_df, balance_sheet_df
+            )["wacc"]
+        discount_rate = float(
+            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
+        )
 
         nopat = normalized_ebit * (1 - tax_rate)
         enterprise_value = nopat / discount_rate
@@ -1622,16 +1709,18 @@ def get_comprehensive_intrinsic_value(
     balance_sheet_df: Optional[pd.DataFrame] = None,
     cashflow_df: Optional[pd.DataFrame] = None,
     overrides: Optional[Dict[str, Any]] = None,
-    iterations: int = 10000
+    iterations: int = 10000,
 ) -> Dict[str, Any]:
     """
     Consolidates multiple intrinsic value models into a single advice object.
     """
     # 0. Enrich data with statement fallbacks to maximize coverage
-    ticker_info = _enrich_ticker_info(ticker_info, financials_df, balance_sheet_df, cashflow_df)
-    
+    ticker_info = _enrich_ticker_info(
+        ticker_info, financials_df, balance_sheet_df, cashflow_df
+    )
+
     overrides = overrides or {}
-    
+
     # Extract DCF overrides
     dcf_discount = overrides.get("dcf_discount_rate")
     dcf_growth = overrides.get("dcf_growth_rate")
@@ -1639,31 +1728,39 @@ def get_comprehensive_intrinsic_value(
     dcf_projection = int(overrides.get("dcf_projection_years", 10))
     dcf_fcf = overrides.get("dcf_fcf")
     target_fcf_margin = overrides.get("target_fcf_margin")
-    
+
     # Extract Graham overrides
     graham_growth = overrides.get("graham_growth_rate")
     graham_eps = overrides.get("graham_eps")
     graham_bond_yield = overrides.get("graham_bond_yield")
 
     dcf_res = calculate_intrinsic_value_dcf(
-        ticker_info, financials_df, balance_sheet_df, cashflow_df,
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
+        cashflow_df,
         discount_rate=dcf_discount,
         growth_rate=dcf_growth,
         projection_years=dcf_projection,
         terminal_growth_rate=dcf_terminal,
         fcf=dcf_fcf,
-        target_fcf_margin=target_fcf_margin
+        target_fcf_margin=target_fcf_margin,
     )
-    
+
     graham_res = calculate_intrinsic_value_graham(
-        ticker_info, financials_df, balance_sheet_df,
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
         growth_rate=graham_growth,
         eps=graham_eps,
-        bond_yield=graham_bond_yield
+        bond_yield=graham_bond_yield,
     )
 
     epv_res = calculate_earnings_power_value(
-        ticker_info, financials_df, balance_sheet_df, cashflow_df,
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
+        cashflow_df,
         discount_rate=overrides.get("epv_discount_rate", dcf_discount),
     )
 
@@ -1682,7 +1779,7 @@ def get_comprehensive_intrinsic_value(
             params["discount_rate"],
             params["projection_years"],
             params["terminal_growth_rate"],
-            iterations=iterations
+            iterations=iterations,
         )
         dcf_res["mc"] = dcf_mc
 
@@ -1690,12 +1787,14 @@ def get_comprehensive_intrinsic_value(
         params = graham_res["parameters"]
         if "eps" in params:
             # Use applied growth for MC if available
-            mc_growth_pct = params.get("applied_growth_pct", params.get("growth_rate_pct", 0))
+            mc_growth_pct = params.get(
+                "applied_growth_pct", params.get("growth_rate_pct", 0)
+            )
             graham_mc = run_monte_carlo_graham(
                 params["eps"],
                 mc_growth_pct,
                 params["bond_yield_proxy"],
-                iterations=iterations
+                iterations=iterations,
             )
             graham_res["mc"] = graham_mc
 
@@ -1707,17 +1806,19 @@ def get_comprehensive_intrinsic_value(
             bear_values.append(mc["bear"])
             bull_values.append(mc["bull"])
 
-    current_price = ticker_info.get("currentPrice") or ticker_info.get("regularMarketPrice")
+    current_price = ticker_info.get("currentPrice") or ticker_info.get(
+        "regularMarketPrice"
+    )
 
     # --- ETF Valuation Logic ---
     quote_type = ticker_info.get("quoteType", "").upper()
     if quote_type == "ETF" or quote_type == "MUTUALFUND":
         nav_price = ticker_info.get("navPrice")
-        
+
         # If no explicit NAV, current price is the best proxy for ETFs
         if (nav_price is None or nav_price == 0) and current_price:
             nav_price = current_price
-            
+
         if nav_price:
             results = {
                 "current_price": current_price,
@@ -1728,15 +1829,15 @@ def get_comprehensive_intrinsic_value(
                     "dcf": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
                     "graham": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
                     "epv": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
-                }
+                },
             }
-            
+
             if current_price:
                 mos = ((nav_price - current_price) / current_price) * 100
                 if mos is not None and (np.isnan(mos) or np.isinf(mos)):
                     mos = None
                 results["margin_of_safety_pct"] = mos
-            
+
             return results
 
     results: Dict[str, Any] = {
@@ -1808,7 +1909,9 @@ def get_comprehensive_intrinsic_value(
     total_weight = sum(c["weight"] for c in contributions)
     avg_intrinsic = sum(c["value"] * c["weight"] for c in contributions) / total_weight
 
-    results["model_weights"] = {c["key"]: c["weight"] / total_weight for c in contributions}
+    results["model_weights"] = {
+        c["key"]: c["weight"] / total_weight for c in contributions
+    }
 
     # Disagreement is information: report it rather than resolving it by fiat.
     values = [c["value"] for c in contributions]
@@ -1823,8 +1926,11 @@ def get_comprehensive_intrinsic_value(
         ratio = avg_intrinsic / current_price
         if ratio > MAX_IV_TO_PRICE or ratio < MIN_IV_TO_PRICE:
             clamped = float(
-                np.clip(avg_intrinsic, MIN_IV_TO_PRICE * current_price,
-                        MAX_IV_TO_PRICE * current_price)
+                np.clip(
+                    avg_intrinsic,
+                    MIN_IV_TO_PRICE * current_price,
+                    MAX_IV_TO_PRICE * current_price,
+                )
             )
             notes.append(
                 f"Model output {ratio:.1f}x price is outside the credible band; "
@@ -1834,7 +1940,9 @@ def get_comprehensive_intrinsic_value(
             status = "clamped"
 
     if spread_pct is not None and spread_pct > 100:
-        detail = ", ".join("{}={:.2f}".format(c["key"], c["value"]) for c in contributions)
+        detail = ", ".join(
+            "{}={:.2f}".format(c["key"], c["value"]) for c in contributions
+        )
         notes.append(
             f"Models disagree by {spread_pct:.0f}% of the blended value ({detail})."
         )
@@ -1878,25 +1986,27 @@ def get_intrinsic_value_for_symbol(
     force_refresh: bool = False,
     prefetched_financials: Optional[pd.DataFrame] = None,
     prefetched_balance_sheet: Optional[pd.DataFrame] = None,
-    prefetched_cashflow: Optional[pd.DataFrame] = None
+    prefetched_cashflow: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     """
     Higher-level helper to calculate intrinsic value with full data and overrides.
     Ensures consistency across API, scripts, and workers.
-    
+
     CRITICAL: This always fetches complete statements to ensure high-quality calculations.
     """
     # Use local imports to avoid potential circular dependencies
     from finutils import map_to_yf_symbol
     import config
-    
+
     # 1. Map symbol
     user_symbol_map = {}
     user_excluded_symbols = set()
-    
+
     if config_manager:
         user_symbol_map = config_manager.manual_overrides.get("user_symbol_map", {})
-        user_excluded_symbols = set(config_manager.manual_overrides.get("user_excluded_symbols", []))
+        user_excluded_symbols = set(
+            config_manager.manual_overrides.get("user_excluded_symbols", [])
+        )
     else:
         # Fallback to config defaults if no manager provided
         user_symbol_map = getattr(config, "SYMBOL_MAP_TO_YFINANCE", {})
@@ -1905,61 +2015,87 @@ def get_intrinsic_value_for_symbol(
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
-             return {"error": f"Symbol {symbol} is in the exclusion list."}
+            return {"error": f"Symbol {symbol} is in the exclusion list."}
         return {"error": f"Could not map {symbol} to Yahoo Finance symbol"}
 
-    # 2. Fetch COMPLETE data 
+    # 2. Fetch COMPLETE data
     # This fulfills the USER requirement: "Always fetch complete statements"
     try:
         info = mdp.get_fundamental_data(yf_symbol, force_refresh=force_refresh)
-        
+
         # CRITICAL: Detect "poisoned" or insufficient info and force fresh fetch
         # If it's an Equity, we expect more identifiers.
         is_sparse = not info or len(info) <= 8
         if info and info.get("quoteType", "").upper() == "EQUITY":
             if not info.get("lastFiscalYearEnd") or not info.get("mostRecentQuarter"):
                 is_sparse = True
-                
+
         if is_sparse:
-            logging.warning(f"Detected sparse/poisoned fundamental info for {yf_symbol} in get_intrinsic_value_for_symbol. Forcing refresh.")
+            logging.warning(
+                f"Detected sparse/poisoned fundamental info for {yf_symbol} in get_intrinsic_value_for_symbol. Forcing refresh."
+            )
             info = mdp.get_fundamental_data(yf_symbol, force_refresh=True)
 
         if not info:
-             return {"error": f"No fundamental data found for {yf_symbol}"}
-             
+            return {"error": f"No fundamental data found for {yf_symbol}"}
+
         # Patch with live price for accuracy (fundamentals cache can be up to 24h)
         try:
             # We use mdp to get a fresh quote (1-min cache)
-            q_res, _, _, _, _ = mdp.get_current_quotes([symbol], {getattr(config, 'DEFAULT_CURRENCY', 'USD')}, user_symbol_map, user_excluded_symbols)
+            q_res, _, _, _, _ = mdp.get_current_quotes(
+                [symbol],
+                {getattr(config, "DEFAULT_CURRENCY", "USD")},
+                user_symbol_map,
+                user_excluded_symbols,
+            )
             if symbol in q_res:
                 live_p = q_res[symbol].get("price")
                 if live_p:
                     info["regularMarketPrice"] = live_p
                     info["currentPrice"] = live_p
         except Exception as e_live:
-            logging.warning(f"Live price patch failed during intrinsic value calculation for {symbol}: {e_live}")
+            logging.warning(
+                f"Live price patch failed during intrinsic value calculation for {symbol}: {e_live}"
+            )
 
         # Use Prefetched or Fetch New
-        financials = prefetched_financials if prefetched_financials is not None else mdp.get_financials(yf_symbol, "annual", force_refresh=force_refresh)
-        balance_sheet = prefetched_balance_sheet if prefetched_balance_sheet is not None else mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force_refresh)
-        cashflow = prefetched_cashflow if prefetched_cashflow is not None else mdp.get_cashflow(yf_symbol, "annual", force_refresh=force_refresh)
-        
+        financials = (
+            prefetched_financials
+            if prefetched_financials is not None
+            else mdp.get_financials(yf_symbol, "annual", force_refresh=force_refresh)
+        )
+        balance_sheet = (
+            prefetched_balance_sheet
+            if prefetched_balance_sheet is not None
+            else mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force_refresh)
+        )
+        cashflow = (
+            prefetched_cashflow
+            if prefetched_cashflow is not None
+            else mdp.get_cashflow(yf_symbol, "annual", force_refresh=force_refresh)
+        )
+
         # 3. Handle Overrides
         symbol_overrides = {}
         if config_manager:
-            val_overrides = config_manager.manual_overrides.get("valuation_overrides", {})
+            val_overrides = config_manager.manual_overrides.get(
+                "valuation_overrides", {}
+            )
             symbol_overrides = val_overrides.get(yf_symbol.upper(), {})
             if not symbol_overrides:
-                 # Try mapped symbol (original)
-                 symbol_overrides = val_overrides.get(symbol.upper(), {})
-        
+                # Try mapped symbol (original)
+                symbol_overrides = val_overrides.get(symbol.upper(), {})
+
         # 4. Calculate
         results = get_comprehensive_intrinsic_value(
-            info, financials, balance_sheet, cashflow,
+            info,
+            financials,
+            balance_sheet,
+            cashflow,
             overrides=symbol_overrides,
-            iterations=iterations
+            iterations=iterations,
         )
-        
+
         return results
     except Exception as e:
         logging.error(f"Error in get_intrinsic_value_for_symbol for {yf_symbol}: {e}")

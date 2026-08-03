@@ -18,7 +18,9 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 import config
 from server.routes.auth import UserCreate, _safe_user_data_dir
@@ -35,20 +37,20 @@ def test_ordinary_usernames_are_accepted(name):
 @pytest.mark.parametrize(
     "name",
     [
-        "../../../etc/passwd",   # traversal
-        "..",                    # traversal, bare
-        "a/../../b",             # traversal, embedded
-        "/absolute/path",        # discards the join base
-        "alice/bob",             # separator
-        "alice\\bob",            # separator, Windows-style
-        "ab",                    # too short
-        "a" * 33,                # too long
-        "",                      # empty
-        ".hidden",               # leading dot -> dotfile dir
-        "alice.",                # trailing dot
-        "-alice",                # leading hyphen
-        "alice bob",             # whitespace
-        "alice\x00",             # NUL truncation
+        "../../../etc/passwd",  # traversal
+        "..",  # traversal, bare
+        "a/../../b",  # traversal, embedded
+        "/absolute/path",  # discards the join base
+        "alice/bob",  # separator
+        "alice\\bob",  # separator, Windows-style
+        "ab",  # too short
+        "a" * 33,  # too long
+        "",  # empty
+        ".hidden",  # leading dot -> dotfile dir
+        "alice.",  # trailing dot
+        "-alice",  # leading hyphen
+        "alice bob",  # whitespace
+        "alice\x00",  # NUL truncation
         # Python's re treats `$` as matching before a trailing newline, so a
         # hand-rolled re.match validator would accept these. Pydantic's engine
         # does not — pin that down.
@@ -78,7 +80,9 @@ def test_contained_username_resolves_inside_users_root(app_data):
     assert resolved == os.path.join(users_root, "alice")
 
 
-@pytest.mark.parametrize("name", ["../escape", "../../escape", "/tmp/escape", "a/../../escape"])
+@pytest.mark.parametrize(
+    "name", ["../escape", "../../escape", "/tmp/escape", "a/../../escape"]
+)
 def test_traversing_username_is_refused(app_data, name):
     """Defence in depth: a row written before USERNAME_PATTERN existed must not
     reach makedirs or rmtree."""
@@ -89,7 +93,7 @@ def test_traversing_username_is_refused(app_data, name):
 
 
 def test_username_resolving_to_the_users_root_itself_is_refused(app_data):
-    """"." resolves to the root — rmtree there would wipe every user."""
+    """ "." resolves to the root — rmtree there would wipe every user."""
     with pytest.raises(HTTPException) as exc:
         _safe_user_data_dir(".")
 

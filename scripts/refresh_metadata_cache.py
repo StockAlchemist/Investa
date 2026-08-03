@@ -12,13 +12,16 @@ Usage:
     python scripts/refresh_metadata_cache.py --clear     # delete stale entries
     python scripts/refresh_metadata_cache.py --dry-run --clear   # preview deletes
 """
+
 import argparse
 import json
 import os
 import sys
 from collections import Counter
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 import config
 
@@ -26,7 +29,9 @@ import config
 V3_REQUIRED_KEYS = ("exchange", "country", "sector", "industry", "quoteType")
 
 
-def _enrich_with_fmp(cache_dir: str, files: list, current_version: int, dry_run: bool) -> int:
+def _enrich_with_fmp(
+    cache_dir: str, files: list, current_version: int, dry_run: bool
+) -> int:
     """Walk cache entries with missing country/sector/industry and fill them from FMP."""
     import time
 
@@ -43,15 +48,23 @@ def _enrich_with_fmp(cache_dir: str, files: list, current_version: int, dry_run:
                 entry = json.load(f)
         except (json.JSONDecodeError, OSError):
             continue
-        if not entry.get("country") or not entry.get("sector") or not entry.get("industry"):
+        if (
+            not entry.get("country")
+            or not entry.get("sector")
+            or not entry.get("industry")
+        ):
             candidates.append((fname, path, entry))
 
     if not candidates:
-        print("\nNo entries need enrichment — country/sector/industry are populated everywhere.")
+        print(
+            "\nNo entries need enrichment — country/sector/industry are populated everywhere."
+        )
         return 0
 
     if dry_run:
-        print(f"\nDRY RUN — {len(candidates)} entries are missing country/sector/industry.")
+        print(
+            f"\nDRY RUN — {len(candidates)} entries are missing country/sector/industry."
+        )
         sample = [c[0][:-5] for c in candidates[:20]]
         print(f"First 20: {', '.join(sample)}")
         print("Re-run without --dry-run to fetch from FMP and patch them in place.")
@@ -59,7 +72,9 @@ def _enrich_with_fmp(cache_dir: str, files: list, current_version: int, dry_run:
 
     from fmp_provider import get_company_profile
 
-    print(f"\nEnriching {len(candidates)} entries via FMP (~{len(candidates) * 0.3:.0f}s with throttle)...")
+    print(
+        f"\nEnriching {len(candidates)} entries via FMP (~{len(candidates) * 0.3:.0f}s with throttle)..."
+    )
     enriched = 0
     failed = 0
     for i, (fname, path, entry) in enumerate(candidates, 1):
@@ -72,7 +87,16 @@ def _enrich_with_fmp(cache_dir: str, files: list, current_version: int, dry_run:
             continue
 
         filled = []
-        for key in ("country", "sector", "industry", "currency", "exchange", "fullExchangeName", "quoteType", "name"):
+        for key in (
+            "country",
+            "sector",
+            "industry",
+            "currency",
+            "exchange",
+            "fullExchangeName",
+            "quoteType",
+            "name",
+        ):
             if not entry.get(key) and profile.get(key):
                 entry[key] = profile[key]
                 filled.append(key)
@@ -90,8 +114,10 @@ def _enrich_with_fmp(cache_dir: str, files: list, current_version: int, dry_run:
         # Throttle so we stay under FMP free-tier rate limit (~300/min)
         time.sleep(0.25)
 
-    print(f"\nEnriched {enriched}/{len(candidates)} entries"
-          + (f" ({failed} FMP lookups failed)" if failed else ""))
+    print(
+        f"\nEnriched {enriched}/{len(candidates)} entries"
+        + (f" ({failed} FMP lookups failed)" if failed else "")
+    )
     return 0
 
 
@@ -109,13 +135,22 @@ def classify(entry: dict, current_version: int) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--clear", action="store_true",
-                        help="Delete stale entries (below current schema version).")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show what would be deleted without removing anything.")
-    parser.add_argument("--enrich-with-fmp", action="store_true",
-                        help="For entries missing country/sector/industry, fetch from FMP and patch in place. "
-                             "Requires FMP_API_KEY in .env.")
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Delete stale entries (below current schema version).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be deleted without removing anything.",
+    )
+    parser.add_argument(
+        "--enrich-with-fmp",
+        action="store_true",
+        help="For entries missing country/sector/industry, fetch from FMP and patch in place. "
+        "Requires FMP_API_KEY in .env.",
+    )
     args = parser.parse_args()
 
     cache_dir = os.path.join(config.get_app_data_dir(), "cache", "metadata_cache")
@@ -160,16 +195,22 @@ def main() -> int:
     if not args.clear:
         if stale_files:
             print(f"\n{len(stale_files)} stale entries would be invalidated.")
-            print("Re-run with --clear to delete them (they will be re-fetched on next portfolio load).")
-            print("Or run with --enrich-with-fmp to fill country/sector/industry from FMP without re-fetching everything.")
+            print(
+                "Re-run with --clear to delete them (they will be re-fetched on next portfolio load)."
+            )
+            print(
+                "Or run with --enrich-with-fmp to fill country/sector/industry from FMP without re-fetching everything."
+            )
         return 0
 
     if not stale_files:
         print("\nNothing to clear — all entries are current.")
         return 0
 
-    print(f"\n{'DRY RUN — would delete' if args.dry_run else 'Deleting'} "
-          f"{len(stale_files)} stale entries...")
+    print(
+        f"\n{'DRY RUN — would delete' if args.dry_run else 'Deleting'} "
+        f"{len(stale_files)} stale entries..."
+    )
     deleted = 0
     for fname in stale_files:
         path = os.path.join(cache_dir, fname)

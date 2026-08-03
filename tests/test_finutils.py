@@ -263,7 +263,12 @@ def test_get_cash_flows_irr_basic(sample_transactions_df):
     expected_flows = [-1505.0, 5.0, 895.0, -2.0, -1.0, 950.0]
 
     dates, flows = get_cash_flows_for_symbol_account(
-        symbol, account, sample_transactions_df, final_mv_local, is_transfer_a_flow=False, report_date=end_date
+        symbol,
+        account,
+        sample_transactions_df,
+        final_mv_local,
+        is_transfer_a_flow=False,
+        report_date=end_date,
     )
 
     assert dates == expected_dates
@@ -308,10 +313,16 @@ def test_get_cash_flows_irr_only_final_value(sample_transactions_df):
     # The function *should* probably return empty if there are no cash flows before the end date.
     # Let's assert that. If the implementation changes, this test needs adjustment.
     dates, flows = get_cash_flows_for_symbol_account(
-        symbol, account, tx_filtered, final_mv_local, is_transfer_a_flow=False, report_date=end_date
+        symbol,
+        account,
+        tx_filtered,
+        final_mv_local,
+        is_transfer_a_flow=False,
+        report_date=end_date,
     )
     assert dates == []
     assert flows == []
+
 
 def test_get_cash_flows_missing_to_account_column():
     """
@@ -320,7 +331,7 @@ def test_get_cash_flows_missing_to_account_column():
     """
     symbol = "AAPL"
     account = "MyAccount"
-    
+
     # Create DataFrame WITHOUT 'To Account'
     data = {
         "Date": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-01-15")],
@@ -332,17 +343,17 @@ def test_get_cash_flows_missing_to_account_column():
         "Commission": [1.0, 1.0],
         "Total Amount": [1001.0, 549.0],
         "Local Currency": ["USD", "USD"],
-        "original_index": [1, 2]
+        "original_index": [1, 2],
     }
     df = pd.DataFrame(data)
-    
-    final_mv_local = 550.0 # Remaining 5 shares * 110
-    
+
+    final_mv_local = 550.0  # Remaining 5 shares * 110
+
     # Should not raise KeyError
     dates, flows = get_cash_flows_for_symbol_account(
         symbol, account, df, final_mv_local, is_transfer_a_flow=False
     )
-    
+
     assert len(dates) > 0
     assert len(flows) > 0
 
@@ -379,12 +390,8 @@ def test_get_conversion_rate_same_currency(sample_fx_rates):
 
 def test_get_conversion_rate_missing(sample_fx_rates):
     # 'XXX' is missing from sample_fx_rates AND STATIC_FX_FALLBACK
-    assert np.isnan(
-        get_conversion_rate("USD", "XXX", sample_fx_rates)
-    )
-    assert np.isnan(
-        get_conversion_rate("XXX", "EUR", sample_fx_rates)
-    )
+    assert np.isnan(get_conversion_rate("USD", "XXX", sample_fx_rates))
+    assert np.isnan(get_conversion_rate("XXX", "EUR", sample_fx_rates))
 
 
 def test_get_conversion_rate_invalid_input(sample_fx_rates):
@@ -430,7 +437,9 @@ def test_get_historical_price_forward_fill(sample_prices_dict):
 
 def test_get_historical_price_before_start(sample_prices_dict):
     # Expect backfilled price (100.0) instead of None, due to backfill strategy in get_historical_price
-    assert get_historical_price("AAPL", date(2023, 1, 9), sample_prices_dict) == pytest.approx(100.0)
+    assert get_historical_price(
+        "AAPL", date(2023, 1, 9), sample_prices_dict
+    ) == pytest.approx(100.0)
 
 
 def test_get_historical_price_symbol_missing(sample_prices_dict):
@@ -438,7 +447,9 @@ def test_get_historical_price_symbol_missing(sample_prices_dict):
 
 
 def test_get_historical_price_empty_df(sample_prices_dict):
-    assert np.isnan(get_historical_price("EMPTY", date(2023, 1, 11), sample_prices_dict))
+    assert np.isnan(
+        get_historical_price("EMPTY", date(2023, 1, 11), sample_prices_dict)
+    )
 
 
 def test_get_historical_price_invalid_date(sample_prices_dict):
@@ -690,17 +701,21 @@ def test_get_cash_flows_mwr_with_historical_fx(sample_transactions_mwr_df):
 
 # --- Tests for map_to_yf_symbol ---
 
+
 def test_map_to_yf_symbol_system_map():
     assert map_to_yf_symbol("BRK.B", {}, set()) == "BRK-B"
     assert map_to_yf_symbol("BF.B", {}, set()) == "BF-B"
 
+
 def test_map_to_yf_symbol_thai_stocks():
     assert map_to_yf_symbol("ADVANC:BKK", {}, set()) == "ADVANC.BK"
-    assert map_to_yf_symbol("AOT.BK", {}, set()) == "AOT.BK" # Should remain unchanged
+    assert map_to_yf_symbol("AOT.BK", {}, set()) == "AOT.BK"  # Should remain unchanged
+
 
 def test_map_to_yf_symbol_dot_to_dash_heuristic():
     assert map_to_yf_symbol("TKR.A", {}, set()) == "TKR-A"
     assert map_to_yf_symbol("XYZ.B", {}, set()) == "XYZ-B"
+
 
 def test_map_to_yf_symbol_invalid_inputs():
     assert map_to_yf_symbol(None, {}, set()) is None
@@ -709,30 +724,44 @@ def test_map_to_yf_symbol_invalid_inputs():
     # Very long symbol to bypass heuristic
     assert map_to_yf_symbol("TOOLONG.A", {}, set()) == "TOOLONG.A"
 
+
 def test_map_to_yf_symbol_user_map():
     user_map = {"WEIRD.TICKER": "NORMAL.TICKER"}
-    assert map_to_yf_symbol("WEIRD.TICKER", user_symbol_map=user_map, user_excluded_symbols=set()) == "NORMAL.TICKER"
-    assert map_to_yf_symbol("BRK.B", user_symbol_map=user_map, user_excluded_symbols=set()) == "BRK-B" # System map still works
-    
+    assert (
+        map_to_yf_symbol(
+            "WEIRD.TICKER", user_symbol_map=user_map, user_excluded_symbols=set()
+        )
+        == "NORMAL.TICKER"
+    )
+    assert (
+        map_to_yf_symbol("BRK.B", user_symbol_map=user_map, user_excluded_symbols=set())
+        == "BRK-B"
+    )  # System map still works
+
+
 def test_map_to_yf_symbol_excluded():
     assert map_to_yf_symbol("BRK.B", {}, {"BRK.B"}) is None
 
 
 # --- Tests for calculate_indicated_dividend ---
 
+
 def test_calculate_indicated_dividend_basic():
     ticker_info = {"dividendRate": 2.0}
     yield_val = calculate_indicated_dividend(ticker_info)
     assert yield_val == 2.0
 
+
 def test_calculate_indicated_dividend_missing_rate():
     ticker_info = {"trailingAnnualDividendRate": 1.5}
     yield_val = calculate_indicated_dividend(ticker_info)
     assert yield_val == 1.5
-    
+
+
 def test_calculate_indicated_dividend_empty_info():
     yield_val = calculate_indicated_dividend({})
     assert yield_val == 0.0
+
 
 def test_calculate_indicated_dividend_invalid():
     ticker_info = {"dividendRate": "not_a_number"}

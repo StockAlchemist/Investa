@@ -175,9 +175,13 @@ _STRATEGIES: Dict[str, Strategy] = {
         ),
         ranking=RankingSleeve(quality_weight=0.80, top_n=20, max_per_sector=3),
         backtest={
-            "window": "2013-2025", "cagr": 17.4, "volatility": 16.5,
-            "max_drawdown": -21.5, "sharpe": 1.05,
-            "train_cagr": 21.9, "test_cagr": 12.1,
+            "window": "2013-2025",
+            "cagr": 17.4,
+            "volatility": 16.5,
+            "max_drawdown": -21.5,
+            "sharpe": 1.05,
+            "train_cagr": 21.9,
+            "test_cagr": 12.1,
         },
         risks=(
             "Fully invested at all times — there is no defensive mode, so a "
@@ -200,9 +204,13 @@ _STRATEGIES: Dict[str, Strategy] = {
         ),
         ranking=RankingSleeve(quality_weight=0.80, top_n=20, max_per_sector=None),
         backtest={
-            "window": "2013-2025", "cagr": 17.6, "volatility": 16.3,
-            "max_drawdown": -20.0, "sharpe": 1.08,
-            "train_cagr": 21.4, "test_cagr": 13.0,
+            "window": "2013-2025",
+            "cagr": 17.6,
+            "volatility": 16.3,
+            "max_drawdown": -20.0,
+            "sharpe": 1.08,
+            "train_cagr": 21.4,
+            "test_cagr": 13.0,
         },
         risks=(
             "Concentrated in whatever the ranking currently favours — often "
@@ -224,9 +232,13 @@ _STRATEGIES: Dict[str, Strategy] = {
         ),
         ranking=RankingSleeve(quality_weight=0.80, top_n=15, max_per_sector=3),
         backtest={
-            "window": "2013-2025", "cagr": 18.9, "volatility": 17.0,
-            "max_drawdown": -18.8, "sharpe": 1.11,
-            "train_cagr": 21.3, "test_cagr": 15.9,
+            "window": "2013-2025",
+            "cagr": 18.9,
+            "volatility": 17.0,
+            "max_drawdown": -18.8,
+            "sharpe": 1.11,
+            "train_cagr": 21.3,
+            "test_cagr": 15.9,
         },
         risks=(
             "Single-name risk is a third higher than the twenty-name book: one "
@@ -247,9 +259,13 @@ _STRATEGIES: Dict[str, Strategy] = {
         ),
         ranking=RankingSleeve(quality_weight=1.00, top_n=20, max_per_sector=3),
         backtest={
-            "window": "2013-2025", "cagr": 15.9, "volatility": 14.8,
-            "max_drawdown": -20.3, "sharpe": 1.07,
-            "train_cagr": 20.0, "test_cagr": 11.0,
+            "window": "2013-2025",
+            "cagr": 15.9,
+            "volatility": 14.8,
+            "max_drawdown": -20.3,
+            "sharpe": 1.07,
+            "train_cagr": 20.0,
+            "test_cagr": 11.0,
         },
         risks=(
             "Ignoring price is the weakest link: this is the only variant whose "
@@ -300,7 +316,9 @@ def month_end_closes(prices: pd.Series) -> pd.Series:
 
 
 def evaluate_trend_signal(
-    prices: pd.Series, sma_months: int = MARKET_SIGNAL_SMA_MONTHS, today: Optional[date] = None
+    prices: pd.Series,
+    sma_months: int = MARKET_SIGNAL_SMA_MONTHS,
+    today: Optional[date] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     The active and provisional readings of the moving-average rule.
@@ -337,7 +355,7 @@ def evaluate_trend_signal(
     # ended right now.
     latest_close = float(prices.dropna().iloc[-1])
     latest_stamp = prices.dropna().index[-1]
-    provisional_window = list(completed.iloc[-(sma_months - 1):]) + [latest_close]
+    provisional_window = list(completed.iloc[-(sma_months - 1) :]) + [latest_close]
     provisional_sma = float(sum(provisional_window) / len(provisional_window))
     provisional_state = "in" if latest_close >= provisional_sma else "out"
 
@@ -345,7 +363,7 @@ def evaluate_trend_signal(
     #   p = (sum(previous sma_months-1 month-ends) + p) / sma_months
     # for p gives the mean of the *other* months in the window — the price at
     # which today's close equals the average that includes it.
-    previous = list(completed.iloc[-(sma_months - 1):])
+    previous = list(completed.iloc[-(sma_months - 1) :])
     flip_close = float(sum(previous) / len(previous)) if previous else sma
     distance_pct = (latest_close / flip_close - 1.0) * 100.0 if flip_close else None
 
@@ -354,7 +372,7 @@ def evaluate_trend_signal(
             "date": str(stamp.date() if hasattr(stamp, "date") else stamp),
             "close": float(close),
             "sma": (
-                float(completed.iloc[max(0, i - sma_months + 1): i + 1].mean())
+                float(completed.iloc[max(0, i - sma_months + 1) : i + 1].mean())
                 if i + 1 >= sma_months
                 else None
             ),
@@ -366,14 +384,18 @@ def evaluate_trend_signal(
         "state": state,
         "sma_months": sma_months,
         # The month-end that set the active signal, and the month it governs.
-        "decision_date": str(decision_stamp.date() if hasattr(decision_stamp, "date") else decision_stamp),
+        "decision_date": str(
+            decision_stamp.date() if hasattr(decision_stamp, "date") else decision_stamp
+        ),
         "decision_close": decision_close,
         "sma": sma,
         "governs_month": str(current_period),
         "provisional_state": provisional_state,
         "provisional_sma": provisional_sma,
         "latest_close": latest_close,
-        "latest_date": str(latest_stamp.date() if hasattr(latest_stamp, "date") else latest_stamp),
+        "latest_date": str(
+            latest_stamp.date() if hasattr(latest_stamp, "date") else latest_stamp
+        ),
         # What the next month-end close has to do to change the answer.
         "flip_close": flip_close,
         "distance_pct": distance_pct,
@@ -390,7 +412,9 @@ def _next_month_end(today: date) -> date:
     return date(today.year, today.month + 1, 1) - timedelta(days=1)
 
 
-def load_signal_prices(symbol: str, today: Optional[date] = None) -> Optional[pd.Series]:
+def load_signal_prices(
+    symbol: str, today: Optional[date] = None
+) -> Optional[pd.Series]:
     """Daily closes for the signal symbol, via the shared market-data provider."""
     from server.route_utils import get_mdp
 
@@ -409,7 +433,9 @@ def load_signal_prices(symbol: str, today: Optional[date] = None) -> Optional[pd
     return series if not series.empty else None
 
 
-def latest_closes(symbols: Sequence[str], today: Optional[date] = None) -> Dict[str, float]:
+def latest_closes(
+    symbols: Sequence[str], today: Optional[date] = None
+) -> Dict[str, float]:
     """
     Most recent close per symbol, for sizing the tradeable sleeve.
 
@@ -424,7 +450,9 @@ def latest_closes(symbols: Sequence[str], today: Optional[date] = None) -> Dict[
     if not wanted:
         return {}
     try:
-        history, _ = get_mdp().get_historical_data([*wanted], today - timedelta(days=14), today)
+        history, _ = get_mdp().get_historical_data(
+            [*wanted], today - timedelta(days=14), today
+        )
     except Exception as exc:
         logging.warning(f"Strategies: quote fetch failed for {wanted}: {exc}")
         return {}
@@ -511,9 +539,13 @@ def _ranking_positions(
     confidence = pd.to_numeric(frame.get("confidence"), errors="coerce").fillna(1.0)
     # A company with no value score keeps its quality score rather than being
     # dropped — the same fallback `buffett_rank.combine` applies.
-    blended = quality.where(
-        value.isna(), quality * sleeve.quality_weight + value * (1.0 - sleeve.quality_weight)
-    ) * confidence
+    blended = (
+        quality.where(
+            value.isna(),
+            quality * sleeve.quality_weight + value * (1.0 - sleeve.quality_weight),
+        )
+        * confidence
+    )
 
     picked = _apply_sector_cap(frame, blended, sleeve)
     per_position = capital / sleeve.top_n if sleeve.top_n else 0.0
@@ -536,18 +568,20 @@ def _ranking_positions(
         if quoted and quoted > 0:
             live_count += 1
         shares = math.floor(per_position / price) if price and price > 0 else None
-        positions.append({
-            "symbol": symbol,
-            "name": row.get("name"),
-            "role": "stock",
-            "weight": 1.0 / sleeve.top_n if sleeve.top_n else 0.0,
-            "amount": per_position,
-            "price": price,
-            "shares": shares,
-            "cost": (shares * price) if (shares and price) else None,
-            "score": float(row["_score"]),
-            "industry": row.get("_industry"),
-        })
+        positions.append(
+            {
+                "symbol": symbol,
+                "name": row.get("name"),
+                "role": "stock",
+                "weight": 1.0 / sleeve.top_n if sleeve.top_n else 0.0,
+                "amount": per_position,
+                "price": price,
+                "shares": shares,
+                "cost": (shares * price) if (shares and price) else None,
+                "score": float(row["_score"]),
+                "industry": row.get("_industry"),
+            }
+        )
 
     # Stated rather than implied: a client showing share counts should be able
     # to say whether they came from today's market or from a stored close.
@@ -566,7 +600,9 @@ def _ranking_positions(
     }
 
 
-def _apply_sector_cap(frame: pd.DataFrame, scores: pd.Series, sleeve: RankingSleeve) -> pd.DataFrame:
+def _apply_sector_cap(
+    frame: pd.DataFrame, scores: pd.Series, sleeve: RankingSleeve
+) -> pd.DataFrame:
     """Walk the ranked list, skipping a name once its industry is full."""
     import edgar_sic
 
@@ -574,7 +610,9 @@ def _apply_sector_cap(frame: pd.DataFrame, scores: pd.Series, sleeve: RankingSle
     try:
         sic_map = edgar_sic.get_sic_map()
     except Exception as exc:
-        logging.warning(f"Strategies: SIC map unavailable, industry cap disabled: {exc}")
+        logging.warning(
+            f"Strategies: SIC map unavailable, industry cap disabled: {exc}"
+        )
         sic_map = {}
 
     codes: Dict[Any, str] = {}
@@ -612,25 +650,49 @@ def _apply_sector_cap(frame: pd.DataFrame, scores: pd.Series, sleeve: RankingSle
 # Major-group labels for the industries the ranking actually surfaces. Display
 # only — the cap itself works on the numeric code.
 _SIC_GROUPS = {
-    "15": "Homebuilders", "20": "Food products", "23": "Apparel",
-    "28": "Pharma / chemicals", "30": "Rubber & plastics", "34": "Fabricated metal",
-    "35": "Industrial machinery", "36": "Electronics", "37": "Transport equipment",
-    "38": "Instruments", "45": "Air transport", "48": "Communications",
-    "50": "Wholesale (durables)", "51": "Wholesale (nondurables)",
-    "52": "Building materials", "53": "General merchandise", "54": "Food retail",
-    "55": "Auto dealers", "56": "Apparel retail", "57": "Furniture retail",
-    "58": "Restaurants", "59": "Miscellaneous retail", "60": "Banks",
-    "61": "Non-bank credit", "62": "Brokers & exchanges", "63": "Insurance carriers",
-    "64": "Insurance agents", "65": "Real estate", "67": "Holding & investment",
-    "70": "Hotels", "73": "Business services / software", "79": "Recreation",
-    "80": "Health services", "87": "Consulting & engineering",
+    "15": "Homebuilders",
+    "20": "Food products",
+    "23": "Apparel",
+    "28": "Pharma / chemicals",
+    "30": "Rubber & plastics",
+    "34": "Fabricated metal",
+    "35": "Industrial machinery",
+    "36": "Electronics",
+    "37": "Transport equipment",
+    "38": "Instruments",
+    "45": "Air transport",
+    "48": "Communications",
+    "50": "Wholesale (durables)",
+    "51": "Wholesale (nondurables)",
+    "52": "Building materials",
+    "53": "General merchandise",
+    "54": "Food retail",
+    "55": "Auto dealers",
+    "56": "Apparel retail",
+    "57": "Furniture retail",
+    "58": "Restaurants",
+    "59": "Miscellaneous retail",
+    "60": "Banks",
+    "61": "Non-bank credit",
+    "62": "Brokers & exchanges",
+    "63": "Insurance carriers",
+    "64": "Insurance agents",
+    "65": "Real estate",
+    "67": "Holding & investment",
+    "70": "Hotels",
+    "73": "Business services / software",
+    "79": "Recreation",
+    "80": "Health services",
+    "87": "Consulting & engineering",
 }
 
 # Codes whose major group misleads on its own: 6798 is a REIT rather than a
 # generic holding company, 6351 is mortgage insurance rather than insurance at
 # large — exactly the distinction that matters for concentration.
 _SIC_EXACT = {
-    "6798": "REITs", "6351": "Mortgage insurance", "1531": "Homebuilders",
+    "6798": "REITs",
+    "6351": "Mortgage insurance",
+    "1531": "Homebuilders",
     "5500": "Auto dealers & services",
 }
 
@@ -648,7 +710,9 @@ def _industry_label(sic: str) -> str:
 STALE_RANKING_DAYS = 7
 
 
-def ranking_age_days(finished_at: Optional[str], today: Optional[date] = None) -> Optional[int]:
+def ranking_age_days(
+    finished_at: Optional[str], today: Optional[date] = None
+) -> Optional[int]:
     """Whole days between a run's completion and `today`, or None if unparseable."""
     if not finished_at:
         return None
@@ -714,24 +778,26 @@ def build_allocation(
             "the last ranking run covered the whole universe."
         )
 
-    sleeves = [{
-        "key": "ranking",
-        "label": (
-            f"Quality sleeve (top {strategy.ranking.top_n}, "
-            f"{strategy.ranking.quality_weight:.0%} quality)"
-        ),
-        "weight": 1.0,
-        "amount": capital,
-        # What the rule asked for against what the ranking could supply, so a
-        # client can show the gap without recounting the positions itself.
-        "positions_requested": wanted,
-        "positions_filled": len(positions),
-        "amount_allocated": allocated,
-        "positions": positions,
-        "run_id": run.get("run_id"),
-        "ranked_at": ranked_at,
-        "price_source": built.get("price_source", "snapshot"),
-    }]
+    sleeves = [
+        {
+            "key": "ranking",
+            "label": (
+                f"Quality sleeve (top {strategy.ranking.top_n}, "
+                f"{strategy.ranking.quality_weight:.0%} quality)"
+            ),
+            "weight": 1.0,
+            "amount": capital,
+            # What the rule asked for against what the ranking could supply, so a
+            # client can show the gap without recounting the positions itself.
+            "positions_requested": wanted,
+            "positions_filled": len(positions),
+            "amount_allocated": allocated,
+            "positions": positions,
+            "run_id": run.get("run_id"),
+            "ranked_at": ranked_at,
+            "price_source": built.get("price_source", "snapshot"),
+        }
+    ]
 
     return {
         "strategy_id": strategy.id,
@@ -739,7 +805,9 @@ def build_allocation(
         "capital": capital,
         "as_of": str(today or date.today()),
         "ranking_age_days": age_days,
-        "ranking_is_stale": bool(age_days is not None and age_days >= STALE_RANKING_DAYS),
+        "ranking_is_stale": bool(
+            age_days is not None and age_days >= STALE_RANKING_DAYS
+        ),
         "is_short": bool(positions and len(positions) < wanted),
         "sleeves": sleeves,
         "warnings": warnings,

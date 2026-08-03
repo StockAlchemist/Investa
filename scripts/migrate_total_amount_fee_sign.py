@@ -22,6 +22,7 @@ Defaults to --dry-run. Pass --apply to commit. Auto-backs up the DB.
 
 Targets dheematan's portfolio.db by default. Pass --db to override.
 """
+
 import argparse
 import shutil
 import sqlite3
@@ -50,8 +51,13 @@ def canonical_total(tx_type: str, qty: float, price: float, commission: float) -
     raise ValueError(f"unsupported type: {tx_type}")
 
 
-def detect_reversed(tx_type: str, qty: float | None, price: float | None,
-                    commission: float | None, total: float | None) -> bool:
+def detect_reversed(
+    tx_type: str,
+    qty: float | None,
+    price: float | None,
+    commission: float | None,
+    total: float | None,
+) -> bool:
     """True iff Total Amount has the fee sign reversed vs canonical."""
     if commission is None or commission <= 0:
         return False
@@ -140,8 +146,7 @@ def migrate(db_path: Path, account_filter: str | None, apply: bool) -> int:
           AND lower(Type) IN ('buy', 'sell', 'short sell', 'buy to cover')
     """
     if account_filter:
-        cur.execute(base_sql + " AND Account = ? ORDER BY Date, id",
-                    (account_filter,))
+        cur.execute(base_sql + " AND Account = ? ORDER BY Date, id", (account_filter,))
     else:
         cur.execute(base_sql + " ORDER BY Account, Date, id")
     rows = cur.fetchall()
@@ -159,8 +164,14 @@ def migrate(db_path: Path, account_filter: str | None, apply: bool) -> int:
 
         bucket = stats.setdefault(
             row["Account"],
-            {"scanned": 0, "reversed": 0, "fixed_stock": 0, "fixed_cash": 0,
-             "no_pair": 0, "many_pair": 0},
+            {
+                "scanned": 0,
+                "reversed": 0,
+                "fixed_stock": 0,
+                "fixed_cash": 0,
+                "no_pair": 0,
+                "many_pair": 0,
+            },
         )
         bucket["scanned"] += 1
 
@@ -171,8 +182,12 @@ def migrate(db_path: Path, account_filter: str | None, apply: bool) -> int:
         new_total = canonical_total(tx_type, float(qty), float(price), float(comm))
 
         paired = find_paired_cash_rows(
-            conn, row["Date"], row["Account"], row["Symbol"],
-            float(total), row["user_id"],
+            conn,
+            row["Date"],
+            row["Account"],
+            row["Symbol"],
+            float(total),
+            row["user_id"],
         )
 
         # Expected pair count: 2 for Buy/Sell (Deposit+Sell or Buy+Withdrawal).
@@ -191,10 +206,18 @@ def migrate(db_path: Path, account_filter: str | None, apply: bool) -> int:
                 f"{row['Symbol']:6}  {tx_type:4}  found {len(paired)} paired rows (expected ≤2)"
             )
 
-        samples.append((
-            row["id"], row["Date"], row["Account"], row["Symbol"],
-            tx_type, float(total), new_total, len(paired),
-        ))
+        samples.append(
+            (
+                row["id"],
+                row["Date"],
+                row["Account"],
+                row["Symbol"],
+                tx_type,
+                float(total),
+                new_total,
+                len(paired),
+            )
+        )
 
         if apply:
             cur.execute(
@@ -228,33 +251,43 @@ def migrate(db_path: Path, account_filter: str | None, apply: bool) -> int:
         conn.close()
         return 0
 
-    hdr = (f"  {'account':16} {'scanned':>8} {'reversed':>9} "
-           f"{'fix-stock':>10} {'fix-cash':>9} {'no-pair':>8} {'many-pair':>10}")
+    hdr = (
+        f"  {'account':16} {'scanned':>8} {'reversed':>9} "
+        f"{'fix-stock':>10} {'fix-cash':>9} {'no-pair':>8} {'many-pair':>10}"
+    )
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
     total_rev = total_nopair = total_manypair = 0
     for acct, s in sorted(stats.items()):
         if s["reversed"] == 0:
             continue
-        print(f"  {acct:16} {s['scanned']:>8} {s['reversed']:>9} "
-              f"{s['fixed_stock']:>10} {s['fixed_cash']:>9} "
-              f"{s['no_pair']:>8} {s['many_pair']:>10}")
+        print(
+            f"  {acct:16} {s['scanned']:>8} {s['reversed']:>9} "
+            f"{s['fixed_stock']:>10} {s['fixed_cash']:>9} "
+            f"{s['no_pair']:>8} {s['many_pair']:>10}"
+        )
         total_rev += s["reversed"]
         total_nopair += s["no_pair"]
         total_manypair += s["many_pair"]
     print()
     print(f"  reversed rows total : {total_rev}")
-    print(f"  missing cash pair   : {total_nopair}  (Buy/Sell only; short trades excluded)")
+    print(
+        f"  missing cash pair   : {total_nopair}  (Buy/Sell only; short trades excluded)"
+    )
     print(f"  ambiguous cash pair : {total_manypair}")
 
     print()
     print("Sample changes (first 12):")
-    print(f"  {'id':>6}  {'date':10}  {'account':14}  {'sym':6}  {'type':12}  "
-          f"{'old':>10} -> {'new':>10}   paired")
+    print(
+        f"  {'id':>6}  {'date':10}  {'account':14}  {'sym':6}  {'type':12}  "
+        f"{'old':>10} -> {'new':>10}   paired"
+    )
     for s in samples[:12]:
         sid, sdate, sacc, ssym, stype, sold, snew, npaired = s
-        print(f"  {sid:>6}  {sdate:10}  {sacc:14}  {ssym:6}  {stype:12}  "
-              f"{sold:>10,.2f} -> {snew:>10,.2f}   {npaired}")
+        print(
+            f"  {sid:>6}  {sdate:10}  {sacc:14}  {ssym:6}  {stype:12}  "
+            f"{sold:>10,.2f} -> {snew:>10,.2f}   {npaired}"
+        )
     if len(samples) > 12:
         print(f"  ... and {len(samples) - 12} more")
 
@@ -269,7 +302,9 @@ def migrate(db_path: Path, account_filter: str | None, apply: bool) -> int:
     if apply:
         if total_manypair > 0:
             print()
-            print("ERROR: ambiguous cash pairs detected — rolling back.", file=sys.stderr)
+            print(
+                "ERROR: ambiguous cash pairs detected — rolling back.", file=sys.stderr
+            )
             conn.rollback()
             conn.close()
             return 2
@@ -290,10 +325,12 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument("--db", type=Path, default=DEFAULT_DB, help="path to portfolio.db")
-    ap.add_argument("--account", default=None,
-                    help="restrict to one account (default: scan all)")
-    ap.add_argument("--apply", action="store_true",
-                    help="commit changes (default: dry run)")
+    ap.add_argument(
+        "--account", default=None, help="restrict to one account (default: scan all)"
+    )
+    ap.add_argument(
+        "--apply", action="store_true", help="commit changes (default: dry run)"
+    )
     args = ap.parse_args()
     return migrate(args.db, args.account, args.apply)
 

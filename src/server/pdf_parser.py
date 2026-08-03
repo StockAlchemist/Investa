@@ -59,7 +59,9 @@ def _ibkr_trades_colmap(header: List[str]) -> Dict[str, int]:
         elif c == "symbol":
             cols.setdefault("sym", i)
         elif "date" in c:
-            cols.setdefault("date", i)  # 'Date/Time' / 'Trade Date/Time' (first wins, not 'Settle Date')
+            cols.setdefault(
+                "date", i
+            )  # 'Date/Time' / 'Trade Date/Time' (first wins, not 'Settle Date')
         elif c == "exchange":
             cols.setdefault("exchange", i)
         elif c == "quantity":
@@ -84,7 +86,11 @@ def _ibkr_trade_from_row(
 
     def cell(key: str) -> str:
         i = colmap.get(key)
-        return row[i].strip() if i is not None and i < len(row) and row[i] is not None else ""
+        return (
+            row[i].strip()
+            if i is not None and i < len(row) and row[i] is not None
+            else ""
+        )
 
     sym = cell("sym")
     qty_raw = cell("qty")
@@ -109,7 +115,11 @@ def _ibkr_trade_from_row(
 
     account = account_name
     acct_i = colmap.get("acct")
-    if acct_i is not None and acct_i < len(row) and _ACCOUNT_ID_RE.match((row[acct_i] or "").strip()):
+    if (
+        acct_i is not None
+        and acct_i < len(row)
+        and _ACCOUNT_ID_RE.match((row[acct_i] or "").strip())
+    ):
         account = row[acct_i].strip()
 
     is_buy = q_val > 0
@@ -158,7 +168,10 @@ def _ibkr_open_positions_basis(pdf) -> Dict[str, float]:
             for raw in table:
                 if not raw:
                     continue
-                row = [str(x).replace("\n", " ").strip() if x is not None else "" for x in raw]
+                row = [
+                    str(x).replace("\n", " ").strip() if x is not None else ""
+                    for x in raw
+                ]
                 low = [c.lower() for c in row]
                 # The column header uniquely identifies Open Positions and
                 # (re)builds the persistent map — its presence also confirms the
@@ -200,7 +213,11 @@ def _ibkr_corporate_action_txns(
     from corporate_actions import build_spinoff_legs, parse_spinoff_description
 
     desc = next(
-        (c for c in row if "spin" in c.lower() and "off" in c.lower().replace("-", " ")),
+        (
+            c
+            for c in row
+            if "spin" in c.lower() and "off" in c.lower().replace("-", " ")
+        ),
         None,
     )
     if not desc:
@@ -242,12 +259,20 @@ def _ibkr_corporate_action_txns(
         return []
 
     return build_spinoff_legs(
-        parent, child, qty, date_str, account_name, user_id,
-        allocated_basis=basis_map.get(child, 0.0), ratio=ratio,
+        parent,
+        child,
+        qty,
+        date_str,
+        account_name,
+        user_id,
+        allocated_basis=basis_map.get(child, 0.0),
+        ratio=ratio,
     )
 
 
-def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
+def parse_ibkr_pdf(
+    file_path: str, user_id: int, cash_mode: str, account_override: str
+) -> List[Dict[str, Any]]:
     transactions = []
     account_name = account_override or "IBKR Account"
     try:
@@ -290,12 +315,17 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                     # Track section state across rows — a single pdfplumber
                     # table can splice several IBKR logical sections together.
                     current_section = section
-                    trades_colmap: Optional[Dict[str, int]] = None  # header-derived map for Trades
+                    trades_colmap: Optional[Dict[str, int]] = (
+                        None  # header-derived map for Trades
+                    )
 
                     for row in table:
                         if not row or len(row) < 3:
                             continue
-                        row = [str(x).replace("\n", " ").strip() if x is not None else "" for x in row]
+                        row = [
+                            str(x).replace("\n", " ").strip() if x is not None else ""
+                            for x in row
+                        ]
 
                         # Mid-table section switch: a known section heading can
                         # appear in ANY column, not just the first. When
@@ -335,7 +365,18 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                         # so skipping it here would wrongly drop right-aligned
                         # tables whose first cell is empty.
                         if section in ("Trades", "Transfers"):
-                            if any(x in first_val for x in [section, "Symbol", "Date", "Total", "Stocks", "USD", "Description"]):
+                            if any(
+                                x in first_val
+                                for x in [
+                                    section,
+                                    "Symbol",
+                                    "Date",
+                                    "Total",
+                                    "Stocks",
+                                    "USD",
+                                    "Description",
+                                ]
+                            ):
                                 continue
                             if not first_val or first_val == "None":
                                 continue
@@ -343,7 +384,9 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                         try:
                             if section == "Trades":
                                 if trades_colmap is not None:
-                                    txn = _ibkr_trade_from_row(row, trades_colmap, account_name, user_id)
+                                    txn = _ibkr_trade_from_row(
+                                        row, trades_colmap, account_name, user_id
+                                    )
                                     if txn:
                                         transactions.append(txn)
                                     continue
@@ -353,36 +396,105 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 # layout.
                                 if _ACCOUNT_ID_RE.match(row[0]):
                                     account = row[0]
-                                    sym, date_str, qty_str, price_str, proceeds_str, comm_str = row[1], row[2].split(",")[0].strip(), row[6], row[7], row[9], row[10]
+                                    (
+                                        sym,
+                                        date_str,
+                                        qty_str,
+                                        price_str,
+                                        proceeds_str,
+                                        comm_str,
+                                    ) = (
+                                        row[1],
+                                        row[2].split(",")[0].strip(),
+                                        row[6],
+                                        row[7],
+                                        row[9],
+                                        row[10],
+                                    )
                                 else:
                                     account = account_name
-                                    sym, date_str, _, qty_str, price_str, _, proceeds_str, comm_str = row[0], row[1].split(",")[0].strip(), row[2], row[3], row[4], row[5], row[6], row[7]
+                                    (
+                                        sym,
+                                        date_str,
+                                        _,
+                                        qty_str,
+                                        price_str,
+                                        _,
+                                        proceeds_str,
+                                        comm_str,
+                                    ) = (
+                                        row[0],
+                                        row[1].split(",")[0].strip(),
+                                        row[2],
+                                        row[3],
+                                        row[4],
+                                        row[5],
+                                        row[6],
+                                        row[7],
+                                    )
 
                                 q_val = _to_float(qty_str)
-                                transactions.append({
-                                    "Date": date_str, "Type": "Buy" if q_val > 0 else "Sell", "Symbol": sym,
-                                    "Quantity": abs(q_val), "Price/Share": _to_float(price_str),
-                                    "Total Amount": abs(_to_float(proceeds_str)),
-                                    "Commission": abs(_to_float(comm_str)),
-                                    "Account": account, "Note": "IBKR Trade", "Local Currency": "USD", "user_id": user_id
-                                })
+                                transactions.append(
+                                    {
+                                        "Date": date_str,
+                                        "Type": "Buy" if q_val > 0 else "Sell",
+                                        "Symbol": sym,
+                                        "Quantity": abs(q_val),
+                                        "Price/Share": _to_float(price_str),
+                                        "Total Amount": abs(_to_float(proceeds_str)),
+                                        "Commission": abs(_to_float(comm_str)),
+                                        "Account": account,
+                                        "Note": "IBKR Trade",
+                                        "Local Currency": "USD",
+                                        "user_id": user_id,
+                                    }
+                                )
 
                             elif section == "Transfers":
                                 if _ACCOUNT_ID_RE.match(row[0]):
                                     account = row[0]
-                                    sym, date_str, t_type, qty_str, mval_str = row[1], row[2], row[3], row[7], row[9]
+                                    sym, date_str, t_type, qty_str, mval_str = (
+                                        row[1],
+                                        row[2],
+                                        row[3],
+                                        row[7],
+                                        row[9],
+                                    )
                                 else:
                                     account = account_name
-                                    sym, date_str, t_type, qty_str, mval_str = row[0], row[1], row[2], row[6], row[8]
+                                    sym, date_str, t_type, qty_str, mval_str = (
+                                        row[0],
+                                        row[1],
+                                        row[2],
+                                        row[6],
+                                        row[8],
+                                    )
                                 q_val = _to_float(qty_str)
-                                transactions.append({
-                                    "Date": date_str, "Type": "Transfer", "Symbol": sym,
-                                    "Quantity": abs(q_val), "Price/Share": _to_float(mval_str) / abs(q_val) if q_val != 0 else 0,
-                                    "Total Amount": abs(_to_float(mval_str)),
-                                    "Commission": 0.0, "Account": account, "Note": f"IBKR Transfer ({t_type})", "Local Currency": "USD", "user_id": user_id
-                                })
-                                
-                            elif section in ["Dividends", "Tax", "Cash", "Fees", "Interest"]:
+                                transactions.append(
+                                    {
+                                        "Date": date_str,
+                                        "Type": "Transfer",
+                                        "Symbol": sym,
+                                        "Quantity": abs(q_val),
+                                        "Price/Share": _to_float(mval_str) / abs(q_val)
+                                        if q_val != 0
+                                        else 0,
+                                        "Total Amount": abs(_to_float(mval_str)),
+                                        "Commission": 0.0,
+                                        "Account": account,
+                                        "Note": f"IBKR Transfer ({t_type})",
+                                        "Local Currency": "USD",
+                                        "user_id": user_id,
+                                    }
+                                )
+
+                            elif section in [
+                                "Dividends",
+                                "Tax",
+                                "Cash",
+                                "Fees",
+                                "Interest",
+                            ]:
                                 # IBKR Activity Statements vary column counts:
                                 # 3-4 columns for single-account dividends,
                                 # but Withholding Tax tables in multi-account
@@ -466,7 +578,10 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                         prefix
                                         and len(prefix) <= 12
                                         and len(tokens) <= 2
-                                        and prefix.replace(" ", "").replace(".", "").replace("-", "").isalnum()
+                                        and prefix.replace(" ", "")
+                                        .replace(".", "")
+                                        .replace("-", "")
+                                        .isalnum()
                                     ):
                                         sym = prefix
 
@@ -494,7 +609,9 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 # Always drop internal sweeps — they aren't
                                 # real external cash movements and they double-
                                 # count once the engine reconciles trades.
-                                if t_type in ["Deposit", "Withdrawal"] and ("sweep" in l_desc or "internal" in l_desc):
+                                if t_type in ["Deposit", "Withdrawal"] and (
+                                    "sweep" in l_desc or "internal" in l_desc
+                                ):
                                     continue
 
                                 abs_amt = abs(amt)
@@ -516,55 +633,78 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
                                 else:
                                     tx_qty = 0.0
                                     tx_price = 0.0
-                                    
+
                                     # Extract exact dividend per share and quantity from description
                                     if t_type == "Dividend":
                                         # Try "0.22 per Share" first, fallback to "Dividend USD 0.22".
                                         # The fallback number may be the total (not a rate), so only
                                         # trust it when it divides the amount into >= 1 share; the
                                         # "per Share" form is explicit and needs no such guard.
-                                        match = re.search(r"(\d+(?:\.\d+)?)\s*per Share", desc, re.IGNORECASE)
+                                        match = re.search(
+                                            r"(\d+(?:\.\d+)?)\s*per Share",
+                                            desc,
+                                            re.IGNORECASE,
+                                        )
                                         is_fallback = False
                                         if not match:
-                                            match = re.search(r"Dividend\s+(?:USD\s*)?(\d+(?:\.\d+)?)", desc, re.IGNORECASE)
+                                            match = re.search(
+                                                r"Dividend\s+(?:USD\s*)?(\d+(?:\.\d+)?)",
+                                                desc,
+                                                re.IGNORECASE,
+                                            )
                                             is_fallback = True
 
                                         if match:
                                             try:
                                                 rate = float(match.group(1))
-                                                if rate > 0 and not (is_fallback and rate > abs_amt):
+                                                if rate > 0 and not (
+                                                    is_fallback and rate > abs_amt
+                                                ):
                                                     tx_price = rate
                                                     tx_qty = round(abs_amt / rate, 4)
                                             except ValueError:
                                                 pass
 
-                                transactions.append({
-                                    "Date": date_str, "Type": t_type, "Symbol": sym,
-                                    "Quantity": tx_qty,
-                                    "Price/Share": tx_price,
-                                    "Total Amount": signed_amt,
-                                    "Commission": 0.0,
-                                    "Account": account, "Note": desc[:100],
-                                    "Local Currency": "USD", "user_id": user_id
-                                })
+                                transactions.append(
+                                    {
+                                        "Date": date_str,
+                                        "Type": t_type,
+                                        "Symbol": sym,
+                                        "Quantity": tx_qty,
+                                        "Price/Share": tx_price,
+                                        "Total Amount": signed_amt,
+                                        "Commission": 0.0,
+                                        "Account": account,
+                                        "Note": desc[:100],
+                                        "Local Currency": "USD",
+                                        "user_id": user_id,
+                                    }
+                                )
 
                             elif section == "CorporateActions":
                                 # Spin-offs (and future multi-symbol actions).
                                 # The helper filters header/label/total rows and
                                 # non-spin-off actions itself, returning [].
-                                acct = row[0] if _ACCOUNT_ID_RE.match(row[0]) else account_name
+                                acct = (
+                                    row[0]
+                                    if _ACCOUNT_ID_RE.match(row[0])
+                                    else account_name
+                                )
                                 transactions.extend(
                                     _ibkr_corporate_action_txns(
                                         row, acct, user_id, open_positions_basis
                                     )
                                 )
                         except (ValueError, IndexError) as e:
-                            logging.debug(f"IBKR parser skipped {section} row {row!r}: {e}")
+                            logging.debug(
+                                f"IBKR parser skipped {section} row {row!r}: {e}"
+                            )
                             continue
     except Exception as e:
         logging.error(f"Error parsing IBKR Comprehensive PDF: {e}")
-        
+
     return transactions
+
 
 # --- Webull monthly statement parsing ----------------------------------------
 #
@@ -583,17 +723,36 @@ def parse_ibkr_pdf(file_path: str, user_id: int, cash_mode: str, account_overrid
 # Currency codes Webull uses as standalone column values. Kept explicit so a
 # 3-letter *ticker* (GLD, MMM, ...) is never mistaken for a currency cell.
 _WEBULL_CURRENCIES = {
-    "USD", "THB", "HKD", "CNH", "CNY", "SGD", "EUR", "GBP",
-    "JPY", "AUD", "CAD", "NZD", "CHF",
+    "USD",
+    "THB",
+    "HKD",
+    "CNH",
+    "CNY",
+    "SGD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "AUD",
+    "CAD",
+    "NZD",
+    "CHF",
 }
 
 # Webull's TRADES table has no currency column — the trade currency is implied
 # by the listing exchange. Maps the exchanges Webull (Thailand) routes to.
 _WEBULL_EXCHANGE_CURRENCY = {
-    "NASDAQ": "USD", "NYSE": "USD", "NYSEARCA": "USD", "ARCA": "USD",
-    "AMEX": "USD", "BATS": "USD", "OTC": "USD",
-    "SEHK": "HKD", "HKEX": "HKD", "HKG": "HKD",
-    "SET": "THB", "SGX": "SGD",
+    "NASDAQ": "USD",
+    "NYSE": "USD",
+    "NYSEARCA": "USD",
+    "ARCA": "USD",
+    "AMEX": "USD",
+    "BATS": "USD",
+    "OTC": "USD",
+    "SEHK": "HKD",
+    "HKEX": "HKD",
+    "HKG": "HKD",
+    "SET": "THB",
+    "SGX": "SGD",
 }
 
 # Webull renders dates as DD/MM/YYYY (e.g. 01/04/2026 = 1 April 2026). Note the
@@ -687,7 +846,9 @@ def _webull_classify_table(rows: List[List[str]]) -> str:
     if "ex-date" in blob or "pay date" in blob:
         return "skip"
     # Portfolio Summary (holdings snapshot) — positions, not transactions.
-    if any(k in blob for k in ("average price", "cost basis", "unrealized", "market value")):
+    if any(
+        k in blob for k in ("average price", "cost basis", "unrealized", "market value")
+    ):
         return "skip"
     # Net Account Value / Cash Report Summary — period aggregates by currency.
     if "total(thb)" in blob or "total cash" in blob:
@@ -704,8 +865,10 @@ def _webull_classify_table(rows: List[List[str]]) -> str:
         return "dividends"
     # Trades blotter: dated, per-symbol rows (holdings lack a Date column, so the
     # Date + Symbol pairing excludes the snapshot table).
-    if "date" in blob and ("symbol" in blob or "name" in blob) and (
-        "price" in blob or "side" in blob or "quantity" in blob
+    if (
+        "date" in blob
+        and ("symbol" in blob or "name" in blob)
+        and ("price" in blob or "side" in blob or "quantity" in blob)
     ):
         return "trades"
     # Generic dated cash-flow detail (Interest / Dividends / Deposits &
@@ -761,7 +924,9 @@ def _webull_cashflow_row(
         desc_pieces.append(c.strip())
     desc = " ".join(p for p in desc_pieces if p).strip()
     low = desc.lower()
-    if not desc or any(k in low for k in ("total", "opening", "closing", "starting", "subtotal")):
+    if not desc or any(
+        k in low for k in ("total", "opening", "closing", "starting", "subtotal")
+    ):
         return None
 
     # Classify by description keywords; sign the amount by direction so the
@@ -869,7 +1034,9 @@ def _webull_trade_row(
 
     gross_abs = abs(gross) if gross else abs(qty * price)
     # Match web app formula: Buy total includes commission; Sell total is net of commission.
-    total = gross_abs + commission if side == "Buy" else max(0.0, gross_abs - commission)
+    total = (
+        gross_abs + commission if side == "Buy" else max(0.0, gross_abs - commission)
+    )
 
     return {
         "Date": date_str,
@@ -976,13 +1143,17 @@ def _webull_days_apart(d1: str, d2: str) -> int:
         return 9999
 
 
-def _webull_tag_reinvestments(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _webull_tag_reinvestments(
+    transactions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
     """Mark each buy that reinvests a dividend with the "Dividend Reinvestment"
     note. Webull settles the dividend to cash and immediately buys shares for the
     net amount the next day; matching on symbol + date proximity + net amount
     distinguishes a DRIP buy from an ordinary purchase. Both legs are kept so
     cash nets to zero (gross dividend − WHT − reinvestment buy)."""
-    dividends = [t for t in transactions if t["Type"] == "Dividend" and t["Symbol"] != "$CASH"]
+    dividends = [
+        t for t in transactions if t["Type"] == "Dividend" and t["Symbol"] != "$CASH"
+    ]
     taxes = [t for t in transactions if t["Type"] == "Tax"]
     buys = [t for t in transactions if t["Type"] == "Buy"]
     used: set = set()
@@ -1007,7 +1178,9 @@ def _webull_tag_reinvestments(transactions: List[Dict[str, Any]]) -> List[Dict[s
     return transactions
 
 
-def parse_webull_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
+def parse_webull_pdf(
+    file_path: str, user_id: int, cash_mode: str, account_override: str
+) -> List[Dict[str, Any]]:
     transactions: List[Dict[str, Any]] = []
     account_name = account_override or "Webull"
     default_currency = "THB"
@@ -1034,7 +1207,10 @@ def parse_webull_pdf(file_path: str, user_id: int, cash_mode: str, account_overr
                     if not table:
                         continue
                     rows = [
-                        [str(c).replace("\n", " ").strip() if c is not None else "" for c in r]
+                        [
+                            str(c).replace("\n", " ").strip() if c is not None else ""
+                            for c in r
+                        ]
                         for r in table
                         if r
                     ]
@@ -1044,7 +1220,9 @@ def parse_webull_pdf(file_path: str, user_id: int, cash_mode: str, account_overr
                     if _webull_is_holdings(rows):
                         for r in rows[1:]:
                             parts = r[0].split() if r and r[0] else []
-                            if len(parts) >= 2 and re.fullmatch(r"[A-Z0-9.]{1,6}", parts[0]):
+                            if len(parts) >= 2 and re.fullmatch(
+                                r"[A-Z0-9.]{1,6}", parts[0]
+                            ):
                                 name_to_symbol[" ".join(parts[1:]).lower()] = parts[0]
 
                     kind = _webull_classify_table(rows)
@@ -1060,14 +1238,23 @@ def parse_webull_pdf(file_path: str, user_id: int, cash_mode: str, account_overr
                     try:
                         if kind == "cashflow":
                             tx = _webull_cashflow_row(
-                                row, account_name, user_id, default_currency, name_to_symbol
+                                row,
+                                account_name,
+                                user_id,
+                                default_currency,
+                                name_to_symbol,
                             )
                             if tx:
                                 transactions.append(tx)
                         elif kind == "dividends":
                             transactions.extend(
                                 _webull_dividend_rows(
-                                    row, header, account_name, user_id, default_currency, name_to_symbol
+                                    row,
+                                    header,
+                                    account_name,
+                                    user_id,
+                                    default_currency,
+                                    name_to_symbol,
                                 )
                             )
                         else:  # trades
@@ -1089,34 +1276,45 @@ def parse_webull_pdf(file_path: str, user_id: int, cash_mode: str, account_overr
     return transactions
 
 
-def parse_tdameritrade_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
+def parse_tdameritrade_pdf(
+    file_path: str, user_id: int, cash_mode: str, account_override: str
+) -> List[Dict[str, Any]]:
     # Fallback to AI for now, or implement a basic text scanner
     return []
 
-def parse_etrade_pdf(file_path: str, user_id: int, cash_mode: str, account_override: str) -> List[Dict[str, Any]]:
+
+def parse_etrade_pdf(
+    file_path: str, user_id: int, cash_mode: str, account_override: str
+) -> List[Dict[str, Any]]:
     # Fallback to AI for now
     return []
 
-def extract_transactions_from_file(file_path: str, user_id: int, cash_mode: Optional[str] = None, account_override: Optional[str] = None) -> List[Dict[str, Any]]:
+
+def extract_transactions_from_file(
+    file_path: str,
+    user_id: int,
+    cash_mode: Optional[str] = None,
+    account_override: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     ext = os.path.splitext(file_path)[1].lower()
     mime_type, _ = mimetypes.guess_type(file_path)
-    
-    if not mime_type:
-        if ext == '.pdf':
-            mime_type = 'application/pdf'
-        elif ext in ['.png', '.jpg', '.jpeg']:
-            mime_type = f'image/{ext[1:]}'
-        else:
-            mime_type = 'application/octet-stream'
 
-    if mime_type == 'application/pdf':
+    if not mime_type:
+        if ext == ".pdf":
+            mime_type = "application/pdf"
+        elif ext in [".png", ".jpg", ".jpeg"]:
+            mime_type = f"image/{ext[1:]}"
+        else:
+            mime_type = "application/octet-stream"
+
+    if mime_type == "application/pdf":
         try:
             # Check if it's IBKR
             with pdfplumber.open(file_path) as pdf:
                 text = ""
                 for i in range(min(3, len(pdf.pages))):
                     text += pdf.pages[i].extract_text() or ""
-            
+
             if "INTERACTIVE BROKERS" in text.upper() or "IBKR" in text.upper():
                 res = parse_ibkr_pdf(file_path, user_id, cash_mode, account_override)
                 if res:
@@ -1126,20 +1324,23 @@ def extract_transactions_from_file(file_path: str, user_id: int, cash_mode: Opti
                 if res:
                     return res
             elif "TD AMERITRADE" in text.upper():
-                res = parse_tdameritrade_pdf(file_path, user_id, cash_mode, account_override)
+                res = parse_tdameritrade_pdf(
+                    file_path, user_id, cash_mode, account_override
+                )
                 if res:
                     return res
             elif "E*TRADE" in text.upper() or "ETRADE" in text.upper():
                 res = parse_etrade_pdf(file_path, user_id, cash_mode, account_override)
                 if res:
                     return res
-                
+
         except Exception as e:
             logging.warning(f"Deterministic parse failed: {e}")
 
     # Fallback to AI Vision Parser
     try:
         from server.vision_parser import parse_document_with_ai
+
         logging.info(f"Parser: Falling back to AI Vision for {file_path}")
         txs = parse_document_with_ai(file_path, mime_type)
         # Inject user_id and account_override if possible

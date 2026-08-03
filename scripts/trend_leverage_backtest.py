@@ -75,7 +75,9 @@ def load_daily(refresh: bool = False) -> pd.DataFrame:
     return frame
 
 
-def total_return_series(panel: pd.DataFrame, etf: str, index: str, pre_etf_div: float) -> pd.Series:
+def total_return_series(
+    panel: pd.DataFrame, etf: str, index: str, pre_etf_div: float
+) -> pd.Series:
     """
     ETF adjusted close (dividends in) spliced onto the pre-ETF price index.
 
@@ -114,7 +116,9 @@ def simulate(
     """
     prices = total_return.dropna()
     returns = prices.pct_change().fillna(0.0)
-    tbill_daily = (tbill_annual.reindex(prices.index).ffill().fillna(0.0) / 100.0) / 252.0
+    tbill_daily = (
+        tbill_annual.reindex(prices.index).ffill().fillna(0.0) / 100.0
+    ) / 252.0
 
     month_ends = prices.groupby(prices.index.to_period("M")).tail(1).index
     sma = prices.loc[month_ends].rolling(sma_months).mean()
@@ -124,7 +128,9 @@ def simulate(
     # The signal decided at month end governs the following month.
     signal = signal_by_month.reindex(prices.index).shift(1).ffill().fillna(0.0)
 
-    financing = (leverage - 1.0) * (tbill_daily + spread / 252.0) if leverage > 1 else 0.0
+    financing = (
+        (leverage - 1.0) * (tbill_daily + spread / 252.0) if leverage > 1 else 0.0
+    )
     er_daily = etf_er / 252.0 if leverage > 1 else 0.0
     strategy_returns = np.where(
         signal > 0,
@@ -144,10 +150,15 @@ def simulate(
     return curve.loc[warm:] / curve.loc[warm:].iloc[0], info
 
 
-def stats(curve: pd.Series, start: Optional[str] = None, end: Optional[str] = None) -> Dict[str, float]:
+def stats(
+    curve: pd.Series, start: Optional[str] = None, end: Optional[str] = None
+) -> Dict[str, float]:
     window = curve.loc[start:end].dropna()
     if len(window) < 252:
-        return {k: float("nan") for k in ("cagr", "volatility", "max_drawdown", "sharpe", "years")}
+        return {
+            k: float("nan")
+            for k in ("cagr", "volatility", "max_drawdown", "sharpe", "years")
+        }
     window = window / window.iloc[0]
     years = (window.index[-1] - window.index[0]).days / 365.25
     cagr = float(window.iloc[-1] ** (1.0 / years) - 1.0)
@@ -170,7 +181,9 @@ def annual_returns(curve: pd.Series) -> Dict[int, float]:
     return {int(k): float(v) for k, v in out.items()}
 
 
-def report_window(name: str, curves: Dict[str, pd.Series], start: str, end: Optional[str]) -> pd.DataFrame:
+def report_window(
+    name: str, curves: Dict[str, pd.Series], start: str, end: Optional[str]
+) -> pd.DataFrame:
     rows = {}
     for label, curve in curves.items():
         s = stats(curve, start, end)
@@ -189,10 +202,21 @@ def report_window(name: str, curves: Dict[str, pd.Series], start: str, end: Opti
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sma", type=int, default=10, help="signal moving average, months")
-    parser.add_argument("--spread", type=float, default=0.01, help="financing spread over T-bills")
-    parser.add_argument("--etf-er", type=float, default=0.0095, help="leveraged ETF expense ratio")
-    parser.add_argument("--pre-etf-div", type=float, default=0.015, help="dividend yield added to pre-ETF index years")
+    parser.add_argument(
+        "--sma", type=int, default=10, help="signal moving average, months"
+    )
+    parser.add_argument(
+        "--spread", type=float, default=0.01, help="financing spread over T-bills"
+    )
+    parser.add_argument(
+        "--etf-er", type=float, default=0.0095, help="leveraged ETF expense ratio"
+    )
+    parser.add_argument(
+        "--pre-etf-div",
+        type=float,
+        default=0.015,
+        help="dividend yield added to pre-ETF index years",
+    )
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
@@ -229,13 +253,27 @@ def main() -> int:
         curves[label] = curve
         infos[label] = info
 
-    print(f"Signal: {args.sma}-month SMA, monthly close. Financing: T-bill + "
-          f"{args.spread:.0%}, ER {args.etf_er:.2%} on levered configs.")
-    print(f"NASDAQ series: ^IXIC from {nasdaq.index[0].date()} (+{args.pre_etf_div:.1%}/yr dividends), QQQ TR from 1999.")
+    print(
+        f"Signal: {args.sma}-month SMA, monthly close. Financing: T-bill + "
+        f"{args.spread:.0%}, ER {args.etf_er:.2%} on levered configs."
+    )
+    print(
+        f"NASDAQ series: ^IXIC from {nasdaq.index[0].date()} (+{args.pre_etf_div:.1%}/yr dividends), QQQ TR from 1999."
+    )
 
     report_window("FULL HISTORY (1972-2025)", curves, "1972-01-01", "2025-12-31")
-    report_window("MODERN / QQQ-ERA (1999-2025) — includes dot-com crash", curves, "1999-03-10", "2025-12-31")
-    report_window("BACKTEST WINDOW SHARED WITH THE STOCK STRATEGY (2013-2025)", curves, "2012-12-31", "2025-12-31")
+    report_window(
+        "MODERN / QQQ-ERA (1999-2025) — includes dot-com crash",
+        curves,
+        "1999-03-10",
+        "2025-12-31",
+    )
+    report_window(
+        "BACKTEST WINDOW SHARED WITH THE STOCK STRATEGY (2013-2025)",
+        curves,
+        "2012-12-31",
+        "2025-12-31",
+    )
     report_window("TRAIN (2013-2019)", curves, "2012-12-31", "2019-12-31")
     report_window("TEST (2020-2025)", curves, "2019-12-31", "2025-12-31")
     report_window("USER HISTORY WINDOW (2003-2025)", curves, "2002-12-31", "2025-12-31")
@@ -252,10 +290,15 @@ def main() -> int:
     if args.out:
         payload = {
             "curves": {
-                label: {str(i.date()): float(v) for i, v in curve.resample("ME").last().items()}
+                label: {
+                    str(i.date()): float(v)
+                    for i, v in curve.resample("ME").last().items()
+                }
                 for label, curve in curves.items()
             },
-            "annual_returns": {label: annual_returns(curve) for label, curve in curves.items()},
+            "annual_returns": {
+                label: annual_returns(curve) for label, curve in curves.items()
+            },
             "info": infos,
         }
         with open(args.out, "w") as handle:

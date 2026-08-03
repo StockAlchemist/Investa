@@ -23,6 +23,7 @@ standards: `generic` (FCF businesses), `bank` (deposit-takers and insurers,
 where leverage is an input rather than a risk) and `reit` (where GAAP
 depreciation obscures cash earnings). See `edgar_sic` for routing.
 """
+
 from __future__ import annotations
 
 import logging
@@ -121,9 +122,7 @@ def _cagr(series_oldest_first: Sequence[Optional[float]]) -> Optional[float]:
     return (end / start) ** (1.0 / years) - 1.0
 
 
-def _total_debt(
-    concepts: Dict[str, Dict[str, float]], period: str
-) -> Optional[float]:
+def _total_debt(concepts: Dict[str, Dict[str, float]], period: str) -> Optional[float]:
     """
     Interest-bearing debt at one period end, or None when it is not reported.
 
@@ -147,7 +146,9 @@ def _aligned(
     return [values_by_period.get(period) for period in periods]
 
 
-def _common_periods(concepts: Dict[str, Dict[str, float]], required: Sequence[str]) -> List[str]:
+def _common_periods(
+    concepts: Dict[str, Dict[str, float]], required: Sequence[str]
+) -> List[str]:
     """
     Annual period ends where every `required` concept has a value, oldest first.
 
@@ -164,7 +165,9 @@ def _common_periods(concepts: Dict[str, Dict[str, float]], required: Sequence[st
 # --- generic model ----------------------------------------------------------
 
 
-def _owner_earnings(concepts: Dict[str, Dict[str, float]], periods: List[str]) -> List[Optional[float]]:
+def _owner_earnings(
+    concepts: Dict[str, Dict[str, float]], periods: List[str]
+) -> List[Optional[float]]:
     """
     Cash an owner could withdraw: operating cash flow less capital expenditure.
 
@@ -192,14 +195,24 @@ def _compute_generic_metrics(
 ) -> Dict[str, Optional[float]]:
     metrics: Dict[str, Optional[float]] = {}
 
-    all_periods = sorted(set(concepts.get("net_income", {})) | set(concepts.get("revenue", {})))
+    all_periods = sorted(
+        set(concepts.get("net_income", {})) | set(concepts.get("revenue", {}))
+    )
     window = all_periods[-DURABILITY_WINDOW:]
 
     # --- Returns on capital -------------------------------------------------
-    roe_series = [ratios_by_period.get(p, {}).get("Return on Equity (ROE) (%)") for p in window]
-    roa_series = [ratios_by_period.get(p, {}).get("Return on Assets (ROA) (%)") for p in window]
-    gross_series = [ratios_by_period.get(p, {}).get("Gross Profit Margin (%)") for p in window]
-    net_margin_series = [ratios_by_period.get(p, {}).get("Net Profit Margin (%)") for p in window]
+    roe_series = [
+        ratios_by_period.get(p, {}).get("Return on Equity (ROE) (%)") for p in window
+    ]
+    roa_series = [
+        ratios_by_period.get(p, {}).get("Return on Assets (ROA) (%)") for p in window
+    ]
+    gross_series = [
+        ratios_by_period.get(p, {}).get("Gross Profit Margin (%)") for p in window
+    ]
+    net_margin_series = [
+        ratios_by_period.get(p, {}).get("Net Profit Margin (%)") for p in window
+    ]
 
     metrics["roe_median"] = _median(roe_series)
     metrics["roa_median"] = _median(roa_series)
@@ -381,8 +394,12 @@ def _compute_bank_metrics(
     all_periods = sorted(set(concepts.get("net_income", {})))
     window = all_periods[-DURABILITY_WINDOW:]
 
-    roe_series = [ratios_by_period.get(p, {}).get("Return on Equity (ROE) (%)") for p in window]
-    roa_series = [ratios_by_period.get(p, {}).get("Return on Assets (ROA) (%)") for p in window]
+    roe_series = [
+        ratios_by_period.get(p, {}).get("Return on Equity (ROE) (%)") for p in window
+    ]
+    roa_series = [
+        ratios_by_period.get(p, {}).get("Return on Assets (ROA) (%)") for p in window
+    ]
     metrics["roe_median"] = _median(roe_series)
     metrics["roa_median"] = _median(roa_series)
     metrics["roe_stdev"] = _stdev(roe_series)
@@ -400,12 +417,15 @@ def _compute_bank_metrics(
     equity_to_assets = []
     for period in window:
         ratio = _safe_divide(
-            concepts.get("equity", {}).get(period), concepts.get("total_assets", {}).get(period)
+            concepts.get("equity", {}).get(period),
+            concepts.get("total_assets", {}).get(period),
         )
         if ratio is not None and 0 < ratio < 1:
             equity_to_assets.append(ratio * 100.0)
     metrics["equity_to_assets_median"] = _median(equity_to_assets)
-    metrics["equity_to_assets_latest"] = equity_to_assets[-1] if equity_to_assets else None
+    metrics["equity_to_assets_latest"] = (
+        equity_to_assets[-1] if equity_to_assets else None
+    )
 
     # Credit discipline: provisions against the loan book, and how much that
     # rate swings. A lender whose provisioning is stable through a cycle is
@@ -513,14 +533,16 @@ def _compute_reit_metrics(
         if net_income is None:
             ffo_series.append(None)
             continue
-        depreciation = _finite(
-            concepts.get("depreciation_amortization", {}).get(period)
-        ) or 0.0
+        depreciation = (
+            _finite(concepts.get("depreciation_amortization", {}).get(period)) or 0.0
+        )
         gains = _finite(sector.get("gain_on_sale_real_estate", {}).get(period)) or 0.0
         ffo_series.append(net_income + depreciation - gains)
 
     observed_ffo = [v for v in ffo_series if v is not None]
-    metrics["ffo_latest"] = next((v for v in reversed(ffo_series) if v is not None), None)
+    metrics["ffo_latest"] = next(
+        (v for v in reversed(ffo_series) if v is not None), None
+    )
     metrics["ffo_cagr"] = _cagr(observed_ffo)
     metrics["negative_ffo_years"] = sum(1 for v in observed_ffo if v < 0)
     metrics["ffo_years"] = float(len(observed_ffo)) if observed_ffo else None
@@ -570,7 +592,11 @@ def _compute_reit_metrics(
     metrics["ffo_per_share_cagr"] = _cagr(ffo_per_share)
 
     metrics["real_estate_cagr"] = _cagr(
-        [v for v in _aligned(sector.get("real_estate_net", {}), window) if v is not None]
+        [
+            v
+            for v in _aligned(sector.get("real_estate_net", {}), window)
+            if v is not None
+        ]
     )
 
     return metrics
@@ -694,7 +720,9 @@ def compute_metrics(cik: str, symbol: str, name: str, model: str) -> CompanyMetr
                 cik, "shares_diluted"
             )
         except Exception as exc:  # pragma: no cover - defensive
-            logging.warning(f"Metrics: share-count reconstruction failed for {symbol}: {exc}")
+            logging.warning(
+                f"Metrics: share-count reconstruction failed for {symbol}: {exc}"
+            )
 
     try:
         ratios = _ratios_by_period(cik)

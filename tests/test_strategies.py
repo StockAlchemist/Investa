@@ -73,7 +73,7 @@ def test_active_signal_ignores_the_running_month():
     A crash inside the current month must not flip `state` — that is the
     difference between the monthly rule that was backtested and a daily one.
     """
-    months = _rising(10)                      # ends June 2026, well above its average
+    months = _rising(10)  # ends June 2026, well above its average
     series = _daily_series(months)
     # Bolt a collapsing July onto the end.
     july = _daily_series([((2026, 7), 1.0)])
@@ -81,7 +81,7 @@ def test_active_signal_ignores_the_running_month():
         pd.concat([series, july]), sma_months=10, today=date(2026, 7, 15)
     )
 
-    assert signal["state"] == "in"                     # unchanged by July
+    assert signal["state"] == "in"  # unchanged by July
     assert signal["decision_date"].startswith("2026-06")
     assert signal["governs_month"] == "2026-07"
     # The provisional reading *does* see the crash, and is flagged as diverging.
@@ -91,9 +91,9 @@ def test_active_signal_ignores_the_running_month():
 
 def test_moving_average_excludes_the_running_month():
     """The average is of completed month-ends only, never the partial month."""
-    months = _rising(10, start=100.0, step=0.0)   # ten flat month-ends at 100
+    months = _rising(10, start=100.0, step=0.0)  # ten flat month-ends at 100
     series = _daily_series(months)
-    july = _daily_series([((2026, 7), 500.0)])   # a spike that must not be averaged in
+    july = _daily_series([((2026, 7), 500.0)])  # a spike that must not be averaged in
     signal = st.evaluate_trend_signal(
         pd.concat([series, july]), sma_months=10, today=date(2026, 7, 20)
     )
@@ -103,11 +103,13 @@ def test_moving_average_excludes_the_running_month():
 def test_refuses_to_answer_without_enough_history():
     """A partial average biased by its own short window is worse than no answer."""
     series = _daily_series(_rising(6))
-    assert st.evaluate_trend_signal(series, sma_months=10, today=date(2026, 7, 5)) is None
+    assert (
+        st.evaluate_trend_signal(series, sma_months=10, today=date(2026, 7, 5)) is None
+    )
 
 
 def test_out_state_when_below_the_average():
-    months = _rising(10, start=200.0, step=-10.0)   # falling into June
+    months = _rising(10, start=200.0, step=-10.0)  # falling into June
     signal = st.evaluate_trend_signal(
         _daily_series(months), sma_months=10, today=date(2026, 7, 10)
     )
@@ -192,16 +194,29 @@ def test_no_strategy_names_a_fund_ticker():
     second version held, and the bill ETFs that stood in for cash.
     """
     banned = {
-        "QLD", "TQQQ", "SSO", "UPRO", "SPXL",      # levered
-        "QQQ", "SPY", "VOO", "IVV", "VTI", "DIA",  # index funds
-        "SGOV", "BIL", "SHV",                       # cash proxies
+        "QLD",
+        "TQQQ",
+        "SSO",
+        "UPRO",
+        "SPXL",  # levered
+        "QQQ",
+        "SPY",
+        "VOO",
+        "IVV",
+        "VTI",
+        "DIA",  # index funds
+        "SGOV",
+        "BIL",
+        "SHV",  # cash proxies
     }
     for strategy in st.list_strategies():
         payload = st.strategy_payload(strategy)
         blob = repr(payload)
         for ticker in banned:
             # Word-boundary match so "SPY" does not fire on prose.
-            assert not re.search(rf"\b{ticker}\b", blob), f"{strategy.id} mentions {ticker}"
+            assert not re.search(rf"\b{ticker}\b", blob), (
+                f"{strategy.id} mentions {ticker}"
+            )
 
 
 def test_payload_exposes_no_trend_sleeve():
@@ -214,11 +229,22 @@ def test_payload_exposes_no_trend_sleeve():
 def test_allocation_is_a_single_stock_sleeve(monkeypatch):
     """The whole capital goes to ranked companies; no second sleeve exists."""
     monkeypatch.setattr(
-        st, "_ranking_positions",
+        st,
+        "_ranking_positions",
         lambda sleeve, capital, today=None: {
             "positions": [
-                {"symbol": "AAA", "role": "stock", "weight": 0.5, "amount": capital / 2},
-                {"symbol": "BBB", "role": "stock", "weight": 0.5, "amount": capital / 2},
+                {
+                    "symbol": "AAA",
+                    "role": "stock",
+                    "weight": 0.5,
+                    "amount": capital / 2,
+                },
+                {
+                    "symbol": "BBB",
+                    "role": "stock",
+                    "weight": 0.5,
+                    "amount": capital / 2,
+                },
             ],
             "run": {"run_id": 1, "finished_at": "2026-07-28"},
             "error": None,
@@ -238,15 +264,17 @@ def test_allocation_is_a_single_stock_sleeve(monkeypatch):
 
 def _score_frame():
     """Six companies: four insurers (SIC 6351) ranked top, then two others."""
-    return pd.DataFrame({
-        "symbol": ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"],
-        "cik": [1, 2, 3, 4, 5, 6],
-        "name": ["A", "B", "C", "D", "E", "F"],
-        "quality_score": [90.0, 89.0, 88.0, 87.0, 60.0, 59.0],
-        "value_score": [90.0, 89.0, 88.0, 87.0, 60.0, 59.0],
-        "confidence": [1.0] * 6,
-        "price": [10.0] * 6,
-    })
+    return pd.DataFrame(
+        {
+            "symbol": ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"],
+            "cik": [1, 2, 3, 4, 5, 6],
+            "name": ["A", "B", "C", "D", "E", "F"],
+            "quality_score": [90.0, 89.0, 88.0, 87.0, 60.0, 59.0],
+            "value_score": [90.0, 89.0, 88.0, 87.0, 60.0, 59.0],
+            "confidence": [1.0] * 6,
+            "price": [10.0] * 6,
+        }
+    )
 
 
 def test_industry_cap_skips_past_a_full_group(monkeypatch):
@@ -262,7 +290,9 @@ def test_industry_cap_skips_past_a_full_group(monkeypatch):
     sic["0000000006"] = 6022
     monkeypatch.setattr("edgar_sic.get_sic_map", lambda: sic)
 
-    sleeve = st.RankingSleeve(quality_weight=0.8, top_n=4, max_per_sector=2, sector_digits=2)
+    sleeve = st.RankingSleeve(
+        quality_weight=0.8, top_n=4, max_per_sector=2, sector_digits=2
+    )
     picked = st._apply_sector_cap(frame, frame["quality_score"], sleeve)
 
     assert list(picked["symbol"]) == ["AAA", "BBB", "EEE", "FFF"]
@@ -284,7 +314,9 @@ def test_unclassified_companies_do_not_cap_each_other(monkeypatch):
     """
     frame = _score_frame()
     monkeypatch.setattr("edgar_sic.get_sic_map", lambda: {})
-    sleeve = st.RankingSleeve(quality_weight=0.8, top_n=4, max_per_sector=1, sector_digits=2)
+    sleeve = st.RankingSleeve(
+        quality_weight=0.8, top_n=4, max_per_sector=1, sector_digits=2
+    )
     picked = st._apply_sector_cap(frame, frame["quality_score"], sleeve)
     assert len(picked) == 4
 
@@ -297,7 +329,9 @@ def test_sic_map_failure_degrades_to_no_cap(monkeypatch):
         raise RuntimeError("sic map unavailable")
 
     monkeypatch.setattr("edgar_sic.get_sic_map", boom)
-    sleeve = st.RankingSleeve(quality_weight=0.8, top_n=3, max_per_sector=2, sector_digits=2)
+    sleeve = st.RankingSleeve(
+        quality_weight=0.8, top_n=3, max_per_sector=2, sector_digits=2
+    )
     picked = st._apply_sector_cap(frame, frame["quality_score"], sleeve)
     assert len(picked) == 3
 
@@ -319,15 +353,17 @@ def _snapshot_frame(count: int = 2):
     # price-source tests keep reading the way they were written.
     symbols = ["AAA", "BBB"] if count == 2 else [f"S{i:02d}" for i in range(count)]
     prices = [10.0, 20.0] if count == 2 else [10.0 * (i + 1) for i in range(count)]
-    return pd.DataFrame({
-        "symbol": symbols,
-        "cik": list(range(1, count + 1)),
-        "name": [f"Company {i}" for i in range(count)],
-        "quality_score": [90.0 - i for i in range(count)],
-        "value_score": [90.0 - i for i in range(count)],
-        "confidence": [1.0] * count,
-        "price": prices,          # stale closes stored with the run
-    })
+    return pd.DataFrame(
+        {
+            "symbol": symbols,
+            "cik": list(range(1, count + 1)),
+            "name": [f"Company {i}" for i in range(count)],
+            "quality_score": [90.0 - i for i in range(count)],
+            "value_score": [90.0 - i for i in range(count)],
+            "confidence": [1.0] * count,
+            "price": prices,  # stale closes stored with the run
+        }
+    )
 
 
 def _store(monkeypatch, finished_at="2026-07-28T08:00:00", count: int = 2):
@@ -352,7 +388,9 @@ def test_share_counts_use_the_live_quote_not_the_stored_close(monkeypatch):
     before it was placed, and gets worse the older the snapshot is.
     """
     _store(monkeypatch)
-    monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0})
+    monkeypatch.setattr(
+        st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0}
+    )
 
     built = st._ranking_positions(
         st.RankingSleeve(quality_weight=0.8, top_n=2, max_per_sector=None), 1000.0
@@ -375,7 +413,7 @@ def test_falls_back_to_the_stored_close_when_a_quote_is_missing(monkeypatch):
         st.RankingSleeve(quality_weight=0.8, top_n=2, max_per_sector=None), 1000.0
     )
     by_symbol = {p["symbol"]: p for p in built["positions"]}
-    assert by_symbol["AAA"]["price"] == pytest.approx(10.0)   # the stored close
+    assert by_symbol["AAA"]["price"] == pytest.approx(10.0)  # the stored close
     assert by_symbol["AAA"]["shares"] == 50
     assert built["price_source"] == "snapshot"
 
@@ -487,7 +525,9 @@ def test_ranking_age_is_measured_in_whole_days():
 
 def test_fresh_snapshot_raises_no_warning(monkeypatch):
     _store(monkeypatch, finished_at="2026-07-28T08:00:00", count=20)
-    monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0})
+    monkeypatch.setattr(
+        st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0}
+    )
     allocation = st.build_allocation(
         st.get_strategy("quality_20"), 1000.0, today=date(2026, 7, 29)
     )
@@ -503,7 +543,9 @@ def test_stale_snapshot_warns_because_a_dead_worker_looks_healthy(monkeypatch):
     threshold it must say so.
     """
     _store(monkeypatch, finished_at="2026-05-01T08:00:00", count=20)
-    monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0})
+    monkeypatch.setattr(
+        st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0}
+    )
     allocation = st.build_allocation(
         st.get_strategy("quality_20"), 1000.0, today=date(2026, 7, 29)
     )
@@ -517,8 +559,15 @@ def test_stale_snapshot_warns_because_a_dead_worker_looks_healthy(monkeypatch):
 def test_staleness_threshold_boundary(monkeypatch):
     """Exactly at the threshold counts as stale — a week of missed daily runs."""
     monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {})
-    for age, expected in ((st.STALE_RANKING_DAYS - 1, False), (st.STALE_RANKING_DAYS, True)):
-        _store(monkeypatch, finished_at=str(date(2026, 7, 29) - timedelta(days=age)), count=20)
+    for age, expected in (
+        (st.STALE_RANKING_DAYS - 1, False),
+        (st.STALE_RANKING_DAYS, True),
+    ):
+        _store(
+            monkeypatch,
+            finished_at=str(date(2026, 7, 29) - timedelta(days=age)),
+            count=20,
+        )
         allocation = st.build_allocation(
             st.get_strategy("quality_20"), 1000.0, today=date(2026, 7, 29)
         )
@@ -527,7 +576,9 @@ def test_staleness_threshold_boundary(monkeypatch):
 
 def test_sleeve_reports_where_its_prices_came_from(monkeypatch):
     _store(monkeypatch)
-    monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0})
+    monkeypatch.setattr(
+        st, "latest_closes", lambda symbols, today=None: {"AAA": 20.0, "BBB": 40.0}
+    )
     allocation = st.build_allocation(
         st.get_strategy("quality_20"), 1000.0, today=date(2026, 7, 29)
     )
@@ -601,8 +652,13 @@ def test_the_running_month_is_decided_on_the_market_clock(monkeypatch):
 
 def test_allocation_amounts_sum_to_the_capital_given(monkeypatch):
     monkeypatch.setattr(
-        st, "_ranking_positions",
-        lambda sleeve, capital, today=None: {"positions": [], "run": None, "error": None},
+        st,
+        "_ranking_positions",
+        lambda sleeve, capital, today=None: {
+            "positions": [],
+            "run": None,
+            "error": None,
+        },
     )
     allocation = st.build_allocation(
         st.get_strategy("quality_20"), 100_000.0, today=date(2026, 7, 10)

@@ -5,6 +5,7 @@ IBKR ships the Trades section in two PDF layouts with different column orders
 header/row helpers with synthetic rows mirroring real PDFs, so they don't
 require a sample PDF on disk.
 """
+
 import os
 import sys
 
@@ -17,30 +18,96 @@ from server.pdf_parser import (  # noqa: E402
 
 # --- Trade Confirmation Report layout (the one that triggered the bug) ---
 TC_HEADER = [
-    "Acct ID", "Symbol", "Trade Date/Time", "Settle Date", "Exchange", "Type",
-    "Quantity", "Price", "Proceeds", "Comm", "Fee", "Order Type", "Code",
+    "Acct ID",
+    "Symbol",
+    "Trade Date/Time",
+    "Settle Date",
+    "Exchange",
+    "Type",
+    "Quantity",
+    "Price",
+    "Proceeds",
+    "Comm",
+    "Fee",
+    "Order Type",
+    "Code",
 ]
 TC_SUMMARY = [
-    "U13340051", "ASML", "2026-06-02, 09:42:49", "2026-06-03", "-", "SELL",
-    "-6", "1,677.0000", "10,062.00", "-1.21", "0.00", "LMT", "C;P",
+    "U13340051",
+    "ASML",
+    "2026-06-02, 09:42:49",
+    "2026-06-03",
+    "-",
+    "SELL",
+    "-6",
+    "1,677.0000",
+    "10,062.00",
+    "-1.21",
+    "0.00",
+    "LMT",
+    "C;P",
 ]
 TC_FILL = [
-    "U13340051", "ASML", "2026-06-02, 09:42:49", "2026-06-03", "NASDAQ", "SELL",
-    "-1", "1,677.0000", "1,677.00", "-1.03", "0.00", "LMT", "C;P",
+    "U13340051",
+    "ASML",
+    "2026-06-02, 09:42:49",
+    "2026-06-03",
+    "NASDAQ",
+    "SELL",
+    "-1",
+    "1,677.0000",
+    "1,677.00",
+    "-1.03",
+    "0.00",
+    "LMT",
+    "C;P",
 ]
 TC_SUBTOTAL = [
-    "Total ASML (Sold)", "", "", "", "", "", "-6", "1,677.0000", "10,062.00",
-    "-1.21", "0.00", "", "",
+    "Total ASML (Sold)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "-6",
+    "1,677.0000",
+    "10,062.00",
+    "-1.21",
+    "0.00",
+    "",
+    "",
 ]
 
 # --- Activity Statement layout ---
 AS_HEADER = [
-    "Symbol", "Date/Time", "", "Quantity", "T. Price", "C. Price", "Proceeds",
-    "Comm/Fee", "Basis", "Realized P/L", "", "MTM P/L", "Code",
+    "Symbol",
+    "Date/Time",
+    "",
+    "Quantity",
+    "T. Price",
+    "C. Price",
+    "Proceeds",
+    "Comm/Fee",
+    "Basis",
+    "Realized P/L",
+    "",
+    "MTM P/L",
+    "Code",
 ]
 AS_ROW = [
-    "AAPL", "2026-03-09, 13:07:27", "", "-78", "257.3379", "259.8800",
-    "20,072.36", "-1.02", "-14,144.91", "5,926.43", "", "-198.28", "C;P",
+    "AAPL",
+    "2026-03-09, 13:07:27",
+    "",
+    "-78",
+    "257.3379",
+    "259.8800",
+    "20,072.36",
+    "-1.02",
+    "-14,144.91",
+    "5,926.43",
+    "",
+    "-198.28",
+    "C;P",
 ]
 
 
@@ -110,6 +177,8 @@ def test_activity_statement_row_imported():
     assert txn is not None
     assert txn["Symbol"] == "AAPL"
     assert txn["Quantity"] == 78.0
-    assert txn["Total Amount"] == 20071.34  # proceeds 20072.36 net of 1.02 commission (Sell)
+    assert (
+        txn["Total Amount"] == 20071.34
+    )  # proceeds 20072.36 net of 1.02 commission (Sell)
     assert txn["Commission"] == 1.02
     assert txn["Account"] == "IBKR"  # no Acct ID column -> falls back to override

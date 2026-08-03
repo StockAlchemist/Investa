@@ -13,12 +13,23 @@ from pydantic import BaseModel, Field
 
 import config
 from server.auth import (
-    Token, User, create_access_token, get_password_hash, verify_password
+    Token,
+    User,
+    create_access_token,
+    get_password_hash,
+    verify_password,
 )
-from server.dependencies import get_current_user, get_global_db_connection, user_data_dir_for
+from server.dependencies import (
+    get_current_user,
+    get_global_db_connection,
+    user_data_dir_for,
+)
 from server.rate_limit import (
-    enforce_limit, get_client_ip,
-    failed_auth_limiter, login_ip_limiter, register_ip_limiter,
+    enforce_limit,
+    get_client_ip,
+    failed_auth_limiter,
+    login_ip_limiter,
+    register_ip_limiter,
 )
 
 router = APIRouter()
@@ -38,10 +49,14 @@ def _safe_user_data_dir(username: str) -> str:
     constraint existed can still hold a traversing username, and this is the
     last gate before makedirs/rmtree act on the result.
     """
-    users_root = os.path.realpath(os.path.join(config.get_app_data_dir(), config.USERS_DIR))
+    users_root = os.path.realpath(
+        os.path.join(config.get_app_data_dir(), config.USERS_DIR)
+    )
     candidate = os.path.realpath(user_data_dir_for(username))
     if candidate != users_root and not candidate.startswith(users_root + os.sep):
-        logging.error(f"Refusing to operate on out-of-tree user directory for username {username!r}")
+        logging.error(
+            f"Refusing to operate on out-of-tree user directory for username {username!r}"
+        )
         raise HTTPException(status_code=400, detail="Invalid username")
     if candidate == users_root:
         raise HTTPException(status_code=400, detail="Invalid username")
@@ -58,13 +73,18 @@ class UserCreate(BaseModel):
     )
     password: str
 
+
 class UserPasswordUpdate(BaseModel):
     current_password: str
     new_password: str
 
 
 @router.post("/auth/register", response_model=User)
-def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depends(get_global_db_connection)):
+def register(
+    user: UserCreate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_global_db_connection),
+):
     # conn obtained from dependency is for GLOBAL DB (Users)
     client_ip = get_client_ip(request)
     enforce_limit(register_ip_limiter, client_ip, "registration attempts")
@@ -88,7 +108,7 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
 
         cursor.execute(
             "INSERT INTO users (username, hashed_password, created_at) VALUES (?, ?, ?)",
-            (user.username, hashed_pw, created_at)
+            (user.username, hashed_pw, created_at),
         )
         new_user_id = cursor.lastrowid
         if new_user_id is None:
@@ -113,11 +133,20 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
 
         except Exception as e:
             conn.rollback()
-            logging.error(f"Failed to initialize user environment for {user.username}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to initialize user data environment")
+            logging.error(
+                f"Failed to initialize user environment for {user.username}: {e}"
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to initialize user data environment"
+            )
 
         conn.commit()
-        return User(id=new_user_id, username=user.username, is_active=True, created_at=created_at)
+        return User(
+            id=new_user_id,
+            username=user.username,
+            is_active=True,
+            created_at=created_at,
+        )
 
     except HTTPException:
         try:
@@ -132,6 +161,7 @@ def register(user: UserCreate, request: Request, conn: sqlite3.Connection = Depe
             pass
         logging.error(f"Registration error: {e}")
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
 
 def _set_auth_cookie(response: Response, token: str) -> None:
     """Set the httpOnly auth cookie used by the web app.
@@ -151,7 +181,12 @@ def _set_auth_cookie(response: Response, token: str) -> None:
 
 
 @router.post("/auth/login", response_model=Token)
-def login(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
+def login(
+    request: Request,
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    conn: sqlite3.Connection = Depends(get_global_db_connection),
+):
     # conn is GLOBAL DB
     client_ip = get_client_ip(request)
     user_key = f"login:{form_data.username.lower()}"
@@ -160,7 +195,10 @@ def login(request: Request, response: Response, form_data: OAuth2PasswordRequest
     login_ip_limiter.record(client_ip)
 
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, hashed_password FROM users WHERE username = ?", (form_data.username,))
+    cursor.execute(
+        "SELECT id, username, hashed_password FROM users WHERE username = ?",
+        (form_data.username,),
+    )
     row = cursor.fetchone()
 
     if not row or not verify_password(form_data.password, row[2]):
@@ -194,38 +232,47 @@ def logout(response: Response):
     )
     return {"detail": "Logged out"}
 
+
 @router.get("/auth/me", response_model=User)
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+
 class UpdateUserProfile(BaseModel):
     alias: Optional[str] = None
+
 
 @router.patch("/auth/me", response_model=User)
 def update_user_profile(
     profile_data: UpdateUserProfile,
     current_user: User = Depends(get_current_user),
-    conn: sqlite3.Connection = Depends(get_global_db_connection)
+    conn: sqlite3.Connection = Depends(get_global_db_connection),
 ):
     try:
         cursor = conn.cursor()
 
         # Only update alias for now
         if profile_data.alias is not None:
-             logging.info(f"Updating alias for {current_user.username} to: '{profile_data.alias}'")
-             cursor.execute("UPDATE users SET alias = ? WHERE id = ?", (profile_data.alias, current_user.id))
-             conn.commit()
-             current_user.alias = profile_data.alias
+            logging.info(
+                f"Updating alias for {current_user.username} to: '{profile_data.alias}'"
+            )
+            cursor.execute(
+                "UPDATE users SET alias = ? WHERE id = ?",
+                (profile_data.alias, current_user.id),
+            )
+            conn.commit()
+            current_user.alias = profile_data.alias
 
         return current_user
     except Exception as e:
         logging.error(f"Error updating profile for {current_user.username}: {e}")
         raise HTTPException(status_code=500, detail="Failed to update profile")
 
+
 @router.delete("/auth/me")
 def delete_user_me(
     current_user: User = Depends(get_current_user),
-    conn: sqlite3.Connection = Depends(get_global_db_connection)
+    conn: sqlite3.Connection = Depends(get_global_db_connection),
 ):
     try:
         # 1. Delete user from GLOBAL DB
@@ -252,7 +299,9 @@ def delete_user_me(
                 shutil.rmtree(user_data_dir)
                 logging.info(f"Deleted data directory for user {current_user.username}")
             except Exception as e:
-                logging.error(f"Failed to delete data directory for {current_user.username}: {e}")
+                logging.error(
+                    f"Failed to delete data directory for {current_user.username}: {e}"
+                )
                 # We continue as the user is effectively deleted from the system
 
         return {"status": "success", "message": f"User {current_user.username} deleted"}
@@ -260,7 +309,9 @@ def delete_user_me(
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error deleting user {current_user.username}: {e}", exc_info=True)
+        logging.error(
+            f"Error deleting user {current_user.username}: {e}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to delete user")
 
 
@@ -268,17 +319,19 @@ def delete_user_me(
 def change_password(
     password_data: UserPasswordUpdate,
     current_user: User = Depends(get_current_user),
-    conn: sqlite3.Connection = Depends(get_global_db_connection)
+    conn: sqlite3.Connection = Depends(get_global_db_connection),
 ):
     pw_key = f"change-password:{current_user.username.lower()}"
     enforce_limit(failed_auth_limiter, pw_key, "incorrect password attempts")
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT hashed_password FROM users WHERE id = ?", (current_user.id,))
+        cursor.execute(
+            "SELECT hashed_password FROM users WHERE id = ?", (current_user.id,)
+        )
         row = cursor.fetchone()
 
         if not row:
-             raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="User not found")
 
         stored_hash = row[0]
 
@@ -289,7 +342,10 @@ def change_password(
 
         hashed_new_pw = get_password_hash(password_data.new_password)
 
-        cursor.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (hashed_new_pw, current_user.id))
+        cursor.execute(
+            "UPDATE users SET hashed_password = ? WHERE id = ?",
+            (hashed_new_pw, current_user.id),
+        )
         conn.commit()
 
         return {"status": "success", "message": "Password updated successfully"}

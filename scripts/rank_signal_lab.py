@@ -84,8 +84,11 @@ SPECS: Dict[str, Dict[str, List[Tuple[str, int]]]] = {
 GENERIC = SPECS["generic"]
 
 PILLAR_WEIGHTS = {
-    "returns_on_capital": 0.30, "financial_strength": 0.20,
-    "predictability": 0.20, "growth": 0.15, "capital_allocation": 0.15,
+    "returns_on_capital": 0.30,
+    "financial_strength": 0.20,
+    "predictability": 0.20,
+    "growth": 0.15,
+    "capital_allocation": 0.15,
 }
 
 # The production value blend, restricted to the three components the cached
@@ -105,28 +108,50 @@ def _cache_dir() -> str:
 # (column, higher_is_better). The direction is the ranking's own claim about the
 # signal, so a negative IC below is a statement that the claim is wrong.
 SIGNALS: Sequence[Tuple[str, bool]] = [
-    ("composite_score", True), ("quality_score", True), ("value_score", True),
+    ("composite_score", True),
+    ("quality_score", True),
+    ("value_score", True),
     ("confidence", True),
-    ("returns_on_capital", True), ("financial_strength", True),
-    ("predictability", True), ("growth", True), ("capital_allocation", True),
+    ("returns_on_capital", True),
+    ("financial_strength", True),
+    ("predictability", True),
+    ("growth", True),
+    ("capital_allocation", True),
     ("margin_of_safety", True),
-    ("earnings_yield", True), ("fcf_yield", True),
-    ("ev_to_ebit", False), ("price_to_book", False), ("price_to_sales", False),
-    ("roe_median", True), ("roic_median", True), ("roa_median", True),
-    ("gross_margin_median", True), ("net_margin_median", True),
-    ("fcf_margin_median", True), ("incremental_roic", True),
+    ("earnings_yield", True),
+    ("fcf_yield", True),
+    ("ev_to_ebit", False),
+    ("price_to_book", False),
+    ("price_to_sales", False),
+    ("roe_median", True),
+    ("roic_median", True),
+    ("roa_median", True),
+    ("gross_margin_median", True),
+    ("net_margin_median", True),
+    ("fcf_margin_median", True),
+    ("incremental_roic", True),
     ("roe_years_above_15", True),
-    ("debt_to_equity", False), ("net_debt_to_owner_earnings", False),
-    ("interest_coverage", True), ("current_ratio", True),
-    ("roe_stdev", False), ("revenue_growth_stdev", False), ("fcf_margin_stdev", False),
-    ("revenue_cagr", True), ("owner_earnings_cagr", True),
+    ("debt_to_equity", False),
+    ("net_debt_to_owner_earnings", False),
+    ("interest_coverage", True),
+    ("current_ratio", True),
+    ("roe_stdev", False),
+    ("revenue_growth_stdev", False),
+    ("fcf_margin_stdev", False),
+    ("revenue_cagr", True),
+    ("owner_earnings_cagr", True),
     ("book_value_per_share_cagr", True),
-    ("share_count_cagr", False), ("payout_ratio_median", True),
-    ("momentum", True), ("volatility", False), ("log_mcap", True),
+    ("share_count_cagr", False),
+    ("payout_ratio_median", True),
+    ("momentum", True),
+    ("volatility", False),
+    ("log_mcap", True),
 ]
 
 
-def build_panel(tables: Dict[int, pd.DataFrame], adjusted: pd.DataFrame) -> pd.DataFrame:
+def build_panel(
+    tables: Dict[int, pd.DataFrame], adjusted: pd.DataFrame
+) -> pd.DataFrame:
     """Stack the per-year tables and attach each company's forward-year return.
 
     The forward return is measured on the adjusted series (dividends included)
@@ -147,18 +172,23 @@ def build_panel(tables: Dict[int, pd.DataFrame], adjusted: pd.DataFrame) -> pd.D
         m0, m1 = pd.Timestamp(f"{year - 2}-11-01"), pd.Timestamp(f"{year - 1}-11-01")
         momentum = (
             adjusted.loc[m1, columns] / adjusted.loc[m0, columns] - 1.0
-            if m0 in adjusted.index and m1 in adjusted.index else pd.Series(dtype=float)
+            if m0 in adjusted.index and m1 in adjusted.index
+            else pd.Series(dtype=float)
         )
-        window = adjusted.loc[f"{year - 4}-01-01": f"{year - 1}-12-01", columns].pct_change()
+        window = adjusted.loc[
+            f"{year - 4}-01-01" : f"{year - 1}-12-01", columns
+        ].pct_change()
         market_cap = pd.to_numeric(table.get("market_cap"), errors="coerce")
 
-        frames.append(table.assign(
-            year=year,
-            fwd_ret=forward.reindex(table.index),
-            momentum=momentum.reindex(table.index) if len(momentum) else np.nan,
-            volatility=(window.std() * np.sqrt(12)).reindex(table.index),
-            log_mcap=np.log(market_cap.where(market_cap > 0)),
-        ))
+        frames.append(
+            table.assign(
+                year=year,
+                fwd_ret=forward.reindex(table.index),
+                momentum=momentum.reindex(table.index) if len(momentum) else np.nan,
+                volatility=(window.std() * np.sqrt(12)).reindex(table.index),
+                log_mcap=np.log(market_cap.where(market_cap > 0)),
+            )
+        )
 
     panel = pd.concat(frames)
     panel.index.name = "symbol"
@@ -185,15 +215,21 @@ def information_coefficients(panel: pd.DataFrame, min_obs: int = 50) -> pd.DataF
             continue
         series = pd.Series(per_year)
         spread = series.std(ddof=1)
-        rows.append({
-            "signal": column,
-            "mean_ic": series.mean() * 100,
-            "t_stat": series.mean() / (spread / np.sqrt(len(series))) if spread else np.nan,
-            "hit_rate": (series > 0).mean() * 100,
-            "coverage": pd.to_numeric(panel[column], errors="coerce").notna().mean() * 100,
-            f"ic_{YEARS[0]}_{SPLIT}": series[series.index <= SPLIT].mean() * 100,
-            f"ic_{SPLIT + 1}_{YEARS[-1]}": series[series.index > SPLIT].mean() * 100,
-        })
+        rows.append(
+            {
+                "signal": column,
+                "mean_ic": series.mean() * 100,
+                "t_stat": series.mean() / (spread / np.sqrt(len(series)))
+                if spread
+                else np.nan,
+                "hit_rate": (series > 0).mean() * 100,
+                "coverage": pd.to_numeric(panel[column], errors="coerce").notna().mean()
+                * 100,
+                f"ic_{YEARS[0]}_{SPLIT}": series[series.index <= SPLIT].mean() * 100,
+                f"ic_{SPLIT + 1}_{YEARS[-1]}": series[series.index > SPLIT].mean()
+                * 100,
+            }
+        )
     return pd.DataFrame(rows).sort_values("mean_ic", ascending=False)
 
 
@@ -203,10 +239,14 @@ def information_coefficients(panel: pd.DataFrame, min_obs: int = 50) -> pd.DataF
 def percentile(frame: pd.DataFrame, column: str, sign: int) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(np.nan, index=frame.index)
-    return _winsorised_percentile(pd.to_numeric(frame[column], errors="coerce"), sign > 0)
+    return _winsorised_percentile(
+        pd.to_numeric(frame[column], errors="coerce"), sign > 0
+    )
 
 
-def weighted(parts: Dict[str, pd.Series], weights: Dict[str, float], index) -> pd.Series:
+def weighted(
+    parts: Dict[str, pd.Series], weights: Dict[str, float], index
+) -> pd.Series:
     """Weighted mean over whichever components resolved, renormalised.
 
     Identical in behaviour to `buffett_rank._quality_score`: a missing component
@@ -225,19 +265,24 @@ def weighted(parts: Dict[str, pd.Series], weights: Dict[str, float], index) -> p
     return total / weight_sum.replace(0.0, np.nan)
 
 
-def pillar_scores(frame: pd.DataFrame, spec: Dict[str, List[Tuple[str, int]]]) -> Dict[str, pd.Series]:
+def pillar_scores(
+    frame: pd.DataFrame, spec: Dict[str, List[Tuple[str, int]]]
+) -> Dict[str, pd.Series]:
     scores = {}
     for pillar, metrics in spec.items():
         columns = [percentile(frame, c, s) for c, s in metrics]
         columns = [c for c in columns if c.notna().any()]
         scores[pillar] = (
             pd.concat(columns, axis=1).mean(axis=1, skipna=True)
-            if columns else pd.Series(np.nan, index=frame.index)
+            if columns
+            else pd.Series(np.nan, index=frame.index)
         )
     return scores
 
 
-def by_model(table: pd.DataFrame, fn: Callable[[pd.DataFrame, str], pd.Series]) -> pd.Series:
+def by_model(
+    table: pd.DataFrame, fn: Callable[[pd.DataFrame, str], pd.Series]
+) -> pd.Series:
     """Score within each valuation model, then concatenate.
 
     Grouping is not optional: the generic pillar spec applied to a bank leaves
@@ -253,15 +298,22 @@ def by_model(table: pd.DataFrame, fn: Callable[[pd.DataFrame, str], pd.Series]) 
 def reported_yields(frame: pd.DataFrame) -> pd.Series:
     """DCF-free value: the two reported yields, equally weighted."""
     return weighted(
-        {"earnings_yield": percentile(frame, "earnings_yield", 1),
-         "fcf_yield": percentile(frame, "fcf_yield", 1)},
-        {"earnings_yield": 0.5, "fcf_yield": 0.5}, frame.index,
+        {
+            "earnings_yield": percentile(frame, "earnings_yield", 1),
+            "fcf_yield": percentile(frame, "fcf_yield", 1),
+        },
+        {"earnings_yield": 0.5, "fcf_yield": 0.5},
+        frame.index,
     )
 
 
-def blend(quality: pd.Series, value: pd.Series, quality_weight: float = 0.80) -> pd.Series:
+def blend(
+    quality: pd.Series, value: pd.Series, quality_weight: float = 0.80
+) -> pd.Series:
     """A company with no value score keeps its quality score, as production does."""
-    return quality.where(value.isna(), quality * quality_weight + value * (1 - quality_weight))
+    return quality.where(
+        value.isna(), quality * quality_weight + value * (1 - quality_weight)
+    )
 
 
 def design_shipped(table: pd.DataFrame) -> pd.Series:
@@ -272,22 +324,30 @@ def design_shipped(table: pd.DataFrame) -> pd.Series:
 
 def design_rebuilt_with_dcf(table: pd.DataFrame) -> pd.Series:
     """The shipped design, rebuilt from raw metrics. Baseline for the DCF test."""
+
     def score(group: pd.DataFrame, model: str) -> pd.Series:
-        quality = weighted(pillar_scores(group, SPECS.get(model, GENERIC)),
-                           PILLAR_WEIGHTS, group.index)
+        quality = weighted(
+            pillar_scores(group, SPECS.get(model, GENERIC)), PILLAR_WEIGHTS, group.index
+        )
         value = weighted(
-            {k: percentile(group, k, 1) for k in VALUE_WEIGHTS}, VALUE_WEIGHTS, group.index
+            {k: percentile(group, k, 1) for k in VALUE_WEIGHTS},
+            VALUE_WEIGHTS,
+            group.index,
         )
         return blend(quality, value)
+
     return by_model(table, score)
 
 
 def design_no_dcf(table: pd.DataFrame) -> pd.Series:
     """Identical, with the margin of safety removed from the value half."""
+
     def score(group: pd.DataFrame, model: str) -> pd.Series:
-        quality = weighted(pillar_scores(group, SPECS.get(model, GENERIC)),
-                           PILLAR_WEIGHTS, group.index)
+        quality = weighted(
+            pillar_scores(group, SPECS.get(model, GENERIC)), PILLAR_WEIGHTS, group.index
+        )
         return blend(quality, reported_yields(group))
+
     return by_model(table, score)
 
 
@@ -298,20 +358,26 @@ def design_no_dcf_no_book_leverage(table: pd.DataFrame) -> pd.Series:
     companies the ranking is trying to find; the gate already stopped using it
     for that reason. This asks whether it should score either.
     """
+
     def score(group: pd.DataFrame, model: str) -> pd.Series:
         spec = {k: list(v) for k, v in SPECS.get(model, GENERIC).items()}
         spec["financial_strength"] = [
-            (m, s) for m, s in spec.get("financial_strength", []) if m != "debt_to_equity"
+            (m, s)
+            for m, s in spec.get("financial_strength", [])
+            if m != "debt_to_equity"
         ]
         quality = weighted(pillar_scores(group, spec), PILLAR_WEIGHTS, group.index)
         return blend(quality, reported_yields(group))
+
     return by_model(table, score)
 
 
 def design_quality_only(table: pd.DataFrame) -> pd.Series:
     def score(group: pd.DataFrame, model: str) -> pd.Series:
-        return weighted(pillar_scores(group, SPECS.get(model, GENERIC)),
-                        PILLAR_WEIGHTS, group.index)
+        return weighted(
+            pillar_scores(group, SPECS.get(model, GENERIC)), PILLAR_WEIGHTS, group.index
+        )
+
     return by_model(table, score)
 
 
@@ -391,11 +457,17 @@ def report_ic(panel: pd.DataFrame) -> None:
     print(formatted.to_string(index=False))
 
 
-def report_designs(tables: Dict[int, pd.DataFrame], adjusted: pd.DataFrame,
-                   top_n: int, cap: Optional[int]) -> None:
+def report_designs(
+    tables: Dict[int, pd.DataFrame],
+    adjusted: pd.DataFrame,
+    top_n: int,
+    cap: Optional[int],
+) -> None:
     print("\n" + "=" * 100)
-    print(f"REBUILT RANKINGS — top {top_n}, max {cap or 'unlimited'} per 2-digit SIC, "
-          "rebalanced each January")
+    print(
+        f"REBUILT RANKINGS — top {top_n}, max {cap or 'unlimited'} per 2-digit SIC, "
+        "rebalanced each January"
+    )
     print("=" * 100)
     rows = []
     for name, scorer in DESIGNS.items():
@@ -403,12 +475,19 @@ def report_designs(tables: Dict[int, pd.DataFrame], adjusted: pd.DataFrame,
         rows.append({"design": name, **stats})
     print(pd.DataFrame(rows).round(2).to_string(index=False))
 
-    print("\nStability across neighbouring settings — a real difference holds its sign.")
+    print(
+        "\nStability across neighbouring settings — a real difference holds its sign."
+    )
     rows = []
-    for name in ("shipped 80/20 (stored scores)", "rebuilt 80/20 (with DCF)",
-                 "rebuilt 80/20 (no DCF)"):
+    for name in (
+        "shipped 80/20 (stored scores)",
+        "rebuilt 80/20 (with DCF)",
+        "rebuilt 80/20 (no DCF)",
+    ):
         for setting_cap in (2, 3, 4, None):
-            stats = measure(holdings_for(tables, DESIGNS[name], top_n, setting_cap), adjusted)
+            stats = measure(
+                holdings_for(tables, DESIGNS[name], top_n, setting_cap), adjusted
+            )
             rows.append({"design": name, "cap": setting_cap or "none", **stats})
     print(pd.DataFrame(rows).round(2).to_string(index=False))
 
@@ -416,12 +495,18 @@ def report_designs(tables: Dict[int, pd.DataFrame], adjusted: pd.DataFrame,
     for symbol, label in BENCHMARKS.items():
         if symbol not in adjusted.columns:
             continue
-        series = adjusted[symbol].loc[f"{YEARS[0] - 1}-12-01": f"{YEARS[-1]}-12-01"].dropna()
+        series = (
+            adjusted[symbol]
+            .loc[f"{YEARS[0] - 1}-12-01" : f"{YEARS[-1]}-12-01"]
+            .dropna()
+        )
         if series.empty:
             continue
         stats = statistics_for(series / series.iloc[0])
-        print(f"  {label:32s} cagr {stats['cagr'] * 100:5.1f}  "
-              f"sharpe {stats['sharpe']:.2f}  max_dd {stats['max_drawdown'] * 100:6.1f}")
+        print(
+            f"  {label:32s} cagr {stats['cagr'] * 100:5.1f}  "
+            f"sharpe {stats['sharpe']:.2f}  max_dd {stats['max_drawdown'] * 100:6.1f}"
+        )
 
 
 def main() -> int:
@@ -446,7 +531,9 @@ def main() -> int:
     if args.section in ("ic", "both"):
         panel = build_panel(tables, adjusted)
         panel = panel[panel["fwd_ret"].notna()]
-        print(f"Panel: {len(panel)} company-years over {panel['year'].nunique()} rebalances\n")
+        print(
+            f"Panel: {len(panel)} company-years over {panel['year'].nunique()} rebalances\n"
+        )
         report_ic(panel)
 
     if args.section in ("designs", "both"):

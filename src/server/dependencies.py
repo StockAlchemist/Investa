@@ -27,9 +27,12 @@ import config  # noqa: E402
 # fall back to the httpOnly auth cookie (web app) before deciding.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
+
 def get_global_db_connection() -> Iterator[sqlite3.Connection]:
     """Dependency for Global DB Connection (Auth)."""
-    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
+    global_db_path = os.path.join(
+        config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME
+    )
     conn = get_db_connection(global_db_path, check_same_thread=False, use_cache=False)
     if not conn:
         raise HTTPException(status_code=500, detail="Global Database unavailable")
@@ -42,7 +45,7 @@ def get_global_db_connection() -> Iterator[sqlite3.Connection]:
 def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
-    conn: sqlite3.Connection = Depends(get_global_db_connection)
+    conn: sqlite3.Connection = Depends(get_global_db_connection),
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -63,13 +66,19 @@ def get_current_user(
         # Transient retry for cloud drives
         for i in range(3):
             try:
-                cursor.execute("SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?", (token_data.username,))
+                cursor.execute(
+                    "SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?",
+                    (token_data.username,),
+                )
                 row = cursor.fetchone()
                 break
             except sqlite3.OperationalError as e:
                 if "disk i/o error" in str(e).lower() and i < 2:
-                    logging.warning(f"Transient disk I/O error during auth query. Retry {i+1}/3...")
+                    logging.warning(
+                        f"Transient disk I/O error during auth query. Retry {i + 1}/3..."
+                    )
                     import time
+
                     time.sleep(0.1 * (i + 1))
                     continue
                 raise
@@ -81,18 +90,25 @@ def get_current_user(
             username=row[1],
             is_active=bool(row[2]),
             created_at=row[3],
-            alias=row[4]
+            alias=row[4],
         )
         if not user.is_active:
-             raise HTTPException(status_code=400, detail="Inactive user")
+            raise HTTPException(status_code=400, detail="Inactive user")
         return user
     except sqlite3.Error as e:
         logging.error(f"Database error during authentication: {e}")
-        raise HTTPException(status_code=503, detail="Authentication database temporarily unavailable")
+        raise HTTPException(
+            status_code=503, detail="Authentication database temporarily unavailable"
+        )
 
-def get_user_db_connection(current_user: User = Depends(get_current_user)) -> Iterator[sqlite3.Connection]:
+
+def get_user_db_connection(
+    current_user: User = Depends(get_current_user),
+) -> Iterator[sqlite3.Connection]:
     """Dependency for User Portfolio DB Connection."""
-    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
+    user_data_dir = os.path.join(
+        config.get_app_data_dir(), config.USERS_DIR, current_user.username
+    )
     db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
     conn = get_db_connection(db_path, check_same_thread=False, use_cache=False)
     if not conn:
@@ -105,7 +121,16 @@ def get_user_db_connection(current_user: User = Depends(get_current_user)) -> It
 
 # --- Per-user transaction/settings cache ---
 
-TransactionData = Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], Dict[str, str], str, float]
+TransactionData = Tuple[
+    pd.DataFrame,
+    Dict[str, Any],
+    Dict[str, str],
+    Set[str],
+    Dict[str, str],
+    Dict[str, str],
+    str,
+    float,
+]
 
 _EMPTY_RESULT: TransactionData = (pd.DataFrame(), {}, {}, set(), {}, {}, "", 0.0)
 
@@ -154,6 +179,7 @@ class _UserCacheEntry:
     """Everything cached for one user. Entries are built off to the side and
     swapped into the cache as a unit, so readers never observe a half-updated
     mix of old and new state (the old design spread this across 12 dicts)."""
+
     transactions: pd.DataFrame = field(default_factory=pd.DataFrame)
     ignored_indices: Set[int] = field(default_factory=set)
     ignored_reasons: Dict[int, str] = field(default_factory=dict)
@@ -215,7 +241,9 @@ class UserDataCache:
 
         db_mtime = self._effective_db_mtime(db_path)
         entry = self._entries.get(username)
-        db_needs_reload = entry is None or db_mtime != entry.db_mtime or db_path != entry.db_path
+        db_needs_reload = (
+            entry is None or db_mtime != entry.db_mtime or db_path != entry.db_path
+        )
 
         if db_needs_reload or self._overrides_changed(entry):
             with self._load_lock:
@@ -228,12 +256,24 @@ class UserDataCache:
                     and not self._overrides_changed(entry)
                 )
                 if fresh:
-                    logging.info(f"Skipping reload for user '{username}', handled by another thread.")
+                    logging.info(
+                        f"Skipping reload for user '{username}', handled by another thread."
+                    )
                 else:
-                    db_needs_reload = entry is None or db_mtime != entry.db_mtime or db_path != entry.db_path
+                    db_needs_reload = (
+                        entry is None
+                        or db_mtime != entry.db_mtime
+                        or db_path != entry.db_path
+                    )
                     new_entry = self._load(
-                        username, entry, config_dir, db_path, db_mtime,
-                        db_needs_reload, account_currency_map, account_cash_mode_map,
+                        username,
+                        entry,
+                        config_dir,
+                        db_path,
+                        db_mtime,
+                        db_needs_reload,
+                        account_currency_map,
+                        account_cash_mode_map,
                     )
                     if new_entry is None:
                         return _EMPTY_RESULT
@@ -253,12 +293,18 @@ class UserDataCache:
 
     def clear_settings(self, username: Optional[str] = None) -> None:
         """Force overrides/settings to be re-read on next access (keeps the DB cache)."""
-        targets = [self._entries.get(username)] if username is not None else list(self._entries.values())
+        targets = (
+            [self._entries.get(username)]
+            if username is not None
+            else list(self._entries.values())
+        )
         for entry in targets:
             if entry is not None:
                 entry.overrides_mtime = 0.0
                 entry.overrides_file_mtime = 0.0
-        logging.info(f"Settings cache cleared for {'user ' + str(username) if username else 'all users'}.")
+        logging.info(
+            f"Settings cache cleared for {'user ' + str(username) if username else 'all users'}."
+        )
 
     # ---- internals ----
 
@@ -282,7 +328,11 @@ class UserDataCache:
 
     @staticmethod
     def _overrides_changed(entry: Optional[_UserCacheEntry]) -> bool:
-        if entry is None or not entry.overrides_path or not os.path.exists(entry.overrides_path):
+        if (
+            entry is None
+            or not entry.overrides_path
+            or not os.path.exists(entry.overrides_path)
+        ):
             return False
         return os.path.getmtime(entry.overrides_path) != entry.overrides_mtime
 
@@ -299,7 +349,9 @@ class UserDataCache:
     ) -> Optional[_UserCacheEntry]:
         """Build a fresh cache entry. Returns None if loading failed."""
         if db_needs_reload:
-            logging.info(f"Loading/Reloading transactions for '{username}' from: {db_path}")
+            logging.info(
+                f"Loading/Reloading transactions for '{username}' from: {db_path}"
+            )
         else:
             logging.info(f"Reloading only overrides for '{username}' (DB is fresh).")
 
@@ -318,7 +370,9 @@ class UserDataCache:
                     overrides_file_mtime = st_mtime
                 except Exception as e:
                     # Keep the previous parsed copy; mtime stays stale so we retry next time.
-                    logging.warning(f"Failed to load overrides at {overrides_path}: {e}")
+                    logging.warning(
+                        f"Failed to load overrides at {overrides_path}: {e}"
+                    )
             new_overrides_path = overrides_path
             new_overrides_mtime = os.path.getmtime(overrides_path)
         else:
@@ -330,24 +384,30 @@ class UserDataCache:
         excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS)
         loaded_excluded = overrides_file_cache.get("user_excluded_symbols", [])
         if isinstance(loaded_excluded, list):
-            excluded_symbols.update({s.upper().strip() for s in loaded_excluded if isinstance(s, str)})
+            excluded_symbols.update(
+                {s.upper().strip() for s in loaded_excluded if isinstance(s, str)}
+            )
         symbol_map = dict(overrides_file_cache.get("user_symbol_map", {}))
 
         try:
             if db_needs_reload:
                 is_db = db_path.lower().endswith((".db", ".sqlite", ".sqlite3"))
-                df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
-                    source_path=db_path,
-                    account_currency_map=account_currency_map,
-                    default_currency=config.DEFAULT_CURRENCY,
-                    is_db_source=is_db,
+                df, _, ignored_indices, ignored_reasons, _, _, _ = (
+                    load_and_clean_transactions(
+                        source_path=db_path,
+                        account_currency_map=account_currency_map,
+                        default_currency=config.DEFAULT_CURRENCY,
+                        is_db_source=is_db,
+                    )
                 )
             else:
                 df = prev.transactions if prev is not None else pd.DataFrame()
                 ignored_indices = prev.ignored_indices if prev is not None else set()
                 ignored_reasons = prev.ignored_reasons if prev is not None else {}
         except Exception as e:
-            logging.error(f"Error loading transactions for '{username}': {e}", exc_info=True)
+            logging.error(
+                f"Error loading transactions for '{username}': {e}", exc_info=True
+            )
             return None
 
         # No user_id filtering: file-level isolation IS the isolation mechanism.
@@ -378,7 +438,9 @@ class UserDataCache:
 user_data_cache = UserDataCache()
 
 
-def get_transaction_data(current_user: User = Depends(get_current_user)) -> TransactionData:
+def get_transaction_data(
+    current_user: User = Depends(get_current_user),
+) -> TransactionData:
     """FastAPI dependency: the current user's transactions + settings (cached).
 
     Returns (transactions_df, manual_overrides, symbol_map, excluded_symbols,
@@ -406,12 +468,16 @@ def clear_settings_cache(username: Optional[str] = None):
 
 from config_manager import ConfigManager  # noqa: E402
 
+
 def get_config_manager(current_user: User = Depends(get_current_user)) -> ConfigManager:
     """Dependency that provides a User-specific ConfigManager."""
-    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
+    user_data_dir = os.path.join(
+        config.get_app_data_dir(), config.USERS_DIR, current_user.username
+    )
     # Ensure dir exists
     os.makedirs(user_data_dir, exist_ok=True)
     return ConfigManager(user_data_dir)
+
 
 def reload_config():
     """Forces a reload of global configuration cache."""

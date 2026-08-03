@@ -32,13 +32,13 @@ def _fetch_factor_data(
 ) -> pd.DataFrame:
     """
     Fetches historical factor data using ETF proxies.
-    
+
     Proxies:
     - Mkt-RF: SPY (S&P 500)
     - SMB: IWM (Russell 2000 - Small Cap) - SPY (Large Cap)
     - HML: VTV (Value) - VUG (Growth)
     - UMD: MTUM (Momentum) - SPY (Market)
-    - RF: Treasuries (Using ^TNX or similar, but for simplicity/reliability we'll use a constant or fetch a bond ETF like SHV for now, or just 0 as it's often small daily). 
+    - RF: Treasuries (Using ^TNX or similar, but for simplicity/reliability we'll use a constant or fetch a bond ETF like SHV for now, or just 0 as it's often small daily).
       Actually, Fama-French uses risk-free rate. We'll use a small constant for daily RF or 0 to approximate 'Market' as pure SPY return for now to keep it simple and robust, or better:
       Use ^IRX (13 week treasury bill) if available, else 0.
       For this implementation, we will use a simplified assumption:
@@ -53,44 +53,48 @@ def _fetch_factor_data(
     tickers = ["SPY", "IWM", "VTV", "VUG"]
     if model_name == "Carhart 4-Factor":
         tickers.append("MTUM")
-    
+
     # We might already have SPY in benchmark_data
     _spy_returns = None
     if benchmark_data is not None and not benchmark_data.empty:
         # Check if we can identify SPY column
         # existing logic...
-        pass 
-    
+        pass
+
     # Fetch all needed tickers
     market_provider = MarketDataProvider()
-    
+
     # Check what we need to fetch
-    tickers_to_fetch = [t for t in tickers] 
-    
+    tickers_to_fetch = [t for t in tickers]
+
     # If we have benchmark_data (likely SPY), we might skip SPY, but for consistency let's just fetch all to ensure alignment
     # Or rely on yfinance caching.
-    
-    data_dict, _ = market_provider.get_historical_data(tickers_to_fetch, start_date, end_date)
-    
+
+    data_dict, _ = market_provider.get_historical_data(
+        tickers_to_fetch, start_date, end_date
+    )
+
     # Process returns
     returns_df = pd.DataFrame()
-    
+
     for ticker in tickers_to_fetch:
         if ticker in data_dict and not data_dict[ticker].empty:
-             # Calculate daily returns
-             returns_df[ticker] = data_dict[ticker]['price'].pct_change()
+            # Calculate daily returns
+            returns_df[ticker] = data_dict[ticker]["price"].pct_change()
         else:
-            logging.error(f"Could not fetch data for {ticker}. Factor analysis may be inaccurate.")
-            
+            logging.error(
+                f"Could not fetch data for {ticker}. Factor analysis may be inaccurate."
+            )
+
     returns_df.dropna(inplace=True)
-    
+
     if returns_df.empty:
         logging.error("No factor data available after fetching.")
         return pd.DataFrame()
 
     # Construct Factors
     factor_df = pd.DataFrame(index=returns_df.index)
-    
+
     # Mkt-RF (Proxy: SPY)
     if "SPY" in returns_df.columns:
         factor_df["Mkt-RF"] = returns_df["SPY"]
@@ -110,7 +114,7 @@ def _fetch_factor_data(
         factor_df["HML"] = returns_df["VTV"] - returns_df["VUG"]
     else:
         factor_df["HML"] = 0.0
-        
+
     # UMD (Momentum): MTUM - SPY (Excess return of momentum over market)
     # Standard UMD is Winners - Losers. MTUM is a long-only momentum ETF.
     # So MTUM - SPY is a reasonable proxy for "Momentum Factor Exposure".
@@ -119,7 +123,7 @@ def _fetch_factor_data(
             factor_df["UMD"] = returns_df["MTUM"] - returns_df["SPY"]
         else:
             factor_df["UMD"] = 0.0
-            
+
     # Risk Free Rate
     # For now, we assume 0 for daily simplification or could fetch ^IRX
     # Let's stick to 0 to avoid another network call dependent failure point
@@ -134,7 +138,6 @@ def _fetch_factor_data(
             return pd.DataFrame()
 
     return factor_df
-
 
 
 def run_factor_regression(
@@ -157,16 +160,17 @@ def run_factor_regression(
         The regression results object, or None if regression fails.
     """
     logging.info(f"Running {model_name} regression.")
-    
+
     # Lazy load statsmodels
     global sm
     if sm is None:
         try:
-             import statsmodels.api as _sm
-             sm = _sm
+            import statsmodels.api as _sm
+
+            sm = _sm
         except ImportError:
-             logging.error("statsmodels not installed. Cannot run factor regression.")
-             return None
+            logging.error("statsmodels not installed. Cannot run factor regression.")
+            return None
 
     if portfolio_returns.empty:
         logging.warning(
@@ -198,7 +202,7 @@ def run_factor_regression(
     # We strip timezone info from both to ensure alignment.
     if portfolio_returns.index.tz is not None:
         portfolio_returns.index = portfolio_returns.index.tz_localize(None)
-    
+
     if factor_data.index.tz is not None:
         factor_data.index = factor_data.index.tz_localize(None)
     # ----------------------------------------

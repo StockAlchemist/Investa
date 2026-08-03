@@ -23,7 +23,9 @@ from risk_metrics import (
 
 def _wealth(daily_returns, start="2002-01-01", freq="D"):
     idx = pd.date_range(start, periods=len(daily_returns) + 1, freq=freq)
-    vals = np.concatenate([[100.0], 100.0 * np.cumprod(1.0 + np.asarray(daily_returns))])
+    vals = np.concatenate(
+        [[100.0], 100.0 * np.cumprod(1.0 + np.asarray(daily_returns))]
+    )
     return pd.Series(vals, index=idx)
 
 
@@ -56,10 +58,15 @@ def test_scoreboard_annualization_uses_inferred_period():
     rng = np.random.default_rng(2)
     rb = rng.normal(0.0003, 0.008, 2000)
     rp = rb + 0.0002  # constant daily active return
-    a_cal = calculate_benchmark_scoreboard(_wealth(rp, freq="D"), {"B": _wealth(rb, freq="D")})[0]["alpha"]
-    a_biz = calculate_benchmark_scoreboard(_wealth(rp, freq="B"), {"B": _wealth(rb, freq="B")})[0]["alpha"]
+    a_cal = calculate_benchmark_scoreboard(
+        _wealth(rp, freq="D"), {"B": _wealth(rb, freq="D")}
+    )[0]["alpha"]
+    a_biz = calculate_benchmark_scoreboard(
+        _wealth(rp, freq="B"), {"B": _wealth(rb, freq="B")}
+    )[0]["alpha"]
     # Calendar-daily annualizes by ~365 vs ~252 -> ~45% larger alpha.
     assert a_cal > a_biz * 1.3
+
 
 def test_max_drawdown():
     # Case 1: Simple drawdown
@@ -79,20 +86,22 @@ def test_max_drawdown():
     mdd = calculate_max_drawdown(values)
     assert mdd == 0.0
 
+
 def test_volatility():
     # Case 1: Constant returns -> 0 volatility
     returns = pd.Series([0.01, 0.01, 0.01, 0.01])
     vol = calculate_volatility(returns)
     assert vol == 0.0
-    
+
     # Case 2: Known std dev
-    # -1%, +1% alternating. 
+    # -1%, +1% alternating.
     returns = pd.Series([-0.01, 0.01, -0.01, 0.01])
     # Std dev of population is 0.01, sample std dev slightly higher
     std_sample = returns.std()
     expected_vol = std_sample * np.sqrt(252)
     vol = calculate_volatility(returns)
     assert np.isclose(vol, expected_vol)
+
 
 def test_sharpe_ratio():
     # Case 1: Returns = Risk Free Rate -> Sharpe 0
@@ -103,32 +112,34 @@ def test_sharpe_ratio():
     sharpe = calculate_sharpe_ratio(returns, risk_free_rate=rf)
     # Std dev is 0, so our function returns 0.0 to avoid div/0
     assert sharpe == 0.0
-    
+
     # Case 2: High returns, low vol
-    returns = pd.Series([0.01, 0.012, 0.01, 0.012]) # Avg > rf
+    returns = pd.Series([0.01, 0.012, 0.01, 0.012])  # Avg > rf
     sharpe = calculate_sharpe_ratio(returns, risk_free_rate=0.0)
     assert sharpe > 0
+
 
 def test_sortino_ratio():
     # Case 1: No negative returns -> Infinite Sortino (or handled large number)
     # Our implementation returns 'inf' if downside deviation is 0 and mean > 0
     returns = pd.Series([0.01, 0.02, 0.01, 0.03])
     sortino = calculate_sortino_ratio(returns)
-    assert sortino == float('inf')
-    
+    assert sortino == float("inf")
+
     # Case 2: Some negative returns
     returns = pd.Series([0.01, -0.02, 0.01, 0.03])
     sortino = calculate_sortino_ratio(returns)
-    assert sortino > 0 and sortino != float('inf')
+    assert sortino > 0 and sortino != float("inf")
+
 
 def test_calculate_all_metrics():
     values = pd.Series([100, 105, 102, 110, 108, 115])
     metrics = calculate_all_risk_metrics(values)
-    
+
     assert "Max Drawdown" in metrics
     assert "Volatility (Ann.)" in metrics
     assert "Sharpe Ratio" in metrics
     assert "Sortino Ratio" in metrics
-    
+
     assert metrics["Max Drawdown"] < 0
     assert metrics["Volatility (Ann.)"] > 0

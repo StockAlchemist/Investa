@@ -24,6 +24,7 @@ from finutils import get_cash_flows_for_mwr, get_cash_flows_for_symbol_account
 # The historical engine now uses Total Amount when available, matching the analyzer.
 # =============================================================================
 
+
 class TestAutoCashDeltaAlignment:
     """
     BUG-02/03/06: Tests that _calculate_daily_holdings_chronological_numba
@@ -38,15 +39,24 @@ class TestAutoCashDeltaAlignment:
             from portfolio_logic import _calculate_daily_holdings_chronological_numba
         except ImportError:
             pytest.skip("Cannot import _calculate_daily_holdings_chronological_numba")
-        
+
         # Minimal symbol/account/type mappings
         symbol_to_id = {"AAPL": 0, "$CASH": 1}
         account_to_id = {"TESTACCOUNT": 0}
         type_to_id = {
-            "buy": 0, "sell": 1, "dividend": 2, "fees": 3,
-            "transfer": 4, "split": 5, "stock split": 6,
-            "deposit": 7, "withdrawal": 8, "short sell": 9,
-            "buy to cover": 10, "interest": 11, "tax": 12,
+            "buy": 0,
+            "sell": 1,
+            "dividend": 2,
+            "fees": 3,
+            "transfer": 4,
+            "split": 5,
+            "stock split": 6,
+            "deposit": 7,
+            "withdrawal": 8,
+            "short sell": 9,
+            "buy to cover": 10,
+            "interest": 11,
+            "tax": 12,
             "spin off": 13,
         }
         return {
@@ -83,16 +93,37 @@ class TestAutoCashDeltaAlignment:
         acc_cash_modes = np.array([1], dtype=np.int64)  # Auto Cash
 
         holdings, cash, _ = func(
-            date_ordinals, tx_dates, tx_symbols, tx_to_accounts, tx_accounts,
-            tx_types, tx_quantities, tx_commissions, tx_split_ratios, tx_prices,
+            date_ordinals,
+            tx_dates,
+            tx_symbols,
+            tx_to_accounts,
+            tx_accounts,
+            tx_types,
+            tx_quantities,
+            tx_commissions,
+            tx_split_ratios,
+            tx_prices,
             tx_totals,  # BUG-06 FIX: new parameter
-            len(s2id), len(a2id),
-            t2id["split"], t2id["stock split"],
-            t2id["buy"], t2id["deposit"], t2id["sell"], t2id["withdrawal"],
-            t2id["short sell"], t2id["buy to cover"], t2id["transfer"],
+            len(s2id),
+            len(a2id),
+            t2id["split"],
+            t2id["stock split"],
+            t2id["buy"],
+            t2id["deposit"],
+            t2id["sell"],
+            t2id["withdrawal"],
+            t2id["short sell"],
+            t2id["buy to cover"],
+            t2id["transfer"],
             t2id["spin off"],
-            t2id["dividend"], t2id["interest"], t2id["fees"], t2id["tax"],
-            s2id["$CASH"], 1e-6, shortable_ids, acc_cash_modes,
+            t2id["dividend"],
+            t2id["interest"],
+            t2id["fees"],
+            t2id["tax"],
+            s2id["$CASH"],
+            1e-6,
+            shortable_ids,
+            acc_cash_modes,
         )
         # Return cash balance on the last day for account 0
         return cash[-1, a2id["TESTACCOUNT"]]
@@ -101,42 +132,57 @@ class TestAutoCashDeltaAlignment:
         """BUG-02: Buy should prefer Total Amount over qty*price+comm."""
         # Total Amount = 1510 (includes fractional fees), qty*price+comm = 10*150+5 = 1505
         cash = self._run_single_tx(setup_numba_env, "buy", 10, 150.0, 5.0, 1510.0)
-        assert cash == pytest.approx(-1510.0), "Buy should use Total Amount (1510), not qty*price+comm (1505)"
+        assert cash == pytest.approx(-1510.0), (
+            "Buy should use Total Amount (1510), not qty*price+comm (1505)"
+        )
 
     def test_bug02_buy_fallback_without_total(self, setup_numba_env):
         """BUG-02: Buy falls back to qty*price+comm when Total Amount is 0."""
         cash = self._run_single_tx(setup_numba_env, "buy", 10, 150.0, 5.0, 0.0)
-        assert cash == pytest.approx(-1505.0), "Buy without Total Amount should use qty*price+comm"
+        assert cash == pytest.approx(-1505.0), (
+            "Buy without Total Amount should use qty*price+comm"
+        )
 
     def test_bug02_sell_uses_total_amount(self, setup_numba_env):
         """BUG-02: Sell should prefer Total Amount over qty*price-comm."""
         cash = self._run_single_tx(setup_numba_env, "sell", 10, 150.0, 5.0, 1490.0)
-        assert cash == pytest.approx(1490.0), "Sell should use Total Amount (1490), not qty*price-comm (1495)"
+        assert cash == pytest.approx(1490.0), (
+            "Sell should use Total Amount (1490), not qty*price-comm (1495)"
+        )
 
     def test_bug03_fees_uses_total_amount(self, setup_numba_env):
         """BUG-03: Fees should prefer Total Amount over commission."""
         cash = self._run_single_tx(setup_numba_env, "fees", 0, 0.0, 5.0, 12.0)
-        assert cash == pytest.approx(-12.0), "Fees should use Total Amount (12), not commission (5)"
+        assert cash == pytest.approx(-12.0), (
+            "Fees should use Total Amount (12), not commission (5)"
+        )
 
     def test_bug03_fees_fallback_to_commission(self, setup_numba_env):
         """BUG-03: Fees falls back to commission when Total Amount is 0."""
         cash = self._run_single_tx(setup_numba_env, "fees", 0, 0.0, 7.0, 0.0)
-        assert cash == pytest.approx(-7.0), "Fees without Total Amount should use commission"
+        assert cash == pytest.approx(-7.0), (
+            "Fees without Total Amount should use commission"
+        )
 
     def test_bug03_tax_uses_total_amount(self, setup_numba_env):
         """BUG-03: Tax should prefer Total Amount over commission."""
         cash = self._run_single_tx(setup_numba_env, "tax", 0, 0.0, 3.0, 15.0)
-        assert cash == pytest.approx(-15.0), "Tax should use Total Amount (15), not commission (3)"
+        assert cash == pytest.approx(-15.0), (
+            "Tax should use Total Amount (15), not commission (3)"
+        )
 
     def test_bug03_interest_uses_total_amount(self, setup_numba_env):
         """BUG-03: Interest should prefer Total Amount over price."""
         cash = self._run_single_tx(setup_numba_env, "interest", 0, 5.0, 0.0, 25.0)
-        assert cash == pytest.approx(25.0), "Interest should use Total Amount (25), not price (5)"
+        assert cash == pytest.approx(25.0), (
+            "Interest should use Total Amount (25), not price (5)"
+        )
 
 
 # =============================================================================
 # BUG-04: TWR Spike Capping (Contextual Guard)
 # =============================================================================
+
 
 class TestTWRSpikeCapping:
     """BUG-04: Spike cap should only zero FLOW-DRIVEN spikes, not legitimate market moves."""
@@ -144,12 +190,15 @@ class TestTWRSpikeCapping:
     def _build_daily_df(self, values, net_flows, daily_returns):
         """Build a DataFrame mimicking the daily_df structure."""
         dates = pd.date_range("2024-01-01", periods=len(values), freq="D", tz="UTC")
-        return pd.DataFrame({
-            "value": values,
-            "net_flow": net_flows,
-            "daily_return": daily_returns,
-            "daily_gain": [0.0] * len(values),
-        }, index=dates)
+        return pd.DataFrame(
+            {
+                "value": values,
+                "net_flow": net_flows,
+                "daily_return": daily_returns,
+                "daily_gain": [0.0] * len(values),
+            },
+            index=dates,
+        )
 
     def test_bug04_legitimate_market_spike_preserved(self):
         """A 60% return on a $50k portfolio with no net flow should NOT be capped."""
@@ -159,14 +208,18 @@ class TestTWRSpikeCapping:
             daily_returns=[np.nan, 0.6],
         )
         spike_threshold = 0.5
-        spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
+        spike_mask = (daily_df["daily_return"] > spike_threshold) | (
+            daily_df["daily_return"] < -spike_threshold
+        )
         net_flow_abs = daily_df["net_flow"].fillna(0.0).abs()
         portfolio_value_abs = daily_df["value"].abs()
         flow_driven_mask = spike_mask & (
             (portfolio_value_abs < 1000.0) & (net_flow_abs > portfolio_value_abs * 0.5)
         )
         # Should NOT be capped (portfolio is $50k, no flow)
-        assert not flow_driven_mask.any(), "Legitimate 60% market return should NOT be flagged as flow-driven"
+        assert not flow_driven_mask.any(), (
+            "Legitimate 60% market return should NOT be flagged as flow-driven"
+        )
 
     def test_bug04_flow_driven_spike_capped(self):
         """A 200% return on a $100 portfolio with $500 flow SHOULD be capped."""
@@ -176,13 +229,17 @@ class TestTWRSpikeCapping:
             daily_returns=[np.nan, 2.0],
         )
         spike_threshold = 0.5
-        spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
+        spike_mask = (daily_df["daily_return"] > spike_threshold) | (
+            daily_df["daily_return"] < -spike_threshold
+        )
         net_flow_abs = daily_df["net_flow"].fillna(0.0).abs()
         portfolio_value_abs = daily_df["value"].abs()
         flow_driven_mask = spike_mask & (
             (portfolio_value_abs < 1000.0) & (net_flow_abs > portfolio_value_abs * 0.5)
         )
-        assert flow_driven_mask.any(), "Flow-driven spike on tiny portfolio should be capped"
+        assert flow_driven_mask.any(), (
+            "Flow-driven spike on tiny portfolio should be capped"
+        )
 
     def test_bug04_large_portfolio_never_capped(self):
         """Even extreme returns on large portfolios should not be capped."""
@@ -192,18 +249,23 @@ class TestTWRSpikeCapping:
             daily_returns=[np.nan, 0.6],
         )
         spike_threshold = 0.5
-        spike_mask = (daily_df["daily_return"] > spike_threshold) | (daily_df["daily_return"] < -spike_threshold)
+        spike_mask = (daily_df["daily_return"] > spike_threshold) | (
+            daily_df["daily_return"] < -spike_threshold
+        )
         net_flow_abs = daily_df["net_flow"].fillna(0.0).abs()
         portfolio_value_abs = daily_df["value"].abs()
         flow_driven_mask = spike_mask & (
             (portfolio_value_abs < 1000.0) & (net_flow_abs > portfolio_value_abs * 0.5)
         )
-        assert not flow_driven_mask.any(), "Large portfolios should never be spike-capped"
+        assert not flow_driven_mask.any(), (
+            "Large portfolios should never be spike-capped"
+        )
 
 
 # =============================================================================
 # BUG-05: Transfer Healing (Flow-Aware)
 # =============================================================================
+
 
 class TestTransferHealing:
     """BUG-05: Transfer healing should only zero returns when the spike is flow-driven."""
@@ -212,17 +274,19 @@ class TestTransferHealing:
         """A -12% market crash that coincides with a transfer should NOT be zeroed
         if the gain is larger than the flow."""
         # daily return -0.12 — the crash the docstring names
-        net_flow = 100.0      # Small transfer
+        net_flow = 100.0  # Small transfer
         daily_gain = -15000.0  # Large market loss
         # BUG-05 condition: only heal if |net_flow| > |daily_gain| * 0.5
         should_heal = abs(net_flow) > abs(daily_gain) * 0.5
-        assert not should_heal, "Market crash should not be healed just because a transfer happened"
+        assert not should_heal, (
+            "Market crash should not be healed just because a transfer happened"
+        )
 
     def test_bug05_flow_driven_spike_on_transfer_day_healed(self):
         """A 15% spike caused by a large transfer SHOULD be zeroed."""
         # daily return +0.15 — the spike the docstring names
-        net_flow = 50000.0    # Large transfer flow
-        daily_gain = 5000.0   # Small actual market gain
+        net_flow = 50000.0  # Large transfer flow
+        daily_gain = 5000.0  # Small actual market gain
         should_heal = abs(net_flow) > abs(daily_gain) * 0.5
         assert should_heal, "Flow-driven spike on transfer day should be healed"
 
@@ -230,6 +294,7 @@ class TestTransferHealing:
 # =============================================================================
 # BUG-08: MWR Fee abs() Consistency
 # =============================================================================
+
 
 class TestMWRFeeHandling:
     """BUG-08: Fee handling in get_cash_flows_for_mwr should use abs(commission)."""
@@ -270,6 +335,7 @@ class TestMWRFeeHandling:
 # BUG-09: MWR Outbound Transfer Commission Sign
 # =============================================================================
 
+
 class TestMWRTransferCommission:
     """BUG-09: Outbound asset transfer should SUBTRACT commission, not add it."""
 
@@ -308,13 +374,15 @@ class TestMWRTransferCommission:
         if len(flows) >= 2:
             transfer_flow = flows[1] if len(dates) == 2 else None
             if transfer_flow is not None:
-                assert transfer_flow == pytest.approx(1190.0), \
+                assert transfer_flow == pytest.approx(1190.0), (
                     f"Outbound transfer should be qty*price - commission = 1190, got {transfer_flow}"
+                )
 
 
 # =============================================================================
 # BUG-10: Normalization t-1 vs t0
 # =============================================================================
+
 
 class TestNormalization:
     """BUG-10: Normalization should use t-1 (last point before visible range) as divisor."""
@@ -323,40 +391,63 @@ class TestNormalization:
         """When pre-range data exists, the last point before visible range should be used."""
         # Simulate resampled_naive (full data including pre-range)
         all_dates = pd.date_range("2024-01-01", "2024-01-10", freq="D")
-        resampled_naive = pd.DataFrame({
-            "Accumulated Gain Portfolio": [1.0, 1.02, 1.05, 1.03, 1.08, 1.10, 1.12, 1.15, 1.18, 1.20]
-        }, index=all_dates)
+        resampled_naive = pd.DataFrame(
+            {
+                "Accumulated Gain Portfolio": [
+                    1.0,
+                    1.02,
+                    1.05,
+                    1.03,
+                    1.08,
+                    1.10,
+                    1.12,
+                    1.15,
+                    1.18,
+                    1.20,
+                ]
+            },
+            index=all_dates,
+        )
 
         # Visible range starts at day 5
         visible_start = pd.Timestamp("2024-01-05")
         col = "Accumulated Gain Portfolio"
 
         # BUG-10 FIX: Look up t-1 from pre-range data
-        pre_range_data = resampled_naive.loc[resampled_naive.index < visible_start, col].dropna()
+        pre_range_data = resampled_naive.loc[
+            resampled_naive.index < visible_start, col
+        ].dropna()
         assert not pre_range_data.empty, "Should have pre-range data"
         t_minus_1_val = pre_range_data.iloc[-1]  # Last point before visible range
 
         # t-1 should be 2024-01-04 value = 1.03
-        assert t_minus_1_val == pytest.approx(1.03), f"t-1 should be 1.03, got {t_minus_1_val}"
+        assert t_minus_1_val == pytest.approx(1.03), (
+            f"t-1 should be 1.03, got {t_minus_1_val}"
+        )
 
         # Old behavior would use t0 (2024-01-05 = 1.08)
         t0_val = resampled_naive.loc[visible_start, col]
         assert t0_val == pytest.approx(1.08), "t0 should be 1.08"
 
         # Verify t-1 != t0 (the fix makes a difference)
-        assert t_minus_1_val != t0_val, "t-1 and t0 should differ, proving the fix has an effect"
+        assert t_minus_1_val != t0_val, (
+            "t-1 and t0 should differ, proving the fix has an effect"
+        )
 
     def test_bug10_falls_back_to_t0_when_no_pre_range(self):
         """When no pre-range data exists, fall back to t0."""
         all_dates = pd.date_range("2024-01-01", "2024-01-05", freq="D")
-        resampled_naive = pd.DataFrame({
-            "Accumulated Gain Portfolio": [1.0, 1.02, 1.05, 1.08, 1.10]
-        }, index=all_dates)
+        resampled_naive = pd.DataFrame(
+            {"Accumulated Gain Portfolio": [1.0, 1.02, 1.05, 1.08, 1.10]},
+            index=all_dates,
+        )
 
         visible_start = pd.Timestamp("2024-01-01")  # Start at beginning
         col = "Accumulated Gain Portfolio"
 
-        pre_range_data = resampled_naive.loc[resampled_naive.index < visible_start, col].dropna()
+        pre_range_data = resampled_naive.loc[
+            resampled_naive.index < visible_start, col
+        ].dropna()
         assert pre_range_data.empty, "No pre-range data should exist"
 
         # Fallback to t0
@@ -367,6 +458,7 @@ class TestNormalization:
 # =============================================================================
 # BUG-08 (Symbol-level): get_cash_flows_for_symbol_account fee consistency
 # =============================================================================
+
 
 class TestSymbolLevelFeeConsistency:
     """Verify that symbol-level IRR fees use abs() consistently."""
@@ -390,8 +482,12 @@ class TestSymbolLevelFeeConsistency:
     def test_symbol_fee_is_negative(self, fee_tx_df):
         """Fee cash flow should be negative (cost to investor)."""
         dates, flows = get_cash_flows_for_symbol_account(
-            "AAPL", "ACC1", fee_tx_df, 1000.0,
-            is_transfer_a_flow=False, report_date=date(2024, 6, 1),
+            "AAPL",
+            "ACC1",
+            fee_tx_df,
+            1000.0,
+            is_transfer_a_flow=False,
+            report_date=date(2024, 6, 1),
         )
         # Flows: Buy = -(10*100 + 2) = -1002, Fees = -5, FinalMV = +1000
         assert len(flows) == 3
@@ -401,6 +497,7 @@ class TestSymbolLevelFeeConsistency:
 # =============================================================================
 # Integration: Auto Cash parity between analyzer and historical engines (ARCH-05)
 # =============================================================================
+
 
 class TestAutoCashParity:
     """ARCH-05: Verify both engines produce the same cash balance for identical inputs."""
@@ -430,29 +527,58 @@ class TestAutoCashParity:
         acc_cash_modes = np.array([1], dtype=np.int64)  # Auto
 
         state, _ = _process_numba_core(
-            sym_ids, acc_ids, type_ids, qtys, prices, comms, totals, split_ratios,
-            to_acc_ids, local_curr_ids, fx_rates_hist, shortable, 1e-6, cash_sym_id,
-            2, 2, 1, acc_cash_modes,
+            sym_ids,
+            acc_ids,
+            type_ids,
+            qtys,
+            prices,
+            comms,
+            totals,
+            split_ratios,
+            to_acc_ids,
+            local_curr_ids,
+            fx_rates_hist,
+            shortable,
+            1e-6,
+            cash_sym_id,
+            2,
+            2,
+            1,
+            acc_cash_modes,
         )
         analyzer_cash = state[cash_sym_id, 0, 0]  # $CASH qty for account 0
 
         # --- Run Historical Engine ---
         base_date = pd.Timestamp("2024-01-01", tz="UTC")
-        date_range = pd.DatetimeIndex([base_date, base_date + timedelta(days=1), base_date + timedelta(days=2)])
+        date_range = pd.DatetimeIndex(
+            [base_date, base_date + timedelta(days=1), base_date + timedelta(days=2)]
+        )
         date_ordinals = np.array(date_range.values.astype("int64"), dtype=np.int64)
-        tx_dates = np.array([base_date.value, (base_date + timedelta(days=1)).value], dtype=np.int64)
+        tx_dates = np.array(
+            [base_date.value, (base_date + timedelta(days=1)).value], dtype=np.int64
+        )
 
         s2id = {"AAPL": 0, "$CASH": 1}
         t2id = {
-            "buy": 0, "sell": 1, "dividend": 2, "fees": 3,
-            "transfer": 4, "split": 5, "stock split": 6,
-            "deposit": 7, "withdrawal": 8, "short sell": 9,
-            "buy to cover": 10, "interest": 11, "tax": 12,
+            "buy": 0,
+            "sell": 1,
+            "dividend": 2,
+            "fees": 3,
+            "transfer": 4,
+            "split": 5,
+            "stock split": 6,
+            "deposit": 7,
+            "withdrawal": 8,
+            "short sell": 9,
+            "buy to cover": 10,
+            "interest": 11,
+            "tax": 12,
             "spin off": 13,
         }
 
         _, cash_balances, _ = _calculate_daily_holdings_chronological_numba(
-            date_ordinals, tx_dates,
+            date_ordinals,
+            tx_dates,
             np.array([0, 0], dtype=np.int64),  # symbols
             np.array([-1, -1], dtype=np.int64),  # to_accounts
             np.array([0, 0], dtype=np.int64),  # accounts
@@ -462,16 +588,29 @@ class TestAutoCashParity:
             np.array([0.0, 0.0], dtype=np.float64),
             np.array([100.0, 120.0], dtype=np.float64),
             np.array([1005.0, 597.0], dtype=np.float64),  # BUG-06 FIX: totals
-            2, 1,
-            t2id["split"], t2id["stock split"],
-            t2id["buy"], t2id["deposit"], t2id["sell"], t2id["withdrawal"],
-            t2id["short sell"], t2id["buy to cover"], t2id["transfer"],
+            2,
+            1,
+            t2id["split"],
+            t2id["stock split"],
+            t2id["buy"],
+            t2id["deposit"],
+            t2id["sell"],
+            t2id["withdrawal"],
+            t2id["short sell"],
+            t2id["buy to cover"],
+            t2id["transfer"],
             t2id["spin off"],
-            t2id["dividend"], t2id["interest"], t2id["fees"], t2id["tax"],
-            s2id["$CASH"], 1e-6, np.array([], dtype=np.int64),
+            t2id["dividend"],
+            t2id["interest"],
+            t2id["fees"],
+            t2id["tax"],
+            s2id["$CASH"],
+            1e-6,
+            np.array([], dtype=np.int64),
             np.array([1], dtype=np.int64),
         )
         logic_cash = cash_balances[-1, 0]
 
-        assert analyzer_cash == pytest.approx(logic_cash, abs=0.01), \
+        assert analyzer_cash == pytest.approx(logic_cash, abs=0.01), (
             f"Auto Cash parity failed: Analyzer={analyzer_cash}, Logic={logic_cash}"
+        )

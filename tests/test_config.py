@@ -135,7 +135,9 @@ def test_per_user_config_defaults_to_own_db(tmp_path):
     other_dir = tmp_path / "no_db_here"
     other_dir.mkdir()
     cm2 = ConfigManager(str(other_dir))
-    assert cm2._get_default_gui_config()["transactions_file"] == get_database_path(DB_FILENAME)
+    assert cm2._get_default_gui_config()["transactions_file"] == get_database_path(
+        DB_FILENAME
+    )
 
 
 # Add more specific checks if needed for complex constants

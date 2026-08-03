@@ -24,6 +24,7 @@ Note that `--limit` does not write to the store. Every strategy reads the newest
 snapshot, so a capped run that got saved would quietly become the ranking the
 app trades off — see `run_once`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -59,7 +60,9 @@ def refresh_edgar() -> None:
         logging.error("Worker: EDGAR refresh failed, continuing with existing data")
         return
 
-    ciks = set(universe.group_by_cik(universe.get_rankable_universe(force_refresh=True)))
+    ciks = set(
+        universe.group_by_cik(universe.get_rankable_universe(force_refresh=True))
+    )
     stats = edgar_provider.ingest_bulk(archive, ciks=ciks)
     logging.info(f"Worker: EDGAR refresh complete — {stats}")
 
@@ -114,13 +117,13 @@ def main() -> int:
         type=int,
         default=None,
         help="Cap the number of filers. A smoke test: the run is computed but NOT saved, "
-             "because a capped run would otherwise become the snapshot every strategy reads.",
+        "because a capped run would otherwise become the snapshot every strategy reads.",
     )
     parser.add_argument(
         "--persist-partial",
         action="store_true",
         help="Save a --limit run anyway. Only for when a capped run really is meant to "
-             "become the production ranking.",
+        "become the production ranking.",
     )
     parser.add_argument(
         "--skip-market-data",
@@ -144,7 +147,11 @@ def main() -> int:
         refresh_edgar()
 
     if not args.loop:
-        return 0 if run_once(args.limit, args.skip_market_data, args.persist_partial) else 1
+        return (
+            0
+            if run_once(args.limit, args.skip_market_data, args.persist_partial)
+            else 1
+        )
 
     logging.info(f"Worker: entering loop, interval {args.interval}s")
     while True:

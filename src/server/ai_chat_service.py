@@ -12,6 +12,7 @@ from server.screener_service import run_narrative_search
 
 # --- Tool Implementations ---
 
+
 def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
     """Retrieves the high-level metrics and current holdings for the user's portfolio."""
     try:
@@ -26,43 +27,41 @@ def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
             account_currency_map,
             account_cash_mode_map,
             db_path,
-            db_mtime
+            db_mtime,
         ) = data
-        
+
         if df.empty:
             return {"error": "No transaction data found for this user."}
 
         # Similar to _calculate_portfolio_summary_internal in api.py
         config_manager = get_config_manager(current_user)
         config_manager.load_manual_overrides()
-        account_interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
-        interest_free_thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
+        account_interest_rates = config_manager.manual_overrides.get(
+            "account_interest_rates", {}
+        )
+        interest_free_thresholds = config_manager.manual_overrides.get(
+            "interest_free_thresholds", {}
+        )
 
         mdp = get_shared_mdp()
 
         display_currency = "USD"
-        (
-            overall_metrics,
-            summary_df,
-            holdings_dict,
-            account_metrics,
-            _,
-            _,
-            status
-        ) = calculate_portfolio_summary(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=df,
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
-            display_currency=display_currency,
-            account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY,
-            market_provider=mdp,
-            account_interest_rates=account_interest_rates,
-            interest_free_thresholds=interest_free_thresholds,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map=user_symbol_map,
-            user_excluded_symbols=user_excluded_symbols
+        (overall_metrics, summary_df, holdings_dict, account_metrics, _, _, status) = (
+            calculate_portfolio_summary(
+                all_transactions_df_cleaned=df,
+                original_transactions_df_for_ignored=df,
+                ignored_indices_from_load=set(),
+                ignored_reasons_from_load={},
+                display_currency=display_currency,
+                account_currency_map=account_currency_map,
+                default_currency=config.DEFAULT_CURRENCY,
+                market_provider=mdp,
+                account_interest_rates=account_interest_rates,
+                interest_free_thresholds=interest_free_thresholds,
+                manual_overrides_dict=manual_overrides,
+                user_symbol_map=user_symbol_map,
+                user_excluded_symbols=user_excluded_symbols,
+            )
         )
 
         # Build the holdings list from summary_df, whose per-holding columns are
@@ -89,15 +88,17 @@ def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
                 qty = r.get("Quantity")
                 if pd.isna(qty) or abs(qty) <= 0.001:
                     continue
-                holdings.append({
-                    "symbol": r.get("Symbol"),
-                    "account": r.get("Account"),
-                    "qty": _num(qty),
-                    "market_value": _num(r.get(mv_col)),
-                    "currency": display_currency,
-                    "profit": _num(r.get(gain_col)),
-                    "return_pct": _num(r.get("Total Return %")),
-                })
+                holdings.append(
+                    {
+                        "symbol": r.get("Symbol"),
+                        "account": r.get("Account"),
+                        "qty": _num(qty),
+                        "market_value": _num(r.get(mv_col)),
+                        "currency": display_currency,
+                        "profit": _num(r.get(gain_col)),
+                        "return_pct": _num(r.get("Total Return %")),
+                    }
+                )
 
         return {
             "currency": display_currency,
@@ -105,13 +106,14 @@ def get_portfolio_summary_tool(current_user) -> Dict[str, Any]:
                 "total_value": overall_metrics.get("market_value"),
                 "total_gain": overall_metrics.get("total_gain"),
                 "total_return_pct": overall_metrics.get("total_return_pct"),
-                "cash_balance": overall_metrics.get("cash_balance")
+                "cash_balance": overall_metrics.get("cash_balance"),
             },
-            "holdings": holdings[:20] # Limit to top 20 to avoid token bloat
+            "holdings": holdings[:20],  # Limit to top 20 to avoid token bloat
         }
     except Exception as e:
         logging.error(f"Chat Tool Error (Portfolio Summary): {e}", exc_info=True)
         return {"error": f"Failed to fetch portfolio summary: {str(e)}"}
+
 
 def get_market_data_tool(symbols: List[str]) -> Dict[str, Any]:
     """Retrieves fundamental and current market data for specific tickers."""
@@ -120,7 +122,7 @@ def get_market_data_tool(symbols: List[str]) -> Dict[str, Any]:
         results = {}
         # Fetch batch to be efficient
         data_batch = mdp.get_fundamental_data_batch(set(symbols))
-        
+
         for sym in symbols:
             info = data_batch.get(sym, {})
             # Extract common useful bits from ticker_info if present
@@ -131,12 +133,13 @@ def get_market_data_tool(symbols: List[str]) -> Dict[str, Any]:
                 "market_cap": ticker_info.get("marketCap"),
                 "fifty_two_week_high": ticker_info.get("fiftyTwoWeekHigh"),
                 "fifty_two_week_low": ticker_info.get("fiftyTwoWeekLow"),
-                "description": ticker_info.get("longBusinessSummary", "")[:300] + "..."
+                "description": ticker_info.get("longBusinessSummary", "")[:300] + "...",
             }
         return results
     except Exception as e:
         logging.error(f"Chat Tool Error (Market Data): {e}")
         return {"error": f"Failed to fetch market data: {str(e)}"}
+
 
 def get_stock_review_tool(symbol: str, db_conn=None) -> Dict[str, Any]:
     """Retrieves the pre-generated detailed AI analysis and scorecard for a stock
@@ -166,32 +169,36 @@ def get_stock_review_tool(symbol: str, db_conn=None) -> Dict[str, Any]:
     except Exception as e:
         return {"error": f"Failed to query reviews: {str(e)}"}
 
+
 def run_screener_tool(prompt: str) -> Dict[str, Any]:
     """Runs a natural language stock screening query across the entire market database."""
     try:
         results = run_narrative_search(prompt)
         if not results:
             return {"message": "No stocks matched your criteria."}
-            
+
         # Simplify results for the chat model
         simplified = []
-        for r in results[:10]: # Limit to top 10 to keep context manageable
-            simplified.append({
-                "symbol": r.get("symbol"),
-                "name": r.get("name"),
-                "price": r.get("price"),
-                "upside": r.get("margin_of_safety"),
-                "ai_score": r.get("ai_score"),
-                "sector": r.get("sector")
-            })
+        for r in results[:10]:  # Limit to top 10 to keep context manageable
+            simplified.append(
+                {
+                    "symbol": r.get("symbol"),
+                    "name": r.get("name"),
+                    "price": r.get("price"),
+                    "upside": r.get("margin_of_safety"),
+                    "ai_score": r.get("ai_score"),
+                    "sector": r.get("sector"),
+                }
+            )
         return {
             "match_count": len(results),
             "top_results": simplified,
-            "note": "Sorted by Margin of Safety (higher = more undervalued). Intrinsic value based on DCF models."
+            "note": "Sorted by Margin of Safety (higher = more undervalued). Intrinsic value based on DCF models.",
         }
     except Exception as e:
         logging.error(f"Chat Tool Error (Screener): {e}")
         return {"error": f"Failed to run screener: {str(e)}"}
+
 
 # --- AI Chat Service Core ---
 
@@ -219,7 +226,10 @@ BEHAVIORAL GUIDELINES:
 5. Format — Markdown for tables and highlights. Concise but substantive. No filler.
 """
 
-def process_chat_message(user_message: str, current_user, history: List[Dict] = None, db_conn=None) -> str:
+
+def process_chat_message(
+    user_message: str, current_user, history: List[Dict] = None, db_conn=None
+) -> str:
     """
     Orchestrates the chat logic using Gemini's function calling.
     Currently uses static tools and synchronous calls for MVP.
@@ -249,11 +259,11 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                             "symbols": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "The list of ticker symbols to look up (e.g. ['AAPL', 'MSFT'])."
+                                "description": "The list of ticker symbols to look up (e.g. ['AAPL', 'MSFT']).",
                             }
                         },
-                        "required": ["symbols"]
-                    }
+                        "required": ["symbols"],
+                    },
                 },
                 {
                     "name": "get_stock_review",
@@ -263,11 +273,11 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                         "properties": {
                             "symbol": {
                                 "type": "string",
-                                "description": "The ticker symbol (e.g. 'BRK-B')."
+                                "description": "The ticker symbol (e.g. 'BRK-B').",
                             }
                         },
-                        "required": ["symbol"]
-                    }
+                        "required": ["symbol"],
+                    },
                 },
                 {
                     "name": "run_screener",
@@ -277,12 +287,12 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                         "properties": {
                             "prompt": {
                                 "type": "string",
-                                "description": "The screening criteria in natural language."
+                                "description": "The screening criteria in natural language.",
                             }
                         },
-                        "required": ["prompt"]
-                    }
-                }
+                        "required": ["prompt"],
+                    },
+                },
             ]
         }
     ]
@@ -299,12 +309,12 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
         "gemini-2.5-pro",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
-        "gemini-1.5-pro"
+        "gemini-1.5-pro",
     ]
 
     # Prepare historical messages
     contents = []
-    
+
     # Prepend SYSTEM_PROMPT to the very first user message to define behavior
     # This is more compatible than system_instruction for some preview models
     current_system_prefix = f"[SYSTEM INSTRUCTION]\n{SYSTEM_PROMPT}\n\n[USER PROMPT]\n"
@@ -312,14 +322,14 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
     if history:
         for msg in history:
             role = "user" if msg["role"] == "user" else "model"
-            
+
             # Gemini requires alternating roles starting with 'user'
             if not msg.get("text") or not msg["text"].strip():
                 continue
 
             if not contents and role == "model":
-                continue # Skip leading model messages to comply with Gemini API
-            
+                continue  # Skip leading model messages to comply with Gemini API
+
             # Prepend system instruction to the very first user message
             text = msg["text"]
             if not contents and role == "user":
@@ -328,30 +338,23 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
             if contents and contents[-1]["role"] == role:
                 contents[-1]["parts"][0]["text"] += f"\n{text}"
             else:
-                contents.append({
-                    "role": role,
-                    "parts": [{"text": text}]
-                })
-    
+                contents.append({"role": role, "parts": [{"text": text}]})
+
     # If no history, the current message becomes the first user message (with system prefix)
     if not contents:
-        contents.append({
-            "role": "user",
-            "parts": [{"text": current_system_prefix + user_message}]
-        })
+        contents.append(
+            {"role": "user", "parts": [{"text": current_system_prefix + user_message}]}
+        )
     else:
-        contents.append({
-            "role": "user",
-            "parts": [{"text": user_message}]
-        })
+        contents.append({"role": "user", "parts": [{"text": user_message}]})
 
     # Prepare payload once
     payload = {
         "contents": contents,
         "tools": tools,
         "generationConfig": {
-            "temperature": 0.1, # Lower temperature for even better factual accuracy
-        }
+            "temperature": 0.1,  # Lower temperature for even better factual accuracy
+        },
     }
 
     import time
@@ -362,14 +365,14 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
         # Outer loop for tool calling (Max 5 iterations to prevent infinite loops)
         for iteration in range(5):
             response_json = None
-            
+
             # --- Robust Model Selection Strategy ---
             # 1. Try active_model if we have one
             # 2. Try the rest of CHAT_MODELS if active_model fails or is None
             models_to_try = []
             if active_model:
                 models_to_try.append(active_model)
-            
+
             # Append all models from CHAT_MODELS that aren't already the active_model
             for m in CHAT_MODELS:
                 if m != active_model:
@@ -379,98 +382,124 @@ def process_chat_message(user_message: str, current_user, history: List[Dict] = 
                 if not model:
                     continue
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                
+
                 # Add jitter to avoid rate limits (especially if retrying)
                 # Reduced jitter for better responsiveness unless we are deep in fallbacks
-                sleep_time = random.random() * 1.5 if model == active_model else random.random() * 2.5
+                sleep_time = (
+                    random.random() * 1.5
+                    if model == active_model
+                    else random.random() * 2.5
+                )
                 time.sleep(sleep_time)
-                
+
                 try:
-                    logging.info(f"AI Chat (Iter {iteration+1}): Sending request with model '{model}'...")
+                    logging.info(
+                        f"AI Chat (Iter {iteration + 1}): Sending request with model '{model}'..."
+                    )
                     response = requests.post(url, json=payload, timeout=60)
-                    
-                    if response.status_code == 404 or response.status_code == 429 or 500 <= response.status_code < 600:
-                        logging.warning(f"AI Chat: Model '{model}' failed (status {response.status_code}). Trying next model...")
-                        active_model = None # Reset if the "active" model failed
+
+                    if (
+                        response.status_code == 404
+                        or response.status_code == 429
+                        or 500 <= response.status_code < 600
+                    ):
+                        logging.warning(
+                            f"AI Chat: Model '{model}' failed (status {response.status_code}). Trying next model..."
+                        )
+                        active_model = None  # Reset if the "active" model failed
                         continue
-                        
+
                     response.raise_for_status()
                     response_json = response.json()
-                    
-                    # Basic validation of response structure
-                    if not response_json.get('candidates'):
-                         logging.warning(f"AI Chat: Model '{model}' returned 200 but no candidates. Response: {response.text[:200]}")
-                         active_model = None
-                         continue
 
-                    active_model = model # Set/Refresh active model
-                    break # Success!
+                    # Basic validation of response structure
+                    if not response_json.get("candidates"):
+                        logging.warning(
+                            f"AI Chat: Model '{model}' returned 200 but no candidates. Response: {response.text[:200]}"
+                        )
+                        active_model = None
+                        continue
+
+                    active_model = model  # Set/Refresh active model
+                    break  # Success!
                 except Exception as e:
                     logging.warning(f"AI Chat: Request to '{model}' failed: {e}")
                     active_model = None
                     continue
-            
+
             if not response_json:
                 logging.error("AI Chat: ALL models failed to return a response.")
                 return "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later."
-            
+
             data = response_json
-            candidate = data['candidates'][0]
-            message = candidate['content']
-            finish_reason = candidate.get('finishReason')
-            
-            logging.info(f"AI Chat (Iter {iteration+1}): Model '{active_model}' responded. Finish Reason: {finish_reason}")
-            
+            candidate = data["candidates"][0]
+            message = candidate["content"]
+            finish_reason = candidate.get("finishReason")
+
+            logging.info(
+                f"AI Chat (Iter {iteration + 1}): Model '{active_model}' responded. Finish Reason: {finish_reason}"
+            )
+
             # Check for function calls
-            parts = message.get('parts', [])
-            call_part = next((p for p in parts if 'functionCall' in p), None)
-            
+            parts = message.get("parts", [])
+            call_part = next((p for p in parts if "functionCall" in p), None)
+
             if not call_part:
                 # No more tools, return final text
-                text_part = next((p for p in parts if 'text' in p), None)
-                final_text = text_part['text'] if text_part else ""
-                
+                text_part = next((p for p in parts if "text" in p), None)
+                final_text = text_part["text"] if text_part else ""
+
                 # Safety check: If for some reason the model returned empty text, return a fallback
                 if not final_text.strip():
-                    logging.warning(f"AI Chat: Model '{active_model}' returned empty text. Finish Reason: {finish_reason}. Candidates: {len(data.get('candidates', []))}")
+                    logging.warning(
+                        f"AI Chat: Model '{active_model}' returned empty text. Finish Reason: {finish_reason}. Candidates: {len(data.get('candidates', []))}"
+                    )
                     return "I found some information, but I'm having trouble summarizing it. Could you try asking in a different way?"
-                
+
                 return final_text
 
             # Execute tool
-            fn_call = call_part['functionCall']
-            fn_name = fn_call['name']
-            args = fn_call.get('args', {})
-            
+            fn_call = call_part["functionCall"]
+            fn_name = fn_call["name"]
+            args = fn_call.get("args", {})
+
             logging.info(f"AI Chat: Calling tool {fn_name} with args {args}")
-            
+
             tool_result = None
             if fn_name == "get_portfolio_summary":
                 tool_result = get_portfolio_summary_tool(current_user)
             elif fn_name == "get_market_data":
-                tool_result = get_market_data_tool(args.get('symbols', []))
+                tool_result = get_market_data_tool(args.get("symbols", []))
             elif fn_name == "get_stock_review":
-                tool_result = get_stock_review_tool(args.get('symbol', ''), db_conn=db_conn)
+                tool_result = get_stock_review_tool(
+                    args.get("symbol", ""), db_conn=db_conn
+                )
             elif fn_name == "run_screener":
-                tool_result = run_screener_tool(args.get('prompt', ''))
+                tool_result = run_screener_tool(args.get("prompt", ""))
             else:
                 tool_result = {"error": f"Tool {fn_name} not found."}
 
             # Add model's entire message AND our response to contents
             payload["contents"].append(message)
-            payload["contents"].append({
-                "role": "function",
-                "parts": [{
-                    "functionResponse": {
-                        "name": fn_name,
-                        "response": {"result": tool_result}
-                    }
-                }]
-            })
-            
+            payload["contents"].append(
+                {
+                    "role": "function",
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": fn_name,
+                                "response": {"result": tool_result},
+                            }
+                        }
+                    ],
+                }
+            )
+
             # Continue loop to let model consider the results
 
-        logging.warning("AI Chat: Max tool iterations reached without final text response.")
+        logging.warning(
+            "AI Chat: Max tool iterations reached without final text response."
+        )
         return "I've performed too many lookups to answer this question. Could you try being more specific?"
 
     except Exception as e:

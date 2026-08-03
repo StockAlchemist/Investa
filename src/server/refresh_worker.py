@@ -17,6 +17,7 @@ Tuning knobs (env):
     INVESTA_METADATA_REFRESH_BATCH    — max symbols per cycle (default 50)
     INVESTA_METADATA_REFRESH_ENABLED  — "0" to disable entirely
 """
+
 import asyncio
 import json
 import logging
@@ -28,7 +29,9 @@ import config
 logger = logging.getLogger(__name__)
 
 
-REFRESH_INTERVAL_SECONDS = int(os.getenv("INVESTA_METADATA_REFRESH_INTERVAL", str(6 * 3600)))
+REFRESH_INTERVAL_SECONDS = int(
+    os.getenv("INVESTA_METADATA_REFRESH_INTERVAL", str(6 * 3600))
+)
 BATCH_SIZE = int(os.getenv("INVESTA_METADATA_REFRESH_BATCH", "50"))
 ENABLED = os.getenv("INVESTA_METADATA_REFRESH_ENABLED", "1") != "0"
 
@@ -126,7 +129,9 @@ def _refresh_indices_sync() -> int:
     try:
         mdp = get_shared_mdp()
     except Exception as e:
-        logger.warning(f"Cannot acquire shared MarketDataProvider for index refresh: {e}")
+        logger.warning(
+            f"Cannot acquire shared MarketDataProvider for index refresh: {e}"
+        )
         return 0
 
     try:
@@ -157,7 +162,9 @@ async def index_refresh_loop() -> None:
             logger.info("Index refresh worker cancelled")
             raise
         except Exception as e:
-            logger.exception(f"Index refresh cycle errored (will retry next interval): {e}")
+            logger.exception(
+                f"Index refresh cycle errored (will retry next interval): {e}"
+            )
 
         try:
             await asyncio.sleep(INDEX_REFRESH_INTERVAL_SECONDS)
@@ -169,7 +176,9 @@ async def index_refresh_loop() -> None:
 async def refresh_loop() -> None:
     """Periodic refresh loop. Cancellable; logs each cycle's outcome."""
     if not ENABLED:
-        logger.info("Metadata refresh worker disabled by INVESTA_METADATA_REFRESH_ENABLED=0")
+        logger.info(
+            "Metadata refresh worker disabled by INVESTA_METADATA_REFRESH_ENABLED=0"
+        )
         return
 
     cache_dir = os.path.join(config.get_app_data_dir(), "cache", "metadata_cache")
@@ -187,16 +196,22 @@ async def refresh_loop() -> None:
         try:
             symbols = _find_stale_symbols(cache_dir, current_version, BATCH_SIZE)
             if symbols:
-                logger.info(f"Metadata refresh: refreshing {len(symbols)} stale entries")
+                logger.info(
+                    f"Metadata refresh: refreshing {len(symbols)} stale entries"
+                )
                 refreshed = await asyncio.to_thread(_refresh_batch_sync, symbols)
-                logger.info(f"Metadata refresh: completed ({refreshed} entries written)")
+                logger.info(
+                    f"Metadata refresh: completed ({refreshed} entries written)"
+                )
             else:
                 logger.debug("Metadata refresh: no stale entries this cycle")
         except asyncio.CancelledError:
             logger.info("Metadata refresh worker cancelled")
             raise
         except Exception as e:
-            logger.exception(f"Metadata refresh cycle errored (will retry next interval): {e}")
+            logger.exception(
+                f"Metadata refresh cycle errored (will retry next interval): {e}"
+            )
 
         try:
             await asyncio.sleep(REFRESH_INTERVAL_SECONDS)

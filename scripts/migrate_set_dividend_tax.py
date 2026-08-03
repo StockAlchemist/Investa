@@ -12,6 +12,7 @@ that does NOT match the parse pattern, so a second run is a no-op.
 Defaults to --dry-run. Pass --apply to actually mutate the database. Auto-backs
 up the DB file alongside before applying.
 """
+
 import argparse
 import re
 import shutil
@@ -35,9 +36,7 @@ MIGRATED_NOTE = (
     "[Migrated] Gross dividend; withholding tax {tax_amount:.2f} "
     "split into a separate Tax entry"
 )
-NEW_TAX_NOTE = (
-    "Withholding tax extracted from {symbol} dividend on {date}"
-)
+NEW_TAX_NOTE = "Withholding tax extracted from {symbol} dividend on {date}"
 
 
 def parse_tax(note: str | None) -> float | None:
@@ -92,7 +91,9 @@ def migrate(db_path: Path, apply: bool) -> int:
     skipped_zero = 0
     tax_total = 0.0
     cash_delta = 0.0  # sum of (gross - old) + (-tax) — should always be 0
-    preview: list[tuple[int, str, str, float, float, float]] = []  # (id, date, symbol, old, new, tax)
+    preview: list[
+        tuple[int, str, str, float, float, float]
+    ] = []  # (id, date, symbol, old, new, tax)
 
     for row in rows:
         tax = parse_tax(row["Note"])
@@ -108,7 +109,9 @@ def migrate(db_path: Path, apply: bool) -> int:
         tax_total += tax
         cash_delta += (new_amount - old_amount) + (-tax)  # should be 0
 
-        preview.append((row["id"], row["Date"], row["Symbol"], old_amount, new_amount, tax))
+        preview.append(
+            (row["id"], row["Date"], row["Symbol"], old_amount, new_amount, tax)
+        )
 
         if apply:
             cur = conn.cursor()
@@ -156,10 +159,14 @@ def migrate(db_path: Path, apply: bool) -> int:
     print(f"net cash delta             : {cash_delta:,.4f} (must be 0)")
     print()
     print("Sample changes (first 10):")
-    print(f"  {'id':>6}  {'date':10}  {'symbol':10}  {'old':>10}  -> {'new':>10}    {'tax':>10}")
+    print(
+        f"  {'id':>6}  {'date':10}  {'symbol':10}  {'old':>10}  -> {'new':>10}    {'tax':>10}"
+    )
     for sample in preview[:10]:
         sid, sdate, sym, old, new, t = sample
-        print(f"  {sid:>6}  {sdate:10}  {sym:10}  {old:>10,.2f}  -> {new:>10,.2f}    {t:>10,.2f}")
+        print(
+            f"  {sid:>6}  {sdate:10}  {sym:10}  {old:>10,.2f}  -> {new:>10,.2f}    {t:>10,.2f}"
+        )
     if len(preview) > 10:
         print(f"  ... and {len(preview) - 10} more")
 
@@ -181,7 +188,9 @@ def migrate(db_path: Path, apply: bool) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", type=Path, default=DEFAULT_DB, help="path to portfolio.db")
-    ap.add_argument("--apply", action="store_true", help="commit changes (default: dry run)")
+    ap.add_argument(
+        "--apply", action="store_true", help="commit changes (default: dry run)"
+    )
     args = ap.parse_args()
     return migrate(args.db, args.apply)
 

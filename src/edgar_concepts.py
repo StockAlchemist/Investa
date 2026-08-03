@@ -27,6 +27,7 @@ generic concepts — JPMorgan reports `ProvisionForLoanAndLeaseLosses` for only 
 few of its filed years — which is a fact about EDGAR, not a bug here, and is
 surfaced by the coverage report rather than hidden.
 """
+
 from __future__ import annotations
 
 from typing import Dict, List

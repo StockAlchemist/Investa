@@ -34,7 +34,9 @@ from buffett_backtest import annual_returns, simulate, statistics_for  # noqa: E
 from buffett_strategy_search import load_rank_tables  # noqa: E402
 from rank_signal_lab import SPLIT, YEARS, blend, holdings_for  # noqa: E402
 
-OUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "docs", "figures"))
+OUT_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "docs", "figures")
+)
 TRAIN = [y for y in YEARS if y <= SPLIT]
 TEST = [y for y in YEARS if y > SPLIT]
 
@@ -59,19 +61,22 @@ def scorer_for(quality_weight: float):
         quality = pd.to_numeric(table["quality_score"], errors="coerce")
         value = pd.to_numeric(table["value_score"], errors="coerce")
         return blend(quality, value, quality_weight)
+
     return score
 
 
 def _style() -> None:
-    plt.rcParams.update({
-        "font.size": 9,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.grid": True,
-        "grid.alpha": 0.25,
-        "grid.linewidth": 0.5,
-        "figure.constrained_layout.use": True,
-    })
+    plt.rcParams.update(
+        {
+            "font.size": 9,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "axes.grid": True,
+            "grid.alpha": 0.25,
+            "grid.linewidth": 0.5,
+            "figure.constrained_layout.use": True,
+        }
+    )
 
 
 def main() -> int:
@@ -79,9 +84,18 @@ def main() -> int:
     if not tables:
         print("No cached rankings — run scripts/buffett_backtest.py first")
         return 1
-    panel = pd.read_pickle(os.path.abspath(os.path.join(
-        os.path.dirname(__file__), "..", "data", "cache", "backtest", "monthly_prices.pkl"
-    )))
+    panel = pd.read_pickle(
+        os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "data",
+                "cache",
+                "backtest",
+                "monthly_prices.pkl",
+            )
+        )
+    )
     adjusted = panel["Adj Close"]
     _style()
 
@@ -93,22 +107,39 @@ def main() -> int:
     curves: Dict[str, pd.Series] = {
         name: simulate(h, adjusted, YEARS) for name, h in holdings.items()
     }
-    for symbol, label in (("SPY", "S&P 500 (total return)"),
-                          ("QQQ", "NASDAQ-100 (total return)")):
+    for symbol, label in (
+        ("SPY", "S&P 500 (total return)"),
+        ("QQQ", "NASDAQ-100 (total return)"),
+    ):
         if symbol in adjusted.columns:
-            series = adjusted[symbol].loc[f"{YEARS[0] - 1}-12-01": f"{YEARS[-1]}-12-01"].dropna()
+            series = (
+                adjusted[symbol]
+                .loc[f"{YEARS[0] - 1}-12-01" : f"{YEARS[-1]}-12-01"]
+                .dropna()
+            )
             curves[label] = series / series.iloc[0]
 
     # --- figure 1: growth of $1, log scale --------------------------------
-    shown = ["Buffett Quality 20", "S&P 500 (total return)", "NASDAQ-100 (total return)"]
+    shown = [
+        "Buffett Quality 20",
+        "S&P 500 (total return)",
+        "NASDAQ-100 (total return)",
+    ]
     fig, ax = plt.subplots(figsize=(6.4, 3.4))
     for name in shown:
         curve = curves[name]
-        ax.plot(curve.index, curve.values, label=name,
-                color=COLOURS[name], linewidth=2.0 if "Quality" in name else 1.3)
+        ax.plot(
+            curve.index,
+            curve.values,
+            label=name,
+            color=COLOURS[name],
+            linewidth=2.0 if "Quality" in name else 1.3,
+        )
     ax.set_yscale("log")
     ax.set_yticks([1, 2, 3, 5, 8, 12])
-    ax.get_yaxis().set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"${v:g}"))
+    ax.get_yaxis().set_major_formatter(
+        matplotlib.ticker.FuncFormatter(lambda v, _: f"${v:g}")
+    )
     ax.set_ylabel("Growth of $1 (log scale)")
     ax.legend(frameon=False, loc="upper left", fontsize=8)
     fig.savefig(os.path.join(OUT_DIR, "fig_quality_growth.pdf"))
@@ -118,8 +149,13 @@ def main() -> int:
     annual = {name: annual_returns(curves[name], YEARS) for name in shown}
     frame = pd.DataFrame(annual) * 100
     fig, ax = plt.subplots(figsize=(6.4, 3.0))
-    frame.plot(kind="bar", ax=ax, width=0.78,
-               color=[COLOURS[c] for c in frame.columns], legend=True)
+    frame.plot(
+        kind="bar",
+        ax=ax,
+        width=0.78,
+        color=[COLOURS[c] for c in frame.columns],
+        legend=True,
+    )
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_ylabel("Calendar-year return (%)")
     ax.set_xlabel("")
@@ -132,8 +168,10 @@ def main() -> int:
     summary = {}
     for name, curve in curves.items():
         stats = statistics_for(curve)
-        record = {k: stats[k] for k in
-                  ("cagr", "volatility", "max_drawdown", "sharpe", "total_return")}
+        record = {
+            k: stats[k]
+            for k in ("cagr", "volatility", "max_drawdown", "sharpe", "total_return")
+        }
         if name in holdings:
             for label, window in (("train_cagr", TRAIN), ("test_cagr", TEST)):
                 sub = simulate({y: holdings[name][y] for y in window}, adjusted, window)
@@ -143,8 +181,10 @@ def main() -> int:
     payload = {
         "window": f"{YEARS[0]}-{YEARS[-1]}",
         "split": SPLIT,
-        "annual": {k: {str(y): v for y, v in annual_returns(c, YEARS).items()}
-                   for k, c in curves.items()},
+        "annual": {
+            k: {str(y): v for y, v in annual_returns(c, YEARS).items()}
+            for k, c in curves.items()
+        },
         "summary": summary,
         "holdings_latest": holdings["Buffett Quality 20"][max(YEARS)],
     }
@@ -153,10 +193,16 @@ def main() -> int:
 
     print(f"Wrote figures and report_data.json to {OUT_DIR}")
     for name, record in summary.items():
-        print(f"  {name:28s} cagr {record['cagr'] * 100:5.2f}  "
-              f"sharpe {record['sharpe']:.2f}  dd {record['max_drawdown'] * 100:6.2f}"
-              + (f"  train {record['train_cagr'] * 100:5.2f}"
-                 f"  test {record['test_cagr'] * 100:5.2f}" if "train_cagr" in record else ""))
+        print(
+            f"  {name:28s} cagr {record['cagr'] * 100:5.2f}  "
+            f"sharpe {record['sharpe']:.2f}  dd {record['max_drawdown'] * 100:6.2f}"
+            + (
+                f"  train {record['train_cagr'] * 100:5.2f}"
+                f"  test {record['test_cagr'] * 100:5.2f}"
+                if "train_cagr" in record
+                else ""
+            )
+        )
     return 0
 
 

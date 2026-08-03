@@ -439,7 +439,9 @@ OUTPUT — strict JSON, no markdown, no commentary outside the JSON:
                 logging.warning(f"Portfolio AI: Model {model} rate limited.")
                 rate_limit_count += 1
                 if "exceeded your current quota" in resp.text:
-                    logging.warning(f"Hard quota limit reached for {model}. Stopping fallback to prevent charges.")
+                    logging.warning(
+                        f"Hard quota limit reached for {model}. Stopping fallback to prevent charges."
+                    )
                     break
                 continue
             else:

@@ -7,6 +7,7 @@ code (e.g. config_manager) can import column definitions and graph date
 defaults without pulling in Qt. GUI-only helpers and QColor constants live in
 utils.py, which re-exports the names defined here for backwards compatibility.
 """
+
 from datetime import date, timedelta
 
 from config import DEFAULT_GRAPH_DAYS_AGO
