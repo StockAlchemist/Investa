@@ -89,7 +89,9 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
 
 ## Installation
 
-Requires Python 3.8+.
+Requires **Python 3.11+** (SciPy 1.16 needs 3.11, Numba 0.61 needs 3.10) and
+**Node 20.9+** for the web app (Next.js 16). Developed and tested on Python
+3.12 and Node 22.
 
 1. **Clone the Repository**
 
@@ -142,13 +144,33 @@ Investa includes a built-in configuration tool to secure your app with HTTPS usi
 
 ## Configuration & Data
 
-Investa stores your database (`investa_transactions.db`) and configuration files in your operating system's standard application data directory:
+Everything Investa owns lives in a `data/` directory beside the code, so a
+backup is a copy of one folder and moving an installation is moving it:
 
-* **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
-* **Windows:** `C:\Users\<User>\AppData\Local\StockAlchemist\Investa\`
-* **Linux:** `~/.local/share/StockAlchemist/Investa/`
+```text
+data/
+├── users/<username>/
+│   ├── portfolio.db              your transactions, holdings and cash — the data
+│   └── config/
+│       ├── gui_config.json       layout, display currency, benchmarks
+│       └── manual_overrides.json per-symbol valuation and metadata overrides
+├── db/
+│   ├── global.db                 accounts, sessions, cross-user settings
+│   ├── market_data.db            cached prices and fundamentals
+│   ├── edgar_facts.db            SEC XBRL fundamentals (~800 MB when built)
+│   └── buffett_ranks.db          ranking snapshots
+├── screener/screener_cache.db    shared screener valuations
+├── exports/                      CSV exports
+└── cache/                        derived caches, safe to delete
+```
 
-For details on `gui_config.json`, `manual_overrides.json`, and input formats, consult the **[Tutorial](TUTORIAL.md#configuration-persistence-gui_configjson--manual_overridesjson)**.
+Each user gets their own `portfolio.db`; nothing is shared between accounts
+except the market and screener caches. The four databases under `db/` and
+everything under `cache/` are derived and rebuild themselves — only
+`users/` needs backing up.
+
+For details on `gui_config.json`, `manual_overrides.json`, and input formats,
+consult the **[Tutorial](TUTORIAL.md#configuration-persistence-gui_configjson--manual_overridesjson)**.
 
 ## Input Data Format (CSV)
 

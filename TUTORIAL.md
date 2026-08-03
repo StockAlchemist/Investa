@@ -1,6 +1,11 @@
 # Welcome to Investa v1.1! A Quick Tutorial
 
-Investa is your personal desktop assistant for keeping a close eye on your investment portfolio. It uses a local SQLite database to store your transaction history, fetches the latest market data, and then presents you with a clear, detailed picture of how your investments are doing.
+Investa keeps a close eye on your investment portfolio. It runs on your own
+machine — a Python backend and a web dashboard you open in a browser, plus
+native macOS and iOS apps that talk to the same backend — storing your
+transaction history in local SQLite databases, fetching market data, and
+presenting a clear picture of how your investments are doing. Nothing about
+your holdings leaves the machine you run it on.
 
 Let's dive in!
 
@@ -31,16 +36,40 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
         cd web_app && npm install && cd ..
         ```
 
-2. **Understanding Data Storage: The SQLite Database**
-    Investa uses a local SQLite database file (typically named `investa_transactions.db`) to store all your transaction data. This file is the heart of your Investa setup.
-    * **Location:** This database file, along with configuration files (`gui_config.json`, `manual_overrides.json`), cache, and backups, is stored in a standard application data directory. The exact path depends on your operating system:
-        * **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
-        * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\` (or `AppData\Roaming\StockAlchemist\Investa\`)
-        * **Linux:** `~/.local/share/StockAlchemist/Investa/` (or `~/.config/StockAlchemist/Investa/`)
-    * You will typically create or open this database file when you first run Investa.
+2. **Understanding Data Storage: The SQLite Databases**
+    Investa stores everything it owns in a `data/` folder beside the code — the
+    same path on every operating system. Backing Investa up is copying that one
+    folder.
+
+    Each account gets its own database, created for you when you register:
+
+    ```text
+    data/
+    ├── users/<username>/
+    │   ├── portfolio.db              your transactions, holdings and cash
+    │   └── config/
+    │       ├── gui_config.json       layout, display currency, benchmarks
+    │       └── manual_overrides.json per-symbol valuation overrides
+    ├── db/
+    │   ├── global.db                 accounts and sessions
+    │   ├── market_data.db            cached prices and fundamentals
+    │   ├── edgar_facts.db            SEC filings data
+    │   └── buffett_ranks.db          ranking snapshots
+    ├── screener/screener_cache.db    shared screener valuations
+    └── exports/                      your CSV exports
+    ```
+
+    * **`portfolio.db` is the one that matters.** It holds your transactions and
+      is the only file that cannot be regenerated. Everything under `db/` and
+      `cache/` is a cache: delete any of it and Investa rebuilds it, slowly the
+      first time and normally after.
+    * **Nothing is shared between accounts** except the market and screener
+      caches, which contain no personal data.
+    * You never create or open a database by hand — registering an account
+      creates yours, and logging in opens it.
 
 3. **Preparing Your Transaction Data for Import (Optional CSV):**
-    If you have existing transaction data in a CSV file, you can import it into the Investa database. Investa is flexible with CSV headers but recommends a "cleaned" format for clarity. An in-app utility (**File > Import Transactions from CSV...** then **Standardize Headers**) can help map your CSV columns.
+    If you have existing transaction data in a CSV file, you can import it into the Investa database. Investa is flexible with CSV headers but recommends a "cleaned" format for clarity. The importer will map your columns for you and shows a review step before anything is written.
 
     **Preferred (Cleaned) CSV Headers for Import:**
     1. `Date`: e.g., *Jan 01, 2023* (common date formats are supported)
@@ -69,7 +98,7 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
 
 The special cash symbol **`$CASH`** is crucial for accurately tracking your portfolio's value, cash flows, and performance, especially the Time-Weighted Return (TWR).
 
-* **What it Represents:** The `$CASH` symbol signifies the cash component within an investment account. Its currency is determined by the currency assigned to that account (see **Settings > Account Currencies...**). Its price is always `1.00` in its respective currency.
+* **What it Represents:** The `$CASH` symbol signifies the cash component within an investment account. Its currency is determined by the currency assigned to that account (see **Settings → Accounts**). Its price is always `1.00` in its respective currency.
 * **When and How to Use Cash Symbols (Examples for CSV Import or Manual Entry):**
 
   * **Deposits (External Inflow):** Adding funds to your brokerage account.
@@ -177,27 +206,12 @@ The special cash symbol **`$CASH`** is crucial for accurately tracking your port
     * `Price/Share`: 1
     * `Total Amount`: -10 (or 10 if Quantity is negative)
     * `Account`: Brokerage A
-    * **Growth Outliers:** Flags companies priced with unrealistic growth expectations (e.g., >30% sustained growth needed to justify current price).
-* **Deep Value:** High conviction screener identifying companies with high AI scores, large margin of safety, and strong historical profitability.
-
-## Part 19: Apple Native Apps (macOS, iOS, iPadOS)
-
-Investa includes a comprehensive native Apple client application built entirely in SwiftUI. This single codebase runs seamlessly across Mac, iPhone, and iPad, adapting its layout to the device (sidebar navigation on Mac/iPad, bottom tab bar on iPhone).
-
-The native app connects directly to your Investa backend API, offering real-time performance and deep OS integration.
-
-### Setting up the Native App
-
-1. **Start the Backend:** Ensure your Investa backend is running (e.g., `./start_investa.sh`). The backend serves the API on port `8000`.
-2. **Open the Project:** Navigate to the `macos_app` folder and open `Investa.xcodeproj` in Xcode 16 or later.
-3. **Configure API URL (If Remote):** If you are running the backend on a different machine (e.g., a home server or via Tailscale), open `Networking/APIConfig.swift` in Xcode and update `baseURL` to match your server's IP or Tailscale address (e.g., `http://your-server-ip:8000`). If running locally on a Mac, `http://localhost:8000` is the default and requires no changes.
-4. **Build and Run:** Select your target device (My Mac, iPhone Simulator, or a physical iPad/iPhone) from the top-left dropdown in Xcode and press `Cmd + R` to build and run the application.
-
-*Note: For deploying to a physical iPhone or iPad, you will need to add your free Apple ID to Xcode settings under the Accounts tab to sign the application for local development.* The `Fees` type with `$CASH` implies an expense that reduces the account's cash and is typically treated as a negative return or an outflow.
+    * The `Fees` type with `$CASH` implies an expense that reduces the account's
+      cash, and is treated as a negative return or an outflow.
 
 * **Key for TWR:** Accurately logging `Deposit` and `Withdrawal` transactions for `$CASH` is paramount for correct TWR calculation, as these define the external cash flows against which investment performance is measured. Internal conversions (buying/selling assets) do not count as external flows.
 
-* **Tip:** For detailed examples and specific requirements for each transaction type, once the app is running, check out the **Help > CSV Format Help...** menu. This is especially useful before importing a CSV.
+* **Tip:** The per-type requirements above are the whole specification — a row needs `Date`, `Type`, `Symbol`, and whichever of `Quantity` / `Price/Share` / `Total Amount` that type uses. Worth a skim before importing a CSV.
 
 ## Part 2: Your First Launch and Managing Data Files
 
@@ -208,46 +222,74 @@ The native app connects directly to your Investa backend API, offering real-time
     ./start_investa.sh
     ```
 
-2. **Database Initialization (First Run):**
-    * **Welcome Prompt:** On your very first launch, Investa will display a welcome message and prompt you to either:
-        * **Create a New Database:** This is the recommended option if you're new to Investa or want to start fresh. It will create an empty `investa_transactions.db` file in the default application data directory (see Part 1 for locations) or a location you choose.
-        * **Open an Existing Database:** If you have an existing Investa database file (`.db`) from a previous installation or a backup, use this option.
-        * **(Migrate from CSV - Deprecated):** Older versions focused on CSVs. If Investa detects an old `gui_config.json` pointing to a CSV, it *might* offer to import it. However, the primary workflow is now database-centric. It's better to create a new database and then import your CSV.
+2. **Create Your Account (First Run):**
+    Open <http://localhost:3000> and register. Your username becomes your data
+    directory — `data/users/<username>/` — and your `portfolio.db` is created
+    empty at that moment. There is no database file to choose, name or open;
+    logging in selects it for you, and each account is fully separate from the
+    others.
 
-3. **Managing Your Data Files (File Menu):**
-    The **File** menu is your central hub for managing data:
+    If you are restoring from a backup, put the old `data/users/<username>/`
+    folder in place before registering that username, and it will be picked up
+    as-is.
 
-    * **File > New Database File...**
-        * Use this to create a brand-new, empty SQLite database (`.db` extension).
-        * You'll be asked where to save this file. The default application data directory is a good choice, but you can place it elsewhere (e.g., a synced cloud folder, though ensure it's not simultaneously accessed by multiple Investa instances).
-        * Once created, this new database becomes the active one.
+3. **Getting Your Transactions In:**
+    Three routes, and they can be mixed freely:
 
-    * **File > Open Database File...**
-        * Use this to open an existing Investa SQLite database file (`.db`).
-        * This is how you switch between different portfolio databases if you maintain more than one, or if you've moved your database file.
-        * The path to the last successfully opened database is remembered by Investa.
+    * **Type them in.** The Transactions tab has an add/edit form. For a handful
+      of holdings this is the fastest way to start, and it is how you will
+      maintain things afterwards.
+    * **Import a CSV** via the **Import** button. Bring in history exported from
+      a broker or a spreadsheet.
+      The expected columns are in Part 1 above; Investa is tolerant about header
+      names and date formats.
+    * **Import a brokerage statement.** PDF or image statements can be read
+      directly — there are purpose-built parsers for Interactive Brokers and
+      Webull and an AI fallback for other brokers. Every import goes through a
+      review step that flags rows already present, so re-importing an
+      overlapping statement will not duplicate anything.
 
-    * **File > Import Transactions from CSV...**
-        * This powerful utility allows you to populate your currently open SQLite database with transactions from a CSV file.
-        * A dialog will appear:
-            1. **Select CSV File:** Choose the CSV file containing your transactions.
-            2. **Header Standardization (Important):** You'll see a preview of your CSV data and options to map your CSV columns to Investa's expected fields (`Date`, `Type`, `Symbol`, etc.). Use the dropdowns above each column in the preview to match your CSV's headers to Investa's internal names.
-            3. **Standardize Headers Button:** Click this after mapping. It converts your CSV data to the preferred internal format for import.
-            4. **Import Button:** Once headers are standardized, click this to import the transactions into the active database.
-            5. **Backup Original CSV:** You'll usually be prompted to back up the original CSV file. It's a good idea to do so.
-        * After import, it's wise to check the **Transactions Log** tab to ensure data appears as expected.
+    Interactive Brokers users can skip all three and sync automatically — see
+    Part 16.
 
-4. **Refresh and See the Magic!**
-    * Once your database is set up (and optionally populated via CSV import) and you've added any new transactions directly (see Part 6), click the main **"Refresh All"** button (or press F5).
-    * Investa will:
-        * Load all transactions from the active SQLite database.
-        * Fetch the latest market prices for your holdings using Yahoo Finance.
-        * Calculate all portfolio metrics, historical performance, and generate charts.
-        * Display everything in the dashboard!
+4. **See the Result:**
+    The dashboard loads as soon as there is something to show. Investa reads
+    your transactions, fetches current prices, and computes holdings,
+    performance and charts. The first load after a large import takes a while —
+    it is fetching price history for every symbol you own — and later loads are
+    fast because that history is cached.
+
+    Prices refresh on their own while the app is open — there is no "refresh
+    everything" button to hunt for. If you ever need to force market data to be
+    re-fetched from scratch, **Settings → Advanced Settings → System Cache →
+    Clear System Cache** drops the cached quotes and history.
 
 ## Part 3: Exploring the Main Dashboard
 
-Once your data is loaded (from the database) and refreshed, the main dashboard comes alive. Here's a quick tour:
+Once your data is loaded the dashboard comes alive. Here's a quick tour.
+
+### Getting Around
+
+A collapsible sidebar down the left holds every destination, in two groups:
+
+| Your portfolio | Research |
+|---|---|
+| **Dashboard** — the overview below | **Screener** — filter the market on valuation |
+| **Portfolio** — holdings and allocation | **Rankings** — the Buffett/value ranking |
+| **Performance** — TWR, benchmarks, drawdown | **Strategies** — ranked model portfolios |
+| **Transactions** — your history, and where you edit it | **Watchlist** — symbols you are following |
+| **Income** — dividends and yield | **Markets** — indices and news |
+| **Capital Gains** — realised gains and tax lots | **AI Insights** — AI portfolio review |
+
+**Settings**, **Dark mode** and your username (with **Sign out**) sit at the
+bottom; **Collapse sidebar** reclaims the space and your preference is
+remembered.
+
+Across the top: the page title, whether the market is **CLOSED** or open with
+the market clock, a symbol search (or press **⌘K** / **Ctrl+K**), live index
+quotes, and four controls — **LAYOUT** to rearrange the widgets on the current
+tab, **USD** to change display currency, **CLOSED** to show or hide positions
+you have exited, and **ALL ACCOUNTS** to filter to particular accounts.
 
 * **Portfolio Summary (Top Section):**
     This area provides a high-level snapshot of your entire portfolio (or the accounts selected in the filter):
@@ -263,17 +305,23 @@ Once your data is loaded (from the database) and refreshed, the main dashboard c
   * `IRR (MWR)`: Internal Rate of Return (Money-Weighted Return). When displayed as an annualized figure, it is clearly indicated with an **"Ann."** sub-label for precision.
   * `Ann. TWR %`: Annualized Time-Weighted Return percentage, a key measure of investment performance.
 
-* **Controls (Toolbar and Buttons below Summary):**
-  * `Display Currency`: A dropdown to select your preferred currency (e.g., USD, EUR, JPY) for viewing all monetary values. Add more currencies via **Settings > Choose Currencies...**.
-  * `Show Closed Pos.`: Checkbox to include or exclude assets you've completely sold off from the Holdings Table.
-  * `Accounts`: Button to open a dialog where you can select which specific investment accounts (defined in your transactions) to include in the dashboard view. Click "Update Accounts" (or "Refresh All") after changing.
-  * `Refresh All (F5)`: The main button to reload all data from the database, fetch fresh market prices, and recalculate everything.
-  * `Update Accounts`: A quicker refresh if you've only changed the account filter.
-  * A dedicated section for graph controls with date range selectors, a benchmark selection button, and an "Update Graphs" button. A "Presets..." dropdown menu is available to quickly set common time ranges (`1D`, `5D`, `1W`, `MTD`, `YTD`, `1Y`, `All`, etc.).
-  * **Gapless Intraday Views (1D, 5D):** When selecting "1D" or "5D", the graphs automatically switch to a "gapless" view, displaying only active trading hours (09:30 - 16:00 EST) to provide a clearer picture of price action without overnight gaps.
-  * **Persistent Settings:** Your selected graph preset (e.g., "1D" or "3M") is saved automatically. On startup, the application restores your last used preset and refreshes the data for the current date.
-  * `Update Graphs`: A quicker refresh if you've only changed graph parameters (like date ranges or benchmarks).
-  
+* **Controls:**
+  * `Display Currency`: Choose the currency all monetary values are shown in
+    (e.g., USD, EUR, JPY). Which currencies appear in the list is set under
+    **Settings → Accounts**.
+  * `CLOSED`: Show or hide positions you have exited entirely.
+  * `ALL ACCOUNTS`: Filter the whole dashboard to particular investment
+    accounts. Every view updates as soon as the filter changes.
+  * The portfolio-value panel carries its own period buttons — **1D**, **WTD**,
+    **MTD**, **YTD**, **1Y** — and the choice is remembered between sessions.
+    Benchmarks are chosen once under **Settings → Advanced Settings →
+    Benchmarks**, where you can tick the presets (S&P 500, Dow Jones, NASDAQ,
+    Russell 2000, and the SPY/QQQ/DIA ETFs) or add any ticker under
+    **Custom Ticker**.
+  * **Gapless Intraday Views:** On the shortest period the graphs drop the
+    overnight gaps and show only active trading hours (09:30–16:00 EST), so
+    price action reads continuously.
+
 * **Top Contributors:**
     A widget displaying the top 5 positive and negative contributors to your portfolio's performance, along with their sector and contribution percentage.
 
@@ -297,7 +345,7 @@ Once your data is loaded (from the database) and refreshed, the main dashboard c
 
 ## Part 4: Analyzing Your Performance with Charts
 
-Investa's charting capabilities are grouped into tabs, providing rich visualizations of your portfolio's performance and composition. Remember to click "Update Graphs" if you change date ranges, intervals, or benchmark selections on the "Performance & Summary" tab.
+Investa's charts are spread across the sidebar destinations — **Dashboard** for the overview, **Performance** for returns against benchmarks, **Portfolio** for composition, **Income** for dividends. Changing a period or a benchmark redraws immediately; there is nothing to click to apply it.
 
 ### "Performance & Summary" Tab
 
@@ -381,30 +429,25 @@ Before making changes, it's often helpful to review your existing data. The **"T
 
 ### Adding, Editing, and Deleting Transactions
 
-All modifications to your transaction history are done via the **Transactions** menu or corresponding toolbar buttons:
+All of this happens on the **Transactions** tab, which both lists your history
+and is where you change it.
 
 1. **Adding a New Transaction:**
-    * Go to **Transactions > Add Transaction...** (or click the "Add Tx" button on the toolbar).
-    * A dialog window will appear, allowing you to enter all the details for a new transaction:
-        * `Date`, `Type` (Buy, Sell, Dividend, Transfer, etc.), `Symbol`, `Quantity`, `Price/Share`, `Total Amount`, `Commission`, `Account` (or From/To Accounts for transfers), `Split Ratio` (if applicable), and `Note`.
-    * Click "Save Transaction" to add this new record directly to your SQLite database.
+    * Click **Add** on the Transactions tab.
+    * The form covers `Date`, `Type` (Buy, Sell, Dividend, Transfer, etc.),
+      `Symbol`, `Quantity`, `Price/Share`, `Total Amount`, `Commission`,
+      `Account` (or From/To accounts for transfers), `Split Ratio` where it
+      applies, and a free-text `Note`.
+    * Saving writes the row straight to your `portfolio.db`.
 
-2. **Managing Existing Transactions (Edit/Delete):**
-    * Go to **Transactions > Manage Transactions...** (or click the "Manage Tx" button on the toolbar).
-    * This opens the "Manage Transactions" dialog, which is your primary interface for editing or deleting records.
-    * **Viewing Transactions:** The dialog displays a table of all transactions currently in your database. You can filter this table by `Symbol` or `Account` using the input fields at the top to quickly find the transaction(s) you're interested in.
-    * **Editing a Transaction:**
-        1. Select the transaction row in the table that you wish to modify.
-        2. Click the "Edit Selected" button.
-        3. A dialog, pre-filled with the selected transaction's data, will appear.
-        4. Make your necessary changes and click "Save Changes". The record in the database will be updated.
-    * **Deleting a Transaction:**
-        1. Select the transaction row in the table you want to remove.
-        2. Click the "Delete Selected" button.
-        3. You'll be asked for confirmation. If you confirm, the transaction will be permanently removed from the database.
-            * **Caution:** Deleting transactions is a permanent action in the database. While Investa *may* still create CSV backups during certain operations (like CSV import/export), the primary record is in the database. Always be sure before deleting. It's good practice to occasionally back up your `investa_transactions.db` file itself.
+2. **Editing and Deleting:**
+    * The transactions table is filterable by symbol and account, which is how
+      you find a row in a long history.
+    * Editing a row reopens the same form pre-filled; saving updates the record.
+    * Deleting asks for confirmation first, then removes the row permanently.
+            * **Caution:** Deleting transactions is a permanent action in the database. While Investa *may* still create CSV backups during certain operations (like CSV import/export), the primary record is in the database. Always be sure before deleting. It's good practice to occasionally back up your `data/users/<username>/` folder, which contains `portfolio.db` and your settings.
 
-* **Impact of Changes:** After adding, editing, or deleting any transactions, always click the **"Refresh All"** button on the main dashboard to ensure all calculations and views are updated based on the modified data.
+* **Impact of Changes:** Holdings, performance and charts recalculate from your transactions, so a change here shows up across every tab without any further action.
 
 This direct database management provides a seamless and integrated way to keep your portfolio records accurate and up-to-date.
 
@@ -428,7 +471,7 @@ Four large donut charts break down your portfolio across:
 * Hover over a **legend row** to do the same from the list.
 * The centre label shows the total portfolio value when nothing is hovered.
 
-**Country classification note:** For foreign companies listed on US exchanges as ADRs (e.g. ASML on NASDAQ), yfinance sometimes returns the wrong country. Investa supplements yfinance data with a **Financial Modeling Prep (FMP)** enrichment layer that correctly identifies the domicile. If a symbol still shows as "Unknown" or the wrong country, add a manual override under **Settings > Symbol Settings...** (set the `geography` field).
+**Country classification note:** For foreign companies listed on US exchanges as ADRs (e.g. ASML on NASDAQ), yfinance sometimes returns the wrong country. Investa supplements yfinance data with a **Financial Modeling Prep (FMP)** enrichment layer that correctly identifies the domicile. If a symbol still shows as "Unknown" or the wrong country, add a manual override under **Settings → Symbols** (set the `geography` field).
 
 #### Allocation Drift Cards
 
@@ -448,7 +491,7 @@ Below the donut charts, **Allocation Drift** cards let you set a target allocati
 
 * **Data Source:** Classification accuracy depends on data from Yahoo Finance, supplemented by FMP for ADRs and foreign listings.
 * **Missing Data:** Holdings without sector/country data appear under "Unknown". Use manual overrides to fix them.
-* **Manual Overrides:** In **Settings > Symbol Settings...**, set `asset_type`, `sector`, `geography`, or `industry` for any symbol. Overrides are stored in `manual_overrides.json`.
+* **Manual Overrides:** In **Settings → Symbols**, set `asset_type`, `sector`, `geography`, or `industry` for any symbol. Overrides are stored in `manual_overrides.json`.
 * **Account Filtering:** All allocation charts respect the currently selected account filter.
 
 ## Part 8: Understanding Capital Gains
@@ -595,8 +638,9 @@ Investa packs several additional features and settings to enhance your portfolio
   * **Excluded Symbols Tab:**
     * If you have symbols you want Investa to completely ignore for market data fetching and calculations (e.g., delisted stocks you only keep for historical record, private assets you track manually), add them here.
 
-* **Fundamental Data Viewer (Toolbar & Context Menu):**
-  * Quickly look up detailed financial information for any stock. Enter a symbol in the "Symbol for Fundamentals" box on the toolbar and click "Get Fundamentals", or right-click a holding in the Holdings Table and select "View Fundamentals".
+* **Fundamental Data Viewer:**
+  * Click any holding to open its detail view, or press **⌘K** (Ctrl+K) and type
+    a symbol to look up a company you do not own.
   * The viewer is organized into tabs:
     * **Summary:** Company profile, key statistics (Market Cap, P/E, EPS), dividend information, and price history.
     * **Financials:** Annual and quarterly Income Statements. Now includes Dividend Yield and Rate.
@@ -618,49 +662,49 @@ Investa packs several additional features and settings to enhance your portfolio
     ```bash
     pytest tests/test_db_integrity.py
     ```
-  * **Clearing Cache:** If you suspect data issues, use **Settings > Clear Cache Files...** to force a fresh fetch.
+  * **Clearing Cache:** If you suspect data issues, use **Settings → Advanced Settings → System Cache → Clear System Cache** to force a fresh fetch.
 
 * **Custom Groups (Tags):**
   * You can now organize your holdings beyond standard sectors by using **Tags**.
   * **How to use:** In the **Holdings Table**, look for the **Tags** column. Click the **Edit (Pen)** icon next to any holding to add or edit tags (e.g., "Core", "Speculative", "Income").
   * Multiple tags can be separated by commas. These are saved to your database and can be used for custom sorting or grouping in future updates.
 
-* **Configuration Persistence (`gui_config.json` & `manual_overrides.json`):**
-  * **`gui_config.json`:** Stores your UI preferences and operational settings. This includes:
-      * Path to the currently loaded SQLite database file (`investa_transactions.db` or user-specified).
-      * Selected global display currency.
-      * List of active/selected investment accounts for filtering.
-      * Current graph settings (date ranges, intervals, selected benchmarks).
-      * Visibility status for columns in the main holdings table.
-      * User-defined list of currencies for quick selection in dropdowns.
-  * **`manual_overrides.json`:** Stores symbol-specific configurations and data overrides. This JSON file contains:
-      * **`manual_price_overrides`**: Manually set values for `price`, `asset_type`, `sector`, `geography`, and `industry` for specific symbols. Example: `{"AAPL": {"price": 175.00, "asset_type": "Stock", "sector": "Technology", "geography": "United States", "industry": "Consumer Electronics"}}`
-      * **`user_symbol_map`**: User-defined mappings from alternative ticker symbols to a primary symbol. Example: `{"BRK.B": "BRK-B", "MSFT.NE": "MSFT"}`
-      * **`excluded_symbols`**: A list of symbols to be excluded from market data fetching or certain calculations.
-  * These files are located in the application data directory. You generally don't need to edit them manually, as settings are managed through the application's UI.
+### Configuration Persistence (`gui_config.json` & `manual_overrides.json`)
 
-* **Application Data Directory:**
-    As mentioned in Part 1, this directory is vital. It holds your database, config files, cache, and CSV backups.
-  * **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
-  * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\`
-  * **Linux:** `~/.local/share/StockAlchemist/Investa/`
+* **`gui_config.json`:** Stores your UI preferences and operational settings. This includes:
+    * Selected global display currency.
+    * List of active/selected investment accounts for filtering.
+    * Current graph settings (date ranges, intervals, selected benchmarks).
+    * Visibility status for columns in the main holdings table.
+    * User-defined list of currencies for quick selection in dropdowns.
+* **`manual_overrides.json`:** Stores symbol-specific configurations and data overrides. This JSON file contains:
+    * **`manual_price_overrides`**: Manually set values for `price`, `asset_type`, `sector`, `geography`, and `industry` for specific symbols. Example: `{"AAPL": {"price": 175.00, "asset_type": "Stock", "sector": "Technology", "geography": "United States", "industry": "Consumer Electronics"}}`
+    * **`user_symbol_map`**: User-defined mappings from alternative ticker symbols to a primary symbol. Example: `{"BRK.B": "BRK-B", "MSFT.NE": "MSFT"}`
+    * **`excluded_symbols`**: A list of symbols to be excluded from market data fetching or certain calculations.
+* Both live in `data/users/<username>/config/`. You generally don't need to
+  edit them by hand — everything in them is reachable from **Settings** — but
+  they are plain JSON if you ever want to read or back one up.
+
+* **The `data/` Directory:**
+    As covered in Part 1, `data/` beside the code holds everything: your
+    `portfolio.db` and config under `users/<username>/`, plus shared caches. The
+    path is the same on macOS, Windows and Linux, which is what makes moving an
+    installation a matter of copying one folder.
 
 ## Part 12: Tips & Troubleshooting
 
 Here are some general tips and common troubleshooting steps, reflecting Investa's database-centric approach:
 
-* **Your Database is Primary:** Remember that `investa_transactions.db` (or your custom-named `.db` file) is your primary data source. While CSV import is supported, all ongoing transaction management (adds, edits, deletes) happens directly in the database.
+* **Your Database is Primary:** Your `portfolio.db` is the record. CSV and statement imports are ways of getting history *into* it; once there, all transaction management — adds, edits, deletes — happens against the database, and an exported CSV is a snapshot rather than a second source of truth.
   * **Backup your `.db` file regularly!** While Investa might create CSV backups during certain operations, direct backup of the database file itself is the most robust way to protect your data.
 * **Accuracy is Paramount:** The insights Investa provides are only as good as the data you feed it.
   * Double-check every transaction you enter or import for correct dates, types, symbols, quantities, prices, and especially account assignments.
   * Pay close attention to `$CASH` transactions (Deposits, Withdrawals) as they are critical for accurate Time-Weighted Return (TWR) calculations.
-* **"Refresh All" (F5) is Your Best Friend:**
-  * After adding/editing/deleting transactions directly in the database.
-  * After importing a CSV file.
-  * After changing symbol settings (overrides, mappings, exclusions).
-  * When you want the absolute latest market prices and FX rates.
-  * If something just doesn't look right, a "Refresh All" is often the first step.
-* **Use the Status Bar:** The bottom of the Investa window often displays messages about current operations (e.g., "Fetching prices...", "Calculations complete...", "Database loaded"). This can give you an idea of what the application is doing, especially during longer operations.
+* **When a number looks wrong:** Changes take effect immediately, so staleness
+  is rarely the cause. If you do suspect it — usually after changing symbol
+  overrides or mappings — **Settings → Advanced Settings → System Cache →
+  Clear System Cache** discards the cached history, quotes and metadata and
+  forces a fresh download on the next load.
 * **Ticker Normalization:** Investa includes built-in intelligence to handle symbol variations across different sources. For example, it automatically maps `BRK.B` to `BRK-B` for Yahoo Finance compatibility, ensuring your performance data is always accurate even if your brokerage uses slightly different ticker conventions.
 * **CSV Format Help (`Help > CSV Format Help...`):**
   * Even though the database is primary, this in-app guide is still very useful if you are preparing a CSV file for import. It details the expected headers and data for each transaction type.
@@ -691,10 +735,13 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
     * **Market Data Fetching:** Initial data fetch for many symbols can be slow. Subsequent loads should be faster due to caching.
     * **Numba JIT Compilation:** The first time calculations are run (e.g., historical TWR), Numba compiles functions, which might take a moment. Subsequent runs are faster.
 
-  * **"File not found" error for database on startup:**
-    * This usually means the database file (`investa_transactions.db` or a custom-named one) that was last opened cannot be found at its previous location.
-    * The application will prompt you to either locate the existing `.db` file or create a new one.
-    * Ensure the path stored in `gui_config.json` under `database_path` is correct or select the correct file when prompted.
+  * **Your holdings are suddenly empty after moving or restoring:**
+    * Your data is keyed to your username, at `data/users/<username>/portfolio.db`.
+      An empty dashboard on a fresh install almost always means that folder is
+      missing or was restored under a different username than the one you logged
+      in with.
+    * Check that `data/users/<username>/portfolio.db` exists and is not zero
+      bytes, then log out and back in.
 
 ## Part 13: The Investa Web Dashboard
 
@@ -801,7 +848,7 @@ To see the valuation analysis for any stock:
 Investa automatically fetches default parameters (like Beta, WACC, and analyst growth estimates). If you have different assumptions, you can override them:
  
 **To customize the model:**
-1. Go to **Settings > Valuation Overrides**.
+1. Go to **Settings → Overrides**.
 2. Select the **Symbol** and the **Parameter** (e.g., `Growth Rate (DCF)`, `Discount Rate (DCF)`).
 3. Enter your value (e.g., `0.10` for 10%) and click **Add Parameter**.
  
@@ -861,7 +908,7 @@ To enable this, you must first configure a "Flex Query" in your IBKR Portal:
     *   Save the query and take note of its **Query ID**.
 
 ### 2. Configuring Investa
-1.  Open the Web Dashboard and go to **Settings > IBKR Settings**.
+1.  Open the Web Dashboard and go to **Settings → Advanced Settings → Interactive Brokers Sync**, and enter your **Flex Token** and **Query ID**. Click **Save Credentials**, then **Sync Transactions Now**.
 2.  Enter your **Flex Token** and **Flex Query ID**.
 3.  Click **Save Configuration**.
 
@@ -927,6 +974,11 @@ For any stock in the screener or your watchlist, you can trigger an **AI Audit**
 *   **Valuation Context:** Comparison of current price to intrinsic value estimates.
 
 The **AI Score** helps you quickly prioritize which opportunities to investigate further, acting as a second opinion on the quantitative data.
+
+### Screens Worth Knowing
+
+*   **Growth Outliers:** Flags companies priced with unrealistic growth expectations (e.g., >30% sustained growth needed to justify current price).
+*   **Deep Value:** A high-conviction screen combining a strong AI score, a large margin of safety, and consistent historical profitability.
 
 ## Part 19: Apple Native Apps (macOS, iOS, iPadOS)
 
