@@ -205,13 +205,16 @@ YFINANCE_EXCLUDED_SYMBOLS = set()
 # {"VTSAX", "VTIAX"} # Example: Mutual funds often don't have good YF data
 SHORTABLE_SYMBOLS = {"AAPL", "MSFT", "GOOG", "AMZN", "META", "TSLA", "NVDA"}
 
-# DEFAULT_CSV constant:
-# In the context of a DB-first application, this is less about the *primary data source*
-# and more about a *default filename for CSV operations* like export or import examples.
-# main_gui.py uses DEFAULT_CSV_FOR_IMPORT_FALLBACK for prompting migration.
-# DEFAULT_CSV is also used in PortfolioApp.load_config as a fallback.
-# Note: main_gui.py previously redefined this; ensure it now imports from here.
-DEFAULT_CSV = "my_transactions.csv"  # Default name for CSV related operations (e.g. export suggestion)
+# A default *filename* for CSV operations — an export suggestion, an import
+# example — not a data source. The databases are the data; see
+# PORTFOLIO_DB_FILENAME below. `config_manager` seeds a new user's
+# `transactions_file_csv_fallback` with it and nothing else reads it.
+#
+# It was defined twice, here and again in the "moved from main_gui.py" block
+# below, which is exactly what the note this replaces warned against — the Qt
+# UI's copy was pasted in with the rest when the desktop app was removed. Both
+# said "my_transactions.csv", so nothing behaved differently.
+DEFAULT_CSV = "my_transactions.csv"
 
 # --- Calculation Method Configuration ---
 HISTORICAL_CALC_METHOD = "numba_chrono"  # Options: 'python', 'numba', 'numba_chrono'
@@ -241,7 +244,6 @@ DEBOUNCE_INTERVAL_MS = (
 )
 GLOBAL_DB_FILENAME = "global.db"
 PORTFOLIO_DB_FILENAME = "portfolio.db"
-DEFAULT_CSV = "my_transactions.csv"
 MANUAL_OVERRIDES_FILENAME = "manual_overrides.json"
 GUI_CONFIG_FILENAME = "gui_config.json"
 DEFAULT_API_KEY = ""
