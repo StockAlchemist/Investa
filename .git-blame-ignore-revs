@@ -1,0 +1,9 @@
+# Commits that changed formatting only. `git blame` skips these with:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# (Set it once per clone; GitHub honours the file automatically.)
+
+# style: run ruff format across src/, tests/ and scripts/
+# 132 files, whitespace only — verified AST-identical before and after.
+a905af5750724eed843291f905cfe8865a22adda
