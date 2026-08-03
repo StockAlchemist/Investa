@@ -1,5 +1,6 @@
 """Rebuild ING Direct, Sharebuilder, and Penson accounts for dheematan."""
-import sqlite3, os
+import sqlite3
+import os
 
 DB = os.path.join(os.path.dirname(__file__), '..', 'data', 'users', 'dheematan', 'portfolio.db')
 conn = sqlite3.connect(DB)
@@ -70,7 +71,7 @@ ins('2009-04-30','sell','IDMOX',-297.775,9.25,2754.42,0,'ING Direct','ING DIRECT
 ins('2009-04-30','sell','IDIOX',-440.446,5.87,2585.42,0,'ING Direct','ING DIRECT-2009')
 ins('2009-05-01','withdrawal','$CASH',0,0,-6805.94,0,'ING Direct','ING Direct final withdrawal')
 
-print(f"  Inserted ING Direct transactions")
+print("  Inserted ING Direct transactions")
 
 # Phase 3: Sharebuilder
 print("\n=== Phase 3: Sharebuilder ===")
@@ -138,7 +139,7 @@ for sym,qty in [('AAPL',452),('VGK',84),('SPY',94),('QQQQ',109),('ADRE',267)]:
     ins('2006-12-19','transfer',sym,qty,0,0,0,'Sharebuilder',
         'ACATS Transfer: Sharebuilder -> TD Ameritrade','TD Ameritrade')
 
-print(f"  Inserted Sharebuilder transactions")
+print("  Inserted Sharebuilder transactions")
 
 # Phase 4: Penson
 print("\n=== Phase 4: Penson ===")
@@ -210,7 +211,7 @@ closing_balance = 13709.01 + net_trades + net_other
 ins('2007-06-01','withdrawal','$CASH',0,0,-round(closing_balance,2),0,'Penson',
     f'Final withdrawal (calculated: {closing_balance:.2f})')
 
-print(f"  Inserted Penson transactions")
+print("  Inserted Penson transactions")
 print(f"  Penson closing balance: ${closing_balance:.2f}")
 
 conn.commit()

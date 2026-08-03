@@ -15,18 +15,18 @@ import os
 import pstats
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date
 
 # Ensure src/ is importable
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-import logging
+import logging  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-import config
-from data_loader import load_and_clean_transactions
-from portfolio_history import calculate_historical_performance
+import config  # noqa: E402
+from data_loader import load_and_clean_transactions  # noqa: E402
+from portfolio_history import calculate_historical_performance  # noqa: E402
 
 # ──────────────────────────────────────────────────────────────
 # Monkey-patch the major pipeline phases so we can capture
@@ -45,9 +45,9 @@ def _timed_wrapper(label, original_fn):
     return wrapper
 
 # Patch individual heavy functions
-import portfolio_history as ph
-import portfolio_valuation_kernels as pvk
-import market_data as md
+import portfolio_history as ph  # noqa: E402
+import portfolio_valuation_kernels as pvk  # noqa: E402
+import market_data as md  # noqa: E402
 
 # Phase 1: Input preparation
 ph._prepare_historical_inputs = _timed_wrapper(
@@ -130,7 +130,7 @@ def main():
     today = date.today()
 
     print(f"Date range: {min_date} → {today}")
-    print(f"Display currency: USD")
+    print("Display currency: USD")
     print()
 
     # ── cProfile run ──

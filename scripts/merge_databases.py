@@ -139,7 +139,8 @@ def main(dry_run: bool = False):
 
     if dry_run:
         print("\n[DRY RUN] No changes written.")
-        dhee.close(); kit.close()
+        dhee.close()
+        kit.close()
         return
 
     # ── Apply changes atomically ───────────────────────────────────────────

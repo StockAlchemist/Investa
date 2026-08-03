@@ -326,9 +326,9 @@ def main():
     n_kit = sum(1 for a, n in assign.values() if n and NOTE_KIT in n)
     n_atcha = sum(1 for a, n in assign.values() if n and NOTE_ATCHA in n)
     print(f"  SCBS notes: {n_kit} x '{NOTE_KIT}', {n_atcha} x '{NOTE_ATCHA}'")
-    print(f"  + 1 TCAP buy row and its cash deposit split 3,000 (SCBS) / 2,500 (Kim Eng)")
-    print(f"  + corporate-action rows: MBK split, AMARIN stock dividend (970 KE / 750 SCBS),")
-    print(f"    BECL->BEM merger pair; BEM buy row relabeled BECL, BML relabeled BEM")
+    print("  + 1 TCAP buy row and its cash deposit split 3,000 (SCBS) / 2,500 (Kim Eng)")
+    print("  + corporate-action rows: MBK split, AMARIN stock dividend (970 KE / 750 SCBS),")
+    print("    BECL->BEM merger pair; BEM buy row relabeled BECL, BML relabeled BEM")
 
     if not args.apply:
         print("\nDry run only. Re-run with --apply to write changes.")

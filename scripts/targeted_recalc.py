@@ -9,9 +9,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_path = os.path.join(current_dir, '..', 'src')
 sys.path.append(src_path)
 
-from market_data import get_shared_mdp
-from db_utils import get_db_connection, update_intrinsic_value_in_cache
-from financial_ratios import get_comprehensive_intrinsic_value
+from market_data import get_shared_mdp  # noqa: E402
+from db_utils import get_db_connection, update_intrinsic_value_in_cache  # noqa: E402
+from financial_ratios import get_comprehensive_intrinsic_value  # noqa: E402
 
 # Setup logging
 logging.basicConfig(

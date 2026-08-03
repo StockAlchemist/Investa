@@ -20,7 +20,6 @@ Run: python scripts/reconcile_twr_irr_flows.py dheematan
 import sys
 import sqlite3
 import pandas as pd
-from collections import defaultdict
 
 USER = sys.argv[1] if len(sys.argv) > 1 else "dheematan"
 DB = f"data/users/{USER}/portfolio.db"

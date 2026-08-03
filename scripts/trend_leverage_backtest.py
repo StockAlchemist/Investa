@@ -44,7 +44,7 @@ import argparse
 import json
 import os
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd

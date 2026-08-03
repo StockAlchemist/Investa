@@ -41,10 +41,9 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-import numpy as np
 import pandas as pd
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
