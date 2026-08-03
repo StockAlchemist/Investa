@@ -21,7 +21,8 @@ export interface MarketIndex {
 
 interface MarketsTabProps {
     indices: Record<string, MarketIndex>;
-    onIndexClick: () => void;
+    /** Opens the index graph modal, focused on the card that was clicked. */
+    onIndexClick: (index: MarketIndex) => void;
     holdings?: Holding[];
     currency?: string;
     portfolioSymbols?: string[];
@@ -342,7 +343,7 @@ export default function MarketsTab({ indices, onIndexClick, holdings = [], curre
                 <h2 className="text-2xl font-bold tracking-tight text-foreground mb-4">Market Indices</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Object.values(indices).map((index: MarketIndex) => (
-                        <IndexCard key={index.name} index={index} onClick={onIndexClick} />
+                        <IndexCard key={index.name} index={index} onClick={() => onIndexClick(index)} />
                     ))}
                 </div>
             </div>

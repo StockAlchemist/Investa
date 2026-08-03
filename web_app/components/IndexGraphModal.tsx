@@ -13,7 +13,9 @@ import {
 } from 'recharts';
 import { X, TrendingUp, Info } from 'lucide-react';
 import PeriodSelector from './PeriodSelector';
+import TradingViewChart from './TradingViewChart';
 import { fetchMarketHistory } from '../lib/api';
+import { benchmarkYahooSymbol, toTradingViewSymbol } from '../lib/tradingview';
 import { Badge } from './ui/badge';
 import type { MarketIndex } from './MarketsTab';
 import { cn } from '@/lib/utils';
@@ -23,6 +25,9 @@ interface IndexGraphModalProps {
     onClose: () => void;
     benchmarks: string[];
     currentIndices?: Record<string, MarketIndex>;
+    /** Name of the index card that opened this, if any — the TradingView view
+     *  starts on that index rather than on the first benchmark. */
+    focusIndex?: string | null;
 }
 
 const COLORS = [
@@ -78,8 +83,12 @@ const CustomTooltip = ({ active, payload, label, period }: {
     return null;
 };
 
-export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIndices }: IndexGraphModalProps) {
+export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIndices, focusIndex }: IndexGraphModalProps) {
     const [period, setPeriod] = useState('1y');
+    const [view, setView] = useState<'return' | 'tradingview'>('return');
+    // Carries the index it was picked under, so opening a different card drops
+    // a stale pick rather than charting the last card's index.
+    const [tvPick, setTvPick] = useState<{ focus: string | null; bench: string } | null>(null);
     const [data, setData] = useState<Array<Record<string, number | string | null>>>([]);
     const [loading, setLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -88,8 +97,35 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
         setMounted(true);
     }, []);
 
+    // TradingView charts one instrument at a time, where the return view
+    // overlays them all — so that view picks an index, and only among the ones
+    // we can resolve to a TradingView listing.
+    const tvBenchmarks = useMemo(
+        () => benchmarks.filter(b => {
+            // Both hops have to land: a benchmark we know (S&P 500 → ^GSPC) and
+            // an instrument the free widget will actually draw. Total-return
+            // indices clear the first and fail the second.
+            const yahoo = benchmarkYahooSymbol(b);
+            return yahoo !== null && toTradingViewSymbol(yahoo) !== null;
+        }),
+        [benchmarks],
+    );
+
+    // The clicked card names an index the way the backend does ("Dow"), the
+    // benchmark list the way BENCHMARK_MAPPING does ("Dow Jones") — they meet
+    // at the Yahoo symbol.
+    const focus = focusIndex ?? null;
+    const focusBenchmark = useMemo(() => {
+        const target = focus ? benchmarkYahooSymbol(focus) : null;
+        return target ? tvBenchmarks.find(b => benchmarkYahooSymbol(b) === target) : undefined;
+    }, [focus, tvBenchmarks]);
+
+    const picked = tvPick && tvPick.focus === focus && tvBenchmarks.includes(tvPick.bench) ? tvPick.bench : null;
+    const tvSelected = picked ?? focusBenchmark ?? tvBenchmarks[0];
+
     useEffect(() => {
-        if (!isOpen) return;
+        // TradingView draws from its own feed — don't pull ours behind it.
+        if (!isOpen || view === 'tradingview') return;
 
         let isMounted = true;
         const fetchData = async () => {
@@ -111,7 +147,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
 
         fetchData();
         return () => { isMounted = false; };
-    }, [isOpen, benchmarks, period]);
+    }, [isOpen, benchmarks, period, view]);
 
     const activeBenchmarks = useMemo(() => {
         return benchmarks;
@@ -208,21 +244,73 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                     </div>
 
                     {/* Range Selector Integration */}
-                    <div className="px-8 pb-6 flex items-center justify-between">
-                        <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
-                        <div className="hidden sm:flex items-center gap-4">
-                            {activeBenchmarks.map((bench, idx) => (
-                                <div key={bench} className="flex items-center gap-2">
-                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{bench}</span>
+                    <div className="px-8 pb-6 flex items-center justify-between gap-4 flex-wrap">
+                        {/* TradingView ships its own range tabs and interval picker,
+                            so ours would just be a rival — it gets an index picker
+                            in that slot instead. */}
+                        {view === 'return' ? (
+                            <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
+                        ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                {tvBenchmarks.map((bench) => (
+                                    <button
+                                        key={bench}
+                                        onClick={() => setTvPick({ focus, bench })}
+                                        className={cn(
+                                            'px-3 py-1 text-[11px] font-bold rounded-full border transition-all',
+                                            bench === tvSelected
+                                                ? 'bg-[#0097b2] text-white border-transparent shadow-sm'
+                                                : 'text-muted-foreground border-border bg-secondary hover:text-foreground hover:bg-accent/10',
+                                        )}
+                                    >
+                                        {bench}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex items-center gap-6">
+                            {view === 'return' && (
+                                <div className="hidden sm:flex items-center gap-4">
+                                    {activeBenchmarks.map((bench, idx) => (
+                                        <div key={bench} className="flex items-center gap-2">
+                                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{bench}</span>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
+                            )}
+
+                            {tvBenchmarks.length > 0 && (
+                                <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0">
+                                    {([
+                                        { key: 'return', label: 'Return %' },
+                                        { key: 'tradingview', label: 'TradingView' },
+                                    ] as const).map(({ key, label }) => (
+                                        <button
+                                            key={key}
+                                            onClick={() => setView(key)}
+                                            className={cn(
+                                                'px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all whitespace-nowrap',
+                                                view === key
+                                                    ? 'bg-[#0097b2] text-white shadow-sm'
+                                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10',
+                                            )}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
 
                 {/* Content Area */}
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-background/30">
+                    {view === 'tradingview' && tvSelected ? (
+                        <TradingViewChart symbol={benchmarkYahooSymbol(tvSelected) as string} height={450} />
+                    ) : (
                     <div className="h-[450px] w-full relative">
                         {loading && (
                             <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -289,6 +377,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
+                    )}
 
                 </div>
 
@@ -296,11 +385,13 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                 <div className="bg-card/50 px-8 py-4 flex justify-between items-center bg-secondary/10">
                     <div className="flex items-center gap-4">
                         <span className="text-[10px] text-muted-foreground uppercase tracking-[0.15em] font-black opacity-40">
-                            Market Insight • {period.toUpperCase()} View
+                            {view === 'tradingview'
+                                ? `Market Insight • ${tvSelected ?? ''}`
+                                : `Market Insight • ${period.toUpperCase()} View`}
                         </span>
                     </div>
                     <div className="text-[10px] text-muted-foreground font-black uppercase tracking-[0.1em] opacity-40 italic">
-                        Real-time Data by Yahoo Finance
+                        {view === 'tradingview' ? 'Chart & Data by TradingView' : 'Real-time Data by Yahoo Finance'}
                     </div>
                 </div>
             </div>
