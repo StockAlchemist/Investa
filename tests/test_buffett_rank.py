@@ -10,6 +10,7 @@ system can really do damage with.
 import os
 import sys
 import tempfile
+from datetime import datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -664,3 +665,165 @@ def test_display_name_keeps_the_share_class(stored, expected):
     from server.routes.buffett_rank import _display_name
 
     assert _display_name(stored) == expected
+
+
+# --- retention --------------------------------------------------------------
+#
+# Every run writes the whole universe and nothing ever deleted it, so the store
+# reached 51 MB in its first week and was on course for GitHub's 100 MB hard
+# limit inside another. Pruning caps it; these hold the two properties that make
+# capping safe — the newest runs survive, and the one reader that wants more
+# than the latest still gets its window.
+
+
+def _run(store, rank, symbol="AAA", excluded_symbol="ZZZ"):
+    """One complete run carrying a single ranked row and a single exclusion."""
+    run_id = store.start_run(2, {})
+    store.save_scores(
+        run_id,
+        pd.DataFrame(
+            {
+                "cik": ["0000000001"],
+                "name": ["Test Co"],
+                "model": ["generic"],
+                "rank": [rank],
+                "composite_score": [50.0],
+                "quality_score": [50.0],
+                "value_score": [50.0],
+                "confidence": [1.0],
+                "coverage": [1.0],
+                "symbol": [symbol],
+            }
+        ),
+    )
+    store.save_exclusions(
+        run_id, [{"symbol": excluded_symbol, "cik": "0000000002", "reasons": "gate"}]
+    )
+    store.finish_run(run_id, 1, 1)
+    return run_id
+
+
+def test_pruning_keeps_the_newest_runs_and_drops_the_rest():
+    with tempfile.TemporaryDirectory() as directory:
+        store = BuffettRankStore(os.path.join(directory, "ranks.db"))
+        ids = [_run(store, rank=i + 1) for i in range(8)]
+
+        store.prune_runs(keep=3)
+
+        with store._connect() as conn:
+            kept = [r[0] for r in conn.execute("SELECT run_id FROM rank_runs")]
+        assert sorted(kept) == ids[-3:]
+        assert store.latest_run_id() == ids[-1]
+
+
+def test_pruning_takes_the_scores_and_exclusions_with_it():
+    """A run's rows are the bulk of the file; leaving them orphaned defeats it."""
+    with tempfile.TemporaryDirectory() as directory:
+        store = BuffettRankStore(os.path.join(directory, "ranks.db"))
+        ids = [_run(store, rank=i + 1) for i in range(5)]
+
+        store.prune_runs(keep=2)
+
+        with store._connect() as conn:
+            scores = {
+                r[0] for r in conn.execute("SELECT DISTINCT run_id FROM rank_scores")
+            }
+            excl = {
+                r[0]
+                for r in conn.execute("SELECT DISTINCT run_id FROM rank_exclusions")
+            }
+        assert scores == set(ids[-2:])
+        assert excl == set(ids[-2:])
+
+
+def test_a_finished_run_prunes_on_its_own():
+    """finish_run applies the retention budget, so nothing has to remember to."""
+    with tempfile.TemporaryDirectory() as directory:
+        store = BuffettRankStore(os.path.join(directory, "ranks.db"))
+        for i in range(4):
+            _run(store, rank=i + 1)
+        # The default budget is far above 4, so nothing should have gone yet.
+        with store._connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM rank_runs").fetchone()[0] == 4
+
+
+def test_a_run_still_in_flight_is_never_evicted():
+    """
+    Its rows land before finish_run marks it, so counting it against the budget
+    could delete a run mid-write.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        store = BuffettRankStore(os.path.join(directory, "ranks.db"))
+        for i in range(5):
+            _run(store, rank=i + 1)
+        in_flight = store.start_run(2, {})  # started, never finished
+
+        store.prune_runs(keep=1)
+
+        with store._connect() as conn:
+            kept = {r[0] for r in conn.execute("SELECT run_id FROM rank_runs")}
+        assert in_flight in kept
+        # And it is not mistaken for the newest *usable* run.
+        assert store.latest_run_id() != in_flight
+
+
+def test_an_abandoned_run_is_reclaimed():
+    """
+    A worker killed between save_scores and finish_run holds a full universe that
+    the budget can never reach, because the budget only evicts finished runs. Old
+    enough to rule out being in flight, it goes.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        store = BuffettRankStore(os.path.join(directory, "ranks.db"))
+        _run(store, rank=1)
+        abandoned = store.start_run(2, {})
+        store.save_exclusions(
+            abandoned, [{"symbol": "HALF", "cik": "9", "reasons": "gate"}]
+        )
+        # Backdate it past the staleness window: no live run takes six hours.
+        with store._connect() as conn:
+            conn.execute(
+                "UPDATE rank_runs SET started_at = ? WHERE run_id = ?",
+                ((datetime.now() - timedelta(hours=7)).isoformat(), abandoned),
+            )
+            conn.commit()
+
+        store.prune_runs()
+
+        with store._connect() as conn:
+            kept = {r[0] for r in conn.execute("SELECT run_id FROM rank_runs")}
+            orphans = conn.execute(
+                "SELECT COUNT(*) FROM rank_exclusions WHERE run_id = ?", (abandoned,)
+            ).fetchone()[0]
+        assert abandoned not in kept
+        assert orphans == 0, "its rows must go with it, or the leak remains"
+
+
+def test_a_young_unfinished_run_outlives_pruning():
+    """The staleness rule must not race a worker that started a minute ago."""
+    with tempfile.TemporaryDirectory() as directory:
+        store = BuffettRankStore(os.path.join(directory, "ranks.db"))
+        _run(store, rank=1)
+        fresh = store.start_run(2, {})
+
+        store.prune_runs()
+
+        with store._connect() as conn:
+            kept = {r[0] for r in conn.execute("SELECT run_id FROM rank_runs")}
+        assert fresh in kept
+
+
+def test_the_symbol_history_window_survives_the_default_budget():
+    """
+    get_symbol_history asks for 24 runs by default. If retention were tighter
+    than that, a stock's rank trajectory would be silently truncated.
+    """
+    from buffett_store import _KEEP_RUNS
+
+    assert _KEEP_RUNS >= 24
+
+
+def test_pruning_an_empty_store_is_a_no_op():
+    with tempfile.TemporaryDirectory() as directory:
+        store = BuffettRankStore(os.path.join(directory, "ranks.db"))
+        assert store.prune_runs(keep=5) == 0

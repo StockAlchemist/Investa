@@ -17,13 +17,22 @@ fi
 
 # Function to kill all child processes on exit
 cleanup() {
+    # Disarm first: with EXIT trapped as well as the signals, a SIGTERM would
+    # otherwise run this twice — once for the signal, once for the exit it calls.
+    trap - SIGINT SIGTERM EXIT
     echo "Shutting down Investa..."
     kill $(jobs -p) 2>/dev/null
     exit
 }
 
-# Trap SIGINT (Ctrl+C) and call cleanup
-trap cleanup SIGINT
+# Trap SIGINT (Ctrl+C) and call cleanup.
+#
+# SIGTERM and EXIT are in here too, and they are the ones that matter for the
+# ranking worker: it holds no port, so the port sweep below cannot reap it, and
+# on SIGINT alone it survived every exit that was not Ctrl+C. Four orphaned
+# workers had accumulated that way, the oldest three days old, each still
+# ranking once a day into the same store.
+trap cleanup SIGINT SIGTERM EXIT
 
 # --- KILL EXISTING PROCESSES ---
 echo "Checking for existing Investa processes..."
@@ -44,6 +53,15 @@ fi
 if lsof -ti:3001 >/dev/null; then
     echo "Killing existing frontend on port 3001..."
     kill -9 $(lsof -ti:3001)
+fi
+
+# The ranking worker listens on nothing, so it cannot be found by port. Left
+# alone it accumulated one orphan per start — each a daily loop writing a full
+# universe snapshot into the same store, which is what took that store to 51 MB
+# in a week. Matched on its command line instead.
+if pgrep -f "buffett_rank_worker.py" >/dev/null; then
+    echo "Killing existing ranking worker(s)..."
+    pkill -f "buffett_rank_worker.py"
 fi
 # -----------------------------
 

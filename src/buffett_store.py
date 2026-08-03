@@ -19,10 +19,11 @@ alone.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -30,6 +31,31 @@ import pandas as pd
 import config
 
 _DB_FILENAME = "buffett_ranks.db"
+
+# How many finished runs to keep. Every run writes the whole universe — ~1,240
+# ranked rows and ~4,300 exclusions, about 0.79 MB — and nothing ever deleted
+# them, so the store grew without bound: 51 MB in its first week, on course for
+# GitHub's 100 MB hard limit inside another one.
+#
+# Thirty is set by the one reader that wants more than the latest run,
+# `get_symbol_history`, which asks for 24. Keeping a margin above it means the
+# rank trajectory a stock's page draws is never shortened by pruning, and the
+# file settles around 24 MB instead of climbing.
+#
+# A ranking's inputs move quarterly, so this is a lot of history, not a little:
+# at the worker's intended one run a day it is a month of it.
+_KEEP_RUNS = 30
+
+# How long an unfinished run is presumed to still be in flight. Rows are written
+# before `finish_run` marks a run complete, so a run killed in between holds a
+# full universe — 0.79 MB — that the retention rule would never reach, since it
+# counts and evicts only finished runs. A worker that dies mid-write is not
+# hypothetical: four orphaned ones were killed at once here.
+#
+# Six hours against a run that takes about eighty seconds. The margin is what
+# makes this safe: a genuinely running job is never mistaken for an abandoned
+# one, and an abandoned one is reclaimed on the next day's run at the latest.
+_STALE_RUN_HOURS = 6
 
 # Columns persisted from the ranking frame. Anything not listed here is
 # reconstructible from these plus the fact store.
@@ -155,6 +181,62 @@ class BuffettRankStore:
                 (datetime.now().isoformat(), ranked, excluded, run_id),
             )
             conn.commit()
+        # Pruned here rather than at start_run so a run is only ever counted
+        # against the retention budget once it is complete — an interrupted run
+        # cannot evict a good one.
+        self.prune_runs()
+
+    def prune_runs(
+        self, keep: int = _KEEP_RUNS, stale_hours: float = _STALE_RUN_HOURS
+    ) -> int:
+        """
+        Drop all but the newest `keep` finished runs. Returns how many runs went.
+
+        A run still in flight is never touched, however many there are: its rows
+        land before `finish_run` marks it, so counting it against the budget could
+        delete a run mid-write. It is also not counted *towards* the budget, so an
+        in-flight run cannot evict a good one.
+
+        An unfinished run older than `stale_hours` is a different thing — a worker
+        that died — and is dropped. Without that it would hold whatever it had
+        already written for good, since the budget only ever evicts finished runs.
+        """
+        cutoff = (datetime.now() - timedelta(hours=stale_hours)).isoformat()
+        with self._write_lock, self._connect() as conn:
+            doomed = [
+                row[0]
+                for row in conn.execute(
+                    """SELECT run_id FROM rank_runs
+                       WHERE (
+                           finished_at IS NOT NULL AND run_id NOT IN (
+                               SELECT run_id FROM rank_runs WHERE finished_at IS NOT NULL
+                               ORDER BY run_id DESC LIMIT ?
+                           )
+                       ) OR (
+                           finished_at IS NULL AND started_at < ?
+                       )""",
+                    (keep, cutoff),
+                )
+            ]
+            if not doomed:
+                return 0
+            marks = ",".join("?" * len(doomed))
+            for table in ("rank_scores", "rank_exclusions", "rank_runs"):
+                conn.execute(f"DELETE FROM {table} WHERE run_id IN ({marks})", doomed)
+            conn.commit()
+
+        # VACUUM reclaims the freed pages to the filesystem; without it the file
+        # never shrinks, which is the whole point here. It cannot run inside a
+        # transaction, hence its own connection outside the block above.
+        try:
+            with self._connect() as conn:
+                conn.isolation_level = None
+                conn.execute("VACUUM")
+        except sqlite3.Error as exc:  # pragma: no cover - never worth failing a run
+            logging.warning(f"Rank store: VACUUM after pruning failed: {exc}")
+
+        logging.info(f"Rank store: pruned {len(doomed)} run(s), keeping {keep}")
+        return len(doomed)
 
     def save_scores(self, run_id: int, frame: pd.DataFrame) -> int:
         """Persist the ranked rows of one run."""
