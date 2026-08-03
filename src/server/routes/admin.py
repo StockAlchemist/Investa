@@ -104,8 +104,17 @@ def clear_cache():
         # Extensions that imply cache (be careful not to delete config/overrides)
         CACHE_EXTENSIONS = ('.json', '.feather', '.npy', '.key') 
         
-        # Safe-List (Never Delete)
-        KEEP_FILES = {'gui_config.json', 'manual_overrides.json', 'investa_transactions.db'}
+        # Safe-List (Never Delete) — top-level files only. A directory named in
+        # CACHE_DIR_NAMES is removed with rmtree, which does not consult this.
+        #
+        # auth_secret.key is here because '.key' is a CACHE_EXTENSION: a top-level
+        # key file matches the extension branch below and nothing else would stop
+        # it, and deleting the JWT signing key logs out every user. It survives
+        # today only because it sits in data/config/, which this never descends
+        # into — that is luck, not intent. (`investa_transactions.db` used to be
+        # listed here; it was the pre-multi-user single-file store, is long gone,
+        # and every real database is covered by KEEP_EXTENSIONS anyway.)
+        KEEP_FILES = {'gui_config.json', 'manual_overrides.json', 'auth_secret.key'}
         KEEP_EXTENSIONS = ('.db', '.sqlite', '.sqlite3', '.bak')
 
         import shutil
