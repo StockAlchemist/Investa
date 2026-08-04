@@ -2089,6 +2089,10 @@ class MarketDataProvider:
 
         # 3b. Batch Fetch Prices using yf.download (Existing Logic)
         stock_data_yf = {}
+        # Session date of the last usable DAILY bar, per internal symbol. The 1m
+        # pass compares against this (not against the server/UTC date) to decide
+        # whether its intraday price is fresher than the daily one.
+        daily_session_dates: Dict[str, Any] = {}
         if yf_symbols_to_fetch:
             # --- 3b. Batch Fetch Sparklines (and fallback prices) using yf.download ---
             logging.info(
@@ -2235,6 +2239,8 @@ class MarketDataProvider:
                                                     last_val  # No history, change=0
                                                 )
 
+                                        daily_session_dates[internal_sym] = last_date
+
                                         logging.debug(
                                             f"{yf_sym} Download: LastDate={last_date}, IsToday={is_today}, Price={price}, Prev={prev_close}"
                                         )
@@ -2313,96 +2319,72 @@ class MarketDataProvider:
 
                 if not df_rt.empty:
                     # Parse 1m results
-                    has_multilevel_rt = getattr(df_rt.columns, "nlevels", 1) > 1
-
                     for internal_sym, yf_sym in internal_to_yf_map_local.items():
                         try:
                             price_rt = None
+                            last_rt_date = None
 
-                            # Extract 1m Series
-                            sym_df_rt = pd.DataFrame()
-                            if len(yf_symbols_to_fetch) > 1:
-                                if (
-                                    has_multilevel_rt
-                                    and yf_sym in df_rt.columns.get_level_values(0)
-                                ):
-                                    sym_df_rt = df_rt[yf_sym]
-                                elif not has_multilevel_rt and any(
-                                    isinstance(c, (tuple, list))
-                                    and c[0].upper() == yf_sym.upper()
-                                    for c in df_rt.columns
-                                ):
-                                    cols_for_sym = [
-                                        c
-                                        for c in df_rt.columns
-                                        if isinstance(c, (tuple, list))
-                                        and c[0].upper() == yf_sym.upper()
-                                    ]
-                                    sym_df_rt = df_rt[cols_for_sym]
-                                    sym_df_rt.columns = [
-                                        c[1] for c in sym_df_rt.columns
-                                    ]
-                            else:
-                                if not has_multilevel_rt:
-                                    sym_df_rt = df_rt
+                            # Extract 1m Series — same helper as the daily leg, so
+                            # both legs cope with every column shape yfinance
+                            # returns (flat, MultiIndex either way round).
+                            sym_df_rt = _extract_ticker_from_df(df_rt, yf_sym)
 
                             if not sym_df_rt.empty and "Close" in sym_df_rt.columns:
-                                # Get last valid price
-                                last_row = sym_df_rt.iloc[-1]
+                                # Take the last bar this symbol actually TRADED, not
+                                # the last row of the frame. The 1m frames of every
+                                # market share one index, so a portfolio holding both
+                                # US and Asian names ends on rows where the other
+                                # market is all-NaN — reading iloc[-1] there dropped
+                                # the intraday price and fell back to a stale daily bar.
+                                valid_rt = sym_df_rt.dropna(subset=["Close"])
+                                if valid_rt.empty:
+                                    continue
+                                last_row = valid_rt.iloc[-1]
                                 price_rt = float(last_row["Close"])
 
-                                # Check if 1m data is actually from today (UTC) to avoid applying stale intraday noise
+                                # Only reject the intraday price when it is OLDER
+                                # than the daily bar we already have. Comparing it
+                                # against the server's UTC date instead threw away
+                                # the newest session for every US symbol between
+                                # 20:00 UTC and the next open — exactly when the
+                                # daily bar for that session is often still missing
+                                # from Yahoo — leaving the portfolio valued a full
+                                # session behind. Market dates belong to the market,
+                                # not to UTC or to the server's clock.
                                 last_rt_date = (
                                     last_row.name.date()
                                     if hasattr(last_row.name, "date")
                                     else last_row.name
                                 )
-                                if last_rt_date < now_utc:
-                                    # Stale 1m data (Yesterday). Skip update to preserve "Change=0" from Daily Logic.
+                                daily_date = daily_session_dates.get(internal_sym)
+                                if daily_date is not None and last_rt_date < daily_date:
+                                    # Genuinely stale 1m data — the daily bar is newer.
                                     price_rt = None
 
                             if price_rt and price_rt > 0:
                                 entry = stock_data_yf.get(internal_sym)
                                 if entry:
-                                    # We have an existing entry from Daily download (containing Sparkline/PrevClose/Meta)
-                                    # We just update the Price and Change.
-
-                                    # Recalculate Change using the stable PrevClose we already have
-                                    # The existing entry['change'] was 0.00 or based on daily.
-                                    # But entry['price'] might be stale (Yesterday).
-
-                                    # We need to dig out the 'prev_close' implicated in the Daily logic?
-                                    # Actually, let's re-derive prev_close from the existing 'stock_data_yf' logic?
-                                    # No, stock_data_yf only stores final values.
-
-                                    # However, we can trust that Daily Download (10d) finding 'Previous Close' is reasonably robust
-                                    # IF we correctly identified "Today" vs "Yesterday".
-                                    # Ah, my previous fix SET prev_close = price (change=0) if data was stale.
-                                    # Now we have FRESH price (price_rt).
-                                    # So we can try to recover the TRUE prev_close.
-
-                                    # But wait, if Daily data was stale (Yesterday), then 'price' was YesterdayClose.
-                                    # And I forced 'prev_close' = YesterdayClose.
-                                    # So now I have price_rt (Today).
-                                    # So PrevClose IS technically that "Stale Price" (YesterdayClose)!
-
-                                    # So: True PrevClose = entry['price'] (which came from the "Stale" Daily Bar logic).
-                                    # BUT only if the Daily logic marked it as stale?
-                                    # If Daily logic marked it as "Current" (Today), then entry['price'] is ALREADY Today's Daily Close (or live).
-                                    # Then entry['change'] is correct.
-
-                                    # Let's assume price_rt is SUPERIOR.
-                                    # And let's assume entry['price'] (from Daily) is "Close of Yesterday" if Daily was stale,
-                                    # OR "Current" if Daily was live.
-
-                                    # Issue: We lost the distinction in the dict.
-                                    # But we can assume:
-                                    # New Change = price_rt - entry['price'] + entry['change'] ?
-                                    # No.
-                                    # Old Price = P_old. Old Change = C_old. Old Prev = P_old - C_old.
-                                    prev_close_derived = (
-                                        entry["price"] - entry["change"]
-                                    )
+                                    # The entry from the daily download carries the
+                                    # sparkline and metadata; the 1m price supersedes
+                                    # its price. Which close the change is measured
+                                    # against depends on the session the 1m bar came
+                                    # from:
+                                    #   same session as the daily bar -> that bar's own
+                                    #     previous close (price - change)
+                                    #   a LATER session than the daily bar (Yahoo has
+                                    #     not published the daily bar yet) -> the daily
+                                    #     bar itself IS the previous close
+                                    daily_date = daily_session_dates.get(internal_sym)
+                                    if (
+                                        daily_date is not None
+                                        and last_rt_date is not None
+                                        and last_rt_date > daily_date
+                                    ):
+                                        prev_close_derived = entry["price"]
+                                    else:
+                                        prev_close_derived = (
+                                            entry["price"] - entry["change"]
+                                        )
 
                                     # Recalculate with New Price
                                     change_new = price_rt - prev_close_derived
