@@ -10,7 +10,7 @@ settings:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: M38ACZ9N67
+    CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Automatic
 targets:
   Investa:
@@ -42,6 +42,10 @@ targets:
         com.apple.security.network.client: true
         # Required for the NSOpenPanel file import (PDF/image statement parsing).
         com.apple.security.files.user-selected.read-only: true
+        # Required to load Xcode's injected SwiftUI preview/debug dylibs when Hardened Runtime is enabled
+        com.apple.security.cs.disable-library-validation: true
+        # Required for Xcode debugger to attach to the sandboxed/hardened app
+        com.apple.security.get-task-allow: true
   Investa-iOS:
     type: application
     platform: iOS
@@ -55,6 +59,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.investa.ios
         PRODUCT_NAME: Investa
+        # iOS can't build ad-hoc signed ("-") like the Mac target, so the
+        # personal team is pinned here — otherwise regenerating the project
+        # drops the signing Xcode was hand-configured with.
+        CODE_SIGN_IDENTITY: "iPhone Developer"
+        DEVELOPMENT_TEAM: M38ACZ9N67
         INFOPLIST_FILE: Investa/Info-iOS.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
