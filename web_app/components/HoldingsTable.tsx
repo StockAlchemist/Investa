@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { exportToCSV } from '../lib/export';
 import { Holding, Lot, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { Search, X, LayoutGrid, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter, Check } from 'lucide-react';
+import { Search, X, LayoutGrid, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown, ListFilter, Check } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,16 @@ import { getHeatmapClass, formatCurrency } from '../lib/utils';
 import { TrendSparkline } from './ui/TrendSparkline';
 import { InlineProgressBar } from './ui/InlineProgressBar';
 import { SemanticBadge } from './ui/SemanticBadge';
+
+function isCashSymbol(symbol: string | undefined): boolean {
+    const s = (symbol || '').toUpperCase();
+    return s === '$CASH' || s === 'CASH' || s.startsWith('CASH (');
+}
+
+/// A cash balance below a cent is rounding residue left by FX conversion and fee
+/// postings — a row that says "-0.0002" is noise, not a position. Compared on
+/// magnitude so a genuine negative (margin) balance still gets a row.
+const CASH_DUST_THRESHOLD = 0.01;
 
 interface HoldingsTableProps {
     holdings: Holding[];
@@ -137,6 +147,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
 
     const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
     const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set());
+    // Mobile holding cards start collapsed to a single summary line — the full
+    // metric grid is tall enough that one expanded card fills a phone screen.
+    // Tracked as the *expanded* set (empty = all collapsed).
+    const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Mkt Val', direction: 'desc' });
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
@@ -232,6 +246,19 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
             }
         }
 
+        // Expanded Cards
+        const savedExpandedCards = localStorage.getItem('investa_holdings_expanded_cards');
+        if (savedExpandedCards) {
+            try {
+                const parsed = JSON.parse(savedExpandedCards);
+                if (Array.isArray(parsed)) {
+                    setExpandedCards(new Set(parsed));
+                }
+            } catch (e) {
+                console.error("Failed to parse saved expanded cards", e);
+            }
+        }
+
         setIsInitialized(true);
     }, []);
 
@@ -252,6 +279,12 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
         if (!isInitialized) return;
         localStorage.setItem('investa_holdings_expanded_lots', JSON.stringify(Array.from(expandedLots)));
     }, [expandedLots, isInitialized]);
+
+    // Persist expandedCards to localStorage on change
+    useEffect(() => {
+        if (!isInitialized) return;
+        localStorage.setItem('investa_holdings_expanded_cards', JSON.stringify(Array.from(expandedCards)));
+    }, [expandedCards, isInitialized]);
 
     // Close menus when clicking outside
     useEffect(() => {
@@ -350,9 +383,16 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
         return holdings.filter(h => {
             const matchesSearch = h.Symbol.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesAccount = selectedAccounts.size === 0 || (h.Account && selectedAccounts.has(h.Account));
+            if (isCashSymbol(h.Symbol)) {
+                // Mkt Val is already in the display currency, so the threshold
+                // reads as a cent of whatever the user is looking at.
+                const mktVal = getValue(h, 'Mkt Val');
+                const amount = typeof mktVal === 'number' ? mktVal : 0;
+                if (Math.abs(amount) <= CASH_DUST_THRESHOLD) return false;
+            }
             return matchesSearch && matchesAccount;
         });
-    }, [holdings, searchQuery, selectedAccounts]);
+    }, [holdings, searchQuery, selectedAccounts, getValue]);
 
     const aggregatedHoldings = useMemo(() => {
         if (visibleColumns.includes('Account')) {
@@ -673,6 +713,23 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
         }
     };
 
+    const toggleCardExpansion = (key: string) => {
+        setExpandedCards(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+
+    const toggleAllCards = () => {
+        if (expandedCards.size > 0) {
+            setExpandedCards(new Set());
+        } else {
+            setExpandedCards(new Set(aggregatedHoldings.map(getExpansionKey)));
+        }
+    };
+
 
 
     const toggleAccount = (account: string) => {
@@ -975,6 +1032,22 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                                 </div>
                             )}
                         </div>
+
+                        {/* Expand/Collapse All Cards — card view is mobile-only */}
+                        {mobileViewMode === 'card' && (
+                            <button
+                                onClick={toggleAllCards}
+                                className={`md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                                ${expandedCards.size > 0
+                                        ? 'bg-[#0097b2] text-white'
+                                        : 'text-foreground bg-secondary hover:bg-accent/10'
+                                    }`}
+                                title={expandedCards.size > 0 ? 'Collapse All Details' : 'Expand All Details'}
+                            >
+                                <ChevronsUpDown className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Details</span>
+                            </button>
+                        )}
 
                         {/* Toggle All Lots Helper */}
                         <button
@@ -1466,13 +1539,45 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                                         <WatchlistStar symbol={holding.Symbol} size="md" />
                                         <h3 className="text-xl font-bold text-foreground leading-none">{holding.Symbol}</h3>
                                     </div>
-                                    <div className="text-right">
-                                        <div className="text-xl font-bold text-foreground leading-none">
-                                            {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
+                                    <div className="flex items-center gap-2">
+                                        <div className="text-right">
+                                            <div className="text-xl font-bold text-foreground leading-none">
+                                                {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
+                                            </div>
+                                            {/* Day change moves up here while collapsed — the strip
+                                                that normally carries it is now inside the expansion,
+                                                and a summary line with no change indicator is no
+                                                summary. Matches the iOS collapsed card. */}
+                                            {!expandedCards.has(getExpansionKey(holding)) && (
+                                                <div className={`text-xs font-medium mt-1 ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
+                                                    {formatValue(getValue(holding, "Day Chg %"), "Day Chg %")}
+                                                </div>
+                                            )}
                                         </div>
+                                        {/* Its own button — a tap on the card already opens the stock detail modal. */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleCardExpansion(getExpansionKey(holding));
+                                            }}
+                                            className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors border-none shrink-0"
+                                            aria-expanded={expandedCards.has(getExpansionKey(holding))}
+                                            title={expandedCards.has(getExpansionKey(holding)) ? `Hide ${holding.Symbol} details` : `Show ${holding.Symbol} details`}
+                                        >
+                                            {expandedCards.has(getExpansionKey(holding)) ? (
+                                                <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                                            ) : (
+                                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                            )}
+                                        </button>
                                     </div>
                                 </div>
 
+                                {/* Account / lots strip — part of the card's detail, so it
+                                    lives inside the expansion alongside the metric grid.
+                                    Otherwise the lots control sits outside the collapsed
+                                    card and a "collapsed" holding is still two rows tall. */}
+                                {expandedCards.has(getExpansionKey(holding)) && (
                                 <div className="flex justify-between items-center bg-zinc-500/5 dark:bg-zinc-400/5 p-2 rounded-md">
                                     <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -1511,8 +1616,13 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                                         )}
                                     </div>
                                 </div>
+                                )}
                             </div>
 
+                            {/* Rendered only when open, like the strip above it — a
+                                `hidden` class would still build ten fields per card
+                                across every holding in the list. */}
+                            {expandedCards.has(getExpansionKey(holding)) && (
                             <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3">
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Qty:</span>
@@ -1564,9 +1674,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                                     </span>
                                 </div>
                             </div>
+                            )}
 
                             {/* Mobile Lots View */}
-                            {expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
+                            {expandedCards.has(getExpansionKey(holding)) && expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
                                 <div className="mt-4 pt-3">
                                     <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Tax Lots</h4>
                                     <div className="space-y-2">

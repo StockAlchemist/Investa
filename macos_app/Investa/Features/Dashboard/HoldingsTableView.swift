@@ -103,6 +103,11 @@ struct HoldingsTableView: View {
     @State private var groupBy: String?
     @State private var expandedGroups: Set<String> = []
     @State private var expandedLots: Set<String> = []
+    /// Holding cards start collapsed to a single summary line — the full metric
+    /// grid is ~20 fields, so one expanded card fills a phone screen. Tracked as
+    /// the *expanded* set (empty = all collapsed) and persisted, so the cards a
+    /// user opens stay open across launches.
+    @AppStorage("investa.holdings.expandedCards") private var expandedCardsRaw = ""
     @State private var visibleRows = 10
     @State private var showColumns = false
     @State private var detail: SymbolID?
@@ -162,11 +167,25 @@ struct HoldingsTableView: View {
         return r
     }
 
+    /// A cash balance below a cent is rounding residue left by FX conversion and
+    /// fee postings — a row reading "-0.0002" is noise, not a position. Compared
+    /// on magnitude so a genuine negative (margin) balance still gets a row.
+    private static let cashDustThreshold = 0.01
+
+    private func isCashDust(_ h: Holding) -> Bool {
+        let s = h.symbol.uppercased()
+        guard s == "$CASH" || s == "CASH" || s.hasPrefix("CASH (") else { return false }
+        // Already in the display currency, so the threshold reads as a cent of
+        // whatever the user is looking at.
+        return abs(h.marketValue(currency: currency) ?? 0) <= Self.cashDustThreshold
+    }
+
     /// Filtered + (optionally) symbol-aggregated rows.
     private var baseRows: [HRow] {
         let filtered = holdings.filter {
             (search.isEmpty || $0.symbol.lowercased().contains(search.lowercased()))
             && (selectedAccounts.isEmpty || selectedAccounts.contains($0.account ?? ""))
+            && !isCashDust($0)
         }
         let rows = filtered.map(makeRow)
         if visibleColumns.contains("Account") { return rows }
@@ -377,6 +396,11 @@ struct HoldingsTableView: View {
                 groupMenu
                 if !uniqueAccounts.isEmpty { accountMenu }
                 columnsButton
+                if hSizeClass == .compact {
+                    toolButton("Details", "chevron.up.chevron.down", active: !expandedCards.isEmpty) {
+                        withAnimation(.easeInOut(duration: 0.18)) { toggleAllCards() }
+                    }
+                }
                 toolButton("Lots", "square.stack.3d.up", active: !expandedLots.isEmpty) { toggleAllLots() }
                 toolButton("Export", "square.and.arrow.down", active: false) { exportCSV() }
             }
@@ -722,15 +746,23 @@ struct HoldingsTableView: View {
 
     private func iosHoldingRow(_ r: HRow) -> some View {
         VStack(spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
                 StockIcon(symbol: r.symbol, size: 45)
+                // Single-line and served first: without this the symbol and share
+                // count are the most compressible things in the row, so they wrap
+                // ("GOO/G") as soon as anything else needs the width. The market
+                // value beside them scales down instead — it already has a
+                // minimumScaleFactor for exactly that.
                 VStack(alignment: .leading, spacing: 4) {
                     Text(r.symbol).font(.headline.weight(.bold))
+                        .lineLimit(1).minimumScaleFactor(0.7)
                     Text("\(Fmt.number(r.num["Quantity"])) shs")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
-                
+                .layoutPriority(1)
+
                 Spacer(minLength: 4)
                 
                 if r.sparkline.count > 1 {
@@ -750,7 +782,7 @@ struct HoldingsTableView: View {
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
-                    
+
                     if let dayChgPct = r.num["Day Chg %"] {
                         Text(pctString(dayChgPct))
                             .font(.system(size: 11, weight: .bold))
@@ -759,11 +791,27 @@ struct HoldingsTableView: View {
                             .foregroundStyle(glColor(dayChgPct))
                     }
                 }
+
+                // Its own button rather than a tap on the card, which already
+                // opens the stock detail sheet. Kept narrow — the header row is
+                // width-bound on a phone — but tall, so the tap target stays
+                // comfortable without costing horizontal space.
+                Button { withAnimation(.easeInOut(duration: 0.18)) { toggleCard(r) } } label: {
+                    Image(systemName: isCardExpanded(r) ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isCardExpanded(r) ? "Hide \(r.symbol) details" : "Show \(r.symbol) details")
             }
-            
-            iosExtraColumns(r)
-            
-            if !r.lots.isEmpty {
+
+            if isCardExpanded(r) {
+                iosExtraColumns(r)
+            }
+
+            if isCardExpanded(r), !r.lots.isEmpty {
                 Button { toggleLot(r.symbol) } label: {
                     HStack {
                         Text("\(r.lots.count) Lots")
@@ -774,7 +822,7 @@ struct HoldingsTableView: View {
                     .padding(.top, 4)
                 }.buttonStyle(.plain)
             }
-            if expandedLots.contains(r.symbol), !r.lots.isEmpty {
+            if isCardExpanded(r), expandedLots.contains(r.symbol), !r.lots.isEmpty {
                 Divider()
                 ForEach(Array(r.lots.enumerated()), id: \.offset) { _, lot in iosLotRow(r, lot) }
             }
@@ -1132,6 +1180,27 @@ struct HoldingsTableView: View {
     private func toggleAllLots() {
         if !expandedLots.isEmpty { expandedLots = [] }
         else { expandedLots = Set(baseRows.filter { !$0.lots.isEmpty }.map(\.symbol)) }
+    }
+
+    // MARK: Card expansion
+
+    /// Row ids of the cards showing their full metric grid.
+    private var expandedCards: Set<String> {
+        get { expandedCardsRaw.isEmpty ? [] : Set(expandedCardsRaw.components(separatedBy: "\n")) }
+        nonmutating set { expandedCardsRaw = newValue.sorted().joined(separator: "\n") }
+    }
+
+    private func isCardExpanded(_ r: HRow) -> Bool { expandedCards.contains(r.id) }
+
+    private func toggleCard(_ r: HRow) {
+        var next = expandedCards
+        if next.contains(r.id) { next.remove(r.id) } else { next.insert(r.id) }
+        expandedCards = next
+    }
+
+    private func toggleAllCards() {
+        if !expandedCards.isEmpty { expandedCards = [] }
+        else { expandedCards = Set(baseRows.map(\.id)) }
     }
 
     private func exportCSV() {
