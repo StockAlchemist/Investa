@@ -263,7 +263,11 @@ struct MainView: View {
                 Divider()
                 sectionView(section)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Pinned to the container rather than `maxWidth: .infinity`, which
+            // grows to fit an oversized child instead of clamping it: one card
+            // that overflows would otherwise widen the shell and push the
+            // control bar off the right edge of the screen.
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

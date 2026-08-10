@@ -37,12 +37,8 @@ struct KpiRow<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity)
-        .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear { availableWidth = geo.size.width }
-                    .onChange(of: geo.size.width) { _, newValue in availableWidth = newValue }
-            }
-        )
+        // Must be the *offered* width: measuring the resolved width latches a
+        // wide column count on after a landscape trip. See `readingContainerWidth`.
+        .readingContainerWidth { availableWidth = $0 }
     }
 }

@@ -32,12 +32,8 @@ struct AdaptiveTwoColumn<L: View, R: View>: View {
                 VStack(spacing: spacing) { left; right }
             }
         }
-        .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear { width = geo.size.width }
-                    .onChange(of: geo.size.width) { _, newValue in width = newValue }
-            }
-        )
+        // Must be the *offered* width: measuring the resolved width latches the
+        // side-by-side form on after a landscape trip. See `readingContainerWidth`.
+        .readingContainerWidth { width = $0 }
     }
 }

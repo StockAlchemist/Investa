@@ -496,15 +496,6 @@ private struct TreemapNode: Identifiable {
     }
 }
 
-/// Carries the laid-out map width back up so the tree can decide whether the
-/// sub-industry tier fits.
-private struct MapWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 private func squarifyHierarchy(node: inout TreemapNode, in rect: CGRect) {
     node.frame = rect
     guard !node.children.isEmpty else { return }
@@ -911,12 +902,9 @@ struct SP500HeatmapView: View {
                         // `primary` flips with the scheme, so the hairline stays
                         // a faint contrast against the map in either mode.
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear.preference(key: MapWidthKey.self, value: proxy.size.width)
-                            }
-                        )
-                        .onPreferenceChange(MapWidthKey.self) { mapWidth = $0 }
+                        // Offered width, not laid-out width — see
+                        // `readingContainerWidth`.
+                        .readingContainerWidth { mapWidth = $0 }
                 }
 
                 // The legend spans exactly the metric's own domain, colouring each

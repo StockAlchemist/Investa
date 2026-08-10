@@ -751,22 +751,12 @@ struct PortfolioCompositionCard: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: CompositionWidthKey.self, value: proxy.size.width)
-                }
-            }
-            .onPreferenceChange(CompositionWidthKey.self) { contentWidth = $0 }
+            // Must be the *offered* width. Measuring the laid-out width latched
+            // the donuts at `maxSide` after a landscape trip: the oversized
+            // donuts grew the card, the card re-measured its own overflow, and
+            // portrait never came back. See `readingContainerWidth`.
+            .readingContainerWidth { contentWidth = $0 }
         }
-    }
-}
-
-/// Carries the composition card's laid-out width back up so the donuts can size
-/// themselves to it.
-private struct CompositionWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }
 
