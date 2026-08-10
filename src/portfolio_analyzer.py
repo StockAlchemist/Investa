@@ -1508,6 +1508,16 @@ def _build_summary_rows(
                 day_change_value_display = (
                     val_today - val_yesterday - net_flow_today_display
                 )
+
+                # Measure the percentage on the same money as the figure above,
+                # so the two agree wherever they are shown together. The
+                # provider's percentage is the stock's move in its *own*
+                # currency, which parts company with the display-currency
+                # amount the moment FX moves — a holding can be up 0.13% in USD
+                # and down ฿31,000 on the same day. Positions opened today have
+                # no yesterday to measure against, so those keep the provider's.
+                if abs(val_yesterday) > 1e-9:
+                    day_change_pct = day_change_value_display / val_yesterday * 100.0
             else:
                 # Fallback if FX prev missing: Ignore FX change, just use local change on starting qty
                 starting_qty = current_qty - qty_change_today
