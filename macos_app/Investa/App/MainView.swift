@@ -261,7 +261,12 @@ struct MainView: View {
                             role: .destructive) { auth.logout() }
                 }
                 Divider()
+                // Pinned to the shell's width, so a section that momentarily
+                // overflows can't widen the VStack around it — a wider VStack
+                // centers the control bar over the section's width and slides
+                // it off the right edge of the screen.
                 sectionView(section)
+                    .frame(width: geo.size.width, alignment: .topLeading)
             }
             // Pinned to the container rather than `maxWidth: .infinity`, which
             // grows to fit an oversized child instead of clamping it: one card

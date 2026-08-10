@@ -18,6 +18,14 @@ import SwiftUI
 /// So the probe is a zero-height sibling instead. A stack proposes its own
 /// proposal to each child, so `Color.clear` reports the offered width no matter
 /// how wide the content beside it turns out to be, and the layout snaps back.
+///
+/// One hazard survives that and is not fixable here: a measurement always lags
+/// its container by a layout pass, so never *pin* a width to one. A child that
+/// demands more width than it was offered inflates the enclosing `ScrollView`,
+/// which adopts the overflow as its own width and re-proposes it to its
+/// content — at which point the probe faithfully reports the inflated width and
+/// the stale measurement is measuring itself. Cap with `maxWidth:` instead
+/// (`SingleDonut`), so an out-of-date measurement can only under-fill.
 extension View {
     /// Calls `onChange` with the width offered by the container, on appear and
     /// whenever it changes.

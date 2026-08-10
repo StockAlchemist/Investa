@@ -810,7 +810,15 @@ private struct SingleDonut: View {
                     ringLabels
                     centerOverlay
                 }
-                .frame(width: side, height: side)
+                // `side` comes from a measurement, so it lags a rotation by a
+                // layout pass. Cap the width rather than pinning it: a pinned
+                // width would overflow the container for that one pass, and a
+                // vertical ScrollView adopts an over-wide child as its own
+                // width and then re-proposes it to its content — which makes
+                // the stale measurement measure itself, and portrait never
+                // comes back. Height may lag freely; nothing latches on it.
+                .frame(height: side)
+                .frame(maxWidth: side)
                 .frame(maxWidth: .infinity)   // center within the column
             }
         }
