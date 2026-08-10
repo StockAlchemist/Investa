@@ -2113,8 +2113,11 @@ class MarketDataProvider:
                         f"Batch Quote Fetch: Processing chunk {i // chunk_size + 1} ({len(chunk)} symbols)"
                     )
 
+                    # A month of daily bars: enough for the one-month trend
+                    # line the clients draw, and the price/previous-close logic
+                    # below only ever looks at the tail.
                     df_chunk = _run_isolated_fetch(
-                        chunk, period="10d", interval="1d", task="history"
+                        chunk, period="1mo", interval="1d", task="history"
                     )
 
                     if not df_chunk.empty:
@@ -2160,6 +2163,7 @@ class MarketDataProvider:
                             price = None
                             prev_close = None
                             sparkline = []
+                            sparkline_1m = []
 
                             # Handle yf.download structure using robust helper
                             sym_df = _extract_ticker_from_df(df, yf_sym)
@@ -2185,10 +2189,14 @@ class MarketDataProvider:
                                     vals = valid_days[col_name].tolist()
                                     dates_idx = valid_days.index.to_list()
 
-                                    # Build sparkline
-                                    sparkline = [float(v) for v in vals]
-                                    if len(sparkline) > 7:
-                                        sparkline = sparkline[-7:]  # Tail 7
+                                    # Build sparklines. Both windows come out of
+                                    # the one fetch: `sparkline_7d` is what the
+                                    # web table column and the watchlist read,
+                                    # `sparkline_1m` is the trend line on the
+                                    # holdings cards (~22 trading days).
+                                    closes = [float(v) for v in vals]
+                                    sparkline = closes[-7:]
+                                    sparkline_1m = closes[-22:]
 
                                     if len(vals) > 0:
                                         last_val = float(vals[-1])
@@ -2286,6 +2294,7 @@ class MarketDataProvider:
                                     ),
                                     "dividendYield": fund.get("dividendYield", 0),
                                     "sparkline_7d": sparkline,
+                                    "sparkline_1m": sparkline_1m,
                                 }
                             else:
                                 # Don't warn yet, fast_info might fix it

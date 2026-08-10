@@ -1772,6 +1772,7 @@ def _build_summary_rows(
                 else 0.0,
                 "Name": stock_data.get("name", ""),  # Add Company Name
                 "sparkline_7d": stock_data.get("sparkline_7d", []),
+                "sparkline_1m": stock_data.get("sparkline_1m", []),
                 "exchange": stock_data.get("exchange"),
                 "fullExchangeName": stock_data.get("fullExchangeName"),
                 "quoteType": stock_data.get("quoteType"),

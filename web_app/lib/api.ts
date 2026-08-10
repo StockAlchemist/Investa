@@ -156,6 +156,7 @@ export interface Holding {
     [key: string]: unknown;
     lots?: Lot[];
     sparkline_7d?: number[];
+    sparkline_1m?: number[];
     ai_score?: number;
     intrinsic_value?: number;
     margin_of_safety?: number;

@@ -12,12 +12,12 @@ private let columnKey: [String: String] = [
     "Real. G/L": "Realized Gain", "Divs": "Dividends", "Fees": "Commissions", "Total G/L": "Total Gain",
     "Total Ret %": "Total Return %", "IRR (%)": "IRR (%)", "Total Buy Cost": "Total Buy Cost",
     "Yield (Cost) %": "Div. Yield (Cost) %", "Yield (Mkt) %": "Div. Yield (Current) %",
-    "FX G/L %": "FX Gain/Loss %", "Est. Income": "Est. Ann. Income", "7d Trend": "sparkline_7d",
+    "FX G/L %": "FX Gain/Loss %", "Est. Income": "Est. Ann. Income", "1M Trend": "sparkline_1m",
     "Tags": "Tags", "Contribution %": "Contribution %", "AI Score": "ai_score", "Intrinsic Value": "intrinsic_value",
 ]
 
 private let columnPickerGroups: [(label: String, cols: [String])] = [
-    ("Core", ["Symbol", "Account", "Quantity", "Price", "Mkt Val", "% of Total", "7d Trend"]),
+    ("Core", ["Symbol", "Account", "Quantity", "Price", "Mkt Val", "% of Total", "1M Trend"]),
     ("Daily", ["Day Chg", "Day Chg %"]),
     ("Returns", ["Unreal. G/L", "Unreal. G/L %", "Real. G/L", "Total G/L", "Total Ret %", "IRR (%)"]),
     ("Cost", ["Avg Cost", "Cost Basis", "Total Buy Cost"]),
@@ -35,7 +35,7 @@ private let sumHeaders = ["Quantity", "Mkt Val", "Cost Basis", "Day Chg", "Unrea
 private func columnWidth(_ h: String) -> CGFloat {
     switch h {
     case "Symbol": return 172
-    case "7d Trend": return 110
+    case "1M Trend": return 110
     case "Tags": return 170
     case "Industry": return 150
     case "Sector": return 130
@@ -79,7 +79,9 @@ private struct HRow: Identifiable {
     var num: [String: Double] = [:]   // numeric headers present
     var text: [String: String] = [:]  // Account / Symbol / Sector / Industry
     var tags: [String] = []
-    var sparkline: [Double] = []
+    /// ~22 daily closes — the "1M Trend" column and the trend line inside an
+    /// expanded holding card.
+    var trend1m: [Double] = []
     var lots: [JSONValue] = []
     var meta: [String: String] = [:]  // grouping fields
     var price: Double { num["Price"] ?? 0 }
@@ -154,7 +156,7 @@ struct HoldingsTableView: View {
         r.text["Sector"] = h.string("Sector") ?? ""
         r.text["Industry"] = h.string("Industry") ?? ""
         r.tags = h.raw["Tags"]?.arrayValue?.compactMap { $0.stringValue } ?? []
-        r.sparkline = h.raw["sparkline_7d"]?.arrayValue?.compactMap { $0.doubleValue } ?? []
+        r.trend1m = h.raw["sparkline_1m"]?.arrayValue?.compactMap { $0.doubleValue } ?? []
         r.lots = h.raw["lots"]?.arrayValue ?? []
         r.mos = h.double("margin_of_safety")
         r.meta["exchange"] = h.string("fullExchangeName") ?? h.string("exchange") ?? h.string("Market") ?? "Unknown"
@@ -536,7 +538,7 @@ struct HoldingsTableView: View {
         case "Divs", "Est. Income", "Yield (Cost) %", "Yield (Mkt) %": return "banknote"
         case "Fees": return "minus.circle"
         case "FX G/L %": return "arrow.left.arrow.right"
-        case "7d Trend": return "chart.xyaxis.line"
+        case "1M Trend": return "chart.xyaxis.line"
         case "Tags": return "tag"
         case "AI Score": return "sparkles"
         case "Intrinsic Value": return "target"
@@ -547,7 +549,7 @@ struct HoldingsTableView: View {
     private func shortColumnName(_ h: String) -> String {
         switch h {
         case "Symbol": return "Sym"
-        case "7d Trend": return "7d"
+        case "1M Trend": return "1M"
         case "Quantity": return "Qty"
         case "Avg Cost": return "Avg Cost"
         case "Cost Basis": return "Basis"
@@ -734,7 +736,8 @@ struct HoldingsTableView: View {
                     .padding(.horizontal, 6).padding(.vertical, 1).background(.background.tertiary, in: Capsule())
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(Fmt.currency(g.agg["Mkt Val"], code: currency)).font(.caption.weight(.bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
+                    FittedMoney(value: g.agg["Mkt Val"], code: currency)
+                        .font(.caption.weight(.bold)).monospacedDigit().lineLimit(1)
                     Text(pctString(g.agg["Day Chg %"])).font(.caption2).monospacedDigit().foregroundStyle(glColor(g.agg["Day Chg %"]))
                 }
             }
@@ -746,68 +749,18 @@ struct HoldingsTableView: View {
 
     private func iosHoldingRow(_ r: HRow) -> some View {
         VStack(spacing: 12) {
-            HStack(alignment: .center, spacing: 10) {
-                StockIcon(symbol: r.symbol, size: 45)
-                // Single-line and served first: without this the symbol and share
-                // count are the most compressible things in the row, so they wrap
-                // ("GOO/G") as soon as anything else needs the width. The market
-                // value beside them scales down instead — it already has a
-                // minimumScaleFactor for exactly that.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(r.symbol).font(.headline.weight(.bold))
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                    Text("\(Fmt.number(r.num["Quantity"])) shs")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.8)
-                }
-                .layoutPriority(1)
-
-                Spacer(minLength: 4)
-                
-                if r.sparkline.count > 1 {
-                    let up = (r.sparkline.last ?? 0) >= (r.sparkline.first ?? 0)
-                    Chart(Array(r.sparkline.enumerated()), id: \.offset) { i, v in
-                        LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(up ? Color.up : Color.down).lineStyle(StrokeStyle(lineWidth: 1.5))
-                    }
-                    .chartYScale(domain: chartDomain(r.sparkline)).chartXAxis(.hidden).chartYAxis(.hidden)
-                    .frame(width: 48, height: 24).clipped()
-                }
-                
-                Spacer(minLength: 4)
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(Fmt.currency(r.num["Mkt Val"], code: currency))
-                        .font(.subheadline.weight(.bold))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-
-                    if let dayChgPct = r.num["Day Chg %"] {
-                        Text(pctString(dayChgPct))
-                            .font(.system(size: 11, weight: .bold))
-                            .padding(.horizontal, 4).padding(.vertical, 2)
-                            .background(glColor(dayChgPct).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                            .foregroundStyle(glColor(dayChgPct))
-                    }
-                }
-
-                // Its own button rather than a tap on the card, which already
-                // opens the stock detail sheet. Kept narrow — the header row is
-                // width-bound on a phone — but tall, so the tap target stays
-                // comfortable without costing horizontal space.
-                Button { withAnimation(.easeInOut(duration: 0.18)) { toggleCard(r) } } label: {
-                    Image(systemName: isCardExpanded(r) ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isCardExpanded(r) ? "Hide \(r.symbol) details" : "Show \(r.symbol) details")
+            // Even without the sparkline, a phone row can't always fit eight
+            // digits of THB beside a symbol and a chevron, so it gives up the
+            // cents first and the magnitude only as a last resort. Every rung
+            // shows a whole number — the row used to clip ("฿15,347,04…").
+            ViewThatFits(in: .horizontal) {
+                iosHoldingRowHeader(r, money: .exact)
+                iosHoldingRowHeader(r, money: .whole)
+                iosHoldingRowHeader(r, money: .compact)
             }
 
             if isCardExpanded(r) {
+                iosSparkline(r)
                 iosExtraColumns(r)
             }
 
@@ -832,8 +785,107 @@ struct HoldingsTableView: View {
         .onTapGesture { detail = SymbolID(id: r.symbol) }
     }
 
+    /// One rung of the ladder above. Nothing in here may report a width smaller
+    /// than it wants, or every rung would "fit" and the first would always win.
+    private func iosHoldingRowHeader(_ r: HRow, money: MoneyForm) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            StockIcon(symbol: r.symbol, size: 45)
+            // Single-line and served first: without this the symbol and share
+            // count are the most compressible things in the row, so they wrap
+            // ("GOO/G") as soon as anything else needs the width.
+            VStack(alignment: .leading, spacing: 4) {
+                Text(r.symbol).font(.headline.weight(.bold))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text("\(Fmt.number(r.num["Quantity"])) shs")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+            }
+            // Deliberately uncapped: a `maxWidth` here would let this block
+            // report less than it wants, every rung of the ladder would "fit",
+            // and the amount would go back to being clipped.
+            .layoutPriority(1)
+
+            Spacer(minLength: 6)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(money.string(r.num["Mkt Val"], code: currency))
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+
+                if let dayChgPct = r.num["Day Chg %"] {
+                    HStack(spacing: 5) {
+                        // What today moved in money, not just in percent. It
+                        // follows the same rung as the value above it, so a row
+                        // that has to shorten one shortens both. Tinted by its
+                        // own sign: the percentage is the stock's move in its
+                        // local currency, while this is the position in the
+                        // display currency, so under a moving FX rate the two
+                        // legitimately disagree.
+                        if let dayChg = r.num["Day Chg"] {
+                            Text(money.signedString(dayChg, code: currency))
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(glColor(dayChg))
+                                .lineLimit(1)
+                        }
+                        Text(pctString(dayChgPct))
+                            .font(.system(size: 11, weight: .bold))
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .background(glColor(dayChgPct).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                            .foregroundStyle(glColor(dayChgPct))
+                    }
+                }
+            }
+            .layoutPriority(1)
+
+            // Its own button rather than a tap on the card, which already
+            // opens the stock detail sheet. Kept narrow — the header row is
+            // width-bound on a phone — but tall, so the tap target stays
+            // comfortable without costing horizontal space.
+            Button { withAnimation(.easeInOut(duration: 0.18)) { toggleCard(r) } } label: {
+                Image(systemName: isCardExpanded(r) ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isCardExpanded(r) ? "Hide \(r.symbol) details" : "Show \(r.symbol) details")
+        }
+    }
+
+    /// The one-month trend, shown inside the expanded card. It used to be seven
+    /// days in the collapsed header, where 44pt was all it could have; with the
+    /// card's full width a month of closes is legible and says more.
+    @ViewBuilder private func iosSparkline(_ r: HRow) -> some View {
+        if r.trend1m.count > 1 {
+            let up = (r.trend1m.last ?? 0) >= (r.trend1m.first ?? 0)
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Text("1M Trend")
+                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase)
+                Chart(Array(r.trend1m.enumerated()), id: \.offset) { i, v in
+                    AreaMark(x: .value("i", i),
+                             yStart: .value("Min", chartDomain(r.trend1m).lowerBound),
+                             yEnd: .value("v", v))
+                        .foregroundStyle((up ? Color.up : .down).opacity(0.15))
+                    LineMark(x: .value("i", i), y: .value("v", v))
+                        .foregroundStyle(up ? Color.up : Color.down)
+                        .lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+                .chartYScale(domain: chartDomain(r.trend1m))
+                .chartXAxis(.hidden).chartYAxis(.hidden)
+                .frame(height: 44)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+        }
+    }
+
     @ViewBuilder private func iosExtraColumns(_ r: HRow) -> some View {
-        let excluded: Set<String> = ["Symbol", "Quantity", "7d Trend", "Mkt Val", "Day Chg %"]
+        let excluded: Set<String> = ["Symbol", "Quantity", "1M Trend", "Mkt Val", "Day Chg %"]
         let extras = visibleColumns.filter { !excluded.contains($0) }
         
         if !extras.isEmpty {
@@ -907,7 +959,7 @@ struct HoldingsTableView: View {
     @ViewBuilder private func cellContent(_ h: String, _ r: HRow) -> some View {
         switch h {
         case "Symbol": symbolCell(r)
-        case "7d Trend": sparklineCell(r)
+        case "1M Trend": sparklineCell(r)
         case "% of Total", "Contribution %": progressCell(r.num[h])
         case "AI Score": aiScoreCell(r.num["AI Score"])
         case "Intrinsic Value": intrinsicCell(r)
@@ -947,14 +999,14 @@ struct HoldingsTableView: View {
     }
 
     @ViewBuilder private func sparklineCell(_ r: HRow) -> some View {
-        if r.sparkline.count > 1 {
-            let up = (r.sparkline.last ?? 0) >= (r.sparkline.first ?? 0)
-            Chart(Array(r.sparkline.enumerated()), id: \.offset) { i, v in
+        if r.trend1m.count > 1 {
+            let up = (r.trend1m.last ?? 0) >= (r.trend1m.first ?? 0)
+            Chart(Array(r.trend1m.enumerated()), id: \.offset) { i, v in
                 AreaMark(x: .value("i", i), y: .value("v", v))
                     .foregroundStyle((up ? Color.up : Color.down).opacity(0.18))
                 LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(up ? Color.up : Color.down)
             }
-            .chartYScale(domain: chartDomain(r.sparkline)).chartXAxis(.hidden).chartYAxis(.hidden)
+            .chartYScale(domain: chartDomain(r.trend1m)).chartXAxis(.hidden).chartYAxis(.hidden)
             .frame(height: 28).clipped()
         } else {
             Text("no data").font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -1204,7 +1256,7 @@ struct HoldingsTableView: View {
     }
 
     private func exportCSV() {
-        let cols = visibleColumns.filter { $0 != "7d Trend" }
+        let cols = visibleColumns.filter { $0 != "1M Trend" }
         var csv = cols.joined(separator: ",") + "\n"
         for r in sortedRows(baseRows) {
             let line = cols.map { h -> String in
@@ -1281,6 +1333,49 @@ private struct TagEditorSheet: View {
                 isSaving = false
                 self.error = "Failed to update tags. Please try again."
             }
+        }
+    }
+}
+
+/// How much of an amount to spell out when the row it sits in is too narrow for
+/// all of it: `฿15,347,047.68`, `฿15,347,048`, `฿15.35M`.
+enum MoneyForm {
+    case exact, whole, compact
+
+    func string(_ value: Double?, code: String) -> String {
+        guard let value else { return "—" }
+        switch self {
+        case .exact: return Fmt.currency(value, code: code)
+        case .whole: return Fmt.symbol(code) + Fmt.number(value, fractionDigits: 0)
+        case .compact: return Fmt.compact(value, code: code)
+        }
+    }
+
+    /// The same amount with an explicit sign, for a figure that is a change
+    /// rather than a level: `+฿52,300`, `-฿1,204`. The sign leads the currency
+    /// symbol, which is where a reader looks for it.
+    func signedString(_ value: Double?, code: String) -> String {
+        guard let value else { return "—" }
+        return (value < 0 ? "-" : "+") + string(abs(value), code: code)
+    }
+}
+
+/// An amount that gets shorter rather than clipped when its container is tight.
+///
+/// `minimumScaleFactor` is no help here: a `Text` only scales against a width it
+/// was *proposed*, and a text squeezed by a stack is placed into the leftover
+/// instead — so it truncates at full size, which is what the holdings rows used
+/// to do. `ViewThatFits` decides from the same proposal the stack would squeeze
+/// into, so what's shown is always a whole number.
+struct FittedMoney: View {
+    let value: Double?
+    let code: String
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(MoneyForm.exact.string(value, code: code))
+            Text(MoneyForm.whole.string(value, code: code))
+            Text(MoneyForm.compact.string(value, code: code))
         }
     }
 }

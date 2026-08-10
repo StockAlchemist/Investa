@@ -60,15 +60,21 @@ const COLUMN_DEFINITIONS: { [header: string]: string } = {
     "Yield (Mkt) %": "Div. Yield (Current) %",
     "FX G/L %": "FX Gain/Loss %",
     "Est. Income": "Est. Ann. Income",
-    "7d Trend": "sparkline_7d",
+    "1M Trend": "sparkline_1m",
     "Tags": "Tags",
     "Contribution %": "Contribution %",
     "AI Score": "ai_score",
     "Intrinsic Value": "intrinsic_value",
 };
 
+// Columns that have been renamed, so a layout saved under the old name is
+// restored rather than dropped.
+const RENAMED_COLUMNS: Record<string, string> = {
+    "7d Trend": "1M Trend",
+};
+
 const DEFAULT_VISIBLE_COLUMNS = [
-    "Symbol", "7d Trend", "Quantity", "% of Total", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L"
+    "Symbol", "1M Trend", "Quantity", "% of Total", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L"
 ];
 
 type SortDirection = 'asc' | 'desc';
@@ -213,7 +219,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
             try {
                 const parsed = JSON.parse(savedColumns);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    setVisibleColumns(parsed);
+                    // Layouts saved before the trend column moved from seven days
+                    // to a month still name it "7d Trend"; without this they'd
+                    // silently come back one column short.
+                    setVisibleColumns(parsed.map((c: string) => RENAMED_COLUMNS[c] ?? c));
                 }
             } catch (e) {
                 console.error("Failed to parse saved columns", e);
@@ -984,7 +993,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                                     </div>
                                     {/* Column groups */}
                                     {[
-                                        { label: 'Core', cols: ['Symbol', 'Account', 'Quantity', 'Price', 'Mkt Val', '% of Total', '7d Trend'] },
+                                        { label: 'Core', cols: ['Symbol', 'Account', 'Quantity', 'Price', 'Mkt Val', '% of Total', '1M Trend'] },
                                         { label: 'Daily', cols: ['Day Chg', 'Day Chg %'] },
                                         { label: 'Returns', cols: ['Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'IRR (%)'] },
                                         { label: 'Cost', cols: ['Avg Cost', 'Cost Basis', 'Total Buy Cost'] },
@@ -1196,7 +1205,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
 
                                                         return (
                                                             <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''} ${heatmapClass}`}>
-                                                                {header === '7d Trend' ? (
+                                                                {header === '1M Trend' ? (
                                                                     <div className="h-10 w-28 ml-auto">
                                                                         {val && Array.isArray(val) && val.length > 1 ? (
                                                                             <TrendSparkline data={val as number[]} />
@@ -1390,7 +1399,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
 
                                                 return (
                                                     <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-lg shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''} ${heatmapClass}`}>
-                                                        {header === '7d Trend' ? (
+                                                        {header === '1M Trend' ? (
                                                             <div className="h-10 w-28 ml-auto">
                                                                 {val && Array.isArray(val) && val.length > 1 ? (
                                                                     <TrendSparkline data={val as number[]} />
