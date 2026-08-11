@@ -477,6 +477,21 @@ async def _get_historical_performance_cached(
     )
 
 
+def _previous_trading_day(d: date) -> date:
+    """The last NYSE session strictly before ``d`` (falls back to the prior day)."""
+    try:
+        from utils_time import get_nyse_calendar
+
+        schedule = get_nyse_calendar().schedule(
+            start_date=d - timedelta(days=10), end_date=d - timedelta(days=1)
+        )
+        if not schedule.empty:
+            return schedule.index[-1].date()
+    except Exception as e_cal:
+        logging.warning(f"Could not resolve the previous trading day for {d}: {e_cal}")
+    return d - timedelta(days=1)
+
+
 def _filter_closed_positions(
     result: Dict[str, Any], show_closed_positions: bool
 ) -> Dict[str, Any]:
@@ -1040,9 +1055,12 @@ async def _calculate_historical_performance_internal(
             # Force calculation from inception
             start_date = df["Date"].min().date()
     elif period != "all":
-        # For intraday, we still buffer by a small amount (e.g. 1 day)
+        # For intraday, we still buffer by a small amount (one session)
         # because calculating intraday from inception would be too heavy/impossible.
-        start_date = start_date - timedelta(days=1)
+        # Step back a *trading* day rather than a calendar one: a Monday's
+        # "yesterday" is a Sunday, which has no session to close at, and the 1D
+        # graph would anchor on a day the market never opened.
+        start_date = _previous_trading_day(start_date)
 
     # --- END BASELINE BUFFERING ---
 

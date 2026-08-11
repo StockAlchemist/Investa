@@ -50,7 +50,7 @@ from portfolio_valuation_kernels import (
     _normalize_series,
 )
 from portfolio_version import CURRENT_HIST_VERSION
-from utils_time import get_est_today, get_latest_trading_date
+from utils_time import get_est_today, get_latest_trading_date, get_nyse_calendar
 
 try:
     from line_profiler import profile
@@ -948,6 +948,60 @@ def _prepare_historical_inputs(
     )
 
 
+def manual_prices_by_symbol_id(
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],
+    id_to_symbol: Dict[int, str],
+) -> Dict[int, float]:
+    """Resolve the user's manual price overrides to {symbol_id: price}.
+
+    Holdings with no price feed at all — Thai mutual funds, private placements —
+    are worth whatever NAV the user entered for them. Keys are matched
+    case-insensitively because the engine normalizes symbols but the override
+    file keeps whatever case the user typed.
+    """
+    if not manual_overrides_dict:
+        return {}
+
+    by_name: Dict[str, float] = {}
+    for key, override in manual_overrides_dict.items():
+        raw_price = override.get("price") if isinstance(override, dict) else override
+        try:
+            price = float(raw_price)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(price) and price > 1e-9:
+            by_name[str(key).upper().strip()] = price
+
+    if not by_name:
+        return {}
+
+    return {
+        sym_id: by_name[str(symbol).upper().strip()]
+        for sym_id, symbol in id_to_symbol.items()
+        if str(symbol).upper().strip() in by_name
+    }
+
+
+def align_prices_to_grid(
+    price_series_by_id: Dict[int, pd.Series], date_range: pd.DatetimeIndex
+) -> pd.DataFrame:
+    """Carry each symbol's last observed price onto the calculation grid.
+
+    Never interpolate across a gap: an overnight, weekend or holiday gap would be
+    bridged by blending in the *next* real quote, which prices a past timestamp
+    with a trade that had not happened yet. The last close is the only price that
+    existed at that moment, so a Sunday is worth what Friday closed at — not
+    three quarters of the way to Monday's open.
+
+    The union index keeps bars that fall between grid points (a 15:45 close
+    against a 16:00 grid point) from being dropped before the fill. A leading
+    backfill still covers grid points that precede a symbol's first quote.
+    """
+    raw_prices = pd.DataFrame(price_series_by_id).sort_index()
+    fill_index = raw_prices.index.union(date_range)
+    return raw_prices.reindex(fill_index).ffill().bfill().reindex(date_range)
+
+
 @profile
 
 # --- VECTORIZED VALUATION HELPER ---
@@ -966,6 +1020,7 @@ def _value_daily_holdings_vectorized(
     account_ids_to_include_set: Set[int],
     default_currency: str,
     interval: str,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Tuple[pd.Series, bool, str]:
     """
     Vectorized valuation of holdings and cash.
@@ -1011,22 +1066,22 @@ def _value_daily_holdings_vectorized(
                         ps.index = pd.to_datetime(ps.index, utc=True)
                     price_series_by_id[sym_id] = ps
 
-    # Bulk reindex + interpolate in one DataFrame operation
     if price_series_by_id:
-        is_intra = any(x in interval for x in ["m", "h", "min"])
-        interp_method = "time" if is_intra else "linear"
-        price_matrix = (
-            pd.DataFrame(price_series_by_id)
-            .reindex(date_range)
-            .interpolate(method=interp_method)
-            .ffill()
-            .bfill()
-        )
+        price_matrix = align_prices_to_grid(price_series_by_id, date_range)
         for sym_id in price_series_by_id:
             daily_prices_aligned[:, sym_id] = price_matrix[sym_id].values
 
-    # 2. Check for missing prices and fill with Last Price if valid
-    # We will handle fallback during calculation.
+    # 2. Where the market has nothing to say, use the NAV the user entered.
+    # This is the same fallback order the summary applies (portfolio_analyzer:
+    # market price, then the manual override, then the last transaction price),
+    # so a fund with no price feed is worth the same on the graph as it is in
+    # the holdings table. Without it these holdings sat frozen at whatever they
+    # last traded at, and the chart drifted away from the headline total.
+    for sym_id, manual_price in manual_prices_by_symbol_id(
+        manual_overrides_dict, id_to_symbol
+    ).items():
+        column = daily_prices_aligned[:, sym_id]
+        np.copyto(column, manual_price, where=np.isnan(column))
 
     # 3. Prepare aligned FX array (N_days, N_accounts)
     daily_fx_aligned = np.full((num_days, num_accounts), np.nan, dtype=np.float64)
@@ -1641,6 +1696,28 @@ def _load_or_calculate_daily_results(
                     keep_mask = range_active_ny.indexer_between_time("09:30", "16:00")
                     range_active = range_active[keep_mask]
 
+                # Clock time alone still keeps a full "session" on every weekend
+                # and holiday, so the point the 1D graph anchors on can land on a
+                # Sunday. Keep only days the NYSE actually opened, so the last
+                # point before the displayed day is the previous real close.
+                if is_intraday_request and not range_active.empty:
+                    try:
+                        active_ny = range_active.tz_convert("America/New_York")
+                        cal = get_nyse_calendar()
+                        tradable_days = set(
+                            cal.schedule(
+                                start_date=active_ny[0].date(),
+                                end_date=active_ny[-1].date(),
+                            ).index.date
+                        )
+                        range_active = range_active[
+                            np.array([d in tradable_days for d in active_ny.date])
+                        ]
+                    except Exception as e_cal_active:
+                        logging.warning(
+                            f"Hist WARN: Could not drop non-trading days from the intraday range: {e_cal_active}"
+                        )
+
                 if range_historical.empty and range_active.empty:
                     date_range_for_calc = pd.DatetimeIndex([])
                 elif range_historical.empty:
@@ -1818,7 +1895,7 @@ def _load_or_calculate_daily_results(
                 acc_cash_modes_np = np.zeros(num_accounts, dtype=np.int64)
                 for _acc_name, _mode_str in _acm.items():
                     _acc_upper = _acc_name.upper().strip()
-                    if _acc_upper in account_to_id and _mode_str == "Auto":
+                    if _acc_upper in account_to_id and str(_mode_str).lower() == "auto":
                         acc_cash_modes_np[account_to_id[_acc_upper]] = 1
 
                 # Call Numba function
@@ -1958,6 +2035,7 @@ def _load_or_calculate_daily_results(
                     account_ids_to_include_set=account_ids_to_include_set,
                     default_currency=default_currency,
                     interval=interval,
+                    manual_overrides_dict=manual_overrides_dict,
                 )
             )
             if val_errors:
@@ -2664,7 +2742,7 @@ def _get_or_calculate_all_daily_holdings(
     acc_cash_modes_np2 = np.zeros(num_accounts, dtype=np.int64)
     for _acc_name2, _mode_str2 in _acm2.items():
         _acc_upper2 = _acc_name2.upper().strip()
-        if _acc_upper2 in account_to_id and _mode_str2 == "Auto":
+        if _acc_upper2 in account_to_id and str(_mode_str2).lower() == "auto":
             acc_cash_modes_np2[account_to_id[_acc_upper2]] = 1
 
     shortable_symbol_ids = np.array(

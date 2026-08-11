@@ -279,16 +279,26 @@ def test_historical_status_and_shape(hist_result):
 def test_historical_series_golden(hist_result):
     hist_df = hist_result[0]
     pv = hist_df["Portfolio Value"]
-    assert pv.iloc[0] == G(2319.0745501285346)
-    assert pv.iloc[260] == G(4241.422695556372)
-    assert pv.iloc[-1] == G(5015.142857142857)
+    # 2023-01-15 is a Sunday: the portfolio is worth what Friday closed at.
+    # (Re-captured when price alignment stopped interpolating across gaps, which
+    # used to price this Sunday partly off the following Tuesday's quote.)
+    assert pv.iloc[0] == G(2315.167095115681)
+    # Re-captured when the historical cash ledger was aligned to the summary's:
+    # the $2 IBKR account fee booked on $CASH no longer debits a Manual-mode
+    # account, and the commissions on the SET $CASH deposit/withdrawal (100 and
+    # 50 THB) no longer move the balance either — the summary has always read
+    # both that way (it reports SET cash as 40,000 THB, not 39,850).
+    assert pv.iloc[260] == G(4247.708409842086)
+    assert pv.iloc[-1] == G(5021.428571428572)
 
     assert hist_df["Portfolio Accumulated Gain"].iloc[-1] == G(
-        1.457530416842845
+        1.4592400141589859
     )  # TWR factor
     assert hist_df["Cumulative Net Flow"].iloc[-1] == G(1138.5714285714287)
-    assert hist_df["Absolute Gain ($)"].iloc[-1] == G(3876.5714285714284)
-    assert hist_df["drawdown"].min() == G(-25.037449835855707)
+    assert hist_df["Absolute Gain ($)"].iloc[-1] == G(3882.857142857143)
+    # Also re-captured with the interpolation removal: closed days now sit at the
+    # previous close rather than part-way to the next one, which moves the trough.
+    assert hist_df["drawdown"].min() == G(-25.047512943181072)
 
 
 def test_historical_internal_consistency(hist_result):

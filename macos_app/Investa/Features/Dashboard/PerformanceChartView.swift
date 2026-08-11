@@ -9,6 +9,11 @@ struct PerformanceChartView: View {
     @Binding var customFrom: Date
     @Binding var customTo: Date
     var isLoading: Bool = false
+    /// Today's change from the portfolio summary — the same number the hero card
+    /// and the holdings list quote. Used verbatim for the 1D period so the two
+    /// readings of "today" on one screen cannot disagree.
+    var dayChange: Double? = nil
+    var dayChangePercent: Double? = nil
 
     @State private var view: PerformanceView = .value
 
@@ -167,6 +172,15 @@ struct PerformanceChartView: View {
         guard points.count >= 2 else { return nil }
         switch view {
         case .value:
+            // For 1D, quote the summary's day change rather than re-deriving one
+            // from the series: both describe today's move, but they come from
+            // different engines (live quotes vs. the historical valuation), and
+            // the hero card above this chart shows the summary's figure.
+            if period == .oneDay, let change = dayChange {
+                return [PeriodStat(label: "Day Change",
+                                   text: "\(Fmt.currency(change, code: currency)) (\(pctStr(dayChangePercent ?? 0)))",
+                                   positive: change >= 0)]
+            }
             guard let startVal = points.first?.value, let endVal = points.last?.value else { return nil }
             let change = endVal - startVal
             let pct = startVal != 0 ? change / startVal * 100 : 0

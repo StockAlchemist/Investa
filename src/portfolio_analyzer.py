@@ -861,8 +861,17 @@ def _process_transactions_to_holdings(
     )
     raw_prices[mask_use_total] = raw_totals[mask_use_total]
 
-    # Handle Dividends with Quantity (price per share)
-    mask_div_calc = (type_ids == TYPE_DIVIDEND) & (~mask_use_total)
+    # A dividend states its payment in Total Amount whenever that column is
+    # filled: it is the cash the broker actually paid. Shares x per-share rate
+    # only reconstructs it — and on a reinvestment the share count is rounded,
+    # so the product drifts from the payment (0.13 * 113.4363 = 14.75 for a
+    # 14.63 dividend). Fall back to that product, then to a bare Price/Share,
+    # for rows that carry no total. The historical engine's _dividend_amount
+    # reads a row the same way, so the graph and the holdings table agree.
+    mask_div_total = (type_ids == TYPE_DIVIDEND) & has_total_mask
+    raw_prices[mask_div_total] = np.abs(raw_totals[mask_div_total])
+
+    mask_div_calc = (type_ids == TYPE_DIVIDEND) & (~mask_use_total) & (~mask_div_total)
     raw_prices[mask_div_calc] = raw_prices[mask_div_calc] * np.abs(qtys[mask_div_calc])
 
     prices = raw_prices

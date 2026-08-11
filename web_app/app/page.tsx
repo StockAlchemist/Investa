@@ -568,6 +568,8 @@ export default function Home() {
                 onCustomFromDateChange={setGraphCustomFromDate}
                 customToDate={graphCustomToDate}
                 onCustomToDateChange={setGraphCustomToDate}
+                dayChange={cardMetrics?.day_change_display ?? null}
+                dayChangePercent={cardMetrics?.day_change_percent ?? null}
               />
             )}
             {visibleItems.includes('projection') && (

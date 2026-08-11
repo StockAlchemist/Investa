@@ -51,7 +51,9 @@ struct DashboardView: View {
                         PerformanceChartView(points: viewModel.history, currency: cur,
                                              benchmarks: appState.benchmarks, period: $appState.period,
                                              customFrom: $appState.customFrom, customTo: $appState.customTo,
-                                             isLoading: viewModel.isLoading)
+                                             isLoading: viewModel.isLoading,
+                                             dayChange: viewModel.metrics?.dayChangeDisplay,
+                                             dayChangePercent: viewModel.metrics?.dayChangePercent)
                     }
                     if vis("projection") {
                         ProjectionCardView(projection: viewModel.projection, currency: cur)

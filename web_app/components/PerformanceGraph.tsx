@@ -53,6 +53,11 @@ interface PerformanceGraphProps {
     onCustomFromDateChange?: (date: string) => void;
     customToDate?: string;
     onCustomToDateChange?: (date: string) => void;
+    /** Today's change from the portfolio summary — the same number the hero
+     *  panel and the holdings table quote. Used verbatim for the 1D period so
+     *  the two readings of "today" on one screen cannot disagree. */
+    dayChange?: number | null;
+    dayChangePercent?: number | null;
 }
 
 const COLORS = [
@@ -75,7 +80,9 @@ export default function PerformanceGraph({
     customFromDate,
     onCustomFromDateChange,
     customToDate,
-    onCustomToDateChange
+    onCustomToDateChange,
+    dayChange,
+    dayChangePercent
 }: PerformanceGraphProps) {
     // const [view, setView] = useState<'return' | 'value' | 'drawdown'>('return'); // Lifted
     // const [period, setPeriod] = useState('1y'); // Lifted
@@ -186,17 +193,24 @@ export default function PerformanceGraph({
         } else if (view === 'value') {
             const startVal = start.value;
             const endVal = end.value;
-            const change = endVal - startVal;
-            const changePct = startVal !== 0 ? (change / startVal) * 100 : 0;
+            // For 1D, quote the summary's day change rather than re-deriving one
+            // from the series: both describe today's move, but they come from
+            // different engines (live quotes vs. the historical valuation), and
+            // the hero panel right above this chart shows the summary's figure.
+            const useSummaryDay = period === '1d' && dayChange != null;
+            const change = useSummaryDay ? dayChange : endVal - startVal;
+            const changePct = useSummaryDay
+                ? (dayChangePercent ?? 0)
+                : (startVal !== 0 ? (change / startVal) * 100 : 0);
 
             return [{
-                label: "Period Change",
+                label: useSummaryDay ? "Day Change" : "Period Change",
                 text: `${formatCurrency(change, currency)} (${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
                 color: change >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
             }];
         }
         return null;
-    }, [processedData, view, currency]);
+    }, [processedData, view, currency, period, dayChange, dayChangePercent]);
 
     const chartedData = useMemo(() => {
         const dataToPlot = (processedData as PerfPoint[]).filter((d) => !d.is_baseline);

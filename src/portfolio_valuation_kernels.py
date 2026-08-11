@@ -31,11 +31,58 @@ except ImportError:
         return func
 
 
+@numba.jit(nopython=True, fastmath=True, cache=True)
+def _dividend_amount(qty, price, total_amount):
+    """The cash a dividend row pays, read the way the summary reads it.
+
+    Total Amount is the payment whenever it is filled — it is what the broker
+    actually paid. Shares x per-share rate only reconstructs it, and on a
+    reinvestment the rounded share count makes the product drift, so it is the
+    fallback; a bare Price/Share is the legacy form. Mirrors the dividend
+    normalization in portfolio_analyzer so the graph and the holdings table
+    book the same cash.
+    """
+    if abs(total_amount) > 1e-9:
+        return abs(total_amount)
+    if abs(qty) > 1e-9 and abs(price) > 1e-9:
+        return abs(qty) * abs(price)
+    return abs(price)
+
+
 def _normalize_series(series):
     """Normalizes a pandas Series to uppercase and trimmed strings."""
     if series.empty:
         return series
     return series.astype(str).str.upper().str.strip()
+
+
+def _manual_override_price(
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]], symbol: str
+) -> Optional[float]:
+    """The user's manually entered price for `symbol`, if it is usable.
+
+    Matched case-insensitively: the engine normalizes symbols, the override file
+    keeps whatever case the user typed.
+    """
+    if not manual_overrides_dict or not symbol:
+        return None
+
+    override = manual_overrides_dict.get(symbol)
+    if override is None:
+        wanted = str(symbol).upper().strip()
+        for key, value in manual_overrides_dict.items():
+            if str(key).upper().strip() == wanted:
+                override = value
+                break
+    if override is None:
+        return None
+
+    raw_price = override.get("price") if isinstance(override, dict) else override
+    try:
+        price = float(raw_price)
+    except (TypeError, ValueError):
+        return None
+    return price if np.isfinite(price) and price > 1e-9 else None
 
 
 def _calculate_portfolio_value_at_date_unadjusted_python(
@@ -50,6 +97,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     processed_warnings: set,
     included_accounts: Optional[List[str]] = None,  # ADDED
+    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
 ) -> Tuple[float, bool]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Pure Python version).
@@ -187,6 +235,15 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                                     if abs(h_data["qty"]) < 1e-9:
                                         h_data["qty"] = 0.0
                         processed_splits.add(split_event)
+                elif pd.notna(split_ratio) and split_ratio < 0:
+                    # "Target quantity" encoding — the position becomes this many
+                    # shares, in this account only. See the numba kernels and
+                    # portfolio_analyzer, which read it the same way.
+                    target_holding = holdings.get(holding_key_from_row)
+                    if target_holding is not None:
+                        old_qty = target_holding["qty"]
+                        if abs(old_qty) >= 1e-9:
+                            target_holding["qty"] = abs(float(split_ratio))
                 else:
                     if IS_DEBUG_DATE:
                         logging.warning(
@@ -295,6 +352,10 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         transactions_til_date["Symbol"] == CASH_SYMBOL_CSV
     ].copy()
     if not cash_transactions.empty:
+        cash_modes = {
+            str(acc).upper().strip(): str(mode).lower()
+            for acc, mode in (account_cash_mode_map or {}).items()
+        }
 
         def get_signed_quantity_cash(row):
             """Calculates cash flow including commission impact."""
@@ -303,7 +364,20 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             commission_raw = pd.to_numeric(row.get("Commission"), errors="coerce")
             commission = 0.0 if pd.isna(commission_raw) else float(commission_raw)
             total_amount_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
-            total_amount = 0.0 if pd.isna(total_amount_raw) else float(total_amount_raw)
+            total_amount = (
+                0.0 if pd.isna(total_amount_raw) else abs(float(total_amount_raw))
+            )
+            # Income / fee rows booked on $CASH move the balance in Auto mode
+            # only — in Manual mode the movement has its own $CASH row and
+            # counting both books the money twice. Matches the summary.
+            is_auto_cash = (
+                cash_modes.get(str(row.get("Account", "")).upper().strip()) == "auto"
+            )
+            if (
+                type_lower in ["dividend", "interest", "fees", "tax"]
+                and not is_auto_cash
+            ):
+                return 0.0
 
             # If it's a fee or tax transaction
             if type_lower in ["fees", "tax"]:
@@ -318,21 +392,16 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                 )
                 return -fee_val
 
-            return (
-                0.0
-                if pd.isna(qty)
-                # Deposit: Increase cash by quantity MINUS commission
-                else (
-                    abs(qty) - commission
-                    if type_lower in ["buy", "deposit", "dividend", "interest"]
-                    # Withdrawal: Decrease cash by quantity PLUS commission
-                    else (
-                        -(abs(qty) + commission)
-                        if type_lower in ["sell", "withdrawal"]
-                        else 0.0
-                    )
-                )
-            )
+            # The commission column on a $CASH row describes the trade the row
+            # mirrors; the charge itself has its own row. Only the amount moves
+            # the balance — same as the summary and the numba kernels, which
+            # also read money in from Quantity and money out from Total Amount.
+            qty_abs = 0.0 if pd.isna(qty) else abs(qty)
+            if type_lower in ["buy", "deposit", "dividend", "interest"]:
+                return qty_abs if qty_abs > 1e-9 else total_amount
+            if type_lower in ["sell", "withdrawal"]:
+                return -(total_amount if total_amount > 1e-9 else qty_abs)
+            return 0.0
 
         cash_transactions["SignedQuantity"] = cash_transactions.apply(
             get_signed_quantity_cash, axis=1
@@ -602,34 +671,43 @@ def _calculate_holdings_numba(
             if cash_currency_np[account_id] == -1:
                 cash_currency_np[account_id] = currency_id
 
-            # Cash-amount fallback chain — see chronological version for the
-            # convention rationale. Total Amount preferred; falls back to
-            # Quantity (Style A) or commission for fee-style rows.
-            cash_amt = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
-            if (
-                type_id == buy_type_id
-                or type_id == deposit_type_id
-                or type_id == dividend_type_id
-                or type_id == interest_type_id
-            ):
-                cash_balances_np[account_id] += cash_amt - commission
+            # Column conventions per direction — see the chronological version:
+            # money in reads Quantity, money out reads Total Amount.
+            cash_in = abs(qty) if abs(qty) > 1e-9 else abs(total_amount)
+            cash_out = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
+            # Income / fee rows on $CASH move the balance in Auto mode only —
+            # see the chronological version for why Manual mode must skip them.
+            is_auto_cash = acc_cash_modes[account_id] == 1
+            # Commission on a $CASH row is descriptive — see the chronological
+            # version. Only the amount moves the balance.
+            if type_id == buy_type_id or type_id == deposit_type_id:
+                cash_balances_np[account_id] += cash_in
+            elif type_id == dividend_type_id:
+                if is_auto_cash:
+                    cash_balances_np[account_id] += _dividend_amount(
+                        qty, price, total_amount
+                    )
+            elif type_id == interest_type_id:
+                if is_auto_cash:
+                    cash_balances_np[account_id] += cash_out
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                cash_balances_np[account_id] -= cash_amt + commission
+                cash_balances_np[account_id] -= cash_out
             elif type_id == fees_type_id or type_id == tax_type_id:
-                fee_val = (
-                    abs(total_amount)
-                    if abs(total_amount) > 1e-9
-                    else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
-                )
-                cash_balances_np[account_id] -= fee_val
+                if is_auto_cash:
+                    fee_val = (
+                        abs(total_amount)
+                        if abs(total_amount) > 1e-9
+                        else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                    )
+                    cash_balances_np[account_id] -= fee_val
             elif type_id == transfer_type_id:
                 dest_account_id = tx_to_accounts_np[i]
                 if dest_account_id != -1:
                     if cash_currency_np[dest_account_id] == -1:
                         cash_currency_np[dest_account_id] = currency_id
 
-                    cash_balances_np[account_id] -= cash_amt + commission
-                    cash_balances_np[dest_account_id] += cash_amt
+                    cash_balances_np[account_id] -= cash_out + commission
+                    cash_balances_np[dest_account_id] += cash_out
             continue
         # --- Handle STOCK transactions ---
         if holdings_currency_np[symbol_id, account_id] == -1:
@@ -730,6 +808,23 @@ def _calculate_holdings_numba(
                             holdings_short_orig_qty_np[symbol_id, acc_idx] *= (
                                 split_ratio
                             )
+            elif split_ratio < -1e-9:
+                # "Target quantity" encoding — see the chronological version.
+                # Applies to this account only.
+                target_qty = -split_ratio
+                old_qty = holdings_qty_np[symbol_id, account_id]
+                if abs(old_qty) > 1e-9:
+                    implied_ratio = target_qty / old_qty
+                    holdings_qty_np[symbol_id, account_id] = target_qty
+                    if abs(holdings_short_orig_qty_np[symbol_id, account_id]) > 1e-9:
+                        holdings_short_orig_qty_np[symbol_id, account_id] *= (
+                            implied_ratio
+                        )
+                    if (
+                        abs(last_prices_np[symbol_id, account_id]) > 1e-9
+                        and abs(implied_ratio) > 1e-9
+                    ):
+                        last_prices_np[symbol_id, account_id] /= implied_ratio
 
             if abs(commission) > 1e-9:
                 holdings_cost_np[symbol_id, account_id] += commission
@@ -820,16 +915,7 @@ def _calculate_holdings_numba(
                     else (abs(qty) * price - commission)
                 )
             elif type_id == dividend_type_id:
-                div_amt = (
-                    abs(total_amount)
-                    if abs(total_amount) > 1e-9
-                    else (
-                        abs(qty) * abs(price)
-                        if abs(qty) > 1e-9 and abs(price) > 1e-9
-                        else abs(price)
-                    )
-                )
-                cash_delta = +div_amt
+                cash_delta = +_dividend_amount(qty, price, total_amount)
             elif type_id == interest_type_id:
                 cash_delta = +(
                     abs(total_amount) if abs(total_amount) > 1e-9 else abs(price)
@@ -841,17 +927,22 @@ def _calculate_holdings_numba(
                     else (abs(commission) if abs(commission) > 1e-9 else abs(price))
                 )
             elif type_id == short_sell_type_id:
-                cash_delta = +(
-                    abs(total_amount)
-                    if abs(total_amount) > 1e-9
-                    else (abs(qty) * price - commission)
-                )
+                # See the chronological version: a short on a shortable symbol
+                # books its cash through its own $CASH rows, so synthesizing
+                # here would count the proceeds twice.
+                if not is_shortable_flag:
+                    cash_delta = +(
+                        abs(total_amount)
+                        if abs(total_amount) > 1e-9
+                        else (abs(qty) * price - commission)
+                    )
             elif type_id == buy_to_cover_type_id:
-                cash_delta = -(
-                    abs(total_amount)
-                    if abs(total_amount) > 1e-9
-                    else (abs(qty) * price + commission)
-                )
+                if not is_shortable_flag:
+                    cash_delta = -(
+                        abs(total_amount)
+                        if abs(total_amount) > 1e-9
+                        else (abs(qty) * price + commission)
+                    )
             # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
 
             if abs(cash_delta) > 1e-9:
@@ -954,38 +1045,58 @@ def _calculate_daily_holdings_chronological_numba(
             total_amount = tx_totals_np[tx_idx]
 
             if symbol_id == cash_symbol_id:
-                # Cash-amount fallback chain: prefer Total Amount, then
-                # Quantity, then commission. Manual entries historically
-                # store the amount in Quantity (Style A); PDF imports and
-                # some manual entries store it in Total Amount (Style B).
-                # Reading both keeps the engine resilient to either.
-                cash_amt = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
-                if (
-                    type_id == buy_type_id
-                    or type_id == deposit_type_id
-                    or type_id == dividend_type_id
-                    or type_id == interest_type_id
-                ):
-                    current_cash_balances[account_id] += cash_amt - commission
+                # Which column carries the amount depends on the direction, and
+                # these are the summary's conventions (portfolio_analyzer) —
+                # the two ledgers have to read a row the same way or the graph
+                # drifts away from the headline total.
+                #   in  (buy/deposit): Quantity, falling back to Total Amount
+                #   out (sell/withdrawal): Total Amount, falling back to Quantity
+                # Manual entries historically store the amount in Quantity
+                # (Style A); PDF imports store it in Total Amount (Style B), and
+                # when both are present they can differ by a fee.
+                cash_in = abs(qty) if abs(qty) > 1e-9 else abs(total_amount)
+                cash_out = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
+                # Income and fee rows booked on $CASH move the balance only in
+                # Auto mode. In Manual mode the movement is already recorded by
+                # its own $CASH buy/withdrawal row and the dividend/fee row just
+                # classifies it, so crediting both counts the money twice.
+                is_auto_cash = acc_cash_modes[account_id] == 1
+                # The commission on a $CASH row is descriptive, not a second
+                # charge: the money it cost leaves through its own $CASH row (a
+                # "Commission ..." withdrawal), and the trade leg it mirrors
+                # carries the same figure. Only the amount moves the balance —
+                # again matching the summary, which books the commission to its
+                # own bucket and never touches the cash quantity with it.
+                if type_id == buy_type_id or type_id == deposit_type_id:
+                    current_cash_balances[account_id] += cash_in
+                elif type_id == dividend_type_id:
+                    if is_auto_cash:
+                        current_cash_balances[account_id] += _dividend_amount(
+                            qty, price, total_amount
+                        )
+                elif type_id == interest_type_id:
+                    if is_auto_cash:
+                        current_cash_balances[account_id] += cash_out
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                    current_cash_balances[account_id] -= cash_amt + commission
+                    current_cash_balances[account_id] -= cash_out
                 elif type_id == fees_type_id or type_id == tax_type_id:
                     # Account-level fee/tax recorded on $CASH symbol (wire fees,
                     # margin interest, withholding, etc.). Debit cash by Total
                     # Amount (preferred), quantity, or commission as fallback.
-                    fee_val = (
-                        abs(total_amount)
-                        if abs(total_amount) > 1e-9
-                        else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
-                    )
-                    current_cash_balances[account_id] -= fee_val
+                    if is_auto_cash:
+                        fee_val = (
+                            abs(total_amount)
+                            if abs(total_amount) > 1e-9
+                            else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
+                        )
+                        current_cash_balances[account_id] -= fee_val
                 elif type_id == transfer_type_id:
                     dest_account_id = tx_to_accounts_np[tx_idx]
                     if dest_account_id != -1:
                         # Move Cash: Deduct from Source, Add to Dest
                         # Assuming commission is paid by source
-                        current_cash_balances[account_id] -= cash_amt + commission
-                        current_cash_balances[dest_account_id] += cash_amt
+                        current_cash_balances[account_id] -= cash_out + commission
+                        current_cash_balances[dest_account_id] += cash_out
 
             else:
                 # Update Last Price ONLY for transaction types where Price/Share
@@ -1011,6 +1122,24 @@ def _calculate_daily_holdings_chronological_numba(
                             # This prevents valuation spikes if market data is missing on the split day.
                             if abs(current_last_prices[symbol_id, acc_idx]) > 1e-9:
                                 current_last_prices[symbol_id, acc_idx] /= split_ratio
+                    elif split_ratio < -1e-9:
+                        # Negative ratio is the "target quantity" encoding: the
+                        # position *becomes* this many shares, for this account
+                        # only (see portfolio_analyzer's split branch, which the
+                        # summary uses). Ignoring it strands the difference as a
+                        # phantom holding the summary has long since closed.
+                        target_qty = -split_ratio
+                        old_qty = current_holdings_qty[symbol_id, account_id]
+                        if abs(old_qty) > 1e-9:
+                            implied_ratio = target_qty / old_qty
+                            current_holdings_qty[symbol_id, account_id] = target_qty
+                            if (
+                                abs(current_last_prices[symbol_id, account_id]) > 1e-9
+                                and abs(implied_ratio) > 1e-9
+                            ):
+                                current_last_prices[symbol_id, account_id] /= (
+                                    implied_ratio
+                                )
 
                 elif type_id == buy_type_id or type_id == deposit_type_id:
                     if qty > 1e-9:
@@ -1068,6 +1197,12 @@ def _calculate_daily_holdings_chronological_numba(
                             qty_covered = min(abs(qty), qty_currently_short)
                             current_holdings_qty[symbol_id, account_id] += qty_covered
 
+                sym_is_shortable = False
+                for short_id in shortable_symbol_ids:
+                    if symbol_id == short_id:
+                        sym_is_shortable = True
+                        break
+
                 # --- AUTO CASH LOGIC (Historical) ---
                 # For Auto-mode accounts, generate implicit cash balance changes
                 # Skip: Deposit/Withdrawal (in-kind shares), Split, Transfer
@@ -1087,21 +1222,7 @@ def _calculate_daily_holdings_chronological_numba(
                             else (abs(qty) * price - commission)
                         )
                     elif type_id == dividend_type_id:
-                        # Three accepted conventions for Dividend on a stock
-                        # symbol: Total=amount (canonical / PDF import), or
-                        # Qty=shares & Price=div_per_share (Style A), or
-                        # Price=amount with Qty=0 (legacy). Prefer Total, fall
-                        # back through qty*price, then bare price.
-                        div_amt = (
-                            abs(total_amount)
-                            if abs(total_amount) > 1e-9
-                            else (
-                                abs(qty) * abs(price)
-                                if abs(qty) > 1e-9 and abs(price) > 1e-9
-                                else abs(price)
-                            )
-                        )
-                        cash_delta = +div_amt
+                        cash_delta = +_dividend_amount(qty, price, total_amount)
                     elif type_id == interest_type_id:
                         cash_delta = +(
                             abs(total_amount)
@@ -1119,9 +1240,15 @@ def _calculate_daily_holdings_chronological_numba(
                             )
                         )
                     elif type_id == short_sell_type_id:
-                        cash_delta = +(abs(qty) * price - commission)
+                        # A short on a shortable symbol books its cash through
+                        # its own $CASH rows; the summary's shortable branch
+                        # returns before synthesizing any, so synthesizing here
+                        # would count the proceeds twice.
+                        if not sym_is_shortable:
+                            cash_delta = +(abs(qty) * price - commission)
                     elif type_id == buy_to_cover_type_id:
-                        cash_delta = -(abs(qty) * price + commission)
+                        if not sym_is_shortable:
+                            cash_delta = -(abs(qty) * price + commission)
                     # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
 
                     if abs(cash_delta) > 1e-9:
@@ -1354,9 +1481,18 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         num_accounts = len(account_to_id)
         _acm_val = account_cash_mode_map if account_cash_mode_map else {}
         acc_cash_modes_val = np.zeros(num_accounts, dtype=np.int64)
+        # Match case-insensitively on both sides. account_to_id arrives
+        # uppercased from generate_mappings but keeps the user's case from other
+        # callers, and the settings file always keeps what the user typed — a
+        # strict comparison drops every account whose name isn't already
+        # uppercase into Manual without saying so.
+        _acc_ids_by_upper = {
+            str(_name).upper().strip(): _idx for _name, _idx in account_to_id.items()
+        }
         for _acc_name_v, _mode_str_v in _acm_val.items():
-            if _acc_name_v in account_to_id and _mode_str_v == "Auto":
-                acc_cash_modes_val[account_to_id[_acc_name_v]] = 1
+            _idx_v = _acc_ids_by_upper.get(str(_acc_name_v).upper().strip())
+            if _idx_v is not None and str(_mode_str_v).lower() == "auto":
+                acc_cash_modes_val[_idx_v] = 1
 
         shortable_symbol_ids = np.array(
             [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
@@ -1459,9 +1595,16 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         except Exception:
             pass
 
-        # --- NEW: Fallback to last transaction price ---
+        # --- Fallback chain: manual NAV, then the last transaction price ---
+        # Same order as the summary (portfolio_analyzer), so a holding with no
+        # price feed is worth the same here as in the holdings table.
         if pd.isna(current_price_local):
-            if last_price > 1e-9:
+            manual_price = _manual_override_price(
+                manual_overrides_dict, internal_symbol
+            )
+            if manual_price is not None:
+                current_price_local = manual_price
+            elif last_price > 1e-9:
                 current_price_local = last_price
             else:
                 current_price_local = np.nan  # Ensure it's a float/NaN, not None
@@ -1631,6 +1774,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             manual_overrides_dict,  # Pass through
             processed_warnings,
             included_accounts=included_accounts,  # Pass included_accounts
+            account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
         )
     else:
         import traceback
