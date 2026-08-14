@@ -152,7 +152,7 @@ def get_settings(
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch settings")
 
 
 class SettingsUpdate(BaseModel):
@@ -346,9 +346,11 @@ def update_settings(
                     status_code=500, detail="Failed to save settings to file"
                 )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error updating settings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update settings")
 
 
 class ManualOverrideRequest(BaseModel):
@@ -434,6 +436,8 @@ def update_manual_override(
 
         return {"status": "success", "message": f"Override for {symbol_upper} updated."}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error updating manual override: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update manual override")

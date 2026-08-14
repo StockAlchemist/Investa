@@ -201,6 +201,7 @@ export default function AuthenticatedDashboard() {
   });
 
   useEffect(() => {
+    if (!mounted) return;
     try {
       localStorage.setItem('investa_currency',                       currency);
       localStorage.setItem('investa_active_tab',                     activeTab);
@@ -232,7 +233,7 @@ export default function AuthenticatedDashboard() {
       if (Object.keys(updates).length > 0) settingsMutation.mutate(updates);
     }, 1000);
     return () => clearTimeout(id);
-  }, [currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, graphPeriod, graphView, settingsQuery.data, settingsMutation]);
+  }, [mounted, currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, graphPeriod, graphView, settingsQuery.data, settingsMutation]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

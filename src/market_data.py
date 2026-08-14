@@ -21,6 +21,7 @@ from io import StringIO  # For historical cache loading
 import subprocess
 import tempfile
 import queue
+from collections import OrderedDict
 from market_db import MarketDatabase
 
 
@@ -148,6 +149,59 @@ def _extract_ticker_from_df(df, ticker):
                 continue
 
     return pd.DataFrame()
+
+
+class BoundedTTLCache:
+    """Thread-safe bounded LRU cache with TTL expiration to prevent unbounded memory growth."""
+
+    def __init__(self, max_size: int = 500, default_ttl: float = 300.0):
+        self._store: OrderedDict = OrderedDict()
+        self._max_size = max_size
+        self._default_ttl = default_ttl
+        self._lock = threading.Lock()
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        with self._lock:
+            if key not in self._store:
+                return default
+            val, expire_at = self._store[key]
+            if time.time() > expire_at:
+                del self._store[key]
+                return default
+            self._store.move_to_end(key)
+            return val
+
+    def set(self, key: Any, value: Any, ttl: Optional[float] = None) -> None:
+        with self._lock:
+            ttl_val = ttl if ttl is not None else self._default_ttl
+            expire_at = time.time() + ttl_val
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = (value, expire_at)
+            while len(self._store) > self._max_size:
+                self._store.popitem(last=False)
+
+    def delete(self, key: Any) -> None:
+        with self._lock:
+            self._store.pop(key, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._store)
+
+    def __contains__(self, key: Any) -> bool:
+        with self._lock:
+            if key not in self._store:
+                return False
+            _, expire_at = self._store[key]
+            if time.time() > expire_at:
+                del self._store[key]
+                return False
+            return True
 
 
 INVALID_SYMBOLS_CACHE_FILE = "invalid_symbols_cache.json"
@@ -542,7 +596,7 @@ EARNINGS_BACKFILL_WINDOW_DAYS = 6
 EARNINGS_BACKFILL_COOLDOWN_MINUTES = 30
 EARNINGS_BACKFILL_QUARTERS = 8
 
-_EARNINGS_BACKFILL_ATTEMPTS: Dict[str, datetime] = {}
+_EARNINGS_BACKFILL_ATTEMPTS = BoundedTTLCache(max_size=500, default_ttl=86400.0)
 _EARNINGS_BACKFILL_LOCK = threading.Lock()
 
 _EARNINGS_TIMESTAMP_KEYS = (
@@ -1003,11 +1057,15 @@ _CIK_MAP_CACHE_FILENAME = "ticker_cik_map.json"
 # request asks for all three statements of the same company in a row, so a
 # short-lived memo turns three queries into one. Batch workers walking a few
 # thousand symbols are the reason this matters.
-_edgar_statement_cache: Dict[str, Tuple[float, Dict[str, pd.DataFrame]]] = {}
-_edgar_quarterly_cache: Dict[str, Tuple[float, Dict[str, pd.DataFrame]]] = {}
-_edgar_statement_lock = threading.Lock()
-_EDGAR_STATEMENT_TTL_SECONDS = 900
+_EDGAR_STATEMENT_TTL_SECONDS = 900.0
 _EDGAR_STATEMENT_CACHE_MAX = 64
+_edgar_statement_cache = BoundedTTLCache(
+    max_size=_EDGAR_STATEMENT_CACHE_MAX, default_ttl=_EDGAR_STATEMENT_TTL_SECONDS
+)
+_edgar_quarterly_cache = BoundedTTLCache(
+    max_size=_EDGAR_STATEMENT_CACHE_MAX, default_ttl=_EDGAR_STATEMENT_TTL_SECONDS
+)
+_edgar_statement_lock = threading.Lock()
 
 
 def _cik_map_cache_path() -> str:
@@ -1120,11 +1178,9 @@ cik_for_symbol = _cik_for_symbol
 
 def _edgar_annual_statements(cik: str) -> Dict[str, pd.DataFrame]:
     """All three EDGAR statements for one filer. Returns {} when unavailable."""
-    now = time.monotonic()
-    with _edgar_statement_lock:
-        entry = _edgar_statement_cache.get(cik)
-        if entry and (now - entry[0]) < _EDGAR_STATEMENT_TTL_SECONDS:
-            return entry[1]
+    cached = _edgar_statement_cache.get(cik)
+    if cached is not None:
+        return cached
 
     try:
         import edgar_provider
@@ -1136,13 +1192,7 @@ def _edgar_annual_statements(cik: str) -> Dict[str, pd.DataFrame]:
         logging.debug(f"EDGAR: no statements for CIK {cik}: {exc}")
         statements = {}
 
-    with _edgar_statement_lock:
-        if len(_edgar_statement_cache) >= _EDGAR_STATEMENT_CACHE_MAX:
-            oldest = min(
-                _edgar_statement_cache, key=lambda k: _edgar_statement_cache[k][0]
-            )
-            _edgar_statement_cache.pop(oldest, None)
-        _edgar_statement_cache[cik] = (now, statements)
+    _edgar_statement_cache.set(cik, statements)
     return statements
 
 
@@ -1155,11 +1205,9 @@ def _edgar_quarterly_statements(cik: str) -> Dict[str, pd.DataFrame]:
     after it reads the local store. A failed download leaves Yahoo's five
     quarters in place rather than an error.
     """
-    now = time.monotonic()
-    with _edgar_statement_lock:
-        entry = _edgar_quarterly_cache.get(cik)
-        if entry and (now - entry[0]) < _EDGAR_STATEMENT_TTL_SECONDS:
-            return entry[1]
+    cached = _edgar_quarterly_cache.get(cik)
+    if cached is not None:
+        return cached
 
     try:
         import edgar_provider
@@ -1173,13 +1221,7 @@ def _edgar_quarterly_statements(cik: str) -> Dict[str, pd.DataFrame]:
         logging.debug(f"EDGAR: no quarterly statements for CIK {cik}: {exc}")
         statements = {}
 
-    with _edgar_statement_lock:
-        if len(_edgar_quarterly_cache) >= _EDGAR_STATEMENT_CACHE_MAX:
-            oldest = min(
-                _edgar_quarterly_cache, key=lambda k: _edgar_quarterly_cache[k][0]
-            )
-            _edgar_quarterly_cache.pop(oldest, None)
-        _edgar_quarterly_cache[cik] = (now, statements)
+    _edgar_quarterly_cache.set(cik, statements)
     return statements
 
 
@@ -1339,6 +1381,14 @@ class MarketDataProvider:
         # Construct path for static_prices_dir (User-defined overrides)
         self.static_prices_dir = os.path.join(app_data_dir, "static_prices")
         os.makedirs(self.static_prices_dir, exist_ok=True)
+
+        # Bounded in-memory quote caches with LRU/TTL expiration to prevent memory growth
+        self._current_quotes_memory_cache = BoundedTTLCache(
+            max_size=200, default_ttl=60.0
+        )
+        self._index_quotes_memory_cache = BoundedTTLCache(
+            max_size=50, default_ttl=120.0
+        )
 
         # logging.info("MarketDataProvider initialized.")
 
@@ -1752,7 +1802,7 @@ class MarketDataProvider:
                 minutes=EARNINGS_BACKFILL_COOLDOWN_MINUTES
             ):
                 return info
-            _EARNINGS_BACKFILL_ATTEMPTS[yf_symbol] = now
+            _EARNINGS_BACKFILL_ATTEMPTS.set(yf_symbol, now)
 
         history = self.get_earnings_history(yf_symbol)
         if not history:
@@ -2046,6 +2096,15 @@ class MarketDataProvider:
         cached_fx_prev = None
         cache_valid = False
 
+        # Fast in-memory cache lookup
+        in_memory_cached = self._current_quotes_memory_cache.get(cache_key)
+        if in_memory_cached is not None:
+            cached_quotes, cached_fx, cached_fx_prev = in_memory_cached
+            logging.debug(
+                f"Using in-memory cache for current quotes (Key: {cache_key[:30]}...)"
+            )
+            return cached_quotes, cached_fx, cached_fx_prev, False, has_warnings
+
         if os.path.exists(self.current_cache_file):
             try:
                 with open(self.current_cache_file, "r") as f:
@@ -2066,6 +2125,11 @@ class MarketDataProvider:
                             cached_fx_prev = cache_data.get("fx_prev_close")
                             if cached_quotes is not None and cached_fx is not None:
                                 cache_valid = True
+                                self._current_quotes_memory_cache.set(
+                                    cache_key,
+                                    (cached_quotes, cached_fx, cached_fx_prev),
+                                    ttl=cache_ttl_minutes * 60,
+                                )
                                 logging.info(
                                     f"Using valid cache for current quotes (Key: {cache_key[:30]}...). Age: {datetime.now(timezone.utc) - cache_timestamp}"
                                 )
@@ -2569,6 +2633,13 @@ class MarketDataProvider:
                 for internal_sym, data in stock_data_yf.items():
                     results[internal_sym] = data
 
+                cache_ttl_minutes = 1 if is_market_open() else 60
+                self._current_quotes_memory_cache.set(
+                    cache_key,
+                    (results, fx_rates_vs_usd, fx_prev_close_vs_usd),
+                    ttl=cache_ttl_minutes * 60,
+                )
+
                 cache_content = {
                     "cache_key": cache_key,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2761,7 +2832,15 @@ class MarketDataProvider:
         cache_key = f"INDEX_QUOTES_v3::{'_'.join(sorted(index_symbols))}"
         cache_duration_minutes = 2
 
-        if os.path.exists(self.current_cache_file):
+        # Fast in-memory cache check
+        in_memory_index = self._index_quotes_memory_cache.get(cache_key)
+        if in_memory_index is not None:
+            results = in_memory_index
+            cached_data_used = True
+            cache_valid = True
+            cached_results = in_memory_index
+
+        if not cache_valid and os.path.exists(self.current_cache_file):
             try:
                 with open(self.current_cache_file, "r") as f:
                     cache_data = json.load(f)
@@ -2778,6 +2857,11 @@ class MarketDataProvider:
                             minutes=cache_duration_minutes
                         ):
                             cache_valid = True
+                            self._index_quotes_memory_cache.set(
+                                cache_key,
+                                cached_results,
+                                ttl=cache_duration_minutes * 60,
+                            )
                             logging.debug(
                                 f"Using valid cache for index quotes (Key: {cache_key[:30]}...)."
                             )
@@ -2983,6 +3067,9 @@ class MarketDataProvider:
 
             # --- Save to Cache ---
             if results:  # Only save if we got some results
+                self._index_quotes_memory_cache.set(
+                    cache_key, results, ttl=cache_duration_minutes * 60
+                )
                 try:
                     # Load existing cache data (if any) to update it
                     full_cache_data = {}

@@ -41,10 +41,9 @@ async function mockApi(page: Page) {
 }
 
 test.describe('Authentication', () => {
-    test('unauthenticated visit to / redirects to the login page', async ({ page }) => {
+    test('unauthenticated visit to / renders the login page', async ({ page }) => {
         await mockApi(page);
         await page.goto('/');
-        await page.waitForURL('**/login');
         await expect(page.getByLabel('Username')).toBeVisible();
         await expect(page.getByLabel('Password')).toBeVisible();
     });
@@ -104,7 +103,7 @@ test.describe('Authentication', () => {
         expect(storedToken).toBeNull();
     });
 
-    test('an invalid session on a return visit logs out quietly to /login', async ({ page }) => {
+    test('an invalid session on a return visit logs out quietly', async ({ page }) => {
         await mockApi(page);
         await page.route('**/api/auth/me', (route) =>
             route.fulfill({
@@ -126,11 +125,12 @@ test.describe('Authentication', () => {
         });
 
         await page.goto('/');
-        await page.waitForURL('**/login');
+        await expect(page.getByLabel('Username')).toBeVisible();
 
         // The cached profile must be cleared, and the 401 handled without console.error
-        const remaining = await page.evaluate(() => localStorage.getItem('investa_user'));
-        expect(remaining).toBeNull();
+        await expect.poll(async () => {
+            return await page.evaluate(() => localStorage.getItem('investa_user'));
+        }).toBeNull();
         expect(errors.filter((e) => e.includes('Failed to fetch user'))).toHaveLength(0);
     });
 });

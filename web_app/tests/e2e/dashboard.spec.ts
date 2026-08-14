@@ -1,15 +1,20 @@
 import { test, expect } from '@playwright/test';
+import { loginAsMockUser } from './helpers/mock-api';
 
 test.describe('Dashboard UI', () => {
-    test('has title and loads successfully', async ({ page }) => {
+    test('has title and loads successfully for authenticated user', async ({ page }) => {
+        await loginAsMockUser(page);
         await page.goto('/');
 
-        // Expect a title "to contain" a substring. Next.js default is often Investa or Create Next App
-        // We will check for some generic element on your dashboard to verify it loads.
-        await expect(page).toHaveTitle(/Investa|React/i);
+        await expect(page).toHaveTitle(/Investa/i);
 
-        // Check if the overall structure rendered (assuming basic page wrapper or typical div)
-        const body = page.locator('body');
-        await expect(body).toBeVisible();
+        // Check sidebar navigation items
+        await expect(page.getByRole('button', { name: 'Dashboard' }).first()).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Portfolio' }).first()).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Transactions' }).first()).toBeVisible();
+
+        // Check dashboard metrics and holdings table
+        await expect(page.getByText('$125,450.00').first()).toBeVisible();
+        await expect(page.getByText('AAPL').first()).toBeVisible();
     });
 });

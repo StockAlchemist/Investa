@@ -74,7 +74,7 @@ async def run_screener(
         return clean_nans(results)
     except Exception as e:
         logging.error(f"Screener error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to run screener query")
 
 
 @router.post("/screener/narrative")
@@ -90,8 +90,8 @@ def narrative_screener(
         results = run_narrative_search(prompt)
         return results
     except Exception as e:
-        logging.error(f"Error in narrative screener API: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in narrative screener API: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to run narrative search")
 
 
 @router.post("/screener/review/{symbol}")
@@ -145,9 +145,13 @@ def trigger_ai_review(
         )
         return clean_nans(review)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"AI Review error for {symbol}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail="Failed to generate AI stock review"
+        )
 
 
 class ChatMessage(BaseModel):

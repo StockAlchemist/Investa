@@ -149,7 +149,7 @@ async def get_asset_change(
 
     except Exception as e:
         logging.error(f"Error calculating asset change: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to calculate asset change")
 
 
 @router.get("/summary")
@@ -235,9 +235,13 @@ async def get_portfolio_summary(
             "holdings_dict": safe_holdings_dict,
         }
         return clean_nans(response_data)
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error calculating summary: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail="Failed to calculate portfolio summary"
+        )
 
 
 @router.get("/summary/headline")
@@ -304,7 +308,9 @@ async def get_portfolio_summary_headline(
         raise
     except Exception as e:
         logging.error(f"Error calculating headline summary: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail="Failed to calculate portfolio summary headline"
+        )
 
     metrics = dict(overall_summary_metrics) if overall_summary_metrics else {}
 
@@ -522,7 +528,9 @@ async def get_portfolio_ai_review(
 
     except Exception as e:
         logging.error(f"Portfolio AI Review Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail="Failed to generate portfolio review"
+        )
 
 
 @router.get("/holdings")
@@ -679,7 +687,7 @@ async def get_holdings(
 
     except Exception as e:
         logging.error(f"Error getting holdings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch holdings")
 
 
 # Period windows (in calendar days) for the holdings performance heatmap.
@@ -848,7 +856,7 @@ async def get_history(
         )
     except Exception as e:
         logging.error(f"Error getting history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch portfolio history")
 
 
 @router.get("/portfolio_health")

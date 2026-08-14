@@ -8,7 +8,6 @@ import re
 import sqlite3
 import threading
 import time
-import traceback
 from collections import OrderedDict
 from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional
@@ -343,11 +342,7 @@ def get_market_history(
 
     except Exception as e:
         logging.error(f"Error in get_market_history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-    except Exception as e:
-        logging.error(f"Error in get_market_history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch market history")
 
 
 @router.get("/stock_history/{symbol}")
@@ -528,7 +523,7 @@ def get_stock_history(
 
     except Exception as e:
         logging.error(f"Error serving stock history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch stock history")
 
 
 @router.get("/earnings_dates/{symbol}")
@@ -579,7 +574,7 @@ def get_earnings_dates(
 
     except Exception as e:
         logging.error(f"Error serving earnings dates for {symbol}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch earnings dates")
 
 
 @router.get("/stock-analysis/{symbol}")
@@ -712,7 +707,7 @@ def get_stock_analysis(
         return clean_nans(analysis)
     except Exception as e:
         logging.error(f"Error in stock analysis for {symbol}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch stock analysis")
 
 
 @router.get("/fundamentals/{symbol}")
@@ -828,9 +823,13 @@ def get_fundamentals_endpoint(
             logging.debug(f"Key-metrics derivation skipped for {symbol}: {e_metrics}")
 
         return clean_nans(fundamental_data)
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error fetching fundamentals for {yf_symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(
+            f"Error fetching fundamentals for {yf_symbol}: {e}", exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Failed to fetch fundamentals")
 
 
 @router.get("/financials/{symbol}")
@@ -907,9 +906,13 @@ def get_financials_endpoint(
                 "shareholders_equity": df_to_dict(shareholders_equity),
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error fetching financials for {yf_symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error fetching financials for {yf_symbol}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch financial statements"
+        )
 
 
 @router.get("/ratios/{symbol}")
@@ -1008,10 +1011,13 @@ def get_ratios_endpoint(
                 "valuation": current_valuation,
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error calculating ratios for {yf_symbol}: {e}")
-        logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error calculating ratios for {yf_symbol}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to calculate financial ratios"
+        )
 
 
 @router.get("/intrinsic_value/{symbol}")
@@ -1059,7 +1065,9 @@ def get_intrinsic_value_endpoint(
         )
 
         if "error" in results:
-            raise HTTPException(status_code=500, detail=results["error"])
+            raise HTTPException(
+                status_code=500, detail="Failed to calculate intrinsic value"
+            )
 
         # We still need info for the sync function below
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
@@ -1083,10 +1091,15 @@ def get_intrinsic_value_endpoint(
             )
 
         return clean_nans(results)
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error calculating intrinsic value for {yf_symbol}: {e}")
-        logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(
+            f"Error calculating intrinsic value for {yf_symbol}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to calculate intrinsic value"
+        )
 
 
 # FX rate cache: {currency_code: (rate, expiry_timestamp)}

@@ -47,6 +47,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 import pandas as pd
 
 import config
+from db_utils import get_db_connection
 from edgar_concepts import (
     BALANCE_CONCEPTS,
     BANK_CONCEPTS,
@@ -198,9 +199,11 @@ class EdgarFactStore:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=60.0)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        conn = get_db_connection(self.db_path, use_cache=False, timeout=60.0)
+        if conn is None:
+            raise sqlite3.OperationalError(
+                f"Could not open database connection to {self.db_path}"
+            )
         return conn
 
     def _init_db(self) -> None:

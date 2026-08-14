@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 import config
+from db_utils import get_db_connection
 
 _DB_FILENAME = "buffett_ranks.db"
 
@@ -99,7 +100,11 @@ class BuffettRankStore:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn = get_db_connection(self.db_path, use_cache=False, timeout=30.0)
+        if conn is None:
+            raise sqlite3.OperationalError(
+                f"Could not open database connection to {self.db_path}"
+            )
         conn.row_factory = sqlite3.Row
         return conn
 

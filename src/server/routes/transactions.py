@@ -95,7 +95,7 @@ def get_transactions(
 
     except Exception as e:
         logging.error(f"Error getting transactions: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch transactions")
 
 
 class TransactionInput(BaseModel):
@@ -263,7 +263,7 @@ def create_transaction(
         raise
     except Exception as e:
         logging.error(f"Error adding transaction: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to add transaction")
 
 
 @router.post("/transactions/parse_document")
@@ -318,9 +318,11 @@ def parse_document(
             "count": len(transactions),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error parsing document: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to parse document")
 
 
 @router.post("/transactions/batch")
@@ -382,9 +384,13 @@ def add_transactions_batch(
             "errors": errors,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error in batch import: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail="Failed to batch import transactions"
+        )
 
 
 @router.put("/transactions/{transaction_id}")
@@ -429,7 +435,7 @@ def update_transaction(
         raise
     except Exception as e:
         logging.error(f"Error updating transaction: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update transaction")
 
 
 @router.delete("/transactions/{transaction_id}")
@@ -469,7 +475,7 @@ def delete_transaction(
         raise
     except Exception as e:
         logging.error(f"Error deleting transaction: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete transaction")
 
 
 class HoldingTagUpdate(BaseModel):
@@ -515,9 +521,11 @@ def update_holding_tags(
             "message": f"Updated tags for {rows_affected} transactions",
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error updating holding tags: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update holding tags")
 
 
 @router.post("/sync/ibkr")
@@ -558,12 +566,13 @@ async def sync_ibkr(
         try:
             new_transactions = await run_in_threadpool(connector.sync)
         except Exception as sync_err:
+            logging.error(f"Error in connector.sync: {sync_err}", exc_info=True)
             return JSONResponse(
                 status_code=500,
                 content={
                     "status": "error",
                     "code": "SYNC_FAILED",
-                    "message": str(sync_err),
+                    "message": "IBKR sync failed",
                 },
             )
 
@@ -662,10 +671,12 @@ async def sync_ibkr(
             "duplicate_count": duplicate_count,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error during IBKR sync: {e}", exc_info=True)
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": str(e)}
+            status_code=500, content={"status": "error", "message": "IBKR sync failed"}
         )
 
 
@@ -680,7 +691,10 @@ def get_pending_ibkr(
         df = pd.read_sql_query(query, conn)
         return df.to_dict(orient="records")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error fetching pending IBKR transactions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch pending transactions"
+        )
 
 
 @router.post("/sync/ibkr/approve")
@@ -742,7 +756,10 @@ def approve_ibkr(
         }
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error approving pending IBKR transactions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to approve pending transactions"
+        )
 
 
 @router.post("/sync/ibkr/reject")
@@ -769,6 +786,7 @@ def reject_ibkr(
         }
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-        logging.error(f"Error during IBKR sync: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Sync error: {str(e)}")
+        logging.error(f"Error rejecting pending IBKR transactions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to reject pending transactions"
+        )

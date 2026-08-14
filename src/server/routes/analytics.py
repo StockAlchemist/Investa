@@ -137,7 +137,7 @@ async def get_capital_gains(
 
     except Exception as e:
         logging.error(f"Error getting capital gains: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to calculate capital gains")
 
 
 @router.get("/dividends")
@@ -214,7 +214,7 @@ async def get_dividends(
 
     except Exception as e:
         logging.error(f"Error getting dividends: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch dividends")
 
 
 async def _generate_dividend_events(
@@ -569,7 +569,9 @@ async def get_projected_income(
         return results
     except Exception as e:
         logging.error(f"Error getting projected income: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail="Failed to calculate projected income"
+        )
 
 
 @router.get("/risk_metrics")

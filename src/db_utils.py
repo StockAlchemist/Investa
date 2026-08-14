@@ -195,6 +195,7 @@ def get_db_connection(
     db_path: Optional[str] = None,
     check_same_thread: bool = True,
     use_cache: bool = True,
+    timeout: float = 30.0,
 ) -> Optional[sqlite3.Connection]:
     """Establishes a connection to the SQLite database, with thread-local caching."""
     if db_path is None:
@@ -231,7 +232,7 @@ def get_db_connection(
         for i in range(retries):
             try:
                 conn = sqlite3.connect(
-                    db_path, timeout=30, check_same_thread=check_same_thread
+                    db_path, timeout=timeout, check_same_thread=check_same_thread
                 )
                 conn.execute("PRAGMA busy_timeout = 30000;")
                 conn.execute("PRAGMA foreign_keys = ON;")

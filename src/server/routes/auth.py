@@ -160,8 +160,8 @@ def register(
             conn.rollback()
         except Exception:
             pass
-        logging.error(f"Registration error: {e}")
-        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+        logging.error(f"Registration error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Registration failed")
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:

@@ -64,7 +64,7 @@ def webhook_refresh(request: WebhookRefreshRequest):
 
     except Exception as e:
         logging.error(f"Error in webhook refresh: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Webhook refresh failed")
 
 
 @router.post("/clear_cache")
@@ -219,4 +219,4 @@ def clear_cache():
         }
     except Exception as e:
         logging.error(f"Error clearing cache: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to clear cache")
