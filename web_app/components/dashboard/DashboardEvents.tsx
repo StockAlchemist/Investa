@@ -128,7 +128,7 @@ function ConfirmedDividendsModal({
                                                 <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
                                             </div>
                                             {e.name && (
-                                                <span className="block text-[10px] text-muted-foreground/70 truncate leading-tight">
+                                                <span className="block text-[10px] text-slate-600 dark:text-slate-400 truncate leading-tight">
                                                     {e.name}
                                                 </span>
                                             )}
@@ -137,7 +137,7 @@ function ConfirmedDividendsModal({
                                     <span className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
                                         {fullDate(e.dividend_date)}
                                     </span>
-                                    <span className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400 w-24 text-right">
+                                    <span className="text-sm font-bold tabular-nums text-emerald-700 dark:text-emerald-400 w-24 text-right">
                                         {formatCurrency(e.amount, currency)}
                                     </span>
                                 </button>
@@ -174,8 +174,8 @@ function ReportedValue({ event }: { event: EarningsEvent }) {
     const tone = surprise == null
         ? 'text-violet-600 dark:text-violet-400'
         : surprise >= 0
-            ? 'text-emerald-600 dark:text-emerald-400'
-            : 'text-rose-600 dark:text-rose-400';
+            ? 'text-emerald-700 dark:text-emerald-400'
+            : 'text-rose-700 dark:text-rose-400';
 
     return (
         <span
@@ -248,13 +248,13 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                     <CalendarClock className="w-3.5 h-3.5 text-cyan-500" />
-                    <h3 className="section-label">Upcoming Events</h3>
+                    <h2 className="section-label">Upcoming Events</h2>
                 </div>
                 <button
                     type="button"
                     onClick={() => setShowAll(true)}
                     disabled={confirmedCount === 0}
-                    className="text-[10px] uppercase tracking-wider font-semibold text-cyan-600 dark:text-cyan-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-default"
+                    className="text-[10px] uppercase tracking-wider font-semibold text-cyan-700 dark:text-cyan-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-default"
                     title="View all confirmed dividends"
                 >
                     Confirmed ({confirmedCount}) →
@@ -300,7 +300,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                                         : `earnings${row.event.status === 'estimated' ? ' est.' : ''}`}
                                                 </span>
                                             ) : row.event.status === 'estimated' ? (
-                                                <span className="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-amber-600 dark:text-amber-400 shrink-0">
+                                                <span className="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-amber-700 dark:text-amber-400 shrink-0">
                                                     <Clock className="w-2.5 h-2.5" />
                                                     est.
                                                 </span>
@@ -309,7 +309,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                             )}
                                         </div>
                                         {row.event.name && (
-                                            <span className="block text-[10px] text-muted-foreground/70 truncate leading-tight">
+                                            <span className="block text-[10px] text-slate-600 dark:text-slate-400 truncate leading-tight">
                                                 {row.event.name}
                                             </span>
                                         )}
@@ -321,7 +321,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                         : fullDate(row.date)}
                                     className={cn(
                                         'text-[10px] uppercase tracking-wider tabular-nums font-semibold',
-                                        isSoon ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+                                        isSoon ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400',
                                     )}
                                 >
                                     {rel}
@@ -340,7 +340,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                             : 'Report'}
                                     </span>
                                 ) : (
-                                    <span className="text-xs font-bold tabular-nums text-emerald-600 dark:text-emerald-400 w-20 text-right">
+                                    <span className="text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-400 w-20 text-right">
                                         {formatCurrency(row.event.amount, currency)}
                                     </span>
                                 )}

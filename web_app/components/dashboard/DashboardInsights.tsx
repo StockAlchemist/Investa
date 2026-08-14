@@ -225,7 +225,7 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
                         <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
                         <h3 className="section-label">Insights</h3>
                     </div>
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                         {insights.length} item{insights.length === 1 ? '' : 's'}
                     </span>
                 </div>
@@ -234,18 +234,18 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
                     <div className="flex flex-col items-center justify-center py-6 text-center gap-1">
                         <Sparkles className="w-5 h-5 text-muted-foreground/40" />
                         <p className="text-sm text-muted-foreground">Nothing to flag today.</p>
-                        <p className="text-[11px] text-muted-foreground/60">No ripening lots, drift breaches, or new value buys.</p>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">No ripening lots, drift breaches, or new value buys.</p>
                     </div>
                 ) : (
                     <div className="space-y-2">
                         {insights.map((ins) => {
                             const Icon = ins.icon;
                             const tone = ins.tone === 'pos'
-                                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
+                                ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10'
                                 : ins.tone === 'alert'
-                                    ? 'text-red-600 dark:text-red-400 bg-red-500/10'
+                                    ? 'text-red-700 dark:text-red-400 bg-red-500/10'
                                     : ins.tone === 'warn'
-                                        ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                                        ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10'
                                         : 'text-foreground bg-muted/30';
                             return (
                                 <div
@@ -268,7 +268,7 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
                                     <div className="min-w-0 flex-1">
                                         <p className="text-sm font-semibold text-foreground leading-snug">{ins.title}</p>
                                         {ins.sub && (
-                                            <p className="text-[11px] text-muted-foreground/70 leading-snug mt-0.5">{ins.sub}</p>
+                                            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug mt-0.5">{ins.sub}</p>
                                         )}
                                     </div>
                                     <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-muted-foreground shrink-0 mt-1 transition-colors" />
@@ -368,17 +368,17 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                                 <td className="px-3 py-2 font-semibold text-foreground">
                                                     {lot.symbol}
                                                     {lot.account && (
-                                                        <span className="text-[10px] text-muted-foreground/70 ml-1.5">{lot.account}</span>
+                                                        <span className="text-[10px] text-slate-600 dark:text-slate-400 ml-1.5">{lot.account}</span>
                                                     )}
                                                 </td>
                                                 <td className="px-3 py-2 text-muted-foreground tabular-nums">
                                                     {new Date(lot.date).toLocaleDateString()}
                                                 </td>
                                                 <td className="px-3 py-2 text-right tabular-nums">{lot.quantity.toLocaleString()}</td>
-                                                <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-semibold">
+                                                <td className="px-3 py-2 text-right tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">
                                                     +{formatCurrency(lot.gain, currency)}
                                                 </td>
-                                                <td className="px-3 py-2 text-right tabular-nums font-bold text-amber-600 dark:text-amber-400">
+                                                <td className="px-3 py-2 text-right tabular-nums font-bold text-amber-700 dark:text-amber-400">
                                                     {lot.daysRemaining}d
                                                 </td>
                                             </tr>
@@ -405,11 +405,11 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                             <div className="flex items-baseline justify-between gap-3 mb-2">
                                                 <div className="min-w-0">
                                                     <p className="text-sm font-bold text-foreground truncate">{d.bucket}</p>
-                                                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">{d.dim}</p>
+                                                    <p className="text-[10px] uppercase tracking-widest text-slate-600 dark:text-slate-400 font-semibold">{d.dim}</p>
                                                 </div>
                                                 <span className={cn(
                                                     'text-sm font-black tabular-nums shrink-0',
-                                                    overweight ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
+                                                    overweight ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'
                                                 )}>
                                                     {overweight ? '+' : ''}{d.drift.toFixed(1)}%
                                                 </span>
@@ -454,7 +454,7 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                                 <td className="px-3 py-2 font-semibold text-foreground">
                                                     {u.symbol}
                                                     {u.account && (
-                                                        <span className="text-[10px] text-muted-foreground/70 ml-1.5">{u.account}</span>
+                                                        <span className="text-[10px] text-slate-600 dark:text-slate-400 ml-1.5">{u.account}</span>
                                                     )}
                                                 </td>
                                                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
@@ -463,7 +463,7 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                                                     {u.marketValue != null ? formatCurrency(u.marketValue, currency) : '—'}
                                                 </td>
-                                                <td className="px-3 py-2 text-right tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                                                <td className="px-3 py-2 text-right tabular-nums font-bold text-emerald-700 dark:text-emerald-400">
                                                     {u.mos.toFixed(1)}%
                                                 </td>
                                             </tr>
@@ -500,11 +500,11 @@ interface DetailSectionProps {
 
 function DetailSection({ icon: Icon, tone, title, description, children }: DetailSectionProps) {
     const toneClass = tone === 'pos'
-        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
+        ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10'
         : tone === 'alert'
-            ? 'text-red-600 dark:text-red-400 bg-red-500/10'
+            ? 'text-red-700 dark:text-red-400 bg-red-500/10'
             : tone === 'warn'
-                ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10'
                 : 'text-foreground bg-muted/30';
     return (
         <section>
@@ -514,7 +514,7 @@ function DetailSection({ icon: Icon, tone, title, description, children }: Detai
                 </span>
                 <div className="min-w-0">
                     <h3 className="text-sm font-bold text-foreground">{title}</h3>
-                    {description && <p className="text-[11px] text-muted-foreground/80 mt-0.5">{description}</p>}
+                    {description && <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">{description}</p>}
                 </div>
             </div>
             {children}

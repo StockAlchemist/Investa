@@ -39,7 +39,7 @@ function MarketContextColumn({ indices, portfolioDayChangePct }: { indices?: Rec
 
     return (
         <div className="flex flex-col gap-2 min-w-0">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                 <Globe className="w-3 h-3" />
                 <span>Market Today</span>
             </div>
@@ -47,11 +47,11 @@ function MarketContextColumn({ indices, portfolioDayChangePct }: { indices?: Rec
                 <div className="flex items-baseline gap-2 mb-1">
                     <span className={cn(
                         'text-2xl font-bold tabular-nums leading-none',
-                        portfolioDayChangePct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                        portfolioDayChangePct >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
                     )}>
                         {portfolioDayChangePct >= 0 ? '+' : ''}{portfolioDayChangePct.toFixed(2)}%
                     </span>
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">you</span>
+                    <span className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">you</span>
                 </div>
             )}
             <div className="space-y-1">
@@ -63,14 +63,14 @@ function MarketContextColumn({ indices, portfolioDayChangePct }: { indices?: Rec
                             <span className="text-foreground truncate">{idx.name}</span>
                             <span className={cn(
                                 'tabular-nums font-bold',
-                                positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
                             )}>
                                 {positive ? '+' : ''}{idx.changesPercentage.toFixed(2)}%
                             </span>
                             {delta != null && (
                                 <span className={cn(
                                     'text-[10px] tabular-nums w-12 text-right',
-                                    delta >= 0 ? 'text-emerald-600/70 dark:text-emerald-400/70' : 'text-red-600/70 dark:text-red-400/70',
+                                    delta >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
                                 )}>
                                     ({delta >= 0 ? '+' : ''}{delta.toFixed(2)})
                                 </span>
@@ -90,7 +90,7 @@ function MoversColumn({ rows, currency, positive, onPick }: {
     onPick: (sym: string) => void;
 }) {
     const Icon = positive ? TrendingUp : TrendingDown;
-    const tone = positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+    const tone = positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400';
     return (
         <div className="flex flex-col gap-2 min-w-0">
             <div className={cn('flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold', tone)}>
@@ -98,7 +98,7 @@ function MoversColumn({ rows, currency, positive, onPick }: {
                 <span>{positive ? 'Top Gainers' : 'Top Losers'}</span>
             </div>
             {rows.length === 0 ? (
-                <p className="text-xs text-muted-foreground/60 py-1">No movers.</p>
+                <p className="text-xs text-slate-600 dark:text-slate-400 py-1">No movers.</p>
             ) : (
                 <div className="space-y-1">
                     {rows.map(r => (
@@ -164,7 +164,7 @@ export default function TodayStrip({ holdings, currency, portfolioDayChangePct, 
         <div className="metric-card p-5">
             <div className="flex items-center gap-2 mb-4">
                 <BarChart3 className="w-3.5 h-3.5 text-muted-foreground" />
-                <h3 className="section-label">Today</h3>
+                <h2 className="section-label">Today</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-4">
                 <MarketContextColumn indices={indices} portfolioDayChangePct={portfolioDayChangePct} />

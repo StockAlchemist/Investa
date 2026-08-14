@@ -123,8 +123,8 @@ function TrendRow({ signal, label }: { signal: TrendSignal; label: string }) {
     const isUp = signal.state === 'in';
     const Icon = isUp ? TrendingUp : TrendingDown;
     const tone = isUp
-        ? 'text-emerald-600 dark:text-emerald-400'
-        : 'text-amber-600 dark:text-amber-400';
+        ? 'text-emerald-700 dark:text-emerald-400'
+        : 'text-amber-700 dark:text-amber-400';
 
     // The margin of the *active* reading: the month-end close that set it,
     // against the average it was compared with. Same comparison as the state
@@ -138,7 +138,7 @@ function TrendRow({ signal, label }: { signal: TrendSignal; label: string }) {
                     <span className="text-sm font-semibold truncate">
                         {signal.signal_name || label}
                     </span>
-                    <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground opacity-60">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                         {signal.signal_symbol}
                     </span>
                 </div>
@@ -173,12 +173,12 @@ function TrendRow({ signal, label }: { signal: TrendSignal; label: string }) {
                         <span className="font-semibold text-amber-700 dark:text-amber-400">
                             On track to turn {signal.provisional_state === 'in' ? 'up' : 'down'}
                         </span>
-                        <span className="text-muted-foreground opacity-70">
+                        <span className="text-slate-600 dark:text-slate-400">
                             {' '}at the next month-end close.
                         </span>
                     </span>
                 ) : (
-                    <span className="text-xs leading-snug text-muted-foreground opacity-70">
+                    <span className="text-xs leading-snug text-slate-600 dark:text-slate-400">
                         Turns {isUp ? 'down below' : 'up above'}{' '}
                         <span className="tabular-nums font-medium text-foreground">
                             {fmtMoney(signal.flip_close)}
@@ -252,7 +252,7 @@ export default function MarketTrendPanel({
     const header = (
         <div className="flex items-baseline justify-between gap-3">
             <span className="section-label">Market trend</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground opacity-60">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                 {smaMonths}-month average
             </span>
         </div>

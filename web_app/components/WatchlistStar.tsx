@@ -81,6 +81,7 @@ export default function WatchlistStar({ symbol, size = "md", className, iconClas
             />
             <button
                 ref={starButtonRef}
+                aria-label={isStarred ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
                 onClick={(e) => {
                     e.stopPropagation();
                     if (showDropdown && watchlists.length > 0) {

@@ -742,6 +742,7 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                                         </td>
                                         <td className="px-4 py-3">
                                             <select
+                                                aria-label="Transaction Type"
                                                 value={tx.Type}
                                                 onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Type: e.target.value })}
                                                 className="bg-transparent border-none text-[10px] p-0 font-bold uppercase tracking-widest focus:ring-0 text-indigo-500 appearance-none"
@@ -1042,6 +1043,7 @@ export default function TransactionsTable({ transactions, currency = 'USD', isLo
                             </button>
                             <div className="w-[1px] h-4 bg-white/20" />
                             <select
+                                aria-label="Import Account"
                                 value={importAccount}
                                 onChange={(e) => setImportAccount(e.target.value)}
                                 className="bg-purple-700 text-white text-[9px] font-bold h-full border-none focus:ring-0 cursor-pointer appearance-none pl-1.5 pr-6 text-right uppercase tracking-tighter"

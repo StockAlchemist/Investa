@@ -53,13 +53,19 @@ export default function LoginPage() {
                 <CardHeader className="space-y-4 flex flex-col items-center">
                     <div className="flex items-center gap-3">
                         <img
-                            src="logo.png?v=5"
+                            src="/logo-sm.webp"
                             alt="Investa Logo"
+                            width={48}
+                            height={48}
+                            fetchPriority="high"
                             className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 block dark:hidden"
                         />
                         <img
-                            src="logo-dark.png?v=5"
+                            src="/logo-dark-sm.webp"
                             alt="Investa Logo"
+                            width={48}
+                            height={48}
+                            fetchPriority="high"
                             className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
                         />
                         <div className="flex flex-col -space-y-0.5">

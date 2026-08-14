@@ -66,7 +66,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
                 <img
-                    src="ibkr-logo.png"
+                    src="/ibkr-logo.png"
                     alt="IBKR"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -88,7 +88,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
                 <img
-                    src="webull-logo.png"
+                    src="/webull-logo.png"
                     alt="WeBull"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -110,7 +110,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
                 <img
-                    src="es-logo.png"
+                    src="/es-logo.png"
                     alt="ES"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -130,7 +130,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
                 <img
-                    src="schwab-logo.png"
+                    src="/schwab-logo.png"
                     alt="Schwab"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -257,12 +257,14 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         'WYNN': 'wynn.png',
     };
 
+    const isStandardTicker = /^[A-Za-z0-9]{1,6}$/.test(symbol) && !symbol.startsWith('SCB');
+
     const sources = [
         localOverrides[symbol],
-        `https://financialmodelingprep.com/image-stock/${symbol}.png`,
+        symbol.startsWith('SCB') ? 'scb-logo.png' : null,
+        isStandardTicker ? `https://financialmodelingprep.com/image-stock/${symbol}.png` : null,
         effectiveDomain ? `https://logo.clearbit.com/${effectiveDomain}` : null,
         effectiveDomain ? `https://www.google.com/s2/favicons?domain=${effectiveDomain}&sz=128` : null,
-        symbol.startsWith('SCB') ? 'scb-logo.png' : null,
     ].filter(Boolean) as string[];
 
     const handleError = () => {
@@ -323,10 +325,15 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
             ? 'bg-black'
             : (isDark ? 'bg-zinc-800' : (symbol === 'V' ? 'bg-white' : 'bg-zinc-100')));
 
+    const pixelWidth = typeof size === 'number' ? size : undefined;
+    const pixelHeight = typeof size === 'number' ? size : undefined;
+
     return (
         <img
-            src={currentSource}
+            src={currentSource.startsWith('http') || currentSource.startsWith('/') ? currentSource : `/${currentSource}`}
             alt={symbol}
+            width={pixelWidth}
+            height={pixelHeight}
             className={cn("rounded-md object-contain shrink-0", className, bgColor)}
             style={sizeStyle}
             onError={handleError}

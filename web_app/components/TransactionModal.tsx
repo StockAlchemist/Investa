@@ -428,8 +428,10 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
 
                             {/* Type */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type *</label>
+                                <label htmlFor="tx-type-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type *</label>
                                 <select
+                                    id="tx-type-select"
+                                    aria-label="Transaction Type"
                                     name="Type"
                                     value={formData.Type}
                                     onChange={handleChange}

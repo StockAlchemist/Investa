@@ -10,12 +10,22 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const viewport: Viewport = {
   themeColor: "#06b6d4",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export const metadata: Metadata = {
-  title: "Investa",
-  description: "Personal Investment Portfolio Tracker",
+  title: {
+    default: "Investa - Portfolio Tracker & Financial Analytics",
+    template: "%s | Investa",
+  },
+  description: "Personal Investment Portfolio Tracker, Dividend Analytics, and Financial Health Screener",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

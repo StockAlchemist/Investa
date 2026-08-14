@@ -97,8 +97,8 @@ export function PageHeader({
 
       {/* Mobile: logo + name */}
       <div className="flex items-center gap-2 md:hidden">
-        <img src="logo-dark.png?v=5" alt="Investa" className="w-6 h-6 rounded-md hidden dark:block" />
-        <img src="logo.png?v=5"      alt="Investa" className="w-6 h-6 rounded-md dark:hidden" />
+        <img src="/logo-sm.webp"      alt="Investa" width={24} height={24} className="w-6 h-6 rounded-md dark:hidden" />
+        <img src="/logo-dark-sm.webp" alt="Investa" width={24} height={24} className="w-6 h-6 rounded-md hidden dark:block" />
         <span className="text-sm font-bold text-foreground">Investa</span>
       </div>
 
@@ -120,8 +120,8 @@ export function PageHeader({
                 className={cn(
                   'flex items-center gap-0.5 text-[11px] font-bold tabular-nums leading-none px-1.5 py-0.5 rounded-full',
                   dayPositive
-                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
-                    : 'text-red-600 dark:text-red-400 bg-red-500/10',
+                    ? 'text-emerald-800 dark:text-emerald-300 bg-emerald-500/10'
+                    : 'text-red-800 dark:text-red-300 bg-red-500/10',
                 )}
               >
                 {dayPositive
@@ -209,6 +209,7 @@ export function PageHeader({
           <button
             onClick={() => onShowClosedChange(!showClosed)}
             title={showClosed ? 'Hide closed positions' : 'Show closed positions'}
+            aria-label={showClosed ? 'Hide closed positions' : 'Show closed positions'}
             aria-pressed={!!showClosed}
             className={cn(
               'flex flex-row items-center gap-1.5 p-3 py-2 px-2 h-[44px] rounded-2xl transition-all duration-300 group bg-transparent',
@@ -238,6 +239,7 @@ export function PageHeader({
         {onMobileMenuOpen && (
           <button
             onClick={onMobileMenuOpen}
+            aria-label="Open Navigation Menu"
             className="md:hidden h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
           >
             <Menu className="w-4 h-4" />

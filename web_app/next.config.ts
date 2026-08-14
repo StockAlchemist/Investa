@@ -10,9 +10,23 @@ const API_URL = process.env.API_URL || "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  compress: true,
   allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net", "muon", "*.ts.net"],
   devIndicators: false,
   turbopack: {}, // Required to prevent error when using next-pwa in Next 16
+  async headers() {
+    return [
+      {
+        source: '/:all*(svg|jpg|png|webp|ico|woff|woff2)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

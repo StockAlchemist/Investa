@@ -51,11 +51,12 @@ function NavItem({ id, label, icon: Icon, activeTab, onTabChange, collapsed }: {
     <button
       onClick={() => onTabChange(id)}
       title={collapsed ? label : undefined}
+      aria-label={label}
       className={cn(
         'group/item relative flex items-center w-full rounded-lg text-sm font-medium transition-all duration-150',
         collapsed ? 'h-9 justify-center' : 'h-9 px-3 gap-2.5',
         active
-          ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
+          ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
@@ -94,8 +95,8 @@ export function Sidebar({
           collapsed ? 'flex-col justify-center gap-0.5' : 'px-4 gap-2.5',
         )}
       >
-        <img src="logo-dark.png?v=5" alt="Investa" className="w-7 h-7 rounded-lg shrink-0 hidden dark:block" />
-        <img src="logo.png?v=5"      alt="Investa" className="w-7 h-7 rounded-lg shrink-0 dark:hidden" />
+        <img src="/logo-sm.webp"      alt="Investa" width={28} height={28} className="w-7 h-7 rounded-lg shrink-0 dark:hidden" />
+        <img src="/logo-dark-sm.webp" alt="Investa" width={28} height={28} className="w-7 h-7 rounded-lg shrink-0 hidden dark:block" />
         {!collapsed && (
           <div className="min-w-0 overflow-hidden">
             <div className="text-sm font-bold text-foreground leading-none">Investa</div>
@@ -128,6 +129,7 @@ export function Sidebar({
         <button
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
           title={collapsed ? (resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode') : undefined}
+          aria-label={resolvedTheme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
           className={cn(
             'flex items-center w-full h-9 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150',
             collapsed ? 'justify-center' : 'px-3 gap-2.5',
@@ -162,6 +164,7 @@ export function Sidebar({
               <button
                 onClick={e => { e.stopPropagation(); onLogout(); }}
                 title="Sign out"
+                aria-label="Sign out"
                 className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -174,6 +177,7 @@ export function Sidebar({
       {/* Collapse / expand toggle */}
       <button
         onClick={onToggle}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         className="absolute -right-3 top-[66px] z-20 w-6 h-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >

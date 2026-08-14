@@ -4,7 +4,6 @@
 import json
 import logging
 import os
-import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +12,7 @@ from pydantic import BaseModel
 
 import config
 from config_manager import ConfigManager
+from db_utils import get_db_connection
 from server.auth import User
 from server.dependencies import (
     clear_settings_cache,
@@ -38,8 +38,9 @@ def _get_symbol_currency_map_sql(db_path: str) -> Dict[str, str]:
     if not os.path.exists(db_path):
         return {}
     try:
-        # Use a separate connection to avoid interfering with pool if any
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection(db_path, check_same_thread=False, use_cache=False)
+        if not conn:
+            return {}
         cursor = conn.cursor()
         # Query unique Symbol/Currency pairs
         cursor.execute(

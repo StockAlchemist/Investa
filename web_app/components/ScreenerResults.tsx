@@ -323,8 +323,10 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
 
                             {/* Market Cap Filter */}
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</label>
+                                <label htmlFor="screener-market-cap" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</label>
                                 <select
+                                    id="screener-market-cap"
+                                    aria-label="Market Cap"
                                     value={marketCapCategory}
                                     onChange={(e) => setMarketCapCategory(e.target.value)}
                                     className="w-full h-9 px-3 bg-background/50 backdrop-blur-sm border border-border/40 rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-foreground transition-all"

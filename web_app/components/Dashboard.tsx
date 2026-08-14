@@ -197,7 +197,7 @@ function StatPill({
             ) : (
                 <p className={cn(
                     'text-lg sm:text-xl font-bold tabular-nums leading-none',
-                    positive ? 'text-emerald-500' : 'text-red-500',
+                    positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
                 )}>
                     {positive ? '+' : ''}{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                 </p>
@@ -282,7 +282,7 @@ function PortfolioHeroCard({
                             {dayGL !== null && (
                                 <div className={cn(
                                     'flex items-center gap-2 flex-wrap',
-                                    positive ? 'text-emerald-500' : 'text-red-500',
+                                    positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
                                 )}>
                                     {positive
                                         ? <ArrowUpRight className="w-4 h-4 shrink-0" />
@@ -293,7 +293,7 @@ function PortfolioHeroCard({
                                     {dayGLPct !== null && (
                                         <span className={cn(
                                             'text-sm font-bold px-2.5 py-0.5 rounded-full',
-                                            positive ? 'bg-emerald-500/10' : 'bg-red-500/10',
+                                            positive ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-red-500/10 text-red-700 dark:text-red-400',
                                         )}>
                                             {animatedDayPct >= 0 ? '+' : ''}{animatedDayPct.toFixed(2)}%
                                         </span>
@@ -348,15 +348,15 @@ function PortfolioHeroCard({
                         {periodView.pct != null && periodView.abs != null && heroPeriod !== 'day' && (
                             <div className={cn(
                                 'inline-flex items-baseline gap-2 tabular-nums',
-                                periodPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                periodPositive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
                             )}>
                                 <span className="text-sm font-bold">
                                     {periodPositive ? '+' : ''}{periodView.pct.toFixed(2)}%
                                 </span>
-                                <span className="text-xs text-muted-foreground/80 font-medium">
+                                <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
                                     ({periodPositive ? '+' : ''}{formatCurrency(periodView.abs, currency)})
                                 </span>
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold">
+                                <span className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
                                     {HERO_PERIODS.find(p => p.key === heroPeriod)?.label}
                                 </span>
                             </div>

@@ -24,11 +24,10 @@ export class SessionExpiredError extends Error {
     }
 }
 
-export async function fetchCurrentUser(): Promise<User> {
+export async function fetchCurrentUser(): Promise<User | null> {
     // Auth rides in the httpOnly cookie (apiClient sends credentials).
     const { data, response } = await apiClient.GET("/api/auth/me");
-    if (response.status === 401) throw new SessionExpiredError();
-    if (!response.ok || !data) throw new Error('Failed to fetch user');
+    if (response.status === 401 || !response.ok || !data) return null;
     return data as unknown as User;
 }
 

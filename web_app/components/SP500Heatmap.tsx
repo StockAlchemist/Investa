@@ -359,6 +359,7 @@ export default function SP500Heatmap() {
                             onChange={e => setMetricKey(e.target.value)}
                             className="px-2.5 py-1 rounded-lg bg-secondary text-xs font-semibold text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 appearance-none pr-6"
                             title="Select metric to display"
+                            aria-label="Select metric to display"
                         >
                             {METRIC_GROUPS.map(g => (
                                 <optgroup key={g} label={g}>
@@ -375,6 +376,7 @@ export default function SP500Heatmap() {
                                 onChange={e => setSectorFilter(e.target.value)}
                                 className="px-2.5 py-1 rounded-lg bg-secondary text-xs font-semibold text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 appearance-none pr-6"
                                 title="Filter by sector"
+                                aria-label="Filter by sector"
                             >
                                 {sectors.map(s => (
                                     <option key={s} value={s}>{s === 'All' ? 'All Sectors' : s}</option>

@@ -233,6 +233,7 @@ def get_db_connection(
                 conn = sqlite3.connect(
                     db_path, timeout=30, check_same_thread=check_same_thread
                 )
+                conn.execute("PRAGMA busy_timeout = 30000;")
                 conn.execute("PRAGMA foreign_keys = ON;")
 
                 # Check for cloud-synced paths to avoid WAL mode conflicts (disk I/O error)

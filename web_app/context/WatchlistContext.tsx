@@ -24,11 +24,11 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         return () => clearTimeout(timer);
     }, []);
 
-    // Fetch all watchlists metadata
+    // Fetch all watchlists metadata only if a user is logged in
     const { data: watchlists = [], isLoading: isLoadingLists } = useQuery({
         queryKey: ['watchlists'],
         queryFn: ({ signal }) => getWatchlists(signal),
-        enabled: ready,
+        enabled: ready && (typeof window !== 'undefined' && !!localStorage.getItem('investa_user')),
     });
 
     // Fetch all items from all watchlists to build a symbol mapping

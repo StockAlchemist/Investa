@@ -64,9 +64,11 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
 
                         {/* Universe Strategy */}
                         <div className="space-y-2">
-                            <label className="text-sm font-semibold text-muted-foreground whitespace-nowrap">Universe</label>
+                            <label htmlFor="screener-universe" className="text-sm font-semibold text-muted-foreground whitespace-nowrap">Universe</label>
                             <div className="relative">
                                 <select
+                                    id="screener-universe"
+                                    aria-label="Universe"
                                     value={universeType}
                                     onChange={(e) => setUniverseType(e.target.value)}
                                     className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
@@ -87,9 +89,11 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                         {/* Watchlist Selection */}
                         {universeType === "watchlist" && (
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-muted-foreground whitespace-nowrap">Target Portfolio</label>
+                                <label htmlFor="screener-target-portfolio" className="text-sm font-semibold text-muted-foreground whitespace-nowrap">Target Portfolio</label>
                                 <div className="relative">
                                     <select
+                                        id="screener-target-portfolio"
+                                        aria-label="Target Portfolio"
                                         value={selectedWatchlistId}
                                         onChange={(e) => setSelectedWatchlistId(e.target.value)}
                                         className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"

@@ -83,8 +83,8 @@ export function MobileNav({
         {/* Header */}
         <div className="flex items-center justify-between h-[52px] border-b border-border px-4 shrink-0">
           <div className="flex items-center gap-2.5">
-            <img src="logo-dark.png?v=5" alt="Investa" className="w-7 h-7 rounded-lg hidden dark:block" />
-            <img src="logo.png?v=5"      alt="Investa" className="w-7 h-7 rounded-lg dark:hidden" />
+            <img src="/logo-sm.webp"      alt="Investa" width={28} height={28} className="w-7 h-7 rounded-lg dark:hidden" />
+            <img src="/logo-dark-sm.webp" alt="Investa" width={28} height={28} className="w-7 h-7 rounded-lg hidden dark:block" />
             <div>
               <div className="text-sm font-bold text-foreground leading-none">Investa</div>
               <div className="text-[9px] text-muted-foreground/50 font-semibold tracking-[0.15em] uppercase mt-0.5">StockAlchemist</div>
@@ -92,6 +92,7 @@ export function MobileNav({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close navigation menu"
             className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
           >
             <X className="w-4 h-4" />
@@ -110,6 +111,7 @@ export function MobileNav({
             <button
               key={id}
               onClick={() => handleTabSelect(id)}
+              aria-label={label}
               className={cn(
                 'relative flex items-center w-full h-10 px-3 gap-3 rounded-lg text-sm font-medium transition-all duration-150',
                 activeTab === id
@@ -131,6 +133,7 @@ export function MobileNav({
             <button
               key={id}
               onClick={() => handleTabSelect(id)}
+              aria-label={label}
               className={cn(
                 'relative flex items-center w-full h-10 px-3 gap-3 rounded-lg text-sm font-medium transition-all duration-150',
                 activeTab === id
@@ -161,6 +164,7 @@ export function MobileNav({
             <button
               onClick={e => { e.stopPropagation(); onLogout(); onClose(); }}
               title="Sign out"
+              aria-label="Sign out"
               className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
             >
               <LogOut className="w-3.5 h-3.5" />

@@ -102,6 +102,42 @@ def get_current_user(
         )
 
 
+def get_current_user_optional(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    conn: sqlite3.Connection = Depends(get_global_db_connection),
+) -> Optional[User]:
+    """Dependency returning the authenticated User if valid, or None if unauthenticated."""
+    if not token:
+        token = request.cookies.get(config.AUTH_COOKIE_NAME)
+    token_data = decode_access_token(token) if token else None
+    if token_data is None:
+        return None
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?",
+            (token_data.username,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        user = User(
+            id=row[0],
+            username=row[1],
+            is_active=bool(row[2]),
+            created_at=row[3],
+            alias=row[4],
+        )
+        if not user.is_active:
+            return None
+        return user
+    except Exception as e:
+        logging.warning(f"Error checking optional user auth: {e}")
+        return None
+
+
 def get_user_db_connection(
     current_user: User = Depends(get_current_user),
 ) -> Iterator[sqlite3.Connection]:

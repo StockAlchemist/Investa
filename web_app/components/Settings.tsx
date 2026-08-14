@@ -755,6 +755,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                 <div className="space-y-1.5">
                                                     <label className={labelClassName}>Asset Type</label>
                                                     <select
+                                                        aria-label="Asset Type"
                                                         value={overrideAssetType}
                                                         onChange={(e) => setOverrideAssetType(e.target.value)}
                                                         className={inputClassName}
@@ -765,6 +766,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                 <div className="space-y-1.5">
                                                     <label className={labelClassName}>Sector</label>
                                                     <select
+                                                        aria-label="Sector"
                                                         value={overrideSector}
                                                         onChange={(e) => setOverrideSector(e.target.value)}
                                                         className={inputClassName}
@@ -775,6 +777,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                 <div className="space-y-1.5">
                                                     <label className={labelClassName}>Country</label>
                                                     <select
+                                                        aria-label="Country"
                                                         value={overrideGeo}
                                                         onChange={(e) => setOverrideGeo(e.target.value)}
                                                         className={inputClassName}
@@ -793,6 +796,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                 <div className="space-y-1.5">
                                                     <label className={labelClassName}>Industry</label>
                                                     <select
+                                                        aria-label="Industry"
                                                         value={overrideIndustry}
                                                         onChange={(e) => setOverrideIndustry(e.target.value)}
                                                         className={inputClassName}
@@ -1218,6 +1222,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                                 <div className="space-y-1.5">
                                                                     <label className={labelClassName}>Default Currency</label>
                                                                     <select
+                                                                        aria-label="Default Currency"
                                                                         value={accountCurrencyMap[account] || 'USD'}
                                                                         onChange={(e) => updateAccountCurrency(account, e.target.value)}
                                                                         className={compactInputClassName}
@@ -1230,6 +1235,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                                 <div className="space-y-1.5">
                                                                     <label className={labelClassName}>Cash Management</label>
                                                                     <select
+                                                                        aria-label="Cash Management"
                                                                         value={settings?.account_cash_mode_map?.[account] || 'Manual'}
                                                                         onChange={(e) => updateAccountCashMode(account, e.target.value)}
                                                                         className={compactInputClassName}

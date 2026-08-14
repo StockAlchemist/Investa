@@ -275,6 +275,7 @@ export default function HoldingsHeatmap({ holdings, currency }: HoldingsHeatmapP
                         onChange={e => setMetricKey(e.target.value)}
                         className="px-2.5 py-1 rounded-lg bg-secondary text-xs font-semibold text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
                         title="Color by"
+                        aria-label="Color by metric"
                     >
                         {METRICS.map(m => (
                             <option key={m.key} value={m.key}>{m.label}</option>

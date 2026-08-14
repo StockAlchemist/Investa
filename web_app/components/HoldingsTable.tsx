@@ -523,7 +523,6 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                 // Use 'fullExchangeName' or 'exchange' if available, then fallback to 'Market' or 'Unknown'
                 const rawExchange = (h as Record<string, string>)['fullExchangeName'] || (h as Record<string, string>)['exchange'] || (h as Record<string, string>)['Market'] || 'Unknown';
                 const exchange = normalizeMarketName(rawExchange);
-                if (h.Symbol === 'AAPL') console.log(`DEBUG_MARKET: AAPL -> Raw: ${rawExchange}, Norm: ${exchange}`, h);
                 groupKey = exchange;
             } else if (groupBy === 'quoteType') {
                 const rawType = (h as Record<string, string>)['quoteType'] || 'Other';
@@ -843,7 +842,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
                             <h2 className="section-label text-sm font-bold text-foreground">Holdings</h2>
-                            <span className="text-[10px] font-bold text-muted-foreground/60 bg-muted/50 border border-border/60 px-2 py-0.5 rounded-full tracking-wide">
+                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 bg-muted/50 border border-border/60 px-2 py-0.5 rounded-full tracking-wide">
                                 {groupBy
                                     ? `${aggregatedHoldings.length} items · ${groupedHoldings?.length || 0} groups`
                                     : `${aggregatedHoldings.length} / ${totalItemsCount}`
@@ -857,6 +856,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                             </div>
                             <input
                                 type="text"
+                                aria-label="Search holdings by symbol or name"
                                 placeholder="Search symbol..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -864,6 +864,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                             />
                             {searchQuery && (
                                 <button
+                                    type="button"
+                                    aria-label="Clear search query"
                                     onClick={() => setSearchQuery("")}
                                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
                                 >

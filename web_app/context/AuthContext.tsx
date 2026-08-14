@@ -15,25 +15,32 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<User | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [user, setUser] = useState<User | null>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const cachedUser = localStorage.getItem("investa_user");
+                if (cachedUser) return JSON.parse(cachedUser);
+            } catch {}
+        }
+        return null;
+    });
+    const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
 
-    // Auth now lives in an httpOnly cookie the browser sends automatically, so
-    // there's no token for JS to read. Optimistically restore the cached user
-    // (profile only, not the token) to render immediately, then validate the
-    // cookie via /auth/me in the background.
+    // Validate session in background, deferring when unauthenticated to avoid competing with initial paint
     useEffect(() => {
-        const cachedUser = localStorage.getItem("investa_user");
-        if (cachedUser) {
-            try {
-                setUser(JSON.parse(cachedUser));
-                setIsLoading(false);
-            } catch {
-                // Corrupt cache — fall back to the blocking fetch below.
+        const cached = typeof window !== 'undefined' ? localStorage.getItem("investa_user") : null;
+        if (cached) {
+            fetchUser();
+        } else {
+            if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+                const id = (window as any).requestIdleCallback(() => fetchUser(), { timeout: 3000 });
+                return () => (window as any).cancelIdleCallback(id);
+            } else {
+                const timer = setTimeout(() => fetchUser(), 1500);
+                return () => clearTimeout(timer);
             }
         }
-        fetchUser();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -64,25 +71,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Clear local session state without a redirect or a server round-trip — used
-    // when the cookie turns out to be absent/invalid during bootstrap.
     const clearLocalSession = () => {
-        setUser(null);
+        setUser(prev => {
+            if (prev === null) return prev;
+            return null;
+        });
         try { localStorage.removeItem("investa_user"); } catch {}
     };
 
     const fetchUser = async () => {
         try {
             const userData = await fetchCurrentUser();
-            setUser(userData);
-            // Cache the profile (no token) for optimistic restore next load.
-            try { localStorage.setItem("investa_user", JSON.stringify(userData)); } catch {}
-        } catch (error) {
-            if (!(error instanceof SessionExpiredError)) {
-                console.error("Failed to fetch user:", error);
+            if (userData) {
+                setUser(prev => {
+                    if (prev && prev.id === userData.id && prev.username === userData.username) return prev;
+                    return userData;
+                });
+                try { localStorage.setItem("investa_user", JSON.stringify(userData)); } catch {}
+            } else {
+                clearLocalSession();
             }
-            // Not logged in / cookie invalid — clear state and let route guards
-            // redirect (don't force-navigate here, matching the prior no-token path).
+        } catch {
             clearLocalSession();
         } finally {
             setIsLoading(false);
@@ -90,15 +99,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const login = async () => {
-        // The login POST already set the httpOnly cookie server-side; just load
-        // the user (sent via cookie) and navigate.
         setIsLoading(true);
         await fetchUser();
         router.push("/");
     };
 
     const logout = () => {
-        logoutRequest(); // best-effort: clears the cookie server-side
+        logoutRequest();
         clearLocalSession();
         router.push("/login");
     };
@@ -107,8 +114,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await fetchUser();
     };
 
+    const contextValue = React.useMemo(() => ({
+        user,
+        isLoading,
+        login,
+        logout,
+        refreshUser,
+    }), [user, isLoading]);
+
     return (
-        <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser }}>
+        <AuthContext.Provider value={contextValue}>
             {children}
         </AuthContext.Provider>
     );

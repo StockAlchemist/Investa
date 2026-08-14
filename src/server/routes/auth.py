@@ -21,6 +21,7 @@ from server.auth import (
 )
 from server.dependencies import (
     get_current_user,
+    get_current_user_optional,
     get_global_db_connection,
     user_data_dir_for,
 )
@@ -233,8 +234,8 @@ def logout(response: Response):
     return {"detail": "Logged out"}
 
 
-@router.get("/auth/me", response_model=User)
-def read_users_me(current_user: User = Depends(get_current_user)):
+@router.get("/auth/me", response_model=Optional[User])
+def read_users_me(current_user: Optional[User] = Depends(get_current_user_optional)):
     return current_user
 
 
