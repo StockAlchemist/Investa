@@ -12,9 +12,11 @@ export default function LazyAIChat() {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
-        if ('requestIdleCallback' in window) {
-            const id = (window as any).requestIdleCallback(() => setMounted(true), { timeout: 4000 });
-            return () => (window as any).cancelIdleCallback(id);
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = window.requestIdleCallback(() => setMounted(true), { timeout: 4000 });
+            return () => {
+                window.cancelIdleCallback(id);
+            };
         }
         const timer = setTimeout(() => setMounted(true), 2500);
         return () => clearTimeout(timer);

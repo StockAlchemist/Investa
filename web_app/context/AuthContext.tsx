@@ -1,8 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { fetchCurrentUser, logoutRequest, SessionExpiredError, User } from "../lib/api";
+import { fetchCurrentUser, logoutRequest, User } from "../lib/api";
 
 interface AuthContextType {
     user: User | null;
@@ -27,59 +27,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
 
-    // Validate session in background, deferring when unauthenticated to avoid competing with initial paint
-    useEffect(() => {
-        const cached = typeof window !== 'undefined' ? localStorage.getItem("investa_user") : null;
-        if (cached) {
-            fetchUser();
-        } else {
-            if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-                const id = (window as any).requestIdleCallback(() => fetchUser(), { timeout: 3000 });
-                return () => (window as any).cancelIdleCallback(id);
-            } else {
-                const timer = setTimeout(() => fetchUser(), 1500);
-                return () => clearTimeout(timer);
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // Read inside the listener below, which is registered once and would
-    // otherwise close over the first render's `user`.
-    const userRef = useRef<User | null>(null);
-    useEffect(() => {
-        userRef.current = user;
-    }, [user]);
-
-    // Listen for 401 events dispatched by the API layers so an expired/invalid
-    // cookie triggers logout.
-    //
-    // Only when somebody is actually signed in. A 401 while logged out is the
-    // ordinary answer — every provider mounted above the router keeps fetching
-    // on the login and register pages — and treating it as an expiry logged the
-    // visitor out of a session they never had and redirected them to /login.
-    // That made /register unreachable: arriving there logged out is the point of
-    // it, and the deferred watchlist fetch bounced you before you could type.
-    // Guarding the listener rather than the dispatchers is what keeps this
-    // fixed, since any globally mounted fetch would otherwise reintroduce it.
-    useEffect(() => {
-        const handleExpired = () => {
-            if (userRef.current) logout();
-        };
-        window.addEventListener('auth:expired', handleExpired);
-        return () => window.removeEventListener('auth:expired', handleExpired);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const clearLocalSession = () => {
+    const clearLocalSession = useCallback(() => {
         setUser(prev => {
             if (prev === null) return prev;
             return null;
         });
         try { localStorage.removeItem("investa_user"); } catch {}
-    };
+    }, []);
 
-    const fetchUser = async () => {
+    const fetchUser = useCallback(async () => {
         try {
             const userData = await fetchCurrentUser();
             if (userData) {
@@ -96,31 +52,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [clearLocalSession]);
 
-    const login = async () => {
-        setIsLoading(true);
-        await fetchUser();
-        router.push("/");
-    };
+    // Validate session in background, deferring when unauthenticated to avoid competing with initial paint
+    useEffect(() => {
+        const cached = typeof window !== 'undefined' ? localStorage.getItem("investa_user") : null;
+        if (cached) {
+            fetchUser();
+        } else {
+            if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+                const id = window.requestIdleCallback(() => fetchUser(), { timeout: 3000 });
+                return () => {
+                    window.cancelIdleCallback(id);
+                };
+            } else {
+                const timer = setTimeout(() => fetchUser(), 1500);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [fetchUser]);
 
-    const logout = () => {
+    const userRef = useRef<User | null>(null);
+    useEffect(() => {
+        userRef.current = user;
+    }, [user]);
+
+    const logout = useCallback(() => {
         logoutRequest();
         clearLocalSession();
         router.push("/login");
-    };
+    }, [clearLocalSession, router]);
 
-    const refreshUser = async () => {
+    const login = useCallback(async () => {
+        setIsLoading(true);
         await fetchUser();
-    };
+        router.push("/");
+    }, [fetchUser, router]);
 
-    const contextValue = React.useMemo(() => ({
+    const refreshUser = useCallback(async () => {
+        await fetchUser();
+    }, [fetchUser]);
+
+    useEffect(() => {
+        const handleExpired = () => {
+            if (userRef.current) logout();
+        };
+        window.addEventListener('auth:expired', handleExpired);
+        return () => window.removeEventListener('auth:expired', handleExpired);
+    }, [logout]);
+
+    const contextValue = useMemo(() => ({
         user,
         isLoading,
         login,
         logout,
         refreshUser,
-    }), [user, isLoading]);
+    }), [user, isLoading, login, logout, refreshUser]);
 
     return (
         <AuthContext.Provider value={contextValue}>

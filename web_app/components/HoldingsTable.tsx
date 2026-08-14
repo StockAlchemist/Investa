@@ -1,1724 +1,187 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { exportToCSV } from '../lib/export';
-import { Holding, Lot, updateHoldingTags } from '../lib/api';
-import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { Search, X, LayoutGrid, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown, ListFilter, Check } from 'lucide-react';
-
-import { Skeleton } from './ui/skeleton';
-import { Card } from "@/components/ui/card";
-
+import React from 'react';
 import { useStockModal } from '@/context/StockModalContext';
-import WatchlistStar from './WatchlistStar';
-import { getHeatmapClass, formatCurrency } from '../lib/utils';
-import { TrendSparkline } from './ui/TrendSparkline';
-import { InlineProgressBar } from './ui/InlineProgressBar';
-import { SemanticBadge } from './ui/SemanticBadge';
+import { HoldingsTableProps } from './holdings/types';
+import { useHoldingsState } from './holdings/hooks/useHoldingsState';
+import { useHoldingsData } from './holdings/hooks/useHoldingsData';
+import { HoldingsToolbar } from './holdings/HoldingsToolbar';
+import { HoldingsDesktopTable } from './holdings/HoldingsDesktopTable';
+import { HoldingsMobileCards } from './holdings/HoldingsMobileCards';
+import { HoldingsTagModal } from './holdings/HoldingsTagModal';
 
-function isCashSymbol(symbol: string | undefined): boolean {
-    const s = (symbol || '').toUpperCase();
-    return s === '$CASH' || s === 'CASH' || s.startsWith('CASH (');
-}
-
-/// A cash balance below a cent is rounding residue left by FX conversion and fee
-/// postings — a row that says "-0.0002" is noise, not a position. Compared on
-/// magnitude so a genuine negative (margin) balance still gets a row.
-const CASH_DUST_THRESHOLD = 0.01;
-
-interface HoldingsTableProps {
-    holdings: Holding[];
-    currency: string;
-    isLoading?: boolean;
-}
-
-// Mapping from UI Header to Data Key Prefix (or exact key)
-// Based on src/utils.py
-const COLUMN_DEFINITIONS: { [header: string]: string } = {
-    "Account": "Account",
-    "Symbol": "Symbol",
-    "Sector": "Sector",
-    "Industry": "Industry",
-    "Quantity": "Quantity",
-    "Day Chg": "Day Change", // Suffix added dynamically
-    "Day Chg %": "Day Change %",
-    "Avg Cost": "Avg Cost",
-    "Price": "Price",
-    "Cost Basis": "Cost Basis",
-    "Mkt Val": "Market Value",
-    "% of Total": "pct_of_total",
-    "Unreal. G/L": "Unreal. Gain",
-    "Unreal. G/L %": "Unreal. Gain %",
-    "Real. G/L": "Realized Gain",
-    "Divs": "Dividends",
-    "Fees": "Commissions",
-    "Total G/L": "Total Gain",
-    "Total Ret %": "Total Return %",
-    "IRR (%)": "IRR (%)",
-    "Total Buy Cost": "Total Buy Cost",
-    "Yield (Cost) %": "Div. Yield (Cost) %",
-    "Yield (Mkt) %": "Div. Yield (Current) %",
-    "FX G/L %": "FX Gain/Loss %",
-    "Est. Income": "Est. Ann. Income",
-    "1M Trend": "sparkline_1m",
-    "Tags": "Tags",
-    "Contribution %": "Contribution %",
-    "AI Score": "ai_score",
-    "Intrinsic Value": "intrinsic_value",
-};
-
-// Columns that have been renamed, so a layout saved under the old name is
-// restored rather than dropped.
-const RENAMED_COLUMNS: Record<string, string> = {
-    "7d Trend": "1M Trend",
-};
-
-const DEFAULT_VISIBLE_COLUMNS = [
-    "Symbol", "1M Trend", "Quantity", "% of Total", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L"
-];
-
-type SortDirection = 'asc' | 'desc';
-
-interface SortConfig {
-    key: string;
-    direction: SortDirection;
-}
-
-type GroupingOption = 'Market' | 'Currency' | 'Sector' | 'Industry' | 'quoteType' | 'Country' | null;
-
-const GROUPING_LABEL_MAP: Record<string, string> = {
-    'Market': 'Market',
-    'Currency': 'Currency',
-    'Sector': 'Sector',
-    'Industry': 'Industry',
-    'quoteType': 'Investment Type',
-    'Country': 'Country',
-};
-
-const INVESTMENT_TYPE_MAP: Record<string, string> = {
-    'EQUITY': 'Stocks',
-    'ETF': 'ETFs',
-    'CASH': 'Cash',
-    'MUTUALFUND': 'Mutual Funds',
-};
-
-const CURRENCY_MAP: Record<string, string> = {
-    'USD': 'US Dollar',
-    'THB': 'Thai Baht',
-    'EUR': 'Euro',
-    'GBP': 'British Pound',
-    'SGD': 'Singapore Dollar',
-    'JPY': 'Japanese Yen',
-    'HKD': 'Hong Kong Dollar',
-};
-
-const normalizeMarketName = (market: string): string => {
-    if (!market) return 'Unknown';
-    const m = market.toUpperCase();
-    if (m.includes('NASDAQ') || m === 'NMS' || m === 'NGM' || m === 'NCM') return 'NASDAQ';
-    if (m === 'NYQ' || m === 'NYSE' || m.includes('NEW YORK')) return 'NYSE';
-    if (m === 'ASE' || m === 'AMEX') return 'AMEX';
-    if (m === 'PCX' || m === 'ARCA' || m.includes('ARCA')) return 'NYSE Arca';
-    return market; // Return original if no match
-};
+export type { HoldingsTableProps };
 
 export default function HoldingsTable({ holdings, currency, isLoading = false }: HoldingsTableProps) {
-    const queryClient = useQueryClient();
-
-    // Watchlist state now handled by WatchlistStar context
-    /*
-    const addWatchlistMutation = useMutation({
-        mutationFn: ({ symbol, note }: { symbol: string, note: string }) => addToWatchlist(symbol, note),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
-        },
-    });
-
-    const removeWatchlistMutation = useMutation({
-        mutationFn: (symbol: string) => removeFromWatchlist(symbol),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
-        },
-    });
-
-    const toggleWatchlist = (symbol: string) => {
-        const isInWatchlist = watchlist.some(item => item.Symbol === symbol);
-        if (isInWatchlist) {
-            removeWatchlistMutation.mutate(symbol);
-        } else {
-            addWatchlistMutation.mutate({ symbol, note: '' });
-        }
-    };
-    */
-
-    const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
-    const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set());
-    // Mobile holding cards start collapsed to a single summary line — the full
-    // metric grid is tall enough that one expanded card fills a phone screen.
-    // Tracked as the *expanded* set (empty = all collapsed).
-    const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
-    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Mkt Val', direction: 'desc' });
-    const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
-    const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-    const columnMenuRef = useRef<HTMLDivElement>(null);
-    const [visibleRows, setVisibleRows] = useState(10);
-    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('table');
     const { openStockDetail } = useStockModal();
 
-    // --- Search & Filter State ---
-    const [searchQuery, setSearchQuery] = useState("");
+    const {
+        visibleColumns,
+        setVisibleColumns,
+        expandedLots,
+        expandedCards,
+        sortConfig,
+        handleSort,
+        toggleColumn,
+        toggleLotExpansion,
+        toggleCardExpansion,
+        isColumnMenuOpen,
+        setIsColumnMenuOpen,
+        columnMenuRef,
+        isAccountMenuOpen,
+        setIsAccountMenuOpen,
+        accountMenuRef,
+        isGroupByMenuOpen,
+        setIsGroupByMenuOpen,
+        groupByMenuRef,
+        draggedColumn,
+        handleDragStart,
+        handleDragOver,
+        handleDrop,
+        mobileViewMode,
+        setMobileViewMode,
+    } = useHoldingsState();
 
-    const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
-
-    const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
-
-    const accountMenuRef = useRef<HTMLDivElement>(null);
-    const groupByMenuRef = useRef<HTMLDivElement>(null);
-
-    // --- Grouping State ---
-    const [groupBy, setGroupBy] = useState<GroupingOption>(null);
-    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-    const [isGroupByMenuOpen, setIsGroupByMenuOpen] = useState(false);
-
-    // --- Tags Editing State ---
-    const [editingTags, setEditingTags] = useState<{ symbol: string, account: string, currentTags: string } | null>(null);
-    const [tagsInput, setTagsInput] = useState("");
-
-    const updateTagsMutation = useMutation({
-        mutationFn: ({ account, symbol, tags }: { account: string, symbol: string, tags: string }) => updateHoldingTags(account, symbol, tags),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['holdings'] });
-            queryClient.invalidateQueries({ queryKey: ['summary'] });
-            setEditingTags(null);
-        },
+    const {
+        searchQuery,
+        setSearchQuery,
+        selectedAccounts,
+        setSelectedAccounts,
+        toggleAccount,
+        uniqueAccounts,
+        groupBy,
+        handleSetGroupBy,
+        expandedGroups,
+        toggleGroup,
+        getValue,
+        getLotValue,
+        getExpansionKey,
+        aggregatedHoldings,
+        groupedHoldings,
+        sortedHoldings,
+        visibleRows,
+        handleShowMore,
+        handleShowAll,
+        editingTags,
+        setEditingTags,
+        tagsInput,
+        setTagsInput,
+        handleEditTags,
+        handleSaveTags,
+        updateTagsMutation,
+    } = useHoldingsData({
+        holdings,
+        currency,
+        visibleColumns,
+        sortConfig,
     });
 
-    const handleEditTags = (symbol: string, account: string, currentTags: string[]) => {
-        setEditingTags({ symbol, account, currentTags: currentTags.join(", ") });
-        setTagsInput(currentTags.join(", "));
-    };
-
-    const handleSaveTags = () => {
-        if (editingTags) {
-            updateTagsMutation.mutate({
-                account: editingTags.account,
-                symbol: editingTags.symbol,
-                tags: tagsInput
-            });
-        }
-    };
-
-
-    const [isInitialized, setIsInitialized] = useState(false);
-
-    // Initialize state from localStorage
-    useEffect(() => {
-        // Columns
-        const savedColumns = localStorage.getItem('investa_holdings_columns');
-        if (savedColumns) {
-            try {
-                const parsed = JSON.parse(savedColumns);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    // Layouts saved before the trend column moved from seven days
-                    // to a month still name it "7d Trend"; without this they'd
-                    // silently come back one column short.
-                    setVisibleColumns(parsed.map((c: string) => RENAMED_COLUMNS[c] ?? c));
-                }
-            } catch (e) {
-                console.error("Failed to parse saved columns", e);
-            }
-        }
-
-        // Sort
-        const savedSort = localStorage.getItem('investa_holdings_sort');
-        if (savedSort) {
-            try {
-                const parsed = JSON.parse(savedSort);
-                if (parsed.key && parsed.direction) {
-                    setSortConfig(parsed);
-                }
-            } catch (e) {
-                console.error("Failed to parse saved sort config", e);
-            }
-        }
-
-        // Expanded Lots
-        const savedExpandedLots = localStorage.getItem('investa_holdings_expanded_lots');
-        if (savedExpandedLots) {
-            try {
-                const parsed = JSON.parse(savedExpandedLots);
-                if (Array.isArray(parsed)) {
-                    setExpandedLots(new Set(parsed));
-                }
-            } catch (e) {
-                console.error("Failed to parse saved expanded lots", e);
-            }
-        }
-
-        // Expanded Cards
-        const savedExpandedCards = localStorage.getItem('investa_holdings_expanded_cards');
-        if (savedExpandedCards) {
-            try {
-                const parsed = JSON.parse(savedExpandedCards);
-                if (Array.isArray(parsed)) {
-                    setExpandedCards(new Set(parsed));
-                }
-            } catch (e) {
-                console.error("Failed to parse saved expanded cards", e);
-            }
-        }
-
-        setIsInitialized(true);
-    }, []);
-
-    // Persist columns to localStorage on change
-    useEffect(() => {
-        if (!isInitialized) return;
-        localStorage.setItem('investa_holdings_columns', JSON.stringify(visibleColumns));
-    }, [visibleColumns, isInitialized]);
-
-    // Persist sort to localStorage on change
-    useEffect(() => {
-        if (!isInitialized) return;
-        localStorage.setItem('investa_holdings_sort', JSON.stringify(sortConfig));
-    }, [sortConfig, isInitialized]);
-
-    // Persist expandedLots to localStorage on change
-    useEffect(() => {
-        if (!isInitialized) return;
-        localStorage.setItem('investa_holdings_expanded_lots', JSON.stringify(Array.from(expandedLots)));
-    }, [expandedLots, isInitialized]);
-
-    // Persist expandedCards to localStorage on change
-    useEffect(() => {
-        if (!isInitialized) return;
-        localStorage.setItem('investa_holdings_expanded_cards', JSON.stringify(Array.from(expandedCards)));
-    }, [expandedCards, isInitialized]);
-
-    // Close menus when clicking outside
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
-                setIsColumnMenuOpen(false);
-            }
-
-            if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
-                setIsAccountMenuOpen(false);
-            }
-            if (groupByMenuRef.current && !groupByMenuRef.current.contains(event.target as Node)) {
-                setIsGroupByMenuOpen(false);
-            }
-        }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, []);
-
-    const resolvedKeysRef = useRef<Record<string, string>>({});
-
-    // Helper to get value from holding object handling currency suffix
-    const getValue = useCallback((holding: Holding, header: string): string | number | string[] | number[] | null => {
-        const prefix = COLUMN_DEFINITIONS[header];
-        if (!prefix) return null;
-
-        // Try exact match first
-        if (holding[prefix] !== undefined) return holding[prefix] as string | number | string[] | number[] | null;
-
-        // Try with currency suffix (e.g., "Market Value (USD)")
-        const keyWithCurrency = `${prefix} (${currency})`;
-        if (holding[keyWithCurrency] !== undefined) return holding[keyWithCurrency] as string | number | string[] | number[] | null;
-
-        // Try cached resolved key
-        const cachedKey = resolvedKeysRef.current[prefix];
-        if (cachedKey && holding[cachedKey] !== undefined) return holding[cachedKey] as string | number | string[] | number[] | null;
-
-        // Fallback: search for key starting with prefix
-        const foundKey = Object.keys(holding).find(k => k.startsWith(prefix));
-        if (foundKey) {
-            resolvedKeysRef.current[prefix] = foundKey; // Cache for next time
-            return holding[foundKey] as string | number | string[] | number[] | null;
-        }
-        return null;
-    }, [currency]);
-
-    // In getLotValue
-    const getLotValue = useCallback((lot: Lot, header: string, holdingPrice?: number) => {
-        if (header === 'Quantity') return lot.Quantity;
-        if (header === 'Cost Basis' || header === 'Total Buy Cost') return lot['Cost Basis'];
-        if (header === 'Mkt Val') {
-            if (lot['Market Value']) return lot['Market Value'];
-            if (holdingPrice && lot.Quantity) return holdingPrice * lot.Quantity;
-            return null;
-        }
-        if (header === 'Unreal. G/L' || header === 'Total G/L') {
-            if (lot['Unreal. Gain']) return lot['Unreal. Gain'];
-            // Calculate if missing
-            const mktVal = lot['Market Value'] || (holdingPrice ? holdingPrice * lot.Quantity : 0);
-            if (mktVal && lot['Cost Basis']) return mktVal - lot['Cost Basis'];
-            return null;
-        }
-        if (header === 'Unreal. G/L %' || header === 'Total Ret %') {
-            if (lot['Unreal. Gain %']) return lot['Unreal. Gain %'];
-            // Calculate if missing
-            const mktVal = lot['Market Value'] || (holdingPrice ? holdingPrice * lot.Quantity : 0);
-            if (mktVal && lot['Cost Basis']) return ((mktVal - lot['Cost Basis']) / lot['Cost Basis']) * 100;
-            return null;
-        }
-        // Calculated fields
-        if ((header === 'Price' || header === 'Avg Cost') && lot.Quantity) return lot['Cost Basis'] / lot.Quantity;
-
-        // Show Date in the first visible text column (usually Symbol or Account)
-        // We will default to showing it in the "Symbol" column if present, else Account.
-        if (header === 'Symbol') return `Lot: ${lot.Date}`;
-        if (header === 'Account' && !visibleColumns.includes('Symbol')) return `Lot: ${lot.Date}`;
-
-        return null;
-    }, [visibleColumns]);
-
-    const handleSort = (header: string) => {
-        setSortConfig(current => ({
-            key: header,
-            direction: current.key === header && current.direction === 'desc' ? 'asc' : 'desc',
-        }));
-    };
-
-    // --- Filter Logic ---
-
-    const uniqueAccounts = useMemo(() => Array.from(new Set(holdings.map(h => h.Account).filter(Boolean) as string[])).sort(), [holdings]);
-
-    const filteredHoldings = useMemo(() => {
-        if (!holdings) return [];
-        return holdings.filter(h => {
-            const matchesSearch = h.Symbol.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesAccount = selectedAccounts.size === 0 || (h.Account && selectedAccounts.has(h.Account));
-            if (isCashSymbol(h.Symbol)) {
-                // Mkt Val is already in the display currency, so the threshold
-                // reads as a cent of whatever the user is looking at.
-                const mktVal = getValue(h, 'Mkt Val');
-                const amount = typeof mktVal === 'number' ? mktVal : 0;
-                if (Math.abs(amount) <= CASH_DUST_THRESHOLD) return false;
-            }
-            return matchesSearch && matchesAccount;
-        });
-    }, [holdings, searchQuery, selectedAccounts, getValue]);
-
-    const aggregatedHoldings = useMemo(() => {
-        if (visibleColumns.includes('Account')) {
-            return filteredHoldings;
-        }
-
-        const grouped = new Map<string, Holding>();
-
-        // Helper to safely get numeric value
-        const getRawVal = (h: Holding, key: string): number => {
-            const val = getValue(h, key);
-            return typeof val === 'number' ? val : 0;
-        };
-
-        filteredHoldings.forEach(h => {
-            if (!grouped.has(h.Symbol)) {
-                // Clone holding (shallow copy + lots copy)
-                grouped.set(h.Symbol, { ...h, lots: h.lots ? [...h.lots] : [] });
-            } else {
-                const current = grouped.get(h.Symbol)!;
-
-                // Merge lots
-                if (h.lots) {
-                    current.lots = (current.lots || []).concat(h.lots);
-                }
-
-                // Sum numeric fields
-                const keysToSum = [
-                    "Quantity", "Mkt Val", "Cost Basis", "Day Chg",
-                    "Unreal. G/L", "Real. G/L", "Divs", "Fees",
-                    "Total G/L", "Total Buy Cost", "Est. Income",
-                    "Contribution %", "FX G/L", "% of Total"
-                ];
-
-                keysToSum.forEach(header => {
-                    const def = COLUMN_DEFINITIONS[header];
-                    if (def) {
-                        const valA = getRawVal(current, header);
-                        const valB = getRawVal(h, header);
-                        (current as Record<string, number>)[def] = valA + valB;
-                    }
-                });
-
-                // Merge Tags
-                const currentTags = Array.isArray(getValue(current, "Tags")) ? getValue(current, "Tags") as string[] : [];
-                const newTags = Array.isArray(getValue(h, "Tags")) ? getValue(h, "Tags") as string[] : [];
-                const mergedTags = Array.from(new Set([...currentTags, ...newTags]));
-                (current as Record<string, string[]>)["Tags"] = mergedTags;
-            }
-        });
-
-        return Array.from(grouped.values()).map(h => {
-            // Recalculate derived fields
-            const qty = getRawVal(h, 'Quantity');
-            const mktVal = getRawVal(h, 'Mkt Val');
-            const costBasis = getRawVal(h, 'Cost Basis');
-            const dayChg = getRawVal(h, 'Day Chg');
-            const unrealGl = getRawVal(h, 'Unreal. G/L');
-            const estIncome = getRawVal(h, 'Est. Income');
-            const totalGl = getRawVal(h, 'Total G/L');
-
-            if (qty !== 0) {
-                (h as Record<string, number>)['Price'] = mktVal / qty;
-                (h as Record<string, number>)['Avg Cost'] = costBasis / qty;
-            }
-
-            if (mktVal - dayChg !== 0) {
-                (h as Record<string, number>)['Day Change %'] = (dayChg / (mktVal - dayChg)) * 100;
-            } else {
-                (h as Record<string, number>)['Day Change %'] = 0;
-            }
-
-            const EPSILON = 0.0001;
-            const totalBuyCost = getRawVal(h, 'Total Buy Cost');
-
-            // Use Total Buy Cost (Cumulative Purchases/Deposits) as the denominator if available
-            // to prevent extreme return percentages when current balance is small.
-            const denominator = (Math.abs(totalBuyCost) > EPSILON) ? totalBuyCost : costBasis;
-            const hasDenominator = Math.abs(denominator) > EPSILON;
-
-            if (hasDenominator) {
-                (h as Record<string, number>)['Unreal. Gain %'] = (unrealGl / denominator) * 100;
-                (h as Record<string, number>)['Div. Yield (Cost) %'] = (estIncome / denominator) * 100;
-                (h as Record<string, number>)['Total Return %'] = (totalGl / denominator) * 100;
-            } else {
-                (h as Record<string, number>)['Unreal. Gain %'] = unrealGl > EPSILON ? Infinity : 0;
-                (h as Record<string, number>)['Div. Yield (Cost) %'] = estIncome > EPSILON ? Infinity : 0;
-                (h as Record<string, number>)['Total Return %'] = totalGl > EPSILON ? Infinity : 0;
-            }
-
-            if (mktVal !== 0) {
-                (h as Record<string, number>)['Div. Yield (Current) %'] = (estIncome / mktVal) * 100;
-            }
-
-            // ADDED: Use true Aggregate IRR for the combined row if provided by the backend
-            if ((h as Record<string, number | null | undefined>)['Aggregate IRR (%)'] != null) {
-                (h as Record<string, number | null | undefined>)['IRR (%)'] = (h as Record<string, number | null | undefined>)['Aggregate IRR (%)'];
-            }
-
-            return h;
-        });
-
-    }, [filteredHoldings, visibleColumns, getValue]);
-
-    // --- Grouping Logic ---
-    const groupedHoldings = useMemo(() => {
-        if (!groupBy) return null;
-
-        const groups = new Map<string, {
-            key: string;
-            holdings: Holding[];
-            aggregates: Record<string, number>;
-        }>();
-
-        aggregatedHoldings.forEach(h => {
-            // Determine group key
-            let groupKey = 'Other';
-            if (groupBy === 'Market') {
-                // Use 'fullExchangeName' or 'exchange' if available, then fallback to 'Market' or 'Unknown'
-                const rawExchange = (h as Record<string, string>)['fullExchangeName'] || (h as Record<string, string>)['exchange'] || (h as Record<string, string>)['Market'] || 'Unknown';
-                const exchange = normalizeMarketName(rawExchange);
-                groupKey = exchange;
-            } else if (groupBy === 'quoteType') {
-                const rawType = (h as Record<string, string>)['quoteType'] || 'Other';
-                groupKey = INVESTMENT_TYPE_MAP[rawType] || rawType;
-            } else if (groupBy === 'Country') {
-                // Prioritize 'geography' over 'Country'
-                groupKey = (h as Record<string, string>)['geography'] || (h as Record<string, string>)['Country'] || 'Unknown';
-            } else if (groupBy === 'Currency') {
-                const rawCurrency = (h as Record<string, string>)['Local Currency'] || 'Unknown';
-                groupKey = CURRENCY_MAP[rawCurrency] || rawCurrency;
-            } else {
-                const val = getValue(h, groupBy);
-                groupKey = val ? String(val) : 'Other';
-            }
-
-            if (!groups.has(groupKey)) {
-                groups.set(groupKey, {
-                    key: groupKey,
-                    holdings: [],
-                    aggregates: {
-                        'Mkt Val': 0,
-                        'Day Chg': 0,
-                        'Cost Basis': 0,
-                        'Unreal. G/L': 0,
-                        'Real. G/L': 0,
-                        'Divs': 0,
-                        'Fees': 0,
-                        'Total G/L': 0,
-                        'Total Buy Cost': 0,
-                    }
-                });
-            }
-
-            const group = groups.get(groupKey)!;
-            group.holdings.push(h);
-
-            // Accumulate Aggregates
-            const getNum = (key: string) => {
-                const val = getValue(h, key);
-                return typeof val === 'number' ? val : 0;
-            };
-
-            group.aggregates['Mkt Val'] += getNum('Mkt Val');
-            group.aggregates['Day Chg'] += getNum('Day Chg');
-            group.aggregates['Cost Basis'] += getNum('Cost Basis');
-            group.aggregates['Unreal. G/L'] += getNum('Unreal. G/L');
-            group.aggregates['Real. G/L'] += getNum('Real. G/L');
-            group.aggregates['Divs'] += getNum('Divs');
-            group.aggregates['Fees'] += getNum('Fees');
-            group.aggregates['Total G/L'] += getNum('Total G/L');
-            group.aggregates['Total Buy Cost'] += getNum('Total Buy Cost');
-        });
-
-        // Calculate Percentages for Groups and Sort Items
-        return Array.from(groups.values()).map(g => {
-            // Calculate Group Percentages
-            if (g.aggregates['Mkt Val'] !== 0 && g.aggregates['Mkt Val'] - g.aggregates['Day Chg'] !== 0) {
-                g.aggregates['Day Chg %'] = (g.aggregates['Day Chg'] / (g.aggregates['Mkt Val'] - g.aggregates['Day Chg'])) * 100;
-            }
-            // Use Total Buy Cost as the denominator for all groups to be consistent
-            const costDenominator = (Math.abs(g.aggregates['Total Buy Cost']) > 0.0001)
-                ? g.aggregates['Total Buy Cost']
-                : g.aggregates['Cost Basis'];
-
-            if (Math.abs(costDenominator) > 0.0001) {
-                g.aggregates['Unreal. G/L %'] = (g.aggregates['Unreal. G/L'] / costDenominator) * 100;
-                g.aggregates['Total Ret %'] = (g.aggregates['Total G/L'] / costDenominator) * 100;
-            }
-
-            // Sort items within group
-            g.holdings.sort((a, b) => {
-                const valA = getValue(a, sortConfig.key);
-                const valB = getValue(b, sortConfig.key);
-
-                if (valA === null || valA === undefined) return 1;
-                if (valB === null || valB === undefined) return -1;
-
-                if (typeof valA === 'string' && typeof valB === 'string') {
-                    return sortConfig.direction === 'asc'
-                        ? valA.localeCompare(valB)
-                        : valB.localeCompare(valA);
-                }
-
-                const numA = typeof valA === 'number' ? valA : 0;
-                const numB = typeof valB === 'number' ? valB : 0;
-                return sortConfig.direction === 'asc' ? (numA - numB) : (numB - numA);
-            });
-
-            return g;
-        }).sort((a, b) => b.aggregates['Mkt Val'] - a.aggregates['Mkt Val']); // Sort groups by Mkt Val largely
-
-    }, [aggregatedHoldings, groupBy, getValue, sortConfig]);
-
-    const toggleGroup = (groupKey: string) => {
-        setExpandedGroups(prev => {
-            const next = new Set(prev);
-            if (next.has(groupKey)) next.delete(groupKey);
-            else next.add(groupKey);
-            return next;
-        });
-    };
-
-    // Auto-expand all groups when grouping changes
-    useEffect(() => {
-        if (groupedHoldings) {
-            setExpandedGroups(new Set(groupedHoldings.map(g => g.key)));
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-expands only when the grouping mode changes, not on every price-driven data update
-    }, [groupBy]); // This might cause re-expansion on data updates, which might be annoying if user collapsed.
-    // Better: Only expand if expandedGroups is empty? 
-    // Or just depend on `groupBy` changing. 
-    // If we put `groupedHoldings` dependency, it triggers on every price update.
-    // The implementation above with [groupBy] roughly works but `groupedHoldings` is derived. 
-    // Best to verify if `groupBy` changed. 
-
-    // Actually, we can just use a separate effect for when `groupBy` changes identity.
-    // The current effect depends on `groupBy` implicitly because of the component render, 
-    // but cleaner to make it explicit or use a ref to track prev groupBy.
-    // For simplicity, let's leave it manual or auto-expand on setGroupBy.
-
-    const handleSetGroupBy = (option: GroupingOption) => {
-        setGroupBy(option);
-        // Expanded groups will be handled by effect or reset
-    };
-
-    const sortedHoldings = useMemo(() => {
-        return [...aggregatedHoldings].sort((a, b) => {
-            const valA = getValue(a, sortConfig.key);
-            const valB = getValue(b, sortConfig.key);
-
-            if (valA === null || valA === undefined) return 1;
-            if (valB === null || valB === undefined) return -1;
-
-            if (typeof valA === 'string' && typeof valB === 'string') {
-                return sortConfig.direction === 'asc'
-                    ? valA.localeCompare(valB)
-                    : valB.localeCompare(valA);
-            }
-
-            const numA = typeof valA === 'number' ? valA : 0;
-            const numB = typeof valB === 'number' ? valB : 0;
-            return sortConfig.direction === 'asc' ? (numA - numB) : (numB - numA);
-        });
-    }, [aggregatedHoldings, sortConfig, getValue]);
-
-    const totalItemsCount = useMemo(() => {
-        if (!holdings) return 0;
-        if (groupBy) {
-            return groupedHoldings?.length || 0; // Count groups? or items? Usually items.
-            // If grouped, existing count logic (aggregatedHoldings.length) is still valid for "Total Items" 
-            // but maybe we want to show "X Groups". 
-            // Let's stick to total holdings count.
-        }
-        if (visibleColumns.includes('Account')) {
-            return holdings.length;
-        }
-        return new Set(holdings.map(h => h.Symbol)).size;
-    }, [holdings, visibleColumns, groupBy, groupedHoldings]);
-
-    if (!isLoading && (!holdings || holdings.length === 0)) {
-        return <div className="p-4 text-center text-muted-foreground">No holdings found.</div>;
-    }
-
-    const toggleColumn = (header: string) => {
-        setVisibleColumns(current =>
-            current.includes(header)
-                ? current.filter(c => c !== header)
-                : [...current, header]
-        );
-    };
-
-    const getExpansionKey = (holding: Holding) => {
-        return visibleColumns.includes('Account') ? `${holding.Symbol}-${holding.Account}` : holding.Symbol;
-    };
-
-    const toggleLotExpansion = (key: string) => {
-        setExpandedLots(prev => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key);
-            else next.add(key);
-            return next;
-        });
-    };
+    const visibleHoldings = sortedHoldings.slice(0, visibleRows);
 
     const toggleAllLots = () => {
         if (expandedLots.size > 0) {
-            setExpandedLots(new Set());
+            expandedLots.clear();
         } else {
-            const allKeys = new Set<string>();
             aggregatedHoldings.forEach(h => {
                 if (h.lots && h.lots.length > 0) {
-                    allKeys.add(getExpansionKey(h));
+                    expandedLots.add(getExpansionKey(h));
                 }
             });
-            setExpandedLots(allKeys);
         }
-    };
-
-    const toggleCardExpansion = (key: string) => {
-        setExpandedCards(prev => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key);
-            else next.add(key);
-            return next;
-        });
     };
 
     const toggleAllCards = () => {
         if (expandedCards.size > 0) {
-            setExpandedCards(new Set());
+            expandedCards.clear();
         } else {
-            setExpandedCards(new Set(aggregatedHoldings.map(getExpansionKey)));
+            aggregatedHoldings.forEach(h => {
+                expandedCards.add(getExpansionKey(h));
+            });
         }
     };
-
-
-
-    const toggleAccount = (account: string) => {
-        setSelectedAccounts(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(account)) newSet.delete(account);
-            else newSet.add(account);
-            return newSet;
-        });
-    };
-
-    // Drag and Drop Handlers
-    const handleDragStart = (e: React.DragEvent<HTMLTableHeaderCellElement>, header: string) => {
-        setDraggedColumn(header);
-        e.dataTransfer.effectAllowed = 'move';
-        // Set a transparent drag image or custom styling if needed
-        // e.dataTransfer.setDragImage(e.currentTarget, 0, 0);
-    };
-
-    const handleDragOver = (e: React.DragEvent<HTMLTableHeaderCellElement>) => {
-        e.preventDefault(); // Necessary to allow dropping
-        e.dataTransfer.dropEffect = 'move';
-    };
-
-    const handleDrop = (e: React.DragEvent<HTMLTableHeaderCellElement>, targetHeader: string) => {
-        e.preventDefault();
-        if (!draggedColumn || draggedColumn === targetHeader) return;
-
-        const currentIndex = visibleColumns.indexOf(draggedColumn);
-        const targetIndex = visibleColumns.indexOf(targetHeader);
-
-        if (currentIndex !== -1 && targetIndex !== -1) {
-            const newColumns = [...visibleColumns];
-            newColumns.splice(currentIndex, 1); // Remove from old pos
-            newColumns.splice(targetIndex, 0, draggedColumn); // Insert at new pos
-            setVisibleColumns(newColumns);
-        }
-        setDraggedColumn(null);
-    };
-
-    // Formatters
-    const formatValue = (val: number | string | string[] | number[] | null | undefined, field: string) => {
-        if (val === undefined || val === null || val === '') return '-';
-        if (Array.isArray(val)) return val.join(', ');
-
-        // Skip numeric conversion for known text fields
-        const textFields = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags', 'Name'];
-        if (textFields.some(tf => field.includes(tf)) && typeof val === 'string') {
-            return val;
-        }
-
-        const num = typeof val === 'string' ? parseFloat(val.replace(/[^0-9.-]/g, '')) : val;
-        if (isNaN(num)) return val;
-
-        if (field.includes('%') || field.includes('Yield') || field === 'Weight') {
-            if (num === Infinity) return '∞';
-            if (num === -Infinity) return '-∞';
-            return `${num.toFixed(2)}%`;
-        }
-        if (field.includes('Price') || field.includes('Value') || field.includes('Cost') || field.includes('Gain') || field.includes('Div') || field.includes('Balance')) {
-            return formatCurrency(num, currency);
-        }
-        if (field === 'Quantity') {
-            return num.toLocaleString(undefined, { maximumFractionDigits: 4 });
-        }
-        return num.toLocaleString();
-    };
-
-    const getCellClass = (val: unknown, header: string) => {
-        if (val === null || val === undefined || val === '-' || val === '' || (typeof val === 'number' && Math.abs(val) < 0.0001)) {
-            return 'text-muted-foreground/40 font-light';
-        }
-        if (typeof val !== 'number') return '';
-        if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)'].includes(header)) {
-            if (Math.abs(val) < 0.001) return 'text-muted-foreground/40 font-light';
-            return val > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-red-600 dark:text-red-500 font-medium';
-        }
-        return '';
-    };
-
-    const visibleHoldings = sortedHoldings.slice(0, visibleRows);
-
-    const handleShowMore = () => {
-        setVisibleRows(prev => prev + 20);
-    };
-
-    const handleShowAll = () => {
-        setVisibleRows(sortedHoldings.length);
-    };
-
-
-
-    // ... (existing code)
 
     return (
         <>
             <div className="metric-card card-shine mt-6 scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent transition-all duration-300 relative overflow-hidden">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
-                <div className="flex flex-col gap-4 p-5">
-                    {/* Header Row: Title, Count & Search */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                            <h2 className="section-label text-sm font-bold text-foreground">Holdings</h2>
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 bg-muted/50 border border-border/60 px-2 py-0.5 rounded-full tracking-wide">
-                                {groupBy
-                                    ? `${aggregatedHoldings.length} items · ${groupedHoldings?.length || 0} groups`
-                                    : `${aggregatedHoldings.length} / ${totalItemsCount}`
-                                }
-                            </span>
-                        </div>
+                <HoldingsToolbar
+                    totalItemsCount={holdings.length}
+                    aggregatedCount={aggregatedHoldings.length}
+                    groupedCount={groupedHoldings?.length || 0}
+                    groupBy={groupBy}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    isGroupByMenuOpen={isGroupByMenuOpen}
+                    setIsGroupByMenuOpen={setIsGroupByMenuOpen}
+                    groupByMenuRef={groupByMenuRef}
+                    handleSetGroupBy={handleSetGroupBy}
+                    isAccountMenuOpen={isAccountMenuOpen}
+                    setIsAccountMenuOpen={setIsAccountMenuOpen}
+                    accountMenuRef={accountMenuRef}
+                    selectedAccounts={selectedAccounts}
+                    setSelectedAccounts={setSelectedAccounts}
+                    uniqueAccounts={uniqueAccounts}
+                    toggleAccount={toggleAccount}
+                    isColumnMenuOpen={isColumnMenuOpen}
+                    setIsColumnMenuOpen={setIsColumnMenuOpen}
+                    columnMenuRef={columnMenuRef}
+                    visibleColumns={visibleColumns}
+                    setVisibleColumns={setVisibleColumns}
+                    toggleColumn={toggleColumn}
+                    mobileViewMode={mobileViewMode}
+                    setMobileViewMode={setMobileViewMode}
+                    expandedCards={expandedCards}
+                    toggleAllCards={toggleAllCards}
+                    expandedLots={expandedLots}
+                    toggleAllLots={toggleAllLots}
+                    holdings={holdings}
+                />
 
-                        <div className="relative w-full sm:w-64 lg:w-80">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search className="h-3.5 w-3.5 text-muted-foreground/50" />
-                            </div>
-                            <input
-                                type="text"
-                                aria-label="Search holdings by symbol or name"
-                                placeholder="Search symbol..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-1.5 text-sm bg-muted/40 dark:bg-white/[0.04] border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder-muted-foreground/40 transition-all"
-                            />
-                            {searchQuery && (
-                                <button
-                                    type="button"
-                                    aria-label="Clear search query"
-                                    onClick={() => setSearchQuery("")}
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
-                                >
-                                    <X className="h-3.5 w-3.5" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
+                <HoldingsDesktopTable
+                    mobileViewMode={mobileViewMode}
+                    visibleColumns={visibleColumns}
+                    isLoading={isLoading}
+                    draggedColumn={draggedColumn}
+                    handleDragStart={handleDragStart}
+                    handleDragOver={handleDragOver}
+                    handleDrop={handleDrop}
+                    handleSort={handleSort}
+                    sortConfig={sortConfig}
+                    groupBy={groupBy}
+                    groupedHoldings={groupedHoldings}
+                    visibleHoldings={visibleHoldings}
+                    expandedGroups={expandedGroups}
+                    toggleGroup={toggleGroup}
+                    expandedLots={expandedLots}
+                    toggleLotExpansion={toggleLotExpansion}
+                    getExpansionKey={getExpansionKey}
+                    getValue={getValue}
+                    getLotValue={getLotValue}
+                    currency={currency}
+                    openStockDetail={openStockDetail}
+                    editingTags={editingTags}
+                    setEditingTags={setEditingTags}
+                    tagsInput={tagsInput}
+                    setTagsInput={setTagsInput}
+                    handleEditTags={handleEditTags}
+                    handleSaveTags={handleSaveTags}
+                />
 
-                    {/* Filters & Actions Group - Consolidated and Compact */}
-                    <div className="flex flex-wrap items-center gap-1.5">
+                <HoldingsMobileCards
+                    mobileViewMode={mobileViewMode}
+                    visibleHoldings={visibleHoldings}
+                    currency={currency}
+                    openStockDetail={openStockDetail}
+                    expandedCards={expandedCards}
+                    toggleCardExpansion={toggleCardExpansion}
+                    expandedLots={expandedLots}
+                    toggleLotExpansion={toggleLotExpansion}
+                    getExpansionKey={getExpansionKey}
+                    getValue={getValue}
+                    getLotValue={getLotValue}
+                />
 
-                        {/* Group By Filter */}
-                        <div className="relative" ref={groupByMenuRef}>
-                            <button
-                                onClick={() => setIsGroupByMenuOpen(!isGroupByMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
-                                ${groupBy
-                                        ? 'bg-[#0097b2] text-white border-none'
-                                        : 'text-foreground bg-secondary border-none hover:bg-accent/10'
-                                    }`}
-                            >
-                                <ListFilter className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">{groupBy ? `By ${GROUPING_LABEL_MAP[groupBy]}` : 'Group'}</span>
-                            </button>
-                            {isGroupByMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-1.5 w-48 origin-top-left bg-white dark:bg-zinc-950 rounded-md focus:outline-none">
-                                    <div className="py-1">
-                                        <label className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="grouping"
-                                                checked={groupBy === null}
-                                                onChange={() => handleSetGroupBy(null)}
-                                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded-full bg-secondary"
-                                            />
-                                            <span className="ml-2">Do not group</span>
-                                        </label>
-                                        <hr className="my-1 opacity-10" />
-                                        {Object.entries(GROUPING_LABEL_MAP).map(([key, label]) => (
-                                            <label key={key} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    name="grouping"
-                                                    checked={groupBy === key}
-                                                    onChange={() => handleSetGroupBy(key as GroupingOption)}
-                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded-full bg-secondary"
-                                                />
-                                                <span className="ml-2">{label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-
-
-                        {/* Account Filter */}
-                        <div className="relative" ref={accountMenuRef}>
-                            <button
-                                onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
-                                ${selectedAccounts.size > 0 || isAccountMenuOpen
-                                        ? 'bg-[#0097b2] text-white'
-                                        : 'text-foreground bg-secondary hover:bg-accent/10'
-                                    }`}
-                            >
-                                <UserCircle className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}</span>
-                                {selectedAccounts.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center">{selectedAccounts.size}</span>}
-                            </button>
-                            {isAccountMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-white dark:bg-zinc-950 rounded-md shadow-none ring-0 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
-                                    <div className="p-2">
-                                        <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
-                                            Clear Filter
-                                        </button>
-                                    </div>
-                                    <div className="py-1">
-                                        {uniqueAccounts.map(account => (
-                                            <label key={account} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedAccounts.has(account)}
-                                                    onChange={() => toggleAccount(account)}
-                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                                />
-                                                <span className="ml-2 truncate">{account}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Columns Selector */}
-                        <div className="relative" ref={columnMenuRef}>
-                            <button
-                                onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none transition-colors
-                                ${isColumnMenuOpen
-                                        ? 'bg-primary/10 text-primary border border-primary/30'
-                                        : 'text-foreground bg-secondary hover:bg-accent/10 border border-transparent'
-                                    }`}
-                            >
-                                <Settings2 className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Columns</span>
-                                <span className="hidden sm:inline text-[10px] font-bold bg-primary/15 text-primary px-1.5 rounded-full leading-4">
-                                    {visibleColumns.length}
-                                </span>
-                            </button>
-                            {isColumnMenuOpen && (
-                                <div
-                                    style={{ backgroundColor: 'var(--menu-solid)' }}
-                                    className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-72 origin-top-left sm:origin-top-right border border-border rounded-xl shadow-xl overflow-hidden"
-                                >
-                                    {/* Header */}
-                                    <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
-                                        <span className="text-xs font-bold text-foreground">Visible Columns</span>
-                                        <button
-                                            onClick={() => setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)}
-                                            className="text-[10px] font-semibold text-primary hover:underline"
-                                        >
-                                            Reset
-                                        </button>
-                                    </div>
-                                    {/* Column groups */}
-                                    {[
-                                        { label: 'Core', cols: ['Symbol', 'Account', 'Quantity', 'Price', 'Mkt Val', '% of Total', '1M Trend'] },
-                                        { label: 'Daily', cols: ['Day Chg', 'Day Chg %'] },
-                                        { label: 'Returns', cols: ['Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'IRR (%)'] },
-                                        { label: 'Cost', cols: ['Avg Cost', 'Cost Basis', 'Total Buy Cost'] },
-                                        { label: 'Income', cols: ['Divs', 'Est. Income', 'Yield (Cost) %', 'Yield (Mkt) %'] },
-                                        { label: 'Details', cols: ['Sector', 'Industry', 'FX G/L %', 'Fees', 'Tags', 'Contribution %', 'AI Score', 'Intrinsic Value'] },
-                                    ].map(group => (
-                                        <div key={group.label} className="px-2 py-1.5">
-                                            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5 mb-1">{group.label}</p>
-                                            <div className="grid grid-cols-2 gap-0.5">
-                                                {group.cols.map(header => {
-                                                    const isSelected = visibleColumns.includes(header);
-                                                    return (
-                                                        <label
-                                                            key={header}
-                                                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md cursor-pointer group transition-colors ${
-                                                                isSelected
-                                                                    ? 'bg-primary/10 hover:bg-primary/15'
-                                                                    : 'hover:bg-muted/60'
-                                                            }`}
-                                                        >
-                                                            <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                                                                isSelected
-                                                                    ? 'bg-primary border-primary text-primary-foreground'
-                                                                    : 'border-border group-hover:border-primary/50'
-                                                            }`}>
-                                                                {isSelected && (
-                                                                    <Check className="w-3 h-3" strokeWidth={3} />
-                                                                )}
-                                                            </span>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isSelected}
-                                                                onChange={() => toggleColumn(header)}
-                                                                className="sr-only"
-                                                            />
-                                                            <span className={`text-xs truncate ${
-                                                                isSelected ? 'text-primary font-semibold' : 'text-foreground'
-                                                            }`}>{header}</span>
-                                                        </label>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Expand/Collapse All Cards — card view is mobile-only */}
-                        {mobileViewMode === 'card' && (
-                            <button
-                                onClick={toggleAllCards}
-                                className={`md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
-                                ${expandedCards.size > 0
-                                        ? 'bg-[#0097b2] text-white'
-                                        : 'text-foreground bg-secondary hover:bg-accent/10'
-                                    }`}
-                                title={expandedCards.size > 0 ? 'Collapse All Details' : 'Expand All Details'}
-                            >
-                                <ChevronsUpDown className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Details</span>
-                            </button>
-                        )}
-
-                        {/* Toggle All Lots Helper */}
-                        <button
-                            onClick={toggleAllLots}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
-                            ${expandedLots.size > 0
-                                    ? 'bg-[#0097b2] text-white'
-                                    : 'text-foreground bg-secondary hover:bg-accent/10'
-                                }`}
-                            title={expandedLots.size > 0 ? 'Collapse All Tax Lots' : 'Show All Tax Lots'}
-                        >
-                            <Layers className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Lots</span>
-                        </button>
-
-                        {/* Export Button */}
-                        <button
-                            onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary rounded-md hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center ml-auto"
-                            title="Export to CSV"
-                        >
-                            <Download className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Mobile View Toggle */}
-                        <button
-                            onClick={() => setMobileViewMode(current => current === 'card' ? 'table' : 'card')}
-                            className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary hover:bg-accent/10"
-                            title={mobileViewMode === 'card' ? 'Switch to Table View' : 'Switch to Card View'}
-                        >
-                            {mobileViewMode === 'card' ? <TableIcon className="w-3.5 h-3.5" /> : <LayoutGrid className="w-3.5 h-3.5" />}
-                            <span className="sr-only">{mobileViewMode === 'card' ? 'Table' : 'Card'}</span>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Desktop Table View (also visible on mobile if toggled) */}
-                <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto [overflow-y:clip]`}>
-                    <table className="min-w-full">
-                        <thead className="bg-secondary sticky top-0 z-30 font-semibold border-b">
-                            <tr>
-                                {visibleColumns.map(header => {
-                                    const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
-                                    const isSticky = header === 'Symbol' || (header === 'Account' && visibleColumns.indexOf('Account') === 0);
-                                    return (
-                                        <th
-                                            key={header}
-                                            scope="col"
-                                            draggable
-                                            onDragStart={(e) => handleDragStart(e, header)}
-                                            onDragOver={handleDragOver}
-                                            onDrop={(e) => handleDrop(e, header)}
-                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${isSticky ? 'sticky left-0 z-40 bg-secondary/95 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}
-                                            onClick={() => handleSort(header)}
-                                        >
-                                            <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
-                                                {header}
-                                                {sortConfig.key === header && (
-                                                    <span className="text-cyan-500">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                                                )}
-                                            </div>
-                                        </th>
-                                    );
-                                })}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y-none">
-                            {isLoading ? (
-                                Array.from({ length: 5 }).map((_, i) => (
-                                    <tr key={`skeleton-${i}`}>
-                                        {visibleColumns.map((header, j) => (
-                                            <td key={`skeleton-${i}-${j}`} className="px-6 py-4">
-                                                <Skeleton className="h-6 w-full ml-auto" />
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))
-                            ) : groupBy && groupedHoldings ? (
-                                groupedHoldings.map((group) => (
-                                    <React.Fragment key={group.key}>
-                                        {/* Group Header Row */}
-                                        <tr
-                                            className="bg-secondary/30 hover:bg-secondary/50 cursor-pointer transition-colors"
-                                            onClick={() => toggleGroup(group.key)}
-                                        >
-                                            <td colSpan={visibleColumns.length} className="px-4 py-3">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        {expandedGroups.has(group.key) ? (
-                                                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                                        ) : (
-                                                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                                        )}
-                                                        <span className="font-semibold text-foreground">{group.key}</span>
-                                                        <span className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
-                                                            {group.holdings.length}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* Group Summaries for Visible Columns */}
-                                                    <div className="flex items-center gap-6 pr-2">
-                                                        {visibleColumns.includes('Mkt Val') && (
-                                                            <div className="text-sm">
-                                                                <span className="text-xs text-muted-foreground mr-1">Mkt:</span>
-                                                                <span className="font-medium tabular-nums">{formatValue(group.aggregates['Mkt Val'], 'Mkt Val')}</span>
-                                                            </div>
-                                                        )}
-                                                        {visibleColumns.includes('Day Chg') && (
-                                                            <div className="text-sm hidden sm:block">
-                                                                <span className="text-xs text-muted-foreground mr-1">Day:</span>
-                                                                <span className={`${getCellClass(group.aggregates['Day Chg'], 'Day Chg')} tabular-nums`}>
-                                                                    {formatValue(group.aggregates['Day Chg'], 'Day Chg')}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {visibleColumns.includes('Day Chg %') && (
-                                                            <div className="text-sm hidden sm:block">
-                                                                <span className={`${getCellClass(group.aggregates['Day Chg'], 'Day Chg %')} tabular-nums`}>
-                                                                    {formatValue(group.aggregates['Day Chg %'], 'Day Chg %')}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {visibleColumns.includes('Unreal. G/L') && (
-                                                            <div className="text-sm hidden md:block">
-                                                                <span className="text-xs text-muted-foreground mr-1">Unreal:</span>
-                                                                <span className={`${getCellClass(group.aggregates['Unreal. G/L'], 'Unreal. G/L')} tabular-nums`}>
-                                                                    {formatValue(group.aggregates['Unreal. G/L'], 'Unreal. G/L')}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        {/* Group Items */}
-                                        {expandedGroups.has(group.key) && group.holdings.map((holding, idx) => (
-                                            <React.Fragment key={`${holding.Symbol}-${idx}`}>
-                                                <tr className="hover:bg-accent/5 transition-colors">
-                                                    {visibleColumns.map(header => {
-                                                        const val = getValue(holding, header);
-                                                        const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
-                                                        const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
-
-                                                        const isHeatmap = ['Day Chg %', 'Unreal. G/L %', 'Total Ret %'].includes(header);
-                                                        const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
-
-                                                        return (
-                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''} ${heatmapClass}`}>
-                                                                {header === '1M Trend' ? (
-                                                                    <div className="h-10 w-28 ml-auto">
-                                                                        {val && Array.isArray(val) && val.length > 1 ? (
-                                                                            <TrendSparkline data={val as number[]} />
-                                                                        ) : (
-                                                                            <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground/50">
-                                                                                no data
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
-                                                                    <div className="w-24 ml-auto h-6">
-                                                                        <InlineProgressBar value={(val as number) || 0} max={100}>
-                                                                            <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-red-600 dark:text-red-500' : ''}`}>{formatValue(val, header)}</span>
-                                                                        </InlineProgressBar>
-                                                                    </div>
-                                                                ) : header === 'Symbol' ? (
-                                                                    <div className="flex items-center gap-3">
-                                                                        {/* Watchlist Star */}
-                                                                        <WatchlistStar
-                                                                            symbol={holding.Symbol}
-                                                                            className="text-muted-foreground hover:text-amber-400"
-                                                                        />
-
-                                                                        {/* Logo */}
-
-
-                                                                        <div className="flex flex-col">
-                                                                            <div className="flex items-center gap-2">
-                                                                                <span
-                                                                                    className="font-bold text-foreground hover:text-cyan-500 cursor-pointer transition-colors"
-                                                                                    onClick={() => openStockDetail(holding.Symbol)}
-                                                                                >
-                                                                                    {holding.Symbol}
-                                                                                </span>
-                                                                                {holding.lots && holding.lots.length > 0 && (
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            toggleLotExpansion(getExpansionKey(holding));
-                                                                                        }}
-                                                                                        className="p-0.5 hover:bg-accent/20 rounded-md transition-colors"
-                                                                                        title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
-                                                                                    >
-                                                                                        {expandedLots.has(getExpansionKey(holding)) ? (
-                                                                                            <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
-                                                                                        ) : (
-                                                                                            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                                                                                        )}
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                            {holding.lots && holding.lots.length > 0 && (
-                                                                                <div className="flex items-center gap-1 mt-0.5" title={`${holding.lots.length} tax lots`}>
-                                                                                    <Layers className="w-3 h-3 text-muted-foreground" />
-                                                                                    <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                ) : header === 'Tags' ? (
-                                                                    <div className="group/tags flex items-center gap-2 justify-start min-w-[100px]">
-                                                                        {editingTags?.symbol === holding.Symbol && editingTags?.account === (holding.Account || 'All') ? (
-                                                                            <div className="flex items-center gap-1 animate-in fade-in zoom-in duration-200">
-                                                                                <input
-                                                                                    type="text"
-                                                                                    value={tagsInput}
-                                                                                    onChange={(e) => setTagsInput(e.target.value)}
-                                                                                    className="w-32 h-7 text-xs bg-background rounded px-2 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                                                                                    placeholder="e.g. Dividend, Tech"
-                                                                                    autoFocus
-                                                                                    onKeyDown={(e) => {
-                                                                                        if (e.key === 'Enter') handleSaveTags();
-                                                                                        if (e.key === 'Escape') setEditingTags(null);
-                                                                                    }}
-                                                                                />
-                                                                                <button onClick={handleSaveTags} className="p-1 hover:bg-emerald-500/10 text-emerald-600 rounded">
-                                                                                    <Save className="w-3.5 h-3.5" />
-                                                                                </button>
-                                                                                <button onClick={() => setEditingTags(null)} className="p-1 hover:bg-red-500/10 text-red-600 rounded">
-                                                                                    <X className="w-3.5 h-3.5" />
-                                                                                </button>
-                                                                            </div>
-                                                                        ) : (
-                                                                            <>
-                                                                                {val && Array.isArray(val) && val.length > 0 ? (
-                                                                                    <div className="flex flex-wrap gap-1">
-                                                                                        {(val as string[]).map((tag: string, i: number) => (
-                                                                                            <SemanticBadge key={i} text={tag} />
-                                                                                        ))}
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <span className="text-muted-foreground/30 text-xs italic group-hover/tags:opacity-100 opacity-0 transition-opacity">Add tags...</span>
-                                                                                )}
-
-                                                                                <button
-                                                                                    onClick={() => handleEditTags(holding.Symbol, holding.Account || 'All', Array.isArray(val) ? val as string[] : [])}
-                                                                                    className="opacity-0 group-hover/tags:opacity-100 p-1 hover:bg-secondary rounded-full transition-all text-muted-foreground hover:text-foreground"
-                                                                                >
-                                                                                    <PenLine className="w-3 h-3" />
-                                                                                </button>
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                ) : header === 'AI Score' ? (
-                                                                    <div className="flex justify-end">
-                                                                        {val !== null && val !== undefined ? (
-                                                                            <div
-                                                                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white shadow-sm ${(val as number) >= 8.0 ? 'bg-emerald-500' :
-                                                                                    (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
-                                                                                    }`}
-                                                                            >
-                                                                                {(val as number).toFixed(1)}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <span className="text-muted-foreground/30">-</span>
-                                                                        )}
-                                                                    </div>
-                                                                ) : header === 'Intrinsic Value' ? (
-                                                                    <div className="flex flex-col items-end gap-1.5 min-w-[80px]">
-                                                                        <span className={
-                                                                            val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
-                                                                                (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' :
-                                                                                    (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
-                                                                            ) : ''
-                                                                        }>
-                                                                            {formatValue(val, header)}
-                                                                            {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
-                                                                                <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
-                                                                                    ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
-                                                                                </span>
-                                                                            )}
-                                                                        </span>
-                                                                        {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
-                                                                            <div className="w-16 h-1 bg-secondary rounded-full overflow-hidden flex">
-                                                                                {holding.margin_of_safety > 0 ? (
-                                                                                    <>
-                                                                                        <div className="w-1/2 bg-transparent" />
-                                                                                        <div className="h-full bg-emerald-500" style={{ width: `${Math.min(holding.margin_of_safety, 100) / 2}%` }} />
-                                                                                    </>
-                                                                                ) : (
-                                                                                    <>
-                                                                                        <div className="h-full bg-transparent" style={{ width: `${50 - Math.min(Math.abs(holding.margin_of_safety), 100) / 2}%` }} />
-                                                                                        <div className="h-full bg-rose-500" style={{ width: `${Math.min(Math.abs(holding.margin_of_safety), 100) / 2}%` }} />
-                                                                                    </>
-                                                                                )}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                ) : (
-                                                                    formatValue(val, header)
-                                                                )}
-                                                            </td>
-                                                        );
-                                                    })}
-                                                </tr>
-                                                {expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
-                                                    holding.lots.map((lot, lotIdx) => (
-                                                        <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-zinc-50/50 dark:bg-zinc-900/40">
-                                                            {visibleColumns.map(header => {
-                                                                const holdingPrice = getValue(holding, "Price") as number;
-                                                                const val = getLotValue(lot, header, holdingPrice);
-                                                                const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
-
-                                                                return (
-                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}>
-                                                                        {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
-                                                                        {formatValue(val, header)}
-                                                                    </td>
-                                                                );
-                                                            })}
-                                                        </tr>
-                                                    ))
-                                                )}
-                                            </React.Fragment>
-                                        ))}
-                                    </React.Fragment>
-                                ))
-                            ) : (
-                                // Existing flat list rendering
-                                visibleHoldings.map((holding, idx) => (
-                                    <React.Fragment key={`${holding.Symbol}-${idx}`}>
-                                        <tr className="hover:bg-accent/5 transition-colors">
-                                            {visibleColumns.map(header => {
-                                                const val = getValue(holding, header);
-                                                // Use tabular-nums for numeric columns to ensure digit alignment
-                                                const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
-                                                const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
-
-                                                const isHeatmap = ['Day Chg %', 'Unreal. G/L %', 'Total Ret %'].includes(header);
-                                                const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
-
-                                                return (
-                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-lg shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''} ${heatmapClass}`}>
-                                                        {header === '1M Trend' ? (
-                                                            <div className="h-10 w-28 ml-auto">
-                                                                {val && Array.isArray(val) && val.length > 1 ? (
-                                                                    <TrendSparkline data={val as number[]} />
-                                                                ) : (
-                                                                    <div className="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground/30">
-                                                                        no data
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
-                                                            <div className="w-24 ml-auto h-6">
-                                                                <InlineProgressBar value={(val as number) || 0} max={100}>
-                                                                    <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-red-600 dark:text-red-500' : ''}`}>{formatValue(val, header)}</span>
-                                                                </InlineProgressBar>
-                                                            </div>
-                                                        ) : header === 'Symbol' ? (
-                                                            <div className="flex items-center justify-start gap-3">
-                                                                <WatchlistStar symbol={val as string} size="md" />
-                                                                <div className="flex flex-col">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <button
-                                                                            onClick={() => openStockDetail(val as string, currency)}
-                                                                            className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
-                                                                        >
-                                                                            {formatValue(val, header)}
-                                                                        </button>
-                                                                        {holding.lots && holding.lots.length > 0 && (
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    toggleLotExpansion(getExpansionKey(holding));
-                                                                                }}
-                                                                                className="p-0.5 hover:bg-accent/20 rounded-md transition-colors"
-                                                                                title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
-                                                                            >
-                                                                                {expandedLots.has(getExpansionKey(holding)) ? (
-                                                                                    <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
-                                                                                ) : (
-                                                                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                                                                                )}
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                    {holding.lots && holding.lots.length > 0 && (
-                                                                        <div className="flex items-center gap-1 mt-0.5 cursor-help" title={`${holding.lots.length} tax lots`}>
-                                                                            <Layers className="w-3 h-3 text-muted-foreground hover:text-cyan-500 transition-colors" />
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        ) : header === 'Tags' ? (
-                                                            <div className="flex items-center justify-end gap-2 group/tags min-w-[120px]">
-                                                                <div className="flex flex-wrap gap-1 justify-end">
-                                                                    {Array.isArray(val) && val.length > 0 ? (
-                                                                        (val as string[]).map((tag: string, i: number) => (
-                                                                            <SemanticBadge key={i} text={tag} />
-                                                                        ))
-                                                                    ) : (
-                                                                        <span className="text-muted-foreground italic text-xs opacity-0 group-hover/tags:opacity-50 transition-opacity">Add tag</span>
-                                                                    )}
-                                                                </div>
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        const tags = Array.isArray(val) ? val as string[] : [];
-                                                                        const acc = formatValue(getValue(holding, "Account"), "Account") as string;
-                                                                        handleEditTags(holding.Symbol, acc, tags);
-                                                                    }}
-                                                                    className="text-muted-foreground hover:text-cyan-500 opacity-0 group-hover/tags:opacity-100 transition-opacity p-1"
-                                                                    title="Edit Tags"
-                                                                >
-                                                                    <PenLine className="h-3 w-3" />
-                                                                </button>
-                                                            </div>
-                                                        ) : header === 'AI Score' ? (
-                                                            <div className="flex justify-end">
-                                                                {val !== null && val !== undefined ? (
-                                                                    <div
-                                                                        className={`px-2 py-0.5 rounded text-xs font-bold text-white shadow-sm ${(val as number) >= 8.0 ? 'bg-emerald-500' :
-                                                                            (val as number) >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
-                                                                            }`}
-                                                                    >
-                                                                        {(val as number).toFixed(1)}
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-muted-foreground/30">-</span>
-                                                                )}
-                                                            </div>
-                                                        ) : header === 'Intrinsic Value' ? (
-                                                            <span className={
-                                                                val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
-                                                                    (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' :
-                                                                        (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
-                                                                ) : ''
-                                                            }>
-                                                                {formatValue(val, header)}
-                                                                {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
-                                                                    <span className="text-[10px] opacity-70 ml-1.5 tabular-nums">
-                                                                        ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
-                                                                    </span>
-                                                                )}
-                                                            </span>
-                                                        ) : (
-                                                            formatValue(val, header)
-                                                        )}
-                                                    </td>
-                                                );
-                                            })}
-                                        </tr>
-                                        {expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
-                                            holding.lots.map((lot, lotIdx) => (
-                                                <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-zinc-50/50 dark:bg-zinc-900/40">
-                                                    {visibleColumns.map(header => {
-                                                        const holdingPrice = getValue(holding, "Price") as number;
-                                                        const val = getLotValue(lot, header, holdingPrice);
-                                                        const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
-
-                                                        return (
-                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-none ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}>
-                                                                {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
-                                                                {formatValue(val, header)}
-                                                            </td>
-                                                        );
-                                                    })}
-                                                </tr>
-                                            ))
-                                        )}
-                                    </React.Fragment>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Mobile Card View */}
-                <div className={`${mobileViewMode === 'card' ? 'block' : 'hidden'} md:hidden space-y-4 p-4`}>
-                    {visibleHoldings.map((holding, idx) => (
-                        <Card
-                            key={`mobile-${holding.Symbol}-${idx}`}
-                            className="bg-card rounded-2xl border-none p-0 relative group cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
-                            onClick={() => openStockDetail(holding.Symbol, currency)}
-                        >
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-start">
-                                    <div className="flex items-center gap-3">
-                                        <WatchlistStar symbol={holding.Symbol} size="md" />
-                                        <h3 className="text-xl font-bold text-foreground leading-none">{holding.Symbol}</h3>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="text-right">
-                                            <div className="text-xl font-bold text-foreground leading-none">
-                                                {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
-                                            </div>
-                                            {/* Day change moves up here while collapsed — the strip
-                                                that normally carries it is now inside the expansion,
-                                                and a summary line with no change indicator is no
-                                                summary. Matches the iOS collapsed card. */}
-                                            {!expandedCards.has(getExpansionKey(holding)) && (
-                                                <div className={`text-xs font-medium mt-1 ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
-                                                    {formatValue(getValue(holding, "Day Chg %"), "Day Chg %")}
-                                                </div>
-                                            )}
-                                        </div>
-                                        {/* Its own button — a tap on the card already opens the stock detail modal. */}
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleCardExpansion(getExpansionKey(holding));
-                                            }}
-                                            className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors border-none shrink-0"
-                                            aria-expanded={expandedCards.has(getExpansionKey(holding))}
-                                            title={expandedCards.has(getExpansionKey(holding)) ? `Hide ${holding.Symbol} details` : `Show ${holding.Symbol} details`}
-                                        >
-                                            {expandedCards.has(getExpansionKey(holding)) ? (
-                                                <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                                            ) : (
-                                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Account / lots strip — part of the card's detail, so it
-                                    lives inside the expansion alongside the metric grid.
-                                    Otherwise the lots control sits outside the collapsed
-                                    card and a "collapsed" holding is still two rows tall. */}
-                                {expandedCards.has(getExpansionKey(holding)) && (
-                                <div className="flex justify-between items-center bg-zinc-500/5 dark:bg-zinc-400/5 p-2 rounded-md">
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                            <span>{holding.Account}</span>
-                                        </div>
-                                        {holding.lots && holding.lots.length > 0 && (
-                                            <div className="flex items-center gap-1 text-[10px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 px-1.5 py-0.5 rounded-full w-fit">
-                                                <Layers className="w-2.5 h-2.5" />
-                                                <span className="font-medium">{holding.lots.length} Lots</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="text-right">
-                                            <div className={`text-sm font-medium ${getCellClass(getValue(holding, "Day Chg"), "Day Chg")}`}>
-                                                {formatValue(getValue(holding, "Day Chg"), "Day Chg")}
-                                            </div>
-                                            <div className={`text-xs ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
-                                                {formatValue(getValue(holding, "Day Chg %"), "Day Chg %")}
-                                            </div>
-                                        </div>
-                                        {holding.lots && holding.lots.length > 0 && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleLotExpansion(getExpansionKey(holding));
-                                                }}
-                                                className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors border-none"
-                                            >
-                                                {expandedLots.has(getExpansionKey(holding)) ? (
-                                                    <ChevronDown className="w-4 h-4 text-cyan-500" />
-                                                ) : (
-                                                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                                                )}
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                                )}
-                            </div>
-
-                            {/* Rendered only when open, like the strip above it — a
-                                `hidden` class would still build ten fields per card
-                                across every holding in the list. */}
-                            {expandedCards.has(getExpansionKey(holding)) && (
-                            <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3">
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Qty:</span>
-                                    <span className="text-foreground font-medium">{formatValue(getValue(holding, "Quantity"), "Quantity")}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Price:</span>
-                                    <span className="text-foreground font-medium">{formatValue(getValue(holding, "Price"), "Price")}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Avg Cost:</span>
-                                    <span className="text-foreground font-medium">{formatValue(getValue(holding, "Avg Cost"), "Avg Cost")}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Div Yield:</span>
-                                    <span className="text-foreground font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">AI Score:</span>
-                                    <div className="flex justify-end">
-                                        {holding.ai_score !== null && holding.ai_score !== undefined ? (
-                                            <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${holding.ai_score >= 8.0 ? 'bg-emerald-500' :
-                                                holding.ai_score >= 6.0 ? 'bg-amber-500' : 'bg-red-500'
-                                                }`}>
-                                                {holding.ai_score.toFixed(1)}
-                                            </div>
-                                        ) : <span className="text-muted-foreground/30 leading-none">-</span>}
-                                    </div>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Intrinsic:</span>
-                                    <span className={`font-medium ${holding.intrinsic_value !== null && holding.intrinsic_value !== undefined && holding.Price !== undefined ? (
-                                        holding.intrinsic_value > (holding.Price as number) ? 'text-emerald-500' :
-                                            holding.intrinsic_value < (holding.Price as number) ? 'text-rose-500' : 'text-foreground'
-                                    ) : 'text-foreground'
-                                        }`}>
-                                        {formatValue(holding.intrinsic_value, "Intrinsic Value")}
-                                        {holding.margin_of_safety !== null && holding.margin_of_safety !== undefined && (
-                                            <span className="text-[10px] opacity-70 ml-1">
-                                                ({Math.abs(holding.margin_of_safety).toFixed(1)}%)
-                                            </span>
-                                        )}
-                                    </span>
-                                </div>
-                                <div className="flex flex-col items-center justify-center col-span-2 bg-emerald-500/5 dark:bg-emerald-400/5 p-3 rounded-lg">
-                                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total Return</span>
-                                    <span className={`text-base font-bold ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
-                                        {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
-                                    </span>
-                                </div>
-                            </div>
-                            )}
-
-                            {/* Mobile Lots View */}
-                            {expandedCards.has(getExpansionKey(holding)) && expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
-                                <div className="mt-4 pt-3">
-                                    <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Tax Lots</h4>
-                                    <div className="space-y-2">
-                                        {holding.lots.map((lot, lotIdx) => {
-                                            const holdingPrice = getValue(holding, "Price") as number;
-                                            const gain = getLotValue(lot, "Unreal. G/L", holdingPrice);
-                                            const gainPct = getLotValue(lot, "Unreal. G/L %", holdingPrice);
-                                            return (
-                                                <div key={`mobile-lot-${lotIdx}`} className="bg-secondary p-2 rounded text-xs">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <span className="font-medium text-foreground">
-                                                            {formatValue(getLotValue(lot, "Symbol"), "Symbol")}
-                                                        </span>
-                                                        <span className={`font-medium ${getCellClass(gain, "Unreal. G/L")}`}>
-                                                            {formatValue(gain, "Unreal. G/L")} ({formatValue(gainPct, "Unreal. G/L %")})
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex justify-between text-muted-foreground">
-                                                        <span>Qty: {formatValue(getLotValue(lot, "Quantity"), "Quantity")}</span>
-                                                        <span>Cost: {formatValue(getLotValue(lot, "Cost Basis"), "Cost Basis")}</span>
-                                                    </div>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </Card>
-                    ))}
-                </div>
                 {!groupBy && visibleRows < sortedHoldings.length && (
                     <div className="flex justify-center gap-4 p-4">
                         <button
@@ -1735,59 +198,16 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                         </button>
                     </div>
                 )}
-
             </div>
 
-
-            {/* Edit Tags Modal */}
-            {
-                editingTags && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                        <div className="bg-card rounded-lg shadow-none w-full max-w-sm p-4 space-y-4">
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-semibold flex items-center gap-2">
-                                    <Tag className="w-4 h-4" />
-                                    Edit Tags
-                                </h3>
-                                <button onClick={() => setEditingTags(null)} className="text-muted-foreground hover:text-foreground">
-                                    <X className="w-4 h-4" />
-                                </button>
-                            </div>
-                            <div className="space-y-2">
-                                <div className="text-sm text-muted-foreground">
-                                    Tags for <span className="font-medium text-foreground">{editingTags.symbol}</span> ({editingTags.account})
-                                </div>
-                                <input
-                                    type="text"
-                                    value={tagsInput}
-                                    onChange={(e) => setTagsInput(e.target.value)}
-                                    placeholder="Enter tags separated by commas..."
-                                    className="w-full px-3 py-2 bg-secondary border-none rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                                    autoFocus
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Separate multiple tags with commas (e.g. &quot;Long Term, High Risk&quot;).
-                                </p>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                <button
-                                    onClick={() => setEditingTags(null)}
-                                    className="px-3 py-1.5 text-sm bg-secondary text-foreground rounded hover:bg-accent/50 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleSaveTags}
-                                    disabled={updateTagsMutation.isPending}
-                                    className="px-3 py-1.5 text-sm bg-[#0097b2] text-white rounded hover:bg-[#0086a0] transition-colors flex items-center gap-2 disabled:opacity-50"
-                                >
-                                    {updateTagsMutation.isPending ? "Saving..." : <><Save className="w-3 h-3" /> Save</>}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
+            <HoldingsTagModal
+                editingTags={editingTags}
+                setEditingTags={setEditingTags}
+                tagsInput={tagsInput}
+                setTagsInput={setTagsInput}
+                handleSaveTags={handleSaveTags}
+                isPending={updateTagsMutation.isPending}
+            />
         </>
     );
 }

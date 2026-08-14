@@ -235,7 +235,7 @@ export async function setupHermeticMockApi(page: Page, options: MockApiOptions =
                 const existing = state.holdings.find(h => h.Symbol === createdTx.Symbol && h.Account === createdTx.Account);
                 if (existing) {
                     existing.Quantity += Number(createdTx.Quantity) || 0;
-                    existing['Market Value'] = (existing['Market Value'] || 0) + (Number(createdTx['Total Amount']) || 0);
+                    existing['Market Value'] = (Number(existing['Market Value']) || 0) + (Number(createdTx['Total Amount']) || 0);
                 } else {
                     state.holdings.push({
                         Symbol: createdTx.Symbol,

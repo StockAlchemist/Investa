@@ -27,7 +27,10 @@ export const MOCK_USER: User = {
 };
 
 export const MOCK_SETTINGS: Settings = {
-    accounts: ['Taxable', 'Roth IRA', 'Crypto'],
+    manual_overrides: {},
+    user_symbol_map: {},
+    user_excluded_symbols: [],
+    valuation_overrides: {},
     account_currency_map: {
         'Taxable': 'USD',
         'Roth IRA': 'USD',
@@ -49,15 +52,14 @@ export const MOCK_SETTINGS: Settings = {
         'Roth IRA': 0,
         'Crypto': 0,
     },
-    base_currency: 'USD',
+    interest_free_thresholds: {
+        'Taxable': 0,
+        'Roth IRA': 0,
+        'Crypto': 0,
+    },
     display_currency: 'USD',
     available_currencies: ['USD', 'EUR', 'THB', 'GBP', 'JPY', 'CNY'],
-    auto_refresh_enabled: false,
-    auto_refresh_interval_seconds: 60,
-    alpha_vantage_api_key_configured: false,
-    twelvedata_api_key_configured: false,
     selected_accounts: [],
-    theme: 'dark',
 };
 
 export const MOCK_SUMMARY_USD: PortfolioSummary = {
@@ -733,27 +735,31 @@ export const MOCK_BUFFETT_EXCLUSIONS: BuffettExclusionPage = {
 };
 
 export const MOCK_WATCHLISTS: WatchlistMeta[] = [
-    { id: 1, name: 'Default Watchlist' },
-    { id: 2, name: 'Tech Quality' },
+    { id: 1, name: 'Default Watchlist', created_at: '2026-01-01T00:00:00' },
+    { id: 2, name: 'Tech Quality', created_at: '2026-01-01T00:00:00' },
 ];
 
 export const MOCK_WATCHLIST_ITEMS: WatchlistItem[] = [
     {
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        price: 225.00,
-        day_change: 2.10,
-        day_change_percent: 0.94,
-        watchlist_id: 1,
-        created_at: '2026-01-01',
+        Symbol: 'AAPL',
+        Note: 'Apple Inc.',
+        Price: 225.00,
+        'Day Change': 2.10,
+        'Day Change %': 0.94,
+        Name: 'Apple Inc.',
+        Currency: 'USD',
+        Sparkline: [220, 222, 225],
+        AddedOn: '2026-01-01',
     },
     {
-        symbol: 'MSFT',
-        name: 'Microsoft Corp.',
-        price: 440.00,
-        day_change: 3.50,
-        day_change_percent: 0.80,
-        watchlist_id: 1,
-        created_at: '2026-01-01',
+        Symbol: 'MSFT',
+        Note: 'Microsoft Corp.',
+        Price: 440.00,
+        'Day Change': 3.50,
+        'Day Change %': 0.80,
+        Name: 'Microsoft Corp.',
+        Currency: 'USD',
+        Sparkline: [430, 435, 440],
+        AddedOn: '2026-01-01',
     },
 ];
