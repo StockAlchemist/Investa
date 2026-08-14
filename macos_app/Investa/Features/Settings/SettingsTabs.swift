@@ -17,13 +17,11 @@ struct AccountsSettings: View {
     @State private var thresholds: [String: Double] = [:]
     
     @State private var newCurrency = ""
-    @State private var newGroupName = ""
-    @State private var expandedGroups: Set<String> = []
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 24) {
+            AccountGroupManagerView(vm: vm, settings: settings, availableAccounts: accounts, appState: appState)
             availableCurrenciesCard
-            accountGroupsCard
             perAccountCard
             cashYieldCard
         }
@@ -88,145 +86,6 @@ struct AccountsSettings: View {
 
     private func setCurrencies(_ currs: [String]) { Task { await vm.update("available_currencies", currs) } }
     private func remove(_ c: String, _ all: [String]) { let rest = all.filter { $0 != c }; setCurrencies(rest) }
-
-    // MARK: Account groups (mirrors the web AccountGroupManager)
-
-    private var groupsMap: [String: [String]] { settings?.accountGroups ?? [:] }
-
-    /// Group names in saved order, with unlisted groups appended (never dropped).
-    private var orderedGroupNames: [String] {
-        var order = (settings?.accountGroupOrder ?? groupsMap.keys.sorted())
-            .filter { groupsMap[$0] != nil }
-        order += groupsMap.keys.filter { !order.contains($0) }.sorted()
-        return order
-    }
-
-    private var accountGroupsCard: some View {
-        SettingsCard(title: "Account Groups", icon: "rectangle.3.group", iconColor: .blue) {
-            Text("Group accounts for one-tap selection in the account filter.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if orderedGroupNames.isEmpty {
-                Text("No groups defined.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(Array(orderedGroupNames.enumerated()), id: \.element) { index, name in
-                        groupRow(name: name, index: index)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Add a Group").font(.caption2).foregroundStyle(.secondary)
-                HStack {
-                    TextField("e.g. Retirement", text: $newGroupName)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 220)
-                    Button("Add") {
-                        let name = newGroupName.trimmingCharacters(in: .whitespaces)
-                        guard !name.isEmpty, groupsMap[name] == nil else { return }
-                        newGroupName = ""
-                        expandedGroups.insert(name)
-                        var groups = groupsMap
-                        groups[name] = []
-                        saveGroups(groups, order: orderedGroupNames + [name])
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-                    .disabled(newGroupName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-            .padding(.top, 8)
-        }
-    }
-
-    @ViewBuilder private func groupRow(name: String, index: Int) -> some View {
-        let members = groupsMap[name] ?? []
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Button {
-                    if expandedGroups.contains(name) { expandedGroups.remove(name) }
-                    else { expandedGroups.insert(name) }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: expandedGroups.contains(name) ? "chevron.down" : "chevron.right")
-                            .font(.caption2).foregroundStyle(.secondary)
-                        Text(name).font(.headline)
-                        Text("\(members.count)")
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.15), in: Capsule())
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Button { moveGroup(name, by: -1) } label: { Image(systemName: "arrow.up") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .disabled(index == 0)
-                Button { moveGroup(name, by: 1) } label: { Image(systemName: "arrow.down") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .disabled(index == orderedGroupNames.count - 1)
-                Button { deleteGroup(name) } label: { Image(systemName: "trash") }
-                    .buttonStyle(.plain).foregroundStyle(.red)
-            }
-            if expandedGroups.contains(name) {
-                let selectable = accounts.filter { $0 != "All Accounts" }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 6)], alignment: .leading, spacing: 6) {
-                    ForEach(selectable, id: \.self) { acc in
-                        let isMember = members.contains(acc)
-                        Button { toggleMembership(group: name, account: acc) } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: isMember ? "checkmark.circle.fill" : "circle")
-                                    .font(.caption2)
-                                    .foregroundStyle(isMember ? Color.blue : Color.secondary)
-                                Text(acc).font(.caption).lineLimit(1)
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(isMember ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.08), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-        .padding(10)
-        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private func toggleMembership(group: String, account: String) {
-        var groups = groupsMap
-        var members = groups[group] ?? []
-        if let i = members.firstIndex(of: account) { members.remove(at: i) }
-        else { members.append(account) }
-        groups[group] = members
-        saveGroups(groups, order: orderedGroupNames)
-    }
-
-    private func moveGroup(_ name: String, by offset: Int) {
-        var order = orderedGroupNames
-        guard let i = order.firstIndex(of: name) else { return }
-        let j = i + offset
-        guard order.indices.contains(j) else { return }
-        order.swapAt(i, j)
-        saveGroups(groupsMap, order: order)
-    }
-
-    private func deleteGroup(_ name: String) {
-        var groups = groupsMap
-        groups.removeValue(forKey: name)
-        saveGroups(groups, order: orderedGroupNames.filter { $0 != name })
-    }
-
-    private func saveGroups(_ groups: [String: [String]], order: [String]) {
-        Task {
-            await vm.updateGroups(groups, order: order)
-            await appState.loadSettings(initial: false)
-        }
-    }
 
     private var perAccountCard: some View {
         SettingsCard(title: "Account Preferences", icon: "slider.horizontal.3", iconColor: .purple) {

@@ -106,35 +106,158 @@ final class APIClient: Sendable {
         return request
     }
 
-    private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            if error is CancellationError || (error as? URLError)?.code == .cancelled {
-                throw CancellationError()
+    // MARK: - Core Execution with Exponential Backoff Retries
+
+    private func send<T: Decodable>(_ request: URLRequest, maxAttempts: Int = 3, baseDelay: TimeInterval = 0.35) async throws -> T {
+        var lastError: Error?
+        var lastResponse: HTTPURLResponse?
+
+        for attempt in 0..<maxAttempts {
+            if attempt > 0 {
+                let jitter = Double.random(in: 0.02...0.08)
+                let delay = baseDelay * pow(2.0, Double(attempt - 1)) + jitter
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                if Task.isCancelled {
+                    throw CancellationError()
+                }
             }
-            print("APIClient transport error for \(request.url?.absoluteString ?? "unknown"): \(error)")
-            throw APIError.transport(underlying: error)
+
+            do {
+                let (data, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    let err = APIError.http(status: -1, detail: nil)
+                    lastError = err
+                    break
+                }
+                lastResponse = http
+
+                if http.statusCode == 401 {
+                    NotificationCenter.default.post(name: .authExpired, object: nil)
+                    throw APIError.unauthorized
+                }
+
+                // If transient server error (502, 503, 504, 429) and attempts remain, retry.
+                if isRetryableStatusCode(http.statusCode) && attempt < maxAttempts - 1 {
+                    continue
+                }
+
+                guard (200..<300).contains(http.statusCode) else {
+                    let detail = Self.detail(from: data)
+                    let err = APIError.http(status: http.statusCode, detail: detail)
+                    // If final attempt was a 50x server error, present a toast.
+                    if (500...599).contains(http.statusCode) {
+                        presentToast(for: err, httpStatus: http.statusCode)
+                    }
+                    throw err
+                }
+
+                do {
+                    return try decoder.decode(T.self, from: data)
+                } catch {
+                    throw APIError.decoding(underlying: error)
+                }
+            } catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                    throw CancellationError()
+                }
+                if let apiErr = error as? APIError {
+                    switch apiErr {
+                    case .unauthorized, .decoding, .invalidURL:
+                        throw apiErr
+                    case .http(let status, _):
+                        if !isRetryableStatusCode(status) || attempt == maxAttempts - 1 {
+                            throw apiErr
+                        }
+                    case .transport:
+                        break
+                    }
+                }
+
+                lastError = error
+                // If it's not a retryable transport error or this was the last attempt, break and report.
+                if !isRetryableTransportError(error) || attempt == maxAttempts - 1 {
+                    break
+                }
+            }
         }
 
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.http(status: -1, detail: nil)
+        let finalError: Error = lastError ?? APIError.http(status: lastResponse?.statusCode ?? -1, detail: nil)
+        let mappedError: APIError
+        if let apiErr = finalError as? APIError {
+            mappedError = apiErr
+        } else {
+            mappedError = APIError.transport(underlying: finalError)
         }
 
-        if http.statusCode == 401 {
-            NotificationCenter.default.post(name: .authExpired, object: nil)
-            throw APIError.unauthorized
+        presentToast(for: mappedError, httpStatus: lastResponse?.statusCode)
+        throw mappedError
+    }
+
+    private func isRetryableStatusCode(_ code: Int) -> Bool {
+        code == 502 || code == 503 || code == 504 || code == 429
+    }
+
+    private func isRetryableTransportError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut,
+                 .cannotConnectToHost,
+                 .networkConnectionLost,
+                 .notConnectedToInternet,
+                 .dnsLookupFailed,
+                 .cannotFindHost,
+                 .resourceUnavailable,
+                 .internationalRoamingOff,
+                 .dataNotAllowed:
+                return true
+            default:
+                return false
+            }
         }
-        guard (200..<300).contains(http.statusCode) else {
-            throw APIError.http(status: http.statusCode, detail: Self.detail(from: data))
+        return true
+    }
+
+    private func presentToast(for error: APIError, httpStatus: Int?) {
+        let message: String
+        let style: ToastStyle
+
+        switch error {
+        case .unauthorized:
+            return // handled by authExpired notification
+        case .invalidURL:
+            message = "Invalid server URL configured."
+            style = .error
+        case .decoding:
+            message = "Received malformed data from server."
+            style = .error
+        case .http(let status, let detail):
+            if status == 502 || status == 503 || status == 504 {
+                message = detail ?? "Investa server is temporarily unavailable (HTTP \(status))."
+                style = .warning
+            } else {
+                message = detail ?? "Request failed (HTTP \(status))."
+                style = .error
+            }
+        case .transport(let underlying):
+            if let urlErr = underlying as? URLError {
+                if urlErr.code == .notConnectedToInternet {
+                    message = "You appear to be offline. Please check your internet connection."
+                    style = .warning
+                } else if urlErr.code == .timedOut {
+                    message = "Server request timed out. Retrying may succeed."
+                    style = .warning
+                } else {
+                    message = "Cannot reach server: \(urlErr.localizedDescription)"
+                    style = .error
+                }
+            } else {
+                message = "Network connection error. Is the Investa backend running?"
+                style = .error
+            }
         }
 
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIError.decoding(underlying: error)
+        DispatchQueue.main.async {
+            ToastManager.shared.show(message: message, style: style)
         }
     }
 

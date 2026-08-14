@@ -24,6 +24,7 @@ struct RootView: View {
         // step (≈ +13%). Fixed `.system(size:)` accents are scaled to match in
         // their call sites so badges keep pace with the body text.
         .dynamicTypeSize(.xLarge)
+        .toastOverlay()
         .task {
             await auth.restoreSession()
         }

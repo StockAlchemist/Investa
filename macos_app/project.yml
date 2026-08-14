@@ -69,11 +69,31 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
         TARGETED_DEVICE_FAMILY: "1,2"
+  InvestaTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: InvestaTests
+    dependencies:
+      - target: Investa
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.investa.mac.tests
+        PRODUCT_NAME: InvestaTests
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_TESTING_SEARCH_PATHS: YES
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Investa.app/Contents/MacOS/Investa"
 schemes:
   Investa:
     build:
       targets:
         Investa: all
+        InvestaTests: [test]
+    test:
+      targets:
+        - name: InvestaTests
     run:
       config: Debug
   Investa-iOS:
@@ -82,3 +102,4 @@ schemes:
         Investa-iOS: all
     run:
       config: Debug
+
