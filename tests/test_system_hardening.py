@@ -6,10 +6,8 @@ Tests for system hardening:
 3. Sanitized HTTP 500 error responses across API routes to prevent trace/path leakage.
 """
 
-import os
 import sqlite3
 import time
-import pytest
 from fastapi.testclient import TestClient
 
 from db_utils import get_db_connection

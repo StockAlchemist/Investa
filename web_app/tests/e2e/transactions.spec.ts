@@ -13,7 +13,7 @@ test.describe('Transactions Journey', () => {
         await page.getByRole('button', { name: 'Transactions' }).click();
 
         // Verify transactions view header and table
-        await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Add Transaction/i })).toBeVisible();
         await expect(page.getByText('AAPL').first()).toBeVisible();
         await expect(page.getByText('MSFT').first()).toBeVisible();
     });
@@ -23,7 +23,7 @@ test.describe('Transactions Journey', () => {
         await page.getByRole('button', { name: 'Transactions' }).click();
 
         // Open Add Transaction modal
-        await page.getByRole('button', { name: 'Add', exact: true }).click();
+        await page.getByRole('button', { name: /Add Transaction/i }).click();
         await expect(page.getByRole('heading', { name: 'Add Transaction' })).toBeVisible();
 
         // Fill form fields
@@ -39,7 +39,7 @@ test.describe('Transactions Journey', () => {
         await expect(page.locator('input[name="Total Amount"]')).toHaveValue('6002');
 
         // Submit form
-        await page.getByRole('button', { name: 'Add Transaction' }).click();
+        await page.locator('form').getByRole('button', { name: 'Add Transaction' }).click();
 
         // Verify modal closes
         await expect(page.getByRole('heading', { name: 'Add Transaction' })).not.toBeVisible();
@@ -54,7 +54,7 @@ test.describe('Transactions Journey', () => {
 
         // Find the edit button for Buy AAPL transaction row
         const aaplRow = page.getByRole('row', { name: /Buy/i }).filter({ hasText: 'AAPL' }).first();
-        await aaplRow.locator('button[title="Edit"]').click();
+        await aaplRow.locator('button[title="Edit Transaction"]').click();
 
         // Verify Edit Transaction modal is open with prefilled data
         await expect(page.getByRole('heading', { name: 'Edit Transaction' })).toBeVisible();
@@ -85,7 +85,7 @@ test.describe('Transactions Journey', () => {
 
         // Delete the GOOGL transaction
         const googlRow = page.getByRole('row', { name: /GOOGL/i }).first();
-        await googlRow.locator('button[title="Delete"]').click();
+        await googlRow.locator('button[title="Delete Transaction"]').click();
 
         // Verify GOOGL row is removed from table
         await expect(page.getByRole('row', { name: /GOOGL/i })).not.toBeVisible();
@@ -96,7 +96,7 @@ test.describe('Transactions Journey', () => {
         await page.getByRole('button', { name: 'Transactions' }).click();
 
         // Verify search input exists
-        const searchInput = page.getByPlaceholder('Search symbol...');
+        const searchInput = page.getByPlaceholder('Filter by symbol...');
         await expect(searchInput).toBeVisible();
 
         // Filter by MSFT
