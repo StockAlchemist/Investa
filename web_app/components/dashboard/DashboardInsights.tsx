@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Lightbulb, Hourglass, AlertTriangle, Gem, Sparkles, ChevronRight, X } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { Holding, fetchSettings } from '../../lib/api';
 import { cn, formatCurrency } from '../../lib/utils';
 
@@ -66,7 +67,8 @@ interface InsightDetails {
 }
 
 export default function DashboardInsights({ holdings, currency }: DashboardInsightsProps) {
-    const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: fetchSettings, staleTime: 5 * 60 * 1000 });
+    const { user } = useAuth();
+    const settingsQuery = useQuery({ queryKey: ['settings', user?.username], queryFn: fetchSettings, staleTime: 5 * 60 * 1000 });
     const targets = settingsQuery.data?.target_allocation;
     // Freeze "now" at mount — re-renders shouldn't shift the ripening window mid-session.
     const [now] = useState<number>(() => Date.now());

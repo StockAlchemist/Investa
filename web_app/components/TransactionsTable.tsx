@@ -2,7 +2,9 @@
 
 import React, { useRef, useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Transaction, deleteTransaction, addTransaction, updateTransaction, parseDocument, fetchSettings } from '../lib/api';
+import { CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Transaction, deleteTransaction, addTransaction, updateTransaction, parseDocument, fetchSettings, syncIbkr } from '../lib/api';
 import { TransactionsTableProps } from './transactions/types';
 import { useTransactionsFilter } from './transactions/hooks/useTransactionsFilter';
 import { TransactionsToolbar } from './transactions/TransactionsToolbar';
@@ -18,6 +20,7 @@ import TableSkeleton from './skeletons/TableSkeleton';
 export type { TransactionsTableProps };
 
 export default function TransactionsTable({ transactions = [], currency = 'USD', isLoading = false }: TransactionsTableProps) {
+    const { user } = useAuth();
     const queryClient = useQueryClient();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -26,13 +29,18 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
 
+    // IBKR sync state
+    const [isSyncingIbkr, setIsSyncingIbkr] = useState(false);
+    const [syncStatus, setSyncStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
     // Import review state
     const [isReviewing, setIsReviewing] = useState(false);
     const [reviewTransactions, setReviewTransactions] = useState<Transaction[]>([]);
-    const [importAccount] = useState('');
+    const [importAccount, setImportAccount] = useState('');
+    const [autoAddCash, setAutoAddCash] = useState(true);
 
     const { data: settings } = useQuery({
-        queryKey: ['settings'],
+        queryKey: ['settings', user?.username],
         queryFn: fetchSettings,
         staleTime: 5 * 60 * 1000,
     });
@@ -85,6 +93,15 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
         return map;
     }, [settings, transactions]);
 
+    const handleSelectImportAccount = (acc: string) => {
+        setImportAccount(acc);
+        const targetAcc = acc || 'Default';
+        const mode = (settings?.account_cash_mode_map?.[targetAcc] || (acc ? 'Manual' : (settings?.account_cash_mode_map?.['Default'] || 'Manual'))).toLowerCase();
+        if (mode !== 'manual') {
+            setAutoAddCash(false);
+        }
+    };
+
     const handleAdd = () => {
         setModalMode('add');
         setCurrentTransaction(null);
@@ -129,6 +146,35 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
         } catch (error) {
             console.error("Failed to save transaction:", error);
             throw error;
+        }
+    };
+
+    const handleSyncIbkr = async () => {
+        setIsSyncingIbkr(true);
+        setSyncStatus(null);
+        try {
+            const res = await syncIbkr();
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] }),
+                queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+                queryClient.invalidateQueries({ queryKey: ['summary'] }),
+                queryClient.invalidateQueries({ queryKey: ['holdings'] }),
+            ]);
+            setSyncStatus({
+                message: res.message || 'IBKR sync complete.',
+                type: 'success',
+            });
+            setTimeout(() => setSyncStatus(null), 6000);
+        } catch (error: unknown) {
+            console.error('Failed to sync with IBKR:', error);
+            const message = error instanceof Error ? error.message : 'Failed to sync with IBKR';
+            setSyncStatus({
+                message,
+                type: 'error',
+            });
+            setTimeout(() => setSyncStatus(null), 8000);
+        } finally {
+            setIsSyncingIbkr(false);
         }
     };
 
@@ -180,6 +226,31 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
                 className="hidden"
             />
 
+            {/* IBKR Sync Feedback Banner */}
+            {syncStatus && (
+                <div className={`p-3.5 rounded-2xl text-xs flex items-center justify-between transition-all animate-in fade-in slide-in-from-top-2 duration-300 ${
+                    syncStatus.type === 'error'
+                        ? 'bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400'
+                        : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                }`}>
+                    <div className="flex items-center gap-2.5">
+                        {syncStatus.type === 'error' ? (
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                        ) : (
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        )}
+                        <span className="font-medium">{syncStatus.message}</span>
+                    </div>
+                    <button
+                        onClick={() => setSyncStatus(null)}
+                        className="p-1 hover:opacity-75 transition-opacity text-foreground/60 cursor-pointer"
+                        title="Dismiss"
+                    >
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
+
             {/* IBKR Pending sync banner */}
             <PendingIbkrBanner />
 
@@ -190,6 +261,11 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
                 reviewTransactions={reviewTransactions}
                 setReviewTransactions={setReviewTransactions}
                 importAccount={importAccount}
+                setImportAccount={handleSelectImportAccount}
+                autoAddCash={autoAddCash}
+                setAutoAddCash={setAutoAddCash}
+                availableAccounts={uniqueAccounts}
+                accountCashModeMap={settings?.account_cash_mode_map}
                 transactions={transactions}
             />
 
@@ -203,6 +279,8 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
                 accountFilter={accountFilter}
                 setAccountFilter={setAccountFilter}
                 uniqueAccounts={uniqueAccounts}
+                availableAccounts={uniqueAccounts}
+                accountCashModeMap={settings?.account_cash_mode_map}
                 filterTypes={filterTypes}
                 toggleFilterType={toggleFilterType}
                 availableTypes={availableTypes}
@@ -218,6 +296,12 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
                 setViewMode={setViewMode}
                 onOpenAddModal={handleAdd}
                 onOpenImportModal={() => fileInputRef.current?.click()}
+                importAccount={importAccount}
+                onSelectImportAccount={handleSelectImportAccount}
+                autoAddCash={autoAddCash}
+                onToggleAutoAddCash={() => setAutoAddCash(prev => !prev)}
+                onSyncIbkr={handleSyncIbkr}
+                isSyncingIbkr={isSyncingIbkr}
                 filteredTransactions={filteredTransactions}
             />
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
@@ -19,6 +19,7 @@ import {
   fetchWatchlist,
   fetchSettings,
   updateSettings,
+  type Settings as SettingsType,
   SettingsUpdate,
   fetchPortfolioHealth,
   fetchProjectedIncome,
@@ -197,8 +198,36 @@ export default function AuthenticatedDashboard() {
 
   const settingsMutation = useMutation({
     mutationFn: updateSettings,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', user?.username] }),
+    onSuccess: (_, variables) => {
+      // Optimistically update React Query cache in-memory to prevent invalidation refetch loops
+      queryClient.setQueryData(['settings', user?.username], (old: SettingsType | undefined) => {
+        if (!old) return old;
+        return { ...old, ...variables };
+      });
+    },
   });
+
+  const mutateSettingsRef = useRef(settingsMutation.mutate);
+  mutateSettingsRef.current = settingsMutation.mutate;
+
+  // Track the last synced server settings to prevent re-sending identical updates
+  const lastSyncedRef = useRef<Record<string, unknown>>({});
+  const isInitialSyncDone = useRef(false);
+
+  // Initialize lastSyncedRef once settingsQuery.data is first loaded
+  useEffect(() => {
+    if (!settingsQuery.data || isInitialSyncDone.current) return;
+    isInitialSyncDone.current = true;
+    const s = settingsQuery.data;
+    lastSyncedRef.current = {
+      display_currency: s.display_currency,
+      active_tab: s.active_tab,
+      show_closed: s.show_closed,
+      selected_accounts: s.selected_accounts,
+      visible_items: s.visible_items,
+      benchmarks: s.benchmarks,
+    };
+  }, [settingsQuery.data]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -218,22 +247,36 @@ export default function AuthenticatedDashboard() {
       console.warn('localStorage quota exceeded, skipping persistence', e);
     }
 
-    if (!settingsQuery.data) return;
+    if (!isInitialSyncDone.current) return;
+
     const id = setTimeout(() => {
       const updates: Partial<SettingsUpdate> = {};
-      const s = settingsQuery.data;
-      if (s.display_currency !== currency)        updates.display_currency    = currency;
-      if (s.active_tab !== activeTab)             updates.active_tab          = activeTab;
-      if (s.show_closed !== showClosed)           updates.show_closed         = showClosed;
-      const eq = (a: string[] | undefined | null, b: string[]) =>
-        !!a && a.length === b.length && a.every((v, i) => v === b[i]);
-      if (!eq(s.selected_accounts, selectedAccounts))               updates.selected_accounts = selectedAccounts;
-      if (!eq(s.visible_items, visibleItems) && visibleItems.length > 0) updates.visible_items = visibleItems;
-      if (!eq(s.benchmarks, benchmarks) && benchmarks.length > 0)  updates.benchmarks = benchmarks;
-      if (Object.keys(updates).length > 0) settingsMutation.mutate(updates);
-    }, 1000);
+      const last = lastSyncedRef.current;
+
+      const arrayEqual = (a?: unknown, b?: string[] | null) => {
+        const arrA = (Array.isArray(a) ? a : []) as string[];
+        const arrB = b || [];
+        return arrA.length === arrB.length && arrA.every((v, i) => v === arrB[i]);
+      };
+
+      if (last.display_currency !== currency) updates.display_currency = currency;
+      if (last.active_tab !== activeTab) updates.active_tab = activeTab;
+      if (last.show_closed !== showClosed) updates.show_closed = showClosed;
+      if (!arrayEqual(last.selected_accounts, selectedAccounts)) updates.selected_accounts = selectedAccounts;
+      if (!arrayEqual(last.visible_items, visibleItems) && visibleItems.length > 0) updates.visible_items = visibleItems;
+      if (!arrayEqual(last.benchmarks, benchmarks) && benchmarks.length > 0) updates.benchmarks = benchmarks;
+
+      if (Object.keys(updates).length > 0) {
+        lastSyncedRef.current = {
+          ...lastSyncedRef.current,
+          ...updates,
+        };
+        mutateSettingsRef.current(updates);
+      }
+    }, 1500);
+
     return () => clearTimeout(id);
-  }, [mounted, currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, graphPeriod, graphView, settingsQuery.data, settingsMutation]);
+  }, [mounted, currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, graphPeriod, graphView]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

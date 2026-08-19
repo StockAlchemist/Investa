@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Check, X, AlertTriangle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { Holding, fetchSettings, updateSettings } from '../lib/api';
 import { cn } from '../lib/utils';
 
@@ -59,18 +60,19 @@ export default function AllocationDrift({
     settingsBucket,
     scrollable = false,
 }: AllocationDriftProps) {
+    const { user } = useAuth();
     const bucket = settingsBucket ?? (bucketKey as string);
     const queryClient = useQueryClient();
 
     const settingsQuery = useQuery({
-        queryKey: ['settings'],
+        queryKey: ['settings', user?.username],
         queryFn: fetchSettings,
         staleTime: 5 * 60 * 1000,
     });
 
     const settingsMutation = useMutation({
         mutationFn: updateSettings,
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', user?.username] }),
     });
 
     // Render-time source of truth: server settings if loaded, else localStorage cache.

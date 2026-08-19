@@ -11,6 +11,11 @@ interface ImportReviewModalProps {
     reviewTransactions: Transaction[];
     setReviewTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
     importAccount: string;
+    setImportAccount?: (acc: string) => void;
+    autoAddCash?: boolean;
+    setAutoAddCash?: (auto: boolean) => void;
+    availableAccounts?: string[];
+    accountCashModeMap?: Record<string, string>;
     transactions: Transaction[];
 }
 
@@ -19,6 +24,12 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
     setIsReviewing,
     reviewTransactions,
     setReviewTransactions,
+    importAccount,
+    setImportAccount,
+    autoAddCash = true,
+    setAutoAddCash,
+    availableAccounts = [],
+    accountCashModeMap = {},
     transactions,
 }) => {
     const queryClient = useQueryClient();
@@ -44,10 +55,35 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
         [reviewTransactions, existingTxKeys],
     );
 
+    const accountList = useMemo(() => {
+        const set = new Set<string>(availableAccounts);
+        transactions.forEach(t => { if (t.Account) set.add(t.Account); });
+        return Array.from(set).filter(acc => acc && acc.trim().toLowerCase() !== 'all accounts' && acc.trim().toLowerCase() !== 'all').sort();
+    }, [availableAccounts, transactions]);
+
+    const isSelectedAccountManual = (() => {
+        const targetAcc = importAccount || 'Default';
+        const mode = (accountCashModeMap[targetAcc] || (importAccount ? 'Manual' : (accountCashModeMap['Default'] || 'Manual'))).toLowerCase();
+        return mode === 'manual';
+    })();
+
     if (!isReviewing || reviewTransactions.length === 0) return null;
 
     const handleUpdateReviewTransaction = (index: number, updated: Transaction) => {
         setReviewTransactions(prev => prev.map((tx, i) => i === index ? updated : tx));
+    };
+
+    const handleBulkAccountChange = (newAcc: string) => {
+        setImportAccount?.(newAcc);
+        const targetAcc = newAcc || 'Default';
+        const mode = (accountCashModeMap[targetAcc] || (newAcc ? 'Manual' : (accountCashModeMap['Default'] || 'Manual'))).toLowerCase();
+        if (mode !== 'manual') {
+            setAutoAddCash?.(false);
+        }
+        setReviewTransactions(prev => prev.map(tx => ({
+            ...tx,
+            Account: newAcc || 'Default'
+        })));
     };
 
     const handleRemoveFromReview = (index: number) => {
@@ -59,7 +95,8 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
 
         setIsImporting(true);
         try {
-            const result = await addTransactionsBatch(reviewTransactions);
+            const shouldAutoAddCash = isSelectedAccountManual && autoAddCash;
+            const result = await addTransactionsBatch(reviewTransactions, shouldAutoAddCash);
             alert(`Successfully imported ${result.count} transactions!`);
 
             setReviewTransactions([]);
@@ -78,8 +115,14 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
 
     return (
         <div className="metric-card card-shine overflow-hidden animate-in fade-in zoom-in duration-500 relative border-2 border-indigo-500/20">
+            <datalist id="import-review-accounts">
+                <option value="Default" />
+                {accountList.map(acc => (
+                    <option key={acc} value={acc} />
+                ))}
+            </datalist>
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500" />
-            <div className="px-4 py-4 bg-indigo-500/10 flex justify-between items-center border-b border-indigo-500/10">
+            <div className="px-4 py-4 bg-indigo-500/10 flex flex-wrap justify-between items-center gap-3 border-b border-indigo-500/10">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-500/20 rounded-full">
                         <FileText className="h-5 w-5 text-indigo-500" />
@@ -99,21 +142,54 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
                         )}
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={handleReviewConfirm}
-                        disabled={isImporting}
-                        className="px-5 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black uppercase tracking-wider hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-500/40 disabled:opacity-50 flex items-center gap-2 border-none cursor-pointer"
-                    >
-                        <CheckCircle className="h-4 w-4" />
-                        Confirm & Import All
-                    </button>
-                    <button
-                        onClick={() => { setReviewTransactions([]); setIsReviewing(false); }}
-                        className="px-4 py-2 bg-secondary text-foreground rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-accent/10 transition-all border-none cursor-pointer"
-                    >
-                        <Trash2 className="h-4 w-4" />
-                    </button>
+
+                <div className="flex flex-wrap items-center gap-3">
+                    {/* Bulk account selector */}
+                    <div className="flex items-center gap-1.5 text-xs">
+                        <span className="text-muted-foreground text-[11px] font-medium">Account:</span>
+                        <select
+                            aria-label="Bulk Target Account"
+                            value={importAccount}
+                            onChange={e => handleBulkAccountChange(e.target.value)}
+                            className="px-2.5 py-1 bg-background border border-indigo-500/30 rounded-lg text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                            <option value="">Default (Auto-detect)</option>
+                            {accountList.map(acc => (
+                                <option key={acc} value={acc}>{acc}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Auto-add cash toggle - only shown if selected account is manual */}
+                    {setAutoAddCash && isSelectedAccountManual && (
+                        <label className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={autoAddCash}
+                                onChange={e => setAutoAddCash(e.target.checked)}
+                                className="rounded text-indigo-500 focus:ring-indigo-500"
+                            />
+                            <span className="text-[11px] font-medium text-muted-foreground">Auto-add cash</span>
+                        </label>
+                    )}
+
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleReviewConfirm}
+                            disabled={isImporting}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black uppercase tracking-wider hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-500/40 disabled:opacity-50 flex items-center gap-2 border-none cursor-pointer"
+                        >
+                            <CheckCircle className="h-4 w-4" />
+                            Confirm & Import All
+                        </button>
+                        <button
+                            onClick={() => { setReviewTransactions([]); setIsReviewing(false); }}
+                            className="px-3 py-2 bg-secondary text-foreground rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-accent/10 transition-all border-none cursor-pointer"
+                            title="Discard"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
                 </div>
             </div>
             <div className="overflow-x-auto">
@@ -219,6 +295,7 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
                                             type="text"
                                             value={tx.Account}
                                             placeholder="Account"
+                                            list="import-review-accounts"
                                             onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Account: e.target.value })}
                                             className="bg-transparent border-none text-xs p-0 w-full focus:ring-0 text-muted-foreground"
                                         />

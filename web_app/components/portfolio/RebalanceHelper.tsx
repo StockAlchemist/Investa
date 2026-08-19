@@ -2,6 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Scale, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { Holding, fetchSettings } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
 
@@ -26,8 +27,9 @@ function isUnknown(v: unknown): boolean {
 }
 
 export default function RebalanceHelper({ holdings, currency }: RebalanceHelperProps) {
+    const { user } = useAuth();
     const [dim, setDim] = useState<BucketDim>('quoteType');
-    const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: fetchSettings, staleTime: 5 * 60 * 1000 });
+    const settingsQuery = useQuery({ queryKey: ['settings', user?.username], queryFn: fetchSettings, staleTime: 5 * 60 * 1000 });
 
     const { rows, total, hasTargets } = useMemo(() => {
         const mvKey = `Market Value (${currency})`;
