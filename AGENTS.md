@@ -108,3 +108,4 @@ INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG 
 - **Numba**: JIT-compiled functions in `financial_ratios.py` and `portfolio_logic.py` must use NumPy-compatible code only.
 - **Multi-user**: The backend supports per-user data isolation; user context flows through FastAPI dependencies in `server/dependencies.py`.
 - **UI**: The primary UI is the web app (`web_app/components/*.tsx`); e.g. the transaction form is `web_app/components/TransactionModal.tsx`. There is no longer a desktop/Qt UI. A native SwiftUI macOS client lives in `macos_app/` (SwiftUI + MVVM, async URLSession, generated via XcodeGen from `macos_app/project.yml`); it consumes the same FastAPI endpoints as the web app and mirrors `web_app/lib/api.ts`.
+- **Git**: Use HTTPS remotes, or fallback to HTTPS if SSH connection/authentication is unavailable or restricted.
