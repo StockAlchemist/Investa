@@ -186,14 +186,14 @@ def to_trailing_twelve_months(
     return pd.DataFrame(columns)
 
 
-def _price_on_or_before(prices_data: Any, dt: pd.Timestamp) -> Optional[float]:
+def _price_on_or_before(prices_data: Any, dt: Any) -> Optional[float]:
     """Finds the split-consistent price on or immediately before `dt`."""
-    if prices_data is None:
+    if prices_data is None or dt is None:
         return None
     try:
         series = None
         if isinstance(prices_data, pd.DataFrame):
-            for col in ["Adj Close", "Close", "adj_close", "close"]:
+            for col in ["price", "Price", "Adj Close", "Close", "adj_close", "close"]:
                 if col in prices_data.columns:
                     series = prices_data[col]
                     break
@@ -207,21 +207,38 @@ def _price_on_or_before(prices_data: Any, dt: pd.Timestamp) -> Optional[float]:
         if series is None or series.empty:
             return None
 
+        # Convert index to datetime if needed
         if not isinstance(series.index, pd.DatetimeIndex):
             series.index = pd.to_datetime(series.index, errors="coerce")
             series = series[series.index.notnull()]
 
-        series = series.sort_index()
+        # Normalize timezone on index to naive UTC for safe comparison
+        if getattr(series.index, "tz", None) is not None:
+            try:
+                series.index = series.index.tz_convert("UTC").tz_localize(None)
+            except Exception:
+                series.index = series.index.tz_localize(None)
+
         dt_ts = pd.to_datetime(dt)
+        if dt_ts is None or pd.isna(dt_ts):
+            return None
+        if getattr(dt_ts, "tzinfo", None) is not None:
+            try:
+                dt_ts = dt_ts.tz_convert("UTC").tz_localize(None)
+            except Exception:
+                dt_ts = dt_ts.tz_localize(None)
+
+        series = series.sort_index()
         sub = series.loc[:dt_ts]
         if sub.empty:
             return None
         last_dt = sub.index[-1]
-        if (dt_ts - last_dt).days > 35:
+        if (dt_ts - last_dt).days > 60:
             return None
         val = float(sub.iloc[-1])
         return val if val > 0 and np.isfinite(val) else None
-    except Exception:
+    except Exception as e:
+        logging.debug(f"_price_on_or_before error: {e}")
         return None
 
 
@@ -608,25 +625,34 @@ def calculate_key_ratios_timeseries(
             if revenue and revenue > 0 and ev > 0:
                 current_ratios["EV/Sales"] = ev / revenue
 
-            ebitda = _get_statement_value(
-                financials_df, "Ebitda", period_str_fin
-            ) or _get_statement_value(
-                financials_df, "Normalized EBITDA", period_str_fin
+            ebitda = (
+                _get_statement_value(financials_df, "EBITDA", period_str_fin)
+                or _get_statement_value(financials_df, "Ebitda", period_str_fin)
+                or _get_statement_value(financials_df, "Normalized EBITDA", period_str_fin)
             )
-            if ebitda is None and ebit is not None:
-                depr = _get_statement_value(
-                    financials_df, "Reconciled Depreciation", period_str_fin
-                )
-                if (
-                    depr is None
-                    and cashflow_df is not None
-                    and period_str_cf is not None
-                ):
-                    depr = _get_statement_value(
-                        cashflow_df, "Depreciation And Amortization", period_str_cf
+            if ebitda is None:
+                base_ebit = ebit if ebit is not None else operating_income
+                if base_ebit is not None:
+                    depr = (
+                        _get_statement_value(financials_df, "Reconciled Depreciation", period_str_fin)
+                        or _get_statement_value(financials_df, "Depreciation And Amortization", period_str_fin)
+                        or (
+                            _get_statement_value(cashflow_df, "Depreciation And Amortization", period_str_cf)
+                            if cashflow_df is not None and period_str_cf is not None else None
+                        )
+                        or (
+                            _get_statement_value(cashflow_df, "Depreciation Amortization Depletion", period_str_cf)
+                            if cashflow_df is not None and period_str_cf is not None else None
+                        )
+                        or (
+                            _get_statement_value(cashflow_df, "Depreciation", period_str_cf)
+                            if cashflow_df is not None and period_str_cf is not None else None
+                        )
                     )
-                if depr is not None:
-                    ebitda = ebit + abs(depr)
+                    if depr is not None:
+                        ebitda = base_ebit + abs(depr)
+                    else:
+                        ebitda = base_ebit
             if ebitda and ebitda > 0 and ev > 0:
                 current_ratios["EV/EBITDA"] = ev / ebitda
 
