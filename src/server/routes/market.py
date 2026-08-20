@@ -960,6 +960,20 @@ def get_ratios_endpoint(
         # profit turns into cash is the one thing the other ratios cannot say.
         cashflow = mdp.get_cashflow(yf_symbol, "annual", force_refresh=force)
 
+        # Fetch historical prices if available to calculate historical valuation multiples
+        prices_df = None
+        try:
+            from datetime import date, timedelta
+
+            start_date = date.today() - timedelta(days=365 * 25)
+            hist_dict, _ = mdp.get_historical_data(
+                [yf_symbol], start_date, date.today()
+            )
+            if hist_dict and yf_symbol in hist_dict:
+                prices_df = hist_dict[yf_symbol]
+        except Exception as e:
+            logging.debug(f"Could not load historical prices for ratios: {e}")
+
         # Calculate historical ratios
         if period_type == "quarterly":
             # Flows are summed over the trailing four quarters; the balance
@@ -978,16 +992,17 @@ def get_ratios_endpoint(
                 # Four columns to the year, so the ratios that average a balance
                 # sheet average it over the same year the flow was earned in.
                 periods_per_year=4,
+                prices_df=prices_df,
             )
             # A filer with too little quarterly history to form a single
             # trailing year still gets the annual view rather than nothing.
             if historical_ratios_df is None or historical_ratios_df.empty:
                 historical_ratios_df = calculate_key_ratios_timeseries(
-                    financials, balance_sheet, cashflow
+                    financials, balance_sheet, cashflow, prices_df=prices_df
                 )
         else:
             historical_ratios_df = calculate_key_ratios_timeseries(
-                financials, balance_sheet, cashflow
+                financials, balance_sheet, cashflow, prices_df=prices_df
             )
 
         # Calculate current valuation ratios — point-in-time, so always annual.

@@ -324,6 +324,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
 
             <StockKeyMetrics
+                symbol={fundamentals.symbol}
                 metrics={fundamentals.key_metrics}
                 beta={fundamentals.beta}
                 averageVolume={fundamentals.averageVolume}

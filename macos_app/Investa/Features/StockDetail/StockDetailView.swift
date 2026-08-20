@@ -45,6 +45,7 @@ struct StockDetailView: View {
     @State private var detail: SymbolID?
     @State private var showGrahamExplanation = false
     @State private var summaryExpanded = false
+    @State private var ratiosCategory = "All"
 
     init(symbol: String, currency: String = "USD") {
         _viewModel = StateObject(wrappedValue: StockDetailViewModel(symbol: symbol, currency: currency))
@@ -295,7 +296,8 @@ struct StockDetailView: View {
             StockKeyMetricsView(
                 metrics: f?.keyMetrics ?? [:],
                 beta: f?.beta,
-                averageVolume: f?.double("averageVolume")
+                averageVolume: f?.double("averageVolume"),
+                viewModel: viewModel
             )
             businessSummarySection
         }
@@ -1126,7 +1128,12 @@ struct StockDetailView: View {
         let history = viewModel.ratios?.historical ?? []
         let period = viewModel.ratiosPeriod
 
-        VStack(alignment: .leading, spacing: 24) {
+        let categories = ["All", "Valuation", "Profitability", "Balance Sheet", "Earnings & Sales"]
+        let activeDefs = ratiosCategory == "All"
+            ? StockKeyMetricsView.chartDefs
+            : StockKeyMetricsView.chartDefs.filter { $0.group == ratiosCategory }
+
+        VStack(alignment: .leading, spacing: 20) {
             // Chrome first, so the switch survives an empty quarterly answer.
             HStack(alignment: .center) {
                 Text(period == .quarterly
@@ -1149,18 +1156,38 @@ struct StockDetailView: View {
                 ContentUnavailableView("No ratio data", systemImage: "chart.line.uptrend.xyaxis").frame(height: 200)
             } else {
                 if let record = viewModel.trackRecord { trackRecordPanel(record) }
+
                 if !history.isEmpty {
+                    // Category filter pills
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(categories, id: \.self) { cat in
+                                Button {
+                                    ratiosCategory = cat
+                                } label: {
+                                    Text(cat)
+                                        .font(.caption.weight(.semibold))
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                        .background(ratiosCategory == cat ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
+                                        .foregroundStyle(ratiosCategory == cat ? Color.white : Color.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
-                        ratioChart("Return on Equity", history, "Return on Equity (ROE) (%)", Color(red: 16/255, green: 185/255, blue: 129/255), isPercent: true, periodType: period)
-                        ratioChart("Gross Margin", history, "Gross Profit Margin (%)", Color(red: 6/255, green: 182/255, blue: 212/255), isPercent: true, periodType: period)
-                        ratioChart("Net Margin", history, "Net Profit Margin (%)", Color(red: 139/255, green: 92/255, blue: 246/255), isPercent: true, periodType: period)
-                        ratioChart("Asset Turnover", history, "Asset Turnover", Color(red: 245/255, green: 158/255, blue: 11/255), isPercent: false, periodType: period)
-                        ratioChart("Return on Invested Capital", history, "Return on Invested Capital (ROIC) (%)", Color(red: 236/255, green: 72/255, blue: 153/255), isPercent: true, periodType: period)
-                        ratioChart("Free Cash Flow Margin", history, "Free Cash Flow Margin (%)", Color(red: 20/255, green: 184/255, blue: 166/255), isPercent: true, periodType: period)
-                        // A falling line is the owner's slice growing. Over
-                        // nineteen years it is the clearest picture of whether
-                        // management returned capital or issued it away.
-                        ratioChart("Diluted Shares Outstanding", history, "Diluted Shares Outstanding", Color(red: 100/255, green: 116/255, blue: 139/255), isPercent: false, isCount: true, periodType: period)
+                        ForEach(activeDefs) { def in
+                            ratioChart(
+                                def.title,
+                                history,
+                                def.dataKey,
+                                def.color,
+                                isPercent: def.isPercent,
+                                isCount: def.isCount,
+                                periodType: period
+                            )
+                        }
                     }
                 }
             }

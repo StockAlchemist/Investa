@@ -186,30 +186,59 @@ def to_trailing_twelve_months(
     return pd.DataFrame(columns)
 
 
+def _price_on_or_before(prices_data: Any, dt: pd.Timestamp) -> Optional[float]:
+    """Finds the split-consistent price on or immediately before `dt`."""
+    if prices_data is None:
+        return None
+    try:
+        series = None
+        if isinstance(prices_data, pd.DataFrame):
+            for col in ["Adj Close", "Close", "adj_close", "close"]:
+                if col in prices_data.columns:
+                    series = prices_data[col]
+                    break
+            if series is None and not prices_data.empty:
+                series = prices_data.iloc[:, 0]
+        elif isinstance(prices_data, pd.Series):
+            series = prices_data
+        elif isinstance(prices_data, dict):
+            series = pd.Series(prices_data)
+
+        if series is None or series.empty:
+            return None
+
+        if not isinstance(series.index, pd.DatetimeIndex):
+            series.index = pd.to_datetime(series.index, errors="coerce")
+            series = series[series.index.notnull()]
+
+        series = series.sort_index()
+        dt_ts = pd.to_datetime(dt)
+        sub = series.loc[:dt_ts]
+        if sub.empty:
+            return None
+        last_dt = sub.index[-1]
+        if (dt_ts - last_dt).days > 35:
+            return None
+        val = float(sub.iloc[-1])
+        return val if val > 0 and np.isfinite(val) else None
+    except Exception:
+        return None
+
+
 def calculate_key_ratios_timeseries(
     financials_df: Optional[pd.DataFrame],
     balance_sheet_df: Optional[pd.DataFrame],
     cashflow_df: Optional[pd.DataFrame] = None,
     periods_per_year: int = 1,
-    # ticker_info: Optional[Dict] = None, # Not used for historical series ratios
-    # is_annual: bool = True # Not directly used, period determined by data
+    prices_df: Optional[Any] = None,
 ) -> pd.DataFrame:
     """
     Calculates a timeseries of key financial ratios.
     Assumes input DataFrames have periods as columns and financial items as index.
 
-    `cashflow_df` is optional and only adds the free-cash-flow margin: callers
-    that predate it — the ranking's `_ratios_by_period` among them — keep working
-    and simply do not get that one series.
-
-    `periods_per_year` says how many columns make a year, and exists for the
-    ratios that average a balance sheet across the window their flow was earned
-    over — return on assets, asset turnover. Averaging against the previous
-    *column* is right at one column a year and wrong at four: it would pair a
-    trailing-twelve-month flow with a balance averaged over one quarter, and the
-    quarterly view then disagreed with the annual view on the same fiscal year
-    end (Apple FY2025 asset turnover: 1.205 against 1.149). Pass 4 for a
-    quarterly series so both views measure the same year.
+    `cashflow_df` adds free-cash-flow margin, operating cashflow and dividend yield.
+    `prices_df` adds point-in-time historical valuation multiples (P/E, P/S, P/B, EV/EBITDA, EV/Sales, P/FCF).
+    `periods_per_year` says how many columns make a year (4 for quarterly TTM, 1 for annual).
     """
     if (
         financials_df is None
@@ -223,7 +252,6 @@ def calculate_key_ratios_timeseries(
         return pd.DataFrame()
 
     try:
-        # Convert columns to datetime objects, coercing errors, and drop NaT values
         fin_periods_dt = pd.to_datetime(financials_df.columns, errors="coerce").dropna()
         bs_periods_dt = pd.to_datetime(
             balance_sheet_df.columns, errors="coerce"
@@ -235,7 +263,6 @@ def calculate_key_ratios_timeseries(
             )
             return pd.DataFrame()
 
-        # Find common periods (as datetime objects)
         common_periods_dt = sorted(
             list(set(fin_periods_dt).intersection(set(bs_periods_dt)))
         )
@@ -250,12 +277,9 @@ def calculate_key_ratios_timeseries(
         )
         return pd.DataFrame()
 
-    ratios_data_list: List[Dict] = []  # Ensure type for list of dicts
+    ratios_data_list: List[Dict] = []
 
     for i, period_dt in enumerate(common_periods_dt):
-        # Find the original column name string that corresponds to this datetime period
-        # This is necessary because yfinance might return columns like '2023-12-31' or 'TTM'
-        # We need to match based on the parsed datetime.
         period_str_fin = next(
             (
                 col
@@ -279,9 +303,9 @@ def calculate_key_ratios_timeseries(
             )
             continue
 
-        current_ratios: Dict[str, Any] = {"Period": period_dt}  # Start with Period
+        current_ratios: Dict[str, Any] = {"Period": period_dt}
 
-        # Profitability
+        # 1. Profitability & Operations
         revenue = _get_statement_value(financials_df, "Total Revenue", period_str_fin)
         cost_of_revenue = _get_statement_value(
             financials_df, "Cost Of Revenue", period_str_fin
@@ -291,6 +315,17 @@ def calculate_key_ratios_timeseries(
         )
         if gross_profit is None and revenue is not None and cost_of_revenue is not None:
             gross_profit = revenue - cost_of_revenue
+
+        operating_income = _get_statement_value(
+            financials_df, "Operating Income", period_str_fin
+        ) or _get_statement_value(
+            financials_df, "Operating Revenue Or Loss", period_str_fin
+        )
+
+        ebit = _get_statement_value(financials_df, "Ebit", period_str_fin)
+        if operating_income is None and ebit is not None:
+            operating_income = ebit
+
         net_income = _get_statement_value(financials_df, "Net Income", period_str_fin)
         if net_income is None:
             net_income = _get_statement_value(
@@ -311,8 +346,6 @@ def calculate_key_ratios_timeseries(
         )
 
         avg_equity, avg_assets = total_equity, total_assets
-        # A year back, not a column back: at four columns a year the two are not
-        # the same window, and the flow above is a trailing twelve months.
         if i >= periods_per_year:
             prev_period_dt = common_periods_dt[i - periods_per_year]
             prev_period_str_bs = next(
@@ -340,6 +373,11 @@ def calculate_key_ratios_timeseries(
             if revenue and revenue != 0 and gross_profit is not None
             else np.nan
         )
+        current_ratios["Operating Margin (%)"] = (
+            (operating_income / revenue) * 100
+            if revenue and revenue != 0 and operating_income is not None
+            else np.nan
+        )
         current_ratios["Net Profit Margin (%)"] = (
             (net_income / revenue) * 100
             if revenue and revenue != 0 and net_income is not None
@@ -356,7 +394,7 @@ def calculate_key_ratios_timeseries(
             else np.nan
         )
 
-        # Liquidity
+        # 2. Liquidity
         current_assets = _get_statement_value(
             balance_sheet_df, "Current Assets", period_str_bs
         ) or _get_statement_value(
@@ -383,7 +421,7 @@ def calculate_key_ratios_timeseries(
             else np.nan
         )
 
-        # Solvency
+        # 3. Solvency
         total_liab = (
             _get_statement_value(
                 balance_sheet_df,
@@ -401,7 +439,23 @@ def calculate_key_ratios_timeseries(
             else np.nan
         )
 
-        ebit = _get_statement_value(financials_df, "Ebit", period_str_fin)
+        lt_debt = (
+            _get_statement_value(balance_sheet_df, "Long Term Debt", period_str_bs)
+            or _get_statement_value(
+                balance_sheet_df,
+                "Long Term Debt And Capital Lease Obligation",
+                period_str_bs,
+            )
+            or _get_statement_value(
+                balance_sheet_df, "Long Term Debt Non Current", period_str_bs
+            )
+        )
+        current_ratios["Long-Term Debt to Equity"] = (
+            lt_debt / total_equity
+            if total_equity and total_equity != 0 and lt_debt is not None
+            else np.nan
+        )
+
         interest_exp = _get_statement_value(
             financials_df, "Interest Expense", period_str_fin
         )
@@ -413,19 +467,14 @@ def calculate_key_ratios_timeseries(
             else np.nan
         )
 
-        # Efficiency
+        # 4. Efficiency
         current_ratios["Asset Turnover"] = (
             revenue / avg_assets
             if avg_assets and avg_assets != 0 and revenue is not None
             else np.nan
         )
 
-        # Return on invested capital. The formula is `buffett_metrics`' one,
-        # deliberately: the ranking scores a company on its median ROIC and the
-        # stock window now charts the series behind it, so the two disagreeing
-        # would make "why is this ranked here" unanswerable. Cash is netted off
-        # because an idle balance depresses the return on the operating business
-        # the moat question is actually about.
+        # 5. ROIC
         pretax = _get_statement_value(financials_df, "Pretax Income", period_str_fin)
         tax = _get_statement_value(financials_df, "Tax Provision", period_str_fin)
         total_debt = _get_statement_value(balance_sheet_df, "Total Debt", period_str_bs)
@@ -439,23 +488,20 @@ def calculate_key_ratios_timeseries(
                 (tax / pretax) if pretax and pretax > 0 and tax is not None else None
             )
             if tax_rate is None or not (0.0 <= tax_rate <= 0.6):
-                tax_rate = 0.21  # US statutory; filers with odd effective rates
+                tax_rate = 0.21
             nopat = operating_earnings * (1.0 - tax_rate)
             invested = total_equity + (total_debt or 0.0) - (cash or 0.0)
             if invested and invested != 0:
                 candidate = nopat / invested
-                # The same band the ranking applies: outside it the statement
-                # mapping is wrong rather than the business extraordinary.
                 if -2.0 < candidate < 3.0:
                     roic = candidate * 100.0
         current_ratios["Return on Invested Capital (ROIC) (%)"] = roic
 
-        # Cash conversion and share count, the two series a nineteen-year window
-        # makes worth plotting: one shows whether profit becomes cash, the other
-        # whether the owner's slice grew or shrank. Both need a statement the
-        # ratio engine did not previously take.
+        # 6. Cash Flow & Shares
         current_ratios["Free Cash Flow Margin (%)"] = np.nan
         current_ratios["Diluted Shares Outstanding"] = np.nan
+        ocf, capex, div_paid = None, None, None
+        period_str_cf = None
         if cashflow_df is not None and not cashflow_df.empty:
             period_str_cf = next(
                 (
@@ -472,6 +518,11 @@ def calculate_key_ratios_timeseries(
                 capex = _get_statement_value(
                     cashflow_df, "Capital Expenditure", period_str_cf
                 )
+                div_paid = _get_statement_value(
+                    cashflow_df, "Common Stock Dividend Paid", period_str_cf
+                ) or _get_statement_value(
+                    cashflow_df, "Cash Dividends Paid", period_str_cf
+                )
                 if ocf is not None and capex is not None and revenue:
                     current_ratios["Free Cash Flow Margin (%)"] = (
                         (ocf + capex) / revenue
@@ -484,6 +535,103 @@ def calculate_key_ratios_timeseries(
         )
         if shares:
             current_ratios["Diluted Shares Outstanding"] = shares
+
+        # 7. Level figures (Revenue, Net Income, EPS) & YoY Growth
+        current_ratios["Total Revenue"] = revenue
+        current_ratios["Operating Income"] = operating_income
+        current_ratios["Net Income"] = net_income
+
+        eps = _get_statement_value(financials_df, "Diluted EPS", period_str_fin)
+        if eps is None and net_income is not None and shares and shares > 0:
+            eps = net_income / shares
+        current_ratios["Diluted EPS"] = eps
+
+        # YoY Growth rates against period from 1 year prior
+        current_ratios["Revenue Growth YoY (%)"] = np.nan
+        current_ratios["EPS Growth YoY (%)"] = np.nan
+        if i >= periods_per_year:
+            prev_dt = common_periods_dt[i - periods_per_year]
+            prev_fin_col = next(
+                (
+                    col
+                    for col in financials_df.columns
+                    if pd.to_datetime(col, errors="coerce") == prev_dt
+                ),
+                None,
+            )
+            if prev_fin_col:
+                prev_rev = _get_statement_value(
+                    financials_df, "Total Revenue", prev_fin_col
+                )
+                if prev_rev and prev_rev > 0 and revenue is not None:
+                    current_ratios["Revenue Growth YoY (%)"] = (
+                        (revenue / prev_rev) - 1
+                    ) * 100.0
+
+                prev_eps = _get_statement_value(
+                    financials_df, "Diluted EPS", prev_fin_col
+                )
+                if prev_eps and prev_eps > 0 and eps is not None and eps > 0:
+                    current_ratios["EPS Growth YoY (%)"] = (
+                        (eps / prev_eps) - 1
+                    ) * 100.0
+
+        # 8. Historical Valuation Multiples over Time (using historical price)
+        price = _price_on_or_before(prices_df, period_dt)
+        current_ratios["Price"] = price
+        current_ratios["P/E Ratio"] = np.nan
+        current_ratios["P/S Ratio"] = np.nan
+        current_ratios["P/B Ratio"] = np.nan
+        current_ratios["P/FCF Ratio"] = np.nan
+        current_ratios["EV/EBITDA"] = np.nan
+        current_ratios["EV/Sales"] = np.nan
+        current_ratios["Dividend Yield (%)"] = np.nan
+
+        if price is not None and shares and shares > 0:
+            mkt_cap = price * shares
+            if eps and eps > 0:
+                current_ratios["P/E Ratio"] = price / eps
+            elif net_income and net_income > 0:
+                current_ratios["P/E Ratio"] = mkt_cap / net_income
+
+            if revenue and revenue > 0:
+                current_ratios["P/S Ratio"] = mkt_cap / revenue
+
+            if total_equity and total_equity > 0:
+                current_ratios["P/B Ratio"] = mkt_cap / total_equity
+
+            fcf = (ocf + capex) if (ocf is not None and capex is not None) else None
+            if fcf and fcf > 0:
+                current_ratios["P/FCF Ratio"] = mkt_cap / fcf
+
+            ev = mkt_cap + (total_debt or 0.0) - (cash or 0.0)
+            if revenue and revenue > 0 and ev > 0:
+                current_ratios["EV/Sales"] = ev / revenue
+
+            ebitda = _get_statement_value(
+                financials_df, "Ebitda", period_str_fin
+            ) or _get_statement_value(
+                financials_df, "Normalized EBITDA", period_str_fin
+            )
+            if ebitda is None and ebit is not None:
+                depr = _get_statement_value(
+                    financials_df, "Reconciled Depreciation", period_str_fin
+                )
+                if (
+                    depr is None
+                    and cashflow_df is not None
+                    and period_str_cf is not None
+                ):
+                    depr = _get_statement_value(
+                        cashflow_df, "Depreciation And Amortization", period_str_cf
+                    )
+                if depr is not None:
+                    ebitda = ebit + abs(depr)
+            if ebitda and ebitda > 0 and ev > 0:
+                current_ratios["EV/EBITDA"] = ev / ebitda
+
+            if div_paid is not None and mkt_cap > 0:
+                current_ratios["Dividend Yield (%)"] = (abs(div_paid) / mkt_cap) * 100.0
 
         ratios_data_list.append(current_ratios)
 
