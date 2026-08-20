@@ -172,6 +172,13 @@ def bands(symbol: str, cik: str, today: Optional[date] = None) -> List[Dict[str,
         import edgar_provider
 
         shares = edgar_provider.split_consistent_series(cik, "shares_diluted")
+        if len(shares) < MIN_OBSERVATIONS:
+            for fallback_concept in ("shares_outstanding", "shares_basic"):
+                fallback_shares = edgar_provider.split_consistent_series(
+                    cik, fallback_concept
+                )
+                if len(fallback_shares) > len(shares):
+                    shares = fallback_shares
         if not shares:
             return []
 

@@ -77,64 +77,14 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
     });
     const trackRecord = trackRecordQuery.data ?? null;
 
-    const periodControls = (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[11px] text-muted-foreground">
-                {ratioPeriod === 'quarterly'
-                    ? 'Measured on the trailing twelve months at each quarter end, sampled four times as often.'
-                    : 'Measured on each filed fiscal year.'}
-            </p>
-            <div className="flex items-center gap-2 flex-wrap">
-                {/* 5Y / 10Y / ALL Range Selector */}
-                <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
-                    {(['5y', '10y', 'max'] as const).map(opt => (
-                        <button
-                            key={opt}
-                            type="button"
-                            onClick={() => setRatioRange(opt)}
-                            aria-pressed={ratioRange === opt}
-                            className={cn(
-                                "px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase transition-all cursor-pointer",
-                                ratioRange === opt
-                                    ? "bg-indigo-600 text-white shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground"
-                            )}
-                        >
-                            {opt === 'max' ? 'ALL' : opt.toUpperCase()}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Quarterly / Annual Period Switcher */}
-                <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
-                    {([
-                        { id: 'quarterly', label: 'Quarterly' },
-                        { id: 'annual', label: 'Annual' }
-                    ] as const).map(opt => (
-                        <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => setRatioPeriod(opt.id)}
-                            aria-pressed={ratioPeriod === opt.id}
-                            className={cn(
-                                "px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                                ratioPeriod === opt.id
-                                    ? "bg-indigo-600 text-white shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground"
-                            )}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-
     if (ratiosQuery.isPending) {
         return (
-            <div className="space-y-8 animate-in fade-in duration-500">
-                {periodControls}
+            <div className="space-y-6 animate-in fade-in duration-500">
+                {trackRecord && <TrackRecordPanel record={trackRecord} />}
+                <div className="flex items-center justify-between gap-3">
+                    <Skeleton className="h-8 w-64 rounded-lg" />
+                    <Skeleton className="h-8 w-48 rounded-full" />
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-64 rounded-2xl" />)}
                 </div>
@@ -144,11 +94,11 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
 
     if (!ratios || !ratios.historical.length) {
         return (
-            <div className="space-y-8 animate-in fade-in duration-500">
-                {periodControls}
-                {trackRecord
-                    ? <TrackRecordPanel record={trackRecord} />
-                    : <div className="text-center py-20 text-gray-500">No historical ratio data available.</div>}
+            <div className="space-y-6 animate-in fade-in duration-500">
+                {trackRecord && <TrackRecordPanel record={trackRecord} />}
+                <div className="text-center py-20 text-muted-foreground bg-muted/20 rounded-2xl">
+                    No historical ratio data available.
+                </div>
             </div>
         );
     }
@@ -164,29 +114,86 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {periodControls}
+            {/* 1. Track Record Panel at Top */}
             {trackRecord && <TrackRecordPanel record={trackRecord} />}
 
-            {/* Category Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                {categories.map(cat => (
-                    <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setSelectedCategory(cat)}
-                        className={cn(
-                            "px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
-                            selectedCategory === cat
-                                ? "bg-muted text-foreground border border-border shadow-sm font-bold"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                        )}
-                    >
-                        {cat}
-                    </button>
-                ))}
+            {/* 2. Graphs Section: Category Filter Pills + Period Controls Toolbar */}
+            <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    {/* Category Filter Pills */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                        {categories.map(cat => (
+                            <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setSelectedCategory(cat)}
+                                className={cn(
+                                    "px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
+                                    selectedCategory === cat
+                                        ? "bg-muted text-foreground border border-border shadow-sm font-bold"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                )}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Period & Range Controls */}
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        {/* 5Y / 10Y / ALL Range Selector */}
+                        <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
+                            {(['5y', '10y', 'max'] as const).map(opt => (
+                                <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => setRatioRange(opt)}
+                                    aria-pressed={ratioRange === opt}
+                                    className={cn(
+                                        "px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase transition-all cursor-pointer",
+                                        ratioRange === opt
+                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    {opt === 'max' ? 'ALL' : opt.toUpperCase()}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Quarterly / Annual Period Switcher */}
+                        <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
+                            {([
+                                { id: 'quarterly', label: 'Quarterly' },
+                                { id: 'annual', label: 'Annual' }
+                            ] as const).map(opt => (
+                                <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => setRatioPeriod(opt.id)}
+                                    aria-pressed={ratioPeriod === opt.id}
+                                    className={cn(
+                                        "px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                                        ratioPeriod === opt.id
+                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <p className="text-[11px] text-muted-foreground">
+                    {ratioPeriod === 'quarterly'
+                        ? 'Measured on the trailing twelve months at each quarter end, sampled four times as often.'
+                        : 'Measured on each filed fiscal year.'}
+                </p>
             </div>
 
-            {/* Charts Grid */}
+            {/* 3. Charts Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {filteredCharts.map(item => (
                     <RatioChart

@@ -3,9 +3,7 @@ import React, { useState, useMemo } from 'react';
 import type { Dividend } from '../lib/api';
 import { formatCurrency, formatCompactNumber, cn } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts';
-
-import dynamic from 'next/dynamic';
-const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
+import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 import { Search, X, ChevronDown, ChevronUp, CircleDollarSign, Calendar } from 'lucide-react';
@@ -37,9 +35,9 @@ function SortIndicator({ active, direction }: { active: boolean; direction: 'asc
 export default function Dividend({
     data, currency, expectedDividends, dividendYield, children, isLoading, visibleSections,
 }: DividendProps) {
+    const { openStockDetail } = useStockModal();
     const [sortConfig, setSortConfig] = useState<{ key: SortableKey; direction: 'asc' | 'desc' }>({ key: 'Date', direction: 'desc' });
     const [visibleRows, setVisibleRows] = useState(10);
-    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedYear, setSelectedYear] = useState<string | null>(null);
 
@@ -337,7 +335,7 @@ export default function Dividend({
                                         <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
                                         <td
                                             className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-indigo-500 transition-colors"
-                                            onClick={() => setSelectedSymbol(item.Symbol)}
+                                            onClick={() => openStockDetail(item.Symbol, currency)}
                                         >
                                             <div className="flex items-center gap-2">
                                                 <StockIcon symbol={item.Symbol} size={20} />
@@ -377,7 +375,7 @@ export default function Dividend({
                                 <div>
                                     <h3
                                         className="text-lg font-bold text-foreground cursor-pointer hover:text-indigo-500 transition-colors flex items-center gap-2"
-                                        onClick={() => setSelectedSymbol(item.Symbol)}
+                                        onClick={() => openStockDetail(item.Symbol, currency)}
                                     >
                                         <StockIcon symbol={item.Symbol} size={24} />
                                         {item.Symbol}
@@ -419,16 +417,7 @@ export default function Dividend({
                 )}
             </div>
             )}
-
-            {/* Stock Detail Modal */}
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={() => setSelectedSymbol(null)}
-                    currency={currency}
-                />
-            )}
         </div>
     );
 }
+

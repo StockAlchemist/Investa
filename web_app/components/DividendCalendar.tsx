@@ -1,11 +1,10 @@
-import dynamic from 'next/dynamic';
-const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import StockIcon from './StockIcon';
 import { useState, useMemo } from 'react';
 import { CheckCircle2, Clock } from 'lucide-react';
 import TableSkeleton from './skeletons/TableSkeleton';
 import { formatCurrency } from '../lib/utils';
 import { isWithinMarketMonths } from '../lib/market_time';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface DividendEvent {
     symbol: string;
@@ -24,8 +23,9 @@ interface DividendCalendarProps {
 }
 
 export default function DividendCalendar({ events, isLoading, currency }: DividendCalendarProps) {
-    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+    const { openStockDetail } = useStockModal();
     const [viewDuration, setViewDuration] = useState<'3m' | '1y'>('3m');
+
 
     const filteredEvents = useMemo(() => {
         if (!events || !Array.isArray(events)) return [];
@@ -100,7 +100,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                             <tr key={`${event.symbol}-${event.dividend_date}-${idx}`} className="hover:bg-accent/5 transition-colors group">
                                 <td
                                     className="px-6 py-3 font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors sticky left-0 z-10 bg-background/95 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]"
-                                    onClick={() => setSelectedSymbol(event.symbol)}
+                                    onClick={() => openStockDetail(event.symbol, currency)}
                                 >
                                     <div className="flex items-center gap-2">
                                         <StockIcon symbol={event.symbol} size={20} />
@@ -141,15 +141,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                     </tbody>
                 </table>
             </div>
-
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={() => setSelectedSymbol(null)}
-                    currency={currency}
-                />
-            )}
         </div>
     );
 }
+

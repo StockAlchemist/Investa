@@ -76,7 +76,6 @@ struct WatchlistView: View {
     @State private var renameName = ""
     @State private var editingNoteSymbol: String?
     @State private var editNoteText = ""
-    @State private var detail: SymbolID?
 
     private var cur: String { appState.displayCurrency }
     private var currentListName: String { viewModel.watchlists.first { $0.id == viewModel.activeId }?.name ?? "Watchlist" }
@@ -130,8 +129,8 @@ struct WatchlistView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in
             Task { await viewModel.loadItems(currency: cur) }
         }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
+
 
     // MARK: - List selector
 
@@ -285,7 +284,7 @@ struct WatchlistView: View {
     private func iosWatchlistRow(_ item: WatchlistItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Button { detail = SymbolID(id: item.symbol) } label: {
+                Button { appState.openStock(item.symbol) } label: {
                     HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 27); Text(item.symbol).font(.headline).fontWeight(.bold) }
                 }.buttonStyle(.plain)
                 Spacer()
@@ -364,7 +363,7 @@ struct WatchlistView: View {
 
     private func rowView(_ item: WatchlistItem) -> some View {
         GridRow {
-            Button { detail = SymbolID(id: item.symbol) } label: {
+            Button { appState.openStock(item.symbol) } label: {
                 HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 18); Text(item.symbol).fontWeight(.bold) }
             }
             .buttonStyle(.plain).gridColumnAlignment(.leading)

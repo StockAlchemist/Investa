@@ -1,10 +1,13 @@
 export interface StockDetailModalProps {
     symbol: string;
-    isOpen: boolean;
+    isOpen?: boolean;
     onClose: () => void;
+    onBack?: () => void;
+    previousViewName?: string;
     currency: string;
     initialTab?: string;
 }
+
 
 export type TabType = 'overview' | 'position' | 'chart' | 'financials' | 'ratios' | 'valuation' | 'holdings' | 'analysis' | 'news';
 

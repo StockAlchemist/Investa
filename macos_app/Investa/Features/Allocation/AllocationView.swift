@@ -90,7 +90,6 @@ enum PortfolioBucket {
 struct AllocationView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = AllocationViewModel()
-    @State private var detail: SymbolID?
 
     private var cur: String { appState.displayCurrency }
 
@@ -190,11 +189,11 @@ struct AllocationView: View {
 
                         if vis("rebalanceHelper") { RebalanceHelperCard(holdings: viewModel.holdings, currency: cur, vm: viewModel) }
                         if vis("treemap") { PortfolioTreemapView(holdings: viewModel.holdings, currency: cur,
-                                                                  onSelectSymbol: { detail = SymbolID(id: $0) }) }
+                                                                  onSelectSymbol: { appState.openStock($0) }) }
                         if vis("holdingsHeatmap") {
                             HoldingsHeatmapView(holdings: viewModel.holdings, currency: cur,
                                                 returns: viewModel.holdingReturns,
-                                                onSelectSymbol: { detail = SymbolID(id: $0) })
+                                                onSelectSymbol: { appState.openStock($0) })
                         }
 
                         // Donut charts — grid-cols-1 md:grid-cols-2 (exactly 2-up).
@@ -231,7 +230,6 @@ struct AllocationView: View {
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.allocation, id) }

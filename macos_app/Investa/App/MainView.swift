@@ -49,7 +49,6 @@ struct MainView: View {
     @State private var visitedSections: Set<AppSection> = [.performance]
     @State private var showingSettings = false
     @State private var showingPalette = false
-    @State private var paletteStock: SymbolID?
     /// nil = follow system; true/false = forced.
     @AppStorage("investa.forceDark") private var forceDark = false
     @AppStorage("investa.appearanceSet") private var appearanceSet = false
@@ -72,14 +71,16 @@ struct MainView: View {
             }
             .sheet(isPresented: $showingPalette) {
                 CommandPaletteView(
-                    onNavigate: { selection = $0 },
+                    onNavigate: { selection = $0; appState.clearStock() },
                     onOpenSettings: { showingSettings = true },
-                    onOpenStock: { paletteStock = SymbolID(id: $0) })
+                    onOpenStock: { appState.openStock($0) })
             }
-            .sheet(item: $paletteStock) { StockDetailView(symbol: $0.id, currency: appState.displayCurrency) }
             .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
             .onReceive(NotificationCenter.default.publisher(for: .navigateToSection)) { note in
-                if let section = note.object as? AppSection { selection = section }
+                if let section = note.object as? AppSection {
+                    appState.clearStock()
+                    selection = section
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in showingSettings = true }
             .onReceive(NotificationCenter.default.publisher(for: .toggleDarkMode)) { _ in
@@ -115,20 +116,27 @@ struct MainView: View {
             VStack(spacing: 0) {
                 GlobalControlBar(section: selection)
                 Divider()
-                ZStack {
-                    ForEach(AppSection.allCases) { section in
-                        if visitedSections.contains(section) {
-                            sectionView(section)
-                                .opacity(selection == section ? 1 : 0)
-                                .allowsHitTesting(selection == section)
+                if let selectedStock = appState.selectedStock {
+                    StockDetailView(symbol: selectedStock, currency: appState.displayCurrency)
+                        .id(selectedStock)
+                } else {
+                    ZStack {
+                        ForEach(AppSection.allCases) { section in
+                            if visitedSections.contains(section) {
+                                sectionView(section)
+                                    .opacity(selection == section ? 1 : 0)
+                                    .allowsHitTesting(selection == section)
+                            }
                         }
                     }
                 }
             }
             .task { if !appState.didLoadSettings { await appState.loadSettings() } }
             .onChange(of: selection) { _, newSelection in
+                appState.clearStock()
                 visitedSections.insert(newSelection)
             }
+
             #if os(iOS)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -227,6 +235,9 @@ struct MainView: View {
             }
         }
         .task { if !appState.didLoadSettings { await appState.loadSettings() } }
+        .onChange(of: selection) { _, _ in
+            appState.clearStock()
+        }
     }
 
     @ViewBuilder
@@ -265,9 +276,16 @@ struct MainView: View {
                 // overflows can't widen the VStack around it — a wider VStack
                 // centers the control bar over the section's width and slides
                 // it off the right edge of the screen.
-                sectionView(section)
-                    .frame(width: geo.size.width, alignment: .topLeading)
+                if let selectedStock = appState.selectedStock {
+                    StockDetailView(symbol: selectedStock, currency: appState.displayCurrency)
+                        .id(selectedStock)
+                        .frame(width: geo.size.width, alignment: .topLeading)
+                } else {
+                    sectionView(section)
+                        .frame(width: geo.size.width, alignment: .topLeading)
+                }
             }
+
             // Pinned to the container rather than `maxWidth: .infinity`, which
             // grows to fit an oversized child instead of clamping it: one card
             // that overflows would otherwise widen the shell and push the

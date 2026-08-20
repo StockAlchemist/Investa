@@ -32,7 +32,6 @@ struct AIView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = AIViewModel()
     @State private var detail: MetricDetail?
-    @State private var stockDetail: SymbolID?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.verticalSizeClass) private var vSize
@@ -59,8 +58,8 @@ struct AIView: View {
             Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: true) }
         }
         .sheet(item: $detail) { metricSheet($0) }
-        .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
+
 
     // MARK: - Header
 
@@ -317,7 +316,7 @@ struct AIView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 if !opt.symbol.isEmpty && opt.symbol != "N/A" {
-                    Button("Details") { stockDetail = SymbolID(id: opt.symbol) }.font(.caption2).buttonStyle(.borderless)
+                    Button("Details") { appState.openStock(opt.symbol) }.font(.caption2).buttonStyle(.borderless)
                 }
             }
         }

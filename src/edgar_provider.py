@@ -1390,7 +1390,7 @@ _NEGATE_ON_EMIT = {
 # collapse rather than the 4:1 split it is. Restated onto the latest basis so the
 # column-to-column comparison a statement table invites is a real one.
 _SHARE_SCALED = ("shares_diluted", "shares_basic", "shares_outstanding")
-_PER_SHARE_SCALED = ("eps_diluted",)
+_PER_SHARE_SCALED = ("eps_diluted", "eps_basic")
 
 
 def _tags_for(concepts: Tuple[str, ...]) -> List[str]:
@@ -1455,7 +1455,7 @@ def _spans_on_latest_basis(
 
 def split_adjustment_factors(cik: str) -> Dict[str, float]:
     """
-    {period_end: latest-basis factor} derived from the diluted share count.
+    {period_end: latest-basis factor} derived from the share count.
 
     One factor for every rescaled row rather than a reconstruction per concept:
     a split moves shares and EPS by the same ratio in opposite directions, so
@@ -1463,15 +1463,20 @@ def split_adjustment_factors(cik: str) -> Dict[str, float]:
     whole table. The newest period's factor is 1.0 by construction — that is the
     basis everything is restated onto.
     """
-    assembled = get_concept_values(cik, ["shares_diluted"]).get("shares_diluted", {})
-    if not assembled:
-        return {}
-    corrected = split_consistent_series(cik, "shares_diluted")
-    return {
-        period: corrected[period] / assembled[period]
-        for period in assembled
-        if assembled.get(period) and corrected.get(period)
-    }
+    factors: Dict[str, float] = {}
+    for concept in ("shares_diluted", "shares_basic", "shares_outstanding"):
+        assembled = get_concept_values(cik, [concept]).get(concept, {})
+        if not assembled:
+            continue
+        corrected = split_consistent_series(cik, concept)
+        for period in assembled:
+            if (
+                period not in factors
+                and assembled.get(period)
+                and corrected.get(period)
+            ):
+                factors[period] = corrected[period] / assembled[period]
+    return factors
 
 
 def _apply_split_adjustment(
@@ -1564,7 +1569,9 @@ def get_statements(cik: str) -> Dict[str, pd.DataFrame]:
         list(INCOME_CONCEPTS) + list(BALANCE_CONCEPTS) + list(CASHFLOW_CONCEPTS)
     )
     values = get_concept_values(cik, concept_names)
-    _apply_split_adjustment(values, split_adjustment_factors(cik))
+    for concept in list(_SHARE_SCALED) + list(_PER_SHARE_SCALED):
+        if concept in values:
+            values[concept] = split_consistent_series(cik, concept)
 
     income = _frame_from_concepts(values, _INCOME_LABELS)
     balance = _frame_from_concepts(values, _BALANCE_LABELS)

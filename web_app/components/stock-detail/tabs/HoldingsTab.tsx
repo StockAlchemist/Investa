@@ -1,5 +1,6 @@
 import React from 'react';
 import { List, PieChart as PieChartIcon } from 'lucide-react';
+import { useStockModal } from '@/context/StockModalContext';
 import {
     ResponsiveContainer,
     PieChart,
@@ -17,6 +18,8 @@ interface HoldingsTabProps {
 const COLORS = ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#6366f1'];
 
 export const HoldingsTab: React.FC<HoldingsTabProps> = ({ fundamentals }) => {
+    const { openStockDetail } = useStockModal();
+
     if (!fundamentals?.etf_data) return null;
     const { top_holdings, sector_weightings } = fundamentals.etf_data;
 
@@ -44,8 +47,12 @@ export const HoldingsTab: React.FC<HoldingsTabProps> = ({ fundamentals }) => {
                             </thead>
                             <tbody>
                                 {top_holdings?.map((h: { symbol: string; percent: number }, i: number) => (
-                                    <tr key={i} className="hover:bg-accent/5">
-                                        <td className="px-4 py-2 font-medium">{h.symbol}</td>
+                                    <tr
+                                        key={i}
+                                        onClick={() => openStockDetail(h.symbol)}
+                                        className="hover:bg-accent/10 cursor-pointer transition-colors"
+                                    >
+                                        <td className="px-4 py-2 font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">{h.symbol}</td>
                                         <td className="px-4 py-2 text-right tabular-nums">{(h.percent * 100).toFixed(2)}%</td>
                                     </tr>
                                 ))}
@@ -58,6 +65,7 @@ export const HoldingsTab: React.FC<HoldingsTabProps> = ({ fundamentals }) => {
                         </table>
                     </div>
                 </div>
+
 
                 {/* Sector Allocation Chart */}
                 <div className="bg-muted rounded-2xl p-6">

@@ -628,25 +628,46 @@ def calculate_key_ratios_timeseries(
             ebitda = (
                 _get_statement_value(financials_df, "EBITDA", period_str_fin)
                 or _get_statement_value(financials_df, "Ebitda", period_str_fin)
-                or _get_statement_value(financials_df, "Normalized EBITDA", period_str_fin)
+                or _get_statement_value(
+                    financials_df, "Normalized EBITDA", period_str_fin
+                )
             )
             if ebitda is None:
                 base_ebit = ebit if ebit is not None else operating_income
                 if base_ebit is not None:
                     depr = (
-                        _get_statement_value(financials_df, "Reconciled Depreciation", period_str_fin)
-                        or _get_statement_value(financials_df, "Depreciation And Amortization", period_str_fin)
-                        or (
-                            _get_statement_value(cashflow_df, "Depreciation And Amortization", period_str_cf)
-                            if cashflow_df is not None and period_str_cf is not None else None
+                        _get_statement_value(
+                            financials_df, "Reconciled Depreciation", period_str_fin
+                        )
+                        or _get_statement_value(
+                            financials_df,
+                            "Depreciation And Amortization",
+                            period_str_fin,
                         )
                         or (
-                            _get_statement_value(cashflow_df, "Depreciation Amortization Depletion", period_str_cf)
-                            if cashflow_df is not None and period_str_cf is not None else None
+                            _get_statement_value(
+                                cashflow_df,
+                                "Depreciation And Amortization",
+                                period_str_cf,
+                            )
+                            if cashflow_df is not None and period_str_cf is not None
+                            else None
                         )
                         or (
-                            _get_statement_value(cashflow_df, "Depreciation", period_str_cf)
-                            if cashflow_df is not None and period_str_cf is not None else None
+                            _get_statement_value(
+                                cashflow_df,
+                                "Depreciation Amortization Depletion",
+                                period_str_cf,
+                            )
+                            if cashflow_df is not None and period_str_cf is not None
+                            else None
+                        )
+                        or (
+                            _get_statement_value(
+                                cashflow_df, "Depreciation", period_str_cf
+                            )
+                            if cashflow_df is not None and period_str_cf is not None
+                            else None
                         )
                     )
                     if depr is not None:

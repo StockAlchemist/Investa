@@ -100,8 +100,8 @@ final class BuffettRankViewModel: ObservableObject {
 }
 
 struct BuffettRankView: View {
+    @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = BuffettRankViewModel()
-    @State private var detail: SymbolID?
 
     var body: some View {
         ScrollView {
@@ -127,12 +127,12 @@ struct BuffettRankView: View {
             .padding(20)
         }
         .navigationTitle("Rankings")
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: "USD") }
         .task {
             await viewModel.loadRun()
             await viewModel.load()
         }
     }
+
 
     // MARK: - Header
 
@@ -242,7 +242,7 @@ struct BuffettRankView: View {
         } else {
             LazyVStack(spacing: 8) {
                 ForEach(viewModel.rows) { row in
-                    Button { detail = SymbolID(id: row.symbol) } label: {
+                    Button { appState.openStock(row.symbol) } label: {
                         rankRow(row)
                     }
                     .buttonStyle(.plain)

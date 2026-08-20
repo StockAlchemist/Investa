@@ -5,7 +5,6 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = DashboardViewModel()
-    @State private var detail: SymbolID?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
     private var isPhone: Bool { hSize == .compact }
@@ -31,7 +30,7 @@ struct DashboardView: View {
                         TodayStripCard(holdings: viewModel.holdings, currency: cur,
                                        portfolioDayPct: viewModel.metrics?.dayChangePercent,
                                        indices: viewModel.indices,
-                                       onSelectSymbol: { detail = SymbolID(id: $0) })
+                                       onSelectSymbol: { appState.openStock($0) })
                     }
 
                     // Insights & Events
@@ -78,9 +77,9 @@ struct DashboardView: View {
         .onChange(of: selectionSignature) { _, _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
         .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
     }
+
 
     private var header: some View {
         HStack {
@@ -118,7 +117,7 @@ struct DashboardView: View {
         if events {
             twoColumn(UpcomingEventsCard(dividends: viewModel.dividendEvents,
                                          earnings: viewModel.earningsEvents, currency: cur,
-                                         onSelectSymbol: { detail = SymbolID(id: $0) }),
+                                         onSelectSymbol: { appState.openStock($0) }),
                       trendAndInsightsColumn)
         } else {
             trendAndInsightsColumn
@@ -154,7 +153,7 @@ struct DashboardView: View {
     private func topContributors(_ attr: Attribution) -> some View {
         TopContributorsCard(attribution: attr, currency: cur,
                             accounts: appState.accountsQuery, showClosed: appState.showClosed,
-                            onSelectSymbol: { detail = SymbolID(id: $0) })
+                            onSelectSymbol: { appState.openStock($0) })
     }
 
     private let metricOrder = ["totalReturn", "unrealizedGL", "realizedGain", "annualTWR", "mwr",

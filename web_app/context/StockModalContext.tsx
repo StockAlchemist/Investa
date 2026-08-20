@@ -1,40 +1,69 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import dynamic from 'next/dynamic';
-const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
 interface StockModalContextType {
+    selectedSymbol: string | null;
+    symbolHistory: string[];
+    modalCurrency: string;
     openStockDetail: (symbol: string, currency?: string) => void;
     closeStockDetail: () => void;
+    goBack: () => void;
+    canGoBack: boolean;
 }
 
 const StockModalContext = createContext<StockModalContextType | undefined>(undefined);
 
 export function StockModalProvider({ children, defaultCurrency = 'USD' }: { children: ReactNode; defaultCurrency?: string }) {
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+    const [symbolHistory, setSymbolHistory] = useState<string[]>([]);
     const [modalCurrency, setModalCurrency] = useState(defaultCurrency);
 
-    const openStockDetail = (symbol: string, currency?: string) => {
+    const openStockDetail = useCallback((symbol: string, currency?: string) => {
+        if (!symbol) return;
+        const cleanSymbol = symbol.trim().toUpperCase();
         if (currency) setModalCurrency(currency);
-        setSelectedSymbol(symbol);
-    };
+        
+        setSelectedSymbol(prev => {
+            if (prev && prev !== cleanSymbol) {
+                setSymbolHistory(history => [...history, prev]);
+            }
+            return cleanSymbol;
+        });
+    }, []);
 
-    const closeStockDetail = () => {
+    const goBack = useCallback(() => {
+        setSymbolHistory(history => {
+            if (history.length > 0) {
+                const nextHistory = [...history];
+                const prevSymbol = nextHistory.pop()!;
+                setSelectedSymbol(prevSymbol);
+                return nextHistory;
+            } else {
+                setSelectedSymbol(null);
+                return [];
+            }
+        });
+    }, []);
+
+    const closeStockDetail = useCallback(() => {
         setSelectedSymbol(null);
-    };
+        setSymbolHistory([]);
+    }, []);
 
     return (
-        <StockModalContext.Provider value={{ openStockDetail, closeStockDetail }}>
+        <StockModalContext.Provider
+            value={{
+                selectedSymbol,
+                symbolHistory,
+                modalCurrency,
+                openStockDetail,
+                closeStockDetail,
+                goBack,
+                canGoBack: symbolHistory.length > 0,
+            }}
+        >
             {children}
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={closeStockDetail}
-                    currency={modalCurrency}
-                />
-            )}
         </StockModalContext.Provider>
     );
 }
@@ -46,3 +75,4 @@ export function useStockModal() {
     }
     return context;
 }
+

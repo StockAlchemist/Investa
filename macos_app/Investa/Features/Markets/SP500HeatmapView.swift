@@ -702,13 +702,14 @@ private struct TreemapView: View {
 // MARK: - Main View
 
 struct SP500HeatmapView: View {
+    @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = SP500HeatmapViewModel()
     @State private var metric: HeatMetric = .day
     @State private var sectorFilter = "All"
     @State private var sizeMode: SizeMode = .cap
-    @State private var stockDetail: SymbolID?
     @State private var mapWidth: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
+
 
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
@@ -896,7 +897,7 @@ struct SP500HeatmapView: View {
                     ContentUnavailableView("No valid data to layout", systemImage: "chart.bar.doc.horizontal")
                         .frame(height: 400)
                 } else {
-                    TreemapView(root: node, metric: metric, palette: palette, onTap: { stockDetail = SymbolID(id: $0) })
+                    TreemapView(root: node, metric: metric, palette: palette, onTap: { appState.openStock($0) })
                         .frame(height: 600)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         // `primary` flips with the scheme, so the hairline stays
@@ -936,6 +937,6 @@ struct SP500HeatmapView: View {
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
         .task { viewModel.load() }
-        .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id, currency: "USD") }
     }
 }
+

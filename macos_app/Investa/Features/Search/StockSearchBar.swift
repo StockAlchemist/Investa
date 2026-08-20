@@ -14,11 +14,11 @@ struct StockSearchBar: View {
     /// search is active (mirrors the iOS "search takes over the bar" pattern).
     var onActiveChange: ((Bool) -> Void)? = nil
 
+    @EnvironmentObject private var appState: AppState
     @State private var query = ""
     @State private var results: [SymbolSearchResult] = []
     @State private var loading = false
     @State private var open = false
-    @State private var selected: SymbolID?
     @State private var searchTask: Task<Void, Never>?
     @State private var closeWork: DispatchWorkItem?
     @FocusState private var focused: Bool
@@ -40,8 +40,8 @@ struct StockSearchBar: View {
             .overlay(alignment: .topLeading) {
                 if showDropdown { dropdown.offset(y: 40) }
             }
-            .sheet(item: $selected) { StockDetailView(symbol: $0.id, currency: currency) }
     }
+
 
     // MARK: - Input field
 
@@ -213,7 +213,7 @@ struct StockSearchBar: View {
     private func openDetail(_ symbol: String) {
         guard !symbol.isEmpty else { return }
         closeWork?.cancel()
-        selected = SymbolID(id: symbol)
+        appState.openStock(symbol)
         open = false
         query = ""
         results = []

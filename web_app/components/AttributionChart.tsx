@@ -1,13 +1,13 @@
 'use client';
 
-import dynamic from 'next/dynamic';
-const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, TrendingUp, TrendingDown, X, Info, LayoutDashboard } from 'lucide-react';
+import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from './StockIcon';
 import { cn } from '@/lib/utils';
 import { fetchAttribution } from '../lib/api';
+
 
 export interface AttributionData {
     sectors: {
@@ -84,28 +84,33 @@ export function SectorAttribution({ data, isLoading, isRefreshing = false, curre
     );
 }
 
-interface FullContributorsModalProps {
+function FullContributorsModal({
+    isOpen,
+    onClose,
+    initialData,
+    currency,
+    showClosed
+}: {
     isOpen: boolean;
     onClose: () => void;
     initialData: AttributionData['stocks'];
     currency: string;
-    accounts?: string[];
     showClosed?: boolean;
-}
-
-function FullContributorsModal({ isOpen, onClose, initialData, currency, accounts, showClosed }: FullContributorsModalProps) {
+}) {
+    const { openStockDetail } = useStockModal();
     const [fullData, setFullData] = useState<AttributionData['stocks']>(initialData);
     const [loading, setLoading] = useState(false);
-    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
     const loadFullData = async () => {
         setLoading(true);
         try {
-            const data = await fetchAttribution(currency, accounts, true, showClosed);
-            setFullData(data.stocks);
-        } catch (err) {
-            console.error("Failed to fetch full contributor list:", err);
+            const res = await fetchAttribution(currency, [], true, showClosed);
+            if (res && res.stocks) {
+                setFullData(res.stocks);
+            }
+        } catch (e) {
+            console.error('Failed to load full contributors', e);
         } finally {
             setLoading(false);
         }
@@ -178,19 +183,15 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                 className="w-full bg-muted/60 dark:bg-black/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 backdrop-blur-md placeholder-muted-foreground/60 border border-border/40 dark:border-white/10 transition-all text-foreground"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                autoFocus
                             />
                         </div>
                     </div>
                 </div>
 
                 {/* Content */}
-                <div
-                    style={{ backgroundColor: 'var(--menu-solid)' }}
-                    className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar"
-                >
+                <div className="flex-1 overflow-y-auto p-5 sm:p-8 pt-0 custom-scrollbar">
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center py-24 gap-4">
+                        <div className="flex flex-col items-center justify-center py-20 gap-4">
                             <div className="relative">
                                 <div className="w-12 h-12 rounded-full border-4 border-cyan-500/20 border-t-cyan-500 animate-spin" />
                                 <div className="absolute inset-0 flex items-center justify-center">
@@ -208,7 +209,8 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                     onClick={() => {
                                         const symbols = stock.symbol.split(',').map(s => s.trim());
                                         if (symbols.length === 1) {
-                                            setSelectedSymbol(symbols[0]);
+                                            onClose();
+                                            openStockDetail(symbols[0], currency);
                                         }
                                     }}
                                 >
@@ -224,7 +226,8 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                                         className="text-sm sm:text-base font-bold text-foreground hover:text-cyan-500 transition-colors z-10"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            setSelectedSymbol(sym);
+                                                            onClose();
+                                                            openStockDetail(sym, currency);
                                                         }}
                                                     >
                                                         {sym}{i < arr.length - 1 ? ',' : ''}
@@ -271,22 +274,13 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                     )}
                 </div>
             </div>
-
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={() => setSelectedSymbol(null)}
-                    currency={currency}
-                />
-            )}
         </div>,
         document.body
     );
 }
 
 export function TopContributors({ data, isLoading, isRefreshing = false, currency, showClosed }: CommonProps & { accounts?: string[], showClosed?: boolean }) {
-    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+    const { openStockDetail } = useStockModal();
     const [isAllModalOpen, setIsAllModalOpen] = useState(false);
 
     if (isLoading) {
@@ -318,7 +312,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                             onClick={() => {
                                 const symbols = stock.symbol.split(',').map(s => s.trim());
                                 if (symbols.length === 1) {
-                                    setSelectedSymbol(symbols[0]);
+                                    openStockDetail(symbols[0], currency);
                                 }
                             }}
                         >
@@ -332,7 +326,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                                 className="text-sm font-bold text-foreground hover:text-cyan-500 transition-colors cursor-pointer z-10"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setSelectedSymbol(sym);
+                                                    openStockDetail(sym, currency);
                                                 }}
                                             >
                                                 {sym}{i < arr.length - 1 ? ',' : ''}
@@ -379,15 +373,6 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                 currency={currency}
                 showClosed={showClosed}
             />
-
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={() => setSelectedSymbol(null)}
-                    currency={currency}
-                />
-            )}
         </>
     );
 }

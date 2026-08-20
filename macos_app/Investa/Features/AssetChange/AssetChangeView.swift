@@ -62,7 +62,6 @@ final class AssetChangeViewModel: ObservableObject {
 struct AssetChangeView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = AssetChangeViewModel()
-    @State private var detail: SymbolID?
 
     private var cur: String { appState.displayCurrency }
 
@@ -95,7 +94,6 @@ struct AssetChangeView: View {
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.assetChange, id) }
@@ -121,7 +119,7 @@ struct AssetChangeView: View {
     private func topContributors(_ attr: Attribution) -> some View {
         TopContributorsCard(attribution: attr, currency: cur,
                             accounts: appState.accountsQuery, showClosed: appState.showClosed,
-                            onSelectSymbol: { detail = SymbolID(id: $0) })
+                            onSelectSymbol: { appState.openStock($0) })
     }
 
     private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {

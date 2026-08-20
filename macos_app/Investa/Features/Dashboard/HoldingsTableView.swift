@@ -96,6 +96,7 @@ struct HoldingsTableView: View {
     let holdings: [Holding]
     let currency: String
 
+    @EnvironmentObject private var appState: AppState
     @Environment(\.horizontalSizeClass) var hSizeClass
     @State private var visibleColumns = defaultVisibleColumns
     @State private var sortKey = "Mkt Val"
@@ -112,8 +113,8 @@ struct HoldingsTableView: View {
     @AppStorage("investa.holdings.expandedCards") private var expandedCardsRaw = ""
     @State private var visibleRows = 10
     @State private var showColumns = false
-    @State private var detail: SymbolID?
     @State private var tagEdit: TagEdit?
+
 
     /// Identifies a holding whose tags are being edited (applies across all of
     /// its accounts).
@@ -312,7 +313,6 @@ struct HoldingsTableView: View {
         .padding(16)
         .overlay(alignment: .top) { Rectangle().fill(Color(hex: 0x6366f1).opacity(0.8)).frame(height: 2) }
         .card(.standard)
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
         .sheet(item: $tagEdit) { edit in
             TagEditorSheet(edit: edit) {
                 NotificationCenter.default.post(name: .refreshRequested, object: nil)
@@ -782,7 +782,7 @@ struct HoldingsTableView: View {
         }
         .padding(14)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
-        .onTapGesture { detail = SymbolID(id: r.symbol) }
+        .onTapGesture { appState.openStock(r.symbol) }
     }
 
     /// One rung of the ladder above. Nothing in here may report a width smaller
@@ -980,7 +980,7 @@ struct HoldingsTableView: View {
             StockIcon(symbol: r.symbol, size: 15)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Button { detail = SymbolID(id: r.symbol) } label: { Text(r.symbol).font(.footnote.weight(.bold)).lineLimit(1).fixedSize() }.buttonStyle(.plain)
+                    Button { appState.openStock(r.symbol) } label: { Text(r.symbol).font(.footnote.weight(.bold)).lineLimit(1).fixedSize() }.buttonStyle(.plain)
                     if !r.lots.isEmpty {
                         Button { toggleLot(r.symbol) } label: {
                             Image(systemName: expandedLots.contains(r.symbol) ? "chevron.down" : "chevron.right")

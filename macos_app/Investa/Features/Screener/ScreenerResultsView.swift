@@ -4,6 +4,7 @@ private enum ScreenSortKey: String { case symbol, price, intrinsic, mos, pe, aiS
 private struct ReviewSheetItem: Identifiable { let id: String }
 
 struct ScreenerResultsView: View {
+    @EnvironmentObject private var appState: AppState
     @ObservedObject var viewModel: ScreenerViewModel
     let currency: String
 
@@ -16,8 +17,8 @@ struct ScreenerResultsView: View {
     @State private var sortKey: ScreenSortKey = .mos
     @State private var sortAsc = false
     @State private var expanded: String?
-    @State private var detail: SymbolID?
     @State private var reviewSheetItem: ReviewSheetItem?
+
 
     private let capOptions: [(key: String, label: String)] = [
         ("all", "All"), ("mega", "Mega ≥ $200B"), ("large", "Large $10–200B"),
@@ -96,7 +97,6 @@ struct ScreenerResultsView: View {
             .padding(16)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
-            .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: currency) }
             .sheet(item: $reviewSheetItem) { item in
                 NavigationStack {
                     ScrollView {
@@ -253,7 +253,7 @@ struct ScreenerResultsView: View {
         iosResultRow(row)
         #else
         HStack(spacing: 8) {
-            Button { detail = SymbolID(id: row.symbol) } label: {
+            Button { appState.openStock(row.symbol) } label: {
                 HStack(spacing: 8) {
                     StockIcon(symbol: row.symbol, size: 26)
                     VStack(alignment: .leading, spacing: 1) {
@@ -282,7 +282,7 @@ struct ScreenerResultsView: View {
     private func iosResultRow(_ row: ScreenerResult) -> some View {
         VStack(spacing: 12) {
             HStack {
-                Button { detail = SymbolID(id: row.symbol) } label: {
+                Button { appState.openStock(row.symbol) } label: {
                     HStack(spacing: 8) {
                         StockIcon(symbol: row.symbol, size: 26)
                         VStack(alignment: .leading, spacing: 1) {

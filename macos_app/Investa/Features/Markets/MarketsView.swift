@@ -60,7 +60,6 @@ struct MarketsView: View {
     #endif
     @State private var newsQuery = ""
     @State private var indexDetail: IndexQuote?
-    @State private var stockDetail: SymbolID?
 
     private var cur: String { appState.displayCurrency }
 
@@ -82,7 +81,7 @@ struct MarketsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     indicesSection
-                    YourMoversSection(holdings: viewModel.holdings, currency: cur, onPick: { stockDetail = SymbolID(id: $0) })
+                    YourMoversSection(holdings: viewModel.holdings, currency: cur, onPick: { appState.openStock($0) })
                     SP500HeatmapView()
                     searchField
                     if !viewModel.stockNews.isEmpty {
@@ -97,8 +96,8 @@ struct MarketsView: View {
         .task { viewModel.reload(currency: cur) }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in viewModel.reload(currency: cur) }
         .sheet(item: $indexDetail) { idx in IndexGraphSheet(index: idx) }
-        .sheet(item: $stockDetail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
+
 
     // MARK: - Indices
 

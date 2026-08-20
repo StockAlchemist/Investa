@@ -42,7 +42,6 @@ struct StockDetailView: View {
     @State private var showAllMetrics = false
     /// nil follows the period's own default; a tap pins a range.
     @State private var chartRange: StatementRange?
-    @State private var detail: SymbolID?
     @State private var showGrahamExplanation = false
     @State private var summaryExpanded = false
     @State private var ratiosCategory = "All"
@@ -87,7 +86,6 @@ struct StockDetailView: View {
                 .padding(20)
             }
         }
-        .macSheetSize(width: 860, height: 720)
         .task { await viewModel.loadAll() }
         .onChange(of: tab) { _, t in
             Task {
@@ -99,8 +97,8 @@ struct StockDetailView: View {
                 }
             }
         }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
+
 
     // MARK: - Header + tabs
 
@@ -120,61 +118,99 @@ struct StockDetailView: View {
     }
 
     private var regularHeader: some View {
-        HStack(alignment: .center, spacing: 16) {
-            ZStack {
-                LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                StockIcon(symbol: viewModel.symbol, size: 48)
-                    .padding(8)
-                    .background(.white)
-            }
-            .frame(width: 64, height: 64)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(f?.shortName ?? viewModel.symbol)
-                        .font(.system(size: 32, weight: .black, design: .default))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    
-                    Text(viewModel.symbol)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                appState.closeStock()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                    if let previous = appState.stockHistory.last {
+                        Text("Back to \(previous)")
+                            .font(.system(size: 13, weight: .semibold))
+                    } else {
+                        Text("Back")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
                 }
-                if f?.sector != nil || f?.industry != nil {
-                    HStack(spacing: 6) {
-                        if let s = f?.sector { Text(s).font(.subheadline.weight(.semibold)).foregroundStyle(.indigo).lineLimit(1) }
-                        if f?.sector != nil && f?.industry != nil { Text("•").foregroundStyle(.secondary) }
-                        if let i = f?.industry { Text(i).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+
+            HStack(alignment: .center, spacing: 16) {
+                ZStack {
+                    LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    StockIcon(symbol: viewModel.symbol, size: 48)
+                        .padding(8)
+                        .background(.white)
+                }
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(f?.shortName ?? viewModel.symbol)
+                            .font(.system(size: 32, weight: .black, design: .default))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        
+                        Text(viewModel.symbol)
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(.secondary)
+                    }
+                    if f?.sector != nil || f?.industry != nil {
+                        HStack(spacing: 6) {
+                            if let s = f?.sector { Text(s).font(.subheadline.weight(.semibold)).foregroundStyle(.indigo).lineLimit(1) }
+                            if f?.sector != nil && f?.industry != nil { Text("•").foregroundStyle(.secondary) }
+                            if let i = f?.industry { Text(i).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                        }
+                    }
+                }
+                
+                Spacer(minLength: 16)
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    if viewModel.isLoading { ProgressView().controlSize(.small) }
+                    if let p = f?.price {
+                        Text(Fmt.currency(p, code: nativeCur))
+                            .font(.system(size: 32, weight: .black, design: .default))
+                            .foregroundStyle(.indigo)
                     }
                 }
             }
-            
-            Spacer(minLength: 16)
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                if viewModel.isLoading { ProgressView().controlSize(.small) }
-                if let p = f?.price {
-                    Text(Fmt.currency(p, code: nativeCur))
-                        .font(.system(size: 32, weight: .black, design: .default))
-                        .foregroundStyle(.indigo)
-                }
-            }
-            
-            Button { dismiss() } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .font(.system(size: 23, weight: .bold))
-                .padding(8)
-                .background(.background.secondary, in: Circle())
-                .padding(.leading, 8)
         }
     }
 
     private var compactHeader: some View {
-        VStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
+            Button {
+                appState.closeStock()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .bold))
+                    if let previous = appState.stockHistory.last {
+                        Text("Back to \(previous)")
+                            .font(.system(size: 12, weight: .semibold))
+                    } else {
+                        Text("Back")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -202,15 +238,6 @@ struct StockDetailView: View {
                         if viewModel.isLoading { ProgressView().controlSize(.small) }
                     }
                 }
-                
-                Spacer(minLength: 8)
-                
-                Button { dismiss() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 18, weight: .bold))
-                    .padding(8)
-                    .background(.background.secondary, in: Circle())
             }
             
             HStack(alignment: .bottom) {
@@ -231,6 +258,7 @@ struct StockDetailView: View {
             }
         }
     }
+
 
     private var tabBar: some View {
         #if os(iOS)
@@ -1137,32 +1165,6 @@ struct StockDetailView: View {
             : StockKeyMetricsView.chartDefs.filter { $0.group == ratiosCategory }
 
         VStack(alignment: .leading, spacing: 20) {
-            // Chrome first, so the switch survives an empty quarterly answer.
-            HStack(alignment: .center) {
-                Text(period == .quarterly
-                     ? "Measured on the trailing twelve months at each quarter end, sampled four times as often."
-                     : "Measured on each filed fiscal year.")
-                    .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 12)
-
-                HStack(spacing: 8) {
-                    Picker("", selection: $ratiosRange) {
-                        ForEach(StatementRange.allCases) { r in
-                            Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
-                        }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 140)
-
-                    Picker("", selection: Binding(
-                        get: { period },
-                        set: { p in Task { await viewModel.loadRatios(period: p) } }
-                    )) {
-                        ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 170)
-                }
-            }
-
             if viewModel.isLoadingRatios {
                 ProgressView().frame(maxWidth: .infinity).padding(40)
             } else if history.isEmpty && viewModel.trackRecord == nil {
@@ -1171,22 +1173,88 @@ struct StockDetailView: View {
                 if let record = viewModel.trackRecord { trackRecordPanel(record) }
 
                 if !history.isEmpty {
-                    // Category filter pills
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(categories, id: \.self) { cat in
-                                Button {
-                                    ratiosCategory = cat
-                                } label: {
-                                    Text(cat)
-                                        .font(.caption.weight(.semibold))
-                                        .padding(.horizontal, 10).padding(.vertical, 5)
-                                        .background(ratiosCategory == cat ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
-                                        .foregroundStyle(ratiosCategory == cat ? Color.white : Color.secondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Category filter pills + Period/Range Pickers Toolbar
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .center) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(categories, id: \.self) { cat in
+                                            Button {
+                                                ratiosCategory = cat
+                                            } label: {
+                                                Text(cat)
+                                                    .font(.caption.weight(.semibold))
+                                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                                    .background(ratiosCategory == cat ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
+                                                    .foregroundStyle(ratiosCategory == cat ? Color.white : Color.secondary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
                                 }
-                                .buttonStyle(.plain)
+
+                                Spacer(minLength: 12)
+
+                                HStack(spacing: 8) {
+                                    Picker("", selection: $ratiosRange) {
+                                        ForEach(StatementRange.allCases) { r in
+                                            Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented).labelsHidden().frame(width: 140)
+
+                                    Picker("", selection: Binding(
+                                        get: { period },
+                                        set: { p in Task { await viewModel.loadRatios(period: p) } }
+                                    )) {
+                                        ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
+                                    }
+                                    .pickerStyle(.segmented).labelsHidden().frame(width: 170)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(categories, id: \.self) { cat in
+                                            Button {
+                                                ratiosCategory = cat
+                                            } label: {
+                                                Text(cat)
+                                                    .font(.caption.weight(.semibold))
+                                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                                    .background(ratiosCategory == cat ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
+                                                    .foregroundStyle(ratiosCategory == cat ? Color.white : Color.secondary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+
+                                HStack(spacing: 8) {
+                                    Picker("", selection: $ratiosRange) {
+                                        ForEach(StatementRange.allCases) { r in
+                                            Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented).labelsHidden().frame(width: 140)
+
+                                    Picker("", selection: Binding(
+                                        get: { period },
+                                        set: { p in Task { await viewModel.loadRatios(period: p) } }
+                                    )) {
+                                        ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
+                                    }
+                                    .pickerStyle(.segmented).labelsHidden().frame(width: 170)
+                                }
                             }
                         }
+
+                        Text(period == .quarterly
+                             ? "Measured on the trailing twelve months at each quarter end, sampled four times as often."
+                             : "Measured on each filed fiscal year.")
+                            .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                     }
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
@@ -1983,11 +2051,16 @@ struct StockDetailView: View {
                     }
                     Divider()
                     ForEach(f!.etfTopHoldings, id: \.symbol) { h in
-                        HStack {
-                            Text(h.symbol).font(.headline)
-                            Spacer()
-                            Text(Fmt.percent(h.percent)).font(.subheadline.bold())
+                        Button {
+                            appState.openStock(h.symbol)
+                        } label: {
+                            HStack {
+                                Text(h.symbol).font(.headline).foregroundStyle(.indigo)
+                                Spacer()
+                                Text(Fmt.percent(h.percent)).font(.subheadline.bold()).foregroundStyle(.primary)
+                            }
                         }
+                        .buttonStyle(.plain)
                         Divider()
                     }
                 }

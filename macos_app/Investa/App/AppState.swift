@@ -86,8 +86,34 @@ final class AppState: ObservableObject {
     /// When the global market data (indices / market status) was last fetched.
     @Published var lastUpdated: Date? = nil
     @Published var isRefreshing: Bool = false
+    /// In-window stock detail navigation state.
+    @Published var selectedStock: String? = nil
+    @Published var stockHistory: [String] = []
+
+    func openStock(_ symbol: String) {
+        let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !sym.isEmpty else { return }
+        if let current = selectedStock, current != sym {
+            stockHistory.append(current)
+        }
+        selectedStock = sym
+    }
+
+    func closeStock() {
+        if !stockHistory.isEmpty {
+            selectedStock = stockHistory.removeLast()
+        } else {
+            selectedStock = nil
+        }
+    }
+
+    func clearStock() {
+        selectedStock = nil
+        stockHistory.removeAll()
+    }
 
     private let api: APIClient
+
     private let visibleDefaultsKey = "investa.tabVisible"
     /// Background poll that keeps prices fresh while the market is open.
     private var autoRefreshTask: Task<Void, Never>?

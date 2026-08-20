@@ -42,6 +42,7 @@ import { MobileNav } from '@/components/layout/MobileNav';
 import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
 import { Home as HomeIcon, Activity, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
+import { useStockModal } from '@/context/StockModalContext';
 
 const PerformanceGraph = dynamic(() => import('@/components/PerformanceGraph'), {
   loading: () => <div className="h-[400px] bg-card border border-border/50 rounded-2xl mb-6 animate-pulse" />,
@@ -68,10 +69,31 @@ const RiskMetrics          = dynamic(() => import('@/components/RiskMetrics'), {
 const ProjectionCard       = dynamic(() => import('@/components/ProjectionCard'), { ssr: false });
 const SectorAttribution    = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.SectorAttribution })), { ssr: false });
 const TopContributors      = dynamic(() => import('@/components/AttributionChart').then(m => ({ default: m.TopContributors })), { ssr: false });
+const StockDetailView      = dynamic(() => import('@/components/StockDetailModal'), {
+  loading: () => <div className="h-[600px] bg-card border border-border/50 rounded-2xl animate-pulse" />,
+  ssr: false,
+});
+
+const TAB_NAMES: Record<string, string> = {
+  performance: 'Dashboard',
+  allocation: 'Portfolio',
+  asset_change: 'Performance',
+  transactions: 'Transactions',
+  dividend: 'Income',
+  capital_gains: 'Capital Gains',
+  screener: 'Screener',
+  buffett_rank: 'Rankings',
+  strategies: 'Strategies',
+  watchlist: 'Watchlist',
+  markets: 'Markets',
+  ai_review: 'AI Insights',
+  settings: 'Settings',
+};
 
 export default function AuthenticatedDashboard() {
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
+  const { selectedSymbol, modalCurrency, closeStockDetail, goBack, canGoBack } = useStockModal();
 
   const [selectedAccounts, setSelectedAccounts]     = useState<string[]>([]);
   const [currency, setCurrency]                     = useState('USD');
@@ -96,11 +118,13 @@ export default function AuthenticatedDashboard() {
   const [visibleItems, setVisibleItems]             = useState<string[]>(INITIAL_VISIBLE_ITEMS);
   const [tabLayouts, setTabLayouts]                 = useState<Record<string, string[]>>({});
 
-  const handleUserIconClick = () => { setSettingsInitialTab('account'); setActiveTab('settings'); };
+  const handleUserIconClick = () => { closeStockDetail(); setSettingsInitialTab('account'); setActiveTab('settings'); };
   const handleTabChange = (tab: string) => {
+    closeStockDetail();
     if (tab === 'settings') setSettingsInitialTab(undefined);
     setActiveTab(tab);
   };
+
 
   // Hydrate all state from localStorage in one effect
   useEffect(() => {
@@ -286,7 +310,11 @@ export default function AuthenticatedDashboard() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const handleNavigate = (tab: string) => { setActiveTab(tab); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const handleNavigate = (tab: string) => {
+    closeStockDetail();
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const marketStatusQuery = useQuery({
@@ -856,13 +884,27 @@ export default function AuthenticatedDashboard() {
         {/* Scrollable content area */}
         <main className="flex-1 overflow-y-auto pb-20 md:pb-8">
           <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-5 sm:py-6">
-            {renderTabContent()}
-            <div className={activeTab === 'screener' ? 'block' : 'hidden'}>
-              <ScreenerView currency={currency} />
-            </div>
+            {selectedSymbol ? (
+              <StockDetailView
+                symbol={selectedSymbol}
+                isOpen={true}
+                onClose={closeStockDetail}
+                onBack={goBack}
+                previousViewName={canGoBack ? 'Previous Stock' : (TAB_NAMES[activeTab] || 'Dashboard')}
+                currency={currency || modalCurrency}
+              />
+            ) : (
+              <>
+                {renderTabContent()}
+                <div className={activeTab === 'screener' ? 'block' : 'hidden'}>
+                  <ScreenerView currency={currency} />
+                </div>
+              </>
+            )}
           </div>
         </main>
       </div>
+
 
       {/* ── Modals ── */}
       <CommandPalette

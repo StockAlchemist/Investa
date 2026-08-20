@@ -9,11 +9,11 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchSymbolSearch, type SymbolSearchResult } from '@/lib/api';
+import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from '@/components/StockIcon';
 
-const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
-
 interface CommandPaletteProps {
+
     isOpen: boolean;
     onClose: () => void;
     onNavigate: (tab: string) => void;
@@ -54,11 +54,11 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 export default function CommandPalette({ isOpen, onClose, onNavigate, currency }: CommandPaletteProps) {
+    const { openStockDetail } = useStockModal();
     const [query, setQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [stockResults, setStockResults] = useState<SymbolSearchResult[]>([]);
     const [stockLoading, setStockLoading] = useState(false);
-    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,26 +72,29 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
     }, [isOpen]);
 
     // Debounced stock search
-    const runStockSearch = useCallback((q: string) => {
+    const searchStocks = useCallback((q: string) => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (!q.trim()) { setStockResults([]); setStockLoading(false); return; }
+        if (!q.trim()) {
+            setStockResults([]);
+            setStockLoading(false);
+            return;
+        }
         setStockLoading(true);
         debounceRef.current = setTimeout(async () => {
             try {
-                const data = await fetchSymbolSearch(q.trim());
-                setStockResults(data);
+                const results = await fetchSymbolSearch(q.trim());
+                setStockResults(results);
             } catch {
                 setStockResults([]);
             } finally {
                 setStockLoading(false);
             }
-        }, 280);
+        }, 250);
     }, []);
 
     useEffect(() => {
-        setSelectedIndex(0);
-        runStockSearch(query);
-    }, [query, runStockSearch]);
+        searchStocks(query);
+    }, [query, searchStocks]);
 
     const filteredNav = NAV_COMMANDS.filter(cmd =>
         cmd.label.toLowerCase().includes(query.toLowerCase()) ||
@@ -102,9 +105,9 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
     const totalCount = filteredNav.length + stockResults.length;
 
     const openStock = useCallback((symbol: string) => {
-        setSelectedSymbol(symbol);
+        openStockDetail(symbol, currency);
         onClose();
-    }, [onClose]);
+    }, [openStockDetail, currency, onClose]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -143,143 +146,127 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
 
     let globalIndex = 0;
 
-    // NOTE: We deliberately DO NOT early-return on `!isOpen` here. Clicking a
-    // stock result triggers both setSelectedSymbol(...) and onClose() in the
-    // same React batch — flipping `isOpen` to false. If we early-returned, the
-    // <StockDetailModal/> below would be discarded along with the palette and
-    // never render. Render the modal independently of the palette's open state.
+    if (!isOpen) return null;
+
     return (
-        <>
-            {isOpen && (
-            <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]">
-                {/* Backdrop */}
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+        <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]">
+            {/* Backdrop */}
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
-                {/* Modal */}
-                <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal */}
+            <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
 
-                    {/* Search input */}
-                    <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-                        {stockLoading
-                            ? <Loader2 className="w-4 h-4 text-muted-foreground shrink-0 animate-spin" />
-                            : <Search className="w-4 h-4 text-muted-foreground shrink-0" />
-                        }
-                        <input
-                            ref={inputRef}
-                            type="text"
-                            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-                            placeholder="Go to page or search a stock symbol…"
-                            value={query}
-                            onChange={e => setQuery(e.target.value)}
-                            autoComplete="off"
-                            spellCheck={false}
-                        />
-                        <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] font-mono text-muted-foreground shrink-0">
-                            ESC
-                        </kbd>
-                    </div>
+                {/* Search input */}
+                <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+                    <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        placeholder="Search sections or stock symbols…"
+                        className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                        autoComplete="off"
+                        spellCheck={false}
+                    />
+                    {stockLoading && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin shrink-0" />}
+                    <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground">
+                        ESC
+                    </kbd>
+                </div>
 
-                    {/* Results */}
-                    <div className="max-h-[55vh] overflow-y-auto py-2">
-                        {totalCount === 0 && !stockLoading ? (
-                            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                                {query ? `No results for "${query}"` : 'Start typing to search…'}
+                {/* Results list */}
+                <div className="max-h-80 overflow-y-auto p-2 space-y-3">
+                    {totalCount === 0 && (
+                        <div className="py-8 text-center text-xs text-muted-foreground">
+                            No results found for &ldquo;{query}&rdquo;
+                        </div>
+                    )}
+
+                    {/* Navigation sections */}
+                    {Object.entries(sections).map(([section, items]) => (
+                        <div key={section} className="space-y-0.5">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-2 py-1">
+                                {section}
                             </p>
-                        ) : (
-                            <>
-                                {/* Navigation section */}
-                                {Object.entries(sections).map(([section, cmds]) => (
-                                    <div key={section}>
-                                        <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                                            {section}
-                                        </p>
-                                        {cmds.map(cmd => {
-                                            const idx = globalIndex++;
-                                            const active = idx === selectedIndex;
-                                            const Icon = cmd.icon;
-                                            return (
-                                                <button
-                                                    key={cmd.id}
-                                                    className={cn(
-                                                        'w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
-                                                        active ? 'bg-indigo-600 text-white' : 'text-foreground hover:bg-muted',
-                                                    )}
-                                                    onClick={() => { onNavigate(cmd.id); onClose(); }}
-                                                    onMouseEnter={() => setSelectedIndex(idx)}
-                                                >
-                                                    <Icon className={cn('w-4 h-4 shrink-0', active ? 'text-white' : 'text-muted-foreground')} />
-                                                    <span className="flex-1 text-left font-medium">{cmd.label}</span>
-                                                    {active && <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
+                            {items.map(cmd => {
+                                const Icon = cmd.icon;
+                                const itemIndex = globalIndex++;
+                                const active = itemIndex === selectedIndex;
+                                return (
+                                    <button
+                                        key={cmd.id}
+                                        onClick={() => { onNavigate(cmd.id); onClose(); }}
+                                        onMouseEnter={() => setSelectedIndex(itemIndex)}
+                                        className={cn(
+                                            'w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors',
+                                            active
+                                                ? 'bg-primary text-primary-foreground'
+                                                : 'text-foreground hover:bg-muted',
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-2.5">
+                                            <Icon className={cn('w-4 h-4', active ? 'text-primary-foreground' : 'text-muted-foreground')} />
+                                            <span>{cmd.label}</span>
+                                        </div>
+                                        {active && <ChevronRight className="w-3.5 h-3.5 opacity-70" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ))}
 
-                                {/* Stock results section */}
-                                {stockResults.length > 0 && (
-                                    <div>
-                                        <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                                            Stocks
-                                        </p>
-                                        {stockResults.map(r => {
-                                            const idx = globalIndex++;
-                                            const active = idx === selectedIndex;
-                                            return (
-                                                <button
-                                                    key={r.symbol}
-                                                    className={cn(
-                                                        'w-full flex items-center gap-3 px-4 py-2 transition-colors',
-                                                        active ? 'bg-indigo-600 text-white' : 'text-foreground hover:bg-muted',
-                                                    )}
-                                                    onClick={() => openStock(r.symbol)}
-                                                    onMouseEnter={() => setSelectedIndex(idx)}
-                                                >
-                                                    <div className="w-7 h-7 shrink-0">
-                                                        <StockIcon symbol={r.symbol} size={28} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0 text-left">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className={cn('text-sm font-bold', active ? 'text-white' : 'text-foreground')}>
-                                                                {r.symbol}
-                                                            </span>
-                                                            <TypeBadge type={r.type} />
-                                                        </div>
-                                                        {r.name && (
-                                                            <p className={cn('text-[11px] truncate', active ? 'text-white/70' : 'text-muted-foreground')}>
-                                                                {r.name}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    {active && <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
+                    {/* Stock search results */}
+                    {stockResults.length > 0 && (
+                        <div className="space-y-0.5 pt-1 border-t border-border">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-2 py-1">
+                                Stocks &amp; Assets
+                            </p>
+                            {stockResults.map(r => {
+                                const itemIndex = globalIndex++;
+                                const active = itemIndex === selectedIndex;
+                                return (
+                                    <button
+                                        key={r.symbol}
+                                        onClick={() => openStock(r.symbol)}
+                                        onMouseEnter={() => setSelectedIndex(itemIndex)}
+                                        className={cn(
+                                            'w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition-colors',
+                                            active
+                                                ? 'bg-primary text-white'
+                                                : 'hover:bg-muted',
+                                        )}
+                                    >
+                                        <div className="w-6 h-6 shrink-0">
+                                            <StockIcon symbol={r.symbol} size={24} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={cn('text-xs font-bold', active ? 'text-white' : 'text-foreground')}>
+                                                    {r.symbol}
+                                                </span>
+                                                <TypeBadge type={r.type} />
+                                            </div>
+                                            {r.name && (
+                                                <p className={cn('text-[11px] truncate', active ? 'text-white/70' : 'text-muted-foreground')}>
+                                                    {r.name}
+                                                </p>
+                                            )}
+                                        </div>
+                                        {active && <ChevronRight className="w-4 h-4 text-white/70 shrink-0" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
 
-                    {/* Footer */}
-                    <div className="border-t border-border px-4 py-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                        <span>↑↓ navigate · Enter to open</span>
-                        <span className="font-semibold">Investa</span>
-                    </div>
+                {/* Footer */}
+                <div className="border-t border-border px-4 py-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>↑↓ navigate · Enter to open</span>
+                    <span className="font-semibold">Investa</span>
                 </div>
             </div>
-            )}
-
-            {/* Stock detail modal — kept outside the `isOpen` guard so it
-                survives the palette closing on stock selection. */}
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={() => setSelectedSymbol(null)}
-                    currency={currency}
-                />
-            )}
-        </>
+        </div>
     );
 }

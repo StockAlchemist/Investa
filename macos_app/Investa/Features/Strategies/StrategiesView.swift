@@ -87,9 +87,6 @@ struct StrategiesView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var model = StrategiesViewModel()
     @State private var capitalText = ""
-    /// Tapping a holding opens its detail sheet, matching the web client, where
-    /// the symbol in the allocation table opens the stock modal.
-    @State private var detail: SymbolID?
 
     var body: some View {
         ScrollView {
@@ -109,9 +106,6 @@ struct StrategiesView: View {
             }
             .padding(Theme.gutter)
         }
-        .sheet(item: $detail) {
-            StockDetailView(symbol: $0.id, currency: appState.displayCurrency)
-        }
         .task {
             await model.loadCatalogue()
             await model.adoptPortfolioValue(currency: appState.displayCurrency)
@@ -119,6 +113,7 @@ struct StrategiesView: View {
             await model.buildAllocation()
         }
     }
+
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -179,7 +174,7 @@ struct StrategiesView: View {
                               currency: appState.displayCurrency,
                               ageDays: model.allocation?.rankingAgeDays,
                               isStale: model.allocation?.rankingIsStale ?? false) {
-                    detail = SymbolID(id: $0)
+                    appState.openStock($0)
                 }
             }
         }

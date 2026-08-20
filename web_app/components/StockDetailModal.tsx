@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createPortal } from 'react-dom';
 import {
+
     fetchFundamentals,
     fetchFinancials,
     fetchRatios,
@@ -12,7 +12,7 @@ import {
     fetchHoldings,
     Holding
 } from '../lib/api';
-import { Info } from 'lucide-react';
+import { Info, ArrowLeft } from 'lucide-react';
 import { Skeleton } from './ui/skeleton';
 import { TabType, StockDetailModalProps } from './stock-detail/types';
 import { StockDetailHeader } from './stock-detail/components/StockDetailHeader';
@@ -64,14 +64,34 @@ function getDomain(url: string | undefined): string | undefined {
     }
 }
 
-export default function StockDetailModal({ symbol, isOpen, onClose, currency }: StockDetailModalProps) {
-    const [activeTab, setActiveTab] = useState<TabType>('overview');
+export default function StockDetailModal({
+    symbol,
+    isOpen = true,
+    onClose,
+    onBack,
+    previousViewName,
+    currency,
+    initialTab = 'overview'
+}: StockDetailModalProps) {
+    const [activeTab, setActiveTab] = useState<TabType>((initialTab as TabType) || 'overview');
     const [mounted, setMounted] = useState(false);
     const queryClient = useQueryClient();
+    const handleBack = onBack || onClose;
 
     useEffect(() => {
         setMounted(true);
     }, []);
+
+    // Handle Escape key to go back
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                handleBack();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleBack]);
 
     const fundamentalsQuery = useQuery({
         queryKey: ['stock-fundamentals', symbol],
@@ -253,18 +273,24 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
     if (!mounted || !isOpen) return null;
 
-    return createPortal(
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 isolate">
-            <div className="absolute inset-0 bg-black/60 cursor-pointer" onClick={onClose} />
+    return (
+        <div className="w-full flex flex-col space-y-4 animate-in fade-in-50 duration-200">
+            {/* Top Back Navigation Bar */}
+            <div className="flex items-center justify-between pb-1">
+                <button
+                    onClick={handleBack}
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-card hover:bg-accent text-foreground text-xs sm:text-sm font-semibold border border-border/60 shadow-sm transition-all hover:scale-[1.01] active:scale-[0.98] cursor-pointer"
+                    aria-label="Back"
+                >
+                    <ArrowLeft className="w-4 h-4 text-indigo-500" />
+                    <span>{previousViewName ? `Back to ${previousViewName}` : 'Back'}</span>
+                </button>
+            </div>
 
-            <div className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 bg-white dark:bg-zinc-950">
-                {/* Mobile Drag Handle */}
-                <div className="sm:hidden w-full flex justify-center pt-3 pb-1 flex-shrink-0">
-                    <div className="w-12 h-1.5 bg-secondary rounded-full" />
-                </div>
-
+            {/* Main Stock Detail Card */}
+            <div className="relative w-full rounded-2xl sm:rounded-3xl border border-border/60 bg-card shadow-sm flex flex-col overflow-hidden">
                 {/* Sticky Header & Tabs Container */}
-                <div className="sticky top-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md flex-shrink-0 border-b border-border/40">
+                <div className="sticky top-0 z-20 bg-card/95 backdrop-blur-md flex-shrink-0 border-b border-border/40">
                     <StockDetailHeader
                         symbol={symbol}
                         fundamentals={fundamentals}
@@ -272,6 +298,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         fxRate={fxRate}
                         domain={domain}
                         onClose={onClose}
+                        onBack={onBack}
                     />
                     <StockDetailTabs
                         activeTab={activeTab}
@@ -281,7 +308,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 </div>
 
                 {/* Content Area */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 pt-4 custom-scrollbar">
+                <div className="flex-1 p-4 sm:p-6 pt-4 custom-scrollbar">
                     {loading ? (
                         <div className="space-y-4">
                             <Skeleton className="h-40 w-full rounded-2xl" />
@@ -377,7 +404,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     )}
                 </div>
             </div>
-        </div>,
-        document.body
+        </div>
     );
 }
+

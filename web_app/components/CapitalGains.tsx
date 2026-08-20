@@ -4,9 +4,7 @@ import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import { exportToCSV } from '../lib/export';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
-
-import dynamic from 'next/dynamic';
-const StockDetailModal = dynamic(() => import('@/components/StockDetailModal'), { ssr: false });
+import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 import { Scale, Search, X, Download, Calendar } from 'lucide-react';
@@ -21,11 +19,12 @@ interface CapitalGainsProps {
 }
 
 export default function CapitalGains({ data, currency, isLoading, visibleSections }: CapitalGainsProps) {
+    const { openStockDetail } = useStockModal();
     const [selectedYear, setSelectedYear] = useState<string | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending'; isGainPct?: boolean } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
-    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+
 
     const show = (id: string) => !visibleSections || visibleSections.includes(id);
 
@@ -289,7 +288,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                 <div>
                                     <h3
                                         className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors flex items-center gap-2"
-                                        onClick={() => setSelectedSymbol(item.Symbol)}
+                                        onClick={() => openStockDetail(item.Symbol, currency)}
                                     >
                                         <StockIcon symbol={item.Symbol} size={24} />
                                         {item.Symbol}
@@ -385,7 +384,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                         <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
                                         <td
                                             className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
-                                            onClick={() => setSelectedSymbol(item.Symbol)}
+                                            onClick={() => openStockDetail(item.Symbol, currency)}
                                         >
                                             <div className="flex items-center gap-2">
                                                 <StockIcon symbol={item.Symbol} size={20} />
@@ -441,16 +440,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                 )}
             </div>
             )}
-
-            {/* Stock Detail Modal */}
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={() => setSelectedSymbol(null)}
-                    currency={currency}
-                />
-            )}
         </div>
     );
 }
+

@@ -46,7 +46,6 @@ final class DividendsViewModel: ObservableObject {
 struct DividendsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = DividendsViewModel()
-    @State private var detail: SymbolID?
     /// Year selected by tapping a bar in the Annual Dividends chart; filters the
     /// transactions table below (mirrors the Capital Gains tab).
     @State private var selectedYear: String?
@@ -88,7 +87,7 @@ struct DividendsView: View {
                     }
                     if vis("incomeProjector") { IncomeProjectorCard(income: viewModel.projected, currency: cur) }
                     if vis("dividendCalendar") {
-                        DividendCalendarSection(events: viewModel.calendar, currency: cur, onSelect: { detail = SymbolID(id: $0) })
+                        DividendCalendarSection(events: viewModel.calendar, currency: cur, onSelect: { appState.openStock($0) })
                     }
                     payersRow
                     if vis("annualDividends") { AnnualDividendsCard(dividends: viewModel.dividends, currency: cur, selectedYear: $selectedYear) }
@@ -101,7 +100,6 @@ struct DividendsView: View {
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .sheet(item: $detail) { StockDetailView(symbol: $0.id, currency: cur) }
     }
 
     /// True only during the initial fetch, before any data has arrived — so we
@@ -116,10 +114,10 @@ struct DividendsView: View {
     @ViewBuilder private var payersRow: some View {
         let payers = vis("topPayers"); let byAcct = vis("byAccount")
         if payers && byAcct {
-            twoColumn(TopPayersCard(dividends: viewModel.dividends, currency: cur, onSelect: { detail = SymbolID(id: $0) }),
+            twoColumn(TopPayersCard(dividends: viewModel.dividends, currency: cur, onSelect: { appState.openStock($0) }),
                       ByAccountCard(dividends: viewModel.dividends, currency: cur))
         } else if payers {
-            TopPayersCard(dividends: viewModel.dividends, currency: cur, onSelect: { detail = SymbolID(id: $0) })
+            TopPayersCard(dividends: viewModel.dividends, currency: cur, onSelect: { appState.openStock($0) })
         } else if byAcct {
             ByAccountCard(dividends: viewModel.dividends, currency: cur)
         }
