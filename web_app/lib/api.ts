@@ -1904,3 +1904,40 @@ export async function fetchStockPosition(
     return (await response.json()) as StockPositionData;
 }
 
+export interface StockPositionHistoryPoint {
+    date: string;
+    value: number;
+    cost_basis: number;
+    shares: number;
+    unrealized_gain: number;
+    unrealized_gain_pct: number;
+    return_pct: number;
+    [key: string]: number | string | undefined;
+}
+
+export async function fetchStockPositionHistory(
+    symbol: string,
+    currency: string = 'USD',
+    period: string = '1y',
+    accounts?: string[],
+    benchmarks?: string[],
+    fromDate?: string,
+    toDate?: string,
+    signal?: AbortSignal
+): Promise<StockPositionHistoryPoint[]> {
+    const params = new URLSearchParams({ currency, period });
+    if (accounts && accounts.length) {
+        accounts.forEach((a) => params.append('accounts', a));
+    }
+    if (benchmarks && benchmarks.length) {
+        benchmarks.forEach((b) => params.append('benchmarks', b));
+    }
+    if (fromDate) params.append('from', fromDate);
+    if (toDate) params.append('to', toDate);
+
+    const url = `${API_BASE_URL}/stock/${encodeURIComponent(symbol)}/position_history?${params.toString()}`;
+    const response = await authFetch(url, { signal });
+    if (!response.ok) throw new Error(`Failed to fetch stock position history for ${symbol}`);
+    return (await response.json()) as StockPositionHistoryPoint[];
+}
+

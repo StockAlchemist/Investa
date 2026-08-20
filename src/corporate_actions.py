@@ -315,11 +315,14 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     splits_df["__split_ym"] = pd.to_datetime(splits_df["Date"]).dt.to_period("M")
 
     # Normalize Split Ratio so 7.0 and 7 don't get treated as different splits.
-    splits_df["Split Ratio"] = (
-        pd.to_numeric(splits_df["Split Ratio"], errors="coerce")
-        .fillna(1.0)
-        .astype(float)
-    )
+    if "Split Ratio" in splits_df.columns:
+        splits_df["Split Ratio"] = (
+            pd.to_numeric(splits_df["Split Ratio"], errors="coerce")
+            .fillna(1.0)
+            .round(6)
+        )
+    else:
+        splits_df["Split Ratio"] = 1.0
 
     sort_cols = ["Symbol", "__split_ym", "__split_priority"]
     if "original_index" in splits_df.columns:

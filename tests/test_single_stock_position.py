@@ -215,4 +215,67 @@ def test_get_stock_position_endpoint():
         app.dependency_overrides.clear()
 
 
+def test_calculate_fifo_lots_with_zero_price_sell_writeoff():
+    """Verify FIFO lots correctly close when a sell transaction has price 0 (e.g. fractional share writeoff)."""
+    txs = [
+        # Buy 10.28 shares of AAPL @ $50
+        {
+            "Date": pd.Timestamp("2024-01-10"),
+            "Symbol": "AAPL",
+            "Account": "Brokerage",
+            "Type": "Buy",
+            "Quantity": 10.28,
+            "Price/Share": 50.0,
+            "Commission": 0.0,
+            "Local Currency": "USD",
+            "original_index": 1,
+        },
+        # Sell 10 shares @ $100
+        {
+            "Date": pd.Timestamp("2024-05-10"),
+            "Symbol": "AAPL",
+            "Account": "Brokerage",
+            "Type": "Sell",
+            "Quantity": 10.0,
+            "Price/Share": 100.0,
+            "Commission": 0.0,
+            "Local Currency": "USD",
+            "original_index": 2,
+        },
+        # Writeoff remaining 0.28 shares at $0 proceeds
+        {
+            "Date": pd.Timestamp("2024-06-01"),
+            "Symbol": "AAPL",
+            "Account": "Brokerage",
+            "Type": "Sell",
+            "Quantity": 0.28,
+            "Price/Share": 0.0,
+            "Commission": 0.0,
+            "Local Currency": "USD",
+            "original_index": 3,
+        },
+    ]
 
+    df_txs = pd.DataFrame(txs)
+    df_gains, open_lots = calculate_fifo_lots_and_gains(
+        transactions_df=df_txs,
+        display_currency="USD",
+        historical_fx_yf={},
+        default_currency="USD",
+        shortable_symbols=set(),
+    )
+
+    # 1. Open lots must be completely empty (0 shares remaining)
+    aapl_lots = open_lots.get(("AAPL", "BROKERAGE"), [])
+    assert len(aapl_lots) == 0
+
+    # 2. Both sale and write-off should be in realized gains
+    assert len(df_gains) == 2
+    writeoff_gain = df_gains.iloc[1]
+    assert writeoff_gain["Quantity"] == 0.28
+    assert writeoff_gain["Avg Sale Price (Local)"] == 0.0
+    assert pytest.approx(writeoff_gain["Total Proceeds (Local)"]) == 0.0
+    # Cost basis for 0.28 shares @ $50 = $14.0
+    assert pytest.approx(writeoff_gain["Total Cost Basis (Local)"]) == 14.0
+    # Realized loss = -$14.0
+    assert pytest.approx(writeoff_gain["Realized Gain (Local)"]) == -14.0

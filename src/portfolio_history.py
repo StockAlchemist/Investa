@@ -733,13 +733,16 @@ def _prepare_historical_inputs(
 
     # Extract split history from the *unfiltered* `all_transactions_df`
     # to ensure all splits are considered, even if an account with a split tx is filtered out.
-    split_transactions = all_transactions_df[
-        all_transactions_df["Type"].str.lower().isin(["split", "stock split"])
-        & all_transactions_df["Split Ratio"].notna()
-        & (
-            pd.to_numeric(all_transactions_df["Split Ratio"], errors="coerce") > 0
-        )  # Ensure valid ratio
-    ].sort_values(by="Date", ascending=True)
+    if "Split Ratio" in all_transactions_df.columns:
+        split_transactions = all_transactions_df[
+            all_transactions_df["Type"].str.lower().isin(["split", "stock split"])
+            & all_transactions_df["Split Ratio"].notna()
+            & (
+                pd.to_numeric(all_transactions_df["Split Ratio"], errors="coerce") > 0
+            )  # Ensure valid ratio
+        ].sort_values(by="Date", ascending=True)
+    else:
+        split_transactions = pd.DataFrame()
 
     splits_by_internal_symbol: Dict[str, List[Dict[str, Any]]] = {}
     if not split_transactions.empty:

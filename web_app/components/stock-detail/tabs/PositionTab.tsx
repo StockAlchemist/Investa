@@ -21,6 +21,7 @@ import {
 import { fetchStockPosition, StockPositionData } from '../../../lib/api';
 import { formatCurrency, cn } from '../../../lib/utils';
 import { Skeleton } from '../../ui/skeleton';
+import { PositionPerformanceGraph } from '../components/PositionPerformanceGraph';
 
 interface PositionTabProps {
     symbol: string;
@@ -244,7 +245,15 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                 </div>
             </div>
 
-            {/* 2. Return Attribution Waterfall Card */}
+            {/* 2. Position Performance History Graph (Value & Return %) */}
+            <PositionPerformanceGraph
+                symbol={symbol}
+                currency={currency}
+                accounts={accounts}
+                localCurrency={data.local_currency}
+            />
+
+            {/* 3. Return Attribution Waterfall Card */}
             <div className="bg-muted/50 border border-border/50 rounded-2xl p-5 space-y-4">
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold flex items-center gap-2">

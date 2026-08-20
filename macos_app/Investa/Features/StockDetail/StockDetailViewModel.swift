@@ -19,15 +19,20 @@ final class StockDetailViewModel: ObservableObject {
     @Published var trackRecord: TrackRecord?
     @Published var userPosition: Holding?
     @Published var positionData: StockPositionResponse?
+    @Published var positionHistory: [StockPositionHistoryPoint] = []
     @Published var news: [MarketNewsItem] = []
 
     @Published var isLoading = false
     @Published var isLoadingPosition = false
+    @Published var isLoadingPositionHistory = false
     @Published var isLoadingAnalysis = false
     @Published var isLoadingFinancials = false
     @Published var isLoadingRatios = false
     @Published var isLoadingNews = false
     @Published var period = "1y"
+    @Published var positionPeriod = "1y"
+    @Published var positionView = "value"
+    @Published var positionBenchmarks: [String] = []
     @Published var errorMessage: String?
 
     let currency: String
@@ -61,6 +66,31 @@ final class StockDetailViewModel: ObservableObject {
         // Aggregate the user's position in this symbol across accounts.
         if let holdings = try? await h {
             userPosition = aggregatePosition(holdings.filter { $0.symbol == symbol })
+        }
+        await loadPositionHistory()
+    }
+
+    func loadPositionHistory(period: String? = nil, benchmarks: [String]? = nil) async {
+        let p = period ?? positionPeriod
+        positionPeriod = p
+        let bm = benchmarks ?? positionBenchmarks
+        positionBenchmarks = bm
+
+        isLoadingPositionHistory = true
+        defer { isLoadingPositionHistory = false }
+
+        var query = [
+            URLQueryItem(name: "currency", value: currency),
+            URLQueryItem(name: "period", value: p)
+        ]
+        for b in bm {
+            query.append(URLQueryItem(name: "benchmarks", value: b))
+        }
+
+        do {
+            positionHistory = try await api.get("/stock/\(symbol)/position_history", query: query)
+        } catch {
+            positionHistory = []
         }
     }
 

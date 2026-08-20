@@ -3440,7 +3440,15 @@ def calculate_fifo_lots_and_gains(
 
         if tx_type == "buy":
             if pd.isna(price_local) or price_local <= 1e-9:
-                continue
+                total_amt_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+                if (
+                    pd.notna(total_amt_raw)
+                    and abs(float(total_amt_raw)) > 1e-9
+                    and qty > 1e-9
+                ):
+                    price_local = abs(float(total_amt_raw)) / qty
+                else:
+                    continue
 
             cost_per_share_local_net = ((qty * price_local) + commission_local) / qty
 
@@ -3455,8 +3463,13 @@ def calculate_fifo_lots_and_gains(
             )
 
         elif tx_type == "sell":
-            if pd.isna(price_local) or price_local <= 1e-9:
-                continue
+            if pd.isna(price_local):
+                total_amt_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+                if pd.notna(total_amt_raw) and qty > 1e-9:
+                    price_local = abs(float(total_amt_raw)) / qty
+                else:
+                    price_local = 0.0
+            price_local = max(0.0, float(price_local))
 
             qty_to_sell_remaining = qty
             total_proceeds_local_for_this_sale = (qty * price_local) - commission_local

@@ -6,8 +6,9 @@ import logging
 import sqlite3
 import time
 from datetime import datetime, date, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -944,7 +945,9 @@ async def get_stock_position(
                 if qty > config.STOCK_QUANTITY_CLOSE_TOLERANCE:
                     purchase_date = lot.get("purchase_date")
                     cps_local = float(lot.get("cost_per_share_local_net", 0.0))
-                    lot_fx = float(lot.get("purchase_fx_to_display", fx_rate) or fx_rate)
+                    lot_fx = float(
+                        lot.get("purchase_fx_to_display", fx_rate) or fx_rate
+                    )
                     lot_cost_basis_display = qty * cps_local * lot_fx
                     lot_mkt_val_display = qty * current_price
                     lot_unreal_gain = lot_mkt_val_display - lot_cost_basis_display
@@ -981,7 +984,12 @@ async def get_stock_position(
         closed_trades_list = []
         if not df_gains.empty:
             df_gains_sym = df_gains[
-                df_gains["Symbol"].fillna("").astype(str).str.upper().str.strip().isin(sym_variants)
+                df_gains["Symbol"]
+                .fillna("")
+                .astype(str)
+                .str.upper()
+                .str.strip()
+                .isin(sym_variants)
             ]
             if accounts_filter_norm:
                 df_gains_sym = df_gains_sym[
@@ -1018,7 +1026,9 @@ async def get_stock_position(
         # 6. Build Aggregated Position Summary & Return Attribution
         tot_qty = sum(float(r.get("Quantity", 0.0) or 0.0) for r in matching_rows)
         tot_mkt_val = sum(
-            float(r.get(f"Market Value ({currency})", r.get("Market Value", 0.0)) or 0.0)
+            float(
+                r.get(f"Market Value ({currency})", r.get("Market Value", 0.0)) or 0.0
+            )
             for r in matching_rows
         )
         tot_cost_basis = sum(
@@ -1033,7 +1043,9 @@ async def get_stock_position(
             for r in matching_rows
         )
         tot_unreal_gain = sum(
-            float(r.get(f"Unreal. Gain ({currency})", r.get("Unreal. Gain", 0.0)) or 0.0)
+            float(
+                r.get(f"Unreal. Gain ({currency})", r.get("Unreal. Gain", 0.0)) or 0.0
+            )
             for r in matching_rows
         )
         tot_real_gain = sum(
@@ -1075,14 +1087,14 @@ async def get_stock_position(
                 tot_unreal_gain = tot_mkt_val - tot_cost_basis
                 if tot_buy_cost <= 1e-6:
                     tot_buy_cost = tot_cost_basis
-                tot_gain = tot_unreal_gain + tot_real_gain + tot_divs - tot_comm - tot_tax
+                tot_gain = (
+                    tot_unreal_gain + tot_real_gain + tot_divs - tot_comm - tot_tax
+                )
         elif abs(tot_qty) < 1e-6 and not open_lots_list:
             tot_cost_basis = 0.0
             tot_unreal_gain = 0.0
 
-        avg_cost_price = (
-            (tot_cost_basis / tot_qty) if abs(tot_qty) > 1e-6 else 0.0
-        )
+        avg_cost_price = (tot_cost_basis / tot_qty) if abs(tot_qty) > 1e-6 else 0.0
         unreal_gain_pct = (
             (tot_unreal_gain / tot_cost_basis * 100.0)
             if abs(tot_cost_basis) > 1e-6
@@ -1092,7 +1104,9 @@ async def get_stock_position(
             (tot_gain / tot_buy_cost * 100.0) if abs(tot_buy_cost) > 1e-6 else 0.0
         )
         fx_gain_pct = (
-            (tot_fx_gain / tot_cost_basis * 100.0) if abs(tot_cost_basis) > 1e-6 else 0.0
+            (tot_fx_gain / tot_cost_basis * 100.0)
+            if abs(tot_cost_basis) > 1e-6
+            else 0.0
         )
         port_weight_pct = (
             (tot_mkt_val / overall_mkt_val * 100.0) if overall_mkt_val > 1e-6 else 0.0
@@ -1147,7 +1161,11 @@ async def get_stock_position(
             "fx_gain_loss_pct": round(fx_gain_pct, 2),
         }
 
-        has_pos = (abs(tot_qty) > 1e-6) or len(closed_trades_list) > 0 or len(open_lots_list) > 0
+        has_pos = (
+            (abs(tot_qty) > 1e-6)
+            or len(closed_trades_list) > 0
+            or len(open_lots_list) > 0
+        )
 
         res = {
             "symbol": sym_clean,
@@ -1167,6 +1185,485 @@ async def get_stock_position(
         logging.error(f"Error getting stock position for {symbol}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to get position data for {symbol}"
+        )
+
+
+@router.get("/stock/{symbol}/position_history")
+async def get_stock_position_history(
+    symbol: str,
+    currency: str = "USD",
+    period: str = "1y",
+    benchmarks: Optional[List[str]] = Query(None),
+    accounts: Optional[List[str]] = Query(None),
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns historical daily position performance (Market Value, Cost Basis, Unrealized Gain, Return %)
+    for a single stock position, with optional benchmark comparisons.
+    """
+    (
+        df,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        account_currency_map,
+        account_cash_mode_map,
+        original_csv_path,
+        db_mtime,
+    ) = data
+
+    sym_clean = symbol.upper().strip()
+    yf_mapped = map_to_yf_symbol(sym_clean, user_symbol_map, user_excluded_symbols)
+    sym_variants = {sym_clean}
+    if yf_mapped:
+        sym_variants.add(yf_mapped.upper().strip())
+
+    if df.empty:
+        return []
+
+    # Filter transactions for this symbol
+    sym_series = df["Symbol"].fillna("").astype(str).str.upper().str.strip()
+    sym_mask = sym_series.isin(sym_variants)
+    df_sym = df[sym_mask].copy()
+
+    accounts_filter_norm = (
+        {str(a).upper().strip() for a in accounts}
+        if isinstance(accounts, (list, set, tuple)) and accounts
+        else None
+    )
+    if accounts_filter_norm and not df_sym.empty:
+        df_sym = df_sym[
+            df_sym["Account"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            .isin(accounts_filter_norm)
+        ]
+
+    if df_sym.empty:
+        return []
+
+    try:
+        from utils_time import get_est_today
+
+        today = get_est_today()
+        end_date = today + timedelta(days=1)
+
+        first_tx_date = df_sym["Date"].min().date()
+
+        from_date_custom = None
+        to_date_custom = None
+        if from_date and isinstance(from_date, str):
+            try:
+                from_date_custom = datetime.strptime(from_date, "%Y-%m-%d").date()
+            except Exception:
+                pass
+        if to_date and isinstance(to_date, str):
+            try:
+                to_date_custom = datetime.strptime(to_date, "%Y-%m-%d").date()
+                end_date = to_date_custom + timedelta(days=1)
+            except Exception:
+                pass
+
+        if period == "custom" and from_date_custom:
+            display_start_date = from_date_custom
+        elif period == "1m":
+            display_start_date = end_date - timedelta(days=30)
+        elif period == "3m":
+            display_start_date = end_date - timedelta(days=90)
+        elif period == "6m":
+            display_start_date = end_date - timedelta(days=180)
+        elif period == "ytd":
+            display_start_date = date(today.year, 1, 1)
+        elif period == "1y":
+            display_start_date = end_date - timedelta(days=365)
+        elif period == "3y":
+            display_start_date = end_date - timedelta(days=365 * 3)
+        elif period == "5y":
+            display_start_date = end_date - timedelta(days=365 * 5)
+        elif period == "all" or period == "max":
+            display_start_date = first_tx_date
+        else:
+            display_start_date = end_date - timedelta(days=365)
+
+        calc_start_date = min(first_tx_date, display_start_date)
+
+        # 1. Historical FX for currency conversions
+        _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
+            df=df,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
+            start_date=calc_start_date,
+            end_date=end_date,
+            interval="D",
+            benchmark_symbols_yf=[],
+            display_currency=currency,
+            include_accounts=accounts if isinstance(accounts, list) else None,
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=db_mtime,
+        )
+
+        # 2. Benchmarks mapping
+        mapped_benchmarks = []
+        ticker_to_name = {}
+        if benchmarks and isinstance(benchmarks, (list, set, tuple)):
+            for b in benchmarks:
+                if b in config.BENCHMARK_MAPPING:
+                    ticker = config.BENCHMARK_MAPPING[b]
+                    mapped_benchmarks.append(ticker)
+                    ticker_to_name[ticker] = b
+                else:
+                    mapped_benchmarks.append(b)
+                    ticker_to_name[b] = b
+
+        # 3. Fetch Historical Prices for Stock + Benchmarks
+        mdp = get_mdp()
+        yf_ticker = yf_mapped or sym_clean
+        symbols_to_fetch = [yf_ticker] + mapped_benchmarks
+
+        hist_data, _ = await asyncio.to_thread(
+            mdp.get_historical_data,
+            symbols_to_fetch,
+            calc_start_date - timedelta(days=10),
+            end_date,
+            interval="1d",
+        )
+
+        if yf_ticker not in hist_data or hist_data[yf_ticker].empty:
+            return []
+
+        stock_df = hist_data[yf_ticker].copy()
+        if not isinstance(stock_df.index, pd.DatetimeIndex):
+            stock_df.index = pd.to_datetime(stock_df.index, utc=True)
+        else:
+            stock_df.index = (
+                stock_df.index.tz_convert("UTC")
+                if stock_df.index.tz is not None
+                else stock_df.index.tz_localize("UTC")
+            )
+
+        price_col = (
+            "price"
+            if "price" in stock_df.columns
+            else ("Close" if "Close" in stock_df.columns else "Adj Close")
+        )
+        if price_col not in stock_df.columns:
+            return []
+
+        price_adjusted_series = stock_df[price_col].dropna()
+        if price_adjusted_series.empty:
+            return []
+
+        # Un-adjust historical prices for stock splits so that raw ledger quantities match historical prices
+        split_txs = df_sym[
+            df_sym["Type"]
+            .fillna("")
+            .astype(str)
+            .str.lower()
+            .str.strip()
+            .isin(["split", "stock split"])
+        ]
+        factors = pd.Series(1.0, index=price_adjusted_series.index)
+        if not split_txs.empty:
+            split_txs = split_txs.copy()
+            split_txs["__split_priority"] = np.where(
+                split_txs["Account"].astype(str).str.lower() == "all accounts", 0, 1
+            )
+            split_txs["__ym"] = pd.to_datetime(split_txs["Date"]).dt.to_period("M")
+            sort_cols = ["Symbol", "__ym", "__split_priority"]
+            if "original_index" in split_txs.columns:
+                sort_cols.append("original_index")
+            split_txs = split_txs.sort_values(by=sort_cols)
+            split_txs = split_txs.drop_duplicates(
+                subset=["Symbol", "__ym", "Split Ratio"]
+            )
+
+            price_dates = pd.Series(
+                [ts.date() for ts in price_adjusted_series.index],
+                index=price_adjusted_series.index,
+            )
+            sorted_splits = split_txs.sort_values(by="Date", ascending=False)
+            for _, split_row in sorted_splits.iterrows():
+                s_date = (
+                    split_row["Date"].date()
+                    if isinstance(split_row["Date"], pd.Timestamp)
+                    else pd.to_datetime(split_row["Date"]).date()
+                )
+                ratio = pd.to_numeric(split_row.get("Split Ratio"), errors="coerce")
+                qty = pd.to_numeric(split_row.get("Quantity"), errors="coerce")
+                if (ratio is None or ratio <= 1e-9) and (
+                    qty is not None and 0 < qty <= 20.0
+                ):
+                    ratio = qty
+                if ratio and ratio > 1e-9:
+                    factors[price_dates < s_date] *= ratio
+
+        raw_price_series = price_adjusted_series * factors
+
+        # 4. FX series for display currency conversion
+        target_curr_upper = currency.upper()
+        # Find default account currency or from transaction
+        local_curr = "USD"
+        if (
+            "Local Currency" in df_sym.columns
+            and not df_sym["Local Currency"].dropna().empty
+        ):
+            local_curr = str(df_sym["Local Currency"].dropna().iloc[0]).upper().strip()
+        elif account_currency_map:
+            acc_name = (
+                df_sym["Account"].dropna().iloc[0]
+                if "Account" in df_sym.columns and not df_sym["Account"].dropna().empty
+                else None
+            )
+            if acc_name and acc_name in account_currency_map:
+                local_curr = account_currency_map[acc_name].upper().strip()
+
+        fx_series = pd.Series(1.0, index=raw_price_series.index)
+        if local_curr != target_curr_upper and historical_fx_yf:
+            fx_pair = f"{target_curr_upper}=X"
+            if fx_pair not in historical_fx_yf and target_curr_upper == "THB":
+                fx_pair = "USDTHB=X"
+            if fx_pair in historical_fx_yf:
+                fx_df = historical_fx_yf[fx_pair]
+                rate_c = (
+                    "price"
+                    if "price" in fx_df.columns
+                    else ("Close" if "Close" in fx_df.columns else "rate")
+                )
+                if rate_c in fx_df.columns:
+                    s = fx_df[rate_c].copy()
+                    s.index = pd.to_datetime(s.index, utc=True)
+                    fx_series = (
+                        s.reindex(raw_price_series.index).ffill().bfill().fillna(1.0)
+                    )
+
+        # 5. Benchmark price series
+        bm_series_dict = {}
+        for bm_ticker in mapped_benchmarks:
+            if bm_ticker in hist_data and not hist_data[bm_ticker].empty:
+                bm_df = hist_data[bm_ticker]
+                bm_p_col = (
+                    "price"
+                    if "price" in bm_df.columns
+                    else ("Close" if "Close" in bm_df.columns else "Adj Close")
+                )
+                if bm_p_col in bm_df.columns:
+                    bm_s = bm_df[bm_p_col].copy()
+                    bm_s.index = pd.to_datetime(bm_s.index, utc=True)
+                    bm_series_dict[bm_ticker] = (
+                        bm_s.reindex(raw_price_series.index).ffill().bfill()
+                    )
+
+        # 6. Sort transactions chronologically
+        tx_sorted = df_sym.sort_values(by=["Date", "original_index"]).copy()
+
+        # Build chronological event ledger
+        tx_events = []
+        for _, row in tx_sorted.iterrows():
+            d = (
+                row["Date"].date()
+                if isinstance(row["Date"], pd.Timestamp)
+                else pd.to_datetime(row["Date"]).date()
+            )
+            t_type = str(row["Type"]).lower().strip()
+            qty = float(row.get("Quantity", 0.0) or 0.0)
+            price_local = float(row.get("Price/Share", 0.0) or 0.0)
+            comm = float(row.get("Commission", 0.0) or 0.0)
+            split_ratio = float(row.get("Split Ratio", 1.0) or 1.0)
+            tx_events.append(
+                {
+                    "date": d,
+                    "type": t_type,
+                    "quantity": qty,
+                    "price_local": price_local,
+                    "commission": comm,
+                    "split_ratio": split_ratio,
+                    "account": str(row.get("Account", "")),
+                }
+            )
+
+        # Step through daily price points and calculate holding state
+        daily_records = []
+        open_lots_state: List[Dict[str, Any]] = []
+        event_idx = 0
+        num_events = len(tx_events)
+
+        cum_return_factor = 1.0
+        prev_price_adj_display = None
+        prev_shares = 0.0
+
+        for dt_ts, p_val in raw_price_series.items():
+            cur_date = dt_ts.date()
+
+            # Process all transactions occurring on or before cur_date
+            while event_idx < num_events and tx_events[event_idx]["date"] <= cur_date:
+                ev = tx_events[event_idx]
+                ev_type = ev["type"]
+                ev_qty = ev["quantity"]
+
+                if ev_type in ["buy", "transfer in", "receive", "deposit"]:
+                    cps = ev["price_local"] + (
+                        ev["commission"] / ev_qty if ev_qty > 1e-6 else 0.0
+                    )
+                    cur_fx = float(fx_series.get(dt_ts, 1.0) or 1.0)
+                    open_lots_state.append(
+                        {
+                            "qty": ev_qty,
+                            "cps_local": cps,
+                            "fx": cur_fx,
+                            "date": ev["date"],
+                        }
+                    )
+                elif ev_type in ["sell", "transfer out", "deliver", "withdrawal"]:
+                    rem_to_sell = ev_qty
+                    while rem_to_sell > 1e-6 and open_lots_state:
+                        first_lot = open_lots_state[0]
+                        if first_lot["qty"] <= rem_to_sell + 1e-6:
+                            rem_to_sell -= first_lot["qty"]
+                            open_lots_state.pop(0)
+                        else:
+                            first_lot["qty"] -= rem_to_sell
+                            rem_to_sell = 0.0
+                            break
+                elif ev_type in ["split", "stock split"]:
+                    ratio = ev["split_ratio"]
+                    if ratio > 1e-6:
+                        for lot in open_lots_state:
+                            lot["qty"] *= ratio
+                            lot["cps_local"] /= ratio
+
+                event_idx += 1
+
+            total_shares = sum(lot["qty"] for lot in open_lots_state)
+            if total_shares < config.STOCK_QUANTITY_CLOSE_TOLERANCE:
+                total_shares = 0.0
+
+            cur_fx = float(fx_series.get(dt_ts, 1.0) or 1.0)
+            price_disp = float(p_val) * cur_fx
+            mkt_val = total_shares * price_disp
+
+            # Cost basis of open lots
+            cost_basis_disp = (
+                sum(
+                    lot["qty"]
+                    * lot["cps_local"]
+                    * (cur_fx if local_curr == target_curr_upper else lot["fx"])
+                    for lot in open_lots_state
+                )
+                if total_shares > 0
+                else 0.0
+            )
+            unreal_g = mkt_val - cost_basis_disp if total_shares > 0 else 0.0
+            unreal_pct = (
+                (unreal_g / cost_basis_disp * 100.0) if cost_basis_disp > 1e-6 else 0.0
+            )
+
+            # Daily return tracking for TWR using split-adjusted price
+            p_adj_val = float(price_adjusted_series.get(dt_ts, p_val) or p_val)
+            price_adj_disp = p_adj_val * cur_fx
+            if (
+                prev_price_adj_display is not None
+                and prev_price_adj_display > 1e-6
+                and prev_shares > 1e-6
+            ):
+                r_daily = (price_adj_disp / prev_price_adj_display) - 1.0
+                cum_return_factor *= 1.0 + r_daily
+
+            prev_price_adj_display = price_adj_disp
+            prev_shares = total_shares
+
+            rec = {
+                "date": cur_date.strftime("%Y-%m-%d"),
+                "value": round(mkt_val, 2),
+                "cost_basis": round(cost_basis_disp, 2),
+                "shares": round(total_shares, 6),
+                "unrealized_gain": round(unreal_g, 2),
+                "unrealized_gain_pct": round(unreal_pct, 2),
+                "_cum_factor": cum_return_factor,
+                "_has_shares": total_shares > 0,
+            }
+
+            # Add benchmark prices for normalization
+            for bm_ticker, bm_s in bm_series_dict.items():
+                if dt_ts in bm_s.index:
+                    rec[f"_bm_price_{bm_ticker}"] = float(bm_s.get(dt_ts, 0.0) or 0.0)
+
+            daily_records.append(rec)
+
+        if not daily_records:
+            return []
+
+        # 7. Slice to display range
+        disp_start_str = display_start_date.strftime("%Y-%m-%d")
+        disp_records = [r for r in daily_records if r["date"] >= disp_start_str]
+        if not disp_records and daily_records:
+            disp_records = [daily_records[-1]]
+
+        # 8. Normalize Return % and Benchmarks to start at 0% at the start of the display window
+        # Find baseline return factor
+        first_holding_rec = next((r for r in disp_records if r["_has_shares"]), None)
+        base_factor = (
+            first_holding_rec["_cum_factor"]
+            if first_holding_rec
+            else disp_records[0]["_cum_factor"]
+        )
+
+        # Find benchmark base prices
+        bm_base_prices = {}
+        for bm_ticker in bm_series_dict:
+            first_bm_val = next(
+                (
+                    r.get(f"_bm_price_{bm_ticker}")
+                    for r in disp_records
+                    if r.get(f"_bm_price_{bm_ticker}")
+                    and r.get(f"_bm_price_{bm_ticker}") > 0
+                ),
+                None,
+            )
+            if first_bm_val:
+                bm_base_prices[bm_ticker] = first_bm_val
+
+        final_result = []
+        for r in disp_records:
+            ret_pct = 0.0
+            if base_factor > 1e-6 and r.get("_cum_factor") is not None:
+                ret_pct = (r["_cum_factor"] / base_factor - 1.0) * 100.0
+
+            out_item = {
+                "date": r["date"],
+                "value": r["value"],
+                "cost_basis": r["cost_basis"],
+                "shares": r["shares"],
+                "unrealized_gain": r["unrealized_gain"],
+                "unrealized_gain_pct": r["unrealized_gain_pct"],
+                "return_pct": round(ret_pct, 2),
+            }
+
+            for bm_ticker, b_base in bm_base_prices.items():
+                cur_bm_p = r.get(f"_bm_price_{bm_ticker}")
+                display_name = ticker_to_name.get(bm_ticker, bm_ticker)
+                if cur_bm_p and b_base > 1e-6:
+                    out_item[display_name] = round((cur_bm_p / b_base - 1.0) * 100.0, 2)
+                else:
+                    out_item[display_name] = 0.0
+
+            final_result.append(out_item)
+
+        return clean_nans(final_result)
+
+    except Exception as e:
+        logging.error(
+            f"Error getting stock position history for {symbol}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get position history for {symbol}"
         )
 
 

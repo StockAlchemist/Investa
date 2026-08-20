@@ -2079,7 +2079,10 @@ struct StockDetailView: View {
                         }
                     }
 
-                    // 2. Return Attribution Breakdown
+                    // 2. Position Performance History Chart (Value & Return %)
+                    PositionHistoryChartView(symbol: viewModel.symbol, currency: cur, viewModel: viewModel)
+
+                    // 3. Return Attribution Breakdown
                     card("Return Attribution Breakdown") {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 10)], spacing: 10) {
                             VStack(alignment: .leading, spacing: 4) {

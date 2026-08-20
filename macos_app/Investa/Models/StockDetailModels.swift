@@ -644,3 +644,62 @@ public struct StockPositionResponse: Decodable, Sendable {
     }
 }
 
+public struct StockPositionHistoryPoint: Codable, Sendable, Identifiable {
+    public let date: String
+    public let value: Double
+    public let costBasis: Double
+    public let shares: Double
+    public let unrealizedGain: Double
+    public let unrealizedGainPct: Double
+    public let returnPct: Double
+    public let benchmarks: [String: Double]
+
+    public var id: String { date }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
+        date = raw["date"]?.stringValue ?? ""
+        value = raw["value"]?.doubleValue ?? 0
+        costBasis = raw["cost_basis"]?.doubleValue ?? 0
+        shares = raw["shares"]?.doubleValue ?? 0
+        unrealizedGain = raw["unrealized_gain"]?.doubleValue ?? 0
+        unrealizedGainPct = raw["unrealized_gain_pct"]?.doubleValue ?? 0
+        returnPct = raw["return_pct"]?.doubleValue ?? 0
+
+        var bench: [String: Double] = [:]
+        let known = Set(["date", "value", "cost_basis", "shares", "unrealized_gain", "unrealized_gain_pct", "return_pct"])
+        for (k, v) in raw where !known.contains(k) {
+            if let d = v.doubleValue { bench[k] = d }
+        }
+        benchmarks = bench
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CK.self)
+        try c.encode(date, forKey: .date)
+        try c.encode(value, forKey: .value)
+        try c.encode(costBasis, forKey: .costBasis)
+        try c.encode(shares, forKey: .shares)
+        try c.encode(unrealizedGain, forKey: .unrealizedGain)
+        try c.encode(unrealizedGainPct, forKey: .unrealizedGainPct)
+        try c.encode(returnPct, forKey: .returnPct)
+    }
+
+    private enum CK: String, CodingKey {
+        case date, value
+        case costBasis = "cost_basis"
+        case shares
+        case unrealizedGain = "unrealized_gain"
+        case unrealizedGainPct = "unrealized_gain_pct"
+        case returnPct = "return_pct"
+    }
+
+    public var parsedDate: Date? {
+        StockPositionHistoryPoint.dayFmt.date(from: String(date.prefix(10)))
+    }
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC"); f.dateFormat = "yyyy-MM-dd"; return f
+    }()
+}
+

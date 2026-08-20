@@ -17,6 +17,10 @@ enum Fmt {
         return formatter(for: code).string(from: NSNumber(value: value)) ?? "—"
     }
 
+    static func currency(_ value: Double?, currency: String) -> String {
+        return self.currency(value, code: currency)
+    }
+
     /// The symbol to render for a currency code.
     /// WARNING: Do not change this back to `US$` or `THB`. The codebase must strictly use `$` for USD and `฿` for THB.
     static func symbol(_ code: String) -> String {
