@@ -2125,26 +2125,40 @@ struct StockDetailView: View {
                     card("Open FIFO Tax Lots (\(pos.openLots.count))") {
                         VStack(spacing: 8) {
                             ForEach(pos.openLots) { lot in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(alignment: .center) {
                                         HStack(spacing: 6) {
-                                            Text(lot.date).font(.subheadline.weight(.semibold))
-                                            Text(lot.account).font(.caption2).foregroundStyle(.secondary)
+                                            Text(lot.date)
+                                                .font(.subheadline.weight(.semibold))
+                                                .lineLimit(1)
+                                                .fixedSize(horizontal: true, vertical: false)
+                                            Text(lot.account)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
                                             Text(lot.taxTerm == "long_term" ? "Long-Term" : "Short-Term")
                                                 .font(.system(size: 9, weight: .bold))
                                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                                 .background(lot.taxTerm == "long_term" ? Color.green.opacity(0.15) : Color.blue.opacity(0.15), in: Capsule())
                                                 .foregroundStyle(lot.taxTerm == "long_term" ? Color.green : Color.blue)
+                                                .lineLimit(1)
                                         }
-                                        Text("\(Fmt.number(lot.quantity, fractionDigits: 4)) shares @ \(Fmt.currency(lot.costPerShareLocal, currency: pos.localCurrency))")
-                                            .font(.caption).foregroundStyle(.secondary)
+                                        Spacer(minLength: 8)
+                                        Text(Fmt.currency(lot.marketValueDisplay, currency: cur))
+                                            .font(.subheadline.weight(.semibold))
+                                            .lineLimit(1)
                                     }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text(Fmt.currency(lot.marketValueDisplay, currency: cur)).font(.subheadline.weight(.semibold))
+
+                                    HStack(alignment: .center) {
+                                        Text("\(Fmt.number(lot.quantity, fractionDigits: 4)) shares @ \(Fmt.currency(lot.costPerShareLocal, currency: pos.localCurrency))")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 8)
                                         Text("\(lot.unrealizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(lot.unrealizedGainDisplay, currency: cur)) (\(Fmt.percent(lot.unrealizedGainPct)))")
                                             .font(.caption.weight(.medium))
                                             .foregroundStyle(lot.unrealizedGainDisplay >= 0 ? .green : .red)
+                                            .lineLimit(1)
                                     }
                                 }
                                 .padding(10)
@@ -2159,21 +2173,34 @@ struct StockDetailView: View {
                     card("Closed Trades & Realized Sells (\(pos.closedTrades.count))") {
                         VStack(spacing: 8) {
                             ForEach(pos.closedTrades) { trade in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(alignment: .center) {
                                         HStack(spacing: 6) {
-                                            Text(trade.sellDate).font(.subheadline.weight(.semibold))
-                                            Text(trade.account).font(.caption2).foregroundStyle(.secondary)
+                                            Text(trade.sellDate)
+                                                .font(.subheadline.weight(.semibold))
+                                                .lineLimit(1)
+                                                .fixedSize(horizontal: true, vertical: false)
+                                            Text(trade.account)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
                                         }
-                                        Text("Sold \(Fmt.number(trade.quantitySold, fractionDigits: 4)) shares @ \(Fmt.currency(trade.salePrice, currency: pos.localCurrency))")
-                                            .font(.caption).foregroundStyle(.secondary)
+                                        Spacer(minLength: 8)
+                                        Text("Proceeds: \(Fmt.currency(trade.proceedsDisplay, currency: cur))")
+                                            .font(.caption.weight(.medium))
+                                            .lineLimit(1)
                                     }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("Proceeds: \(Fmt.currency(trade.proceedsDisplay, currency: cur))").font(.caption.weight(.medium))
+
+                                    HStack(alignment: .center) {
+                                        Text("Sold \(Fmt.number(trade.quantitySold, fractionDigits: 4)) shares @ \(Fmt.currency(trade.salePrice, currency: pos.localCurrency))")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 8)
                                         Text("Gain: \(trade.realizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(trade.realizedGainDisplay, currency: cur))")
                                             .font(.subheadline.weight(.bold))
                                             .foregroundStyle(trade.realizedGainDisplay >= 0 ? .green : .red)
+                                            .lineLimit(1)
                                     }
                                 }
                                 .padding(10)
