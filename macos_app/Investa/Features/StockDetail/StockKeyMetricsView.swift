@@ -14,6 +14,7 @@ struct StockKeyMetricsView: View {
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @State private var viewMode: ViewMode = .grid
     @State private var selectedGroup: String = "Valuation"
+    @State private var range: StatementRange = .fiveYears
 
     enum ViewMode: String, CaseIterable {
         case grid = "Table"
@@ -131,7 +132,17 @@ struct StockKeyMetricsView: View {
             if viewMode == .grid {
                 legend
             } else if let vm = viewModel {
-                periodPicker(vm)
+                HStack(spacing: 6) {
+                    Picker("", selection: $range) {
+                        ForEach(StatementRange.allCases) { r in
+                            Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 140)
+
+                    periodPicker(vm)
+                }
             }
         }
     }
@@ -224,7 +235,9 @@ struct StockKeyMetricsView: View {
     @ViewBuilder
     private func graphsView(_ vm: StockDetailViewModel) -> some View {
         let groups = ["Valuation", "Earnings & Sales", "Profitability", "Balance Sheet"]
-        let history = vm.ratios?.historical ?? []
+        let rawHistory = vm.ratios?.historical ?? []
+        let rangeLimit = range.periods(vm.ratiosPeriod)
+        let history = Array(rawHistory.prefix(rangeLimit))
         let activeDefs = Self.chartDefs.filter { $0.group == selectedGroup }
 
         VStack(alignment: .leading, spacing: 14) {

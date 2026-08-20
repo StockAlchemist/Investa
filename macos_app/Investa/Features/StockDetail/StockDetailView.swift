@@ -46,6 +46,7 @@ struct StockDetailView: View {
     @State private var showGrahamExplanation = false
     @State private var summaryExpanded = false
     @State private var ratiosCategory = "All"
+    @State private var ratiosRange: StatementRange = .fiveYears
 
     init(symbol: String, currency: String = "USD") {
         _viewModel = StateObject(wrappedValue: StockDetailViewModel(symbol: symbol, currency: currency))
@@ -1125,8 +1126,10 @@ struct StockDetailView: View {
     // MARK: - Ratios
 
     @ViewBuilder private var ratiosTab: some View {
-        let history = viewModel.ratios?.historical ?? []
         let period = viewModel.ratiosPeriod
+        let rawHistory = viewModel.ratios?.historical ?? []
+        let rangeLimit = ratiosRange.periods(period)
+        let history = Array(rawHistory.prefix(rangeLimit))
 
         let categories = ["All", "Valuation", "Profitability", "Balance Sheet", "Earnings & Sales"]
         let activeDefs = ratiosCategory == "All"
@@ -1137,17 +1140,27 @@ struct StockDetailView: View {
             // Chrome first, so the switch survives an empty quarterly answer.
             HStack(alignment: .center) {
                 Text(period == .quarterly
-                     ? "Measured on the trailing twelve months at each quarter end — the same ratios the annual view reports, sampled four times as often."
+                     ? "Measured on the trailing twelve months at each quarter end, sampled four times as often."
                      : "Measured on each filed fiscal year.")
                     .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
-                Picker("", selection: Binding(
-                    get: { period },
-                    set: { p in Task { await viewModel.loadRatios(period: p) } }
-                )) {
-                    ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
+
+                HStack(spacing: 8) {
+                    Picker("", selection: $ratiosRange) {
+                        ForEach(StatementRange.allCases) { r in
+                            Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
+                        }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 140)
+
+                    Picker("", selection: Binding(
+                        get: { period },
+                        set: { p in Task { await viewModel.loadRatios(period: p) } }
+                    )) {
+                        ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 170)
                 }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 190)
             }
 
             if viewModel.isLoadingRatios {

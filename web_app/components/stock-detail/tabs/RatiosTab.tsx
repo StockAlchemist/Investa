@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchRatios, fetchTrackRecord, type FinancialRatio } from '../../../lib/api';
-import { StatementPeriod } from '../../../lib/statement_chart';
+import { StatementPeriod, StatementRange, defaultRange, periodsInRange } from '../../../lib/statement_chart';
 import { cn } from '../../../lib/utils';
 import { Skeleton } from '../../ui/skeleton';
 import { RatioChart } from '../components/RatioChart';
@@ -58,6 +58,7 @@ const ALL_RATIO_CHARTS: ChartItem[] = [
 
 export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
     const [ratioPeriod, setRatioPeriod] = useState<StatementPeriod>('quarterly');
+    const [ratioRange, setRatioRange] = useState<StatementRange>('5y');
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
     const ratiosQuery = useQuery({
@@ -76,32 +77,56 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
     });
     const trackRecord = trackRecordQuery.data ?? null;
 
-    const periodSwitch = (
+    const periodControls = (
         <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[11px] text-muted-foreground">
                 {ratioPeriod === 'quarterly'
-                    ? 'Measured on the trailing twelve months at each quarter end, so these are the same ratios the annual view reports — sampled four times as often.'
+                    ? 'Measured on the trailing twelve months at each quarter end, sampled four times as often.'
                     : 'Measured on each filed fiscal year.'}
             </p>
-            <div className="flex items-center p-0.5 rounded-full bg-muted/50 flex-shrink-0">
-                {([
-                    { id: 'quarterly', label: 'Quarterly' },
-                    { id: 'annual', label: 'Annual' }
-                ] as const).map(opt => (
-                    <button
-                        key={opt.id}
-                        onClick={() => setRatioPeriod(opt.id)}
-                        aria-pressed={ratioPeriod === opt.id}
-                        className={cn(
-                            "px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                            ratioPeriod === opt.id
-                                ? "bg-indigo-600 text-white shadow-sm"
-                                : "text-muted-foreground hover:text-foreground"
-                        )}
-                    >
-                        {opt.label}
-                    </button>
-                ))}
+            <div className="flex items-center gap-2 flex-wrap">
+                {/* 5Y / 10Y / ALL Range Selector */}
+                <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
+                    {(['5y', '10y', 'max'] as const).map(opt => (
+                        <button
+                            key={opt}
+                            type="button"
+                            onClick={() => setRatioRange(opt)}
+                            aria-pressed={ratioRange === opt}
+                            className={cn(
+                                "px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase transition-all cursor-pointer",
+                                ratioRange === opt
+                                    ? "bg-indigo-600 text-white shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            {opt === 'max' ? 'ALL' : opt.toUpperCase()}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Quarterly / Annual Period Switcher */}
+                <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
+                    {([
+                        { id: 'quarterly', label: 'Quarterly' },
+                        { id: 'annual', label: 'Annual' }
+                    ] as const).map(opt => (
+                        <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setRatioPeriod(opt.id)}
+                            aria-pressed={ratioPeriod === opt.id}
+                            className={cn(
+                                "px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                                ratioPeriod === opt.id
+                                    ? "bg-indigo-600 text-white shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -109,7 +134,7 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
     if (ratiosQuery.isPending) {
         return (
             <div className="space-y-8 animate-in fade-in duration-500">
-                {periodSwitch}
+                {periodControls}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-64 rounded-2xl" />)}
                 </div>
@@ -120,7 +145,7 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
     if (!ratios || !ratios.historical.length) {
         return (
             <div className="space-y-8 animate-in fade-in duration-500">
-                {periodSwitch}
+                {periodControls}
                 {trackRecord
                     ? <TrackRecordPanel record={trackRecord} />
                     : <div className="text-center py-20 text-gray-500">No historical ratio data available.</div>}
@@ -128,7 +153,9 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
         );
     }
 
-    const chartData: FinancialRatio[] = [...ratios.historical].reverse();
+    const allPoints: FinancialRatio[] = [...ratios.historical].reverse();
+    const rangeCount = periodsInRange(ratioRange, ratioPeriod);
+    const chartData: FinancialRatio[] = allPoints.slice(-rangeCount);
 
     const categories = ['All', 'Valuation', 'Profitability', 'Balance Sheet', 'Earnings & Sales'];
     const filteredCharts = selectedCategory === 'All'
@@ -137,7 +164,7 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {periodSwitch}
+            {periodControls}
             {trackRecord && <TrackRecordPanel record={trackRecord} />}
 
             {/* Category Filter Pills */}

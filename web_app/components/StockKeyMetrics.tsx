@@ -10,7 +10,7 @@ import {
     type MetricGroup,
 } from '../lib/metrics';
 import { fetchRatios, type FinancialRatio } from '../lib/api';
-import { StatementPeriod } from '../lib/statement_chart';
+import { StatementPeriod, StatementRange, periodsInRange } from '../lib/statement_chart';
 import { RatioChart } from './stock-detail/components/RatioChart';
 import { Skeleton } from './ui/skeleton';
 import { Table, LineChart as ChartIcon } from 'lucide-react';
@@ -139,13 +139,13 @@ function StockKeyMetricsGraphs({
     selectedGroup,
     onSelectGroup,
     periodType,
-    onSelectPeriodType,
+    ratioRange,
 }: {
     symbol: string;
     selectedGroup: string;
     onSelectGroup: (grp: string) => void;
     periodType: StatementPeriod;
-    onSelectPeriodType: (p: StatementPeriod) => void;
+    ratioRange: StatementRange;
 }) {
     const ratiosQuery = useQuery({
         queryKey: ['stock-ratios', symbol, periodType],
@@ -153,7 +153,9 @@ function StockKeyMetricsGraphs({
         staleTime: 30 * 60 * 1000,
     });
 
-    const chartData: FinancialRatio[] = ratiosQuery.data?.historical ? [...ratiosQuery.data.historical].reverse() : [];
+    const allPoints: FinancialRatio[] = ratiosQuery.data?.historical ? [...ratiosQuery.data.historical].reverse() : [];
+    const rangeCount = periodsInRange(ratioRange, periodType);
+    const chartData: FinancialRatio[] = allPoints.slice(-rangeCount);
     const activeCharts = METRIC_CHARTS_BY_GROUP[selectedGroup] || METRIC_CHARTS_BY_GROUP['Valuation'];
 
     return (
@@ -224,6 +226,7 @@ export default function StockKeyMetrics({
     const [viewMode, setViewMode] = useState<'table' | 'graphs'>('table');
     const [selectedGroup, setSelectedGroup] = useState<string>('Valuation');
     const [periodType, setPeriodType] = useState<StatementPeriod>('quarterly');
+    const [ratioRange, setRatioRange] = useState<StatementRange>('5y');
 
     if (!metrics) return null;
 
@@ -292,25 +295,48 @@ export default function StockKeyMetrics({
                         S&amp;P 500 company on that measure
                     </p>
                 ) : (
-                    <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
-                        {([
-                            { id: 'quarterly', label: 'Quarterly' },
-                            { id: 'annual', label: 'Annual' },
-                        ] as const).map(opt => (
-                            <button
-                                key={opt.id}
-                                type="button"
-                                onClick={() => setPeriodType(opt.id)}
-                                className={cn(
-                                    "px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all cursor-pointer",
-                                    periodType === opt.id
-                                        ? "bg-indigo-600 text-white shadow-sm"
-                                        : "text-muted-foreground hover:text-foreground"
-                                )}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {/* 5Y / 10Y / ALL Range Selector */}
+                        <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
+                            {(['5y', '10y', 'max'] as const).map(opt => (
+                                <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => setRatioRange(opt)}
+                                    aria-pressed={ratioRange === opt}
+                                    className={cn(
+                                        "px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase transition-all cursor-pointer",
+                                        ratioRange === opt
+                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    {opt === 'max' ? 'ALL' : opt.toUpperCase()}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Quarterly / Annual Period Switcher */}
+                        <div className="flex items-center p-0.5 rounded-full bg-muted/70 border border-border/50">
+                            {([
+                                { id: 'quarterly', label: 'Quarterly' },
+                                { id: 'annual', label: 'Annual' },
+                            ] as const).map(opt => (
+                                <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => setPeriodType(opt.id)}
+                                    className={cn(
+                                        "px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all cursor-pointer",
+                                        periodType === opt.id
+                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
@@ -356,7 +382,7 @@ export default function StockKeyMetrics({
                     selectedGroup={selectedGroup}
                     onSelectGroup={setSelectedGroup}
                     periodType={periodType}
-                    onSelectPeriodType={setPeriodType}
+                    ratioRange={ratioRange}
                 />
             ) : null}
         </div>
