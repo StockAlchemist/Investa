@@ -2054,7 +2054,7 @@ struct StockDetailView: View {
                             statCard(
                                 "Unrealized G/L",
                                 Fmt.currency(unreal, currency: cur),
-                                sub: "\(unrealPct >= 0 ? "+" : "")\(Fmt.percent(unrealPct / 100.0))",
+                                sub: "\(unrealPct >= 0 ? "+" : "")\(Fmt.percent(unrealPct))",
                                 icon: "chart.line.uptrend.xyaxis",
                                 iconTint: unreal >= 0 ? .green : .red,
                                 subTint: unrealPct >= 0 ? .green : .red,
@@ -2063,7 +2063,7 @@ struct StockDetailView: View {
                             statCard(
                                 "Total Return",
                                 Fmt.currency(totalG, currency: cur),
-                                sub: "\(totalRetPct >= 0 ? "+" : "")\(Fmt.percent(totalRetPct / 100.0))",
+                                sub: "\(totalRetPct >= 0 ? "+" : "")\(Fmt.percent(totalRetPct))",
                                 icon: "arrow.up.right.circle",
                                 iconTint: totalG >= 0 ? .green : .red,
                                 subTint: totalRetPct >= 0 ? .green : .red,
@@ -2072,8 +2072,8 @@ struct StockDetailView: View {
                         }
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-                            statCard("IRR (Annualized)", ret.irrPct != nil ? "\(ret.irrPct! >= 0 ? "+" : "")\(Fmt.percent(ret.irrPct! / 100.0))" : "—", icon: "percent", iconTint: (ret.irrPct ?? 0) >= 0 ? .green : .red)
-                            statCard("Yield on Cost", ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct! / 100.0) : "—", sub: ret.marketYieldPct != nil ? "Mkt: \(Fmt.percent(ret.marketYieldPct! / 100.0))" : nil, icon: "dollarsign.circle", iconTint: .orange)
+                            statCard("IRR (Annualized)", ret.irrPct != nil ? "\(ret.irrPct! >= 0 ? "+" : "")\(Fmt.percent(ret.irrPct!))" : "—", icon: "percent", iconTint: (ret.irrPct ?? 0) >= 0 ? .green : .red)
+                            statCard("Yield on Cost", ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct!) : "—", sub: ret.marketYieldPct != nil ? "Mkt: \(Fmt.percent(ret.marketYieldPct!))" : nil, icon: "dollarsign.circle", iconTint: .orange)
                             statCard("Lifetime Dividends", Fmt.currency(ret.lifetimeDividends, currency: cur), icon: "banknote", iconTint: .orange)
                             statCard("Realized G/L", Fmt.currency(ret.realizedGain, currency: cur), icon: "checkmark.circle", iconTint: ret.realizedGain >= 0 ? .green : .red)
                         }
@@ -2096,7 +2096,7 @@ struct StockDetailView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Dividend Income").font(.caption2).foregroundStyle(.secondary)
                                 Text("+\(Fmt.currency(ret.lifetimeDividends, currency: cur))").font(.subheadline.bold()).foregroundStyle(.green)
-                                Text("YoC: \(ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct! / 100.0) : "—")").font(.caption2).foregroundStyle(.secondary)
+                                Text("YoC: \(ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct!) : "—")").font(.caption2).foregroundStyle(.secondary)
                             }
                             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
@@ -2104,7 +2104,7 @@ struct StockDetailView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Currency (FX) Impact").font(.caption2).foregroundStyle(.secondary)
                                 Text("\(ret.fxGainLoss >= 0 ? "+" : "")\(Fmt.currency(ret.fxGainLoss, currency: cur))").font(.subheadline.bold()).foregroundStyle(ret.fxGainLoss >= 0 ? .green : .red)
-                                Text("\(ret.fxGainLossPct >= 0 ? "+" : "")\(Fmt.percent(ret.fxGainLossPct / 100.0)) on cost").font(.caption2).foregroundStyle(.secondary)
+                                Text("\(ret.fxGainLossPct >= 0 ? "+" : "")\(Fmt.percent(ret.fxGainLossPct)) on cost").font(.caption2).foregroundStyle(.secondary)
                             }
                             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
@@ -2142,7 +2142,7 @@ struct StockDetailView: View {
                                     Spacer()
                                     VStack(alignment: .trailing, spacing: 2) {
                                         Text(Fmt.currency(lot.marketValueDisplay, currency: cur)).font(.subheadline.weight(.semibold))
-                                        Text("\(lot.unrealizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(lot.unrealizedGainDisplay, currency: cur)) (\(Fmt.percent(lot.unrealizedGainPct / 100.0)))")
+                                        Text("\(lot.unrealizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(lot.unrealizedGainDisplay, currency: cur)) (\(Fmt.percent(lot.unrealizedGainPct)))")
                                             .font(.caption.weight(.medium))
                                             .foregroundStyle(lot.unrealizedGainDisplay >= 0 ? .green : .red)
                                     }

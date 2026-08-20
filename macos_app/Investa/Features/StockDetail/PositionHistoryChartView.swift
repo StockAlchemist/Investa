@@ -94,7 +94,7 @@ struct PositionHistoryChartView: View {
                                 .fixedSize(horizontal: true, vertical: false)
                         } else {
                             let isPositive = last.returnPct >= 0
-                            Text("\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct / 100.0))")
+                            Text("\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct))")
                                 .font(.caption2.weight(.bold))
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(isPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12), in: Capsule())
@@ -105,8 +105,8 @@ struct PositionHistoryChartView: View {
                     } else {
                         let isPositive = viewMode == .value ? (last.unrealizedGain >= 0) : (last.returnPct >= 0)
                         Text(viewMode == .value
-                             ? "\(last.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(last.unrealizedGain, currency: currency)) (\(Fmt.percent(last.unrealizedGainPct / 100.0)))"
-                             : "\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct / 100.0))")
+                             ? "\(last.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(last.unrealizedGain, currency: currency)) (\(Fmt.percent(last.unrealizedGainPct)))"
+                             : "\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct))")
                             .font(.caption2.weight(.bold))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(isPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12), in: Capsule())
@@ -243,62 +243,54 @@ struct PositionHistoryChartView: View {
     }
 
     private var chart: some View {
-        let pIndices: [Date: Int] = Dictionary(uniqueKeysWithValues: pts.compactMap { p in
-            p.parsedDate.map { ($0, pts.firstIndex(where: { $0.id == p.id }) ?? 0) }
-        })
-
-        func xVal(for p: StockPositionHistoryPoint) -> Double {
-            if let d = p.parsedDate {
-                return Double(pIndices[d] ?? 0)
-            }
-            return 0
-        }
-
         return Chart {
             if viewMode == .value {
                 // 1. Market Value Area Fill
                 ForEach(pts) { p in
-                    let x = xVal(for: p)
-                    AreaMark(
-                        x: .value("Day", x),
-                        yStart: .value("Floor", 0),
-                        yEnd: .value("Value", p.value)
-                    )
-                    .foregroundStyle(
-                        .linearGradient(
-                            colors: [Color.indigo.opacity(0.30), Color.indigo.opacity(0.02)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                    if let d = p.parsedDate {
+                        AreaMark(
+                            x: .value("Date", d),
+                            yStart: .value("Floor", 0),
+                            yEnd: .value("Value", p.value)
                         )
-                    )
-                    .interpolationMethod(.monotone)
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [Color.indigo.opacity(0.30), Color.indigo.opacity(0.02)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .interpolationMethod(.monotone)
+                    }
                 }
 
                 // 2. Market Value Continuous Line
                 ForEach(pts) { p in
-                    let x = xVal(for: p)
-                    LineMark(
-                        x: .value("Day", x),
-                        y: .value("Market Value", p.value),
-                        series: .value("Series", "Market Value")
-                    )
-                    .foregroundStyle(Color.indigo)
-                    .lineStyle(.init(lineWidth: 2.0))
-                    .interpolationMethod(.monotone)
+                    if let d = p.parsedDate {
+                        LineMark(
+                            x: .value("Date", d),
+                            y: .value("Market Value", p.value),
+                            series: .value("Series", "Market Value")
+                        )
+                        .foregroundStyle(Color.indigo)
+                        .lineStyle(.init(lineWidth: 2.0))
+                        .interpolationMethod(.monotone)
+                    }
                 }
 
                 // 3. Cost Basis Line (Dashed)
                 if pts.contains(where: { $0.costBasis > 0 }) {
                     ForEach(pts) { p in
-                        let x = xVal(for: p)
-                        LineMark(
-                            x: .value("Day", x),
-                            y: .value("Cost Basis", p.costBasis),
-                            series: .value("Series", "Cost Basis")
-                        )
-                        .foregroundStyle(Color(hex: 0x94a3b8))
-                        .lineStyle(.init(lineWidth: 1.5, dash: [4, 4]))
-                        .interpolationMethod(.monotone)
+                        if let d = p.parsedDate {
+                            LineMark(
+                                x: .value("Date", d),
+                                y: .value("Cost Basis", p.costBasis),
+                                series: .value("Series", "Cost Basis")
+                            )
+                            .foregroundStyle(Color(hex: 0x94a3b8))
+                            .lineStyle(.init(lineWidth: 1.5, dash: [4, 4]))
+                            .interpolationMethod(.monotone)
+                        }
                     }
                 }
             } else {
@@ -312,43 +304,44 @@ struct PositionHistoryChartView: View {
 
                 // 1. Return % Area Fill
                 ForEach(pts) { p in
-                    let x = xVal(for: p)
-                    AreaMark(
-                        x: .value("Day", x),
-                        yStart: .value("Floor", 0),
-                        yEnd: .value("Return", p.returnPct)
-                    )
-                    .foregroundStyle(
-                        .linearGradient(
-                            colors: [strokeColor.opacity(0.28), strokeColor.opacity(0.02)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                    if let d = p.parsedDate {
+                        AreaMark(
+                            x: .value("Date", d),
+                            yStart: .value("Floor", 0),
+                            yEnd: .value("Return", p.returnPct)
                         )
-                    )
-                    .interpolationMethod(.monotone)
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [strokeColor.opacity(0.28), strokeColor.opacity(0.02)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .interpolationMethod(.monotone)
+                    }
                 }
 
                 // 2. Return % Continuous Line
                 ForEach(pts) { p in
-                    let x = xVal(for: p)
-                    LineMark(
-                        x: .value("Day", x),
-                        y: .value("Position Return", p.returnPct),
-                        series: .value("Series", "Position Return")
-                    )
-                    .foregroundStyle(strokeColor)
-                    .lineStyle(.init(lineWidth: 2.0))
-                    .interpolationMethod(.monotone)
+                    if let d = p.parsedDate {
+                        LineMark(
+                            x: .value("Date", d),
+                            y: .value("Position Return", p.returnPct),
+                            series: .value("Series", "Position Return")
+                        )
+                        .foregroundStyle(strokeColor)
+                        .lineStyle(.init(lineWidth: 2.0))
+                        .interpolationMethod(.monotone)
+                    }
                 }
 
                 // 3. Benchmark overlays
                 ForEach(selectedBenchmarks, id: \.self) { bmName in
                     let bmColor = benchmarks.first(where: { $0.name == bmName })?.color ?? .orange
                     ForEach(pts) { p in
-                        if let bVal = p.benchmarks[bmName] {
-                            let x = xVal(for: p)
+                        if let d = p.parsedDate, let bVal = p.benchmarks[bmName] {
                             LineMark(
-                                x: .value("Day", x),
+                                x: .value("Date", d),
                                 y: .value(bmName, bVal),
                                 series: .value("Series", bmName)
                             )
@@ -376,28 +369,18 @@ struct PositionHistoryChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { v in
+            AxisMarks(values: .automatic(desiredCount: 5)) { value in
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
-                if let dbl = v.as(Double.self) {
-                    let idx = Int(round(dbl))
-                    if idx >= 0 && idx < pts.count {
-                        AxisValueLabel {
-                            if let d = pts[idx].parsedDate {
-                                Text(formatXDate(d))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text(pts[idx].date)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                if let date = value.as(Date.self) {
+                    AxisValueLabel {
+                        Text(formatXDate(date))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
         }
-        .chartXScale(domain: [0, Double(max(0, pts.count - 1))])
-        .chartHoverTooltip(Array(pts.indices.map(Double.init))) { i in
+        .chartHoverTooltip(pts.compactMap(\.parsedDate)) { i in
             tooltip(pts[i])
         }
     }
@@ -412,7 +395,7 @@ struct PositionHistoryChartView: View {
                 rows.append(ChartTooltipRow(
                     color: p.unrealizedGain >= 0 ? .green : .red,
                     label: "Unrealized G/L",
-                    value: "\(p.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(p.unrealizedGain, currency: currency)) (\(Fmt.percent(p.unrealizedGainPct / 100.0)))"
+                    value: "\(p.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(p.unrealizedGain, currency: currency)) (\(Fmt.percent(p.unrealizedGainPct)))"
                 ))
             }
             if p.shares > 0 {
@@ -423,7 +406,7 @@ struct PositionHistoryChartView: View {
             rows.append(ChartTooltipRow(
                 color: isPos ? .green : .red,
                 label: "Position Return",
-                value: "\(isPos ? "+" : "")\(Fmt.percent(p.returnPct / 100.0))"
+                value: "\(isPos ? "+" : "")\(Fmt.percent(p.returnPct))"
             ))
             for bmName in selectedBenchmarks {
                 if let bVal = p.benchmarks[bmName] {
@@ -431,7 +414,7 @@ struct PositionHistoryChartView: View {
                     rows.append(ChartTooltipRow(
                         color: bmColor,
                         label: bmName,
-                        value: "\(bVal >= 0 ? "+" : "")\(Fmt.percent(bVal / 100.0))"
+                        value: "\(bVal >= 0 ? "+" : "")\(Fmt.percent(bVal))"
                     ))
                 }
             }
