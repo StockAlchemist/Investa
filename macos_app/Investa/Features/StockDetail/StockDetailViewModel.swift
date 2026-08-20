@@ -18,9 +18,11 @@ final class StockDetailViewModel: ObservableObject {
     @Published var ratiosPeriod: StatementPeriod = .quarterly
     @Published var trackRecord: TrackRecord?
     @Published var userPosition: Holding?
+    @Published var positionData: StockPositionResponse?
     @Published var news: [MarketNewsItem] = []
 
     @Published var isLoading = false
+    @Published var isLoadingPosition = false
     @Published var isLoadingAnalysis = false
     @Published var isLoadingFinancials = false
     @Published var isLoadingRatios = false
@@ -51,9 +53,11 @@ final class StockDetailViewModel: ObservableObject {
         async let iv: IntrinsicValueResponse = api.get("/intrinsic_value/\(symbol)")
         async let e: [EarningsDate] = api.get("/earnings_dates/\(symbol)")
         async let h: [Holding] = api.get("/holdings", query: [URLQueryItem(name: "currency", value: currency)])
+        async let pos: StockPositionResponse = api.get("/stock/\(symbol)/position", query: [URLQueryItem(name: "currency", value: currency)])
         do { fundamentals = try await f } catch { errorMessage = (error as? APIError)?.errorDescription }
         do { intrinsic = try await iv } catch { print("Intrinsic error: \(error)") }
         do { earnings = try await e } catch {}
+        do { positionData = try await pos } catch { print("Position error: \(error)") }
         // Aggregate the user's position in this symbol across accounts.
         if let holdings = try? await h {
             userPosition = aggregatePosition(holdings.filter { $0.symbol == symbol })

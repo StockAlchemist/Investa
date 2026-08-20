@@ -510,3 +510,137 @@ struct StockAnalysis: Decodable, Sendable {
         }
     }
 }
+
+// MARK: - Single Stock Position & Lots (`GET /api/stock/{symbol}/position`)
+
+public struct OpenLot: Decodable, Sendable, Identifiable {
+    public let lotId: Int
+    public let date: String
+    public let account: String
+    public let quantity: Double
+    public let costPerShareLocal: Double
+    public let costBasisDisplay: Double
+    public let marketValueDisplay: Double
+    public let unrealizedGainDisplay: Double
+    public let unrealizedGainPct: Double
+    public let holdingPeriodDays: Int
+    public let taxTerm: String
+
+    public var id: String { "\(account)-\(lotId)-\(date)" }
+
+    enum CodingKeys: String, CodingKey {
+        case lotId = "lot_id"
+        case date, account, quantity
+        case costPerShareLocal = "cost_per_share_local"
+        case costBasisDisplay = "cost_basis_display"
+        case marketValueDisplay = "market_value_display"
+        case unrealizedGainDisplay = "unrealized_gain_display"
+        case unrealizedGainPct = "unrealized_gain_pct"
+        case holdingPeriodDays = "holding_period_days"
+        case taxTerm = "tax_term"
+    }
+}
+
+public struct ClosedTrade: Decodable, Sendable, Identifiable {
+    public let sellDate: String
+    public let account: String
+    public let quantitySold: Double
+    public let salePrice: Double
+    public let proceedsDisplay: Double
+    public let costBasisDisplay: Double
+    public let realizedGainDisplay: Double
+    public let originalTxId: Int?
+
+    public var id: String { "\(account)-\(sellDate)-\(originalTxId ?? 0)" }
+
+    enum CodingKeys: String, CodingKey {
+        case sellDate = "sell_date"
+        case account
+        case quantitySold = "quantity_sold"
+        case salePrice = "sale_price"
+        case proceedsDisplay = "proceeds_display"
+        case costBasisDisplay = "cost_basis_display"
+        case realizedGainDisplay = "realized_gain_display"
+        case originalTxId = "original_tx_id"
+    }
+}
+
+public struct StockPositionSummary: Decodable, Sendable {
+    public let quantity: Double
+    public let currentPrice: Double
+    public let marketValue: Double
+    public let avgCostPrice: Double
+    public let costBasis: Double
+    public let totalBuyCost: Double
+    public let portfolioWeightPct: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case quantity
+        case currentPrice = "current_price"
+        case marketValue = "market_value"
+        case avgCostPrice = "avg_cost_price"
+        case costBasis = "cost_basis"
+        case totalBuyCost = "total_buy_cost"
+        case portfolioWeightPct = "portfolio_weight_pct"
+    }
+}
+
+public struct StockReturnAttribution: Decodable, Sendable {
+    public let unrealizedGain: Double
+    public let unrealizedGainPct: Double
+    public let realizedGain: Double
+    public let lifetimeDividends: Double
+    public let commissions: Double
+    public let withholdingTaxes: Double
+    public let totalGain: Double
+    public let totalReturnPct: Double
+    public let irrPct: Double?
+    public let twrrPct: Double?
+    public let indicatedAnnualDividend: Double
+    public let yieldOnCostPct: Double?
+    public let marketYieldPct: Double?
+    public let fxGainLoss: Double
+    public let fxGainLossPct: Double
+
+    enum CodingKeys: String, CodingKey {
+        case unrealizedGain = "unrealized_gain"
+        case unrealizedGainPct = "unrealized_gain_pct"
+        case realizedGain = "realized_gain"
+        case lifetimeDividends = "lifetime_dividends"
+        case commissions
+        case withholdingTaxes = "withholding_taxes"
+        case totalGain = "total_gain"
+        case totalReturnPct = "total_return_pct"
+        case irrPct = "irr_pct"
+        case twrrPct = "twrr_pct"
+        case indicatedAnnualDividend = "indicated_annual_dividend"
+        case yieldOnCostPct = "yield_on_cost_pct"
+        case marketYieldPct = "market_yield_pct"
+        case fxGainLoss = "fx_gain_loss"
+        case fxGainLossPct = "fx_gain_loss_pct"
+    }
+}
+
+public struct StockPositionResponse: Decodable, Sendable {
+    public let symbol: String
+    public let displayCurrency: String
+    public let localCurrency: String
+    public let fxRate: Double
+    public let hasPosition: Bool
+    public let summary: StockPositionSummary?
+    public let returns: StockReturnAttribution?
+    public let openLots: [OpenLot]
+    public let closedTrades: [ClosedTrade]
+
+    enum CodingKeys: String, CodingKey {
+        case symbol
+        case displayCurrency = "display_currency"
+        case localCurrency = "local_currency"
+        case fxRate = "fx_rate"
+        case hasPosition = "has_position"
+        case summary, returns
+        case openLots = "open_lots"
+        case closedTrades = "closed_trades"
+    }
+}
+

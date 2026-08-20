@@ -15,7 +15,10 @@ import config
 from db_utils import get_cached_screener_results
 from finutils import is_cash_symbol
 from market_data import map_to_yf_symbol
-from portfolio_analyzer import calculate_periodic_returns
+from portfolio_analyzer import (
+    calculate_periodic_returns,
+    calculate_fifo_lots_and_gains,
+)
 from risk_metrics import calculate_all_risk_metrics
 from server.auth import User
 from server.dependencies import (
@@ -782,6 +785,389 @@ async def get_holdings_returns(
         }
 
     return clean_nans(result)
+
+
+@router.get("/stock/{symbol}/position")
+async def get_stock_position(
+    symbol: str,
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user),
+):
+    """Calculates comprehensive position summary, FIFO lots, and return attribution for a single stock."""
+    (
+        df,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        account_currency_map,
+        account_cash_mode_map,
+        original_csv_path,
+        db_mtime,
+    ) = data
+
+    sym_clean = symbol.upper().strip()
+    yf_mapped = map_to_yf_symbol(sym_clean, user_symbol_map, user_excluded_symbols)
+    sym_variants = {sym_clean}
+    if yf_mapped:
+        sym_variants.add(yf_mapped.upper().strip())
+
+    if df.empty:
+        return {
+            "symbol": sym_clean,
+            "display_currency": currency,
+            "local_currency": currency,
+            "fx_rate": 1.0,
+            "has_position": False,
+            "summary": None,
+            "returns": None,
+            "open_lots": [],
+            "closed_trades": [],
+        }
+
+    # Check if this symbol has transactions
+    sym_series = df["Symbol"].fillna("").astype(str).str.upper().str.strip()
+    sym_mask = sym_series.isin(sym_variants)
+    if "To Account" in df.columns:
+        # Include transfer rows where symbol matches
+        sym_mask = sym_mask | sym_series.isin(sym_variants)
+    df_sym = df[sym_mask]
+
+    if df_sym.empty:
+        return {
+            "symbol": sym_clean,
+            "display_currency": currency,
+            "local_currency": currency,
+            "fx_rate": 1.0,
+            "has_position": False,
+            "summary": None,
+            "returns": None,
+            "open_lots": [],
+            "closed_trades": [],
+        }
+
+    try:
+        # 1. Historical FX for currency conversions
+        min_date = df["Date"].min().date()
+        max_date = date.today()
+        _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
+            df=df,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
+            start_date=min_date,
+            end_date=max_date,
+            interval="D",
+            benchmark_symbols_yf=[],
+            display_currency=currency,
+            include_accounts=accounts,
+            account_cash_mode_map=account_cash_mode_map,
+            db_mtime=db_mtime,
+        )
+
+        # 2. FIFO Lots & Realized Gains
+        tx_to_process = df.copy()
+        tx_to_process.sort_values(by=["Date", "original_index"], inplace=True)
+        df_gains, open_lots_dict = calculate_fifo_lots_and_gains(
+            transactions_df=tx_to_process,
+            display_currency=currency,
+            historical_fx_yf=historical_fx_yf,
+            default_currency=config.DEFAULT_CURRENCY,
+            shortable_symbols=config.SHORTABLE_SYMBOLS,
+            stock_quantity_close_tolerance=config.STOCK_QUANTITY_CLOSE_TOLERANCE,
+        )
+
+        # 3. Get exact holding metrics via summary generator
+        summary_data = await _calculate_portfolio_summary_internal(
+            currency=currency,
+            include_accounts=accounts,
+            show_closed_positions=True,
+            data=data,
+            current_user=current_user,
+        )
+
+        overall_metrics = summary_data.get("metrics", {}) or {}
+        overall_mkt_val = overall_metrics.get("market_value", 0.0) or 0.0
+
+        summary_df = summary_data.get("summary_df")
+        all_rows = []
+        if summary_df is not None and not summary_df.empty:
+            summary_df_clean = summary_df.where(pd.notnull(summary_df), None)
+            all_rows = summary_df_clean.to_dict(orient="records")
+
+        matching_rows = [
+            r
+            for r in all_rows
+            if str(r.get("Symbol", "")).upper().strip() in sym_variants
+        ]
+
+        # Extract price and FX info
+        current_price = 0.0
+        local_currency = currency
+        fx_rate = 1.0
+
+        if matching_rows:
+            current_price = float(
+                matching_rows[0].get(
+                    f"Price ({currency})", matching_rows[0].get("Price", 0.0)
+                )
+                or 0.0
+            )
+            local_currency = matching_rows[0].get("Local Currency", currency)
+            fx_rate = float(matching_rows[0].get("fx_rate", 1.0) or 1.0)
+        else:
+            # Try to get price from MarketDataProvider
+            mdp = get_mdp()
+            quotes, _, _, _, _ = mdp.get_current_quotes(
+                [sym_clean], {currency}, {}, set()
+            )
+            stock_data = quotes.get(sym_clean, {})
+            current_price = float(stock_data.get("price", 0.0) or 0.0)
+
+        # 4. Build Open Lots list
+        open_lots_list = []
+        accounts_filter_norm = (
+            {str(a).upper().strip() for a in accounts} if accounts else None
+        )
+
+        for (s, acc), lots in open_lots_dict.items():
+            if str(s).upper().strip() not in sym_variants:
+                continue
+            if accounts_filter_norm and acc.upper().strip() not in accounts_filter_norm:
+                continue
+
+            for idx, lot in enumerate(lots):
+                qty = float(lot.get("qty", 0.0))
+                if qty > config.STOCK_QUANTITY_CLOSE_TOLERANCE:
+                    purchase_date = lot.get("purchase_date")
+                    cps_local = float(lot.get("cost_per_share_local_net", 0.0))
+                    lot_fx = float(lot.get("purchase_fx_to_display", fx_rate) or fx_rate)
+                    lot_cost_basis_display = qty * cps_local * lot_fx
+                    lot_mkt_val_display = qty * current_price
+                    lot_unreal_gain = lot_mkt_val_display - lot_cost_basis_display
+                    lot_unreal_gain_pct = (
+                        (lot_unreal_gain / lot_cost_basis_display * 100.0)
+                        if lot_cost_basis_display > 1e-6
+                        else 0.0
+                    )
+                    days_held = (
+                        (date.today() - purchase_date).days if purchase_date else 0
+                    )
+                    term = "long_term" if days_held >= 365 else "short_term"
+
+                    open_lots_list.append(
+                        {
+                            "lot_id": int(lot.get("original_tx_id") or (idx + 1)),
+                            "date": str(purchase_date),
+                            "account": acc,
+                            "quantity": round(qty, 6),
+                            "cost_per_share_local": round(cps_local, 4),
+                            "cost_basis_display": round(lot_cost_basis_display, 2),
+                            "market_value_display": round(lot_mkt_val_display, 2),
+                            "unrealized_gain_display": round(lot_unreal_gain, 2),
+                            "unrealized_gain_pct": round(lot_unreal_gain_pct, 2),
+                            "holding_period_days": days_held,
+                            "tax_term": term,
+                        }
+                    )
+
+        # Sort lots chronologically (FIFO order)
+        open_lots_list.sort(key=lambda x: (x["date"], x["lot_id"]))
+
+        # 5. Build Closed Trades list
+        closed_trades_list = []
+        if not df_gains.empty:
+            df_gains_sym = df_gains[
+                df_gains["Symbol"].fillna("").astype(str).str.upper().str.strip().isin(sym_variants)
+            ]
+            if accounts_filter_norm:
+                df_gains_sym = df_gains_sym[
+                    df_gains_sym["Account"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .str.strip()
+                    .isin(accounts_filter_norm)
+                ]
+
+            for _, row in df_gains_sym.iterrows():
+                closed_trades_list.append(
+                    {
+                        "sell_date": str(row.get("Date")),
+                        "account": str(row.get("Account")),
+                        "quantity_sold": float(row.get("Quantity", 0.0)),
+                        "sale_price": float(row.get("Avg Sale Price (Local)", 0.0)),
+                        "proceeds_display": float(
+                            row.get("Total Proceeds (Display)", 0.0)
+                        ),
+                        "cost_basis_display": float(
+                            row.get("Total Cost Basis (Display)", 0.0)
+                        ),
+                        "realized_gain_display": float(
+                            row.get("Realized Gain (Display)", 0.0)
+                        ),
+                        "original_tx_id": int(row.get("original_tx_id") or 0),
+                    }
+                )
+
+        closed_trades_list.sort(key=lambda x: x["sell_date"], reverse=True)
+
+        # 6. Build Aggregated Position Summary & Return Attribution
+        tot_qty = sum(float(r.get("Quantity", 0.0) or 0.0) for r in matching_rows)
+        tot_mkt_val = sum(
+            float(r.get(f"Market Value ({currency})", r.get("Market Value", 0.0)) or 0.0)
+            for r in matching_rows
+        )
+        tot_cost_basis = sum(
+            float(r.get(f"Cost Basis ({currency})", r.get("Cost Basis", 0.0)) or 0.0)
+            for r in matching_rows
+        )
+        tot_buy_cost = sum(
+            float(
+                r.get(f"Total Buy Cost ({currency})", r.get("Total Buy Cost", 0.0))
+                or 0.0
+            )
+            for r in matching_rows
+        )
+        tot_unreal_gain = sum(
+            float(r.get(f"Unreal. Gain ({currency})", r.get("Unreal. Gain", 0.0)) or 0.0)
+            for r in matching_rows
+        )
+        tot_real_gain = sum(
+            float(
+                r.get(f"Realized Gain ({currency})", r.get("Realized Gain", 0.0)) or 0.0
+            )
+            for r in matching_rows
+        )
+        tot_divs = sum(
+            float(r.get(f"Dividends ({currency})", r.get("Dividends", 0.0)) or 0.0)
+            for r in matching_rows
+        )
+        tot_comm = sum(
+            float(r.get(f"Commissions ({currency})", r.get("Commissions", 0.0)) or 0.0)
+            for r in matching_rows
+        )
+        tot_tax = sum(
+            float(r.get(f"Taxes ({currency})", r.get("Taxes", 0.0)) or 0.0)
+            for r in matching_rows
+        )
+        tot_gain = sum(
+            float(r.get(f"Total Gain ({currency})", r.get("Total Gain", 0.0)) or 0.0)
+            for r in matching_rows
+        )
+        tot_fx_gain = sum(
+            float(r.get(f"FX Gain/Loss ({currency})", 0.0) or 0.0)
+            for r in matching_rows
+            if pd.notna(r.get(f"FX Gain/Loss ({currency})"))
+        )
+
+        # For open positions, FIFO cost basis and unrealized gain strictly come from the unliquidated open lots
+        if open_lots_list:
+            lot_qty = sum(lot["quantity"] for lot in open_lots_list)
+            lot_cost = sum(lot["cost_basis_display"] for lot in open_lots_list)
+            if lot_qty > 1e-6:
+                tot_qty = lot_qty
+            if lot_cost > 0:
+                tot_cost_basis = lot_cost
+                tot_unreal_gain = tot_mkt_val - tot_cost_basis
+                if tot_buy_cost <= 1e-6:
+                    tot_buy_cost = tot_cost_basis
+                tot_gain = tot_unreal_gain + tot_real_gain + tot_divs - tot_comm - tot_tax
+        elif abs(tot_qty) < 1e-6 and not open_lots_list:
+            tot_cost_basis = 0.0
+            tot_unreal_gain = 0.0
+
+        avg_cost_price = (
+            (tot_cost_basis / tot_qty) if abs(tot_qty) > 1e-6 else 0.0
+        )
+        unreal_gain_pct = (
+            (tot_unreal_gain / tot_cost_basis * 100.0)
+            if abs(tot_cost_basis) > 1e-6
+            else 0.0
+        )
+        total_return_pct = (
+            (tot_gain / tot_buy_cost * 100.0) if abs(tot_buy_cost) > 1e-6 else 0.0
+        )
+        fx_gain_pct = (
+            (tot_fx_gain / tot_cost_basis * 100.0) if abs(tot_cost_basis) > 1e-6 else 0.0
+        )
+        port_weight_pct = (
+            (tot_mkt_val / overall_mkt_val * 100.0) if overall_mkt_val > 1e-6 else 0.0
+        )
+
+        irr_val = matching_rows[0].get("IRR (%)") if matching_rows else None
+        yield_cost = (
+            matching_rows[0].get("Div. Yield (Cost) %") if matching_rows else None
+        )
+        yield_mkt = (
+            matching_rows[0].get("Div. Yield (Current) %") if matching_rows else None
+        )
+        iad = (
+            matching_rows[0].get("Indicated Annual Dividend", 0.0)
+            if matching_rows
+            else 0.0
+        )
+
+        summary_obj = {
+            "quantity": round(tot_qty, 6),
+            "current_price": round(current_price, 4),
+            "market_value": round(tot_mkt_val, 2),
+            "avg_cost_price": round(avg_cost_price, 4),
+            "cost_basis": round(tot_cost_basis, 2),
+            "total_buy_cost": round(tot_buy_cost, 2),
+            "portfolio_weight_pct": round(port_weight_pct, 2)
+            if port_weight_pct
+            else None,
+        }
+
+        returns_obj = {
+            "unrealized_gain": round(tot_unreal_gain, 2),
+            "unrealized_gain_pct": round(unreal_gain_pct, 2),
+            "realized_gain": round(tot_real_gain, 2),
+            "lifetime_dividends": round(tot_divs, 2),
+            "commissions": round(tot_comm, 2),
+            "withholding_taxes": round(tot_tax, 2),
+            "total_gain": round(tot_gain, 2),
+            "total_return_pct": round(total_return_pct, 2),
+            "irr_pct": round(float(irr_val), 2)
+            if irr_val is not None and pd.notna(irr_val)
+            else None,
+            "twrr_pct": None,
+            "indicated_annual_dividend": round(float(iad), 4) if iad else 0.0,
+            "yield_on_cost_pct": round(float(yield_cost), 2)
+            if yield_cost is not None and pd.notna(yield_cost)
+            else None,
+            "market_yield_pct": round(float(yield_mkt), 2)
+            if yield_mkt is not None and pd.notna(yield_mkt)
+            else None,
+            "fx_gain_loss": round(tot_fx_gain, 2),
+            "fx_gain_loss_pct": round(fx_gain_pct, 2),
+        }
+
+        has_pos = (abs(tot_qty) > 1e-6) or len(closed_trades_list) > 0 or len(open_lots_list) > 0
+
+        res = {
+            "symbol": sym_clean,
+            "display_currency": currency,
+            "local_currency": local_currency,
+            "fx_rate": fx_rate,
+            "has_position": has_pos,
+            "summary": summary_obj,
+            "returns": returns_obj,
+            "open_lots": open_lots_list,
+            "closed_trades": closed_trades_list,
+        }
+
+        return clean_nans(res)
+
+    except Exception as e:
+        logging.error(f"Error getting stock position for {symbol}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get position data for {symbol}"
+        )
 
 
 @router.get("/history")

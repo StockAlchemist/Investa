@@ -1822,3 +1822,85 @@ export async function fetchStrategyAllocation(
     if (error) throw new Error('Failed to build the strategy allocation');
     return data as unknown as StrategyAllocation;
 }
+
+export interface OpenLot {
+    lot_id: number;
+    date: string;
+    account: string;
+    quantity: number;
+    cost_per_share_local: number;
+    cost_basis_display: number;
+    market_value_display: number;
+    unrealized_gain_display: number;
+    unrealized_gain_pct: number;
+    holding_period_days: number;
+    tax_term: 'short_term' | 'long_term';
+}
+
+export interface ClosedTrade {
+    sell_date: string;
+    account: string;
+    quantity_sold: number;
+    sale_price: number;
+    proceeds_display: number;
+    cost_basis_display: number;
+    realized_gain_display: number;
+    original_tx_id?: number;
+}
+
+export interface StockPositionSummary {
+    quantity: number;
+    current_price: number;
+    market_value: number;
+    avg_cost_price: number;
+    cost_basis: number;
+    total_buy_cost: number;
+    portfolio_weight_pct?: number | null;
+}
+
+export interface StockReturnAttribution {
+    unrealized_gain: number;
+    unrealized_gain_pct: number;
+    realized_gain: number;
+    lifetime_dividends: number;
+    commissions: number;
+    withholding_taxes: number;
+    total_gain: number;
+    total_return_pct: number;
+    irr_pct?: number | null;
+    twrr_pct?: number | null;
+    indicated_annual_dividend: number;
+    yield_on_cost_pct?: number | null;
+    market_yield_pct?: number | null;
+    fx_gain_loss: number;
+    fx_gain_loss_pct: number;
+}
+
+export interface StockPositionData {
+    symbol: string;
+    display_currency: string;
+    local_currency: string;
+    fx_rate: number;
+    has_position: boolean;
+    summary?: StockPositionSummary | null;
+    returns?: StockReturnAttribution | null;
+    open_lots: OpenLot[];
+    closed_trades: ClosedTrade[];
+}
+
+export async function fetchStockPosition(
+    symbol: string,
+    currency: string = 'USD',
+    accounts?: string[],
+    signal?: AbortSignal
+): Promise<StockPositionData> {
+    const params = new URLSearchParams({ currency });
+    if (accounts && accounts.length) {
+        accounts.forEach((a) => params.append('accounts', a));
+    }
+    const url = `${API_BASE_URL}/stock/${encodeURIComponent(symbol)}/position?${params.toString()}`;
+    const response = await authFetch(url, { signal });
+    if (!response.ok) throw new Error(`Failed to fetch stock position for ${symbol}`);
+    return (await response.json()) as StockPositionData;
+}
+

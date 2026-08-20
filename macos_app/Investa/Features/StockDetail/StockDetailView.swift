@@ -5,15 +5,21 @@ import Charts
 struct SymbolID: Identifiable, Hashable { let id: String }
 
 private enum DetailTab: String, CaseIterable, Identifiable {
-    case overview = "Overview", chart = "Chart", analysis = "Analysis"
+    case overview = "Overview", position = "Position & Lots", chart = "Chart", analysis = "Analysis"
     case financials = "Financials", ratios = "Ratios & Trends", valuation = "Valuation"
     case holdings = "Holdings", news = "News"
     var id: String { rawValue }
     var icon: String {
         switch self {
-        case .overview: return "square.grid.2x2"; case .chart: return "chart.line.uptrend.xyaxis"
-        case .analysis: return "sparkles"; case .financials: return "doc.text"; case .ratios: return "chart.bar"
-        case .valuation: return "dollarsign"; case .holdings: return "chart.pie"; case .news: return "newspaper"
+        case .overview: return "square.grid.2x2"
+        case .position: return "briefcase"
+        case .chart: return "chart.line.uptrend.xyaxis"
+        case .analysis: return "sparkles"
+        case .financials: return "doc.text"
+        case .ratios: return "chart.bar"
+        case .valuation: return "dollarsign"
+        case .holdings: return "chart.pie"
+        case .news: return "newspaper"
         }
     }
 }
@@ -49,7 +55,7 @@ struct StockDetailView: View {
     private var cur: String { viewModel.currency }
 
     private var visibleTabs: [DetailTab] {
-        var tabs: [DetailTab] = [.overview, .chart, .analysis]
+        var tabs: [DetailTab] = [.overview, .position, .chart, .analysis]
         if !(f?.isETF ?? false) { tabs += [.financials, .ratios] }
         tabs.append(.valuation)
         if f?.isETF ?? false { tabs.append(.holdings) }
@@ -66,6 +72,7 @@ struct StockDetailView: View {
                 Group {
                     switch tab {
                     case .overview: overviewTab
+                    case .position: positionTab
                     case .chart: chartTab
                     case .analysis: analysisTab
                     case .financials: financialsTab
@@ -2010,6 +2017,177 @@ struct StockDetailView: View {
                     }.buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    // MARK: - Position & Lots Tab
+
+    @ViewBuilder
+    private var positionTab: some View {
+        if let pos = viewModel.positionData, pos.hasPosition {
+            VStack(alignment: .leading, spacing: 20) {
+                // 1. Overview KPIs
+                if let summary = pos.summary, let ret = pos.returns {
+                    let unreal = ret.unrealizedGain
+                    let unrealPct = ret.unrealizedGainPct
+                    let totalG = ret.totalGain
+                    let totalRetPct = ret.totalReturnPct
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Position Overview").font(.headline)
+                            Spacer()
+                            if let w = summary.portfolioWeightPct, w > 0 {
+                                Text("\(Fmt.number(w, fractionDigits: 2))% of Portfolio")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(Color.indigo.opacity(0.12), in: Capsule())
+                                    .foregroundStyle(Color.indigo)
+                            }
+                        }
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                            statCard("Shares Held", Fmt.number(summary.quantity, fractionDigits: 4), icon: "number", iconTint: .indigo)
+                            statCard("Avg Cost", Fmt.currency(summary.avgCostPrice, currency: cur), icon: "tag", iconTint: .secondary)
+                            statCard("Market Value", Fmt.currency(summary.marketValue, currency: cur), icon: "chart.pie", iconTint: .indigo)
+                            statCard("Cost Basis", Fmt.currency(summary.costBasis, currency: cur), icon: "scalemass", iconTint: .secondary)
+                            statCard(
+                                "Unrealized G/L",
+                                Fmt.currency(unreal, currency: cur),
+                                sub: "\(unrealPct >= 0 ? "+" : "")\(Fmt.percent(unrealPct / 100.0))",
+                                icon: "chart.line.uptrend.xyaxis",
+                                iconTint: unreal >= 0 ? .green : .red,
+                                subTint: unrealPct >= 0 ? .green : .red,
+                                bgTint: (unreal >= 0 ? Color.green : Color.red).opacity(0.08)
+                            )
+                            statCard(
+                                "Total Return",
+                                Fmt.currency(totalG, currency: cur),
+                                sub: "\(totalRetPct >= 0 ? "+" : "")\(Fmt.percent(totalRetPct / 100.0))",
+                                icon: "arrow.up.right.circle",
+                                iconTint: totalG >= 0 ? .green : .red,
+                                subTint: totalRetPct >= 0 ? .green : .red,
+                                bgTint: (totalG >= 0 ? Color.green : Color.red).opacity(0.08)
+                            )
+                        }
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                            statCard("IRR (Annualized)", ret.irrPct != nil ? "\(ret.irrPct! >= 0 ? "+" : "")\(Fmt.percent(ret.irrPct! / 100.0))" : "—", icon: "percent", iconTint: (ret.irrPct ?? 0) >= 0 ? .green : .red)
+                            statCard("Yield on Cost", ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct! / 100.0) : "—", sub: ret.marketYieldPct != nil ? "Mkt: \(Fmt.percent(ret.marketYieldPct! / 100.0))" : nil, icon: "dollarsign.circle", iconTint: .orange)
+                            statCard("Lifetime Dividends", Fmt.currency(ret.lifetimeDividends, currency: cur), icon: "banknote", iconTint: .orange)
+                            statCard("Realized G/L", Fmt.currency(ret.realizedGain, currency: cur), icon: "checkmark.circle", iconTint: ret.realizedGain >= 0 ? .green : .red)
+                        }
+                    }
+
+                    // 2. Return Attribution Breakdown
+                    card("Return Attribution Breakdown") {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 10)], spacing: 10) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Capital Appreciation").font(.caption2).foregroundStyle(.secondary)
+                                Text(Fmt.currency(unreal + ret.realizedGain, currency: cur)).font(.subheadline.bold())
+                                Text("Unreal: \(Fmt.currency(unreal, currency: cur)) · Real: \(Fmt.currency(ret.realizedGain, currency: cur))").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Dividend Income").font(.caption2).foregroundStyle(.secondary)
+                                Text("+\(Fmt.currency(ret.lifetimeDividends, currency: cur))").font(.subheadline.bold()).foregroundStyle(.green)
+                                Text("YoC: \(ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct! / 100.0) : "—")").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Currency (FX) Impact").font(.caption2).foregroundStyle(.secondary)
+                                Text("\(ret.fxGainLoss >= 0 ? "+" : "")\(Fmt.currency(ret.fxGainLoss, currency: cur))").font(.subheadline.bold()).foregroundStyle(ret.fxGainLoss >= 0 ? .green : .red)
+                                Text("\(ret.fxGainLossPct >= 0 ? "+" : "")\(Fmt.percent(ret.fxGainLossPct / 100.0)) on cost").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Fees & Taxes Friction").font(.caption2).foregroundStyle(.secondary)
+                                Text("-\(Fmt.currency(ret.commissions + ret.withholdingTaxes, currency: cur))").font(.subheadline.bold()).foregroundStyle(.red)
+                                Text("Fees: \(Fmt.currency(ret.commissions, currency: cur)) · Tax: \(Fmt.currency(ret.withholdingTaxes, currency: cur))").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+
+                // 3. Open FIFO Lots
+                if !pos.openLots.isEmpty {
+                    card("Open FIFO Tax Lots (\(pos.openLots.count))") {
+                        VStack(spacing: 8) {
+                            ForEach(pos.openLots) { lot in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(lot.date).font(.subheadline.weight(.semibold))
+                                            Text(lot.account).font(.caption2).foregroundStyle(.secondary)
+                                            Text(lot.taxTerm == "long_term" ? "Long-Term" : "Short-Term")
+                                                .font(.system(size: 9, weight: .bold))
+                                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                                .background(lot.taxTerm == "long_term" ? Color.green.opacity(0.15) : Color.blue.opacity(0.15), in: Capsule())
+                                                .foregroundStyle(lot.taxTerm == "long_term" ? Color.green : Color.blue)
+                                        }
+                                        Text("\(Fmt.number(lot.quantity, fractionDigits: 4)) shares @ \(Fmt.currency(lot.costPerShareLocal, currency: pos.localCurrency))")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text(Fmt.currency(lot.marketValueDisplay, currency: cur)).font(.subheadline.weight(.semibold))
+                                        Text("\(lot.unrealizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(lot.unrealizedGainDisplay, currency: cur)) (\(Fmt.percent(lot.unrealizedGainPct / 100.0)))")
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(lot.unrealizedGainDisplay >= 0 ? .green : .red)
+                                    }
+                                }
+                                .padding(10)
+                                .background(Color.gray.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                }
+
+                // 4. Closed Trades
+                if !pos.closedTrades.isEmpty {
+                    card("Closed Trades & Realized Sells (\(pos.closedTrades.count))") {
+                        VStack(spacing: 8) {
+                            ForEach(pos.closedTrades) { trade in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(trade.sellDate).font(.subheadline.weight(.semibold))
+                                            Text(trade.account).font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                        Text("Sold \(Fmt.number(trade.quantitySold, fractionDigits: 4)) shares @ \(Fmt.currency(trade.salePrice, currency: pos.localCurrency))")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("Proceeds: \(Fmt.currency(trade.proceedsDisplay, currency: cur))").font(.caption.weight(.medium))
+                                        Text("Gain: \(trade.realizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(trade.realizedGainDisplay, currency: cur))")
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(trade.realizedGainDisplay >= 0 ? .green : .red)
+                                    }
+                                }
+                                .padding(10)
+                                .background(Color.gray.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "briefcase").font(.system(size: 36)).foregroundStyle(.secondary)
+                Text("No Position in \(viewModel.symbol)").font(.headline)
+                Text("You currently have no recorded transactions for this symbol.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity).padding(40)
         }
     }
 

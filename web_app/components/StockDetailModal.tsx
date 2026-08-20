@@ -20,6 +20,10 @@ import { StockDetailTabs } from './stock-detail/components/StockDetailTabs';
 import { OverviewTab } from './stock-detail/tabs/OverviewTab';
 
 // Dynamically import heavier tabs for optimal code splitting & Lighthouse performance
+const PositionTab = dynamic(
+    () => import('./stock-detail/tabs/PositionTab').then(mod => mod.PositionTab),
+    { loading: () => <Skeleton className="h-96 w-full rounded-2xl" /> }
+);
 const ChartTab = dynamic(
     () => import('./stock-detail/tabs/ChartTab').then(mod => mod.ChartTab),
     { loading: () => <Skeleton className="h-96 w-full rounded-2xl" /> }
@@ -313,6 +317,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     fxRate={fxRate}
                                     loading={loading}
                                     onRefreshData={() => loadData(true)}
+                                />
+                            )}
+                            {activeTab === 'position' && (
+                                <PositionTab
+                                    symbol={symbol}
+                                    currency={currency}
+                                    accounts={filters.accounts}
                                 />
                             )}
                             {activeTab === 'chart' && (

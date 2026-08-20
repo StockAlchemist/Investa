@@ -6,7 +6,7 @@ export interface StockDetailModalProps {
     initialTab?: string;
 }
 
-export type TabType = 'overview' | 'chart' | 'financials' | 'ratios' | 'valuation' | 'holdings' | 'analysis' | 'news';
+export type TabType = 'overview' | 'position' | 'chart' | 'financials' | 'ratios' | 'valuation' | 'holdings' | 'analysis' | 'news';
 
 export interface ChartSeries {
     key: string;

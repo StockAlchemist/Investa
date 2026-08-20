@@ -1,4 +1,3 @@
-import React from 'react';
 import {
     LayoutDashboard,
     TrendingUp,
@@ -7,7 +6,8 @@ import {
     DollarSign,
     PieChart as PieChartIcon,
     Sparkles,
-    Newspaper
+    Newspaper,
+    Wallet,
 } from 'lucide-react';
 import { TabType } from '../types';
 import { cn } from '../../../lib/utils';
@@ -41,7 +41,7 @@ function TabButton({ active, onClick, icon: Icon, label }: {
 export const StockDetailTabs: React.FC<StockDetailTabsProps> = ({
     activeTab,
     setActiveTab,
-    isEtf
+    isEtf,
 }) => {
     return (
         <div className="px-4 sm:px-6 flex justify-around sm:justify-start gap-2 sm:gap-6 overflow-x-auto no-scrollbar">
@@ -50,6 +50,12 @@ export const StockDetailTabs: React.FC<StockDetailTabsProps> = ({
                 onClick={() => setActiveTab('overview')}
                 icon={LayoutDashboard}
                 label="Overview"
+            />
+            <TabButton
+                active={activeTab === 'position'}
+                onClick={() => setActiveTab('position')}
+                icon={Wallet}
+                label="Position & Lots"
             />
             <TabButton
                 active={activeTab === 'chart'}
