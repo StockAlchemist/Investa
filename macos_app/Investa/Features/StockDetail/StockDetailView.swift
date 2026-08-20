@@ -1457,20 +1457,12 @@ struct StockDetailView: View {
             return (period, dateStr, val)
         }
         // Sixty quarterly points would be a row of touching dots; the line
-        // carries the shape on its own once they stop being distinguishable.
-        let showPoints = points.count <= StatementChartConfig.barToLineThreshold
         return card(title) {
             Chart {
                 ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                    LineMark(x: .value("Period", p.period), y: .value(title, p.value))
-                        .foregroundStyle(color).interpolationMethod(.monotone)
-                    AreaMark(x: .value("Period", p.period), y: .value(title, p.value))
-                        .foregroundStyle(LinearGradient(colors: [color.opacity(0.3), color.opacity(0.0)], startPoint: .top, endPoint: .bottom))
-                        .interpolationMethod(.monotone)
-                    if showPoints {
-                        PointMark(x: .value("Period", p.period), y: .value(title, p.value))
-                            .foregroundStyle(color)
-                    }
+                    BarMark(x: .value("Period", p.period), y: .value(title, p.value))
+                        .foregroundStyle(color.gradient)
+                        .cornerRadius(3)
                 }
             }
             .chartXAxis {

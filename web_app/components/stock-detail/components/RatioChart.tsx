@@ -1,11 +1,11 @@
 import React from 'react';
 import {
-    AreaChart,
+    BarChart,
     CartesianGrid,
     XAxis,
     YAxis,
     Tooltip,
-    Area,
+    Bar,
     ResponsiveContainer
 } from 'recharts';
 import { FinancialRatio } from '../../../lib/api';
@@ -65,11 +65,11 @@ export const RatioChart: React.FC<RatioChartProps> = ({
                     </div>
                 ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={data}>
+                        <BarChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                             <defs>
                                 <linearGradient id={sanitizedId} x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={color} stopOpacity={0.35} />
-                                    <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                                    <stop offset="0%" stopColor={color} stopOpacity={0.95} />
+                                    <stop offset="100%" stopColor={color} stopOpacity={0.45} />
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" opacity={0.15} vertical={false} />
@@ -111,19 +111,16 @@ export const RatioChart: React.FC<RatioChartProps> = ({
                                     }
                                     return null;
                                 }}
-                                cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '3 3' }}
+                                cursor={{ fill: 'var(--border)', opacity: 0.15 }}
                             />
-                            <Area
-                                type="monotone"
+                            <Bar
                                 dataKey={dataKey}
-                                stroke={color}
-                                strokeWidth={2.5}
-                                fillOpacity={1}
                                 fill={`url(#${sanitizedId})`}
-                                connectNulls={true}
+                                radius={[4, 4, 0, 0]}
+                                maxBarSize={36}
                                 animationDuration={800}
                             />
-                        </AreaChart>
+                        </BarChart>
                     </ResponsiveContainer>
                 )}
             </div>

@@ -290,20 +290,9 @@ struct StockKeyMetricsView: View {
             } else {
                 Chart {
                     ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                        AreaMark(x: .value("Period", p.period), y: .value(def.title, p.value))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [def.color.opacity(0.30), def.color.opacity(0.02)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .interpolationMethod(.monotone)
-
-                        LineMark(x: .value("Period", p.period), y: .value(def.title, p.value))
-                            .foregroundStyle(def.color)
-                            .lineStyle(.init(lineWidth: 2.0))
-                            .interpolationMethod(.monotone)
+                        BarMark(x: .value("Period", p.period), y: .value(def.title, p.value))
+                            .foregroundStyle(def.color.gradient)
+                            .cornerRadius(3)
                     }
                 }
                 .chartXAxis {
