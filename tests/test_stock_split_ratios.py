@@ -9,7 +9,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import edgar_provider
 import market_data
-from market_data import _cik_for_symbol
 from financial_ratios import calculate_key_ratios_timeseries
 import valuation_history
 
@@ -21,7 +20,7 @@ class TestStockSplitStatementAdjustment:
 
     def test_goog_split_adjustment(self, monkeypatch):
         monkeypatch.setattr(market_data, "_cik_for_symbol", lambda s: self.GOOG_CIK)
-        cik = _cik_for_symbol("GOOG")
+        cik = market_data._cik_for_symbol("GOOG")
         assert cik is not None
 
         # Mock edgar_provider.get_statements with raw filed figures and split adjustment
@@ -103,7 +102,7 @@ class TestStockSplitStatementAdjustment:
     def test_split_adjustment_factors_fallback(self, monkeypatch):
         """split_adjustment_factors should return factors for historical periods even if shares_diluted has few years."""
         monkeypatch.setattr(market_data, "_cik_for_symbol", lambda s: self.GOOG_CIK)
-        cik = _cik_for_symbol("GOOG")
+        cik = market_data._cik_for_symbol("GOOG")
         assert cik is not None
 
         # Mock concept values and split consistent series
@@ -203,7 +202,7 @@ class TestStockSplitStatementAdjustment:
 
     def test_valuation_history_bands_for_goog(self, monkeypatch):
         monkeypatch.setattr(market_data, "_cik_for_symbol", lambda s: self.GOOG_CIK)
-        cik = _cik_for_symbol("GOOG")
+        cik = market_data._cik_for_symbol("GOOG")
         assert cik is not None
 
         years = list(range(2011, 2026))
@@ -228,4 +227,5 @@ class TestStockSplitStatementAdjustment:
         assert len(res) > 0, "Valuation history bands should return data for GOOG"
         metrics = [b["metric"] for b in res]
         assert "earnings" in metrics
+
 
