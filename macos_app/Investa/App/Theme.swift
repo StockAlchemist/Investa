@@ -1,10 +1,37 @@
 import SwiftUI
 
 extension Color {
-    /// Gain (positive) semantic color — slightly desaturated, brighter in dark mode.
+    /// Gain (positive) semantic color — vibrant emerald matching web.
     static let up = Color.adaptive(light: (0.09, 0.64, 0.29), dark: (0.13, 0.77, 0.37))   // #16a34a / #22c55e
-    /// Loss (negative) semantic color.
+    /// Loss (negative) semantic color — rose/red matching web.
     static let down = Color.adaptive(light: (0.86, 0.15, 0.15), dark: (0.94, 0.27, 0.27)) // #dc2626 / #ef4444
+
+    /// Primary brand teal accent (#0097b2).
+    static let brand = Color(hex: 0x0097b2)
+    /// Accent indigo (#6366f1) used in charts, AI cards, table header lines.
+    static let brandIndigo = Color(hex: 0x6366f1)
+    /// Accent violet (#8b5cf6) used in earnings events.
+    static let brandViolet = Color(hex: 0x8b5cf6)
+    /// Accent purple (#a855f7).
+    static let brandPurple = Color(hex: 0xa855f7)
+    /// Accent amber (#f59e0b) used in FX and warnings.
+    static let brandAmber = Color(hex: 0xf59e0b)
+    /// Accent cyan (#06b6d4).
+    static let brandCyan = Color(hex: 0x06b6d4)
+    /// Accent sky (#0ea5e9).
+    static let brandSky = Color(hex: 0x0ea5e9)
+    /// Accent emerald (#10b981).
+    static let brandEmerald = Color(hex: 0x10b981)
+    /// Accent rose (#f43f5e).
+    static let brandRose = Color(hex: 0xf43f5e)
+
+    /// Section header and small uppercase label color (#475569 in light, #94a3b8 in dark).
+    static let sectionText = Color.adaptive(light: (0.28, 0.33, 0.41), dark: (0.58, 0.64, 0.72))
+
+    /// Web-aligned card background: clean elevated surface in light mode, deep dark blue-slate in dark mode.
+    static let cardBg = Color.adaptive(light: (0.98, 0.99, 1.0), dark: (0.04, 0.07, 0.13))
+    /// Card border color: subtle translucent highlight in dark mode, crisp clean border in light mode.
+    static let cardBorder = Color.adaptive(light: (0.88, 0.91, 0.94), dark: (0.20, 0.25, 0.38))
 }
 
 // Make `.up` / `.down` usable directly in ShapeStyle contexts (.foregroundStyle,
@@ -12,59 +39,134 @@ extension Color {
 extension ShapeStyle where Self == Color {
     static var up: Color { Color.up }
     static var down: Color { Color.down }
+    static var brand: Color { Color.brand }
+    static var brandIndigo: Color { Color.brandIndigo }
+    static var sectionText: Color { Color.sectionText }
 }
 
 /// App-wide visual tokens. Centralizes the card chrome that was previously
 /// copy-pasted across every feature, so the whole app can be retuned in one place.
 enum Theme {
     /// Brand accent (the teal already used as the first donut-palette color).
-    static let brand = Color(hex: 0x0097b2)
+    static let brand = Color.brand
 
     /// FX overlay accent (amber-500), matching the web performance graph's FX line.
-    static let fx = Color(hex: 0xf59e0b)
+    static let fx = Color.brandAmber
 
     /// Earnings-event accent (violet-500), matching the web Events card.
-    static let earnings = Color(hex: 0x8b5cf6)
+    static let earnings = Color.brandViolet
 
-    static let cardRadius: CGFloat = 14
-    static let heroRadius: CGFloat = 16
+    static let cardRadius: CGFloat = 16
+    static let heroRadius: CGFloat = 20
+    static let insetRadius: CGFloat = 12
     static let gutter: CGFloat = 16
 
     /// Card depth tiers. The hero floats highest; insets sit flush inside a card.
     enum Tier { case hero, standard, inset }
 }
 
-/// Shared card chrome: secondary fill, a soft top-edge highlight instead of a
-/// hard grey border, and a tier-scaled drop shadow to lift cards off the page.
+/// Shared card chrome: elevated card background, top-shine highlight gradient,
+/// fine perimeter stroke, and a tier-scaled drop shadow matching web's glass cards.
 struct CardStyle: ViewModifier {
     var tier: Theme.Tier = .standard
+    @Environment(\.colorScheme) private var colorScheme
 
-    private var radius: CGFloat { tier == .hero ? Theme.heroRadius : Theme.cardRadius }
+    private var radius: CGFloat {
+        switch tier {
+        case .hero: return Theme.heroRadius
+        case .standard: return Theme.cardRadius
+        case .inset: return Theme.insetRadius
+        }
+    }
 
     func body(content: Content) -> some View {
         content
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: radius))
+            .background(Color.cardBg, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             // Clip content (e.g. full-bleed chart fills) to the card's rounded corners.
-            .clipShape(RoundedRectangle(cornerRadius: radius))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: radius)
+                // Top-shine highlight gradient (mirrors web .card-shine::before)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.05 : 0.15),
+                                Color.white.opacity(0.0)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .center
+                        )
+                    )
+                    .allowsHitTesting(false)
+            )
+            .overlay(
+                // Subtle perimeter border stroke
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
-                            colors: [.white.opacity(0.10), .white.opacity(0.02)],
-                            startPoint: .top, endPoint: .bottom
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.12 : 0.8),
+                                Color.cardBorder.opacity(colorScheme == .dark ? 0.25 : 0.6)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
                         ),
                         lineWidth: 1
                     )
+                    .allowsHitTesting(false)
             )
-            .shadow(color: .black.opacity(tier == .hero ? 0.18 : 0.10),
-                    radius: tier == .hero ? 18 : 8,
-                    y: tier == .hero ? 6 : 3)
+            .shadow(
+                color: colorScheme == .dark
+                    ? Color.black.opacity(tier == .hero ? 0.40 : 0.25)
+                    : Color(hex: 0x6366f1).opacity(tier == .hero ? 0.08 : 0.04),
+                radius: tier == .hero ? 18 : 8,
+                x: 0,
+                y: tier == .hero ? 8 : 3
+            )
     }
 }
 
 extension View {
     /// Apply the shared card chrome at a given depth tier.
     func card(_ tier: Theme.Tier = .standard) -> some View { modifier(CardStyle(tier: tier)) }
+}
+
+/// Standardized section label view (10px uppercase, font-weight 800, tracking 1.5).
+struct SectionLabel: View {
+    let title: String
+    var body: some View {
+        Text(title)
+            .font(.system(size: 10, weight: .heavy))
+            .tracking(1.5)
+            .textCase(.uppercase)
+            .foregroundStyle(Color.sectionText)
+            .lineLimit(1)
+    }
+}
+
+/// Reusable semantic badge pill with border and translucent background fill.
+struct SemanticBadge: View {
+    let text: String
+    var tint: Color = .brandIndigo
+    var isPositive: Bool? = nil
+
+    private var effectiveTint: Color {
+        if let pos = isPositive {
+            return pos ? Color.up : Color.down
+        }
+        return tint
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .bold))
+            .monospacedDigit()
+            .foregroundStyle(effectiveTint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2.5)
+            .background(effectiveTint.opacity(0.12), in: Capsule())
+            .overlay(Capsule().strokeBorder(effectiveTint.opacity(0.25), lineWidth: 0.8))
+    }
 }
 
 extension Color {
@@ -148,3 +250,4 @@ extension View {
         #endif
     }
 }
+

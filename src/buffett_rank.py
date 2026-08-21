@@ -65,7 +65,7 @@ GENERIC_PILLARS: PillarSpec = {
         ("roe_median", True),
         ("roic_median", True),
         ("roa_median", True),
-        ("gross_margin_median", True),
+        ("fcf_margin_median", True),
         ("roe_years_above_15", True),
     ],
     # DO NOT remove or shrink this pillar on the strength of its information
@@ -111,7 +111,6 @@ GENERIC_PILLARS: PillarSpec = {
     "growth": [
         ("revenue_cagr", True),
         ("owner_earnings_cagr", True),
-        ("book_value_per_share_cagr", True),
     ],
     "capital_allocation": [
         # Falling share count is a return of capital; rising is dilution.

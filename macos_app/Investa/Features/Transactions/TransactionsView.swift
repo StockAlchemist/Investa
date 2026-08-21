@@ -713,7 +713,7 @@ struct TransactionsView: View {
             #endif
         }
         .padding(16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .card(.standard)
     }
 
     // MARK: - Table
@@ -870,7 +870,7 @@ struct TransactionsView: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+        .card(.standard)
     }
 
     /// Table selection works on the row id (`Int?`); bridge to a `Set<Int>`.

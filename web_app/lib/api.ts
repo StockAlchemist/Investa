@@ -1069,13 +1069,45 @@ export type ValuationStatus =
     | "no_model"
     | "nav";
 
+export interface RecommendedValuationMethod {
+    method_key: string;
+    name: string;
+    best_suited_for?: string;
+    key_caveats?: string;
+    when_to_use?: string;
+    key_limitation?: string;
+    rationale: string;
+    intrinsic_value?: number | null;
+}
+
 export interface IntrinsicValueResponse {
     current_price: number | null;
+    recommended_method?: RecommendedValuationMethod;
     models: {
+        /** Primary Method: Discounted Free Cash Flow. */
         dcf: IntrinsicValueModel;
+        /** Discounted Cash from Operations — for consistent CFO with lumpy CapEx. */
+        dcfo?: IntrinsicValueModel;
+        /** Discounted Net Income — for financials & steady earnings growers. */
+        dni?: IntrinsicValueModel;
+        /** Mean P/E Ratio — for stable P/E history. */
+        mean_pe?: IntrinsicValueModel;
+        /** PEG Ratio Fair Value — fair value at PEG = 1.0. */
+        peg?: IntrinsicValueModel;
+        /** Mean P/B Ratio — for banks (1.2-1.4x), REITs & asset-heavy firms. */
+        mean_pb?: IntrinsicValueModel;
+        /** Mean P/S Ratio — for speculative growth & cyclicals. */
+        mean_ps?: IntrinsicValueModel;
+        /** Price-to-Sales Growth (PSG) — sales cousin of PEG for hyper-growth. */
+        psg?: IntrinsicValueModel;
+        /** Benjamin Graham's Revised Formula. */
         graham: IntrinsicValueModel;
+        /** Multi-Stage Dividend Discount Model — for dividend payers, financials & REITs. */
+        ddm?: IntrinsicValueModel;
         /** Earnings Power Value — the no-growth floor. Reported, never blended. */
         epv?: IntrinsicValueModel;
+        /** Peter Lynch Fair Value — PEG=1.0 with dividend yield adjustment. */
+        lynch?: IntrinsicValueModel;
     };
     /** Null when the backend refuses to value the company; check valuation_status. */
     average_intrinsic_value?: number | null;
@@ -1092,6 +1124,8 @@ export interface IntrinsicValueResponse {
     model_weights?: Record<string, number>;
     /** Value of current earning power with zero growth. */
     earnings_power_floor?: number;
+    /** Peter Lynch Fair Value estimate. */
+    lynch_fair_value?: number;
 }
 
 export interface SymbolSearchResult {
@@ -1710,6 +1744,7 @@ export interface StrategyDefinition {
         top_n: number;
         max_per_sector: number | null;
         sector_digits: number;
+        min_market_cap?: number | null;
         rebalance: string;
     };
 }

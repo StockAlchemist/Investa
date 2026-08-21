@@ -42,7 +42,6 @@ struct StockDetailView: View {
     @State private var showAllMetrics = false
     /// nil follows the period's own default; a tap pins a range.
     @State private var chartRange: StatementRange?
-    @State private var showGrahamExplanation = false
     @State private var summaryExpanded = false
     @State private var ratiosCategory = "All"
     @State private var ratiosRange: StatementRange = .fiveYears
@@ -78,7 +77,7 @@ struct StockDetailView: View {
                     case .analysis: analysisTab
                     case .financials: financialsTab
                     case .ratios: ratiosTab
-                    case .valuation: valuationTab
+                    case .valuation: StockValuationTabView(viewModel: viewModel)
                     case .holdings: holdingsTab
                     case .news: newsTab
                     }
@@ -136,20 +135,20 @@ struct StockDetailView: View {
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
 
             HStack(alignment: .center, spacing: 16) {
                 ZStack {
-                    LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    LinearGradient(colors: [Color.brandIndigo, Color.brandPurple], startPoint: .topLeading, endPoint: .bottomTrailing)
                     StockIcon(symbol: viewModel.symbol, size: 48)
                         .padding(8)
                         .background(.white)
                 }
                 .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
@@ -161,12 +160,12 @@ struct StockDetailView: View {
                         Text(viewModel.symbol)
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                            .background(Color.cardBorder.opacity(0.25), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .foregroundStyle(.secondary)
                     }
                     if f?.sector != nil || f?.industry != nil {
                         HStack(spacing: 6) {
-                            if let s = f?.sector { Text(s).font(.subheadline.weight(.semibold)).foregroundStyle(.indigo).lineLimit(1) }
+                            if let s = f?.sector { Text(s).font(.subheadline.weight(.semibold)).foregroundStyle(Color.brandIndigo).lineLimit(1) }
                             if f?.sector != nil && f?.industry != nil { Text("•").foregroundStyle(.secondary) }
                             if let i = f?.industry { Text(i).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
                         }
@@ -180,7 +179,7 @@ struct StockDetailView: View {
                     if let p = f?.price {
                         Text(Fmt.currency(p, code: nativeCur))
                             .font(.system(size: 32, weight: .black, design: .default))
-                            .foregroundStyle(.indigo)
+                            .foregroundStyle(Color.brandIndigo)
                     }
                 }
             }
@@ -206,20 +205,20 @@ struct StockDetailView: View {
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
 
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
-                    LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    LinearGradient(colors: [Color.brandIndigo, Color.brandPurple], startPoint: .topLeading, endPoint: .bottomTrailing)
                     StockIcon(symbol: viewModel.symbol, size: 45)
                         .padding(6)
                         .background(.white)
                 }
                 .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -233,7 +232,7 @@ struct StockDetailView: View {
                         Text(viewModel.symbol)
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                            .background(Color.cardBorder.opacity(0.25), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .foregroundStyle(.secondary)
                         if viewModel.isLoading { ProgressView().controlSize(.small) }
                     }
@@ -244,14 +243,14 @@ struct StockDetailView: View {
                 if let p = f?.price {
                     Text(Fmt.currency(p, code: nativeCur))
                         .font(.system(size: 41, weight: .black, design: .default))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(Color.brandIndigo)
                         .minimumScaleFactor(0.8)
                         .lineLimit(1)
                 }
                 Spacer()
                 if f?.sector != nil || f?.industry != nil {
                     VStack(alignment: .trailing, spacing: 2) {
-                        if let s = f?.sector { Text(s).font(.caption.weight(.semibold)).foregroundStyle(.indigo).lineLimit(1) }
+                        if let s = f?.sector { Text(s).font(.caption.weight(.semibold)).foregroundStyle(Color.brandIndigo).lineLimit(1) }
                         if let i = f?.industry { Text(i).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                     }
                 }
@@ -274,9 +273,9 @@ struct StockDetailView: View {
                                 .fixedSize()
                         }
                         .padding(.bottom, 8)
-                        .foregroundStyle(tab == t ? Color.indigo : .secondary)
+                        .foregroundStyle(tab == t ? Color.brandIndigo : .secondary)
                         .overlay(alignment: .bottom) {
-                            if tab == t { Rectangle().fill(Color.indigo).frame(height: 2) }
+                            if tab == t { Rectangle().fill(Color.brandIndigo).frame(height: 2) }
                         }
                     }.buttonStyle(.plain)
                 }
@@ -297,9 +296,9 @@ struct StockDetailView: View {
                             .fixedSize()
                     }
                     .padding(.bottom, 8)
-                    .foregroundStyle(tab == t ? Color.indigo : .secondary)
+                    .foregroundStyle(tab == t ? Color.brandIndigo : .secondary)
                     .overlay(alignment: .bottom) {
-                        if tab == t { Rectangle().fill(Color.indigo).frame(height: 2) }
+                        if tab == t { Rectangle().fill(Color.brandIndigo).frame(height: 2) }
                     }
                 }.buttonStyle(.plain)
             }
@@ -319,6 +318,7 @@ struct StockDetailView: View {
             }
             
             upcomingEventsSection
+            aiScorecardSection
             marketOverviewHeader
             intrinsicValueSection
             marketStatsSection
@@ -468,37 +468,174 @@ struct StockDetailView: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
+    private func getPillarTier(id: String, score: Double) -> String {
+        switch id {
+        case "moat":
+            return score >= 9 ? "Wide Moat" : score >= 7.5 ? "Solid Moat" : score >= 5.5 ? "Narrow Moat" : "No Moat"
+        case "strength":
+            return score >= 9 ? "Fortress" : score >= 7.5 ? "Healthy" : score >= 5.5 ? "Adequate" : "Constrained"
+        case "predictability":
+            return score >= 9 ? "High Visibility" : score >= 7.5 ? "Predictable" : score >= 5.5 ? "Moderate" : "Volatile"
+        case "growth":
+            return score >= 9 ? "High Growth" : score >= 7.5 ? "Solid Growth" : score >= 5.5 ? "Moderate" : "Sluggish"
+        default:
+            return score >= 8 ? "Strong" : "Moderate"
+        }
+    }
+
+    @ViewBuilder private var aiScorecardSection: some View {
+        if let sc = viewModel.analysis?.scorecard {
+            let topics: [(id: String, name: String, icon: String, score: Double?, tint: Color)] = [
+                ("moat", "Moat & Edge", "shield.fill", sc.moat, .blue),
+                ("strength", "Financial Strength", "bolt.fill", sc.financialStrength, .orange),
+                ("predictability", "Predictability", "target", sc.predictability, .green),
+                ("growth", "Growth Pace", "chart.line.uptrend.xyaxis", sc.growth, .purple),
+            ]
+            
+            let validScores = topics.compactMap(\.score)
+            let compositeScore = validScores.isEmpty ? nil : validScores.reduce(0, +) / Double(validScores.count)
+            let compositeTier: String? = compositeScore.map { s in
+                s >= 8.5 ? "Exceptional" : s >= 7.0 ? "Strong" : s >= 5.5 ? "Moderate" : "Weak"
+            }
+            
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            LinearGradient(colors: [.purple, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
+                    
+                    Text("AI Fundamental Health")
+                        .font(.subheadline.weight(.bold))
+                    
+                    Text("Gemini AI")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.12), in: Capsule())
+                    
+                    Spacer()
+                    
+                    if let cs = compositeScore {
+                        HStack(spacing: 3) {
+                            Text("Composite:").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                            Text(String(format: "%.1f", cs)).font(.system(size: 12, weight: .black)).foregroundStyle(.indigo)
+                            Text("/10").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary.opacity(0.7))
+                            if let ct = compositeTier {
+                                Text("· \(ct)").font(.system(size: 10, weight: .bold)).foregroundStyle(.green)
+                            }
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+                
+                let cols = hSizeClass == .regular ? 4 : 2
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: cols), spacing: 10) {
+                    ForEach(topics, id: \.id) { t in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .center, spacing: 6) {
+                                Image(systemName: t.icon)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(t.tint)
+                                    .frame(width: 20, height: 20)
+                                    .background(t.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                                
+                                Text(t.name)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                
+                                Spacer(minLength: 0)
+                                
+                                if let s = t.score {
+                                    Text(getPillarTier(id: t.id, score: s))
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(t.tint)
+                                        .padding(.horizontal, 4).padding(.vertical, 1.5)
+                                        .background(t.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                                }
+                            }
+                            
+                            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                                if let s = t.score {
+                                    let formatted = s.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", s) : String(format: "%.1f", s)
+                                    Text(formatted).font(.system(size: 24, weight: .black)).foregroundStyle(t.tint)
+                                    Text("/10").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
+                                } else {
+                                    Text("—").font(.title3.weight(.bold)).foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            GeometryReader { geo in
+                                let progress = t.score != nil ? max(0, min(1.0, (t.score! / 10.0))) : 0.0
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.secondary.opacity(0.12)).frame(height: 4)
+                                    Capsule().fill(t.tint).frame(width: max(3, geo.size.width * CGFloat(progress)), height: 4)
+                                }
+                            }
+                            .frame(height: 4)
+                        }
+                        .padding(12)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary, lineWidth: 0.5))
+                    }
+                }
+            }
+            .padding(14)
+            .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.quaternary.opacity(0.6), lineWidth: 1))
+        }
+    }
+
     @ViewBuilder private var marketOverviewHeader: some View {
         HStack {
-            Label("Market Overview", systemImage: "square.grid.2x2").font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: "square.grid.2x2").foregroundStyle(Color.brandIndigo)
+                Text("Market Overview").font(.headline)
+            }
             Spacer()
             Button { Task { await viewModel.loadAll() } } label: {
-                Label("Refresh Data", systemImage: "arrow.clockwise")
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Refresh")
+                }
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.cyan)
             }
-            .font(.caption2.weight(.bold)).foregroundStyle(.cyan)
             .buttonStyle(.plain)
         }
     }
 
     @ViewBuilder private var intrinsicValueSection: some View {
         if let iv = viewModel.intrinsic {
-            // Column count follows how many models actually returned a value, so
-            // a third card never lands alone on a half-empty row.
-            let present = [iv.models?.dcf?.intrinsicValue,
-                           iv.models?.graham?.intrinsicValue,
-                           iv.models?.epv?.intrinsicValue].compactMap { $0 }.count
-            let cols = hSizeClass == .regular ? min(max(present, 1), 3) : 1
+            let rec = iv.recommendedMethod
+            let bestFitVal = rec?.intrinsicValue
+            let bestFitRange: IntrinsicValueResponse.MC? = {
+                guard let k = rec?.methodKey else { return nil }
+                if k == "dcf" { return iv.models?.dcf?.mc }
+                if k == "graham" { return iv.models?.graham?.mc }
+                if k == "ddm" { return iv.models?.ddm?.mc }
+                return nil
+            }()
+            let blendedVal = iv.averageIntrinsicValue
+            let blendedRange: IntrinsicValueResponse.MC? = {
+                guard let r = iv.range else { return nil }
+                return .init(bear: r.bear, base: blendedVal, bull: r.bull, histogram: nil)
+            }()
+
+            let cols = hSizeClass == .regular ? 2 : 1
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: cols), spacing: 12) {
-                if let dcf = iv.models?.dcf?.intrinsicValue {
-                    ivCard("DCF Intrinsic Value", dcf, upside: upside(dcf, iv.currentPrice), range: iv.models?.dcf?.mc, tint: .green, icon: "chart.line.uptrend.xyaxis")
+                if let bestFitVal, bestFitVal > 0 {
+                    ivCard("Best-Fit: \(rec?.name ?? "Valuation Method")", bestFitVal, upside: upside(bestFitVal, iv.currentPrice), range: bestFitRange, tint: .indigo, icon: "sparkles")
                 }
-                if let g = iv.models?.graham?.intrinsicValue {
-                    ivCard("Graham Intrinsic Value", g, upside: upside(g, iv.currentPrice), range: iv.models?.graham?.mc, tint: .orange, icon: "scalemass")
-                }
-                // Earnings Power Value: the business valued with no growth at
-                // all. Shown beside the others as a floor, not blended in.
-                if let epv = iv.models?.epv?.intrinsicValue {
-                    ivCard("Earnings Power (no growth)", epv, upside: upside(epv, iv.currentPrice), range: nil, tint: .cyan, icon: "anchor")
+                if let blendedVal, blendedVal > 0 {
+                    let title = iv.valuationStatus == "nav" ? "Net Asset Value (NAV)" : "Blended Intrinsic Value"
+                    ivCard(title, blendedVal, upside: upside(blendedVal, iv.currentPrice), range: blendedRange, tint: .indigo, icon: "scalemass")
                 }
             }
         }
@@ -565,7 +702,7 @@ struct StockDetailView: View {
                 Text("-").font(.title3.weight(.bold))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
+        .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
         .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -656,7 +793,7 @@ struct StockDetailView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
+        .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -1595,449 +1732,6 @@ struct StockDetailView: View {
         return isPercent ? Fmt.percent(v) : Fmt.number(v, fractionDigits: 2)
     }
 
-    // MARK: - Valuation
-
-    @ViewBuilder private var valuationTab: some View {
-        VStack(spacing: 24) {
-            if let iv = viewModel.intrinsic {
-                valuationSummaryCards(iv)
-
-                if let note = iv.valuationNote {
-                    // A refusal is information, not a warning — tint it neutrally
-                    // so it doesn't read as an alarm about the company.
-                    let tint: Color = iv.isRefusal ? .secondary : .orange
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: iv.isRefusal ? "info.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(tint).font(.title3)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(valuationNoteTitle(iv)).font(.caption.weight(.bold)).foregroundStyle(tint).textCase(.uppercase)
-                            Text(note).font(.subheadline.italic()).foregroundStyle(tint)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background((iv.isRefusal ? Color.secondary : Color.orange).opacity(0.1),
-                                in: RoundedRectangle(cornerRadius: 12))
-                }
-
-                if let models = iv.models {
-                    if let dcf = models.dcf {
-                        dcfCard("Discounted Cash Flow", "chart.line.uptrend.xyaxis", .green, dcf, modelKey: "dcf", iv: iv)
-                    }
-                    if let g = models.graham {
-                        grahamCard("Graham Formula", "scalemass", .orange, g, modelKey: "graham", iv: iv)
-                    }
-                }
-                
-                if (f?.isETF ?? false) && (iv.models?.dcf == nil && iv.models?.graham == nil) {
-                    card("Why standard models aren't shown?") {
-                        Text("Traditional valuation methods like Discounted Cash Flow (DCF) and Graham's Formula rely on free cash flow and earnings growth, which are company-specific metrics. For ETFs, which are baskets of many securities, these metrics cannot be reliably aggregated or projected. Therefore, intrinsic value modeling is not applicable.")
-                            .font(.callout).foregroundStyle(.secondary)
-                    }
-                }
-            } else if viewModel.isLoadingFinancials {
-                ProgressView().frame(maxWidth: .infinity).padding(40)
-            } else {
-                ContentUnavailableView("Valuation unavailable", systemImage: "dollarsign.circle").frame(height: 200)
-            }
-        }
-    }
-
-    /// The three valuation summary cards (intrinsic value / current price /
-    /// margin of safety). Side-by-side on regular widths; stacked on compact
-    /// (iPhone) so the large figures aren't squeezed into a third of the screen
-    /// and wrapped character-by-character.
-    @ViewBuilder private func valuationSummaryCards(_ iv: IntrinsicValueResponse) -> some View {
-        let mos = iv.marginOfSafetyPct ?? 0
-        // The backend now declines to value companies whose fundamentals can't
-        // support one. Distinguish "no answer" from "an answer of zero".
-        let hasValue = iv.averageIntrinsicValue != nil
-        let intrinsic = valuationCard(label: iv.status == .nav ? "Net Asset Value" : "Blended Intrinsic Value",
-                                      value: hasValue ? Fmt.currency(iv.averageIntrinsicValue, code: nativeCur) : "Not valued",
-                                      valueColor: hasValue ? .indigo : .secondary) {
-            if hasValue, let r = iv.range {
-                Text("Range: \(Fmt.currency(r.bear, code: nativeCur)) - \(Fmt.currency(r.bull, code: nativeCur))")
-                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            if hasValue, let floor = iv.earningsPowerFloor {
-                Text("No-growth floor: \(Fmt.currency(floor, code: nativeCur))")
-                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        let current = valuationCard(label: "Current Price",
-                                    value: Fmt.currency(iv.currentPrice, code: nativeCur),
-                                    valueColor: .primary) { EmptyView() }
-        let safety = valuationCard(label: "Margin of Safety",
-                                   value: hasValue ? Fmt.percent(mos, includeSign: true) : "—",
-                                   valueColor: hasValue ? (mos >= 0 ? .green : .red) : .secondary,
-                                   tint: hasValue ? (mos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1)) : nil) { EmptyView() }
-
-        if hSizeClass == .compact {
-            VStack(spacing: 12) { intrinsic; current; safety }
-        } else {
-            HStack(spacing: 16) { intrinsic; current; safety }
-        }
-    }
-
-    /// Headline for the valuation note, keyed to why the backend produced it.
-    private func valuationNoteTitle(_ iv: IntrinsicValueResponse) -> String {
-        switch iv.status {
-        case .noModel:        return "Cannot be valued"
-        case .ineligible:     return "Not eligible for valuation"
-        case .clamped:        return "Output outside credible range"
-        case .lowConfidence:  return "Models disagree"
-        default:              return "Valuation note"
-        }
-    }
-
-    private func valuationCard<Sub: View>(label: String, value: String, valueColor: Color,
-                                          tint: Color? = nil,
-                                          @ViewBuilder sub: () -> Sub) -> some View {
-        VStack(spacing: 8) {
-            Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                .multilineTextAlignment(.center)
-            Text(value).font(.system(size: 32, weight: .bold)).foregroundStyle(valueColor)
-                .lineLimit(1).minimumScaleFactor(0.5)   // shrink instead of wrapping
-            sub()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(hSizeClass == .compact ? 16 : 24)
-        .background {
-            if let tint {
-                RoundedRectangle(cornerRadius: 16).fill(tint)
-            } else {
-                RoundedRectangle(cornerRadius: 16).fill(.background.secondary)
-            }
-        }
-    }
-
-    private func paramRow(_ label: String, _ val: String, _ isNote: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(val).font(isNote ? .caption : .subheadline.weight(.semibold))
-                .foregroundStyle(isNote ? Color.secondary : .primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func mcGrid(_ mc: IntrinsicValueResponse.MC?, type: String) -> some View {
-        VStack(alignment: .center, spacing: 12) {
-            Text("Probabilistic Scenarios (Monte Carlo)").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
-            HStack(spacing: 8) {
-                VStack(spacing: 6) {
-                    Text("Bear (10th)").font(.caption2.weight(.bold)).foregroundStyle(.red).textCase(.uppercase)
-                    Text(Fmt.currency(mc?.bear, code: nativeCur)).font(.subheadline.bold())
-                }
-                .frame(maxWidth: .infinity).padding(8)
-                .background(Color.red.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                
-                let midColor: Color = type == "dcf" ? .indigo : .orange
-                VStack(spacing: 6) {
-                    Text("Median (50th)").font(.caption2.weight(.bold)).foregroundStyle(midColor).textCase(.uppercase)
-                    Text(Fmt.currency(mc?.base, code: nativeCur)).font(.subheadline.bold())
-                }
-                .frame(maxWidth: .infinity).padding(8)
-                .background(midColor.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                
-                VStack(spacing: 6) {
-                    Text("Bull (90th)").font(.caption2.weight(.bold)).foregroundStyle(.green).textCase(.uppercase)
-                    Text(Fmt.currency(mc?.bull, code: nativeCur)).font(.subheadline.bold())
-                }
-                .frame(maxWidth: .infinity).padding(8)
-                .background(Color.green.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-            }
-        }
-    }
-
-    private func dcfCard(_ title: String, _ icon: String, _ color: Color, _ m: IntrinsicValueResponse.Model, modelKey: String, iv: IntrinsicValueResponse) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: icon).foregroundStyle(color)
-                    Text(title).font(.headline)
-                }
-                Spacer()
-                if m.error == nil {
-                    Text(Fmt.currency(m.intrinsicValue, code: nativeCur))
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(color)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(color.opacity(0.2), in: Capsule())
-                }
-            }
-            
-            if let e = m.error {
-                Text(e).font(.callout).foregroundStyle(.red)
-            } else {
-                if let p = m.parameters {
-                    let columns = hSizeClass == .compact 
-                        ? [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)] 
-                        : [GridItem(.adaptive(minimum: 150), spacing: 24)]
-                    LazyVGrid(columns: columns, spacing: 24) {
-                        if let v = p["discount_rate"]?.doubleValue { paramRow("Discount Rate (WACC)", Fmt.percent(v)) }
-                        if let v = p["growth_rate"]?.doubleValue { paramRow("Growth Rate", Fmt.percent(v)) }
-                        if let v = p["applied_growth"]?.doubleValue { paramRow("Applied Growth", Fmt.percent(v)) }
-                        if let v = p["terminal_growth_rate"]?.doubleValue { paramRow("Terminal Growth", Fmt.percent(v)) }
-                        if let v = p["projection_years"]?.doubleValue { paramRow("Projection Years", "\(Int(v))") }
-                        if let v = p["base_fcf"]?.doubleValue { paramRow("Base FCF", Fmt.compact(v, code: nativeCur)) }
-                        if let v = p["fcf_margin"]?.doubleValue { paramRow("Est. FCF Margin", Fmt.percent(v)) }
-                    }
-                    if let n = p["note"]?.stringValue { 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Note").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
-                            Text(n).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 8)
-                    }
-                }
-                
-                if let hist = m.mc?.histogram, !hist.isEmpty {
-                    VStack(spacing: 16) {
-                        mcGrid(m.mc, type: modelKey)
-                        histogramChart(hist, mc: m.mc, currentPrice: iv.currentPrice)
-                    }
-                    .padding(.top, 24)
-                }
-            }
-        }
-        .padding(24).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func grahamMathBlock(_ p: [String: JSONValue]?) -> some View {
-        let y = p?["bond_yield_proxy"]?.doubleValue ?? 4.5
-        return Button {
-            showGrahamExplanation = true
-        } label: {
-            VStack(spacing: 16) {
-                // Formula
-                HStack(spacing: 8) {
-                    Text("V").fontWeight(.bold)
-                    Text("=").opacity(0.5)
-                    Text("EPS").fontWeight(.bold)
-                    Text("×").opacity(0.5)
-                    Text("8.5 + 2G").fontWeight(.bold)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.secondary.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
-                    Text("×").opacity(0.5)
-                    Text("4.4").fontWeight(.bold)
-                    Text("/").opacity(0.5)
-                    Text("Y").fontWeight(.bold)
-                }
-                .font(.system(.body, design: .monospaced))
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
-
-                // Legend
-                VStack(alignment: .leading, spacing: 8) {
-                    grahamLegend("V", "Intrinsic Value")
-                    grahamLegend("EPS", "Trailing 12-Month Earnings")
-                    grahamLegend("8.5 + 2G", "Growth Multiplier")
-                    grahamLegend("4.4", "Historic Corporate Bond Yield")
-                    grahamLegend("Y", "Current Yield (\(Fmt.number(y, fractionDigits: 1))%)")
-                }
-                .padding(.horizontal, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $showGrahamExplanation) {
-            grahamExplanationView(y: y)
-        }
-    }
-
-    private func grahamExplanationView(y: Double) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Graham's Intrinsic Value Formula")
-                    .font(.headline)
-                Text("This is Benjamin Graham's revised formula for calculating the intrinsic value of a stock, adapted for modern markets.")
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    explanationRow("V", "Intrinsic Value", "The estimated true value of the stock.")
-                    explanationRow("EPS", "Earnings Per Share", "Trailing 12-month earnings per share.")
-                    explanationRow("8.5", "Base P/E", "The price-to-earnings ratio of a no-growth company.")
-                    explanationRow("2G", "Growth Multiplier", "G is the expected long-term earnings growth rate. Graham multiplied it by 2.")
-                    explanationRow("4.4", "Historic Yield", "The historic average yield of high-grade corporate bonds.")
-                    explanationRow("Y", "Current Yield", "The current yield of AAA-rated corporate bonds (\(Fmt.number(y, fractionDigits: 1))%).")
-                }
-                .font(.caption)
-            }
-            .padding(24)
-        }
-        .frame(width: 320)
-    }
-
-    private func explanationRow(_ symbol: String, _ title: String, _ desc: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(symbol).fontWeight(.bold)
-                Text("-").opacity(0.5)
-                Text(title).fontWeight(.semibold)
-            }
-            Text(desc).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func grahamLegend(_ symbol: String, _ desc: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(symbol)
-                .font(.caption.weight(.bold))
-                .frame(width: 70, alignment: .trailing)
-            Text(desc)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func grahamCard(_ title: String, _ icon: String, _ color: Color, _ m: IntrinsicValueResponse.Model, modelKey: String, iv: IntrinsicValueResponse) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: icon).foregroundStyle(color)
-                    Text(title).font(.headline)
-                }
-                Spacer()
-                if m.error == nil {
-                    Text(Fmt.currency(m.intrinsicValue, code: nativeCur))
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(color)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(color.opacity(0.2), in: Capsule())
-                }
-            }
-            
-            if let e = m.error {
-                Text(e).font(.callout).foregroundStyle(.red)
-            } else {
-                if let p = m.parameters {
-                    let columns = hSizeClass == .compact 
-                        ? [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)] 
-                        : [GridItem(.adaptive(minimum: 150), spacing: 24)]
-                    LazyVGrid(columns: columns, spacing: 24) {
-                        if let v = p["eps"]?.doubleValue { paramRow("Trailing EPS", Fmt.number(v, fractionDigits: 2)) }
-                        if let v = p["growth_rate_pct"]?.doubleValue { paramRow("Growth Rate (G)", "\(Fmt.number(v, fractionDigits: 2))%") }
-                        if let v = p["applied_growth_pct"]?.doubleValue { paramRow("Applied Growth", "\(Fmt.number(v, fractionDigits: 2))%") }
-                        if let v = p["bond_yield_proxy"]?.doubleValue { paramRow("Bond Yield (Y)", "\(Fmt.number(v, fractionDigits: 2))%") }
-                    }
-                    if let n = p["note"]?.stringValue { 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Note").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
-                            Text(n).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 8)
-                    }
-                    grahamMathBlock(p)
-                        .padding(.top, 16)
-                }
-                
-                if let hist = m.mc?.histogram, !hist.isEmpty {
-                    VStack(spacing: 16) {
-                        mcGrid(m.mc, type: modelKey)
-                        histogramChart(hist, mc: m.mc, currentPrice: iv.currentPrice)
-                    }
-                    .padding(.top, 24)
-                }
-            }
-        }
-        .padding(24).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    @ViewBuilder
-    private func histogramChart(_ hist: [IntrinsicValueResponse.HistogramPoint], mc: IntrinsicValueResponse.MC?, currentPrice: Double?) -> some View {
-        let validHist = hist.filter { $0.price != nil && $0.count != nil }
-        let minPrice = validHist.first?.price ?? 0
-        let maxPrice = validHist.last?.price ?? 1
-        let range = maxPrice - minPrice > 0 ? maxPrice - minPrice : 1
-        
-        let bearPct = max(0, min(1, ((mc?.bear ?? minPrice) - minPrice) / range))
-        let bullPct = max(0, min(1, ((mc?.bull ?? maxPrice) - minPrice) / range))
-        
-        let grad = LinearGradient(
-            stops: [
-                .init(color: .red, location: 0),
-                .init(color: .red, location: bearPct),
-                .init(color: .cyan, location: bearPct),
-                .init(color: .cyan, location: bullPct),
-                .init(color: .green, location: bullPct),
-                .init(color: .green, location: 1)
-            ],
-            startPoint: .leading, endPoint: .trailing
-        )
-        
-        Chart {
-            ForEach(validHist, id: \.price) { h in
-                if let price = h.price, let count = h.count {
-                    AreaMark(
-                        x: .value("Price", price),
-                        y: .value("Count", count)
-                    )
-                    .foregroundStyle(grad.opacity(0.4))
-                }
-            }
-            if let c = currentPrice {
-                RuleMark(x: .value("Current Price", c))
-                    .foregroundStyle(.primary)
-                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
-                    .annotation(position: .top) {
-                        Text("Current").font(.system(size: 11, weight: .bold))
-                    }
-            }
-        }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { v in
-                if let val = v.as(Double.self) {
-                    AxisValueLabel { Text(Fmt.compact(val, code: nativeCur)) }
-                    AxisGridLine()
-                    AxisTick()
-                }
-            }
-        }
-        .chartYAxis(.hidden)
-        .frame(height: 150)
-        .padding(.top, 16)
-    }
-
-    private func valBox(_ label: String, _ value: String, _ tint: Color) -> some View {
-        VStack(spacing: 4) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase).multilineTextAlignment(.center)
-            Text(value).font(.title.bold()).foregroundStyle(tint)
-        }
-        .frame(maxWidth: .infinity).padding(16)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func modelCard(_ title: String, _ model: IntrinsicValueResponse.Model?, _ tint: Color) -> some View {
-        card(title) {
-            if let m = model {
-                HStack {
-                    Text(m.model ?? title).font(.subheadline.weight(.medium))
-                    Spacer()
-                    if let iv = m.intrinsicValue {
-                        Text(Fmt.currency(iv, code: nativeCur)).font(.callout.bold())
-                            .padding(.horizontal, 8).padding(.vertical, 2).background(tint.opacity(0.2), in: Capsule()).foregroundStyle(tint)
-                    }
-                }
-                if let err = m.error, !err.isEmpty { Text(err).font(.caption).foregroundStyle(.red) }
-                if let mc = m.mc, let bear = mc.bear, let bull = mc.bull {
-                    Text("Bear \(Fmt.currency(bear, code: nativeCur)) · Base \(Fmt.currency(mc.base, code: nativeCur)) · Bull \(Fmt.currency(bull, code: nativeCur))")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            } else { Text("Not available.").foregroundStyle(.secondary) }
-        }
-    }
-
     // MARK: - Holdings (ETF)
 
     @ViewBuilder private var holdingsTab: some View {
@@ -2116,7 +1810,7 @@ struct StockDetailView: View {
                             }.padding(20)
                             Spacer(minLength: 0)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                     }.buttonStyle(.plain)
@@ -2352,7 +2046,7 @@ struct StockDetailView: View {
                 if let sub { Text(sub).font(.caption2.weight(.bold)).foregroundStyle(subTint ?? iconTint) }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
+        .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
         .background(bgTint ?? Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 

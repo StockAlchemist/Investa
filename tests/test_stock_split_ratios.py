@@ -28,7 +28,12 @@ class TestStockSplitStatementAdjustment:
             # Pre-split filed EPS: 2019: 49.16, 2018: 43.70, 2014: 20.57
             # Post-split 20:1 factor: 20.0
             # Pre-split filed shares: 2020: 675M, 2019: 688M, 2014: 680M
-            dates = [pd.Timestamp("2020-12-31"), pd.Timestamp("2019-12-31"), pd.Timestamp("2018-12-31"), pd.Timestamp("2014-12-31")]
+            dates = [
+                pd.Timestamp("2020-12-31"),
+                pd.Timestamp("2019-12-31"),
+                pd.Timestamp("2018-12-31"),
+                pd.Timestamp("2014-12-31"),
+            ]
             fin_df = pd.DataFrame(
                 {
                     dates[0]: [152.0, 7.60],
@@ -36,7 +41,7 @@ class TestStockSplitStatementAdjustment:
                     dates[2]: [136.8, 43.70 / 20.0],
                     dates[3]: [66.0, 20.57 / 20.0],
                 },
-                index=["Total Revenue", "Diluted EPS"]
+                index=["Total Revenue", "Diluted EPS"],
             )
             bs_df = pd.DataFrame(
                 {
@@ -45,7 +50,7 @@ class TestStockSplitStatementAdjustment:
                     dates[2]: [695e6 * 20.0, 232.8e9],
                     dates[3]: [680e6 * 20.0, 131.1e9],
                 },
-                index=["Ordinary Shares Number", "Total Assets"]
+                index=["Ordinary Shares Number", "Total Assets"],
             )
             cf_df = pd.DataFrame(
                 {
@@ -54,7 +59,7 @@ class TestStockSplitStatementAdjustment:
                     dates[2]: [48.0e9, -25.1e9],
                     dates[3]: [22.4e9, -11.8e9],
                 },
-                index=["Operating Cash Flow", "Capital Expenditure"]
+                index=["Operating Cash Flow", "Capital Expenditure"],
             )
             return {"financials": fin_df, "balance_sheet": bs_df, "cashflow": cf_df}
 
@@ -118,8 +123,14 @@ class TestStockSplitStatementAdjustment:
             "2020-12-31": 1.35e10,
             "2022-12-31": 1.35e10,
         }
-        monkeypatch.setattr(edgar_provider, "get_concept_values", lambda c, concepts: assembled_shares)
-        monkeypatch.setattr(edgar_provider, "split_consistent_series", lambda c, concept: corrected_shares)
+        monkeypatch.setattr(
+            edgar_provider, "get_concept_values", lambda c, concepts: assembled_shares
+        )
+        monkeypatch.setattr(
+            edgar_provider,
+            "split_consistent_series",
+            lambda c, concept: corrected_shares,
+        )
 
         factors = edgar_provider.split_adjustment_factors(cik)
         # Should cover older years (e.g. 2019) and have ~20.0 factor
@@ -171,9 +182,12 @@ class TestStockSplitStatementAdjustment:
         price_dates = pd.date_range("2014-01-01", "2024-01-01", freq="D")
         prices_df = pd.DataFrame(
             {
-                "Close": [50.0 + (i / len(price_dates)) * 80.0 for i in range(len(price_dates))],
+                "Close": [
+                    50.0 + (i / len(price_dates)) * 80.0
+                    for i in range(len(price_dates))
+                ],
             },
-            index=price_dates
+            index=price_dates,
         )
 
         ratios = calculate_key_ratios_timeseries(fin, bs, cf, prices_df=prices_df)
@@ -208,10 +222,18 @@ class TestStockSplitStatementAdjustment:
         years = list(range(2011, 2026))
         dates = [f"{y}-12-31" for y in years]
         price_index = pd.to_datetime([f"{y}-12-20" for y in years])
-        prices_series = pd.Series([50.0 + i * 5.0 for i in range(len(years))], index=price_index)
+        prices_series = pd.Series(
+            [50.0 + i * 5.0 for i in range(len(years))], index=price_index
+        )
 
-        monkeypatch.setattr(valuation_history, "_load_prices", lambda s, start, end: prices_series)
-        monkeypatch.setattr(edgar_provider, "split_consistent_series", lambda c, concept: {d: 13.5e9 for d in dates})
+        monkeypatch.setattr(
+            valuation_history, "_load_prices", lambda s, start, end: prices_series
+        )
+        monkeypatch.setattr(
+            edgar_provider,
+            "split_consistent_series",
+            lambda c, concept: {d: 13.5e9 for d in dates},
+        )
         monkeypatch.setattr(
             edgar_provider,
             "get_concept_values",
@@ -219,7 +241,7 @@ class TestStockSplitStatementAdjustment:
                 "net_income": {d: 20e9 + i * 3e9 for i, d in enumerate(dates)},
                 "operating_cash_flow": {d: 25e9 + i * 4e9 for i, d in enumerate(dates)},
                 "capex": {d: 8e9 + i * 1e9 for i, d in enumerate(dates)},
-            }
+            },
         )
 
         res = valuation_history.bands("GOOG", cik, today=date(2026, 7, 31))
@@ -227,5 +249,3 @@ class TestStockSplitStatementAdjustment:
         assert len(res) > 0, "Valuation history bands should return data for GOOG"
         metrics = [b["metric"] for b in res]
         assert "earnings" in metrics
-
-

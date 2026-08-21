@@ -15,12 +15,11 @@ private struct Card<Content: View>: View {
                 if let icon {
                     Image(systemName: icon).font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
                 }
-                Text(title).font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
-                    .foregroundStyle(.secondary)
+                SectionLabel(title: title)
                 Spacer(minLength: 0)
                 if let accessory { accessory }
             }
-            Divider()
+            Divider().opacity(0.6)
             content
             Spacer(minLength: 0)
         }
@@ -89,31 +88,21 @@ struct PortfolioHeroCard: View {
                     VStack(alignment: .leading, spacing: 12) { valueBlock; pillCluster }
                 }
             }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 if compact {
                     VStack(alignment: .trailing, spacing: 8) {
+                        periodControls
                         if period != .day, let pct = periodView.pct, let absV = periodView.abs {
-                            Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct)) (\(Fmt.currency(absV, code: currency)))")
-                                .font(.caption.weight(.bold)).foregroundStyle(Fmt.tint(for: pct))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
+                            periodReturnText(pct: pct, absV: absV)
                         }
-                        Picker("", selection: $period) {
-                            ForEach(HeroPeriod.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 } else {
-                    HStack {
-                        Picker("", selection: $period) {
-                            ForEach(HeroPeriod.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented).fixedSize()
+                    HStack(alignment: .center) {
+                        periodControls
                         Spacer()
                         if period != .day, let pct = periodView.pct, let absV = periodView.abs {
-                            Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct)) (\(Fmt.currency(absV, code: currency)))")
-                                .font(.caption.weight(.bold)).foregroundStyle(Fmt.tint(for: pct))
+                            periodReturnText(pct: pct, absV: absV)
                         }
                     }
                 }
@@ -126,11 +115,22 @@ struct PortfolioHeroCard: View {
                             yStart: .value("Min", domain.lowerBound),
                             yEnd: .value("v", v)
                         )
-                            .foregroundStyle((up ? Color.up : .down).opacity(0.18))
-                        LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(up ? Color.up : Color.down)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    (up ? Color.up : Color.down).opacity(0.32),
+                                    (up ? Color.up : Color.down).opacity(0.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        LineMark(x: .value("i", i), y: .value("v", v))
+                            .foregroundStyle(up ? Color.up : Color.down)
+                            .lineStyle(StrokeStyle(lineWidth: 2))
                     }
                     .chartYScale(domain: domain)
-                    .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 48)
+                    .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 50)
                 }
             }
         }
@@ -139,20 +139,67 @@ struct PortfolioHeroCard: View {
         .background(
             // Faint directional wash: green when the day is up, red when down.
             LinearGradient(
-                colors: [(positive ? Color.up : .down).opacity(0.10), .clear],
+                colors: [(positive ? Color.up : .down).opacity(0.08), .clear],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.heroRadius))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.heroRadius, style: .continuous))
         )
         .card(.hero)
+    }
+
+    private var periodControls: some View {
+        HStack(spacing: 2) {
+            ForEach(HeroPeriod.allCases) { p in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { period = p }
+                } label: {
+                    Text(p.rawValue)
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4.5)
+                        .background(
+                            period == p ? Color.brand : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        )
+                        .foregroundStyle(period == p ? Color.white : Color.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2.5)
+        .background(Color.cardBorder.opacity(0.25), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func periodReturnText(pct: Double, absV: Double) -> some View {
+        HStack(spacing: 4) {
+            Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct))")
+                .font(.system(size: 13, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(Fmt.tint(for: pct))
+            Text("(\(pct >= 0 ? "+" : "")\(Fmt.currency(absV, code: currency)))")
+                .font(.system(size: 11, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            Text(period.rawValue)
+                .font(.system(size: 10, weight: .bold))
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
     }
 
     private var valueBlock: some View {
         let positive = (dayGL ?? 0) >= 0
         return VStack(alignment: .leading, spacing: compact ? 4 : 6) {
-            HStack(spacing: 8) {
-                Label("Total Portfolio Value", systemImage: "wallet.pass")
-                    .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Image(systemName: "wallet.pass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.sectionText)
+                SectionLabel(title: "Total Portfolio Value")
+                if isLoading {
+                    ProgressView().controlSize(.mini).padding(.leading, 2)
+                }
             }
             // The day-change sits beside the value when wide, below it on phone
             // (so the big value never gets squeezed/truncated).
@@ -167,20 +214,27 @@ struct PortfolioHeroCard: View {
 
     private var valueText: some View {
         Text(Fmt.currency(metrics?.marketValue, code: currency))
-            .font(.system(size: compact ? 34 : 40, weight: .black, design: .rounded))
+            .font(.system(size: compact ? 34 : 42, weight: .black, design: .rounded))
+            .monospacedDigit()
             .minimumScaleFactor(0.5).lineLimit(1)
     }
 
     @ViewBuilder private func deltaView(_ positive: Bool) -> some View {
         if let g = dayGL {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
-                Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))").fontWeight(.semibold)
+                    .font(.system(size: 13, weight: .bold))
+                Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))")
+                    .font(.system(size: 16, weight: .semibold))
+                    .monospacedDigit()
                 if let p = dayGLPct {
                     Text("\(p >= 0 ? "+" : "")\(String(format: "%.2f%%", p))")
-                        .font(.caption.bold())
-                        .padding(.horizontal, 8).padding(.vertical, 2)
-                        .background((positive ? Color.up : .down).opacity(0.12), in: Capsule())
+                        .font(.system(size: 12, weight: .bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background((positive ? Color.up : Color.down).opacity(0.12), in: Capsule())
+                        .overlay(Capsule().strokeBorder((positive ? Color.up : Color.down).opacity(0.25), lineWidth: 0.8))
                 }
                 Text("today").font(.caption).foregroundStyle(.secondary)
             }
@@ -192,23 +246,38 @@ struct PortfolioHeroCard: View {
     private var pillCluster: some View {
         HStack(spacing: 0) {
             statPill("Total TWR", metrics?.cumulativeTWR, sub: nil)
-            if let a = metrics?.annualizedTWR { Divider().frame(height: 32); statPill("Ann. TWR", a, sub: "p.a.") }
-            if let irr = metrics?.portfolioMWR { Divider().frame(height: 32); statPill("IRR (MWR)", irr, sub: "p.a.") }
+            if let a = metrics?.annualizedTWR {
+                Rectangle().fill(Color.cardBorder.opacity(0.5)).frame(width: 1, height: 32)
+                statPill("Ann. TWR", a, sub: "p.a.")
+            }
+            if let irr = metrics?.portfolioMWR {
+                Rectangle().fill(Color.cardBorder.opacity(0.5)).frame(width: 1, height: 32)
+                statPill("IRR (MWR)", irr, sub: "p.a.")
+            }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
         .frame(maxWidth: compact ? .infinity : nil)
-        .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.05), lineWidth: 1))
+        .background(Color.cardBorder.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.cardBorder.opacity(0.4), lineWidth: 0.8))
     }
 
     private func statPill(_ label: String, _ value: Double?, sub: String?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-                .lineLimit(1).minimumScaleFactor(0.7)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(Fmt.percent(value, includeSign: true)).font(.title3.bold()).foregroundStyle(Fmt.tint(for: value))
-                    .lineLimit(1).minimumScaleFactor(0.5)
-                if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 3) {
+            SectionLabel(title: label)
+                .minimumScaleFactor(0.7)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(Fmt.percent(value, includeSign: true))
+                    .font(.system(size: 18, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(Fmt.tint(for: value))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                if let sub {
+                    Text(sub)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
@@ -233,6 +302,7 @@ struct PortfolioHeroCard: View {
         }
     }
 }
+
 
 // MARK: - Today strip (mirrors dashboard/TodayStrip.tsx)
 

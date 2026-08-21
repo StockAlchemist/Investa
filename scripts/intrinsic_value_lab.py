@@ -135,7 +135,9 @@ def evaluate(symbols: List[str], iterations: int = 2000) -> List[Dict[str, Any]]
         models = res.get("models", {}) or {}
         dcf = models.get("dcf", {}) or {}
         graham = models.get("graham", {}) or {}
+        ddm = models.get("ddm", {}) or {}
         epv = models.get("epv", {}) or {}
+        lynch = models.get("lynch", {}) or {}
         avg = res.get("average_intrinsic_value")
 
         rows.append(
@@ -152,9 +154,15 @@ def evaluate(symbols: List[str], iterations: int = 2000) -> List[Dict[str, Any]]
                 "graham_iv": graham.get("intrinsic_value"),
                 "graham_model": graham.get("model"),
                 "graham_error": graham.get("error"),
+                "ddm_iv": ddm.get("intrinsic_value"),
+                "ddm_model": ddm.get("model"),
+                "ddm_error": ddm.get("error"),
                 "epv_iv": epv.get("intrinsic_value"),
                 "epv_model": epv.get("model"),
                 "epv_error": epv.get("error"),
+                "lynch_iv": lynch.get("intrinsic_value"),
+                "lynch_model": lynch.get("model"),
+                "lynch_error": lynch.get("error"),
                 "status": res.get("valuation_status"),
                 "spread_pct": res.get("model_spread_pct"),
                 "note": res.get("valuation_note"),
@@ -201,8 +209,10 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     print("\nCOVERAGE (equities)")
     coverage = {
         "dcf": cov(equities, "dcf_iv", "DCF"),
+        "ddm": cov(equities, "ddm_iv", "DDM"),
         "epv": cov(equities, "epv_iv", "EPV"),
         "graham": cov(equities, "graham_iv", "Graham"),
+        "lynch": cov(equities, "lynch_iv", "Peter Lynch"),
         "average": cov(equities, "avg_iv", "Blended IV"),
     }
 
@@ -222,8 +232,10 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         return None if iv is None else (iv - r["price"]) / r["price"] * 100.0
 
     dcf_mos = _dist("  DCF alone", [as_mos(r, "dcf_iv") for r in equities])
+    ddm_mos = _dist("  DDM alone", [as_mos(r, "ddm_iv") for r in equities])
     epv_mos = _dist("  EPV alone", [as_mos(r, "epv_iv") for r in equities])
     graham_mos = _dist("  Graham alone", [as_mos(r, "graham_iv") for r in equities])
+    lynch_mos = _dist("  Lynch alone", [as_mos(r, "lynch_iv") for r in equities])
 
     print("\nMODEL DISPERSION — |DCF - Graham| / price, %")
     both = [
@@ -239,7 +251,13 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     print("\nMODEL VARIANTS USED")
     variants: Dict[str, int] = {}
     for r in equities:
-        for key in ("dcf_model", "graham_model", "epv_model"):
+        for key in (
+            "dcf_model",
+            "graham_model",
+            "ddm_model",
+            "epv_model",
+            "lynch_model",
+        ):
             if r.get(key):
                 variants[r[key]] = variants.get(r[key], 0) + 1
     for k, v in sorted(variants.items(), key=lambda kv: -kv[1]):
@@ -248,7 +266,7 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     print("\nTOP FAILURE REASONS")
     errors: Dict[str, int] = {}
     for r in equities:
-        for key in ("dcf_error", "graham_error", "epv_error"):
+        for key in ("dcf_error", "graham_error", "ddm_error", "epv_error"):
             if r.get(key):
                 errors[r[key][:60]] = errors.get(r[key][:60], 0) + 1
     for k, v in sorted(errors.items(), key=lambda kv: -kv[1])[:8]:
@@ -284,8 +302,10 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "coverage": coverage,
         "mos_blended": mos,
         "mos_dcf": dcf_mos,
+        "mos_ddm": ddm_mos,
         "mos_epv": epv_mos,
         "mos_graham": graham_mos,
+        "mos_lynch": lynch_mos,
         "spread": spread,
         "absurd_frac": len(absurd) / max(1, len(equities)),
     }

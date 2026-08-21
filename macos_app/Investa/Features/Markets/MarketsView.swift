@@ -140,7 +140,7 @@ struct MarketsView: View {
             if !newsQuery.isEmpty { Button { newsQuery = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary) }
         }
         .padding(10)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func newsSection(_ title: String, _ news: [MarketNewsItem]) -> some View {
@@ -442,7 +442,12 @@ private struct YourMoversSection: View {
         let m = movers
         if !m.gainers.isEmpty || !m.losers.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Label("Your Movers Today", systemImage: "chart.bar").font(.title3.bold())
+                HStack(spacing: 6) {
+                    Image(systemName: "chart.bar")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.brand)
+                    SectionLabel(title: "Your Movers Today")
+                }
                 #if os(iOS)
                 VStack(alignment: .leading, spacing: 24) {
                     column("Top Gainers", m.gainers, true)
@@ -450,8 +455,7 @@ private struct YourMoversSection: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+                .card(.standard)
                 #else
                 HStack(alignment: .top, spacing: 32) {
                     column("Top Gainers", m.gainers, true)
@@ -459,8 +463,7 @@ private struct YourMoversSection: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+                .card(.standard)
                 #endif
             }
         }
@@ -469,7 +472,7 @@ private struct YourMoversSection: View {
     private func column(_ title: String, _ rows: [Mover], _ positive: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: positive ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis")
-                .font(.caption2).textCase(.uppercase).foregroundStyle(positive ? .green : .red)
+                .font(.caption2).textCase(.uppercase).foregroundStyle(positive ? Color.up : Color.down)
             if rows.isEmpty { Text("No movers.").font(.caption).foregroundStyle(.secondary) }
             ForEach(rows, id: \.symbol) { r in
                 Button { onPick(r.symbol) } label: {
@@ -477,7 +480,7 @@ private struct YourMoversSection: View {
                         Text(r.symbol).fontWeight(.bold).lineLimit(1)
                         Spacer(minLength: 6)
                         if let p = r.price { Text(Fmt.currency(p, code: currency)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                        Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))").fontWeight(.bold).foregroundStyle(positive ? .green : .red).lineLimit(1)
+                        Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))").fontWeight(.bold).foregroundStyle(positive ? Color.up : Color.down).lineLimit(1)
                     }.font(.caption)
                 }.buttonStyle(.plain)
             }
@@ -506,14 +509,14 @@ private struct NewsCard: View {
             HStack(alignment: .top, spacing: 10) {
                 if let thumb = item.thumbnail, let url = URL(string: thumb) {
                     AsyncImage(url: url) { img in img.resizable().aspectRatio(contentMode: .fill) } placeholder: { Color.gray.opacity(0.15) }
-                        .frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
+                        .frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.title).font(.callout.weight(.semibold)).multilineTextAlignment(.leading).lineLimit(2)
                     HStack(spacing: 6) {
                         if let sym = item.symbol, !sym.isEmpty {
-                            Text(sym).font(.caption2.weight(.bold)).foregroundStyle(.indigo)
-                                .padding(.horizontal, 5).padding(.vertical, 1).background(.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                            Text(sym).font(.caption2.weight(.bold)).foregroundStyle(Color.brandIndigo)
+                                .padding(.horizontal, 5).padding(.vertical, 1).background(Color.brandIndigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                         }
                         Text(item.provider).font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase).lineLimit(1)
                         if !item.pubDate.isEmpty {
@@ -525,8 +528,7 @@ private struct NewsCard: View {
                 }
             }
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
+            .card(.inset)
         }
         .buttonStyle(.plain)
     }

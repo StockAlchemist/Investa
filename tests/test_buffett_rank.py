@@ -253,7 +253,7 @@ def test_missing_metric_does_not_score_as_bad():
             "roe_median": [20.0, 10.0],
             "roic_median": [None, 5.0],
             "roa_median": [None, None],
-            "gross_margin_median": [None, None],
+            "fcf_margin_median": [None, None],
             "roe_years_above_15": [None, None],
         },
         index=["A", "B"],

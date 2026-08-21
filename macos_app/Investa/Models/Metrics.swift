@@ -54,4 +54,13 @@ struct Metrics: Codable, Sendable {
     var volatilityAnn: Double? { double("volatility_ann") }
     var beta: Double? { double("beta") }
     var estAnnualIncomeDisplay: Double? { double("est_annual_income_display") }
+    var costBasis: Double? { double("cost_basis") }
+    var costBasisHeld: Double? { double("cost_basis_held") }
+    var unrealizedReturnPct: Double? {
+        if let p = double("unrealized_return_pct") { return p }
+        if let u = unrealizedGain, let c = costBasisHeld ?? costBasis, c > 0 {
+            return (u / c) * 100
+        }
+        return nil
+    }
 }

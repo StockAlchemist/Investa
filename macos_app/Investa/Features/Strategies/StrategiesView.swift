@@ -278,6 +278,7 @@ struct StrategiesView: View {
                 Text("Top \(ranking.topN) of the quality ranking at "
                      + "\(Int(ranking.qualityWeight * 100))% quality, equally weighted"
                      + (ranking.maxPerSector.map { ", max \($0) per industry" } ?? "")
+                     + (ranking.minMarketCap.map { ", min $\(Int($0 / 1_000_000_000))B market cap" } ?? "")
                      + ". \(ranking.rebalance).")
                     .font(.caption).fixedSize(horizontal: false, vertical: true)
             } icon: {

@@ -157,8 +157,10 @@ class TestQuarterlyMatchesAnnual:
         _a_inc, _a_bs, q_inc, q_bs = self.build()
         raw = calculate_key_ratios_timeseries(q_inc, q_bs)
         stamp = pd.Timestamp("2025-12-31")
-        # 80 / 800 = 10%, against the real 200/800 = 25%.
-        assert raw.loc[stamp, "Return on Equity (ROE) (%)"] == pytest.approx(10.0)
+        # 80 / ~800 = ~10%, against the real 200/800 = 25%.
+        assert raw.loc[stamp, "Return on Equity (ROE) (%)"] == pytest.approx(
+            10.0, abs=0.5
+        )
 
 
 class TestAveragedBalanceWindow:

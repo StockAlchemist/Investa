@@ -71,29 +71,144 @@ MIN_IV_TO_PRICE = 0.1
 
 # Blend weights for the central fair-value estimate.
 #
-# EPV is deliberately absent. It is a *floor* — the value of current earning
-# power with no growth — and measured on the local cache it lands below the DCF
-# for 75% of companies (median 0.38x price vs 0.64x). Averaging a floor into a
-# central estimate does not make the estimate conservative, it makes it wrong:
-# including it at 35% weight pushed the median margin of safety to -20%, i.e.
-# the claim that the typical profitable company is a fifth overvalued. EPV is
-# computed and reported on its own, where a floor is what the reader wants.
-MODEL_BLEND_WEIGHTS = {"dcf": 0.60, "graham": 0.40}
+# EPV is deliberately absent from the central blend. It is a *floor* — the value
+# of current earning power with no growth. EPV is computed and reported on its own.
+# DDM is included dynamically for dividend-paying companies and financials/REITs.
+MODEL_BLEND_WEIGHTS = {"dcf": 0.50, "graham": 0.30, "ddm": 0.20}
+MODEL_BLEND_WEIGHTS_NO_DDM = {"dcf": 0.60, "graham": 0.40}
+MODEL_BLEND_WEIGHTS_FINANCIAL = {"ddm": 0.35, "graham": 0.35, "dcf": 0.30}
+
+# Canonical accounting statement aliases mapping GAAP/IFRS variations
+STATEMENT_ALIASES: Dict[str, List[str]] = {
+    "Total Revenue": [
+        "Total Revenue",
+        "Operating Revenue",
+        "Total Operating Income As Reported",
+        "Revenue",
+        "Gross Revenue",
+    ],
+    "Operating Income": [
+        "Operating Income",
+        "Operating Profit",
+        "Total Operating Income As Reported",
+        "EBIT",
+        "Ebit",
+    ],
+    "Net Income": [
+        "Net Income",
+        "Net Income Common Stockholders",
+        "Net Income Continuous Operations",
+        "Net Income From Continuing Operation Net Minority Interest",
+        "Net Income Including Noncontrolling Interests",
+    ],
+    "Operating Cash Flow": [
+        "Operating Cash Flow",
+        "Cash Flow From Continuing Operating Activities",
+        "Cash Flowsfromusedin Operating Activities Direct",
+        "Total Cash From Operating Activities",
+    ],
+    "Capital Expenditure": [
+        "Capital Expenditure",
+        "Capital Expenditure Reported",
+        "Purchase Of PPE",
+        "Payments For Property Plant And Equipment",
+        "Net PPE Purchase And Sale",
+    ],
+    "Free Cash Flow": ["Free Cash Flow"],
+    "Cash Dividends Paid": [
+        "Cash Dividends Paid",
+        "Common Stock Dividend Paid",
+        "Payment Of Dividends",
+        "Total Cash Dividends Paid",
+    ],
+    "Tax Provision": [
+        "Tax Provision",
+        "Provision For Income Taxes",
+        "Income Tax Expense",
+        "Tax Rate For Calcs",
+    ],
+    "Pretax Income": [
+        "Pretax Income",
+        "Income Before Tax",
+        "Earnings Before Taxes",
+        "Pretax Operating Income",
+    ],
+    "Total Stockholder Equity": [
+        "Total Stockholder Equity",
+        "Stockholders Equity",
+        "Total Equity Gross Minority Interest",
+        "Common Stock Equity",
+        "Total Stockholders' Equity",
+    ],
+    "Total Cash": [
+        "Cash And Cash Equivalents",
+        "Cash Cash Equivalents And Short Term Investments",
+        "Cash Financial",
+        "Cash Cash Equivalents And Federal Funds Sold",
+        "Cash Equivalents",
+    ],
+    "Total Debt": [
+        "Total Debt",
+        "Long Term Debt And Capital Lease Obligation",
+        "Long Term Debt",
+        "Current Debt And Capital Lease Obligation",
+    ],
+    "Diluted EPS": [
+        "Diluted EPS",
+        "Basic EPS",
+        "Diluted Normalized EPS",
+        "EPS Diluted",
+    ],
+    "Interest Expense": [
+        "Interest Expense",
+        "Interest Expense Non Operating",
+        "Total Interest Expense",
+        "Interest Paid Supplemental Data",
+    ],
+    "Ordinary Shares Number": [
+        "Ordinary Shares Number",
+        "Share Issued",
+        "Diluted Average Shares",
+        "Basic Average Shares",
+    ],
+}
 
 
 def _get_statement_value(
     df: Optional[pd.DataFrame], item_name: str, period_column: str
 ) -> Optional[float]:
-    """Safely retrieves a value from a financial statement DataFrame."""
-    if (
-        df is None
-        or df.empty
-        or item_name not in df.index
-        or period_column not in df.columns
-    ):
+    """Safely retrieves a value from a financial statement DataFrame with alias fallback."""
+    if df is None or df.empty or period_column not in df.columns:
         return None
-    val = df.loc[item_name, period_column]
-    return float(val) if pd.notna(val) else None
+    # 1. Exact match
+    if item_name in df.index:
+        val = df.loc[item_name, period_column]
+        if pd.notna(val):
+            return float(val)
+    # 2. Alias fallback
+    aliases = STATEMENT_ALIASES.get(item_name, [])
+    for alias in aliases:
+        if alias != item_name and alias in df.index:
+            val = df.loc[alias, period_column]
+            if pd.notna(val):
+                return float(val)
+    return None
+
+
+def _extract_fcf_from_statement(
+    cf_df: Optional[pd.DataFrame], col: Any
+) -> Optional[float]:
+    """Extracts Free Cash Flow from cashflow statement using explicit FCF or OCF + CapEx."""
+    if cf_df is None or cf_df.empty or col not in cf_df.columns:
+        return None
+    fcf = _get_statement_value(cf_df, "Free Cash Flow", col)
+    if fcf is not None:
+        return fcf
+    ocf = _get_statement_value(cf_df, "Operating Cash Flow", col)
+    capex = _get_statement_value(cf_df, "Capital Expenditure", col)
+    if ocf is not None and capex is not None:
+        return ocf + capex if capex < 0 else ocf - capex
+    return None
 
 
 # A share count is a level, not a flow: four quarters of "Diluted Average
@@ -754,19 +869,18 @@ def calculate_wacc(
     Calculates the Weighted Average Cost of Capital (WACC).
     """
     try:
-        # 1. Cost of Equity (CAPM)
-        beta = ticker_info.get("beta")
-        if beta is None or pd.isna(beta):
+        # 1. Cost of Equity (CAPM with Blume Beta Adjustment)
+        raw_beta = ticker_info.get("beta")
+        if raw_beta is None or pd.isna(raw_beta):
             beta = 1.0  # Default to market beta
             logging.debug(f"Beta missing for {ticker_info.get('symbol')}, using 1.0")
-        # Yahoo betas on thin tickers run to absurd values in both directions;
-        # outside this band the number describes the data, not the risk.
-        beta = float(np.clip(beta, 0.3, 3.0))
+        else:
+            # Blume technique adjusts beta toward market mean (1.0)
+            beta = float(np.clip(0.67 * raw_beta + 0.33 * 1.0, 0.3, 3.0))
 
         cost_of_equity = risk_free_rate + beta * (market_return - risk_free_rate)
 
-        # Beta is estimated from price history, which says little about the
-        # financing and liquidity risk of a small company.
+        # Small company financing and liquidity risk premium
         market_cap_for_size = ticker_info.get("marketCap")
         size_premium = 0.0
         if market_cap_for_size:
@@ -777,10 +891,19 @@ def calculate_wacc(
         cost_of_equity += size_premium
 
         # 2. Cost of Debt
-        cost_of_debt = 0.05  # Default 5%
+        cost_of_debt = risk_free_rate + 0.015  # Default baseline credit spread
         tax_rate = default_tax_rate
 
         total_debt = ticker_info.get("totalDebt")
+        if (
+            total_debt is None
+            and balance_sheet_df is not None
+            and not balance_sheet_df.empty
+        ):
+            total_debt = _get_statement_value(
+                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
+            )
+
         interest_expense = None
         income_tax_expense = None
         pretax_income = None
@@ -796,12 +919,29 @@ def calculate_wacc(
             pretax_income = _get_statement_value(
                 financials_df, "Pretax Income", latest_period
             )
+            operating_income = _get_statement_value(
+                financials_df, "Operating Income", latest_period
+            )
 
             if interest_expense and total_debt and total_debt > 0:
                 implied = abs(interest_expense) / total_debt
-                # A tiny debt balance against a full year of interest expense
-                # yields nonsense rates; clamp rather than propagate.
-                cost_of_debt = float(np.clip(implied, 0.01, MAX_COST_OF_DEBT))
+                cost_of_debt = float(np.clip(implied, risk_free_rate, MAX_COST_OF_DEBT))
+            elif operating_income and interest_expense and abs(interest_expense) > 0:
+                # Synthetic credit spread based on interest coverage ratio (ICR)
+                icr = operating_income / abs(interest_expense)
+                if icr > 8.5:
+                    spread = 0.010
+                elif icr > 6.5:
+                    spread = 0.0125
+                elif icr > 4.0:
+                    spread = 0.0175
+                elif icr > 3.0:
+                    spread = 0.025
+                elif icr > 1.5:
+                    spread = 0.035
+                else:
+                    spread = 0.055
+                cost_of_debt = risk_free_rate + spread
 
             if income_tax_expense and pretax_income and pretax_income > 0:
                 tax_rate = float(np.clip(income_tax_expense / pretax_income, 0.0, 0.5))
@@ -1142,6 +1282,19 @@ def _enrich_ticker_info(
         if eps:
             enriched["trailingEps"] = eps
 
+    # Check 5: Dividend Rate
+    if not enriched.get("dividendRate") and not enriched.get(
+        "trailingAnnualDividendRate"
+    ):
+        if cashflow_df is not None and not cashflow_df.empty:
+            latest_col = cashflow_df.columns[0]
+            div_paid = _get_statement_value(
+                cashflow_df, "Cash Dividends Paid", latest_col
+            )
+            shares = enriched.get("sharesOutstanding")
+            if div_paid and shares and shares > 0:
+                enriched["dividendRate"] = abs(div_paid) / shares
+
     return enriched
 
 
@@ -1171,18 +1324,11 @@ def estimate_fcf_margin(
         margins = []
         for col in common_cols[-years:]:  # Look at last N years
             rev = _get_statement_value(financials_df, "Total Revenue", col)
-            ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", col)
-            capex = _get_statement_value(cashflow_df, "Capital Expenditure", col)
+            fcf = _extract_fcf_from_statement(cashflow_df, col)
 
-            if rev and rev > 0 and ocf is not None and capex is not None:
-                # Capex is usually negative
-                fcf = ocf + capex
+            if rev and rev > 0 and fcf is not None:
                 margin = fcf / rev
-                # Keep loss-making years. Dropping them (the old filter was
-                # 0 < margin < 0.5) meant a company that burned cash in three
-                # of five years was scored on its two good ones, which is the
-                # single most upward-biased step in the old chain. Only
-                # implausible magnitudes are excluded as data errors.
+                # Keep loss-making years. Only implausible magnitudes are excluded.
                 if -1.0 < margin < 0.6:
                     margins.append(margin)
 
@@ -1234,11 +1380,10 @@ def through_cycle_fcf_margin(
             )
             for col in common[-years:]:
                 revenue = _get_statement_value(financials_df, "Total Revenue", col)
-                ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", col)
-                capex = _get_statement_value(cashflow_df, "Capital Expenditure", col)
-                if not revenue or revenue <= 0 or ocf is None or capex is None:
+                fcf = _extract_fcf_from_statement(cashflow_df, col)
+                if not revenue or revenue <= 0 or fcf is None:
                     continue
-                margin = (ocf + capex) / revenue
+                margin = fcf / revenue
                 # The same plausibility band `estimate_fcf_margin` uses: outside
                 # it the statement mapping is wrong, not the business remarkable.
                 if -1.0 < margin < 0.6:
@@ -1281,10 +1426,9 @@ def normalized_base_fcf(
                 cashflow_df.columns, key=lambda c: pd.to_datetime(c, errors="coerce")
             )
             for col in cols[-years:]:
-                ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", col)
-                capex = _get_statement_value(cashflow_df, "Capital Expenditure", col)
-                if ocf is not None and capex is not None:
-                    history.append(ocf + capex)
+                fcf = _extract_fcf_from_statement(cashflow_df, col)
+                if fcf is not None:
+                    history.append(fcf)
     except Exception as exc:
         logging.debug(f"FCF history extraction failed: {exc}")
 
@@ -1293,6 +1437,7 @@ def normalized_base_fcf(
         latest_fcf = ticker_info.get("freeCashflow")
 
     revenue = ticker_info.get("totalRevenue")
+
     # A reported FCF margin above 60% is almost always a bad statement mapping
     # rather than a spectacular business. Drop only the offending years: an
     # earlier version discarded the whole history whenever the *latest* year
@@ -1330,13 +1475,6 @@ def normalized_base_fcf(
     if len(history) >= 3:
         median_fcf = float(np.median(history))
         if median_fcf > 0:
-            # The median *is* the robust estimate — deliberately not
-            # min(median, latest). Taking the lower of two estimates is a
-            # haircut with no statistical basis, and such haircuts stack:
-            # combined with a shrunk growth rate and a size-premium discount
-            # rate it produced a model asserting the median profitable company
-            # was 26% overvalued. Each conservatism was defensible alone; the
-            # product of three was not.
             return {
                 "fcf": median_fcf,
                 "method": f"median of {len(history)}y FCF",
@@ -1360,6 +1498,38 @@ def normalized_base_fcf(
     }
 
 
+def _generate_mc_stats(intrinsic_values: np.ndarray) -> Dict[str, Any]:
+    """Computes standard percentiles, standard deviation, and a 40-bin smoothed histogram for Monte Carlo samples."""
+    try:
+        valid = intrinsic_values[np.isfinite(intrinsic_values) & (intrinsic_values > 0)]
+        if len(valid) < 50:
+            return {}
+
+        counts, edges = np.histogram(valid, bins=40)
+        midpoints = (edges[:-1] + edges[1:]) / 2
+
+        # 7-point Gaussian smoothing kernel
+        kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
+        smoothed_counts = np.convolve(counts, kernel, mode="same")
+
+        histogram = [
+            {"price": float(p), "count": float(c)}
+            for p, c in zip(midpoints, smoothed_counts)
+        ]
+
+        return {
+            "bear": float(np.percentile(valid, 10)),
+            "conservative": float(np.percentile(valid, 25)),
+            "base": float(np.percentile(valid, 50)),
+            "bull": float(np.percentile(valid, 90)),
+            "std_dev": float(np.std(valid)),
+            "histogram": histogram,
+        }
+    except Exception as e:
+        logging.error(f"Error computing MC stats: {e}")
+        return {}
+
+
 def run_monte_carlo_dcf(
     ticker_info: Dict[str, Any],
     base_fcf: float,
@@ -1369,31 +1539,17 @@ def run_monte_carlo_dcf(
     terminal_growth: float = 0.02,
     iterations: int = 10000,
 ) -> Dict[str, Any]:
-    """Runs a vectorized Monte Carlo simulation for DCF."""
+    """Runs a vectorized Monte Carlo simulation for Discounted Free Cash Flow (DCF)."""
     try:
         shares = ticker_info.get("sharesOutstanding")
-        if not shares:
+        if not shares or shares <= 0:
             return {}
 
-        # 1. Generate stochastic variables
-        #
-        # Uncertainty on growth is *absolute*, not proportional to the estimate.
-        # The old relative-20% rule gave a company forecast at 2% growth a
-        # standard deviation of 0.4pp — near-certainty about the hardest number
-        # in the model — while a 40%-growth forecast got 8pp. Nobody knows a
-        # decade of growth to within half a point. 6pp is roughly the observed
-        # cross-sectional spread of realized 5y growth around forecasts.
         growth_sigma = max(0.06, abs(base_growth) * 0.25)
         growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
-        # Discount rate: absolute floor on the spread too, for the same reason.
         discount_sigma = max(0.015, abs(base_discount) * 0.15)
         discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
 
-        # The band the projection is allowed to explore. Crucially the lower
-        # bound is negative: the old floor of 0.0 meant no simulated future
-        # ever had the business shrinking, so the "bear" percentile was not a
-        # bear case at all and the distribution was biased upward by
-        # construction.
         growth_samples = np.clip(
             growth_samples, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH
         )
@@ -1401,76 +1557,285 @@ def run_monte_carlo_dcf(
             discount_samples, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE
         )
 
-        # 2. Vectorized Projections
-        # Shape: (iterations, projection_years)
         years = np.arange(1, projection_years + 1)
-
-        # Linear Fade: Growth trends from growth_sample to terminal_growth over projection period
         fade_factors = (
             (years - 1) / (projection_years - 1)
             if projection_years > 1
             else np.array([0])
         )
-        # yearly_growths shape: (iterations, projection_years)
         yearly_growths = (
             growth_samples[:, None]
             - (growth_samples[:, None] - terminal_growth) * fade_factors
         )
 
-        # Calculate FCF for each year: base_fcf * cumprod(1 + g_i)
         fcf_projections = base_fcf * np.cumprod(1 + yearly_growths, axis=1)
-
-        # 3. Present Value of FCFs
-        # PV = FCF / (1 + r)^n
-        pv_projections = fcf_projections / (1 + discount_samples[:, None]) ** years
+        pv_projections = fcf_projections / (1 + discount_samples[:, None]) ** (
+            years - 0.5
+        )
         sum_pv_fcf = np.sum(pv_projections, axis=1)
 
-        # 4. Terminal Value
-        # TV = (FCF_last * (1 + g_term)) / (r - g_term)
         last_fcf = fcf_projections[:, -1]
+        safe_discount = np.maximum(discount_samples, terminal_growth + 0.01)
         terminal_values = (last_fcf * (1 + terminal_growth)) / (
-            discount_samples - terminal_growth
+            safe_discount - terminal_growth
         )
-        # PV of TV
         pv_terminal_values = (
             terminal_values / (1 + discount_samples) ** projection_years
         )
 
-        # 5. Equity Value to Intrinsic Value
         cash = ticker_info.get("totalCash") or 0
         debt = ticker_info.get("totalDebt") or 0
         enterprise_values = sum_pv_fcf + pv_terminal_values
         equity_values = enterprise_values + cash - debt
         intrinsic_values = equity_values / shares
 
-        # 6. Generate Histogram for Probability Plot
-        counts, edges = np.histogram(intrinsic_values, bins=40)
-        midpoints = (edges[:-1] + edges[1:]) / 2
-
-        # Apply Gaussian smoothing to make it look like a "bell curve"
-        # 7-point Gaussian kernel for better smoothness
-        kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
-        smoothed_counts = np.convolve(counts, kernel, mode="same")
-
-        histogram = [
-            {"price": float(p), "count": float(c)}
-            for p, c in zip(midpoints, smoothed_counts)
-        ]
-
-        # 7. Extract Percentiles
-        # `conservative` (P25) is what the Buffett/value ranking sorts on: the
-        # mean of a DCF distribution is not a price you would pay, because being
-        # wrong on the downside costs more than being right on the upside.
-        return {
-            "bear": float(np.percentile(intrinsic_values, 10)),
-            "conservative": float(np.percentile(intrinsic_values, 25)),
-            "base": float(np.percentile(intrinsic_values, 50)),
-            "bull": float(np.percentile(intrinsic_values, 90)),
-            "std_dev": float(np.std(intrinsic_values)),
-            "histogram": histogram,
-        }
+        return _generate_mc_stats(intrinsic_values)
     except Exception as e:
         logging.error(f"Monte Carlo DCF failed: {e}")
+        return {}
+
+
+def run_monte_carlo_dcfo(
+    ticker_info: Dict[str, Any],
+    base_cfo: float,
+    base_growth: float,
+    base_discount: float,
+    projection_years: int = 10,
+    terminal_growth: float = 0.02,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Discounted Cash from Operations (D-CFO)."""
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares or shares <= 0:
+            return {}
+
+        cfo_per_share = base_cfo / shares
+        growth_sigma = max(0.05, abs(base_growth) * 0.25)
+        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
+        discount_sigma = max(0.015, abs(base_discount) * 0.15)
+        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
+
+        growth_samples = np.clip(growth_samples, -0.05, 0.25)
+        discount_samples = np.clip(
+            discount_samples, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE
+        )
+
+        years = np.arange(1, projection_years + 1)
+        fade_factors = (
+            (years - 1) / (projection_years - 1)
+            if projection_years > 1
+            else np.array([0])
+        )
+        yearly_growths = (
+            growth_samples[:, None]
+            - (growth_samples[:, None] - terminal_growth) * fade_factors
+        )
+
+        cfo_projections = cfo_per_share * np.cumprod(1 + yearly_growths, axis=1)
+        pv_projections = cfo_projections / (1 + discount_samples[:, None]) ** (
+            years - 0.5
+        )
+        sum_pv_cfo = np.sum(pv_projections, axis=1)
+
+        last_cfo = cfo_projections[:, -1]
+        safe_discount = np.maximum(discount_samples, terminal_growth + 0.01)
+        terminal_values = (last_cfo * (1 + terminal_growth)) / (
+            safe_discount - terminal_growth
+        )
+        pv_terminal_values = (
+            terminal_values / (1 + discount_samples) ** projection_years
+        )
+
+        cash = ticker_info.get("totalCash") or 0
+        debt = ticker_info.get("totalDebt") or 0
+        net_cash_per_share = (cash - debt) / shares
+        intrinsic_values = sum_pv_cfo + pv_terminal_values + net_cash_per_share
+
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo D-CFO failed: {e}")
+        return {}
+
+
+def run_monte_carlo_dni(
+    base_eps: float,
+    base_growth: float,
+    base_discount: float,
+    projection_years: int = 10,
+    terminal_growth: float = 0.02,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Discounted Net Income (D-NI)."""
+    try:
+        growth_sigma = max(0.05, abs(base_growth) * 0.25)
+        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
+        discount_sigma = max(0.015, abs(base_discount) * 0.15)
+        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
+
+        growth_samples = np.clip(growth_samples, -0.05, 0.25)
+        discount_samples = np.clip(
+            discount_samples, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE
+        )
+
+        years = np.arange(1, projection_years + 1)
+        fade_factors = (
+            (years - 1) / (projection_years - 1)
+            if projection_years > 1
+            else np.array([0])
+        )
+        yearly_growths = (
+            growth_samples[:, None]
+            - (growth_samples[:, None] - terminal_growth) * fade_factors
+        )
+
+        eps_projections = base_eps * np.cumprod(1 + yearly_growths, axis=1)
+        pv_projections = eps_projections / (1 + discount_samples[:, None]) ** (
+            years - 0.5
+        )
+        sum_pv_eps = np.sum(pv_projections, axis=1)
+
+        last_eps = eps_projections[:, -1]
+        safe_discount = np.maximum(discount_samples, terminal_growth + 0.01)
+        terminal_values = (last_eps * (1 + terminal_growth)) / (
+            safe_discount - terminal_growth
+        )
+        pv_terminal_values = (
+            terminal_values / (1 + discount_samples) ** projection_years
+        )
+
+        intrinsic_values = sum_pv_eps + pv_terminal_values
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo D-NI failed: {e}")
+        return {}
+
+
+def run_monte_carlo_mean_pe(
+    eps: float,
+    applied_pe: float,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Mean P/E Valuation."""
+    try:
+        eps_samples = np.random.normal(eps, max(0.1, abs(eps) * 0.15), iterations)
+        pe_samples = np.random.normal(applied_pe, max(1.5, applied_pe * 0.18), iterations)
+
+        eps_samples = np.clip(eps_samples, 0.01, eps * 2.5)
+        pe_samples = np.clip(pe_samples, 5.0, 45.0)
+
+        intrinsic_values = eps_samples * pe_samples
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo Mean P/E failed: {e}")
+        return {}
+
+
+def run_monte_carlo_peg(
+    eps: float,
+    applied_growth_pct: float,
+    dividend_yield_pct: float = 0.0,
+    target_peg: float = 1.0,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for PEG Ratio Fair Value."""
+    try:
+        eps_samples = np.random.normal(eps, max(0.1, abs(eps) * 0.15), iterations)
+        growth_samples = np.random.normal(
+            applied_growth_pct, max(1.5, abs(applied_growth_pct) * 0.25), iterations
+        )
+        peg_samples = np.random.normal(target_peg, max(0.1, target_peg * 0.15), iterations)
+
+        eps_samples = np.clip(eps_samples, 0.01, eps * 2.5)
+        growth_samples = np.clip(growth_samples, 2.0, 40.0)
+        peg_samples = np.clip(peg_samples, 0.5, 2.5)
+
+        fair_pe = np.clip(peg_samples * (growth_samples + dividend_yield_pct), 5.0, 35.0)
+        intrinsic_values = eps_samples * fair_pe
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo PEG failed: {e}")
+        return {}
+
+
+def run_monte_carlo_mean_pb(
+    book_value_per_share: float,
+    applied_pb: float,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Mean P/B Ratio Valuation."""
+    try:
+        bv_samples = np.random.normal(
+            book_value_per_share, max(0.1, book_value_per_share * 0.08), iterations
+        )
+        pb_samples = np.random.normal(applied_pb, max(0.15, applied_pb * 0.18), iterations)
+
+        bv_samples = np.clip(bv_samples, 0.01, book_value_per_share * 2.0)
+        pb_samples = np.clip(pb_samples, 0.4, 8.0)
+
+        intrinsic_values = bv_samples * pb_samples
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo Mean P/B failed: {e}")
+        return {}
+
+
+def run_monte_carlo_mean_ps(
+    sales_per_share: float,
+    applied_ps: float,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Mean P/S Ratio Valuation."""
+    try:
+        sps_samples = np.random.normal(
+            sales_per_share, max(0.1, sales_per_share * 0.10), iterations
+        )
+        ps_samples = np.random.normal(applied_ps, max(0.2, applied_ps * 0.18), iterations)
+
+        sps_samples = np.clip(sps_samples, 0.01, sales_per_share * 2.0)
+        ps_samples = np.clip(ps_samples, 0.4, 15.0)
+
+        intrinsic_values = sps_samples * ps_samples
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo Mean P/S failed: {e}")
+        return {}
+
+
+def run_monte_carlo_psg(
+    sales_per_share: float,
+    applied_growth_pct: float,
+    gross_margin: float,
+    target_psg: float = 1.0,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Price-to-Sales Growth (PSG) Valuation."""
+    try:
+        sps_samples = np.random.normal(
+            sales_per_share, max(0.1, sales_per_share * 0.10), iterations
+        )
+        growth_samples = np.random.normal(
+            applied_growth_pct, max(2.0, applied_growth_pct * 0.25), iterations
+        )
+        gm_samples = np.random.normal(
+            gross_margin, max(0.02, gross_margin * 0.08), iterations
+        )
+        target_psg_samples = np.random.normal(
+            target_psg, max(0.1, target_psg * 0.15), iterations
+        )
+
+        sps_samples = np.clip(sps_samples, 0.01, sales_per_share * 2.0)
+        growth_samples = np.clip(growth_samples, 5.0, 50.0)
+        gm_samples = np.clip(gm_samples, 0.20, 0.95)
+        target_psg_samples = np.clip(target_psg_samples, 0.5, 2.0)
+
+        fair_ps = np.clip(
+            (growth_samples / 10.0) * gm_samples * target_psg_samples * 1.5, 0.5, 15.0
+        )
+        intrinsic_values = sps_samples * fair_ps
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo PSG failed: {e}")
         return {}
 
 
@@ -1479,48 +1844,139 @@ def run_monte_carlo_graham(
 ) -> Dict[str, Any]:
     """Runs a vectorized Monte Carlo simulation for Graham's Formula."""
     try:
-        # 1. Stochastic Variables
-        # Growth Rate: 20% relative std dev
         growth_samples = np.random.normal(
-            base_growth, abs(base_growth) * 0.2, iterations
+            base_growth, max(1.0, abs(base_growth) * 0.2), iterations
         )
-        # Bond Yield: 10% relative std dev
         yield_samples = np.random.normal(
-            base_bond_yield, abs(base_bond_yield) * 0.1, iterations
+            base_bond_yield, max(0.3, abs(base_bond_yield) * 0.1), iterations
         )
 
-        # Floor for stability
-        growth_samples = np.maximum(0.0, growth_samples)
-        yield_samples = np.maximum(0.5, yield_samples)
+        growth_samples = np.clip(growth_samples, 0.0, 25.0)
+        yield_samples = np.clip(yield_samples, 0.5, 10.0)
 
-        # 2. Vectorized Formula: V = (EPS * (8.5 + 2g) * 4.4) / Y
-        # Note: base_growth for graham is usually passed as percentage (e.g. 5.0 for 5%)
         intrinsic_values = (eps * (8.5 + 2 * growth_samples) * 4.4) / yield_samples
-
-        # 3. Generate Histogram
-        counts, edges = np.histogram(intrinsic_values, bins=40)
-        midpoints = (edges[:-1] + edges[1:]) / 2
-
-        # Apply smoothing
-        kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
-        smoothed_counts = np.convolve(counts, kernel, mode="same")
-
-        histogram = [
-            {"price": float(p), "count": float(c)}
-            for p, c in zip(midpoints, smoothed_counts)
-        ]
-
-        return {
-            "bear": float(np.percentile(intrinsic_values, 10)),
-            "conservative": float(np.percentile(intrinsic_values, 25)),
-            "base": float(np.percentile(intrinsic_values, 50)),
-            "bull": float(np.percentile(intrinsic_values, 90)),
-            "std_dev": float(np.std(intrinsic_values)),
-            "histogram": histogram,
-        }
+        return _generate_mc_stats(intrinsic_values)
     except Exception as e:
         logging.error(f"Monte Carlo Graham failed: {e}")
         return {}
+
+
+def run_monte_carlo_ddm(
+    base_dividend: float,
+    base_growth: float,
+    base_discount: float,
+    projection_years: int = 10,
+    terminal_growth: float = 0.02,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Dividend Discount Model (DDM)."""
+    try:
+        growth_sigma = max(0.03, abs(base_growth) * 0.25)
+        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
+        discount_sigma = max(0.015, abs(base_discount) * 0.15)
+        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
+
+        growth_samples = np.clip(growth_samples, -0.05, 0.15)
+        discount_samples = np.clip(
+            discount_samples, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE
+        )
+
+        years = np.arange(1, projection_years + 1)
+        fade_factors = (
+            (years - 1) / (projection_years - 1)
+            if projection_years > 1
+            else np.array([0])
+        )
+        yearly_growths = (
+            growth_samples[:, None]
+            - (growth_samples[:, None] - terminal_growth) * fade_factors
+        )
+
+        div_projections = base_dividend * np.cumprod(1 + yearly_growths, axis=1)
+        pv_projections = div_projections / (1 + discount_samples[:, None]) ** (
+            years - 0.5
+        )
+        sum_pv_div = np.sum(pv_projections, axis=1)
+
+        last_div = div_projections[:, -1]
+        safe_discount = np.maximum(discount_samples, terminal_growth + 0.01)
+        terminal_values = (last_div * (1 + terminal_growth)) / (
+            safe_discount - terminal_growth
+        )
+        pv_terminal_values = (
+            terminal_values / (1 + discount_samples) ** projection_years
+        )
+
+        intrinsic_values = sum_pv_div + pv_terminal_values
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo DDM failed: {e}")
+        return {}
+
+
+def run_monte_carlo_epv(
+    ticker_info: Dict[str, Any],
+    normalized_ebit: float,
+    tax_rate: float,
+    base_discount: float,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Earnings Power Value (EPV)."""
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares or shares <= 0:
+            return {}
+
+        ebit_samples = np.random.normal(
+            normalized_ebit, max(1.0, abs(normalized_ebit) * 0.15), iterations
+        )
+        discount_samples = np.random.normal(
+            base_discount, max(0.01, abs(base_discount) * 0.12), iterations
+        )
+
+        ebit_samples = np.clip(ebit_samples, 0.01, normalized_ebit * 2.5)
+        discount_samples = np.clip(
+            discount_samples, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE
+        )
+
+        nopat_samples = ebit_samples * (1 - tax_rate)
+        cash = ticker_info.get("totalCash") or 0
+        debt = ticker_info.get("totalDebt") or 0
+
+        enterprise_values = nopat_samples / discount_samples
+        equity_values = enterprise_values + cash - debt
+        intrinsic_values = np.maximum(0.01, equity_values / shares)
+
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo EPV failed: {e}")
+        return {}
+
+
+def run_monte_carlo_lynch(
+    eps: float,
+    growth_rate_pct: float,
+    dividend_yield_pct: float = 0.0,
+    iterations: int = 10000,
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Peter Lynch Fair Value."""
+    try:
+        eps_samples = np.random.normal(eps, max(0.1, abs(eps) * 0.15), iterations)
+        growth_samples = np.random.normal(
+            growth_rate_pct, max(1.5, abs(growth_rate_pct) * 0.25), iterations
+        )
+
+        eps_samples = np.clip(eps_samples, 0.01, eps * 2.5)
+        growth_samples = np.clip(growth_samples, 2.0, 35.0)
+
+        multipliers = np.clip(growth_samples + dividend_yield_pct, 5.0, 25.0)
+        intrinsic_values = eps_samples * multipliers
+
+        return _generate_mc_stats(intrinsic_values)
+    except Exception as e:
+        logging.error(f"Monte Carlo Lynch failed: {e}")
+        return {}
+
 
 
 def calculate_intrinsic_value_dcf(
@@ -1536,10 +1992,18 @@ def calculate_intrinsic_value_dcf(
     fcf: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Performs a Discounted Cash Flow (DCF) valuation.
+    Performs a Discounted Cash Flow (DCF) valuation with mid-year discounting.
     """
     try:
         current_revenue = ticker_info.get("totalRevenue")
+        if (
+            not current_revenue
+            and financials_df is not None
+            and not financials_df.empty
+        ):
+            current_revenue = _get_statement_value(
+                financials_df, "Total Revenue", financials_df.columns[0]
+            )
         model_method = "DCF"
 
         # 1. Base FCF — a normalized figure, not one fiscal year.
@@ -1551,13 +2015,6 @@ def calculate_intrinsic_value_dcf(
             fcf_method = base_res["method"]
             fcf_history = base_res["history"]
 
-        # Revenue-based fallback: only when the company has a genuinely
-        # profitable cash-flow history that a single bad year has interrupted.
-        # The old code applied it to anything with revenue, which manufactured a
-        # DCF for businesses that had never converted a dollar of sales to cash
-        # (41% of all DCFs in the baseline took this path, median 0.51x price
-        # and 49 of them above 10x). A company that does not generate cash is
-        # not conservatively valued by assuming it soon will.
         used_fcf_margin = None
         if (fcf is None or fcf <= 0) and current_revenue and current_revenue > 0:
             if target_fcf_margin is None:
@@ -1594,10 +2051,9 @@ def calculate_intrinsic_value_dcf(
             wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
             discount_rate = wacc_res["wacc"]
         else:
-            # Apply stability floor even to provided discount rate
             discount_rate = max(0.075, discount_rate)
 
-        # 3. Growth Rate — shrunk toward a base rate before it is compounded.
+        # 3. Growth Rate
         growth_method = "caller-supplied growth"
         growth_signals: Dict[str, float] = {}
         if growth_rate is None:
@@ -1608,8 +2064,6 @@ def calculate_intrinsic_value_dcf(
             growth_method = growth_res["method"]
             growth_signals = growth_res["signals"]
 
-        # An explicit override still gets the sanity band: no projection may
-        # assume a decade at a rate no business sustains.
         applied_growth = float(
             np.clip(growth_rate, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH)
         )
@@ -1619,7 +2073,6 @@ def calculate_intrinsic_value_dcf(
         current_fcf = fcf
 
         for y in range(1, projection_years + 1):
-            # Linear Fade: Growth trends from applied_growth to terminal_rate over projection period
             fade_factor = (
                 (y - 1) / (projection_years - 1) if projection_years > 1 else 0
             )
@@ -1629,11 +2082,11 @@ def calculate_intrinsic_value_dcf(
 
             next_fcf = current_fcf * (1 + yearly_growth)
             projected_fcf.append(next_fcf)
-            pv_fcf.append(next_fcf / ((1 + discount_rate) ** y))
+            # Mid-year discounting convention: cash flows arrive continuously across the year
+            pv_fcf.append(next_fcf / ((1 + discount_rate) ** (y - 0.5)))
             current_fcf = next_fcf
 
         # 5. Terminal Value
-        # Ensure denominator is positive
         safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
         terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (
             safe_discount - terminal_growth_rate
@@ -1642,28 +2095,41 @@ def calculate_intrinsic_value_dcf(
 
         # 6. Enterprise Value to Equity Value
         enterprise_value = sum(pv_fcf) + pv_terminal_value
-        cash = ticker_info.get("totalCash") or 0
-        debt = ticker_info.get("totalDebt") or 0
+        cash = ticker_info.get("totalCash")
+        if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+            cash = _get_statement_value(
+                balance_sheet_df, "Total Cash", balance_sheet_df.columns[0]
+            )
+        cash = cash or 0
+
+        debt = ticker_info.get("totalDebt")
+        if debt is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+            debt = _get_statement_value(
+                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
+            )
+        debt = debt or 0
+
         equity_value = enterprise_value + cash - debt
 
         shares_outstanding = ticker_info.get("sharesOutstanding")
+        if (
+            not shares_outstanding
+            and balance_sheet_df is not None
+            and not balance_sheet_df.empty
+        ):
+            shares_outstanding = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
+            )
         if not shares_outstanding:
             return {"error": "Missing shares outstanding"}
 
         intrinsic_value = equity_value / shares_outstanding
 
-        # Protect against NaN in final DCF result
         if np.isnan(intrinsic_value) or np.isinf(intrinsic_value):
             return {"error": "DCF resulted in invalid NaN/Inf value"}
 
-        # A DCF whose value is almost entirely terminal is a statement about
-        # the assumed perpetuity, not about the business's next decade. Surface
-        # the share so the caller can weigh it instead of taking the point
-        # estimate at face value.
         tv_share = pv_terminal_value / enterprise_value if enterprise_value else None
 
-        # Net debt above enterprise value means the equity is a stub; the model
-        # is not built for that and would report a negative per-share value.
         if intrinsic_value <= 0:
             return {
                 "error": "Net debt exceeds discounted cash flows (no residual equity value)",
@@ -1683,14 +2149,20 @@ def calculate_intrinsic_value_dcf(
                 "terminal_growth_rate": terminal_growth_rate,
                 "projection_years": projection_years,
                 "base_fcf": fcf,
+                "total_cash": cash,
+                "total_debt": debt,
+                "shares_outstanding": shares_outstanding,
                 "fcf_margin": used_fcf_margin,
                 "fcf_method": fcf_method,
                 "growth_method": growth_method,
                 "growth_signals": growth_signals,
                 "terminal_value_share": tv_share,
+                "mid_year_discounting": True,
             },
         }
-        notes = [f"Linear growth fade over {projection_years}y toward terminal rate"]
+        notes = [
+            f"Linear growth fade over {projection_years}y with mid-year discounting"
+        ]
         if growth_rate > MAX_PROJECTED_GROWTH:
             notes.append(f"growth clamped {growth_rate:.1%} -> {applied_growth:.1%}")
         if tv_share is not None and tv_share > 0.75:
@@ -1739,6 +2211,10 @@ def calculate_intrinsic_value_graham(
 
         if eps is None:
             eps = ticker_info.get("trailingEps")
+        if eps is None and financials_df is not None and not financials_df.empty:
+            eps = _get_statement_value(
+                financials_df, "Diluted EPS", financials_df.columns[0]
+            )
 
         book_value = None
         if balance_sheet_df is not None and not balance_sheet_df.empty:
@@ -1751,30 +2227,37 @@ def calculate_intrinsic_value_graham(
                 latest_bs_period,
             )
             shares = ticker_info.get("sharesOutstanding")
+            if (
+                not shares
+                and balance_sheet_df is not None
+                and not balance_sheet_df.empty
+            ):
+                shares = _get_statement_value(
+                    balance_sheet_df, "Ordinary Shares Number", latest_bs_period
+                )
             if total_equity and shares and shares > 0:
                 book_value = total_equity / shares
 
         # No book-value substitution. This previously returned book value per
-        # share *labelled as the Graham model* for 37% of the universe, so a
-        # third of "Graham" valuations were a different model wearing its name,
-        # then averaged in with equal weight. Book value is also the weakest
-        # value signal measured on this data (see the ranking signal audit):
-        # buybacks and intangibles distort it worst for exactly the durable
-        # compounders this is meant to find. It is reported as context only.
+        # share *labelled as the Graham model* for 37% of the universe.
+        # Book value is reported as context and used for Graham Number.
         if eps is None or eps <= 0:
             return {
                 "error": "Negative or missing EPS",
                 "diagnostics": {"book_value_per_share": book_value},
             }
 
-        # Graham's multiplier is unbounded in g and was written for a market
-        # where 'reasonably expected' growth meant single digits. At the old
-        # 30% cap the formula implied a P/E of 68 as *intrinsic* value.
         applied_growth = float(np.clip(growth_rate, -5.0, 15.0))
         intrinsic_value = (eps * (8.5 + 2 * applied_growth) * 4.4) / bond_yield
 
         if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
             return {"error": "Graham formula produced a non-positive value"}
+
+        graham_number = (
+            float(np.sqrt(22.5 * eps * book_value))
+            if (book_value and book_value > 0 and eps and eps > 0)
+            else None
+        )
 
         res = {
             "intrinsic_value": intrinsic_value,
@@ -1786,6 +2269,7 @@ def calculate_intrinsic_value_graham(
                 "bond_yield_proxy": bond_yield,
                 "growth_method": growth_method,
                 "book_value_per_share": book_value,
+                "graham_number": graham_number,
                 "implied_pe": intrinsic_value / eps if eps else None,
             },
         }
@@ -1799,6 +2283,235 @@ def calculate_intrinsic_value_graham(
         return {"error": f"Graham calculation failed: {str(e)}"}
 
 
+def calculate_intrinsic_value_ddm(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    cashflow_df: Optional[pd.DataFrame] = None,
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    discount_rate: Optional[float] = None,
+    growth_rate: Optional[float] = None,
+    projection_years: int = 10,
+    terminal_growth_rate: float = 0.02,
+    base_dividend: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Calculates intrinsic value using a Multi-Stage Dividend Discount Model (DDM).
+    Ideal for dividend-paying companies, financials, banks, insurance, and REITs.
+    """
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
+            shares = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
+            )
+
+        current_price = ticker_info.get("currentPrice") or ticker_info.get(
+            "regularMarketPrice"
+        )
+
+        # 1. Base Dividend per share
+        if base_dividend is None:
+            base_dividend = ticker_info.get("dividendRate") or ticker_info.get(
+                "trailingAnnualDividendRate"
+            )
+
+        if (
+            (base_dividend is None or base_dividend <= 0)
+            and cashflow_df is not None
+            and not cashflow_df.empty
+            and shares
+            and shares > 0
+        ):
+            latest_col = cashflow_df.columns[0]
+            div_paid = _get_statement_value(
+                cashflow_df, "Cash Dividends Paid", latest_col
+            )
+            if div_paid and div_paid != 0:
+                base_dividend = abs(div_paid) / shares
+
+        if base_dividend is None or base_dividend <= 0:
+            return {"error": "No positive dividend rate reported"}
+
+        # Dividend sustainability check
+        payout = ticker_info.get("payoutRatio")
+        if payout is not None and payout > 1.5:
+            return {
+                "error": f"Dividend payout ratio ({payout:.1%}) exceeds sustainable threshold (>150%)",
+                "diagnostics": {"payout_ratio": payout, "base_dividend": base_dividend},
+            }
+
+        # 2. Dividend Growth Rate
+        growth_method = "caller-supplied dividend growth"
+        if growth_rate is None:
+            div_history = []
+            if cashflow_df is not None and not cashflow_df.empty:
+                cols = sorted(
+                    cashflow_df.columns,
+                    key=lambda c: pd.to_datetime(c, errors="coerce"),
+                )
+                for c in cols[-10:]:
+                    d = _get_statement_value(cashflow_df, "Cash Dividends Paid", c)
+                    if d is not None and d != 0:
+                        div_history.append(abs(d))
+
+            if len(div_history) >= 3:
+                first_d, last_d = div_history[0], div_history[-1]
+                n_yrs = len(div_history) - 1
+                if first_d > 0 and last_d > 0 and n_yrs > 0:
+                    hist_cagr = (last_d / first_d) ** (1.0 / n_yrs) - 1.0
+                    raw_growth = hist_cagr if np.isfinite(hist_cagr) else 0.035
+                    growth_method = f"{len(div_history)}y historical dividend CAGR ({raw_growth:.1%})"
+                else:
+                    raw_growth = 0.035
+            else:
+                growth_res = blended_growth_estimate(
+                    financials_df, ticker_info=ticker_info, item_name="Net Income"
+                )
+                raw_growth = growth_res["growth"]
+                growth_method = f"Earnings growth blend ({raw_growth:.1%})"
+
+            # Shrink toward sustainable long-run dividend growth (3.5%)
+            shrunk = 0.35 * raw_growth + 0.65 * 0.035
+            applied_growth = float(np.clip(shrunk, -0.02, 0.12))
+        else:
+            applied_growth = float(np.clip(growth_rate, -0.05, 0.15))
+
+        # 3. Cost of Equity (CAPM)
+        if discount_rate is None:
+            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
+            discount_rate = (
+                wacc_res.get("cost_of_equity") or wacc_res.get("wacc") or 0.09
+            )
+        discount_rate = float(
+            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
+        )
+
+        # 4. Projections with Mid-Year Discounting
+        projected_divs = []
+        pv_divs = []
+        current_div = base_dividend
+
+        for y in range(1, projection_years + 1):
+            fade_factor = (
+                (y - 1) / (projection_years - 1) if projection_years > 1 else 0
+            )
+            yearly_growth = (
+                applied_growth - (applied_growth - terminal_growth_rate) * fade_factor
+            )
+
+            next_div = current_div * (1 + yearly_growth)
+            projected_divs.append(next_div)
+            # Mid-year discounting convention
+            pv_divs.append(next_div / ((1 + discount_rate) ** (y - 0.5)))
+            current_div = next_div
+
+        # 5. Terminal Value (Gordon Growth Model)
+        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
+        terminal_price = (current_div * (1 + terminal_growth_rate)) / (
+            safe_discount - terminal_growth_rate
+        )
+        pv_terminal_value = terminal_price / ((1 + discount_rate) ** projection_years)
+
+        intrinsic_value = sum(pv_divs) + pv_terminal_value
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "DDM produced non-positive value"}
+
+        tv_share = pv_terminal_value / intrinsic_value if intrinsic_value else None
+
+        res = {
+            "intrinsic_value": intrinsic_value,
+            "model": "Dividend Discount Model (Multi-Stage)",
+            "parameters": {
+                "base_dividend": base_dividend,
+                "dividend_yield_pct": (base_dividend / current_price) * 100
+                if current_price and current_price > 0
+                else None,
+                "payout_ratio": payout,
+                "growth_rate": growth_rate
+                if growth_rate is not None
+                else applied_growth,
+                "applied_growth": applied_growth,
+                "terminal_growth_rate": terminal_growth_rate,
+                "discount_rate": discount_rate,
+                "projection_years": projection_years,
+                "growth_method": growth_method,
+                "terminal_value_share": tv_share,
+                "mid_year_discounting": True,
+            },
+        }
+        notes = [
+            f"Multi-stage DDM fading to {terminal_growth_rate:.1%} terminal growth"
+        ]
+        if tv_share is not None and tv_share > 0.75:
+            notes.append(f"{tv_share:.0%} of value is terminal")
+        res["parameters"]["note"] = "; ".join(notes)
+        return res
+    except Exception as e:
+        return {"error": f"DDM calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_lynch(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    growth_rate: Optional[float] = None,
+    eps: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Calculates Peter Lynch Fair Value based on the principle that fair P/E equals growth rate (PEG=1.0),
+    adjusted for dividend yield: Fair Value = EPS * min(max(Growth + DivYield, 5), 25).
+    """
+    try:
+        if eps is None:
+            eps = ticker_info.get("trailingEps")
+        if eps is None and financials_df is not None and not financials_df.empty:
+            eps = _get_statement_value(
+                financials_df, "Diluted EPS", financials_df.columns[0]
+            )
+
+        if eps is None or eps <= 0:
+            return {"error": "Negative or missing EPS"}
+
+        if growth_rate is None:
+            growth_res = blended_growth_estimate(
+                financials_df, ticker_info=ticker_info, item_name="Net Income"
+            )
+            growth_rate = growth_res["growth"] * 100
+
+        div_yield_pct = 0.0
+        div_rate = ticker_info.get("dividendRate") or ticker_info.get(
+            "trailingAnnualDividendRate"
+        )
+        current_price = ticker_info.get("currentPrice") or ticker_info.get(
+            "regularMarketPrice"
+        )
+        if div_rate and current_price and current_price > 0:
+            div_yield_pct = (div_rate / current_price) * 100
+        elif ticker_info.get("dividendYield"):
+            div_yield_pct = ticker_info["dividendYield"] * 100
+
+        # Peter Lynch fair multiplier = growth + dividend yield, clamped to sane range [5.0, 25.0]
+        fair_multiplier = float(np.clip(growth_rate + div_yield_pct, 5.0, 25.0))
+        intrinsic_value = eps * fair_multiplier
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "Lynch formula produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Peter Lynch Fair Value",
+            "parameters": {
+                "eps": eps,
+                "growth_rate_pct": growth_rate,
+                "dividend_yield_pct": div_yield_pct,
+                "fair_pe_multiplier": fair_multiplier,
+                "note": "Fair Value where PEG = 1.0 (adjusted for dividend yield)",
+            },
+        }
+    except Exception as e:
+        return {"error": f"Lynch calculation failed: {str(e)}"}
+
+
 def calculate_earnings_power_value(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame],
@@ -1809,19 +2522,13 @@ def calculate_earnings_power_value(
     """Greenwald's Earnings Power Value: what the business is worth if it never grows.
 
     EPV = normalized after-tax operating earnings / cost of capital, plus net cash.
-
-    This exists to break the DCF's dependence on a growth forecast. A DCF puts
-    most of its value in a terminal assumption, so two analysts with the same
-    facts can differ threefold; EPV asks the narrower question "what is the
-    current earning power worth in perpetuity?" and answers it from realized
-    numbers only. Where EPV sits above price, the market is charging nothing
-    for growth — the condition a value investor is actually hunting for.
-
-    Uses the median of up to five years of operating income, so a single
-    exceptional year does not become a perpetuity.
     """
     try:
         shares = ticker_info.get("sharesOutstanding")
+        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
+            shares = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
+            )
         if not shares or shares <= 0:
             return {"error": "Missing shares outstanding"}
 
@@ -1833,8 +2540,6 @@ def calculate_earnings_power_value(
             )
             for col in cols[-5:]:
                 ebit = _get_statement_value(financials_df, "Operating Income", col)
-                if ebit is None:
-                    ebit = _get_statement_value(financials_df, "EBIT", col)
                 if ebit is not None:
                     ebit_history.append(ebit)
 
@@ -1868,8 +2573,20 @@ def calculate_earnings_power_value(
         nopat = normalized_ebit * (1 - tax_rate)
         enterprise_value = nopat / discount_rate
 
-        cash = ticker_info.get("totalCash") or 0
-        debt = ticker_info.get("totalDebt") or 0
+        cash = ticker_info.get("totalCash")
+        if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+            cash = _get_statement_value(
+                balance_sheet_df, "Total Cash", balance_sheet_df.columns[0]
+            )
+        cash = cash or 0
+
+        debt = ticker_info.get("totalDebt")
+        if debt is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+            debt = _get_statement_value(
+                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
+            )
+        debt = debt or 0
+
         equity_value = enterprise_value + cash - debt
         if equity_value <= 0:
             return {
@@ -1884,6 +2601,10 @@ def calculate_earnings_power_value(
         return {
             "intrinsic_value": intrinsic_value,
             "model": "Earnings Power Value (no growth)",
+            "when_to_use": "Conservative valuation of normalized sustainable operating earnings in perpetuity assuming zero future growth.",
+            "best_suited_for": "Conservative valuation of normalized sustainable operating earnings in perpetuity assuming zero future growth.",
+            "key_limitation": "Strictly a no-growth baseline floor; gives zero credit to value-accretive capital reinvestment or growth opportunities.",
+            "key_caveats": "Strictly a no-growth baseline floor; gives zero credit to value-accretive capital reinvestment or growth opportunities.",
             "parameters": {
                 "normalized_ebit": normalized_ebit,
                 "ebit_years": len(ebit_history),
@@ -1891,11 +2612,791 @@ def calculate_earnings_power_value(
                 "discount_rate": discount_rate,
                 "nopat": nopat,
                 "net_cash": cash - debt,
+                "shares": shares,
                 "note": "Assumes zero growth; value of current earning power only",
             },
         }
     except Exception as e:
         return {"error": f"EPV calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_dcfo(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    cashflow_df: Optional[pd.DataFrame] = None,
+    discount_rate: Optional[float] = None,
+    growth_rate: Optional[float] = None,
+    projection_years: int = 10,
+    terminal_growth_rate: float = 0.02,
+    base_cfo: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Discounted Cash from Operations (D-CFO).
+    Best Suited For: Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).
+    Key Caveats: Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.
+    """
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
+            shares = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
+            )
+        if not shares or shares <= 0:
+            return {"error": "Missing shares outstanding"}
+
+        if base_cfo is None:
+            if cashflow_df is not None and not cashflow_df.empty:
+                base_cfo = _get_statement_value(
+                    cashflow_df, "Operating Cash Flow", cashflow_df.columns[0]
+                )
+            if base_cfo is None:
+                base_cfo = ticker_info.get("operatingCashflow")
+
+        if base_cfo is None or base_cfo <= 0:
+            return {"error": "Negative or missing Operating Cash Flow"}
+
+        cfo_per_share = base_cfo / shares
+
+        # Growth rate estimation
+        growth_method = "caller-supplied growth"
+        if growth_rate is None:
+            growth_res = blended_growth_estimate(
+                cashflow_df if cashflow_df is not None else financials_df,
+                ticker_info=ticker_info,
+                item_name="Operating Cash Flow",
+            )
+            raw_growth = growth_res["growth"]
+            growth_method = growth_res["method"]
+            shrunk = 0.40 * raw_growth + 0.60 * 0.04
+            applied_growth = float(np.clip(shrunk, -0.05, 0.20))
+        else:
+            applied_growth = float(np.clip(growth_rate, -0.05, 0.20))
+
+        if discount_rate is None:
+            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
+            discount_rate = wacc_res.get("wacc", 0.09)
+        discount_rate = float(
+            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
+        )
+
+        # Project 10 years of CFO with mid-year discounting
+        projected_cfos = []
+        pv_cfos = []
+        current_cfo = cfo_per_share
+
+        for y in range(1, projection_years + 1):
+            fade = (y - 1) / (projection_years - 1) if projection_years > 1 else 0
+            yearly_g = applied_growth - (applied_growth - terminal_growth_rate) * fade
+            next_cfo = current_cfo * (1 + yearly_g)
+            projected_cfos.append(next_cfo)
+            pv_cfos.append(next_cfo / ((1 + discount_rate) ** (y - 0.5)))
+            current_cfo = next_cfo
+
+        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
+        terminal_cfo = (current_cfo * (1 + terminal_growth_rate)) / (
+            safe_discount - terminal_growth_rate
+        )
+        pv_terminal = terminal_cfo / ((1 + discount_rate) ** projection_years)
+
+        cash = ticker_info.get("totalCash")
+        if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+            cash = _get_statement_value(
+                balance_sheet_df, "Total Cash", balance_sheet_df.columns[0]
+            )
+        cash = cash or 0
+
+        debt = ticker_info.get("totalDebt")
+        if debt is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+            debt = _get_statement_value(
+                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
+            )
+        debt = debt or 0
+
+        net_cash_per_share = (cash - debt) / shares
+        intrinsic_value = sum(pv_cfos) + pv_terminal + net_cash_per_share
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "Discounted CFO produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Discounted Cash from Operations",
+            "when_to_use": "Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).",
+            "best_suited_for": "Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).",
+            "key_limitation": "Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.",
+            "key_caveats": "Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.",
+            "parameters": {
+                "base_cfo": base_cfo,
+                "cfo_per_share": cfo_per_share,
+                "growth_rate": growth_rate
+                if growth_rate is not None
+                else applied_growth,
+                "applied_growth": applied_growth,
+                "discount_rate": discount_rate,
+                "terminal_growth_rate": terminal_growth_rate,
+                "projection_years": projection_years,
+                "net_cash_per_share": net_cash_per_share,
+                "growth_method": growth_method,
+                "mid_year_discounting": True,
+            },
+        }
+    except Exception as e:
+        return {"error": f"Discounted CFO calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_dni(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    discount_rate: Optional[float] = None,
+    growth_rate: Optional[float] = None,
+    projection_years: int = 10,
+    terminal_growth_rate: float = 0.02,
+    base_eps: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Discounted Net Income (D-NI).
+    Best Suited For: Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.
+    Key Caveats: Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.
+    """
+    try:
+        if base_eps is None:
+            base_eps = ticker_info.get("trailingEps")
+        if base_eps is None and financials_df is not None and not financials_df.empty:
+            base_eps = _get_statement_value(
+                financials_df, "Diluted EPS", financials_df.columns[0]
+            )
+
+        if base_eps is None or base_eps <= 0:
+            return {"error": "Negative or missing Net Income / EPS"}
+
+        growth_method = "caller-supplied earnings growth"
+        if growth_rate is None:
+            growth_res = blended_growth_estimate(
+                financials_df, ticker_info=ticker_info, item_name="Net Income"
+            )
+            raw_growth = growth_res["growth"]
+            growth_method = growth_res["method"]
+            shrunk = 0.40 * raw_growth + 0.60 * 0.04
+            applied_growth = float(np.clip(shrunk, -0.05, 0.20))
+        else:
+            applied_growth = float(np.clip(growth_rate, -0.05, 0.20))
+
+        if discount_rate is None:
+            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
+            discount_rate = (
+                wacc_res.get("cost_of_equity") or wacc_res.get("wacc") or 0.09
+            )
+        discount_rate = float(
+            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
+        )
+
+        projected_eps = []
+        pv_eps = []
+        current_eps = base_eps
+
+        for y in range(1, projection_years + 1):
+            fade = (y - 1) / (projection_years - 1) if projection_years > 1 else 0
+            yearly_g = applied_growth - (applied_growth - terminal_growth_rate) * fade
+            next_eps = current_eps * (1 + yearly_g)
+            projected_eps.append(next_eps)
+            pv_eps.append(next_eps / ((1 + discount_rate) ** (y - 0.5)))
+            current_eps = next_eps
+
+        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
+        terminal_val = (current_eps * (1 + terminal_growth_rate)) / (
+            safe_discount - terminal_growth_rate
+        )
+        pv_terminal = terminal_val / ((1 + discount_rate) ** projection_years)
+
+        intrinsic_value = sum(pv_eps) + pv_terminal
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "Discounted Net Income produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Discounted Net Income",
+            "when_to_use": "Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.",
+            "best_suited_for": "Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.",
+            "key_limitation": "Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.",
+            "key_caveats": "Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.",
+            "parameters": {
+                "base_eps": base_eps,
+                "growth_rate": growth_rate
+                if growth_rate is not None
+                else applied_growth,
+                "applied_growth": applied_growth,
+                "discount_rate": discount_rate,
+                "terminal_growth_rate": terminal_growth_rate,
+                "projection_years": projection_years,
+                "growth_method": growth_method,
+                "mid_year_discounting": True,
+            },
+        }
+    except Exception as e:
+        return {"error": f"Discounted Net Income calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_mean_pe(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    mean_pe: Optional[float] = None,
+    eps: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Mean P/E Ratio Valuation.
+    Best Suited For: Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.
+    Key Caveats: Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.
+    """
+    try:
+        if eps is None:
+            eps = ticker_info.get("trailingEps")
+        if eps is None and financials_df is not None and not financials_df.empty:
+            eps = _get_statement_value(
+                financials_df, "Diluted EPS", financials_df.columns[0]
+            )
+
+        if eps is None or eps <= 0:
+            return {"error": "Negative or missing EPS"}
+
+        pe_source = "caller-supplied"
+        if mean_pe is None:
+            hist_pe = (
+                ticker_info.get("trailingPE")
+                or ticker_info.get("forwardPE")
+                or ticker_info.get("regularMarketPE")
+            )
+            if hist_pe and 5.0 <= hist_pe <= 45.0:
+                mean_pe = hist_pe
+                pe_source = f"Historical P/E anchor ({hist_pe:.1f}x)"
+            else:
+                mean_pe = 17.5  # Long-run S&P 500 median baseline
+                pe_source = "Market baseline (17.5x)"
+
+        applied_pe = float(np.clip(mean_pe, 5.0, 45.0))
+        intrinsic_value = eps * applied_pe
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "Mean P/E produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Mean P/E Ratio",
+            "when_to_use": "Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.",
+            "best_suited_for": "Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.",
+            "key_limitation": "Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.",
+            "key_caveats": "Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.",
+            "parameters": {
+                "eps": eps,
+                "mean_pe": mean_pe,
+                "applied_pe": applied_pe,
+                "pe_source": pe_source,
+            },
+        }
+    except Exception as e:
+        return {"error": f"Mean P/E calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_peg(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    growth_rate: Optional[float] = None,
+    eps: Optional[float] = None,
+    target_peg: float = 1.0,
+    dividend_yield_pct: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    PEG Ratio Fair Value.
+    Best Suited For: Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.
+    Key Caveats: Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.
+    """
+    try:
+        if eps is None:
+            eps = ticker_info.get("trailingEps")
+        if eps is None and financials_df is not None and not financials_df.empty:
+            eps = _get_statement_value(
+                financials_df, "Diluted EPS", financials_df.columns[0]
+            )
+
+        if eps is None or eps <= 0:
+            return {"error": "Negative or missing EPS"}
+
+        growth_method = "caller-supplied growth"
+        if growth_rate is None:
+            growth_res = blended_growth_estimate(
+                financials_df, ticker_info=ticker_info, item_name="Net Income"
+            )
+            growth_rate = growth_res["growth"] * 100.0
+            growth_method = growth_res["method"]
+
+        if dividend_yield_pct is None:
+            div_rate = ticker_info.get("dividendRate") or ticker_info.get(
+                "trailingAnnualDividendRate"
+            )
+            curr_p = ticker_info.get("currentPrice") or ticker_info.get(
+                "regularMarketPrice"
+            )
+            if div_rate and curr_p and curr_p > 0:
+                dividend_yield_pct = (div_rate / curr_p) * 100.0
+            elif ticker_info.get("dividendYield"):
+                dividend_yield_pct = ticker_info["dividendYield"] * 100.0
+            else:
+                dividend_yield_pct = 0.0
+
+        applied_growth = float(np.clip(growth_rate, 3.0, 35.0))
+        target_peg = float(np.clip(target_peg, 0.5, 2.0))
+        fair_pe_multiplier = float(
+            np.clip(target_peg * (applied_growth + dividend_yield_pct), 5.0, 35.0)
+        )
+        intrinsic_value = eps * fair_pe_multiplier
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "PEG calculation produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "PEG Ratio Fair Value",
+            "when_to_use": "Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.",
+            "best_suited_for": "Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.",
+            "key_limitation": "Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.",
+            "key_caveats": "Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.",
+            "parameters": {
+                "eps": eps,
+                "growth_rate_pct": growth_rate,
+                "applied_growth_pct": applied_growth,
+                "dividend_yield_pct": dividend_yield_pct,
+                "target_peg": target_peg,
+                "fair_pe_multiplier": fair_pe_multiplier,
+                "growth_method": growth_method,
+            },
+        }
+    except Exception as e:
+        return {"error": f"PEG calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_mean_pb(
+    ticker_info: Dict[str, Any],
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    book_value_per_share: Optional[float] = None,
+    mean_pb: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Mean P/B Ratio Valuation.
+    Best Suited For: Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.
+    Key Caveats: Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.
+    """
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
+            shares = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
+            )
+
+        if book_value_per_share is None:
+            book_value_per_share = ticker_info.get("bookValue")
+            if (
+                (book_value_per_share is None or book_value_per_share <= 0)
+                and balance_sheet_df is not None
+                and not balance_sheet_df.empty
+                and shares
+                and shares > 0
+            ):
+                total_equity = _get_statement_value(
+                    balance_sheet_df,
+                    "Total Stockholder Equity",
+                    balance_sheet_df.columns[0],
+                )
+                if total_equity and total_equity > 0:
+                    book_value_per_share = total_equity / shares
+
+        if book_value_per_share is None or book_value_per_share <= 0:
+            return {"error": "Negative or missing Book Value per Share"}
+
+        sector = (ticker_info.get("sector") or "").lower()
+        pb_source = "caller-supplied"
+
+        if mean_pb is None:
+            if "bank" in sector or "financial" in sector:
+                mean_pb = 1.30  # Standard 1.2 - 1.4x banking benchmark
+                pb_source = "Banking benchmark (1.30x)"
+            elif "real estate" in sector or "reit" in sector:
+                mean_pb = 1.05  # Price/NAV benchmark
+                pb_source = "REIT NAV benchmark (1.05x)"
+            else:
+                hist_pb = ticker_info.get("priceToBook")
+                if hist_pb and 0.5 <= hist_pb <= 8.0:
+                    mean_pb = hist_pb
+                    pb_source = f"MRQ P/B anchor ({hist_pb:.2f}x)"
+                else:
+                    mean_pb = 1.80
+                    pb_source = "Market baseline (1.80x)"
+
+        applied_pb = float(np.clip(mean_pb, 0.4, 8.0))
+        intrinsic_value = book_value_per_share * applied_pb
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "Mean P/B produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Mean P/B Ratio",
+            "when_to_use": "Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.",
+            "best_suited_for": "Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.",
+            "key_limitation": "Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.",
+            "key_caveats": "Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.",
+            "parameters": {
+                "book_value_per_share": book_value_per_share,
+                "mean_pb": mean_pb,
+                "applied_pb": applied_pb,
+                "pb_source": pb_source,
+                "sector": ticker_info.get("sector"),
+            },
+        }
+    except Exception as e:
+        return {"error": f"Mean P/B calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_mean_ps(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    sales_per_share: Optional[float] = None,
+    mean_ps: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Mean P/S Ratio Valuation.
+    Best Suited For: Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.
+    Key Caveats: Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.
+    """
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
+            shares = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
+            )
+
+        if sales_per_share is None:
+            revenue = ticker_info.get("totalRevenue")
+            if (
+                revenue is None
+                and financials_df is not None
+                and not financials_df.empty
+            ):
+                revenue = _get_statement_value(
+                    financials_df, "Total Revenue", financials_df.columns[0]
+                )
+            if revenue and shares and shares > 0:
+                sales_per_share = revenue / shares
+
+        if sales_per_share is None or sales_per_share <= 0:
+            return {"error": "Negative or missing Revenue / Sales per share"}
+
+        ps_source = "caller-supplied"
+        if mean_ps is None:
+            hist_ps = ticker_info.get("priceToSalesTrailing12Months")
+            if hist_ps and 0.5 <= hist_ps <= 15.0:
+                mean_ps = hist_ps
+                ps_source = f"TTM P/S anchor ({hist_ps:.2f}x)"
+            else:
+                mean_ps = 2.50
+                ps_source = "Market baseline (2.50x)"
+
+        applied_ps = float(np.clip(mean_ps, 0.4, 15.0))
+        intrinsic_value = sales_per_share * applied_ps
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "Mean P/S produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Mean P/S Ratio",
+            "when_to_use": "Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.",
+            "best_suited_for": "Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.",
+            "key_limitation": "Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.",
+            "key_caveats": "Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.",
+            "parameters": {
+                "sales_per_share": sales_per_share,
+                "mean_ps": mean_ps,
+                "applied_ps": applied_ps,
+                "ps_source": ps_source,
+            },
+        }
+    except Exception as e:
+        return {"error": f"Mean P/S calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_psg(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    sales_per_share: Optional[float] = None,
+    revenue_growth_pct: Optional[float] = None,
+    target_psg: float = 1.0,
+) -> Dict[str, Any]:
+    """
+    Price-to-Sales Growth Ratio (PSG) Valuation.
+    Best Suited For: High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.
+    Key Caveats: Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.
+    """
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
+            shares = _get_statement_value(
+                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
+            )
+
+        if sales_per_share is None:
+            revenue = ticker_info.get("totalRevenue")
+            if (
+                revenue is None
+                and financials_df is not None
+                and not financials_df.empty
+            ):
+                revenue = _get_statement_value(
+                    financials_df, "Total Revenue", financials_df.columns[0]
+                )
+            if revenue and shares and shares > 0:
+                sales_per_share = revenue / shares
+
+        if sales_per_share is None or sales_per_share <= 0:
+            return {"error": "Negative or missing Revenue / Sales per share"}
+
+        growth_method = "caller-supplied growth"
+        if revenue_growth_pct is None:
+            growth_res = blended_growth_estimate(
+                financials_df, ticker_info=ticker_info, item_name="Total Revenue"
+            )
+            revenue_growth_pct = growth_res["growth"] * 100.0
+            growth_method = growth_res["method"]
+
+        gross_margin = ticker_info.get("grossMargins")
+        if (
+            gross_margin is None
+            and financials_df is not None
+            and not financials_df.empty
+        ):
+            rev = _get_statement_value(
+                financials_df, "Total Revenue", financials_df.columns[0]
+            )
+            gp = _get_statement_value(
+                financials_df, "Gross Profit", financials_df.columns[0]
+            )
+            if rev and gp and rev > 0:
+                gross_margin = gp / rev
+        gross_margin = float(
+            np.clip(gross_margin if gross_margin is not None else 0.50, 0.20, 0.95)
+        )
+
+        applied_growth = float(np.clip(revenue_growth_pct, 5.0, 45.0))
+        target_psg = float(np.clip(target_psg, 0.5, 2.0))
+
+        # Fair P/S multiplier scales with revenue growth rate scaled by gross margin quality
+        fair_ps_multiplier = float(
+            np.clip(
+                (applied_growth / 10.0) * gross_margin * target_psg * 1.5, 0.5, 12.0
+            )
+        )
+        intrinsic_value = sales_per_share * fair_ps_multiplier
+
+        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
+            return {"error": "PSG calculation produced non-positive value"}
+
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Price-to-Sales Growth (PSG)",
+            "when_to_use": "High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.",
+            "best_suited_for": "High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.",
+            "key_limitation": "Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.",
+            "key_caveats": "Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.",
+            "parameters": {
+                "sales_per_share": sales_per_share,
+                "revenue_growth_pct": revenue_growth_pct,
+                "applied_growth_pct": applied_growth,
+                "gross_margin_pct": gross_margin * 100.0,
+                "target_psg": target_psg,
+                "fair_ps_multiplier": fair_ps_multiplier,
+                "growth_method": growth_method,
+            },
+        }
+    except Exception as e:
+        return {"error": f"PSG calculation failed: {str(e)}"}
+
+
+def recommend_best_valuation_method(
+    ticker_info: Dict[str, Any],
+    models: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    cashflow_df: Optional[pd.DataFrame] = None,
+    is_bank_or_financial: bool = False,
+) -> Dict[str, Any]:
+    """
+    Selects the best-fit valuation method according to the 'Choosing the Right Valuation Method' framework:
+    1. Financials/Banks/REITs -> Mean P/B (for banks/REITs) or Discounted Net Income (D-NI).
+    2. High-Growth Unprofitable -> Price-to-Sales Growth (PSG) or Mean P/S.
+    3. Steady Cash Generator -> Discounted Free Cash Flow (DCF - Primary Method).
+    4. Lumpy CapEx but Steady Operations -> Discounted Cash from Operations (D-CFO).
+    5. Consistent Earnings Growth -> PEG Ratio or Mean P/E.
+    """
+    sector = (ticker_info.get("sector") or "").lower()
+    industry = (ticker_info.get("industry") or "").lower()
+
+    if (
+        "bank" in sector
+        or "financial" in sector
+        or "bank" in industry
+        or "insurance" in industry
+        or "real estate" in sector
+    ):
+        is_bank_or_financial = True
+
+    eps = ticker_info.get("trailingEps") or 0.0
+    fcf = ticker_info.get("freeCashflow") or 0.0
+    cfo = ticker_info.get("operatingCashflow") or 0.0
+    rev_growth = ticker_info.get("revenueGrowth") or 0.0
+    div_yield = ticker_info.get("dividendYield") or 0.0
+
+    # 1. Banks, REITs, Financials
+    if is_bank_or_financial:
+        if "bank" in sector or "real estate" in sector:
+            if models.get("mean_pb", {}).get("intrinsic_value") is not None:
+                return {
+                    "method_key": "mean_pb",
+                    "name": "Mean P/B Ratio",
+                    "when_to_use": "Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.",
+                    "best_suited_for": "Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.",
+                    "key_limitation": "Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.",
+                    "key_caveats": "Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.",
+                    "rationale": "Financial institutions and property assets are primarily asset-backed and valued relative to book value and marked-to-market equity.",
+                    "intrinsic_value": models["mean_pb"]["intrinsic_value"],
+                }
+        if models.get("dni", {}).get("intrinsic_value") is not None:
+            return {
+                "method_key": "dni",
+                "name": "Discounted Net Income",
+                "when_to_use": "Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.",
+                "best_suited_for": "Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.",
+                "key_limitation": "Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.",
+                "key_caveats": "Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.",
+                "rationale": "Financial firms do not have traditional industrial CapEx; discounting Net Income at Cost of Equity is the canonical approach.",
+                "intrinsic_value": models["dni"]["intrinsic_value"],
+            }
+        if (
+            models.get("ddm", {}).get("intrinsic_value") is not None
+            and div_yield > 0.02
+        ):
+            return {
+                "method_key": "ddm",
+                "name": "Dividend Discount Model",
+                "when_to_use": "Mature dividend payers and utilities with long track records of consistent dividend growth and sustainable payout ratios (<100%).",
+                "best_suited_for": "Mature dividend payers and utilities with long track records of consistent dividend growth and sustainable payout ratios (<100%).",
+                "key_limitation": "Only reflects value returned as direct dividends; entirely unsuited for non-dividend payers and ignores share repurchases or cash retained.",
+                "key_caveats": "Only reflects value returned as direct dividends; entirely unsuited for non-dividend payers and ignores share repurchases or cash retained.",
+                "rationale": "High dividend payout yields direct cash return to shareholders.",
+                "intrinsic_value": models["ddm"]["intrinsic_value"],
+            }
+
+    # 2. Speculative / Unprofitable High Growth
+    if eps <= 0 and rev_growth >= 0.12:
+        if models.get("psg", {}).get("intrinsic_value") is not None:
+            return {
+                "method_key": "psg",
+                "name": "Price-to-Sales Growth (PSG)",
+                "when_to_use": "High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.",
+                "best_suited_for": "High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.",
+                "key_limitation": "Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.",
+                "key_caveats": "Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.",
+                "rationale": "Unprofitable hyper-growth companies require growth-relative revenue multiples while unit economics scale.",
+                "intrinsic_value": models["psg"]["intrinsic_value"],
+            }
+        if models.get("mean_ps", {}).get("intrinsic_value") is not None:
+            return {
+                "method_key": "mean_ps",
+                "name": "Mean P/S Ratio",
+                "when_to_use": "Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.",
+                "best_suited_for": "Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.",
+                "key_limitation": "Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.",
+                "key_caveats": "Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.",
+                "rationale": "Historical sales multiple baseline for companies without consistent earnings.",
+                "intrinsic_value": models["mean_ps"]["intrinsic_value"],
+            }
+
+    # 3. Predictable Free Cash Flow Generator -> DCF (Primary Method)
+    if models.get("dcf", {}).get("intrinsic_value") is not None and fcf > 0:
+        return {
+            "method_key": "dcf",
+            "name": "Discounted Free Cash Flow (Primary)",
+            "when_to_use": "Cash-generative companies with steady, predictable Free Cash Flow (Operating Cash Flow minus Capital Expenditures).",
+            "best_suited_for": "Cash-generative companies with steady, predictable Free Cash Flow (Operating Cash Flow minus Capital Expenditures).",
+            "key_limitation": "Highly sensitive to growth and discount rate (WACC) inputs; unsuitable for cyclical, negative-FCF, or lumpy CapEx businesses.",
+            "key_caveats": "Highly sensitive to growth and discount rate (WACC) inputs; unsuitable for cyclical, negative-FCF, or lumpy CapEx businesses.",
+            "rationale": "Strong, predictable Free Cash Flow makes DCF the gold standard valuation model.",
+            "intrinsic_value": models["dcf"]["intrinsic_value"],
+        }
+
+    # 4. Steady Operating Cash Flow but Lumpy CapEx -> D-CFO
+    if models.get("dcfo", {}).get("intrinsic_value") is not None and cfo > 0:
+        return {
+            "method_key": "dcfo",
+            "name": "Discounted Cash from Operations",
+            "when_to_use": "Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).",
+            "best_suited_for": "Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).",
+            "key_limitation": "Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.",
+            "key_caveats": "Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.",
+            "rationale": "Operating cash flow is durable while capital expenditure fluctuates through reinvestment cycles.",
+            "intrinsic_value": models["dcfo"]["intrinsic_value"],
+        }
+
+    # 5. Steady Earnings -> PEG or Mean P/E
+    if models.get("peg", {}).get("intrinsic_value") is not None and eps > 0:
+        return {
+            "method_key": "peg",
+            "name": "PEG Ratio Fair Value",
+            "when_to_use": "Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.",
+            "best_suited_for": "Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.",
+            "key_limitation": "Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.",
+            "key_caveats": "Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.",
+            "rationale": "Growth-adjusted earnings multiple benchmark matching earnings expansion with valuation.",
+            "intrinsic_value": models["peg"]["intrinsic_value"],
+        }
+
+    if models.get("mean_pe", {}).get("intrinsic_value") is not None and eps > 0:
+        return {
+            "method_key": "mean_pe",
+            "name": "Mean P/E Ratio",
+            "when_to_use": "Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.",
+            "best_suited_for": "Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.",
+            "key_limitation": "Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.",
+            "key_caveats": "Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.",
+            "rationale": "Mature, profitable company with established earnings multiple baseline.",
+            "intrinsic_value": models["mean_pe"]["intrinsic_value"],
+        }
+
+    # Fallback to Graham or whatever model succeeded
+    for k in ("graham", "epv", "lynch", "mean_pb", "mean_ps"):
+        if models.get(k, {}).get("intrinsic_value") is not None:
+            return {
+                "method_key": k,
+                "name": models[k].get("model", k.upper()),
+                "when_to_use": "Specialized fallback valuation model applicable to available reporting.",
+                "best_suited_for": "Specialized fallback valuation model applicable to available reporting.",
+                "key_limitation": "May not account for all future growth phases or capital structure nuances.",
+                "key_caveats": "May not account for all future growth phases or capital structure nuances.",
+                "rationale": "Alternative baseline model applicable to available reporting.",
+                "intrinsic_value": models[k]["intrinsic_value"],
+            }
+
+    return {
+        "method_key": "none",
+        "name": "No Defensible Model",
+        "when_to_use": "N/A",
+        "best_suited_for": "N/A",
+        "key_limitation": "N/A",
+        "key_caveats": "N/A",
+        "rationale": "Fundamental data is insufficient to compute a reliable intrinsic value.",
+        "intrinsic_value": None,
+    }
 
 
 def get_comprehensive_intrinsic_value(
@@ -1908,6 +3409,7 @@ def get_comprehensive_intrinsic_value(
 ) -> Dict[str, Any]:
     """
     Consolidates multiple intrinsic value models into a single advice object.
+    Supports DCF, D-CFO, D-NI, Mean P/E, PEG, Mean P/B, Mean P/S, PSG, Graham, DDM, EPV, and Peter Lynch fair value.
     """
     # 0. Enrich data with statement fallbacks to maximize coverage
     ticker_info = _enrich_ticker_info(
@@ -1929,6 +3431,13 @@ def get_comprehensive_intrinsic_value(
     graham_eps = overrides.get("graham_eps")
     graham_bond_yield = overrides.get("graham_bond_yield")
 
+    # Extract DDM overrides
+    ddm_discount = overrides.get("ddm_discount_rate")
+    ddm_growth = overrides.get("ddm_growth_rate")
+    ddm_terminal = overrides.get("ddm_terminal_growth", 0.02)
+    ddm_projection = int(overrides.get("ddm_projection_years", 10))
+    ddm_dividend = overrides.get("ddm_base_dividend")
+
     dcf_res = calculate_intrinsic_value_dcf(
         ticker_info,
         financials_df,
@@ -1942,6 +3451,68 @@ def get_comprehensive_intrinsic_value(
         target_fcf_margin=target_fcf_margin,
     )
 
+    dcfo_res = calculate_intrinsic_value_dcfo(
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
+        cashflow_df,
+        discount_rate=overrides.get("dcfo_discount_rate", dcf_discount),
+        growth_rate=overrides.get("dcfo_growth_rate", dcf_growth),
+        projection_years=dcf_projection,
+        terminal_growth_rate=dcf_terminal,
+        base_cfo=overrides.get("dcfo_base_cfo"),
+    )
+
+    dni_res = calculate_intrinsic_value_dni(
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
+        discount_rate=overrides.get("dni_discount_rate", ddm_discount),
+        growth_rate=overrides.get("dni_growth_rate", graham_growth),
+        projection_years=dcf_projection,
+        terminal_growth_rate=dcf_terminal,
+        base_eps=overrides.get("dni_base_eps", graham_eps),
+    )
+
+    mean_pe_res = calculate_intrinsic_value_mean_pe(
+        ticker_info,
+        financials_df,
+        eps=overrides.get("mean_pe_eps", graham_eps),
+        mean_pe=overrides.get("mean_pe_multiple"),
+    )
+
+    peg_res = calculate_intrinsic_value_peg(
+        ticker_info,
+        financials_df,
+        growth_rate=overrides.get("peg_growth_rate", graham_growth),
+        eps=overrides.get("peg_eps", graham_eps),
+        target_peg=overrides.get("peg_target", 1.0),
+    )
+
+    mean_pb_res = calculate_intrinsic_value_mean_pb(
+        ticker_info,
+        balance_sheet_df,
+        book_value_per_share=overrides.get("mean_pb_bvps"),
+        mean_pb=overrides.get("mean_pb_multiple"),
+    )
+
+    mean_ps_res = calculate_intrinsic_value_mean_ps(
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
+        sales_per_share=overrides.get("mean_ps_sps"),
+        mean_ps=overrides.get("mean_ps_multiple"),
+    )
+
+    psg_res = calculate_intrinsic_value_psg(
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
+        sales_per_share=overrides.get("psg_sps"),
+        revenue_growth_pct=overrides.get("psg_revenue_growth"),
+        target_psg=overrides.get("psg_target", 1.0),
+    )
+
     graham_res = calculate_intrinsic_value_graham(
         ticker_info,
         financials_df,
@@ -1949,6 +3520,18 @@ def get_comprehensive_intrinsic_value(
         growth_rate=graham_growth,
         eps=graham_eps,
         bond_yield=graham_bond_yield,
+    )
+
+    ddm_res = calculate_intrinsic_value_ddm(
+        ticker_info,
+        financials_df,
+        cashflow_df,
+        balance_sheet_df,
+        discount_rate=ddm_discount,
+        growth_rate=ddm_growth,
+        projection_years=ddm_projection,
+        terminal_growth_rate=ddm_terminal,
+        base_dividend=ddm_dividend,
     )
 
     epv_res = calculate_earnings_power_value(
@@ -1959,15 +3542,18 @@ def get_comprehensive_intrinsic_value(
         discount_rate=overrides.get("epv_discount_rate", dcf_discount),
     )
 
-    dcf_mc = None
-    graham_mc = None
+    lynch_res = calculate_intrinsic_value_lynch(
+        ticker_info,
+        financials_df,
+        growth_rate=overrides.get("lynch_growth_rate", graham_growth),
+        eps=overrides.get("lynch_eps", graham_eps),
+    )
 
-    # Pass through iterations to MC simulations
-    if "intrinsic_value" in dcf_res:
+    # Run Monte Carlo simulations for all 12 valuation models
+    if "intrinsic_value" in dcf_res and "parameters" in dcf_res:
         params = dcf_res["parameters"]
-        # Use applied growth for MC if available
-        mc_growth = params.get("applied_growth", params["growth_rate"])
-        dcf_mc = run_monte_carlo_dcf(
+        mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
+        dcf_res["mc"] = run_monte_carlo_dcf(
             ticker_info,
             params["base_fcf"],
             mc_growth,
@@ -1976,27 +3562,138 @@ def get_comprehensive_intrinsic_value(
             params["terminal_growth_rate"],
             iterations=iterations,
         )
-        dcf_res["mc"] = dcf_mc
 
-    if "intrinsic_value" in graham_res:
+    if "intrinsic_value" in dcfo_res and "parameters" in dcfo_res:
+        params = dcfo_res["parameters"]
+        mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
+        dcfo_res["mc"] = run_monte_carlo_dcfo(
+            ticker_info,
+            params["base_cfo"],
+            mc_growth,
+            params["discount_rate"],
+            params["projection_years"],
+            params["terminal_growth_rate"],
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in dni_res and "parameters" in dni_res:
+        params = dni_res["parameters"]
+        mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
+        dni_res["mc"] = run_monte_carlo_dni(
+            params["base_eps"],
+            mc_growth,
+            params["discount_rate"],
+            params["projection_years"],
+            params["terminal_growth_rate"],
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in mean_pe_res and "parameters" in mean_pe_res:
+        params = mean_pe_res["parameters"]
+        mean_pe_res["mc"] = run_monte_carlo_mean_pe(
+            params["eps"],
+            params["applied_pe"],
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in peg_res and "parameters" in peg_res:
+        params = peg_res["parameters"]
+        peg_res["mc"] = run_monte_carlo_peg(
+            params["eps"],
+            params.get("applied_growth_pct", params.get("growth_rate_pct", 10.0)),
+            params.get("dividend_yield_pct", 0.0),
+            params.get("target_peg", 1.0),
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in mean_pb_res and "parameters" in mean_pb_res:
+        params = mean_pb_res["parameters"]
+        mean_pb_res["mc"] = run_monte_carlo_mean_pb(
+            params["book_value_per_share"],
+            params["applied_pb"],
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in mean_ps_res and "parameters" in mean_ps_res:
+        params = mean_ps_res["parameters"]
+        mean_ps_res["mc"] = run_monte_carlo_mean_ps(
+            params["sales_per_share"],
+            params["applied_ps"],
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in psg_res and "parameters" in psg_res:
+        params = psg_res["parameters"]
+        gm = params.get("gross_margin_pct", 50.0) / 100.0 if "gross_margin_pct" in params else 0.50
+        psg_res["mc"] = run_monte_carlo_psg(
+            params["sales_per_share"],
+            params.get("applied_growth_pct", params.get("revenue_growth_pct", 15.0)),
+            gm,
+            params.get("target_psg", 1.0),
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in graham_res and "parameters" in graham_res:
         params = graham_res["parameters"]
         if "eps" in params:
-            # Use applied growth for MC if available
             mc_growth_pct = params.get(
                 "applied_growth_pct", params.get("growth_rate_pct", 0)
             )
-            graham_mc = run_monte_carlo_graham(
+            graham_res["mc"] = run_monte_carlo_graham(
                 params["eps"],
                 mc_growth_pct,
                 params["bond_yield_proxy"],
                 iterations=iterations,
             )
-            graham_res["mc"] = graham_mc
+
+    if "intrinsic_value" in ddm_res and "parameters" in ddm_res:
+        params = ddm_res["parameters"]
+        ddm_res["mc"] = run_monte_carlo_ddm(
+            params["base_dividend"],
+            params["applied_growth"],
+            params["discount_rate"],
+            params["projection_years"],
+            params["terminal_growth_rate"],
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in epv_res and "parameters" in epv_res:
+        params = epv_res["parameters"]
+        epv_res["mc"] = run_monte_carlo_epv(
+            ticker_info,
+            params["normalized_ebit"],
+            params["tax_rate"],
+            params["discount_rate"],
+            iterations=iterations,
+        )
+
+    if "intrinsic_value" in lynch_res and "parameters" in lynch_res:
+        params = lynch_res["parameters"]
+        lynch_res["mc"] = run_monte_carlo_lynch(
+            params["eps"],
+            params.get("growth_rate_pct", 10.0),
+            params.get("dividend_yield_pct", 0.0),
+            iterations=iterations,
+        )
 
     # Simulated bear/bull bounds, collected from whichever models ran.
     bear_values: List[float] = []
     bull_values: List[float] = []
-    for mc in (dcf_mc, graham_mc):
+    for model_res in (
+        dcf_res,
+        dcfo_res,
+        dni_res,
+        mean_pe_res,
+        peg_res,
+        mean_pb_res,
+        mean_ps_res,
+        psg_res,
+        graham_res,
+        ddm_res,
+        epv_res,
+        lynch_res,
+    ):
+        mc = model_res.get("mc")
         if mc and mc.get("bear") is not None and mc.get("bull") is not None:
             bear_values.append(mc["bear"])
             bull_values.append(mc["bull"])
@@ -2009,8 +3706,6 @@ def get_comprehensive_intrinsic_value(
     quote_type = ticker_info.get("quoteType", "").upper()
     if quote_type == "ETF" or quote_type == "MUTUALFUND":
         nav_price = ticker_info.get("navPrice")
-
-        # If no explicit NAV, current price is the best proxy for ETFs
         if (nav_price is None or nav_price == 0) and current_price:
             nav_price = current_price
 
@@ -2020,10 +3715,29 @@ def get_comprehensive_intrinsic_value(
                 "average_intrinsic_value": nav_price,
                 "valuation_note": f"Valuation based on Net Asset Value (NAV) for {quote_type}.",
                 "valuation_status": "nav",
+                "recommended_method": {
+                    "method_key": "nav",
+                    "name": "Net Asset Value (NAV)",
+                    "when_to_use": "ETFs, CEFs, and Mutual Funds holding diversified portfolios of publicly-traded securities.",
+                    "best_suited_for": "ETFs, CEFs, and Mutual Funds holding diversified portfolios of publicly-traded securities.",
+                    "key_limitation": "Fund NAV equals total underlying portfolio assets minus fund liabilities, reflecting portfolio holdings rather than operating business cash flows.",
+                    "key_caveats": "Fund NAV equals total underlying portfolio assets minus fund liabilities, reflecting portfolio holdings rather than operating business cash flows.",
+                    "rationale": "Funds are valued by their reported Net Asset Value per share.",
+                    "intrinsic_value": nav_price,
+                },
                 "models": {
                     "dcf": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "dcfo": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "dni": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "mean_pe": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "peg": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "mean_pb": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "mean_ps": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "psg": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
                     "graham": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "ddm": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
                     "epv": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "lynch": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
                 },
             }
 
@@ -2035,22 +3749,33 @@ def get_comprehensive_intrinsic_value(
 
             return results
 
+    models_map = {
+        "dcf": dcf_res,
+        "dcfo": dcfo_res,
+        "dni": dni_res,
+        "mean_pe": mean_pe_res,
+        "peg": peg_res,
+        "mean_pb": mean_pb_res,
+        "mean_ps": mean_ps_res,
+        "psg": psg_res,
+        "graham": graham_res,
+        "ddm": ddm_res,
+        "epv": epv_res,
+        "lynch": lynch_res,
+    }
+
+    # Best-fit method recommendation
+    recommended = recommend_best_valuation_method(
+        ticker_info, models_map, financials_df, cashflow_df
+    )
+
     results: Dict[str, Any] = {
         "current_price": current_price,
-        "models": {
-            "dcf": dcf_res,
-            "graham": graham_res,
-            "epv": epv_res,
-        },
+        "recommended_method": recommended,
+        "models": models_map,
     }
 
     # --- Eligibility ---------------------------------------------------------
-    # Refuse before blending when the inputs cannot support a valuation. The old
-    # code always produced a number: 99.1% "coverage", of which 15% sat above
-    # 10x or below 0.1x price. Sub-dollar and micro-cap tickers were the worst
-    # (42% absurd under $1) because per-share arithmetic on a tiny denominator
-    # amplifies every data error. A blank is a usable answer; a fabricated
-    # fair value next to a real price is not.
     market_cap = ticker_info.get("marketCap")
     ineligible = None
     if current_price is not None and current_price < MIN_PRICE_FOR_VALUATION:
@@ -2067,20 +3792,26 @@ def get_comprehensive_intrinsic_value(
         results["valuation_note"] = ineligible
         return results
 
-    # --- Reliability-weighted blend -----------------------------------------
-    # Replaces the previous rule, which — when two models disagreed by more
-    # than 50% — discarded both and kept whichever number sat closest to the
-    # current price. That rule fired on 64% of the universe and made the output
-    # a function of price, so the margin of safety it produced could only ever
-    # be small: the estimate was anchored to the very quantity it was supposed
-    # to judge. Models are now weighted by how defensible they are, never by
-    # how flattering their answer is.
+    # --- Sector-Aware Reliability-Weighted Blend -----------------------------
+    sector = (ticker_info.get("sector") or "").lower()
+    is_financial = any(
+        k in sector
+        for k in ("financial", "bank", "insurance", "real estate", "utilities")
+    )
+
+    if is_financial:
+        blend_weights = MODEL_BLEND_WEIGHTS_FINANCIAL
+    elif ddm_res.get("intrinsic_value") is not None:
+        blend_weights = MODEL_BLEND_WEIGHTS
+    else:
+        blend_weights = MODEL_BLEND_WEIGHTS_NO_DDM
+
     contributions: List[Dict[str, Any]] = []
-    for key, model_res in (("dcf", dcf_res), ("graham", graham_res)):
+    for key, model_res in (("dcf", dcf_res), ("graham", graham_res), ("ddm", ddm_res)):
         iv = model_res.get("intrinsic_value")
         if iv is not None and np.isfinite(iv) and iv > 0:
             contributions.append(
-                {"key": key, "value": float(iv), "weight": MODEL_BLEND_WEIGHTS[key]}
+                {"key": key, "value": float(iv), "weight": blend_weights.get(key, 0.33)}
             )
 
     # EPV travels alongside the estimate as the no-growth floor, not inside it.
@@ -2088,9 +3819,15 @@ def get_comprehensive_intrinsic_value(
     if epv_iv is not None and np.isfinite(epv_iv) and epv_iv > 0:
         results["earnings_power_floor"] = float(epv_iv)
 
+    lynch_iv = lynch_res.get("intrinsic_value")
+    if lynch_iv is not None and np.isfinite(lynch_iv) and lynch_iv > 0:
+        results["lynch_fair_value"] = float(lynch_iv)
+
     if not contributions:
         reasons = [
-            m.get("error") for m in (dcf_res, epv_res, graham_res) if m.get("error")
+            m.get("error")
+            for m in (dcf_res, epv_res, graham_res, ddm_res)
+            if m.get("error")
         ]
         results["average_intrinsic_value"] = None
         results["valuation_status"] = "no_model"

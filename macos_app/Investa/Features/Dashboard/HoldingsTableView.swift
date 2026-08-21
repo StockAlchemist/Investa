@@ -340,7 +340,7 @@ struct HoldingsTableView: View {
                     if let gb = groupBy, !gb.isEmpty { groupedBody(columns: pinnedCols, width: fw, part: .label) } else { flatBody(columns: pinnedCols) }
                 }
                 .frame(width: fw, alignment: .leading)
-                .background(.background.secondary)
+                .background(Color.cardBg)
                 .zIndex(1)
 
                 Divider()
@@ -370,14 +370,14 @@ struct HoldingsTableView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "tablecells").font(.caption.weight(.semibold)).foregroundStyle(Color(hex: 0x6366f1))
+            Image(systemName: "tablecells").font(.caption.weight(.semibold)).foregroundStyle(Color.brandIndigo)
             #if !os(iOS)
-            Text("Holdings").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase).foregroundStyle(.secondary)
+            SectionLabel(title: "Holdings")
             #endif
             Text(groupBy != nil ? "\(baseRows.count) items · \(groups.count) groups" : "\(baseRows.count)")
                 .font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 2)
-                .background(.background.tertiary, in: Capsule())
+                .background(Color.cardBorder.opacity(0.25), in: Capsule())
             Spacer()
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
@@ -385,7 +385,7 @@ struct HoldingsTableView: View {
                 if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary) }
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 

@@ -22,25 +22,25 @@ private struct ISection<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.headline)
+                SectionLabel(title: title)
                 if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
                 if let trailing { trailing }
             }
             #else
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
+                    SectionLabel(title: title)
                     if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
                 }
                 Spacer(); if let trailing { trailing }
             }
             #endif
+            Divider().opacity(0.6)
             content
             Spacer(minLength: 0)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .card(.standard)
     }
 }
 
@@ -94,8 +94,9 @@ struct IncomeKpiStrip: View {
         }
     }
     private func tile(_ label: String, _ value: String, _ sub: String, _ tone: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+        VStack(alignment: .leading, spacing: 3) {
+            SectionLabel(title: label)
+                .minimumScaleFactor(0.7)
             Text(value).font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
             Text(sub).font(.caption2).foregroundStyle(.secondary)
         }

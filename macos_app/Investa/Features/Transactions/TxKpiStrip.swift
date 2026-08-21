@@ -112,8 +112,7 @@ struct TxKpiStrip: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .card(.standard)
     }
 
     private func activity(_ value: String, _ label: String, tint: Color = .primary) -> some View {
@@ -125,8 +124,9 @@ struct TxKpiStrip: View {
     }
 
     private func kpiStat(_ label: String, _ value: String, valueColor: Color = .primary) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+        VStack(alignment: .leading, spacing: 3) {
+            SectionLabel(title: label)
+                .minimumScaleFactor(0.7)
             Text(value).font(.headline).foregroundStyle(valueColor).monospacedDigit()
         }
     }

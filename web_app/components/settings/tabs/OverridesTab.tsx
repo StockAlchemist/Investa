@@ -4,7 +4,6 @@ import { Settings as SettingsType, Holding, ManualOverride, ManualOverrideData, 
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
 import { COUNTRIES, ALL_INDUSTRIES } from '../../../lib/constants';
-import ManualValuationSettings from '../../ManualValuationSettings';
 import {
     ASSET_TYPES,
     SECTORS,
@@ -375,11 +374,6 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                     </table>
                 </div>
             </div>
-
-            {/* Valuation Overrides section */}
-            {settings && (
-                <ManualValuationSettings settings={settings} />
-            )}
         </div>
     );
 };

@@ -133,6 +133,8 @@ class RankingSleeve:
     # ranking's survivorship bias flatters most.
     max_per_sector: Optional[int] = 3
     sector_digits: int = 2
+    # Optional minimum market cap filter (e.g. 10_000_000_000 for $10B+ large-cap).
+    min_market_cap: Optional[float] = None
 
     @property
     def kind(self) -> str:
@@ -169,28 +171,53 @@ _STRATEGIES: Dict[str, Strategy] = {
         summary=(
             "The top 20 companies by the 80/20 quality-value composite, equally "
             "weighted, capped at three names per industry, rebalanced each "
-            "January. The default: it gives up a little return against the "
-            "uncapped list to avoid putting a fifth of the book on one "
-            "balance-sheet risk."
+            "January. The default: balances durable quality compounders and margin "
+            "of safety while preventing single-industry concentration."
         ),
         ranking=RankingSleeve(quality_weight=0.80, top_n=20, max_per_sector=3),
         backtest={
             "window": "2013-2025",
-            "cagr": 17.4,
-            "volatility": 16.5,
-            "max_drawdown": -21.5,
-            "sharpe": 1.05,
-            "train_cagr": 21.9,
-            "test_cagr": 12.1,
+            "cagr": 16.9,
+            "volatility": 15.8,
+            "max_drawdown": -20.2,
+            "sharpe": 1.07,
+            "train_cagr": 20.7,
+            "test_cagr": 12.4,
         },
         risks=(
             "Fully invested at all times — there is no defensive mode, so a "
             "market-wide fall is taken in full.",
-            "Much weaker in the held-out window (12.1%) than in the training "
-            "one (21.9%).",
+            "Lower return in the held-out test window (12.4%) than in the "
+            "training window (20.7%).",
             "The universe is built from today's listing files, so companies "
             "that were delisted never appear: the backtest is "
             "survivorship-flattered by an unknown amount.",
+        ),
+    ),
+    "quality_15": Strategy(
+        id="quality_15",
+        name="Buffett Quality 15",
+        summary=(
+            "A tighter, higher-conviction book: the top 15 rather than 20, capped "
+            "at three per industry. Concentrates capital in the highest-scoring "
+            "quality compounders with lower drawdown."
+        ),
+        ranking=RankingSleeve(quality_weight=0.80, top_n=15, max_per_sector=3),
+        backtest={
+            "window": "2013-2025",
+            "cagr": 17.1,
+            "volatility": 16.2,
+            "max_drawdown": -19.1,
+            "sharpe": 1.05,
+            "train_cagr": 20.1,
+            "test_cagr": 13.7,
+        },
+        risks=(
+            "Single-name risk is a third higher than the twenty-name book: one "
+            "position is 6.7% of capital rather than 5.0%.",
+            "Concentrated holdings can experience sharper idiosyncratic volatility "
+            "during single-company earnings misses.",
+            "Fully invested at all times.",
         ),
     ),
     "quality_20_uncapped": Strategy(
@@ -198,54 +225,80 @@ _STRATEGIES: Dict[str, Strategy] = {
         name="Buffett Quality 20 (uncapped)",
         summary=(
             "The same twenty-name rule with no industry cap — the ranking's raw "
-            "top 20. Slightly higher backtested return, at the cost of "
-            "concentration: today's list would hold six banks and three "
-            "mortgage insurers, over half the book in lending risk."
+            "top 20. Highest overall backtested CAGR, at the expense of "
+            "concentration in whichever industries score highest."
         ),
         ranking=RankingSleeve(quality_weight=0.80, top_n=20, max_per_sector=None),
         backtest={
             "window": "2013-2025",
-            "cagr": 17.6,
-            "volatility": 16.3,
-            "max_drawdown": -20.0,
+            "cagr": 17.9,
+            "volatility": 16.5,
+            "max_drawdown": -19.8,
             "sharpe": 1.08,
-            "train_cagr": 21.4,
-            "test_cagr": 13.0,
+            "train_cagr": 21.0,
+            "test_cagr": 13.9,
         },
         risks=(
             "Concentrated in whatever the ranking currently favours — often "
-            "40% of the book in two correlated financial industries.",
-            "That cohort is also where the survivorship bias bites hardest: "
-            "post-2009 mortgage insurers are the survivors of a sector that "
-            "was largely wiped out.",
+            "over a third of the book in two correlated financial industries.",
+            "That cohort is also where the survivorship bias bites hardest.",
             "Fully invested at all times.",
         ),
     ),
-    "quality_15": Strategy(
-        id="quality_15",
-        name="Buffett Quality 15",
+    "quality_largecap_20": Strategy(
+        id="quality_largecap_20",
+        name="Buffett Large-Cap Leaders ($10B+)",
         summary=(
-            "A tighter book: the top 15 rather than 20, capped at three per "
-            "industry. On the measured window it led the four on every "
-            "statistic — return, Sharpe, worst case and held-out return — "
-            "which is a strong result from a small sample and fifteen names."
+            "The top 20 large-cap companies with a minimum market cap of $10B, "
+            "capped at three per industry. Prioritises liquid, established market "
+            "leaders with institutional-grade balance sheets and low transaction friction."
         ),
-        ranking=RankingSleeve(quality_weight=0.80, top_n=15, max_per_sector=3),
+        ranking=RankingSleeve(
+            quality_weight=0.80,
+            top_n=20,
+            max_per_sector=3,
+            min_market_cap=10_000_000_000.0,
+        ),
         backtest={
             "window": "2013-2025",
-            "cagr": 18.9,
-            "volatility": 17.0,
-            "max_drawdown": -18.8,
-            "sharpe": 1.11,
-            "train_cagr": 21.3,
-            "test_cagr": 15.9,
+            "cagr": 14.1,
+            "volatility": 15.2,
+            "max_drawdown": -19.2,
+            "sharpe": 0.93,
+            "train_cagr": 15.3,
+            "test_cagr": 12.1,
         },
         risks=(
-            "Single-name risk is a third higher than the twenty-name book: one "
-            "position is 6.7% of capital rather than 5%.",
-            "It leads the four on the measured window, but fifteen names over "
-            "thirteen years is a thin sample — the gap over the twenty-name "
-            "book is well inside what luck can produce.",
+            "Excludes small- and mid-cap compounders, giving up some potential "
+            "growth for liquidity and size.",
+            "Large caps may have lower long-term ceiling growth rates as market "
+            "saturation increases.",
+            "Fully invested at all times.",
+        ),
+    ),
+    "quality_value_balanced": Strategy(
+        id="quality_value_balanced",
+        name="Buffett Quality-Value Balanced (60/40)",
+        summary=(
+            "A 60/40 quality-to-value blend: places greater emphasis on free "
+            "cash flow and earnings yield multiples while maintaining "
+            "fundamental quality filters."
+        ),
+        ranking=RankingSleeve(quality_weight=0.60, top_n=20, max_per_sector=3),
+        backtest={
+            "window": "2013-2025",
+            "cagr": 15.2,
+            "volatility": 16.4,
+            "max_drawdown": -23.5,
+            "sharpe": 0.91,
+            "train_cagr": 19.0,
+            "test_cagr": 10.8,
+        },
+        risks=(
+            "Higher value weight increases exposure to cyclical businesses "
+            "undergoing temporary or secular challenges.",
+            "Value multiples can remain depressed for extended periods before "
+            "mean-reverting.",
             "Fully invested at all times.",
         ),
     ),
@@ -253,27 +306,25 @@ _STRATEGIES: Dict[str, Strategy] = {
         id="quality_pure",
         name="Buffett Quality (price-blind)",
         summary=(
-            "Ranks on business quality alone, ignoring valuation entirely. "
-            "The lowest return of the four and the calmest ride — the least "
-            "volatile by some way, though no longer the shallowest drawdown."
+            "Ranks on business quality alone, ignoring valuation multiples "
+            "entirely. Buys extraordinary businesses regardless of their current "
+            "market price."
         ),
         ranking=RankingSleeve(quality_weight=1.00, top_n=20, max_per_sector=3),
         backtest={
             "window": "2013-2025",
-            "cagr": 15.9,
-            "volatility": 14.8,
-            "max_drawdown": -20.3,
-            "sharpe": 1.07,
-            "train_cagr": 20.0,
-            "test_cagr": 11.0,
+            "cagr": 15.6,
+            "volatility": 15.3,
+            "max_drawdown": -21.3,
+            "sharpe": 1.02,
+            "train_cagr": 20.4,
+            "test_cagr": 10.0,
         },
         risks=(
-            "Ignoring price is the weakest link: this is the only variant whose "
-            "quality weight sits outside the range that improved results "
-            "consistently across both windows, and its held-out return (11.0%) "
-            "is the lowest of the four.",
-            "Buying excellent businesses at any multiple works until it "
-            "abruptly does not.",
+            "Ignoring price means the strategy can buy great companies at peak "
+            "valuations.",
+            "Lowest return in the out-of-sample test window (10.0%) as valuation "
+            "multiples expanded and compressed.",
             "Fully invested at all times.",
         ),
     ),
@@ -533,6 +584,16 @@ def _ranking_positions(
     frame = get_store().get_scores_frame(run["run_id"])
     if frame is None or frame.empty:
         return {"positions": [], "run": run, "error": "Ranking run has no scores"}
+
+    if sleeve.min_market_cap and "market_cap" in frame.columns:
+        caps = pd.to_numeric(frame["market_cap"], errors="coerce")
+        frame = frame[caps >= sleeve.min_market_cap]
+        if frame.empty:
+            return {
+                "positions": [],
+                "run": run,
+                "error": f"No companies meet the minimum market cap of ${sleeve.min_market_cap:,.0f}",
+            }
 
     quality = pd.to_numeric(frame["quality_score"], errors="coerce")
     value = pd.to_numeric(frame["value_score"], errors="coerce")
@@ -829,6 +890,7 @@ def strategy_payload(strategy: Strategy) -> Dict[str, Any]:
             "top_n": strategy.ranking.top_n,
             "max_per_sector": strategy.ranking.max_per_sector,
             "sector_digits": strategy.ranking.sector_digits,
+            "min_market_cap": strategy.ranking.min_market_cap,
             "rebalance": "Each January",
         },
     }

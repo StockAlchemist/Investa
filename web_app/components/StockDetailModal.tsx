@@ -337,6 +337,7 @@ export default function StockDetailModal({
                         <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
                             {activeTab === 'overview' && (
                                 <OverviewTab
+                                    symbol={symbol}
                                     fundamentals={fundamentals}
                                     intrinsicValue={intrinsicValue}
                                     userPosition={userPosition}

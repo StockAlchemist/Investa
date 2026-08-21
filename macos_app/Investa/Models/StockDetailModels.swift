@@ -194,6 +194,9 @@ struct IntrinsicValueResponse: Codable, Sendable {
     let modelSpreadPct: Double?
     /// Value of current earning power assuming zero growth.
     let earningsPowerFloor: Double?
+    /// Peter Lynch Fair Value estimate.
+    let lynchFairValue: Double?
+    let recommendedMethod: RecommendedMethod?
     let models: Models?
     let range: Range?
 
@@ -205,6 +208,8 @@ struct IntrinsicValueResponse: Codable, Sendable {
         case valuationStatus = "valuation_status"
         case modelSpreadPct = "model_spread_pct"
         case earningsPowerFloor = "earnings_power_floor"
+        case lynchFairValue = "lynch_fair_value"
+        case recommendedMethod = "recommended_method"
         case models, range
     }
 
@@ -219,6 +224,28 @@ struct IntrinsicValueResponse: Codable, Sendable {
 
     /// True when the backend refused to produce a value at all.
     var isRefusal: Bool { status == .ineligible || status == .noModel }
+
+    struct RecommendedMethod: Codable, Sendable {
+        let methodKey: String?
+        let name: String?
+        let bestSuitedFor: String?
+        let keyCaveats: String?
+        let whenToUse: String?
+        let keyLimitation: String?
+        let rationale: String?
+        let intrinsicValue: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case methodKey = "method_key"
+            case name
+            case bestSuitedFor = "best_suited_for"
+            case keyCaveats = "key_caveats"
+            case whenToUse = "when_to_use"
+            case keyLimitation = "key_limitation"
+            case rationale
+            case intrinsicValue = "intrinsic_value"
+        }
+    }
 
     struct Range: Codable, Sendable { let bear: Double?; let bull: Double? }
     struct HistogramPoint: Codable, Sendable { let price: Double?; let count: Double? }
@@ -236,9 +263,27 @@ struct IntrinsicValueResponse: Codable, Sendable {
     }
     struct Models: Codable, Sendable {
         let dcf: Model?
+        let dcfo: Model?
+        let dni: Model?
+        let meanPe: Model?
+        let peg: Model?
+        let meanPb: Model?
+        let meanPs: Model?
+        let psg: Model?
         let graham: Model?
-        /// Earnings Power Value — the no-growth floor. Reported, never blended.
+        let ddm: Model?
         let epv: Model?
+        let lynch: Model?
+
+        enum CodingKeys: String, CodingKey {
+            case dcf, dcfo, dni
+            case meanPe = "mean_pe"
+            case peg
+            case meanPb = "mean_pb"
+            case meanPs = "mean_ps"
+            case psg
+            case graham, ddm, epv, lynch
+        }
     }
 }
 
@@ -464,10 +509,19 @@ struct RatiosResponse: Decodable, Sendable {
     /// Historical ratio rows (each has a `Period` plus dynamic metric keys).
     let historical: [[String: JSONValue]]
 
+    enum CodingKeys: String, CodingKey {
+        case valuation, historical
+    }
+
+    init(valuation: [String: JSONValue]? = nil, historical: [[String: JSONValue]] = []) {
+        self.valuation = valuation
+        self.historical = historical
+    }
+
     init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
-        valuation = raw["valuation"]?.objectValue
-        historical = (raw["historical"]?.arrayValue ?? []).compactMap { $0.objectValue }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.valuation = try container.decodeIfPresent([String: JSONValue].self, forKey: .valuation)
+        self.historical = try container.decodeIfPresent([[String: JSONValue]].self, forKey: .historical) ?? []
     }
 }
 

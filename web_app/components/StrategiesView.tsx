@@ -352,6 +352,9 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
                                             equally weighted
                                             {active.ranking.max_per_sector != null && (
                                                 <>, max {active.ranking.max_per_sector} per industry</>
+                                            )}
+                                            {active.ranking.min_market_cap != null && active.ranking.min_market_cap > 0 && (
+                                                <>, min ${(active.ranking.min_market_cap / 1e9).toFixed(0)}B market cap</>
                                             )}. {active.ranking.rebalance}.
                                         </span>
                                     </li>

@@ -112,6 +112,7 @@ struct RankingSleeveSpec: Decodable, Sendable {
     let topN: Int
     let maxPerSector: Int?
     let sectorDigits: Int
+    let minMarketCap: Double?
     let rebalance: String
 
     private enum CodingKeys: String, CodingKey {
@@ -119,6 +120,7 @@ struct RankingSleeveSpec: Decodable, Sendable {
         case topN = "top_n"
         case maxPerSector = "max_per_sector"
         case sectorDigits = "sector_digits"
+        case minMarketCap = "min_market_cap"
         case rebalance
     }
 }

@@ -7,14 +7,18 @@ private struct PSection<Content: View>: View {
     var trailing: AnyView? = nil
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack { Text(title).font(.headline); Spacer(); if let trailing { trailing } }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionLabel(title: title)
+                Spacer()
+                if let trailing { trailing }
+            }
+            Divider().opacity(0.6)
             content
             Spacer(minLength: 0)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .card(.standard)
     }
 }
 
@@ -94,11 +98,12 @@ struct PerfKpiStrip: View {
     private func pct(_ v: Double?) -> String { v.map { "\($0 > 0 ? "+" : "")\(String(format: "%.2f%%", $0))" } ?? "–" }
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            SectionLabel(title: label)
+                .minimumScaleFactor(0.7)
             Text(value).font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

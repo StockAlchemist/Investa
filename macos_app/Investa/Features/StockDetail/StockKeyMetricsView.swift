@@ -101,6 +101,11 @@ struct StockKeyMetricsView: View {
                     graphsView(vm)
                 }
             }
+            .task(id: viewMode) {
+                if viewMode == .graphs, let vm = viewModel, vm.ratios == nil {
+                    await vm.loadRatios()
+                }
+            }
             .onChange(of: viewMode) { _, mode in
                 if mode == .graphs, let vm = viewModel, vm.ratios == nil {
                     Task { await vm.loadRatios() }
@@ -112,36 +117,73 @@ struct StockKeyMetricsView: View {
     // MARK: - Header
 
     private var headerRow: some View {
-        HStack(alignment: .center) {
-            HStack(spacing: 8) {
-                Label("Key Metrics", systemImage: "square.grid.3x3").font(.headline)
-
-                if viewModel != nil {
-                    Picker("", selection: $viewMode) {
-                        ForEach(ViewMode.allCases, id: \.self) { mode in
-                            Text(mode.rawValue).tag(mode)
+        Group {
+            if hSizeClass == .compact {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.grid.3x3").foregroundStyle(Color.brandIndigo)
+                            Text("Key Metrics").font(.headline)
+                        }
+                        Spacer()
+                        if viewModel != nil {
+                            Picker("", selection: $viewMode) {
+                                ForEach(ViewMode.allCases, id: \.self) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 140)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 140)
+                    if viewMode == .grid {
+                        legend
+                    } else if let vm = viewModel {
+                        HStack(spacing: 6) {
+                            Picker("", selection: $range) {
+                                ForEach(StatementRange.allCases) { r in
+                                    Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
+                            periodPicker(vm)
+                        }
+                    }
                 }
-            }
+            } else {
+                HStack(alignment: .center) {
+                    HStack(spacing: 8) {
+                        Label("Key Metrics", systemImage: "square.grid.3x3").font(.headline)
 
-            Spacer(minLength: 12)
-
-            if viewMode == .grid {
-                legend
-            } else if let vm = viewModel {
-                HStack(spacing: 6) {
-                    Picker("", selection: $range) {
-                        ForEach(StatementRange.allCases) { r in
-                            Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
+                        if viewModel != nil {
+                            Picker("", selection: $viewMode) {
+                                ForEach(ViewMode.allCases, id: \.self) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 140)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 140)
 
-                    periodPicker(vm)
+                    Spacer(minLength: 12)
+
+                    if viewMode == .grid {
+                        legend
+                    } else if let vm = viewModel {
+                        HStack(spacing: 6) {
+                            Picker("", selection: $range) {
+                                ForEach(StatementRange.allCases) { r in
+                                    Text(r.rawValue == "MAX" ? "ALL" : r.rawValue).tag(r)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 140)
+
+                            periodPicker(vm)
+                        }
+                    }
                 }
             }
         }
@@ -175,10 +217,7 @@ struct StockKeyMetricsView: View {
 
     private func panel(_ group: StockMetric.Group) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(group.rawValue)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+            SectionLabel(title: group.rawValue)
                 .padding(.bottom, 6)
 
             ForEach(StockMetric.inGroup(group)) { metric in
@@ -194,18 +233,19 @@ struct StockKeyMetricsView: View {
                         viewMode = .graphs
                     }
                 }
-                Divider().opacity(0.4)
+                Divider().opacity(0.3)
             }
             if group == .market {
                 ForEach(extraRows, id: \.label) { extra in
                     row(extra.label, extra.value, .primary)
-                    Divider().opacity(0.4)
+                    Divider().opacity(0.3)
                 }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.cardBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.cardBorder.opacity(0.5), lineWidth: 0.8))
     }
 
     private func row(_ label: String, _ value: String, _ tone: Color, action: (() -> Void)? = nil) -> some View {
@@ -262,14 +302,26 @@ struct StockKeyMetricsView: View {
             if vm.isLoadingRatios {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 180)
             } else if history.isEmpty {
-                ContentUnavailableView("No ratio data available", systemImage: "chart.line.uptrend.xyaxis")
-                    .frame(maxWidth: .infinity, minHeight: 180)
+                VStack(spacing: 12) {
+                    ContentUnavailableView("No ratio data available", systemImage: "chart.line.uptrend.xyaxis")
+                    Button("Reload Ratios") {
+                        Task { await vm.loadRatios() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .frame(maxWidth: .infinity, minHeight: 180)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
                     ForEach(activeDefs) { def in
                         chartCard(def, history: history, period: vm.ratiosPeriod)
                     }
                 }
+            }
+        }
+        .task(id: vm.ratiosPeriod) {
+            if vm.ratios == nil {
+                await vm.loadRatios()
             }
         }
     }

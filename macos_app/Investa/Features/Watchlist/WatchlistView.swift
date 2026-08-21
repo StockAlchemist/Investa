@@ -202,8 +202,7 @@ struct WatchlistView: View {
             table
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .card(.standard)
     }
 
     private var addForm: some View {
@@ -434,19 +433,18 @@ struct WatchlistKpiStrip: View {
         return KpiRow(count: 5, minTileWidth: 140) {
             tile("Symbols", "\(items.count)", "tracked", .primary)
             tile("Avg Day Change", avg.map { Fmt.percent($0) } ?? "–", nil, Fmt.tint(for: avg))
-            tileWithSymbol("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
-            tileWithSymbol("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
-            tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? .green : .primary)
+            tileWithSymbol("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, Color.up)
+            tileWithSymbol("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, Color.down)
+            tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? Color.up : .primary)
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .card(.standard)
     }
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-                .lineLimit(1).minimumScaleFactor(0.7)
+            SectionLabel(title: label)
+                .minimumScaleFactor(0.7)
             Text(value).font(.title3.bold()).foregroundStyle(tone)
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
         }
@@ -454,14 +452,14 @@ struct WatchlistKpiStrip: View {
     }
     private func tileWithSymbol(_ label: String, _ value: String, _ symbol: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-                .lineLimit(1).minimumScaleFactor(0.7)
+            SectionLabel(title: label)
+                .minimumScaleFactor(0.7)
             Text(value).font(.title3.bold()).foregroundStyle(tone)
             if let symbol {
                 Button {
                     appState.openStock(symbol)
                 } label: {
-                    Text(symbol).font(.caption2.bold()).foregroundStyle(.indigo)
+                    Text(symbol).font(.caption2.bold()).foregroundStyle(Color.brandIndigo)
                 }
                 .buttonStyle(.plain)
             }

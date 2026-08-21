@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Wallet,
     Calendar,
@@ -6,7 +6,6 @@ import {
     RotateCcw,
     TrendingUp,
     Scale,
-    Anchor,
     Globe,
     Receipt,
     DollarSign,
@@ -16,7 +15,11 @@ import {
     PieChart as PieChartIcon,
     LineChart as LineChartIcon,
     BarChart3,
-    Activity as LucideActivity
+    Activity as LucideActivity,
+    Sparkles,
+    Shield,
+    Zap,
+    Target
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { FiftyTwoWeekCard } from '../components/FiftyTwoWeekCard';
@@ -25,6 +28,7 @@ import StockKeyMetrics from '../../StockKeyMetrics';
 import { cn, formatCurrency, formatPercent as formatPercentShared } from '../../../lib/utils';
 import { normalizeDividendYield, normalizeExpenseRatio } from '../../../lib/dividend';
 import { formatCalendarDate } from '../../../lib/market_time';
+import { fetchStockAnalysis, type StockAnalysisResponse } from '../../../lib/api';
 
 function formatPercentPoints(points: number | null | undefined): string {
     if (points === null || points === undefined || isNaN(points)) return "-";
@@ -36,6 +40,7 @@ function formatEventDate(iso: string): string {
 }
 
 interface OverviewTabProps {
+    symbol?: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fundamentals payload
     fundamentals: any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intrinsicValue payload
@@ -49,6 +54,7 @@ interface OverviewTabProps {
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
+    symbol,
     fundamentals,
     intrinsicValue,
     userPosition,
@@ -58,6 +64,36 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     onRefreshData,
 }) => {
     const [summaryExpanded, setSummaryExpanded] = useState(false);
+    const [analysis, setAnalysis] = useState<StockAnalysisResponse | null>(null);
+
+    const activeSymbol = symbol || fundamentals?.symbol;
+
+    useEffect(() => {
+        if (activeSymbol) {
+            let active = true;
+            fetchStockAnalysis(activeSymbol)
+                .then(data => {
+                    if (active && data && !data.error) {
+                        setAnalysis(data);
+                    }
+                })
+                .catch(err => {
+                    console.debug("Overview AI analysis fetch (non-critical):", err);
+                });
+            return () => { active = false; };
+        }
+    }, [activeSymbol]);
+
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const ce = e as CustomEvent<{ symbol: string; analysis: StockAnalysisResponse }>;
+            if (ce.detail?.symbol === activeSymbol && ce.detail.analysis) {
+                setAnalysis(ce.detail.analysis);
+            }
+        };
+        window.addEventListener('stock-analysis-updated', handler);
+        return () => window.removeEventListener('stock-analysis-updated', handler);
+    }, [activeSymbol]);
 
     if (!fundamentals) return null;
 
@@ -80,14 +116,21 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         return upside > 0 ? "text-emerald-500 font-bold" : "text-rose-500 font-bold";
     };
 
-    const dcfUpside = getUpsidePercentage(intrinsicValue?.models?.dcf?.intrinsic_value);
-    const grahamUpside = getUpsidePercentage(intrinsicValue?.models?.graham?.intrinsic_value);
-    const epvUpside = getUpsidePercentage(intrinsicValue?.models?.epv?.intrinsic_value);
-    const valuationCardCount = [
-        intrinsicValue?.models?.dcf?.intrinsic_value,
-        intrinsicValue?.models?.graham?.intrinsic_value,
-        intrinsicValue?.models?.epv?.intrinsic_value,
-    ].filter(Boolean).length;
+    const recommendedMethod = intrinsicValue?.recommended_method;
+    const bestFitValue = recommendedMethod?.intrinsic_value;
+    const bestFitUpside = getUpsidePercentage(bestFitValue);
+    const blendedValue = intrinsicValue?.average_intrinsic_value;
+    const blendedUpside = getUpsidePercentage(blendedValue);
+
+    const getBestFitRange = () => {
+        if (!recommendedMethod || !intrinsicValue?.models) return null;
+        const key = recommendedMethod.method_key;
+        if (key === 'dcf') return intrinsicValue.models.dcf?.mc;
+        if (key === 'graham') return intrinsicValue.models.graham?.mc;
+        if (key === 'ddm') return intrinsicValue.models.ddm?.mc;
+        return null;
+    };
+    const bestFitRange = getBestFitRange();
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -229,6 +272,145 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 </div>
             )}
 
+            {/* AI Analysis Scores */}
+            {analysis?.scorecard && (() => {
+                const sc = analysis.scorecard;
+                const validScores = [
+                    sc.moat,
+                    sc.financial_strength,
+                    sc.predictability,
+                    sc.growth,
+                ].filter((v): v is number => typeof v === 'number' && !isNaN(v));
+
+                const compositeScore = validScores.length > 0
+                    ? validScores.reduce((acc, s) => acc + s, 0) / validScores.length
+                    : null;
+
+                const compositeTier = compositeScore != null
+                    ? compositeScore >= 8.5 ? "Exceptional" : compositeScore >= 7.0 ? "Strong" : compositeScore >= 5.5 ? "Moderate" : "Weak"
+                    : null;
+
+                const pillars = [
+                    {
+                        id: 'moat',
+                        label: 'Moat & Edge',
+                        icon: Shield,
+                        score: sc.moat,
+                        color: 'text-blue-500 dark:text-blue-400',
+                        bgColor: 'bg-blue-500/10 dark:bg-blue-500/20',
+                        barColor: 'from-blue-500 to-cyan-500',
+                        badgeColor: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                        getTier: (s: number) => s >= 9 ? 'Wide Moat' : s >= 7.5 ? 'Solid Moat' : s >= 5.5 ? 'Narrow Moat' : 'No Moat',
+                    },
+                    {
+                        id: 'strength',
+                        label: 'Financial Strength',
+                        icon: Zap,
+                        score: sc.financial_strength,
+                        color: 'text-amber-500 dark:text-amber-400',
+                        bgColor: 'bg-amber-500/10 dark:bg-amber-500/20',
+                        barColor: 'from-amber-500 to-orange-500',
+                        badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                        getTier: (s: number) => s >= 9 ? 'Fortress' : s >= 7.5 ? 'Healthy' : s >= 5.5 ? 'Adequate' : 'Constrained',
+                    },
+                    {
+                        id: 'predictability',
+                        label: 'Predictability',
+                        icon: Target,
+                        score: sc.predictability,
+                        color: 'text-emerald-500 dark:text-emerald-400',
+                        bgColor: 'bg-emerald-500/10 dark:bg-emerald-500/20',
+                        barColor: 'from-emerald-500 to-teal-500',
+                        badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                        getTier: (s: number) => s >= 9 ? 'High Visibility' : s >= 7.5 ? 'Predictable' : s >= 5.5 ? 'Moderate' : 'Volatile',
+                    },
+                    {
+                        id: 'growth',
+                        label: 'Growth Pace',
+                        icon: TrendingUp,
+                        score: sc.growth,
+                        color: 'text-purple-500 dark:text-purple-400',
+                        bgColor: 'bg-purple-500/10 dark:bg-purple-500/20',
+                        barColor: 'from-purple-500 to-pink-500',
+                        badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+                        getTier: (s: number) => s >= 9 ? 'High Growth' : s >= 7.5 ? 'Solid Growth' : s >= 5.5 ? 'Moderate' : 'Sluggish',
+                    },
+                ];
+
+                return (
+                    <div className="rounded-2xl sm:rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-slate-500/[0.04] via-indigo-500/[0.02] to-purple-500/[0.04] border border-border/60 shadow-xs space-y-3.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 text-white flex items-center justify-center shadow-xs shadow-purple-500/20">
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm sm:text-base font-bold text-foreground">
+                                        AI Fundamental Health
+                                    </h3>
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                                        Gemini AI
+                                    </span>
+                                </div>
+                            </div>
+                            {compositeScore !== null && (
+                                <div className="flex items-center gap-1.5 bg-background/80 px-2.5 py-1 rounded-xl border border-border/50 shadow-2xs">
+                                    <span className="text-[11px] font-medium text-muted-foreground">Composite:</span>
+                                    <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{compositeScore.toFixed(1)}</span>
+                                    <span className="text-[11px] font-bold text-muted-foreground/60">/10</span>
+                                    {compositeTier && (
+                                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 ml-1">· {compositeTier}</span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
+                            {pillars.map(p => (
+                                <div
+                                    key={p.id}
+                                    className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-card border border-border/50 shadow-2xs flex flex-col justify-between gap-2.5 hover:border-border transition-all"
+                                >
+                                    <div className="flex items-center justify-between gap-1">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <div className={cn("p-1.5 rounded-lg shrink-0", p.bgColor)}>
+                                                <p.icon className={cn("w-3.5 h-3.5", p.color)} />
+                                            </div>
+                                            <span className="text-xs font-bold text-foreground truncate">
+                                                {p.label}
+                                            </span>
+                                        </div>
+                                        {p.score != null && (
+                                            <span className={cn("text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded border leading-none shrink-0", p.badgeColor)}>
+                                                {p.getTier(p.score)}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-baseline justify-between pt-0.5">
+                                        <div className="flex items-baseline gap-1">
+                                            <span className={cn("text-2xl sm:text-3xl font-black tracking-tight", p.color)}>
+                                                {p.score != null ? p.score : '—'}
+                                            </span>
+                                            <span className="text-xs font-medium text-muted-foreground/60">/10</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Mini Progress Track */}
+                                    <div className="w-full bg-muted/70 h-1.5 rounded-full overflow-hidden">
+                                        <div
+                                            className={cn("h-full rounded-full transition-all duration-700 bg-gradient-to-r", p.barColor)}
+                                            style={{ width: p.score != null ? `${Math.min(100, Math.max(0, (p.score / 10) * 100))}%` : '0%' }}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })()}
+
             <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                     <LayoutDashboard className="w-5 h-5 text-indigo-500" />
@@ -245,42 +427,29 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 </button>
             </div>
 
-            <div className={cn(
-                'grid grid-cols-1 gap-2.5 w-full',
-                valuationCardCount >= 3 ? 'sm:grid-cols-2 md:grid-cols-3' : 'sm:grid-cols-2',
-            )}>
-                {intrinsicValue?.models?.dcf?.intrinsic_value && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                {bestFitValue != null && bestFitValue > 0 && (
                     <StatCard
-                        label="DCF Intrinsic Value"
-                        value={formatCurrency((intrinsicValue.models.dcf.intrinsic_value ?? 0) * fxRate, currency)}
-                        subValue={formatUpside(dcfUpside)}
-                        subValueColor={getUpsideColor(dcfUpside)}
-                        rangeMin={formatCurrency((intrinsicValue.models.dcf.mc?.bear ?? 0) * fxRate, currency)}
-                        rangeMax={formatCurrency((intrinsicValue.models.dcf.mc?.bull ?? 0) * fxRate, currency)}
-                        icon={TrendingUp}
-                        color="text-emerald-400"
+                        label={`Best-Fit: ${recommendedMethod?.name || 'Valuation Model'}`}
+                        value={formatCurrency(bestFitValue * fxRate, currency)}
+                        subValue={formatUpside(bestFitUpside)}
+                        subValueColor={getUpsideColor(bestFitUpside)}
+                        rangeMin={bestFitRange?.bear ? formatCurrency((bestFitRange.bear ?? 0) * fxRate, currency) : undefined}
+                        rangeMax={bestFitRange?.bull ? formatCurrency((bestFitRange.bull ?? 0) * fxRate, currency) : undefined}
+                        icon={Sparkles}
+                        color="text-indigo-500 dark:text-indigo-400"
                     />
                 )}
-                {intrinsicValue?.models?.graham?.intrinsic_value && (
+                {blendedValue != null && blendedValue > 0 && (
                     <StatCard
-                        label="Graham Intrinsic Value"
-                        value={formatCurrency((intrinsicValue.models.graham.intrinsic_value ?? 0) * fxRate, currency)}
-                        subValue={formatUpside(grahamUpside)}
-                        subValueColor={getUpsideColor(grahamUpside)}
-                        rangeMin={formatCurrency((intrinsicValue.models.graham.mc?.bear ?? 0) * fxRate, currency)}
-                        rangeMax={formatCurrency((intrinsicValue.models.graham.mc?.bull ?? 0) * fxRate, currency)}
+                        label={intrinsicValue.valuation_status === "nav" ? "Net Asset Value (NAV)" : "Blended Intrinsic Value"}
+                        value={formatCurrency(blendedValue * fxRate, currency)}
+                        subValue={formatUpside(blendedUpside)}
+                        subValueColor={getUpsideColor(blendedUpside)}
+                        rangeMin={intrinsicValue.range?.bear ? formatCurrency((intrinsicValue.range.bear ?? 0) * fxRate, currency) : undefined}
+                        rangeMax={intrinsicValue.range?.bull ? formatCurrency((intrinsicValue.range.bull ?? 0) * fxRate, currency) : undefined}
                         icon={Scale}
-                        color="text-amber-400"
-                    />
-                )}
-                {intrinsicValue?.models?.epv?.intrinsic_value && (
-                    <StatCard
-                        label="Earnings Power (no growth)"
-                        value={formatCurrency((intrinsicValue.models.epv.intrinsic_value ?? 0) * fxRate, currency)}
-                        subValue={formatUpside(epvUpside)}
-                        subValueColor={getUpsideColor(epvUpside)}
-                        icon={Anchor}
-                        color="text-sky-400"
+                        color="text-indigo-500 dark:text-indigo-400"
                     />
                 )}
             </div>

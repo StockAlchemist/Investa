@@ -91,12 +91,15 @@ struct DashboardView: View {
 
     private func sectionDivider(_ label: String) -> some View {
         HStack(spacing: 12) {
-            Rectangle().fill(.quaternary).frame(height: 1)
-            Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                .textCase(.uppercase).tracking(2).fixedSize()
-            Rectangle().fill(.quaternary).frame(height: 1)
+            LinearGradient(colors: [.clear, Color.cardBorder.opacity(0.7), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(height: 1)
+            SectionLabel(title: label)
+                .fixedSize()
+            LinearGradient(colors: [.clear, Color.cardBorder.opacity(0.7), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(height: 1)
         }
-        .padding(.top, 4)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
     }
 
     private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
@@ -157,7 +160,7 @@ struct DashboardView: View {
     }
 
     private let metricOrder = ["totalReturn", "unrealizedGL", "realizedGain", "annualTWR", "mwr",
-                               "ytdDividends", "dividendYield", "ytdReturn", "cashBalance", "fxGL", "fees", "taxes"]
+                                "ytdDividends", "dividendYield", "ytdReturn", "cashBalance", "fxGL", "fees", "taxes"]
 
     // Compact metric grid: the web's 12 scalar cards, filtered by Layout visibility, in order.
     private var metricGrid: some View {
@@ -167,34 +170,98 @@ struct DashboardView: View {
         // summary metric (already a percent) — mirrors the web Dashboard.
         let ytdReturn: Double? = viewModel.risk?.ytdReturn.map { $0 * 100 } ?? m?.ytdReturn
         let byId: [String: MetricCard] = [
-            "totalReturn": MetricCard(title: "Total Return", value: Fmt.currency(m?.totalGain, code: cur),
-                       subtitle: pct(m?.totalReturnPct), tint: Fmt.tint(for: m?.totalGain)),
-            "unrealizedGL": MetricCard(title: "Unrealized G/L", value: Fmt.currency(m?.unrealizedGain, code: cur),
-                       tint: Fmt.tint(for: m?.unrealizedGain)),
-            "realizedGain": MetricCard(title: "Realized Gain", value: Fmt.currency(m?.realizedGain, code: cur),
-                       tint: Fmt.tint(for: m?.realizedGain)),
-            "annualTWR": MetricCard(title: "Total TWR", value: Fmt.percent(m?.cumulativeTWR, includeSign: true),
-                       subtitle: m?.annualizedTWR != nil ? "\(Fmt.percent(m?.annualizedTWR, includeSign: true)) p.a." : nil,
-                       tint: Fmt.tint(for: m?.cumulativeTWR)),
-            "mwr": MetricCard(title: "IRR (MWR)", value: Fmt.percent(m?.portfolioMWR, includeSign: true), subtitle: "p.a.",
-                       tint: Fmt.tint(for: m?.portfolioMWR)),
-            "ytdDividends": MetricCard(title: "Total Dividends", value: Fmt.currency(m?.dividends, code: cur), tint: .up),
-            "dividendYield": MetricCard(title: "Dividend Yield", value: Fmt.percent(m?.dividendReturnCumulative),
-                       subtitle: m?.dividendReturnAnnualized != nil ? "\(Fmt.percent(m?.dividendReturnAnnualized)) p.a." : nil,
-                       accent: Theme.brand),
-            "ytdReturn": MetricCard(title: "YTD Return", value: Fmt.percent(ytdReturn, includeSign: true), tint: Fmt.tint(for: ytdReturn)),
-            "cashBalance": MetricCard(title: "Cash Balance", value: Fmt.currency(m?.cashBalance, code: cur),
-                       accent: Theme.brand),
-            "fxGL": MetricCard(title: "FX Gain/Loss", value: Fmt.currency(m?.fxGainLossDisplay, code: cur),
-                       subtitle: pct(m?.fxGainLossPct), tint: Fmt.tint(for: m?.fxGainLossDisplay)),
-            "fees": MetricCard(title: "Fees", value: Fmt.currency(m?.commissions, code: cur), tint: .down),
-            "taxes": MetricCard(title: "Taxes", value: Fmt.currency(m?.taxes, code: cur), tint: .down),
+            "totalReturn": MetricCard(
+                title: "Total Return",
+                value: Fmt.currency(m?.totalGain, code: cur),
+                subtitle: pct(m?.totalReturnPct),
+                tint: Fmt.tint(for: m?.totalGain),
+                accent: Color.brandIndigo,
+                icon: "waveform.path.ecg"
+            ),
+            "unrealizedGL": MetricCard(
+                title: "Unrealized G/L",
+                value: Fmt.currency(m?.unrealizedGain, code: cur),
+                subtitle: pct(m?.unrealizedReturnPct),
+                tint: Fmt.tint(for: m?.unrealizedGain),
+                accent: Color.brandIndigo,
+                icon: "chart.line.uptrend.xyaxis"
+            ),
+            "realizedGain": MetricCard(
+                title: "Realized Gain",
+                value: Fmt.currency(m?.realizedGain, code: cur),
+                tint: Fmt.tint(for: m?.realizedGain),
+                accent: Color.brandPurple,
+                icon: "dollarsign.square"
+            ),
+            "annualTWR": MetricCard(
+                title: "Total TWR",
+                value: Fmt.percent(m?.cumulativeTWR, includeSign: true),
+                subtitle: m?.annualizedTWR != nil ? "\(Fmt.percent(m?.annualizedTWR, includeSign: true)) p.a." : nil,
+                tint: Fmt.tint(for: m?.cumulativeTWR),
+                accent: Color.brandIndigo,
+                icon: "percent"
+            ),
+            "mwr": MetricCard(
+                title: "IRR (MWR)",
+                value: Fmt.percent(m?.portfolioMWR, includeSign: true),
+                subtitle: "p.a.",
+                tint: Fmt.tint(for: m?.portfolioMWR),
+                accent: Color.brandCyan,
+                icon: "chart.xyaxis.line"
+            ),
+            "ytdDividends": MetricCard(
+                title: "Total Dividends",
+                value: Fmt.currency(m?.dividends, code: cur),
+                tint: .up,
+                accent: Color.brandEmerald,
+                icon: "dollarsign.circle"
+            ),
+            "dividendYield": MetricCard(
+                title: "Dividend Yield",
+                value: Fmt.percent(m?.dividendReturnCumulative),
+                subtitle: m?.dividendReturnAnnualized != nil ? "\(Fmt.percent(m?.dividendReturnAnnualized)) p.a." : nil,
+                tint: Fmt.tint(for: m?.dividendReturnCumulative),
+                accent: Color.brandAmber,
+                icon: "percent"
+            ),
+            "ytdReturn": MetricCard(
+                title: "YTD Return",
+                value: Fmt.percent(ytdReturn, includeSign: true),
+                tint: Fmt.tint(for: ytdReturn),
+                accent: Color.brand,
+                icon: "chart.line.uptrend.xyaxis"
+            ),
+            "cashBalance": MetricCard(
+                title: "Cash Balance",
+                value: Fmt.currency(m?.cashBalance, code: cur),
+                tint: .primary,
+                accent: Color.brandSky,
+                icon: "dollarsign.circle"
+            ),
+            "fxGL": MetricCard(
+                title: "FX Gain/Loss",
+                value: Fmt.currency(m?.fxGainLossDisplay, code: cur),
+                subtitle: pct(m?.fxGainLossPct),
+                tint: Fmt.tint(for: m?.fxGainLossDisplay),
+                accent: Color.brandAmber,
+                icon: "arrow.left.arrow.right"
+            ),
+            "fees": MetricCard(
+                title: "Fees",
+                value: Fmt.currency(m?.commissions, code: cur),
+                tint: .down,
+                accent: Color.brandRose,
+                icon: "receipt"
+            ),
+            "taxes": MetricCard(
+                title: "Taxes",
+                value: Fmt.currency(m?.taxes, code: cur),
+                tint: .down,
+                accent: Color.brandRose,
+                icon: "doc.text"
+            ),
         ]
         let cards = metricOrder.filter { vis($0) }.compactMap { byId[$0] }
-        // macOS: a fixed 6-column grid (the 12 metric cards land in two rows of 6)
-        // since the window is always wide. iOS (iPhone *and* iPad): adaptive, so
-        // cards stay wide enough to show full labels/values — an iPad with the
-        // sidebar open has a narrow detail area that can't fit 6 legible columns.
         #if os(macOS)
         let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
         #else

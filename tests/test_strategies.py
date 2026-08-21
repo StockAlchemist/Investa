@@ -680,3 +680,56 @@ def test_payload_always_describes_its_ranking_sleeve():
     for strategy in st.list_strategies():
         payload = st.strategy_payload(strategy)
         assert payload["ranking"]["top_n"] > 0, strategy.id
+        assert "min_market_cap" in payload["ranking"], strategy.id
+
+
+def test_all_expected_strategies_exist():
+    expected_ids = {
+        "quality_20",
+        "quality_15",
+        "quality_20_uncapped",
+        "quality_largecap_20",
+        "quality_value_balanced",
+        "quality_pure",
+    }
+    registered_ids = {s.id for s in st.list_strategies()}
+    assert registered_ids == expected_ids
+
+
+def test_min_market_cap_filters_positions(monkeypatch):
+    """Companies below min_market_cap must be excluded before picking."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["SMALL", "LARGE"],
+            "cik": [1, 2],
+            "name": ["Small Co", "Large Co"],
+            "quality_score": [95.0, 85.0],
+            "value_score": [95.0, 85.0],
+            "market_cap": [5_000_000_000.0, 50_000_000_000.0],
+            "confidence": [1.0, 1.0],
+            "price": [10.0, 20.0],
+        }
+    )
+
+    class FakeStore:
+        def get_run(self, run_id=None):
+            return {"run_id": 1, "finished_at": "2026-07-28T08:00:00"}
+
+        def get_scores_frame(self, run_id=None):
+            return frame
+
+    monkeypatch.setattr("buffett_store.get_store", lambda: FakeStore())
+    monkeypatch.setattr("edgar_sic.get_sic_map", lambda: {})
+    monkeypatch.setattr(
+        st, "latest_closes", lambda symbols, today=None: {"LARGE": 20.0}
+    )
+
+    sleeve = st.RankingSleeve(
+        quality_weight=0.8,
+        top_n=1,
+        max_per_sector=3,
+        min_market_cap=10_000_000_000.0,
+    )
+    res = st._ranking_positions(sleeve, 10_000.0)
+    assert len(res["positions"]) == 1
+    assert res["positions"][0]["symbol"] == "LARGE"

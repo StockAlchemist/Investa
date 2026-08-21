@@ -22,24 +22,24 @@ private struct CGSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.headline)
+                SectionLabel(title: title)
                 if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
                 if let trailing { trailing }
             }
             #else
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
+                    SectionLabel(title: title)
                     if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
                 }
                 Spacer(); if let trailing { trailing }
             }
             #endif
+            Divider().opacity(0.6)
             content
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        .card(.standard)
     }
 }
 
