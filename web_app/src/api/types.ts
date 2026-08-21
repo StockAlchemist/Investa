@@ -777,6 +777,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stock/{symbol}/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stock Position
+         * @description Calculates comprehensive position summary, FIFO lots, and return attribution for a single stock.
+         */
+        get: operations["get_stock_position_api_stock__symbol__position_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stock/{symbol}/position_history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stock Position History
+         * @description Returns historical daily position performance (Market Value, Cost Basis, Unrealized Gain, Return %)
+         *     for a single stock position, with optional benchmark comparisons.
+         */
+        get: operations["get_stock_position_history_api_stock__symbol__position_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history": {
         parameters: {
             query?: never;
@@ -2257,6 +2298,47 @@ export interface paths {
          *     non-cash symbol in the transaction history is used.
          */
         get: operations["get_holdings_returns_holdings_returns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stock/{symbol}/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stock Position
+         * @description Calculates comprehensive position summary, FIFO lots, and return attribution for a single stock.
+         */
+        get: operations["get_stock_position_stock__symbol__position_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stock/{symbol}/position_history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stock Position History
+         * @description Returns historical daily position performance (Market Value, Cost Basis, Unrealized Gain, Return %)
+         *     for a single stock position, with optional benchmark comparisons.
+         */
+        get: operations["get_stock_position_history_stock__symbol__position_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4452,6 +4534,78 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stock_position_api_stock__symbol__position_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stock_position_history_api_stock__symbol__position_history_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                period?: string;
+                benchmarks?: string[] | null;
+                accounts?: string[] | null;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -6698,6 +6852,78 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stock_position_stock__symbol__position_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stock_position_history_stock__symbol__position_history_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                period?: string;
+                benchmarks?: string[] | null;
+                accounts?: string[] | null;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { X } from 'lucide-react';
 import { Badge } from '../../ui/badge';
 import StockIcon from '../../StockIcon';
 import { formatCurrency } from '../../../lib/utils';
@@ -20,6 +21,7 @@ export const StockDetailHeader: React.FC<StockDetailHeaderProps> = ({
     currency,
     fxRate,
     domain,
+    onClose,
 }) => {
     return (
         <div className="p-4 sm:p-6 pb-2 sm:pb-3 flex justify-between items-start gap-3">
@@ -48,6 +50,16 @@ export const StockDetailHeader: React.FC<StockDetailHeaderProps> = ({
                     </p>
                 </div>
             </div>
+
+            {onClose && (
+                <button
+                    onClick={onClose}
+                    className="p-1 px-2 -mr-1 hover:bg-muted rounded-full transition-colors text-muted-foreground hover:text-foreground relative z-20 cursor-pointer"
+                    aria-label="Close modal"
+                >
+                    <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+            )}
         </div>
     );
 };
