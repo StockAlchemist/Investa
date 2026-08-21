@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Sector } from 'recharts';
 import { MousePointerClick } from 'lucide-react';
 import { Holding } from '../../lib/api';
 import { formatCompactNumber, cn } from '../../lib/utils';
+import { useStockModal } from '@/context/StockModalContext';
 
 export interface AggregatedSlice {
     name: string;
@@ -56,6 +57,7 @@ function getBucket(h: Holding, key: PieBucketKey): string {
 }
 
 export default function AllocationPieChart({ title, data, currency, holdings, bucketKey }: AllocationPieChartProps) {
+    const { openStockDetail } = useStockModal();
     const [activeIndex, setActiveIndex] = useState<number | null>(null);
     const [selectedBucket, setSelectedBucket] = useState<string | null>(null);
 
@@ -271,7 +273,13 @@ export default function AllocationPieChart({ title, data, currency, holdings, bu
                                 <div key={`${row.symbol}-${row.bucket}`} className="grid grid-cols-[1fr_auto] gap-3 items-center text-xs">
                                     <div className="min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className="font-bold text-foreground truncate">{row.symbol}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => openStockDetail(row.symbol, currency)}
+                                                className="font-bold text-foreground hover:text-indigo-500 cursor-pointer transition-colors truncate text-left"
+                                            >
+                                                {row.symbol}
+                                            </button>
                                             {row.name && (
                                                 <span className="text-muted-foreground/70 truncate text-[10px]">{row.name}</span>
                                             )}

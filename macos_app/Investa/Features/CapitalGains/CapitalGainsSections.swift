@@ -46,6 +46,7 @@ private struct CGSection<Content: View>: View {
 // MARK: - Unrealized tax view (mirrors UnrealizedTaxView.tsx)
 
 struct UnrealizedTaxSection: View {
+    @EnvironmentObject private var appState: AppState
     let holdings: [Holding]
     let currency: String
     private let minHarvestLoss = 100.0
@@ -131,7 +132,12 @@ struct UnrealizedTaxSection: View {
                     ForEach(harvest.prefix(maxCandidates)) { c in
                         VStack(spacing: 8) {
                             HStack {
-                                Text(c.symbol).fontWeight(.bold)
+                                Button {
+                                    appState.openStock(c.symbol)
+                                } label: {
+                                    Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                }
+                                .buttonStyle(.plain)
                                 termBadge(c.isLT)
                                 if let acc = c.account {
                                     Text(acc).foregroundStyle(.secondary).font(.caption2)
@@ -174,8 +180,18 @@ struct UnrealizedTaxSection: View {
                     Divider()
                     ForEach(harvest.prefix(maxCandidates)) { c in
                         GridRow {
-                            (Text(c.symbol).fontWeight(.bold) + Text(c.account.map { "  \($0)" } ?? "").foregroundColor(.secondary))
-                                .gridColumnAlignment(.leading)
+                            HStack(spacing: 4) {
+                                Button {
+                                    appState.openStock(c.symbol)
+                                } label: {
+                                    Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                }
+                                .buttonStyle(.plain)
+                                if let acc = c.account {
+                                    Text(acc).foregroundStyle(.secondary)
+                                }
+                            }
+                            .gridColumnAlignment(.leading)
                             Text(c.date).foregroundStyle(.secondary).gridColumnAlignment(.leading)
                             Text(Fmt.number(c.qty)); Text(Fmt.currency(c.cost, code: currency)).foregroundStyle(.secondary)
                             Text(Fmt.currency(c.value, code: currency))
@@ -196,7 +212,12 @@ struct UnrealizedTaxSection: View {
             ForEach(ripening.prefix(8)) { c in
                 HStack {
                     Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                    Text(c.symbol).fontWeight(.bold)
+                    Button {
+                        appState.openStock(c.symbol)
+                    } label: {
+                        Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                    }
+                    .buttonStyle(.plain)
                     Text("acquired \(c.date)").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Text("+\(Fmt.currency(c.gain, code: currency))").foregroundStyle(.green).monospacedDigit()
@@ -219,6 +240,7 @@ struct UnrealizedTaxSection: View {
 // MARK: - Realized-gains KPI strip (mirrors capital-gains/CapitalGainsKpiStrip.tsx)
 
 struct CapitalGainsKpiStrip: View {
+    @EnvironmentObject private var appState: AppState
     let gains: [CapitalGain]
     let currency: String
     #if os(iOS)
@@ -304,7 +326,13 @@ struct CapitalGainsKpiStrip: View {
             Image(systemName: tone == .green ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis").foregroundStyle(tone)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                Text(v.0).fontWeight(.bold); Text(v.1).font(.caption2).foregroundStyle(.secondary)
+                Button {
+                    appState.openStock(v.0)
+                } label: {
+                    Text(v.0).fontWeight(.bold).foregroundStyle(.indigo)
+                }
+                .buttonStyle(.plain)
+                Text(v.1).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             Text("\(prefix)\(Fmt.currency(v.2, code: currency))").font(.title3.bold()).foregroundStyle(tone)
@@ -440,6 +468,7 @@ struct CGRow: Identifiable {
 }
 
 struct RealizedGainsTable: View {
+    @EnvironmentObject private var appState: AppState
     let gains: [CapitalGain]
     let currency: String
     @State private var search = ""
@@ -467,7 +496,14 @@ struct RealizedGainsTable: View {
                 #else
                 Table(rows, sortOrder: $sortOrder) {
                     TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
-                    TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
+                    TableColumn("Symbol", value: \.symbol) { row in
+                        Button {
+                            appState.openStock(row.symbol)
+                        } label: {
+                            Text(row.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     TableColumn("Account", value: \.account) { Text($0.account).font(.caption).foregroundStyle(.secondary) }
                     TableColumn("Type", value: \.type) { Text($0.type).font(.caption).foregroundStyle(.secondary) }
                     TableColumn("Qty", value: \.quantity) { Text(Fmt.number($0.quantity)).monospacedDigit() }
@@ -489,7 +525,12 @@ struct RealizedGainsTable: View {
     private func iosCGRow(_ r: CGRow) -> some View {
         VStack(spacing: 8) {
             HStack {
-                Text(r.symbol).font(.headline).fontWeight(.bold)
+                Button {
+                    appState.openStock(r.symbol)
+                } label: {
+                    Text(r.symbol).font(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                }
+                .buttonStyle(.plain)
                 Text(r.type).font(.caption.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
                 Spacer()
                 Text(Fmt.currency(r.gain, code: currency)).fontWeight(.medium).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gain))

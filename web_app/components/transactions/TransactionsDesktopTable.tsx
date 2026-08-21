@@ -13,6 +13,7 @@ interface TransactionsDesktopTableProps {
     duplicateKeys: Set<string>;
     onEdit: (tx: Transaction) => void;
     onDelete: (tx: Transaction) => void;
+    currency?: string;
 }
 
 function SortIndicator({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
@@ -43,6 +44,7 @@ export const TransactionsDesktopTable: React.FC<TransactionsDesktopTableProps> =
     duplicateKeys,
     onEdit,
     onDelete,
+    currency = 'USD',
 }) => {
     return (
         <div className="overflow-x-auto rounded-2xl border border-border/60 bg-card shadow-sm">
@@ -167,7 +169,7 @@ export const TransactionsDesktopTable: React.FC<TransactionsDesktopTableProps> =
                                     {/* Symbol */}
                                     <td className="py-3 px-3 whitespace-nowrap font-bold text-foreground">
                                         {tx.Symbol ? (
-                                            <StockTicker symbol={tx.Symbol} />
+                                            <StockTicker symbol={tx.Symbol} currency={tx['Local Currency'] || currency} />
                                         ) : (
                                             <span className="text-muted-foreground/40">-</span>
                                         )}

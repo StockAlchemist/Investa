@@ -6,6 +6,7 @@ import { Lightbulb, Hourglass, AlertTriangle, Gem, Sparkles, ChevronRight, X } f
 import { useAuth } from '../../context/AuthContext';
 import { Holding, fetchSettings } from '../../lib/api';
 import { cn, formatCurrency } from '../../lib/utils';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface DashboardInsightsProps {
     holdings: Holding[];
@@ -303,6 +304,8 @@ interface InsightsDetailModalProps {
 }
 
 function InsightsDetailModal({ open, onClose, details, insights, currency }: InsightsDetailModalProps) {
+    const { openStockDetail } = useStockModal();
+
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
         document.addEventListener('keydown', onKey);
@@ -368,7 +371,16 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                         {details.ripening.map((lot, i) => (
                                             <tr key={i} className="hover:bg-muted/20">
                                                 <td className="px-3 py-2 font-semibold text-foreground">
-                                                    {lot.symbol}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            openStockDetail(lot.symbol, currency);
+                                                            onClose();
+                                                        }}
+                                                        className="font-semibold text-foreground hover:text-indigo-500 cursor-pointer transition-colors text-left"
+                                                    >
+                                                        {lot.symbol}
+                                                    </button>
                                                     {lot.account && (
                                                         <span className="text-[10px] text-slate-600 dark:text-slate-400 ml-1.5">{lot.account}</span>
                                                     )}
@@ -454,7 +466,16 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                         {details.undervalued.map((u, i) => (
                                             <tr key={i} className="hover:bg-muted/20">
                                                 <td className="px-3 py-2 font-semibold text-foreground">
-                                                    {u.symbol}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            openStockDetail(u.symbol, currency);
+                                                            onClose();
+                                                        }}
+                                                        className="font-semibold text-foreground hover:text-indigo-500 cursor-pointer transition-colors text-left"
+                                                    >
+                                                        {u.symbol}
+                                                    </button>
                                                     {u.account && (
                                                         <span className="text-[10px] text-slate-600 dark:text-slate-400 ml-1.5">{u.account}</span>
                                                     )}

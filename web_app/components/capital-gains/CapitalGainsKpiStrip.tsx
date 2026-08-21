@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { CircleDollarSign, Target, TrendingUp, TrendingDown, Hash, ArrowUpRight, Scale } from 'lucide-react';
 import { CapitalGain } from '../../lib/api';
 import { formatCompactNumber, formatCurrency, cn } from '../../lib/utils';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface CapitalGainsKpiStripProps {
     data: CapitalGain[];
@@ -44,6 +45,8 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
 }
 
 export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpiStripProps) {
+    const { openStockDetail } = useStockModal();
+
     const m = useMemo(() => {
         let totalGain = 0, totalProceeds = 0, totalCost = 0;
         let wins = 0, losses = 0, breakeven = 0;
@@ -151,7 +154,13 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                                 <TrendingUp className="w-4 h-4 text-emerald-500" />
                                 <div>
                                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Biggest Win</div>
-                                    <div className="text-sm font-bold text-foreground">{m.biggestWin.symbol}</div>
+                                    <button
+                                        type="button"
+                                        onClick={() => openStockDetail(m.biggestWin!.symbol, currency)}
+                                        className="text-sm font-bold text-foreground hover:text-emerald-500 cursor-pointer transition-colors text-left"
+                                    >
+                                        {m.biggestWin.symbol}
+                                    </button>
                                     <div className="text-[10px] text-muted-foreground/60 tabular-nums">{m.biggestWin.date}</div>
                                 </div>
                             </div>
@@ -166,7 +175,13 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                                 <TrendingDown className="w-4 h-4 text-red-500" />
                                 <div>
                                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Biggest Loss</div>
-                                    <div className="text-sm font-bold text-foreground">{m.biggestLoss.symbol}</div>
+                                    <button
+                                        type="button"
+                                        onClick={() => openStockDetail(m.biggestLoss!.symbol, currency)}
+                                        className="text-sm font-bold text-foreground hover:text-red-500 cursor-pointer transition-colors text-left"
+                                    >
+                                        {m.biggestLoss.symbol}
+                                    </button>
                                     <div className="text-[10px] text-muted-foreground/60 tabular-nums">{m.biggestLoss.date}</div>
                                 </div>
                             </div>

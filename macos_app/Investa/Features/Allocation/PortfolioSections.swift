@@ -83,6 +83,7 @@ func squarifiedTreemap(_ values: [Double], in rect: CGRect) -> [CGRect] {
 // MARK: - Concentration KPIs (mirrors portfolio/ConcentrationKpiStrip.tsx)
 
 struct ConcentrationKpiStrip: View {
+    @EnvironmentObject private var appState: AppState
     let holdings: [Holding]
     let currency: String
 
@@ -118,7 +119,7 @@ struct ConcentrationKpiStrip: View {
         return Section_(title: "Concentration", icon: "scope") {
             KpiRow(count: 6, minTileWidth: 140) {
                 tile("Holdings", "\(mt.stockCount)", mt.cashCount > 0 ? "+ \(mt.cashCount) cash" : "stocks & funds", .primary)
-                tile("Largest", mt.largestSymbol ?? "–", mt.largestPct.map { String(format: "%.1f%%", $0) }, largestTone)
+                tileWithSymbol("Largest", mt.largestSymbol, mt.largestPct.map { String(format: "%.1f%%", $0) }, largestTone)
                 tile("Top 5", mt.top5.map { String(format: "%.1f%%", $0) } ?? "–", "of portfolio", .primary)
                 tile("Top 10", mt.top10.map { String(format: "%.1f%%", $0) } ?? "–", "of portfolio", .primary)
                 tile("Effective N", mt.effectiveN.map { String(format: "%.1f", $0) } ?? "–", "equal-weight equiv.", effTone)
@@ -131,6 +132,27 @@ struct ConcentrationKpiStrip: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
             Text(value).font(.title3.bold()).monospacedDigit().foregroundStyle(tone).lineLimit(1)
+            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.05), lineWidth: 1))
+    }
+
+    private func tileWithSymbol(_ label: String, _ symbol: String?, _ sub: String?, _ tone: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            if let symbol, !symbol.isEmpty && !symbol.uppercased().hasPrefix("CASH") && symbol != "$CASH" && symbol != "–" {
+                Button {
+                    appState.openStock(symbol)
+                } label: {
+                    Text(symbol).font(.title3.bold()).foregroundStyle(.indigo).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(symbol ?? "–").font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
+            }
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -750,6 +772,7 @@ struct HoldingsHeatmapView: View {
 // MARK: - Drill-down donut (mirrors portfolio/AllocationPieChart.tsx)
 
 struct AllocationDonutChart: View {
+    @EnvironmentObject private var appState: AppState
     let title: String
     let holdings: [Holding]
     let currency: String
@@ -930,7 +953,16 @@ struct AllocationDonutChart: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(r.symbol).font(.caption.bold()).lineLimit(1)
+                    if !r.symbol.isEmpty && !r.symbol.uppercased().hasPrefix("CASH") && r.symbol != "$CASH" {
+                        Button {
+                            appState.openStock(r.symbol)
+                        } label: {
+                            Text(r.symbol).font(.caption.bold()).foregroundStyle(.indigo).lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(r.symbol).font(.caption.bold()).lineLimit(1)
+                    }
                     if !r.name.isEmpty { Text(r.name).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 GeometryReader { geo in

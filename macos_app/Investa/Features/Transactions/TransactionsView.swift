@@ -546,7 +546,16 @@ struct TransactionsView: View {
             ForEach(viewModel.pendingIbkr) { tx in
                 VStack(spacing: 8) {
                     HStack {
-                        Text(tx.symbol).font(.headline).fontWeight(.bold)
+                        if !tx.symbol.isEmpty && !tx.symbol.uppercased().hasPrefix("CASH") && tx.symbol != "$CASH" {
+                            Button {
+                                appState.openStock(tx.symbol)
+                            } label: {
+                                Text(tx.symbol).font(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Text(tx.symbol).font(.headline).fontWeight(.bold)
+                        }
                         Spacer()
                         Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).fontWeight(.bold).monospacedDigit()
                     }
@@ -581,7 +590,17 @@ struct TransactionsView: View {
                 HStack {
                     Text(tx.displayDate).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
                     Text(tx.type).frame(width: 80, alignment: .leading)
-                    Text(tx.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
+                    if !tx.symbol.isEmpty && !tx.symbol.uppercased().hasPrefix("CASH") && tx.symbol != "$CASH" {
+                        Button {
+                            appState.openStock(tx.symbol)
+                        } label: {
+                            Text(tx.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 70, alignment: .leading)
+                    } else {
+                        Text(tx.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
+                    }
                     Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
                     Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).monospacedDigit().frame(width: 100, alignment: .trailing)
                     Text(tx.account).font(.caption).foregroundStyle(.secondary)
@@ -717,8 +736,21 @@ struct TransactionsView: View {
                     .foregroundStyle(Self.typeColor(tx.type))
             }
             .width(min: 80, ideal: 100)
-            TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
-                .width(min: 70, ideal: 90)
+            TableColumn("Symbol", value: \.symbol) { tx in
+                if !tx.symbol.isEmpty && !tx.symbol.uppercased().hasPrefix("CASH") && tx.symbol != "$CASH" {
+                    Button {
+                        appState.openStock(tx.symbol)
+                    } label: {
+                        Text(tx.symbol)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.indigo)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(tx.symbol).fontWeight(.medium)
+                }
+            }
+            .width(min: 70, ideal: 90)
             TableColumn("Qty", value: \.quantity) { tx in Text(displayQty(for: tx)).monospacedDigit() }
                 .width(min: 60, ideal: 80)
             TableColumn("Price", value: \.pricePerShare) { tx in Text(displayPrice(for: tx)).monospacedDigit() }
@@ -745,15 +777,37 @@ struct TransactionsView: View {
     private func iosTransactionRow(_ tx: Transaction) -> some View {
         HStack(alignment: .center, spacing: 12) {
             // Icon
-            StockIcon(symbol: tx.symbol.isEmpty ? "CASH" : tx.symbol, size: 40)
-                .frame(width: 44, height: 44)
+            if !tx.symbol.isEmpty && !tx.symbol.uppercased().hasPrefix("CASH") && tx.symbol != "$CASH" {
+                Button {
+                    appState.openStock(tx.symbol)
+                } label: {
+                    StockIcon(symbol: tx.symbol, size: 40)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+            } else {
+                StockIcon(symbol: tx.symbol.isEmpty ? "CASH" : tx.symbol, size: 40)
+                    .frame(width: 44, height: 44)
+            }
 
             VStack(spacing: 6) {
                 // Row 1: Symbol & Total Amount
                 HStack(alignment: .center, spacing: 6) {
-                    Text(Self.rowTitle(tx))
-                        .font(.subheadline.weight(.bold))
-                        .lineLimit(1)
+                    if !tx.symbol.isEmpty && !tx.symbol.uppercased().hasPrefix("CASH") && tx.symbol != "$CASH" {
+                        Button {
+                            appState.openStock(tx.symbol)
+                        } label: {
+                            Text(Self.rowTitle(tx))
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.indigo)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(Self.rowTitle(tx))
+                            .font(.subheadline.weight(.bold))
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 4)
                     Text(Fmt.currency(tx.displayTotalAmount, code: tx.localCurrency))
                         .font(.subheadline.weight(.bold))

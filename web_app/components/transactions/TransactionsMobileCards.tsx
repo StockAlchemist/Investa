@@ -9,6 +9,7 @@ interface TransactionsMobileCardsProps {
     duplicateKeys: Set<string>;
     onEdit: (tx: Transaction) => void;
     onDelete: (tx: Transaction) => void;
+    currency?: string;
 }
 
 export const TransactionsMobileCards: React.FC<TransactionsMobileCardsProps> = ({
@@ -16,6 +17,7 @@ export const TransactionsMobileCards: React.FC<TransactionsMobileCardsProps> = (
     duplicateKeys,
     onEdit,
     onDelete,
+    currency = 'USD',
 }) => {
     if (transactions.length === 0) {
         return (
@@ -69,7 +71,7 @@ export const TransactionsMobileCards: React.FC<TransactionsMobileCardsProps> = (
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <span className="font-bold text-base text-foreground">
-                                    {tx.Symbol ? <StockTicker symbol={tx.Symbol} /> : '-'}
+                                    {tx.Symbol ? <StockTicker symbol={tx.Symbol} currency={tx['Local Currency'] || currency} /> : '-'}
                                 </span>
                                 <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-secondary text-muted-foreground">
                                     {formatTransactionType(tx.Type || '')}

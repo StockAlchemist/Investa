@@ -416,6 +416,7 @@ struct DivRow: Identifiable {
 }
 
 struct DividendTransactionsCard: View {
+    @EnvironmentObject private var appState: AppState
     let dividends: [Dividend]
     let currency: String
     @State private var search = ""
@@ -443,7 +444,14 @@ struct DividendTransactionsCard: View {
                 #else
                 Table(rows, sortOrder: $sortOrder) {
                     TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
-                    TableColumn("Symbol", value: \.symbol) { Text($0.symbol).fontWeight(.medium) }
+                    TableColumn("Symbol", value: \.symbol) { row in
+                        Button {
+                            appState.openStock(row.symbol)
+                        } label: {
+                            Text(row.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     TableColumn("Account", value: \.account) { Text($0.account).font(.caption).foregroundStyle(.secondary) }
                     TableColumn("Gross", value: \.gross) { Text(Fmt.currency($0.gross, code: currency)).monospacedDigit().foregroundStyle(.green) }
                     TableColumn("Tax", value: \.tax) { Text($0.tax > 0 ? Fmt.currency($0.tax, code: currency) : "—").monospacedDigit().foregroundStyle(.red) }
@@ -458,7 +466,12 @@ struct DividendTransactionsCard: View {
     private func iosDivRow(_ r: DivRow) -> some View {
         VStack(spacing: 8) {
             HStack {
-                Text(r.symbol).font(.headline).fontWeight(.bold)
+                Button {
+                    appState.openStock(r.symbol)
+                } label: {
+                    Text(r.symbol).font(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                }
+                .buttonStyle(.plain)
                 Spacer()
                 Text(Fmt.currency(r.net, code: currency)).fontWeight(.bold).monospacedDigit()
             }

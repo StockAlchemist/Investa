@@ -13,9 +13,10 @@ interface WatchlistStarProps {
     className?: string;
     iconClassName?: string;
     showDropdown?: boolean;
+    onIconClick?: () => void;
 }
 
-export default function WatchlistStar({ symbol, size = "md", className, iconClassName, showDropdown = true }: WatchlistStarProps) {
+export default function WatchlistStar({ symbol, size = "md", className, iconClassName, showDropdown = true, onIconClick }: WatchlistStarProps) {
     const { watchlists, symbolWatchlistMap, toggleWatchlist } = useWatchlist();
     const [openWatchlistDropdown, setOpenWatchlistDropdown] = useState(false);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, right: 0, width: 0 });
@@ -71,14 +72,24 @@ export default function WatchlistStar({ symbol, size = "md", className, iconClas
 
     return (
         <div className={cn("relative group/star flex-shrink-0", className)}>
-            <StockIcon
-                symbol={symbol}
-                size={effectiveSize}
-                className={cn(
-                    "rounded-lg bg-white dark:bg-gray-800 shadow-sm p-1 border border-border",
-                    iconClassName
-                )}
-            />
+            <div
+                onClick={(e) => {
+                    if (onIconClick) {
+                        e.stopPropagation();
+                        onIconClick();
+                    }
+                }}
+                className={cn(onIconClick && "cursor-pointer hover:opacity-80 transition-opacity")}
+            >
+                <StockIcon
+                    symbol={symbol}
+                    size={effectiveSize}
+                    className={cn(
+                        "rounded-lg bg-white dark:bg-gray-800 shadow-sm p-1 border border-border",
+                        iconClassName
+                    )}
+                />
+            </div>
             <button
                 ref={starButtonRef}
                 aria-label={isStarred ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}

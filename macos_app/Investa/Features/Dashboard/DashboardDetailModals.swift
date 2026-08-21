@@ -204,6 +204,7 @@ private struct SheetHeader: View {
 struct InsightsDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var hSize
+    @EnvironmentObject private var appState: AppState
     let scope: InsightScope
     let details: InsightDetails
     let summaries: [InsightSummary]
@@ -285,7 +286,13 @@ struct InsightsDetailSheet: View {
                     ForEach(details.ripening) { lot in
                         HStack {
                             HStack(spacing: 5) {
-                                Text(lot.symbol).fontWeight(.semibold)
+                                Button {
+                                    dismiss()
+                                    appState.openStock(lot.symbol)
+                                } label: {
+                                    Text(lot.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                }
+                                .buttonStyle(.plain)
                                 if let a = lot.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Text(displayDate(lot.date)).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
@@ -307,7 +314,13 @@ struct InsightsDetailSheet: View {
     private func ripeningCard(_ lot: RipeningLot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(lot.symbol).font(.callout.bold())
+                Button {
+                    dismiss()
+                    appState.openStock(lot.symbol)
+                } label: {
+                    Text(lot.symbol).font(.callout.bold()).foregroundStyle(.indigo)
+                }
+                .buttonStyle(.plain)
                 if let a = lot.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
                 Spacer()
                 Text("\(lot.daysRemaining)d left").font(.caption.bold()).foregroundStyle(.orange)
@@ -389,7 +402,13 @@ struct InsightsDetailSheet: View {
                     ForEach(details.undervalued) { u in
                         HStack {
                             HStack(spacing: 5) {
-                                Text(u.symbol).fontWeight(.semibold)
+                                Button {
+                                    dismiss()
+                                    appState.openStock(u.symbol)
+                                } label: {
+                                    Text(u.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                }
+                                .buttonStyle(.plain)
                                 if let a = u.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Text(u.intrinsic.map { Fmt.currency($0, code: currency) } ?? "—").foregroundStyle(.secondary)
@@ -412,7 +431,13 @@ struct InsightsDetailSheet: View {
     private func undervaluedCard(_ u: UndervaluedHolding) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(u.symbol).font(.callout.bold())
+                Button {
+                    dismiss()
+                    appState.openStock(u.symbol)
+                } label: {
+                    Text(u.symbol).font(.callout.bold()).foregroundStyle(.indigo)
+                }
+                .buttonStyle(.plain)
                 if let a = u.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
                 Spacer()
                 Text(String(format: "%.1f%% MOS", u.mos)).font(.caption.bold()).foregroundStyle(Color.up)

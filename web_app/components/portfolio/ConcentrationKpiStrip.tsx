@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Hash, Crown, Layers, Sigma, AlertTriangle } from 'lucide-react';
 import { Holding } from '../../lib/api';
 import { cn } from '../../lib/utils';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface ConcentrationKpiStripProps {
     holdings: Holding[];
@@ -11,7 +12,7 @@ interface ConcentrationKpiStripProps {
 
 interface KpiTileProps {
     label: string;
-    value: string;
+    value: React.ReactNode;
     sub?: string;
     tone?: 'neutral' | 'pos' | 'warn' | 'neg';
     icon?: React.ComponentType<{ className?: string }>;
@@ -53,6 +54,7 @@ function isCashSymbol(symbol: string | undefined): boolean {
 }
 
 export default function ConcentrationKpiStrip({ holdings, currency }: ConcentrationKpiStripProps) {
+    const { openStockDetail } = useStockModal();
     const metrics = useMemo(() => {
         const mvKey = `Market Value (${currency})`;
         const positions = (holdings ?? [])
@@ -128,7 +130,15 @@ export default function ConcentrationKpiStrip({ holdings, currency }: Concentrat
                 />
                 <KpiTile
                     label="Largest"
-                    value={metrics.largest ? metrics.largest.symbol : '–'}
+                    value={metrics.largest ? (
+                        <button
+                            type="button"
+                            onClick={() => openStockDetail(metrics.largest!.symbol, currency)}
+                            className="hover:text-indigo-500 cursor-pointer transition-colors text-left truncate font-bold"
+                        >
+                            {metrics.largest.symbol}
+                        </button>
+                    ) : '–'}
                     sub={metrics.largest?.pct != null ? `${metrics.largest.pct.toFixed(1)}%` : undefined}
                     tone={largestTone}
                     icon={Crown}

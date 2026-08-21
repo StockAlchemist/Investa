@@ -203,6 +203,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                                 <WatchlistStar
                                                                     symbol={holding.Symbol}
                                                                     className="text-muted-foreground hover:text-amber-400"
+                                                                    onIconClick={() => openStockDetail(holding.Symbol, currency)}
                                                                 />
                                                                 <div className="flex flex-col">
                                                                     <div className="flex items-center gap-2">

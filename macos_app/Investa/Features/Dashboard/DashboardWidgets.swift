@@ -1337,6 +1337,7 @@ struct ProjectedIncomeCard: View {
 // MARK: - Dividend calendar
 
 struct DividendCalendarCard: View {
+    @EnvironmentObject private var appState: AppState
     let events: [DividendEvent]
     let currency: String
     var body: some View {
@@ -1347,7 +1348,13 @@ struct DividendCalendarCard: View {
                 ForEach(events.sorted { $0.exDividendDate < $1.exDividendDate }.prefix(10)) { ev in
                     VStack(spacing: 4) {
                         HStack {
-                            Text(ev.symbol).fontWeight(.medium).frame(width: 70, alignment: .leading)
+                            Button {
+                                appState.openStock(ev.symbol)
+                            } label: {
+                                Text(ev.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(width: 70, alignment: .leading)
                             VStack(alignment: .leading) {
                                 Text("Ex: \(ev.exDividendDate)").font(.caption)
                                 Text("Pay: \(ev.dividendDate)").font(.caption2).foregroundStyle(.secondary)

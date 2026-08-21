@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Hash, TrendingUp, TrendingDown, Activity, Target } from 'lucide-react';
 import { WatchlistItem } from '../../lib/api';
 import { cn } from '../../lib/utils';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface WatchlistKpiStripProps {
     items: WatchlistItem[];
@@ -11,7 +12,7 @@ interface WatchlistKpiStripProps {
 interface KpiTileProps {
     label: string;
     value: string;
-    sub?: string;
+    sub?: React.ReactNode;
     tone?: 'neutral' | 'pos' | 'neg' | 'warn';
     icon?: React.ComponentType<{ className?: string }>;
 }
@@ -41,6 +42,8 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
 }
 
 export default function WatchlistKpiStrip({ items }: WatchlistKpiStripProps) {
+    const { openStockDetail } = useStockModal();
+
     const m = useMemo(() => {
         const withChange = items.filter(i => typeof i['Day Change %'] === 'number');
         const changes = withChange.map(i => i['Day Change %'] as number);
@@ -83,14 +86,30 @@ export default function WatchlistKpiStrip({ items }: WatchlistKpiStripProps) {
                 <KpiTile
                     label="Best Today"
                     value={m.best ? fmtPct(m.best.pct) : '–'}
-                    sub={m.best?.symbol}
+                    sub={m.best ? (
+                        <button
+                            type="button"
+                            onClick={() => openStockDetail(m.best!.symbol)}
+                            className="hover:text-emerald-500 cursor-pointer font-bold transition-colors"
+                        >
+                            {m.best.symbol}
+                        </button>
+                    ) : undefined}
                     tone={(m.best?.pct ?? 0) >= 0 ? 'pos' : 'neg'}
                     icon={TrendingUp}
                 />
                 <KpiTile
                     label="Worst Today"
                     value={m.worst ? fmtPct(m.worst.pct) : '–'}
-                    sub={m.worst?.symbol}
+                    sub={m.worst ? (
+                        <button
+                            type="button"
+                            onClick={() => openStockDetail(m.worst!.symbol)}
+                            className="hover:text-red-500 cursor-pointer font-bold transition-colors"
+                        >
+                            {m.worst.symbol}
+                        </button>
+                    ) : undefined}
                     tone={(m.worst?.pct ?? 0) <= 0 ? 'neg' : 'pos'}
                     icon={TrendingDown}
                 />

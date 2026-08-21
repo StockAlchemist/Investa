@@ -422,6 +422,7 @@ struct WatchlistView: View {
 // MARK: - KPI strip (mirrors watchlist/WatchlistKpiStrip.tsx)
 
 struct WatchlistKpiStrip: View {
+    @EnvironmentObject private var appState: AppState
     let items: [WatchlistItem]
 
     var body: some View {
@@ -433,8 +434,8 @@ struct WatchlistKpiStrip: View {
         return KpiRow(count: 5, minTileWidth: 140) {
             tile("Symbols", "\(items.count)", "tracked", .primary)
             tile("Avg Day Change", avg.map { Fmt.percent($0) } ?? "–", nil, Fmt.tint(for: avg))
-            tile("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
-            tile("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
+            tileWithSymbol("Best Today", best.map { Fmt.percent($0.1) } ?? "–", best?.0, .green)
+            tileWithSymbol("Worst Today", worst.map { Fmt.percent($0.1) } ?? "–", worst?.0, .red)
             tile("Opportunities", "\(opportunities)", "below fair value", opportunities > 0 ? .green : .primary)
         }
         .padding(16)
@@ -448,6 +449,22 @@ struct WatchlistKpiStrip: View {
                 .lineLimit(1).minimumScaleFactor(0.7)
             Text(value).font(.title3.bold()).foregroundStyle(tone)
             if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+        }
+        .padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private func tileWithSymbol(_ label: String, _ value: String, _ symbol: String?, _ tone: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.title3.bold()).foregroundStyle(tone)
+            if let symbol {
+                Button {
+                    appState.openStock(symbol)
+                } label: {
+                    Text(symbol).font(.caption2.bold()).foregroundStyle(.indigo)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
     }

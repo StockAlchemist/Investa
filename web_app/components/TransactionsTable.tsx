@@ -315,6 +315,7 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
                     duplicateKeys={duplicateKeys}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
+                    currency={currency}
                 />
             ) : (
                 <TransactionsMobileCards
@@ -322,6 +323,7 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
                     duplicateKeys={duplicateKeys}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
+                    currency={currency}
                 />
             )}
 

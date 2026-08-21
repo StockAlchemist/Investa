@@ -302,7 +302,16 @@ struct AIView: View {
                 Image(systemName: optIcon(opt.type)).foregroundStyle(optTint(opt.type)).font(.title3)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(opt.title).font(.callout.weight(.bold))
-                    if !opt.symbol.isEmpty { Text(opt.symbol).font(.caption2.weight(.bold)).foregroundStyle(.secondary) }
+                    if !opt.symbol.isEmpty && opt.symbol != "N/A" {
+                        Button {
+                            appState.openStock(opt.symbol)
+                        } label: {
+                            Text(opt.symbol).font(.caption2.weight(.bold)).foregroundStyle(.indigo)
+                        }
+                        .buttonStyle(.plain)
+                    } else if !opt.symbol.isEmpty {
+                        Text(opt.symbol).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Text("\(opt.priority) Priority").font(.caption2.weight(.bold))

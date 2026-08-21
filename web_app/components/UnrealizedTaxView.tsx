@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { TrendingUp, TrendingDown, AlertCircle, Info } from 'lucide-react';
 import { Holding, Lot } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface Props {
     holdings: Holding[];
@@ -50,6 +51,7 @@ function classifyLots(holdings: Holding[]): ClassifiedLot[] {
 }
 
 export default function UnrealizedTaxView({ holdings, currency }: Props) {
+    const { openStockDetail } = useStockModal();
     const [maxCandidates, setMaxCandidates] = useState(10);
 
     const { stTotal, ltTotal, harvest, ripening } = useMemo(() => {
@@ -155,7 +157,13 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                                     return (
                                         <tr key={`${c.symbol}-${i}`} className="border-b border-border/30 hover:bg-muted/30">
                                             <td className="py-1.5 pr-3 font-bold text-foreground">
-                                                {c.symbol}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openStockDetail(c.symbol, currency)}
+                                                    className="hover:text-indigo-500 cursor-pointer font-bold transition-colors text-left"
+                                                >
+                                                    {c.symbol}
+                                                </button>
                                                 {c.account && (
                                                     <span className="text-muted-foreground/60 font-normal ml-1">{c.account}</span>
                                                 )}
@@ -213,7 +221,13 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                                 <div key={`r-${i}`} className="flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
                                         <AlertCircle className="w-3 h-3 text-amber-500" />
-                                        <span className="font-bold text-foreground">{c.symbol}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => openStockDetail(c.symbol, currency)}
+                                            className="font-bold text-foreground hover:text-indigo-500 cursor-pointer transition-colors text-left"
+                                        >
+                                            {c.symbol}
+                                        </button>
                                         <span className="text-muted-foreground">acquired {c.lot.Date}</span>
                                     </div>
                                     <div className="flex items-center gap-3">
