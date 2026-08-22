@@ -65,6 +65,11 @@ FUNDAMENTALS_CACHE_DURATION_HOURS = (
     24  # Reduced from 3 months to ensure fresh screening metadata
 )
 CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes (prices, fx)
+# How far back a cached quote may be resurrected when a live fetch misses a
+# symbol. Long enough to carry the last completed session across a long weekend
+# (Fri close -> Tue open), short enough that a quote can never be served
+# indefinitely as if it were current.
+QUOTE_BACKFILL_MAX_AGE_HOURS = 96
 METADATA_CACHE_FILE_NAME = (
     "yf_metadata_cache.json"  # Long-lived cache for static data (Name, Currency)
 )
@@ -75,7 +80,43 @@ METADATA_CACHE_DURATION_DAYS = 30
 #   1 — initial (name, currency, sector, industry, quoteType)
 #   2 — added 'exchange'
 #   3 — added 'country' (foreign ADRs were misclassified without it)
-METADATA_SCHEMA_VERSION = 3
+#   4 — added 'exchangeTimezoneName' (1m bars were dated on the wrong clock)
+METADATA_SCHEMA_VERSION = 4
+
+# Currency of the exchange a Yahoo suffix names, used ONLY as a last resort when
+# Yahoo metadata is unavailable for a symbol. A Yahoo symbol that reaches this
+# table has already been normalized (map_to_yf_symbol turns share classes into
+# dashes, BRK.B -> BRK-B), so a remaining dot always names an exchange.
+# Deliberately absent: '.L'. London equities quote in GBp (pence), not GBP, and
+# nothing downstream divides by 100 — refusing the symbol costs a quote, while
+# guessing 'GBP' would overstate the position 100x.
+EXCHANGE_SUFFIX_CURRENCY = {
+    "AX": "AUD",  # Australia (ASX)
+    "BK": "THB",  # Thailand (SET)
+    "BR": "EUR",  # Belgium (Euronext Brussels)
+    "DE": "EUR",  # Germany (XETRA)
+    "F": "EUR",  # Germany (Frankfurt)
+    "HK": "HKD",  # Hong Kong (HKEX)
+    "JK": "IDR",  # Indonesia (IDX)
+    "KL": "MYR",  # Malaysia (Bursa)
+    "KS": "KRW",  # Korea (KOSPI)
+    "KQ": "KRW",  # Korea (KOSDAQ)
+    "MC": "EUR",  # Spain (BME)
+    "MI": "EUR",  # Italy (Borsa Italiana)
+    "NS": "INR",  # India (NSE)
+    "NZ": "NZD",  # New Zealand (NZX)
+    "PA": "EUR",  # France (Euronext Paris)
+    "SI": "SGD",  # Singapore (SGX)
+    "SS": "CNY",  # China (Shanghai)
+    "SZ": "CNY",  # China (Shenzhen)
+    "ST": "SEK",  # Sweden (Nasdaq Stockholm)
+    "SW": "CHF",  # Switzerland (SIX)
+    "T": "JPY",  # Japan (Tokyo)
+    "TO": "CAD",  # Canada (TSX)
+    "TW": "TWD",  # Taiwan (TWSE)
+    "V": "CAD",  # Canada (TSX Venture)
+    "VI": "EUR",  # Austria (Vienna)
+}
 AI_REVIEW_CACHE_TTL = 604800  # 1 week for AI stock analysis
 
 # --- Logging Configuration ---

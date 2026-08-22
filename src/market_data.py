@@ -96,6 +96,8 @@ try:
         METADATA_CACHE_FILE_NAME,  # <-- ADDED
         METADATA_CACHE_DURATION_DAYS,  # <-- ADDED
         METADATA_SCHEMA_VERSION,
+        QUOTE_BACKFILL_MAX_AGE_HOURS,
+        EXCHANGE_SUFFIX_CURRENCY,
     )
 except ImportError:
     logging.error(
@@ -105,6 +107,8 @@ except ImportError:
     DEFAULT_CURRENT_CACHE_FILE_PATH = "portfolio_cache_yf.json"
     YFINANCE_CACHE_DURATION_HOURS = 4
     CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1
+    QUOTE_BACKFILL_MAX_AGE_HOURS = 96
+    EXCHANGE_SUFFIX_CURRENCY = {"BK": "THB"}
 
     YFINANCE_INDEX_TICKER_MAP = {}
     DEFAULT_INDEX_QUERY_SYMBOLS = []
@@ -114,6 +118,99 @@ except ImportError:
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = (
         "yf_portfolio_hist_raw_adjusted"  # Keep as prefix for basename construction
     )
+
+
+# --- Exchange Inference Helpers ---
+def _exchange_suffix(yf_symbol: str) -> Optional[str]:
+    """The exchange suffix of a Yahoo symbol ('PTT.BK' -> 'BK'), or None."""
+    if not yf_symbol or "." not in yf_symbol:
+        return None
+    return yf_symbol.rsplit(".", 1)[1].upper() or None
+
+
+def _fallback_currency(yf_symbol: str) -> Optional[str]:
+    """
+    The currency a symbol trades in, inferred from its exchange suffix.
+
+    Only ever a last resort: Yahoo's own `currency` is authoritative and this is
+    consulted just when metadata could not be fetched. A bare symbol is a US
+    listing (share classes are normalized to dashes upstream, so a dot always
+    names an exchange). An exchange we have no entry for returns None — the
+    caller drops the quote rather than valuing a foreign price as dollars.
+    """
+    suffix = _exchange_suffix(yf_symbol)
+    if suffix is None:
+        return "USD"
+    return EXCHANGE_SUFFIX_CURRENCY.get(suffix)
+
+
+def _fallback_market_timezone(yf_symbol: str) -> str:
+    """
+    The exchange timezone to date a symbol's intraday bars in, when Yahoo's
+    `exchangeTimezoneName` is unavailable. Falls back to New York, which is
+    right for the bare US symbols that dominate and no worse than the UTC
+    default it replaces for the rest.
+    """
+    suffix = _exchange_suffix(yf_symbol)
+    return (
+        _SUFFIX_MARKET_TIMEZONE.get(suffix, "America/New_York")
+        if suffix
+        else "America/New_York"
+    )
+
+
+# Exchange timezones for the suffixes in EXCHANGE_SUFFIX_CURRENCY, so a symbol
+# whose metadata predates schema v4 still dates its 1m bars on the right clock.
+_SUFFIX_MARKET_TIMEZONE = {
+    "AX": "Australia/Sydney",
+    "BK": "Asia/Bangkok",
+    "BR": "Europe/Brussels",
+    "DE": "Europe/Berlin",
+    "F": "Europe/Berlin",
+    "HK": "Asia/Hong_Kong",
+    "JK": "Asia/Jakarta",
+    "KL": "Asia/Kuala_Lumpur",
+    "KS": "Asia/Seoul",
+    "KQ": "Asia/Seoul",
+    "L": "Europe/London",
+    "MC": "Europe/Madrid",
+    "MI": "Europe/Rome",
+    "NS": "Asia/Kolkata",
+    "NZ": "Pacific/Auckland",
+    "PA": "Europe/Paris",
+    "SI": "Asia/Singapore",
+    "SS": "Asia/Shanghai",
+    "SZ": "Asia/Shanghai",
+    "ST": "Europe/Stockholm",
+    "SW": "Europe/Zurich",
+    "T": "Asia/Tokyo",
+    "TO": "America/Toronto",
+    "TW": "Asia/Taipei",
+    "V": "America/Toronto",
+    "VI": "Europe/Vienna",
+}
+
+
+# --- Cached Quote Helpers ---
+def _quote_entry_age(entry: dict, now_utc: datetime) -> Optional[timedelta]:
+    """
+    How old a cached quote is, measured from the timestamp it was fetched with.
+
+    Copying an entry forward into a later cache write never refreshes this
+    timestamp, so the age it reports stays honest no matter how many times the
+    file is rewritten. Returns None when the entry carries no readable
+    timestamp — an unknown age is refused rather than assumed to be recent.
+    """
+    ts_str = entry.get("timestamp")
+    if not ts_str:
+        return None
+    try:
+        ts = datetime.fromisoformat(ts_str)
+    except (ValueError, TypeError):
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return now_utc - ts
 
 
 # --- Robust MultiIndex Helper ---
@@ -1534,6 +1631,11 @@ class MarketDataProvider:
                             # --- 1.1 Cache Validation ---
                             # Entries below the current schema version are stale, UNLESS they
                             # already have all the v3-required keys (legacy entries get grandfathered).
+                            # 'exchangeTimezoneName' (v4) is deliberately NOT required here:
+                            # demanding it would invalidate every entry at once and stampede
+                            # ~4k symbols back through yfinance, while a v3 entry without it
+                            # falls back to _fallback_market_timezone() and re-fetches on its
+                            # own within METADATA_CACHE_DURATION_DAYS anyway.
                             entry_version = cached_meta.get("schema_version", 0)
                             v3_keys = (
                                 "exchange",
@@ -1603,6 +1705,7 @@ class MarketDataProvider:
                             ),  # PERF FIX (BN-07): Added for batch sector enrichment
                             "exchange": info.get("exchange"),
                             "fullExchangeName": info.get("fullExchangeName"),
+                            "exchangeTimezoneName": info.get("exchangeTimezoneName"),
                             "quoteType": info.get("quoteType"),
                             "timestamp": now_ts.isoformat(),
                             "schema_version": METADATA_SCHEMA_VERSION,
@@ -1637,14 +1740,19 @@ class MarketDataProvider:
                         logging.warning(
                             f"Failed to fetch metadata for {sym}. Using placeholders."
                         )
+                        # Currency stays unknown rather than guessed: this entry
+                        # is persisted for METADATA_CACHE_DURATION_DAYS, so a
+                        # wrong guess here misvalues the position for a month.
+                        # Quote assembly infers a fallback per fetch instead.
                         meta_entry = {
                             "name": sym,
-                            "currency": "THB" if sym.endswith(".BK") else "USD",
+                            "currency": None,
                             "sector": None,
                             "industry": None,
                             "country": None,
                             "exchange": None,
                             "fullExchangeName": None,
+                            "exchangeTimezoneName": None,
                             "quoteType": None,
                             "timestamp": now_ts.isoformat(),
                             "schema_version": METADATA_SCHEMA_VERSION,
@@ -2320,7 +2428,9 @@ class MarketDataProvider:
 
                             # Retrieve metadata
                             meta = metadata_map.get(yf_sym, {})
-                            currency = meta.get("currency") or ("THB" if yf_sym.endswith(".BK") else "USD")
+                            currency = meta.get("currency") or _fallback_currency(
+                                yf_sym
+                            )
                             name = meta.get("name")
 
                             # Retrieve fundamentals
@@ -2426,13 +2536,17 @@ class MarketDataProvider:
                                 # session behind. Market dates belong to the market,
                                 # not to UTC or to the server's clock.
                                 meta = metadata_map.get(yf_sym, {})
-                                tz_name = (
-                                    meta.get("exchangeTimezoneName")
-                                    or ("Asia/Bangkok" if yf_sym.endswith(".BK") else "America/New_York")
-                                )
-                                if hasattr(last_row.name, "tz_convert") and last_row.name.tzinfo is not None:
+                                tz_name = meta.get(
+                                    "exchangeTimezoneName"
+                                ) or _fallback_market_timezone(yf_sym)
+                                if (
+                                    hasattr(last_row.name, "tz_convert")
+                                    and last_row.name.tzinfo is not None
+                                ):
                                     try:
-                                        last_rt_date = last_row.name.tz_convert(tz_name).date()
+                                        last_rt_date = last_row.name.tz_convert(
+                                            tz_name
+                                        ).date()
                                     except Exception:
                                         last_rt_date = last_row.name.date()
                                 elif hasattr(last_row.name, "date"):
@@ -2490,7 +2604,14 @@ class MarketDataProvider:
                                     # No daily entry? (Maybe failed daily but succeeded intraday)
                                     # Create entry from intraday price
                                     meta = metadata_map.get(yf_sym, {})
-                                    curr = meta.get("currency") or ("THB" if yf_sym.endswith(".BK") else "USD")
+                                    curr = meta.get("currency") or _fallback_currency(
+                                        yf_sym
+                                    )
+                                    if not curr:
+                                        # Unknown currency: valuing a foreign
+                                        # price as dollars is worse than having
+                                        # no quote at all.
+                                        continue
                                     stock_data_yf[internal_sym] = {
                                         "price": price_rt,
                                         "change": 0.0,
@@ -2498,10 +2619,14 @@ class MarketDataProvider:
                                         "currency": curr.upper(),
                                         "name": meta.get("name") or yf_sym,
                                         "exchange": meta.get("exchange"),
-                                        "fullExchangeName": meta.get("fullExchangeName"),
+                                        "fullExchangeName": meta.get(
+                                            "fullExchangeName"
+                                        ),
                                         "quoteType": meta.get("quoteType"),
                                         "source": "yf_batch_1m_intraday_standalone",
-                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "timestamp": datetime.now(
+                                            timezone.utc
+                                        ).isoformat(),
                                         "sparkline_7d": [],
                                         "sparkline_1m": [],
                                     }
@@ -2665,22 +2790,40 @@ class MarketDataProvider:
                         with open(self.current_cache_file, "r") as f_prev:
                             existing_cache_data = json.load(f_prev)
                     except Exception as e_read_prev:
-                        logging.warning(f"Error reading existing quotes cache: {e_read_prev}")
+                        logging.warning(
+                            f"Error reading existing quotes cache: {e_read_prev}"
+                        )
 
                 prev_quotes = existing_cache_data.get("quotes", {})
-                if isinstance(prev_quotes, dict):
-                    for sym in internal_stock_symbols:
-                        if (
-                            sym not in results
-                            and sym in prev_quotes
-                            and isinstance(prev_quotes[sym], dict)
-                            and prev_quotes[sym].get("price")
-                        ):
-                            results[sym] = prev_quotes[sym]
-                            logging.info(
-                                f"Backfilled missing quote for {sym} from persistent cache: "
-                                f"price={prev_quotes[sym].get('price')}"
-                            )
+                if not isinstance(prev_quotes, dict):
+                    prev_quotes = {}
+
+                # Backfill symbols this fetch missed from the last known quote,
+                # so a transient yfinance failure doesn't drop the position back
+                # to its transaction price. Bounded by the quote's own age: past
+                # the cutoff the price no longer describes a recent session, and
+                # serving it as current would be a quieter error than the
+                # fallback it replaces. Backfilled entries are marked so callers
+                # can tell them apart from a live quote.
+                now_utc = datetime.now(timezone.utc)
+                max_backfill_age = timedelta(hours=QUOTE_BACKFILL_MAX_AGE_HOURS)
+                for sym in internal_stock_symbols:
+                    if sym in results:
+                        continue
+                    prev_entry = prev_quotes.get(sym)
+                    if not isinstance(prev_entry, dict) or not prev_entry.get("price"):
+                        continue
+                    age = _quote_entry_age(prev_entry, now_utc)
+                    if age is None or age > max_backfill_age:
+                        continue
+                    backfilled = dict(prev_entry)
+                    backfilled["source"] = "persistent_cache_backfill"
+                    backfilled["stale"] = True
+                    results[sym] = backfilled
+                    logging.info(
+                        f"Backfilled missing quote for {sym} from persistent cache: "
+                        f"price={prev_entry.get('price')} age={age}"
+                    )
 
                 cache_ttl_minutes = 1 if is_market_open() else 60
                 self._current_quotes_memory_cache.set(
@@ -2689,17 +2832,29 @@ class MarketDataProvider:
                     ttl=cache_ttl_minutes * 60,
                 )
 
-                # Merge new results with previous quotes so quotes for symbols not in this batch are retained
-                merged_quotes = dict(prev_quotes) if isinstance(prev_quotes, dict) else {}
+                # Retain quotes for symbols outside this batch so a later fetch
+                # can still backfill from them, but drop anything already too old
+                # to be eligible — otherwise the file grows without bound and
+                # carries prices no caller may use.
+                merged_quotes = {}
+                for sym, entry in prev_quotes.items():
+                    if not isinstance(entry, dict):
+                        continue
+                    entry_age = _quote_entry_age(entry, now_utc)
+                    if entry_age is not None and entry_age > max_backfill_age:
+                        continue
+                    merged_quotes[sym] = entry
                 merged_quotes.update(results)
 
-                existing_cache_data.update({
-                    "cache_key": cache_key,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "quotes": merged_quotes,
-                    "fx_rates": fx_rates_vs_usd,
-                    "fx_prev_close": fx_prev_close_vs_usd,
-                })
+                existing_cache_data.update(
+                    {
+                        "cache_key": cache_key,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "quotes": merged_quotes,
+                        "fx_rates": fx_rates_vs_usd,
+                        "fx_prev_close": fx_prev_close_vs_usd,
+                    }
+                )
 
                 with open(self.current_cache_file, "w") as f:
                     json.dump(existing_cache_data, f, indent=2)
@@ -4407,8 +4562,14 @@ class MarketDataProvider:
 
         # 0. Sync Throttling (Batched)
         now_est = get_est_now()
-        now = now_est.to_pydatetime() if hasattr(now_est, "to_pydatetime") else now_est
-        now_date = now_est.date()
+        now = now_est.to_pydatetime()
+        now_date = now.date()
+        # Rows written before the market-clock migration carry a naive,
+        # server-local timestamp. Localize those to the server's zone so the
+        # comparisons below measure a real elapsed duration instead of the
+        # offset between two clocks — a naive Bangkok stamp read as EST reports
+        # ~11 hours less than has actually passed, and the symbol never resyncs.
+        server_tz = datetime.now().astimezone().tzinfo
         sync_needed = []
 
         if not symbols:
@@ -4424,31 +4585,22 @@ class MarketDataProvider:
             if last_ts_str:
                 try:
                     last_ts = datetime.fromisoformat(last_ts_str)
-                    # If last_ts is timezone-naive, treat as EST/UTC aware
-                    if last_ts.tzinfo is not None and hasattr(now_est, "tzinfo") and now_est.tzinfo is not None:
-                        elapsed = now_est - last_ts
-                    elif hasattr(now, "replace") and last_ts.tzinfo is None:
-                        elapsed = (now.replace(tzinfo=None) if hasattr(now, "tzinfo") and now.tzinfo else now) - last_ts
-                    else:
-                        elapsed = now - last_ts
+                    if last_ts.tzinfo is None:
+                        last_ts = last_ts.replace(tzinfo=server_tz)
+                    elapsed = now - last_ts
+                    # The market date the last sync landed on, so the day
+                    # comparisons below stay on the same clock as now_date.
+                    last_sync_date = last_ts.astimezone(now.tzinfo).date()
                     is_stale = elapsed >= timedelta(hours=4)
 
                     # RELAXATION: If synced today, allow 15-min staleness during market hours
                     # to keep the 'Today' daily bar fresh for TWR/YTD calculations.
-                    if (
-                        not is_stale
-                        and last_ts.date() == now_date
-                        and is_market_open()
-                    ):
+                    if not is_stale and last_sync_date == now_date and is_market_open():
                         if elapsed >= timedelta(minutes=15):
                             is_stale = True
 
                     # If synced yesterday but market is now open today, force a sync to get 'Today' row
-                    if (
-                        not is_stale
-                        and last_ts.date() < now_date
-                        and is_market_open()
-                    ):
+                    if not is_stale and last_sync_date < now_date and is_market_open():
                         is_stale = True
 
                     if not is_stale:
