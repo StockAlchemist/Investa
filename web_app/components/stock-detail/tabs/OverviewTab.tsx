@@ -19,7 +19,8 @@ import {
     Sparkles,
     Shield,
     Zap,
-    Target
+    Target,
+    ChevronRight
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { FiftyTwoWeekCard } from '../components/FiftyTwoWeekCard';
@@ -51,6 +52,8 @@ interface OverviewTabProps {
     fxRate: number;
     loading: boolean;
     onRefreshData: () => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onSelectTab?: (tab: any) => void;
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
@@ -62,6 +65,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     fxRate,
     loading,
     onRefreshData,
+    onSelectTab,
 }) => {
     const [summaryExpanded, setSummaryExpanded] = useState(false);
     const [analysis, setAnalysis] = useState<StockAnalysisResponse | null>(null);
@@ -290,6 +294,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                     ? compositeScore >= 8.5 ? "Exceptional" : compositeScore >= 7.0 ? "Strong" : compositeScore >= 5.5 ? "Moderate" : "Weak"
                     : null;
 
+                const getCompositeColor = (score: number) => {
+                    if (score >= 8.5) return {
+                        text: 'text-emerald-600 dark:text-emerald-400',
+                        bg: 'bg-emerald-500/10 dark:bg-emerald-500/15',
+                        border: 'border-emerald-500/30 dark:border-emerald-500/25',
+                    };
+                    if (score >= 7.0) return {
+                        text: 'text-indigo-600 dark:text-indigo-400',
+                        bg: 'bg-indigo-500/10 dark:bg-indigo-500/15',
+                        border: 'border-indigo-500/30 dark:border-indigo-500/25',
+                    };
+                    if (score >= 5.5) return {
+                        text: 'text-amber-600 dark:text-amber-400',
+                        bg: 'bg-amber-500/10 dark:bg-amber-500/15',
+                        border: 'border-amber-500/30 dark:border-amber-500/25',
+                    };
+                    return {
+                        text: 'text-rose-600 dark:text-rose-400',
+                        bg: 'bg-rose-500/10 dark:bg-rose-500/15',
+                        border: 'border-rose-500/30 dark:border-rose-500/25',
+                    };
+                };
+
+                const compStyle = compositeScore !== null ? getCompositeColor(compositeScore) : null;
+
                 const pillars = [
                     {
                         id: 'moat',
@@ -297,9 +326,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         icon: Shield,
                         score: sc.moat,
                         color: 'text-blue-500 dark:text-blue-400',
-                        bgColor: 'bg-blue-500/10 dark:bg-blue-500/20',
+                        bgColor: 'bg-blue-500/10 dark:bg-blue-500/20 text-blue-500 dark:text-blue-400',
                         barColor: 'from-blue-500 to-cyan-500',
-                        badgeColor: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                        badgeColor: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25',
                         getTier: (s: number) => s >= 9 ? 'Wide Moat' : s >= 7.5 ? 'Solid Moat' : s >= 5.5 ? 'Narrow Moat' : 'No Moat',
                     },
                     {
@@ -308,9 +337,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         icon: Zap,
                         score: sc.financial_strength,
                         color: 'text-amber-500 dark:text-amber-400',
-                        bgColor: 'bg-amber-500/10 dark:bg-amber-500/20',
+                        bgColor: 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-500 dark:text-amber-400',
                         barColor: 'from-amber-500 to-orange-500',
-                        badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                        badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25',
                         getTier: (s: number) => s >= 9 ? 'Fortress' : s >= 7.5 ? 'Healthy' : s >= 5.5 ? 'Adequate' : 'Constrained',
                     },
                     {
@@ -319,9 +348,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         icon: Target,
                         score: sc.predictability,
                         color: 'text-emerald-500 dark:text-emerald-400',
-                        bgColor: 'bg-emerald-500/10 dark:bg-emerald-500/20',
+                        bgColor: 'bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-500 dark:text-emerald-400',
                         barColor: 'from-emerald-500 to-teal-500',
-                        badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                        badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25',
                         getTier: (s: number) => s >= 9 ? 'High Visibility' : s >= 7.5 ? 'Predictable' : s >= 5.5 ? 'Moderate' : 'Volatile',
                     },
                     {
@@ -330,83 +359,133 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         icon: TrendingUp,
                         score: sc.growth,
                         color: 'text-purple-500 dark:text-purple-400',
-                        bgColor: 'bg-purple-500/10 dark:bg-purple-500/20',
+                        bgColor: 'bg-purple-500/10 dark:bg-purple-500/20 text-purple-500 dark:text-purple-400',
                         barColor: 'from-purple-500 to-pink-500',
-                        badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+                        badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/25',
                         getTier: (s: number) => s >= 9 ? 'High Growth' : s >= 7.5 ? 'Solid Growth' : s >= 5.5 ? 'Moderate' : 'Sluggish',
                     },
                 ];
 
                 return (
-                    <div className="rounded-2xl sm:rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-slate-500/[0.04] via-indigo-500/[0.02] to-purple-500/[0.04] border border-border/60 shadow-xs space-y-3.5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 text-white flex items-center justify-center shadow-xs shadow-purple-500/20">
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <h3 className="text-sm sm:text-base font-bold text-foreground">
+                    <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-indigo-500/[0.03] via-card to-purple-500/[0.04] border border-border/70 shadow-xs space-y-3.5 sm:space-y-4">
+                        {/* Ambient glow accent */}
+                        <div className="pointer-events-none absolute -top-10 -right-10 w-36 h-36 bg-purple-500/10 dark:bg-purple-500/15 rounded-full blur-2xl" />
+
+                        {/* Card Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 relative z-10">
+                            <div className="flex items-center justify-between sm:justify-start gap-2.5 min-w-0">
+                                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 text-white flex items-center justify-center shadow-xs shadow-purple-500/20 shrink-0">
+                                        <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                    </div>
+                                    <h3 className="text-sm sm:text-base font-bold text-foreground tracking-tight whitespace-nowrap">
                                         AI Fundamental Health
                                     </h3>
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
-                                        Gemini AI
-                                    </span>
                                 </div>
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 whitespace-nowrap shrink-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                                    Gemini AI
+                                </span>
                             </div>
-                            {compositeScore !== null && (
-                                <div className="flex items-center gap-1.5 bg-background/80 px-2.5 py-1 rounded-xl border border-border/50 shadow-2xs">
-                                    <span className="text-[11px] font-medium text-muted-foreground">Composite:</span>
-                                    <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{compositeScore.toFixed(1)}</span>
-                                    <span className="text-[11px] font-bold text-muted-foreground/60">/10</span>
-                                    {compositeTier && (
-                                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 ml-1">· {compositeTier}</span>
-                                    )}
+                            {compositeScore !== null && compStyle && (
+                                <div className={cn(
+                                    "flex items-center justify-between sm:justify-start gap-2 px-3 py-1.5 rounded-xl border backdrop-blur-xs shadow-2xs whitespace-nowrap w-full sm:w-auto",
+                                    compStyle.bg,
+                                    compStyle.border
+                                )}>
+                                    <span className="text-[11px] font-medium text-muted-foreground">Composite Score:</span>
+                                    <div className="flex items-center gap-1">
+                                        <span className={cn("text-xs sm:text-sm font-black tabular-nums", compStyle.text)}>
+                                            {compositeScore.toFixed(1)}
+                                        </span>
+                                        <span className="text-[10px] sm:text-[11px] font-bold text-muted-foreground/60">/10</span>
+                                        {compositeTier && (
+                                            <span className={cn("text-[10px] sm:text-[11px] font-bold ml-1", compStyle.text)}>
+                                                · {compositeTier}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
-                            {pillars.map(p => (
-                                <div
-                                    key={p.id}
-                                    className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-card border border-border/50 shadow-2xs flex flex-col justify-between gap-2.5 hover:border-border transition-all"
-                                >
-                                    <div className="flex items-center justify-between gap-1">
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                            <div className={cn("p-1.5 rounded-lg shrink-0", p.bgColor)}>
+                        {/* 4 Pillar Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3.5 relative z-10">
+                            {pillars.map(p => {
+                                const tier = p.score != null ? p.getTier(p.score) : null;
+                                const pct = p.score != null ? Math.min(100, Math.max(0, (p.score / 10) * 100)) : 0;
+                                return (
+                                    <div
+                                        key={p.id}
+                                        onClick={() => onSelectTab && onSelectTab('analysis')}
+                                        className={cn(
+                                            "group p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-card/90 dark:bg-card/70 border border-border/60 hover:border-border shadow-2xs hover:shadow-xs transition-all duration-200 flex flex-col justify-between gap-2.5",
+                                            onSelectTab ? "cursor-pointer hover:bg-card" : ""
+                                        )}
+                                        title={p.label}
+                                    >
+                                        {/* Card Top: Icon & Status Badge */}
+                                        <div className="flex items-center justify-between gap-1.5">
+                                            <div className={cn("p-1.5 rounded-lg shrink-0 flex items-center justify-center", p.bgColor)}>
                                                 <p.icon className={cn("w-3.5 h-3.5", p.color)} />
                                             </div>
-                                            <span className="text-xs font-bold text-foreground truncate">
+                                            {tier && (
+                                                <span className={cn(
+                                                    "text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md border leading-none shrink-0 whitespace-nowrap tracking-tight",
+                                                    p.badgeColor
+                                                )}>
+                                                    {tier}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Card Middle: Pillar Label (Dedicated Row, Prevents Truncation) */}
+                                        <div className="pt-0.5">
+                                            <span className="text-xs font-semibold text-foreground/90 block leading-tight truncate">
                                                 {p.label}
                                             </span>
                                         </div>
-                                        {p.score != null && (
-                                            <span className={cn("text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded border leading-none shrink-0", p.badgeColor)}>
-                                                {p.getTier(p.score)}
-                                            </span>
-                                        )}
-                                    </div>
 
-                                    <div className="flex items-baseline justify-between pt-0.5">
-                                        <div className="flex items-baseline gap-1">
-                                            <span className={cn("text-2xl sm:text-3xl font-black tracking-tight", p.color)}>
-                                                {p.score != null ? p.score : '—'}
-                                            </span>
-                                            <span className="text-xs font-medium text-muted-foreground/60">/10</span>
+                                        {/* Card Bottom: Numeric Score & Progress Bar */}
+                                        <div className="space-y-1.5 pt-0.5">
+                                            <div className="flex items-baseline justify-between">
+                                                <div className="flex items-baseline gap-1">
+                                                    <span className={cn("text-2xl sm:text-3xl font-black tracking-tight tabular-nums", p.color)}>
+                                                        {p.score != null ? p.score : '—'}
+                                                    </span>
+                                                    <span className="text-xs font-medium text-muted-foreground/60">/10</span>
+                                                </div>
+                                                {onSelectTab && (
+                                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-foreground/70 group-hover:translate-x-0.5 transition-all hidden sm:block" />
+                                                )}
+                                            </div>
+
+                                            {/* Mini Progress Track */}
+                                            <div className="w-full bg-muted/80 dark:bg-muted/40 h-1.5 rounded-full overflow-hidden">
+                                                <div
+                                                    className={cn("h-full rounded-full transition-all duration-700 bg-gradient-to-r", p.barColor)}
+                                                    style={{ width: `${pct}%` }}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
-
-                                    {/* Mini Progress Track */}
-                                    <div className="w-full bg-muted/70 h-1.5 rounded-full overflow-hidden">
-                                        <div
-                                            className={cn("h-full rounded-full transition-all duration-700 bg-gradient-to-r", p.barColor)}
-                                            style={{ width: p.score != null ? `${Math.min(100, Math.max(0, (p.score / 10) * 100))}%` : '0%' }}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
+
+                        {/* Optional footer quick link to full AI analysis */}
+                        {onSelectTab && (
+                            <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[11px] relative z-10">
+                                <span className="text-muted-foreground">Detailed fundamental review & drivers</span>
+                                <button
+                                    onClick={() => onSelectTab('analysis')}
+                                    className="font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1 transition-colors cursor-pointer group"
+                                >
+                                    <span>View Full Analysis</span>
+                                    <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 );
             })()}

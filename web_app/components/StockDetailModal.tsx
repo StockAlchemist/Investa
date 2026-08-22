@@ -345,6 +345,7 @@ export default function StockDetailModal({
                                     fxRate={fxRate}
                                     loading={loading}
                                     onRefreshData={() => loadData(true)}
+                                    onSelectTab={setActiveTab}
                                 />
                             )}
                             {activeTab === 'position' && (

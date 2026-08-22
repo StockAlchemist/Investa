@@ -533,87 +533,118 @@ struct StockDetailView: View {
                 s >= 8.5 ? "Exceptional" : s >= 7.0 ? "Strong" : s >= 5.5 ? "Moderate" : "Weak"
             }
             
-            VStack(alignment: .leading, spacing: 14) {
+            let compositeTierColor: Color = {
+                guard let cs = compositeScore else { return .secondary }
+                if cs >= 8.5 { return .green }
+                if cs >= 7.0 { return .indigo }
+                if cs >= 5.5 { return .orange }
+                return .red
+            }()
+            
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 26, height: 26)
                         .background(
                             LinearGradient(colors: [.purple, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: RoundedRectangle(cornerRadius: 6)
+                            in: RoundedRectangle(cornerRadius: 7)
                         )
                     
                     Text("AI Fundamental Health")
                         .font(.subheadline.weight(.bold))
+                        .lineLimit(1)
+                    
+                    Spacer(minLength: 4)
                     
                     Text("Gemini AI")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.purple)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.purple.opacity(0.12), in: Capsule())
-                    
-                    Spacer()
-                    
-                    if let cs = compositeScore {
+                }
+                
+                if let cs = compositeScore {
+                    HStack {
+                        Text("Composite Score:")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
                         HStack(spacing: 3) {
-                            Text("Composite:").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
-                            Text(String(format: "%.1f", cs)).font(.system(size: 12, weight: .black)).foregroundStyle(.indigo)
-                            Text("/10").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary.opacity(0.7))
+                            Text(String(format: "%.1f", cs))
+                                .font(.system(size: 13, weight: .black))
+                                .foregroundStyle(compositeTierColor)
+                            Text("/10")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.secondary.opacity(0.7))
                             if let ct = compositeTier {
-                                Text("· \(ct)").font(.system(size: 10, weight: .bold)).foregroundStyle(.green)
+                                Text("· \(ct)")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(compositeTierColor)
                             }
                         }
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
                     }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(compositeTierColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(compositeTierColor.opacity(0.25), lineWidth: 0.5))
                 }
                 
                 let cols = hSizeClass == .regular ? 4 : 2
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: cols), spacing: 10) {
                     ForEach(topics, id: \.id) { t in
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .center, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            // Top Row: Icon on left, Tier Badge on right
+                            HStack(alignment: .center) {
                                 Image(systemName: t.icon)
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(t.tint)
-                                    .frame(width: 20, height: 20)
-                                    .background(t.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                                    .frame(width: 22, height: 22)
+                                    .background(t.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
                                 
-                                Text(t.name)
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                
-                                Spacer(minLength: 0)
+                                Spacer(minLength: 2)
                                 
                                 if let s = t.score {
                                     Text(getPillarTier(id: t.id, score: s))
-                                        .font(.system(size: 8, weight: .bold))
+                                        .font(.system(size: 8.5, weight: .bold))
                                         .foregroundStyle(t.tint)
-                                        .padding(.horizontal, 4).padding(.vertical, 1.5)
-                                        .background(t.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                                        .padding(.horizontal, 5).padding(.vertical, 2)
+                                        .background(t.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(t.tint.opacity(0.2), lineWidth: 0.5))
+                                        .fixedSize(horizontal: true, vertical: false)
                                 }
                             }
                             
-                            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                                if let s = t.score {
-                                    let formatted = s.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", s) : String(format: "%.1f", s)
-                                    Text(formatted).font(.system(size: 24, weight: .black)).foregroundStyle(t.tint)
-                                    Text("/10").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
-                                } else {
-                                    Text("—").font(.title3.weight(.bold)).foregroundStyle(.secondary)
-                                }
-                            }
+                            // Middle Row: Full Pillar Title (Never Truncated)
+                            Text(t.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .padding(.top, 2)
                             
-                            GeometryReader { geo in
-                                let progress = t.score != nil ? max(0, min(1.0, (t.score! / 10.0))) : 0.0
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.secondary.opacity(0.12)).frame(height: 4)
-                                    Capsule().fill(t.tint).frame(width: max(3, geo.size.width * CGFloat(progress)), height: 4)
+                            // Bottom Row: Score and Progress Bar
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                                    if let s = t.score {
+                                        let formatted = s.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", s) : String(format: "%.1f", s)
+                                        Text(formatted).font(.system(size: 24, weight: .black)).foregroundStyle(t.tint)
+                                        Text("/10").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
+                                    } else {
+                                        Text("—").font(.title3.weight(.bold)).foregroundStyle(.secondary)
+                                    }
                                 }
+                                
+                                GeometryReader { geo in
+                                    let progress = t.score != nil ? max(0, min(1.0, (t.score! / 10.0))) : 0.0
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.secondary.opacity(0.12)).frame(height: 4)
+                                        Capsule().fill(t.tint).frame(width: max(3, geo.size.width * CGFloat(progress)), height: 4)
+                                    }
+                                }
+                                .frame(height: 4)
                             }
-                            .frame(height: 4)
                         }
                         .padding(12)
                         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
