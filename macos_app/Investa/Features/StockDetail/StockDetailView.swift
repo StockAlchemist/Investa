@@ -64,6 +64,40 @@ struct StockDetailView: View {
     }
 
     var body: some View {
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                tabBar
+                Divider()
+                Group {
+                    switch tab {
+                    case .overview: overviewTab
+                    case .position: positionTab
+                    case .chart: chartTab
+                    case .analysis: analysisTab
+                    case .financials: financialsTab
+                    case .ratios: ratiosTab
+                    case .valuation: StockValuationTabView(viewModel: viewModel)
+                    case .holdings: holdingsTab
+                    case .news: newsTab
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .task { await viewModel.loadAll() }
+        .onChange(of: tab) { _, t in
+            Task {
+                switch t {
+                case .analysis: if viewModel.analysis == nil { await viewModel.loadAnalysis() }
+                case .financials, .ratios: await viewModel.loadFinancials()
+                case .news: await viewModel.loadNews()
+                default: break
+                }
+            }
+        }
+        #else
         VStack(spacing: 0) {
             header
             tabBar
@@ -96,6 +130,7 @@ struct StockDetailView: View {
                 }
             }
         }
+        #endif
     }
 
 

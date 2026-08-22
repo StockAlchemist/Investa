@@ -179,18 +179,54 @@ struct TransactionsView: View {
         }
     }
 
+    private var header: some View {
+        HStack {
+            Text("Transactions").font(.title2.bold())
+            if viewModel.isLoading { ProgressView().controlSize(.small) }
+            Spacer()
+            Text("Showing \(sorted.count) of \(viewModel.transactions.count)")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Transactions").font(.title2.bold())
-                if viewModel.isLoading { ProgressView().controlSize(.small) }
-                Spacer()
-                Text("Showing \(sorted.count) of \(viewModel.transactions.count)")
-                    .font(.caption).foregroundStyle(.secondary)
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                if let error = viewModel.errorMessage { errorBanner(error) }
+                VStack(spacing: 16) {
+                    TxKpiStrip(transactions: sorted, preferredCurrency: cur)
+                    if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
+                    if duplicateCount > 0 { duplicateBanner }
+                    toolbar
+                    if showFilters { filterPanel }
+                    table
+                }
+                .padding(20)
             }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+        }
+        .macMinSize(width: 820, height: 560)
+        .task(id: accountSignature) { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        .sheet(isPresented: $showingAdd) { TransactionEditView(existing: nil, onSave: handleSave, existingSymbols: existingSymbols).environmentObject(appState) }
+        .sheet(item: $editing) { tx in TransactionEditView(existing: tx, onSave: handleSave, existingSymbols: existingSymbols).environmentObject(appState) }
+        .sheet(isPresented: $showingReview) { reviewSheet }
+        .alert("Delete transaction?", isPresented: deleteBinding, presenting: pendingDelete) { tx in
+            Button("Delete", role: .destructive) { Task { await viewModel.delete(tx); reload() } }
+            Button("Cancel", role: .cancel) {}
+        } message: { tx in Text("\(tx.type) \(tx.symbol) on \(tx.displayDate) will be removed.") }
+        .alert("Delete \(selection.count) transactions?", isPresented: $pendingBulkDelete) {
+            Button("Delete", role: .destructive) { bulkDelete() }
+            Button("Cancel", role: .cancel) {}
+        }
+        #else
+        VStack(spacing: 0) {
+            header
             Divider()
             if let error = viewModel.errorMessage { errorBanner(error) }
             contentBody
@@ -209,15 +245,15 @@ struct TransactionsView: View {
             Button("Delete", role: .destructive) { bulkDelete() }
             Button("Cancel", role: .cancel) {}
         }
+        #endif
     }
 
+    #if os(macOS)
     // MARK: - Content
 
     /// macOS keeps the controls fixed at the top and lets the `Table` fill the
-    /// remaining window height (the table scrolls internally). iOS scrolls the
-    /// whole page since its rows are a plain `LazyVStack`.
-    @ViewBuilder private var contentBody: some View {
-        #if os(macOS)
+    /// remaining window height (the table scrolls internally).
+    private var contentBody: some View {
         VStack(spacing: 16) {
             TxKpiStrip(transactions: sorted, preferredCurrency: cur)
             if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
@@ -227,20 +263,8 @@ struct TransactionsView: View {
             table
         }
         .padding(20)
-        #else
-        ScrollView {
-            VStack(spacing: 16) {
-                TxKpiStrip(transactions: sorted, preferredCurrency: cur)
-                if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
-                if duplicateCount > 0 { duplicateBanner }
-                toolbar
-                if showFilters { filterPanel }
-                table
-            }
-            .padding(20)
-        }
-        #endif
     }
+    #endif
 
     // MARK: - Toolbar
 

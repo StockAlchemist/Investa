@@ -62,14 +62,53 @@ struct DividendsView: View {
         return viewModel.dividends.filter { $0.date.hasPrefix(y) }
     }
 
+    private var header: some View {
+        HStack {
+            Text("Income").font(.title2.bold())
+            if viewModel.isLoading { ProgressView().controlSize(.small) }
+            Spacer()
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Income").font(.title2.bold())
-                if viewModel.isLoading { ProgressView().controlSize(.small) }
-                Spacer()
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                if isInitialLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading income…").font(.callout).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
+                } else {
+                    VStack(spacing: 20) {
+                        if vis("incomeKpis") {
+                            IncomeKpiStrip(dividends: viewModel.dividends, currency: cur,
+                                           expectedDividends: viewModel.metrics?.estAnnualIncomeDisplay,
+                                           dividendYield: viewModel.metrics?.dividendYieldPct)
+                        }
+                        if vis("incomeProjector") { IncomeProjectorCard(income: viewModel.projected, currency: cur) }
+                        if vis("dividendCalendar") {
+                            DividendCalendarSection(events: viewModel.calendar, currency: cur, onSelect: { appState.openStock($0) })
+                        }
+                        payersRow
+                        if vis("annualDividends") { AnnualDividendsCard(dividends: viewModel.dividends, currency: cur, selectedYear: $selectedYear) }
+                        if vis("dividendTransactions") { DividendTransactionsCard(dividends: filteredDividends, currency: cur) }
+                    }
+                    .padding(20)
+                }
             }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+        }
+        .macMinSize(width: 820, height: 560)
+        .task(id: signature) { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        #else
+        VStack(spacing: 0) {
+            header
             Divider()
             if isInitialLoading {
                 VStack(spacing: 12) {
@@ -78,28 +117,29 @@ struct DividendsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-            ScrollView {
-                VStack(spacing: 20) {
-                    if vis("incomeKpis") {
-                        IncomeKpiStrip(dividends: viewModel.dividends, currency: cur,
-                                       expectedDividends: viewModel.metrics?.estAnnualIncomeDisplay,
-                                       dividendYield: viewModel.metrics?.dividendYieldPct)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if vis("incomeKpis") {
+                            IncomeKpiStrip(dividends: viewModel.dividends, currency: cur,
+                                           expectedDividends: viewModel.metrics?.estAnnualIncomeDisplay,
+                                           dividendYield: viewModel.metrics?.dividendYieldPct)
+                        }
+                        if vis("incomeProjector") { IncomeProjectorCard(income: viewModel.projected, currency: cur) }
+                        if vis("dividendCalendar") {
+                            DividendCalendarSection(events: viewModel.calendar, currency: cur, onSelect: { appState.openStock($0) })
+                        }
+                        payersRow
+                        if vis("annualDividends") { AnnualDividendsCard(dividends: viewModel.dividends, currency: cur, selectedYear: $selectedYear) }
+                        if vis("dividendTransactions") { DividendTransactionsCard(dividends: filteredDividends, currency: cur) }
                     }
-                    if vis("incomeProjector") { IncomeProjectorCard(income: viewModel.projected, currency: cur) }
-                    if vis("dividendCalendar") {
-                        DividendCalendarSection(events: viewModel.calendar, currency: cur, onSelect: { appState.openStock($0) })
-                    }
-                    payersRow
-                    if vis("annualDividends") { AnnualDividendsCard(dividends: viewModel.dividends, currency: cur, selectedYear: $selectedYear) }
-                    if vis("dividendTransactions") { DividendTransactionsCard(dividends: filteredDividends, currency: cur) }
+                    .padding(20)
                 }
-                .padding(20)
-            }
             }
         }
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        #endif
     }
 
     /// True only during the initial fetch, before any data has arrived — so we

@@ -65,14 +65,43 @@ struct AssetChangeView: View {
 
     private var cur: String { appState.displayCurrency }
 
+    private var header: some View {
+        HStack {
+            Text("Performance").font(.title2.bold())
+            if viewModel.isLoading { ProgressView().controlSize(.small) }
+            Spacer()
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Performance").font(.title2.bold())
-                if viewModel.isLoading { ProgressView().controlSize(.small) }
-                Spacer()
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                if let error = viewModel.errorMessage {
+                    Text(error).foregroundStyle(.red).font(.callout).padding(12)
+                }
+                VStack(spacing: 20) {
+                    if vis("kpiStrip") {
+                        PerfKpiStrip(data: viewModel.data, metrics: viewModel.metrics,
+                                     risk: viewModel.risk, benchmarks: appState.benchmarks)
+                    }
+                    if vis("returnsChart") { ReturnsChart(data: viewModel.data, currency: cur) }
+                    if vis("monthlyHeatmap") { MonthlyHeatmap(data: viewModel.data) }
+                    drawdownBenchmarkRow
+                    attributionRow
+                }
+                .padding(20)
             }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+        }
+        .macMinSize(width: 820, height: 560)
+        .task(id: signature) { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        #else
+        VStack(spacing: 0) {
+            header
             Divider()
             if let error = viewModel.errorMessage {
                 Text(error).foregroundStyle(.red).font(.callout).padding(12)
@@ -94,6 +123,7 @@ struct AssetChangeView: View {
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        #endif
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.assetChange, id) }

@@ -77,6 +77,33 @@ struct ScreenerView: View {
     private var cur: String { appState.displayCurrency }
 
     var body: some View {
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                VStack(alignment: .leading, spacing: 16) {
+                    inputCard
+                    if viewModel.isRefreshing {
+                        Label("Updating live prices…", systemImage: "binoculars")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.background.secondary, in: Capsule())
+                    }
+                    if let error = viewModel.errorMessage {
+                        Text(error).foregroundStyle(.red).font(.callout)
+                    }
+                    ScreenerResultsView(viewModel: viewModel, currency: cur)
+                }
+                .padding(20)
+            }
+        }
+        .macMinSize(width: 820, height: 560)
+        .task {
+            await viewModel.loadWatchlists()
+            if watchlistId.isEmpty { watchlistId = viewModel.watchlists.first.map { String($0.id) } ?? "" }
+        }
+        #else
         VStack(spacing: 0) {
             header
             Divider()
@@ -102,6 +129,7 @@ struct ScreenerView: View {
             await viewModel.loadWatchlists()
             if watchlistId.isEmpty { watchlistId = viewModel.watchlists.first.map { String($0.id) } ?? "" }
         }
+        #endif
     }
 
     private var header: some View {

@@ -48,14 +48,39 @@ struct CapitalGainsView: View {
         return viewModel.gains.filter { $0.date.hasPrefix(y) }
     }
 
+    private var header: some View {
+        HStack {
+            Text("Capital Gains").font(.title2.bold())
+            if viewModel.isLoading { ProgressView().controlSize(.small) }
+            Spacer()
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Capital Gains").font(.title2.bold())
-                if viewModel.isLoading { ProgressView().controlSize(.small) }
-                Spacer()
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                if let error = viewModel.errorMessage {
+                    Text(error).foregroundStyle(.red).font(.callout).padding(12)
+                }
+                VStack(spacing: 20) {
+                    if vis("unrealizedTax") { UnrealizedTaxSection(holdings: viewModel.holdings, currency: cur) }
+                    if vis("capitalGainsKpis") { CapitalGainsKpiStrip(gains: filteredGains, currency: cur) }
+                    if vis("annualCapitalGains") { AnnualRealizedGainsCard(gains: viewModel.gains, currency: cur, selectedYear: $selectedYear) }
+                    if vis("capitalGainsTransactions") { RealizedGainsTable(gains: filteredGains, currency: cur) }
+                }
+                .padding(20)
             }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+        }
+        .macMinSize(width: 820, height: 560)
+        .task(id: signature) { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        #else
+        VStack(spacing: 0) {
+            header
             Divider()
             if let error = viewModel.errorMessage {
                 Text(error).foregroundStyle(.red).font(.callout).padding(12)
@@ -73,6 +98,7 @@ struct CapitalGainsView: View {
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        #endif
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.capitalGains, id) }

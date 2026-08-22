@@ -46,6 +46,22 @@ struct AIView: View {
     private func letterGrade(_ avg: Double) -> String { avg >= 8.5 ? "A" : (avg >= 7 ? "B" : (avg >= 5.5 ? "C" : "D")) }
 
     var body: some View {
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                iosContent
+            }
+        }
+        .macMinSize(width: 820, height: 560)
+        .task { if viewModel.review == nil { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: false) } }
+        .onChange(of: signature) { _, _ in Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: false) } }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in
+            Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: true) }
+        }
+        .sheet(item: $detail) { metricSheet($0) }
+        #else
         VStack(spacing: 0) {
             header
             Divider()
@@ -58,6 +74,7 @@ struct AIView: View {
             Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: true) }
         }
         .sheet(item: $detail) { metricSheet($0) }
+        #endif
     }
 
 
@@ -138,6 +155,30 @@ struct AIView: View {
     }
 
     // MARK: - Content
+
+    #if os(iOS)
+    @ViewBuilder private var iosContent: some View {
+        if viewModel.isLoading {
+            ProgressView("Generating analysis…")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 60)
+        } else if let review = viewModel.review, review.scorecard != nil || review.summary != nil {
+            VStack(alignment: .leading, spacing: 16) {
+                if let w = review.warning ?? (review.error == "RateLimit" ? review.error : nil) {
+                    banner(review.message ?? "AI service busy. Showing cached analysis.", warning: w)
+                }
+                scorecardGrid(review)
+                if let summary = review.summary, !summary.isEmpty { sectionCard("Executive Summary", summary, accent: .pink) }
+                if !review.optimizations.isEmpty { optimizationHub(review.optimizations) }
+                detailedAnalysis(review)
+            }
+            .padding(20)
+        } else {
+            unavailable
+                .padding(.vertical, 40)
+        }
+    }
+    #endif
 
     @ViewBuilder private var content: some View {
         if viewModel.isLoading {

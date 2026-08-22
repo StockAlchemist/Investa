@@ -15,10 +15,10 @@ struct DashboardView: View {
     private var cur: String { appState.displayCurrency }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // On iPhone the nav bar already shows the "Dashboard" title.
-            if !isPhone { header; Divider() }
-            ScrollView {
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                if !isPhone { header; Divider() }
                 VStack(spacing: 16) {
                     if let error = viewModel.errorMessage { errorBanner(error) }
 
@@ -78,6 +78,70 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
+        #else
+        VStack(spacing: 0) {
+            header; Divider()
+            ScrollView {
+                VStack(spacing: 16) {
+                    if let error = viewModel.errorMessage { errorBanner(error) }
+
+                    // Overview
+                    if vis("portfolioHero") {
+                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD, isLoading: viewModel.isLoading)
+                    }
+                    if vis("todayStrip") {
+                        TodayStripCard(holdings: viewModel.holdings, currency: cur,
+                                       portfolioDayPct: viewModel.metrics?.dayChangePercent,
+                                       indices: viewModel.indices,
+                                       onSelectSymbol: { appState.openStock($0) })
+                    }
+
+                    // Insights & Events
+                    if anyInsightsVisible { sectionDivider("Insights & Events") }
+                    eventsAndInsights
+
+                    // Compact metric grid (visible scalar cards, in DEFAULT_ITEMS order)
+                    if anyMetricVisible { sectionDivider("Key Metrics") }
+                    metricGrid
+
+                    // Analytics
+                    if anyAnalyticsVisible { sectionDivider("Analytics") }
+                    if vis("portfolioDonut") {
+                        PortfolioCompositionCard(holdings: viewModel.holdings, currency: cur)
+                    }
+                    if vis("performanceGraph") {
+                        PerformanceChartView(points: viewModel.history, currency: cur,
+                                             benchmarks: appState.benchmarks, period: $appState.period,
+                                             customFrom: $appState.customFrom, customTo: $appState.customTo,
+                                             isLoading: viewModel.isLoading,
+                                             dayChange: viewModel.metrics?.dayChangeDisplay,
+                                             dayChangePercent: viewModel.metrics?.dayChangePercent)
+                    }
+                    if vis("projection") {
+                        ProjectionCardView(projection: viewModel.projection, currency: cur)
+                    }
+                    if vis("riskMetrics") {
+                        if let health = viewModel.health {
+                            twoColumn(PortfolioHealthCard(health: health), RiskMetricsCard(risk: viewModel.risk))
+                        } else {
+                            RiskMetricsCard(risk: viewModel.risk)
+                        }
+                    }
+                    attributionRow
+                }
+                .padding(20)
+            }
+        }
+        .macMinSize(width: 900, height: 600)
+        .task {
+            if !appState.didLoadSettings { await appState.loadSettings() }
+            reload()
+        }
+        .onChange(of: selectionSignature) { _, _ in reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
+        .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
+        #endif
     }
 
 

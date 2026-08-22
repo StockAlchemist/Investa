@@ -104,14 +104,39 @@ struct WatchlistView: View {
         return q.isEmpty ? sorted : sorted.filter { $0.symbol.lowercased().contains(q) || ($0.name?.lowercased().contains(q) ?? false) }
     }
 
+    private var header: some View {
+        HStack {
+            Text("Watchlist").font(.title2.bold())
+            if viewModel.isLoading { ProgressView().controlSize(.small) }
+            Spacer()
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Watchlist").font(.title2.bold())
-                if viewModel.isLoading { ProgressView().controlSize(.small) }
-                Spacer()
+        #if os(iOS)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                VStack(alignment: .leading, spacing: 16) {
+                    listSelector
+                    if !viewModel.items.isEmpty { WatchlistKpiStrip(items: viewModel.items) }
+                    card
+                }
+                .padding(20)
             }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+        }
+        .macMinSize(width: 860, height: 560)
+        .task { await viewModel.loadLists(); await viewModel.loadItems(currency: cur) }
+        .onChange(of: viewModel.activeId) { _, _ in Task { await viewModel.loadItems(currency: cur) } }
+        .onChange(of: cur) { _, _ in Task { await viewModel.loadItems(currency: cur) } }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in
+            Task { await viewModel.loadItems(currency: cur) }
+        }
+        #else
+        VStack(spacing: 0) {
+            header
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -129,6 +154,7 @@ struct WatchlistView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in
             Task { await viewModel.loadItems(currency: cur) }
         }
+        #endif
     }
 
 
