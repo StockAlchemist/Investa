@@ -146,7 +146,7 @@ def trigger_background_precalculation(current_user: User):
             import config
             from datetime import date, datetime
 
-            today = date.today()
+            today = get_est_today()
 
             # Call synchronous summary generator
             (
@@ -743,7 +743,7 @@ async def _calculate_portfolio_summary_internal(
             config_manager.gui_config.get("account_closure_dates", {}) or {}
         )
     closed_accounts_in_slice, all_selected_closed = compute_account_closure_state(
-        include_accounts, closure_dates_map, date.today()
+        include_accounts, closure_dates_map, get_est_today()
     )
 
     # --- Calculate Annualized TWR and include in metrics ---
@@ -763,7 +763,7 @@ async def _calculate_portfolio_summary_internal(
                 df_for_twr = df[df["Account"].isin(include_accounts)]
             if not df_for_twr.empty:
                 hist_min_date = df_for_twr["Date"].min().date()
-                hist_end_date = date.today()
+                hist_end_date = get_est_today()
                 (
                     hist_daily_df,
                     _,
@@ -824,7 +824,7 @@ async def _calculate_portfolio_summary_internal(
                     df_for_days = df[df["Account"].isin(include_accounts)]
                 if not df_for_days.empty:
                     min_date_val = df_for_days["Date"].min().date()
-                    days_since_inception = (date.today() - min_date_val).days
+                    days_since_inception = (get_est_today() - min_date_val).days
             except Exception:
                 pass
 
@@ -955,25 +955,16 @@ async def _calculate_historical_performance_internal(
     if period == "custom" and from_date_custom:
         start_date = from_date_custom
     elif period == "1d":
-        # Handle weekends/Mondays to ensure we get some data (last trading day)
-        # If Sat(5) or Sun(6), go back to Friday.
-        # If Mon(0), go back to Friday to ensure we have context if market just opened.
-        if end_date.weekday() == 6:  # Sunday -> Friday
-            start_date = end_date - timedelta(days=2)
-            end_date = end_date + timedelta(days=1)
-        elif end_date.weekday() == 5:  # Saturday -> Friday
-            start_date = end_date - timedelta(days=1)
-            end_date = end_date + timedelta(days=1)
-        # REMOVED: Monday context logic (start_date = end_date - 3)
-        # Monday will now fall through to the 'else' block, treating it as a standard day
-        # (Start = Monday, End = Tuesday), ensuring 1D graph shows ONLY Monday.
         if to_date_custom:
-            start_date = end_date
+            start_date = to_date_custom
+            end_date = to_date_custom + timedelta(days=1)
         else:
-            # Standard Weekday 1D View
-            # end_date is already Today+1. We want start_date to be "Latest Trading Date".
+            # 1D View strictly bounds to the single latest trading session.
+            # When market is closed (weekend, night, pre-market), start_date is the latest valid
+            # trading day (e.g. Friday), and end_date is start_date + 1 day (Saturday, exclusive).
+            # When market is open today, start_date is Today and end_date is Today + 1 (exclusive).
             start_date = get_latest_trading_date()
-            # Keep end_date as Today+1 (exclusive)
+            end_date = start_date + timedelta(days=1)
     elif period == "5d" or period == "7d":
         start_date = end_date - timedelta(days=7)
     elif period == "1m":

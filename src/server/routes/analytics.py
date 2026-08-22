@@ -80,7 +80,7 @@ async def get_capital_gains(
     try:
         # Determine full date range from transactions
         min_date = df["Date"].min().date()
-        max_date = date.today()
+        max_date = get_est_today()
 
         _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
             df=df,
@@ -174,7 +174,7 @@ async def get_dividends(
     try:
         # Determine full date range from transactions
         min_date = df["Date"].min().date()
-        max_date = date.today()
+        max_date = get_est_today()
 
         _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
             df=df,
@@ -519,7 +519,7 @@ async def get_projected_income(
             lambda: {"total": 0.0, "breakdown": defaultdict(float)}
         )
 
-        today = date.today()
+        today = get_est_today()
         # We want to cover the next 12 months
 
         for event in events:
@@ -606,7 +606,7 @@ async def get_risk_metrics(
             account_currency_map=account_currency_map,
             original_csv_file_path=original_csv_path,
             start_date=date(2000, 1, 1),
-            end_date=date.today(),
+            end_date=get_est_today(),
             display_currency=currency,
             include_accounts=accounts,
             benchmark_symbols_yf=["^GSPC"],  # Add S&P 500 for risk metrics
@@ -636,7 +636,7 @@ async def get_risk_metrics(
                 if not pd.api.types.is_datetime64_any_dtype(daily_df.index):
                     daily_df.index = pd.to_datetime(daily_df.index)
 
-                current_year = date.today().year
+                current_year = get_est_today().year
                 prev_year_data = daily_df[daily_df.index.year < current_year]
 
                 if not prev_year_data.empty:
@@ -701,7 +701,7 @@ async def get_projection(
             account_currency_map=account_currency_map,
             original_csv_file_path=original_csv_path,
             start_date=date(2000, 1, 1),
-            end_date=date.today(),
+            end_date=get_est_today(),
             display_currency=currency,
             include_accounts=accounts,
             benchmark_symbols_yf=["^GSPC"],  # matches the proven risk_metrics call path
@@ -800,7 +800,7 @@ async def get_benchmark_scoreboard(
         date(2000, 1, 1)
         if _years is None
         else max(
-            date(2000, 1, 1), date.today() - timedelta(days=round(_years * 365.25))
+            date(2000, 1, 1), get_est_today() - timedelta(days=round(_years * 365.25))
         )
     )
 
@@ -837,7 +837,7 @@ async def get_benchmark_scoreboard(
             account_currency_map=account_currency_map,
             original_csv_file_path=original_csv_path,
             start_date=start,
-            end_date=date.today(),
+            end_date=get_est_today(),
             display_currency=currency,
             include_accounts=accounts,
             benchmark_symbols_yf=mapped,

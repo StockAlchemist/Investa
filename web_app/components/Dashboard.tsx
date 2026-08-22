@@ -15,6 +15,7 @@ import TodayStrip from './dashboard/TodayStrip';
 import DashboardEvents from './dashboard/DashboardEvents';
 import DashboardInsights from './dashboard/DashboardInsights';
 import MarketTrendPanel from './dashboard/MarketTrendPanel';
+import { marketToday, DEFAULT_MARKET_TIMEZONE } from '@/lib/market_time';
 
 const RiskMetrics       = lazy(() => import('./RiskMetrics'));
 const PortfolioDonut    = lazy(() => import('./PortfolioDonut'));
@@ -121,22 +122,23 @@ const HERO_PERIODS: { key: HeroPeriod; label: string }[] = [
     { key: '1y', label: '1Y' },
 ];
 
-// Cutoff date (UTC midnight) for a given period — anything on/after this counts.
-function periodCutoff(period: HeroPeriod, now: Date): Date {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
+// Cutoff date (UTC midnight) for a given period in market-local time — anything on/after this counts.
+function periodCutoff(period: HeroPeriod): Date {
+    const todayStr = marketToday(DEFAULT_MARKET_TIMEZONE);
+    const [y, m, d] = todayStr.split('-').map(Number);
+    const dateUtc = new Date(Date.UTC(y, m - 1, d));
     if (period === 'wtd') {
         // Monday-anchored week.
-        const dow = (d.getDay() + 6) % 7; // 0..6, Monday = 0
-        d.setDate(d.getDate() - dow);
+        const dow = (dateUtc.getUTCDay() + 6) % 7; // 0..6, Monday = 0
+        dateUtc.setUTCDate(dateUtc.getUTCDate() - dow);
     } else if (period === 'mtd') {
-        d.setDate(1);
+        dateUtc.setUTCDate(1);
     } else if (period === 'ytd') {
-        d.setMonth(0, 1);
+        dateUtc.setUTCMonth(0, 1);
     } else if (period === '1y') {
-        d.setFullYear(d.getFullYear() - 1);
+        dateUtc.setUTCFullYear(dateUtc.getUTCFullYear() - 1);
     } // 'day' handled by caller (uses intraday history)
-    return d;
+    return dateUtc;
 }
 
 // Tiny intraday sparkline showing today's portfolio value path. Returns null if
@@ -233,7 +235,7 @@ function PortfolioHeroCard({
         const historyToUse = heroPeriod === 'wtd' ? wtdHistory : longHistory;
         const longRows = (historyToUse ?? []).filter(d => typeof d.value === 'number' && d.date);
         if (longRows.length === 0) return { series: [], pct: null, abs: null };
-        const cutoff = periodCutoff(heroPeriod, new Date(now));
+        const cutoff = periodCutoff(heroPeriod);
         const cutoffMs = cutoff.getTime();
         const sliced = longRows.filter(d => new Date(d.date).getTime() >= cutoffMs);
         // Anchor the period to the last point before the cutoff so the first

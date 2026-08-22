@@ -8,6 +8,7 @@ import sys
 import threading  # Added for _SHARED_MDP_LOCK
 from datetime import datetime, timedelta, date, timezone  # Added UTC
 from utils_time import (
+    get_est_now,
     get_est_today,
     get_latest_trading_date,
     is_market_open,
@@ -1638,7 +1639,7 @@ class MarketDataProvider:
                         )
                         meta_entry = {
                             "name": sym,
-                            "currency": None,
+                            "currency": "THB" if sym.endswith(".BK") else "USD",
                             "sector": None,
                             "industry": None,
                             "country": None,
@@ -2319,7 +2320,7 @@ class MarketDataProvider:
 
                             # Retrieve metadata
                             meta = metadata_map.get(yf_sym, {})
-                            currency = meta.get("currency")
+                            currency = meta.get("currency") or ("THB" if yf_sym.endswith(".BK") else "USD")
                             name = meta.get("name")
 
                             # Retrieve fundamentals
@@ -2424,11 +2425,20 @@ class MarketDataProvider:
                                 # from Yahoo — leaving the portfolio valued a full
                                 # session behind. Market dates belong to the market,
                                 # not to UTC or to the server's clock.
-                                last_rt_date = (
-                                    last_row.name.date()
-                                    if hasattr(last_row.name, "date")
-                                    else last_row.name
+                                meta = metadata_map.get(yf_sym, {})
+                                tz_name = (
+                                    meta.get("exchangeTimezoneName")
+                                    or ("Asia/Bangkok" if yf_sym.endswith(".BK") else "America/New_York")
                                 )
+                                if hasattr(last_row.name, "tz_convert") and last_row.name.tzinfo is not None:
+                                    try:
+                                        last_rt_date = last_row.name.tz_convert(tz_name).date()
+                                    except Exception:
+                                        last_rt_date = last_row.name.date()
+                                elif hasattr(last_row.name, "date"):
+                                    last_rt_date = last_row.name.date()
+                                else:
+                                    last_rt_date = last_row.name
                                 daily_date = daily_session_dates.get(internal_sym)
                                 if daily_date is not None and last_rt_date < daily_date:
                                     # Genuinely stale 1m data — the daily bar is newer.
@@ -2477,9 +2487,24 @@ class MarketDataProvider:
 
                                     stock_data_yf[internal_sym] = entry
                                 else:
-                                    # No daily entry? (Maybe failed daily but succeeded intraday?)
-                                    # Create partial entry
-                                    pass
+                                    # No daily entry? (Maybe failed daily but succeeded intraday)
+                                    # Create entry from intraday price
+                                    meta = metadata_map.get(yf_sym, {})
+                                    curr = meta.get("currency") or ("THB" if yf_sym.endswith(".BK") else "USD")
+                                    stock_data_yf[internal_sym] = {
+                                        "price": price_rt,
+                                        "change": 0.0,
+                                        "changesPercentage": 0.0,
+                                        "currency": curr.upper(),
+                                        "name": meta.get("name") or yf_sym,
+                                        "exchange": meta.get("exchange"),
+                                        "fullExchangeName": meta.get("fullExchangeName"),
+                                        "quoteType": meta.get("quoteType"),
+                                        "source": "yf_batch_1m_intraday_standalone",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "sparkline_7d": [],
+                                        "sparkline_1m": [],
+                                    }
 
                         except Exception:
                             # logging.warning(f"Error extracting RT data for {internal_sym}: {e_sym_rt}")
@@ -2626,12 +2651,36 @@ class MarketDataProvider:
             if has_non_usd:
                 self._save_persistent_fx_cache(fx_rates_vs_usd, fx_prev_close_vs_usd)
 
-        # --- 5. Save Cache ---
+        # --- 5. Backfill and Save Cache ---
         if not has_errors:
             try:
                 # Populate results from stock_data_yf
                 for internal_sym, data in stock_data_yf.items():
                     results[internal_sym] = data
+
+                # Read existing cache file if present to preserve other keys and backfill missing symbols
+                existing_cache_data = {}
+                if os.path.exists(self.current_cache_file):
+                    try:
+                        with open(self.current_cache_file, "r") as f_prev:
+                            existing_cache_data = json.load(f_prev)
+                    except Exception as e_read_prev:
+                        logging.warning(f"Error reading existing quotes cache: {e_read_prev}")
+
+                prev_quotes = existing_cache_data.get("quotes", {})
+                if isinstance(prev_quotes, dict):
+                    for sym in internal_stock_symbols:
+                        if (
+                            sym not in results
+                            and sym in prev_quotes
+                            and isinstance(prev_quotes[sym], dict)
+                            and prev_quotes[sym].get("price")
+                        ):
+                            results[sym] = prev_quotes[sym]
+                            logging.info(
+                                f"Backfilled missing quote for {sym} from persistent cache: "
+                                f"price={prev_quotes[sym].get('price')}"
+                            )
 
                 cache_ttl_minutes = 1 if is_market_open() else 60
                 self._current_quotes_memory_cache.set(
@@ -2640,16 +2689,20 @@ class MarketDataProvider:
                     ttl=cache_ttl_minutes * 60,
                 )
 
-                cache_content = {
+                # Merge new results with previous quotes so quotes for symbols not in this batch are retained
+                merged_quotes = dict(prev_quotes) if isinstance(prev_quotes, dict) else {}
+                merged_quotes.update(results)
+
+                existing_cache_data.update({
                     "cache_key": cache_key,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "quotes": results,
+                    "quotes": merged_quotes,
                     "fx_rates": fx_rates_vs_usd,
                     "fx_prev_close": fx_prev_close_vs_usd,
-                }
+                })
 
                 with open(self.current_cache_file, "w") as f:
-                    json.dump(cache_content, f, indent=2)
+                    json.dump(existing_cache_data, f, indent=2)
             except Exception as e:
                 logging.warning(f"Error saving current quotes cache: {e}")
 
@@ -4353,7 +4406,9 @@ class MarketDataProvider:
             )
 
         # 0. Sync Throttling (Batched)
-        now = datetime.now()
+        now_est = get_est_now()
+        now = now_est.to_pydatetime() if hasattr(now_est, "to_pydatetime") else now_est
+        now_date = now_est.date()
         sync_needed = []
 
         if not symbols:
@@ -4369,14 +4424,20 @@ class MarketDataProvider:
             if last_ts_str:
                 try:
                     last_ts = datetime.fromisoformat(last_ts_str)
-                    elapsed = now - last_ts
+                    # If last_ts is timezone-naive, treat as EST/UTC aware
+                    if last_ts.tzinfo is not None and hasattr(now_est, "tzinfo") and now_est.tzinfo is not None:
+                        elapsed = now_est - last_ts
+                    elif hasattr(now, "replace") and last_ts.tzinfo is None:
+                        elapsed = (now.replace(tzinfo=None) if hasattr(now, "tzinfo") and now.tzinfo else now) - last_ts
+                    else:
+                        elapsed = now - last_ts
                     is_stale = elapsed >= timedelta(hours=4)
 
                     # RELAXATION: If synced today, allow 15-min staleness during market hours
                     # to keep the 'Today' daily bar fresh for TWR/YTD calculations.
                     if (
                         not is_stale
-                        and last_ts.date() == now.date()
+                        and last_ts.date() == now_date
                         and is_market_open()
                     ):
                         if elapsed >= timedelta(minutes=15):
@@ -4385,7 +4446,7 @@ class MarketDataProvider:
                     # If synced yesterday but market is now open today, force a sync to get 'Today' row
                     if (
                         not is_stale
-                        and last_ts.date() < now.date()
+                        and last_ts.date() < now_date
                         and is_market_open()
                     ):
                         is_stale = True

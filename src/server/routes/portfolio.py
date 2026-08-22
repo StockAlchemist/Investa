@@ -37,7 +37,7 @@ from server.portfolio_service import (
     compute_account_closure_state,
 )
 from server.route_utils import _lru_get, clean_nans, get_mdp
-from utils_time import is_market_open
+from utils_time import is_market_open, get_est_today
 
 router = APIRouter()
 
@@ -94,7 +94,7 @@ async def get_asset_change(
             account_currency_map=account_currency_map,
             original_csv_file_path=original_csv_path,
             start_date=date(2000, 1, 1),  # All history
-            end_date=date.today(),
+            end_date=get_est_today(),
             display_currency=currency,
             include_accounts=accounts,
             benchmark_symbols_yf=mapped_benchmarks,
@@ -327,7 +327,7 @@ async def get_portfolio_summary_headline(
             config_manager.gui_config.get("account_closure_dates", {}) or {}
         )
     closed_in_slice, all_selected_closed = compute_account_closure_state(
-        accounts, closure_dates_map, date.today()
+        accounts, closure_dates_map, get_est_today()
     )
     metrics["all_selected_closed"] = all_selected_closed
     metrics["closed_accounts"] = closed_in_slice
@@ -386,7 +386,7 @@ async def get_portfolio_ai_review(
             account_currency_map=acc_curr,
             original_csv_file_path=path,
             start_date=min_date,  # Full history for better risk stats
-            end_date=date.today(),
+            end_date=get_est_today(),
             interval="D",
             benchmark_symbols_yf=["SPY"],  # Benchmark against SPY for Beta
             display_currency=currency,
@@ -412,8 +412,8 @@ async def get_portfolio_ai_review(
                 mtime,
             ) = data
 
-            start_date = date.today() - timedelta(days=365)
-            end_date = date.today()
+            start_date = get_est_today() - timedelta(days=365)
+            end_date = get_est_today()
 
             daily_df, _, _, _ = await _get_historical_performance_cached(
                 df=df,
@@ -754,7 +754,7 @@ async def get_holdings_returns(
     if not yf_map:
         return {}
 
-    today = date.today()
+    today = get_est_today()
     period_starts: Dict[str, date] = {
         label: today - timedelta(days=days)
         for label, days in _HEATMAP_PERIOD_DAYS.items()
@@ -851,7 +851,7 @@ async def get_stock_position(
     try:
         # 1. Historical FX for currency conversions
         min_date = df["Date"].min().date()
-        max_date = date.today()
+        max_date = get_est_today()
         _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
             df=df,
             manual_overrides_dict=manual_overrides,
@@ -957,7 +957,7 @@ async def get_stock_position(
                         else 0.0
                     )
                     days_held = (
-                        (date.today() - purchase_date).days if purchase_date else 0
+                        (get_est_today() - purchase_date).days if purchase_date else 0
                     )
                     term = "long_term" if days_held >= 365 else "short_term"
 
@@ -1707,7 +1707,7 @@ async def get_history(
         except Exception:
             closure_dates_map = {}
         _, all_selected_closed = compute_account_closure_state(
-            accounts, closure_dates_map, date.today()
+            accounts, closure_dates_map, get_est_today()
         )
         if all_selected_closed and accounts:
             parsed_dates: List[date] = []

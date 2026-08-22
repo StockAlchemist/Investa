@@ -287,7 +287,7 @@ struct PortfolioHeroCard: View {
     private static func cutoff(_ period: HeroPeriod) -> Date {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
-        let startOfDay = cal.startOfDay(for: Date())
+        let startOfDay = MarketTime.today(timeZone: nil) ?? cal.startOfDay(for: Date())
         switch period {
         case .day: return startOfDay
         case .wtd:

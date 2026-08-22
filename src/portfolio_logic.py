@@ -18,7 +18,7 @@ SPDX-License-Identifier: MIT
 
 # --- START OF MODIFIED portfolio_logic.py ---
 from datetime import datetime, date
-from utils_time import get_latest_trading_date
+from utils_time import get_latest_trading_date, get_est_today
 from typing import List, Dict, Tuple, Optional, Set, Any
 
 
@@ -447,11 +447,11 @@ def _prepare_historical_fx_rates(
             )  # Use same cache config
 
         # Fetch historical FX rates (local_curr vs USD)
-        # FIX: Use date.today() instead of report_date (latest trading date)
-        # The Capital Gains API uses date.today(), so if we use an earlier date (e.g. Friday),
+        # FIX: Use get_est_today() instead of report_date (latest trading date)
+        # The Capital Gains API uses get_est_today(), so if we use an earlier date (e.g. Friday),
         # recent weekend transactions (crypto) or today's transactions will fail FX lookup
         # and result in NaN gain (0 assumed), causing the Dashboard to be lower.
-        fx_fetch_end_date = date.today()
+        fx_fetch_end_date = get_est_today()
 
         historical_fx_data_usd_based, fx_fetch_err_hist = (
             market_provider_for_hist_fx.get_historical_fx_rates(
