@@ -144,7 +144,7 @@ def trigger_background_precalculation(current_user: User):
             )
             from config import DEFAULT_CURRENCY
             import config
-            from datetime import date, datetime
+            from datetime import datetime
 
             today = get_est_today()
 

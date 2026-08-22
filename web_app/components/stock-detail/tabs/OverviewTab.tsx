@@ -30,6 +30,7 @@ import { cn, formatCurrency, formatPercent as formatPercentShared } from '../../
 import { normalizeDividendYield, normalizeExpenseRatio } from '../../../lib/dividend';
 import { formatCalendarDate } from '../../../lib/market_time';
 import { fetchStockAnalysis, type StockAnalysisResponse } from '../../../lib/api';
+import type { TabType } from '../types';
 
 function formatPercentPoints(points: number | null | undefined): string {
     if (points === null || points === undefined || isNaN(points)) return "-";
@@ -52,8 +53,7 @@ interface OverviewTabProps {
     fxRate: number;
     loading: boolean;
     onRefreshData: () => void;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    onSelectTab?: (tab: any) => void;
+    onSelectTab?: (tab: TabType) => void;
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({

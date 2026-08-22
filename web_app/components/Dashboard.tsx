@@ -223,8 +223,6 @@ function PortfolioHeroCard({
     void themeColor;
 
     const [heroPeriod, setHeroPeriod] = useState<HeroPeriod>('day');
-    // Freeze "now" at mount so re-renders don't shift period boundaries mid-session.
-    const [now] = useState<number>(() => Date.now());
 
     // Derive the series + period return for the currently-selected window.
     const periodView = useMemo(() => {
@@ -251,7 +249,7 @@ function PortfolioHeroCard({
         const abs = endVal - startVal;
         const pct = (abs / startVal) * 100;
         return { series, pct, abs };
-    }, [heroPeriod, history, longHistory, wtdHistory, dayGL, dayGLPct, now]);
+    }, [heroPeriod, history, longHistory, wtdHistory, dayGL, dayGLPct]);
 
     const periodPositive = (periodView.pct ?? 0) >= 0;
     const sparklinePositive = heroPeriod === 'day' ? positive : periodPositive;
