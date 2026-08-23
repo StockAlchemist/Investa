@@ -192,8 +192,22 @@ struct IntrinsicValueResponse: Codable, Sendable {
     let valuationStatus: String?
     /// Spread between contributing models, as % of the blended value.
     let modelSpreadPct: Double?
+    /// Normalized weight actually applied to each contributing model. The
+    /// backend derives these from what the business is *and* from each model's
+    /// own Monte Carlo band, so they are read, never recomputed here.
+    let modelWeights: [String: Double]?
+    /// Reliability (0-1) each contributing model earned from its own MC band.
+    let modelReliability: [String: Double]?
+    /// 0-1. How much the backend stands behind the blended value.
+    let valuationConfidence: Double?
+    /// Which family of models was allowed to set the value: `operating` or `financial`.
+    let blendProfile: String?
+    /// Models held out of the blend, keyed by model, with the reason why.
+    let blendExclusions: [String: String]?
     /// Value of current earning power assuming zero growth.
     let earningsPowerFloor: Double?
+    /// What the dividend stream alone is worth, when the DDM is held out.
+    let dividendDiscountFloor: Double?
     /// Peter Lynch Fair Value estimate.
     let lynchFairValue: Double?
     let recommendedMethod: RecommendedMethod?
@@ -207,7 +221,13 @@ struct IntrinsicValueResponse: Codable, Sendable {
         case valuationNote = "valuation_note"
         case valuationStatus = "valuation_status"
         case modelSpreadPct = "model_spread_pct"
+        case modelWeights = "model_weights"
+        case modelReliability = "model_reliability"
+        case valuationConfidence = "valuation_confidence"
+        case blendProfile = "blend_profile"
+        case blendExclusions = "blend_exclusions"
         case earningsPowerFloor = "earnings_power_floor"
+        case dividendDiscountFloor = "dividend_discount_floor"
         case lynchFairValue = "lynch_fair_value"
         case recommendedMethod = "recommended_method"
         case models, range

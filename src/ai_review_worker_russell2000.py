@@ -35,6 +35,7 @@ try:
     from financial_ratios import (
         calculate_key_ratios_timeseries,
         get_comprehensive_intrinsic_value,
+        load_price_history_for_multiples,
     )
     from db_utils import (
         get_db_connection,
@@ -211,7 +212,11 @@ def process_stock(
         try:
             logging.info(f"Calculating intrinsic value for {symbol}...")
             iv_results = get_comprehensive_intrinsic_value(
-                fund_data, financials_df, balance_sheet_df, cashflow_df
+                fund_data,
+                financials_df,
+                balance_sheet_df,
+                cashflow_df,
+                prices_df=load_price_history_for_multiples(mdp, yf_symbol),
             )
 
             # 6. Update Cache with Intrinsic Value

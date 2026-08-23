@@ -808,59 +808,155 @@ The Web Dashboard uses a **collapsible sidebar** on desktop and a bottom navigat
 *Note: The Web Dashboard supports adding and editing transactions directly. For bulk transaction imports, use the CSV import flow.*
 
 ## Part 14: Intrinsic Value Analysis
- 
-Investa includes a powerful valuation engine to help you estimate the **Intrinsic Value** of your stocks—the "true" worth based on financial fundamentals rather than market sentiment.
- 
-### What is Intrinsic Value?
-Intrinsic value is an estimate of a company's actual value based on its underlying financial strength and future earnings potential.
- 
-Investa calculates this using two primary models:
-1. **Discounted Cash Flow (DCF):** Projects future free cash flows and discounts them back to the present value.
-    * **Income-based:** The standard model using Free Cash Flow.
-    *   **Revenue-based Fallback:** If a company has negative or volatile FCF, Investa estimates value based on Revenue and historical FCF margins.
-2.  **Graham's Revised Formula:** A simplified formula for stable growth companies, based on Earnings Per Share (EPS) and expected growth ($V = \frac{EPS \times (8.5 + 2g) \times 4.4}{Y}$).
-3.  **Net Asset Value (NAV) for ETFs/Funds:** For ETFs and Mutual Funds, standard models like DCF/Graham are often inapplicable. Investa automatically defaults to the fund's **Net Asset Value (NAV)** as the most accurate representation of intrinsic value.
- 
-### Probability Distributions (Monte Carlo)
-To account for uncertainty, Investa runs **10,000 Monte Carlo simulations** for each stock, varying growth rates and discount rates (WACC) within a normal distribution. This provides a range of probable outcomes:
-* **Bear Case (10th percentile):** A conservative "worst-case" scenario.
-* **Base Case (Median):** The most likely value.
-* **Bull Case (90th percentile):** An optimistic "best-case" scenario.
- 
-### 🛡️ Valuation Stability: Cap & Fade
-To prevent unrealistic "infinite" valuations, Investa uses two built-in safety mechanisms:
-* **Cap Growth Rate:** No matter how high analyst estimates are, the models cap growth at **40% (DCF)** or **30% (Graham)**. This ensures that a single outlier estimate doesn't warp the entire valuation.
-* **Faded Growth Rate:** In the real world, hyper-growth eventually slows down as a company matures. Investa uses a **Linear Fade**, gradually reducing the starting growth rate down to a stable **2% (Terminal Growth)** over the 10-year projection period. This mimics the natural lifecycle of a maturing business.
- 
-### ⚠️ Understanding Negative Intrinsic Values
-Sometimes, a model may return a negative value (e.g., -$25.00). This isn't a bug; it is a mathematical result of specific financial conditions:
-* **DCF Negative Value:** Most often caused by **High Debt**. If a company's total debt exceeds its current cash plus the present value of all its future earnings, the remaining value for equity holders is technically negative.
-* **Graham Negative Value:** Occurs when **Growth Estimates are Deeply Negative**. If the formula assumes a company will shrink rapidly (e.g., growth < -4.25%), the math produces a negative valuation.
-* **Signal:** A negative value is often a warning sign of high leverage (debt) or a business in significant structural decline.
- 
-### Viewing Valuation Data
-To see the valuation analysis for any stock:
-1. Go to the **Holdings Table** on the Dashboard or Web App.
-2. Click on the **stock symbol** (usually styled as a link) or right-click and select **"View Details"**.
-3. In the modal that appears, switch to the **"Valuation"** tab.
- 
-### Customizing Valuation Parameters (Overrides)
-Investa automatically fetches default parameters (like Beta, WACC, and analyst growth estimates). If you have different assumptions, you can override them:
- 
-**To customize the model:**
-1. Go to **Settings → Overrides**.
-2. Select the **Symbol** and the **Parameter** (e.g., `Growth Rate (DCF)`, `Discount Rate (DCF)`).
-3. Enter your value (e.g., `0.10` for 10%) and click **Add Parameter**.
- 
-### Batch Processing (S&P 500)
-For users tracking a wide universe of stocks, you can run a batch recalculation for the entire S&P 500 using the provided script:
-```bash
-python scripts/recalculate_sp500_valuations.py
-```
-This will fetch fresh financials for all 500 companies and update your local database with fresh intrinsic values.
 
-### 🌍 Currency Normalization
-Investa handles cross-currency valuations with precision. All Intrinsic Value estimates and "Margin of Safety" calculations are automatically **normalized to your selected display currency**. This ensures that if you are viewing a THB-denominated portfolio, US stock valuations are converted to THB for an accurate "apples-to-apples" comparison against current market prices.
+Investa includes a valuation engine that estimates what a business is **worth** from its
+financial statements, independently of what the market is currently charging for it.
+
+### The one rule everything else follows
+
+**A valuation must never be a restatement of the price.** If an "intrinsic value" moves when
+only the quote moves, it cannot tell you whether the quote is high or low. Every design
+decision below follows from that, including the ones that reduce coverage: where the
+fundamentals cannot support an estimate, Investa **refuses to produce one** rather than
+printing a number that looks authoritative and isn't.
+
+### The models
+
+Twelve models run on every company; each is computed, displayed on its own card, and
+independently adjustable. Funds are the exception — an ETF is valued at NAV alone.
+
+| Model | What it values | Suits |
+|---|---|---|
+| **DCF** | Free cash flow, discounted | Cash-generative operating companies |
+| **D-CFO** | Operating cash flow, discounted | Lumpy-capex businesses, REITs (closest thing to FFO) |
+| **D-NI** | Net income, discounted at cost of equity | Banks, insurers — where capex and FCF are meaningless |
+| **DDM** | The dividend stream, multi-stage | High payers, REITs, utilities |
+| **Graham** | EPS against a bond yield | Mature industrial earnings |
+| **EPV** | Current earnings power, *no growth* | A floor, not a forecast |
+| **Peter Lynch** | Growth + yield as a fair P/E | Steady growers |
+| **PEG** | Fair value at PEG = 1.0 | Profitable growth |
+| **PSG** | Sales growth weighted by gross margin | Unprofitable hyper-growth |
+| **Mean P/E · P/B · P/S** | The multiple this company has *historically traded at* | Companies with a long, stable trading record |
+| *(NAV)* | The fund's reported net asset value | ETFs and funds — **replaces** all of the above |
+
+**The three "Mean" multiples deserve a note.** They use the **median multiple the company has
+actually changed hands at** — one observation per fiscal year, each priced with the quote as of
+that year end. A card reads:
+
+> Median traded P/E **17.9x** (15 years, 2011–2025) · Usually traded at **12.6x – 26.1x**
+
+which lets you see today's 35x against a decade and a half of its own history. They are *not*
+today's P/E multiplied back by today's earnings — that arithmetic returns the share price, which
+is exactly what a valuation must not do.
+
+### The blended value
+
+The headline number is not an average of all twelve. Membership is decided by **what the
+business is**, because a model that cannot describe a company does not become informative by
+being averaged in — a DCF of a bank is not a weaker view of the bank, it is not a view of it:
+
+| Business | Blended from |
+|---|---|
+| **Operating company** | DCF 55% · Graham 30% · DDM 15% |
+| **Financial** (bank, insurer) | D-NI 85% · DDM 15% |
+| **REIT** | D-CFO 50% · Distribution (DDM) 50% |
+
+Two models sit deliberately *outside* the blend and are reported beside it instead:
+
+* **Earnings Power Value** is a **floor** — what current earnings are worth with no growth at all.
+* **The dividend-only value** appears when a company pays out less than 60% of earnings. Below
+  that threshold the DDM is valuing the *dividend*, not the company, so it is shown as a floor
+  rather than blended. REITs are exempt: they distribute by statute.
+
+Utilities and property developers are treated as operating companies — a utility has real capex
+and real free cash flow, and a developer sells buildings rather than distributing rent.
+
+### Weighting: models that are sure of themselves count more
+
+Every model runs **10,000 Monte Carlo simulations**, varying growth and discount rates. That
+gives each one a band around its own answer, and the width of that band sets its weight: a model
+whose simulation spans a factor of two is worth less, *for this company*, than one that spans
+ten percent. The weights actually applied are shown under the blended value (e.g. `DCF 60% ·
+GRAHAM 40%`).
+
+The simulations are seeded per company, so the same company always values the same — a fair
+value that wobbled between two page loads would not be a fair value.
+
+### Confidence, and what the statuses mean
+
+Each valuation carries a **confidence score** (0–100%) combining how tightly each model pinned
+its own answer, how far apart the models landed, and how many of them there were. It appears as
+a bar beside the bear/bull range.
+
+| Status | Meaning |
+|---|---|
+| **OK** | The models agree well enough to stand behind the number |
+| **Models disagree** | Contributing models sit further apart than the blend is large |
+| **Outside credible range** | Raw output was beyond 0.1×–5× the price and was pulled back — treat as low confidence |
+| **Not valued** | No model could run: no sustained free cash flow, no positive EPS, no dividend |
+| **Not eligible** | Price under $1 or market cap under $50M — per-share figures are dominated by noise |
+| **NAV** | An ETF or fund, valued at net asset value |
+
+"Not valued" is a real answer, and around a fifth of listed companies get it.
+
+### Growth: shrunk, banded, and faded
+
+Raw analyst or historical growth compounded over ten years is what produces valuations of forty
+times the share price. Investa instead:
+
+* **Blends** the evidence — analyst estimates and the company's own ten-year record.
+* **Shrinks** the result most of the way toward a 4% base rate, because high growth mean-reverts.
+* **Bands** it to between −5% and +25% a year (Graham's `g` is separately capped at 15%, since
+  his formula's `g` is explicitly a long-run rate).
+* **Fades** it linearly to 2% terminal growth across the projection, mirroring how businesses
+  mature.
+
+Discount rates come from WACC with a size premium for small caps, banded to 8%–20%.
+
+### Reading a valuation
+
+1. Open any holding, watchlist row, or screener result and choose the **Valuation** tab.
+2. The three summary cards give the **blended value**, the **margin of safety** against spot, and
+   the **confidence and range**.
+3. "How this blend was built" states the business profile, any floors, and which models were held
+   out and why.
+4. The **best-fit method** banner names the single model most appropriate to this business.
+5. Below that, one card per model — every input visible.
+
+### Changing the assumptions
+
+Disagree with an input? Open a model card, click the parameter editor, and move any slider
+(growth, discount rate, base cash flow, multiple, projection years). The model's value and the
+blended headline both recompute **live**, with the original shown alongside so you can see what
+your assumption changed. "Reset All to Defaults" restores the backend's figures.
+
+Per-symbol defaults that should persist can be pinned in `data/config/manual_overrides.json`
+under `valuation_overrides`.
+
+### Valuing many stocks at once
+
+The **Market Screener** values entire universes — S&P 500, Russell 2000, or "All Stocks" —
+in the background and caches every result, including the refusals, so a screen over thousands of
+symbols reads from a shared store instead of recomputing. Filter on margin of safety and
+valuation status directly from the Screener tab.
+
+### Currency normalization
+
+All intrinsic values and margins of safety are normalized to your selected display currency, so
+a THB-denominated portfolio compares US valuations against US prices on an apples-to-apples basis.
+
+### Calibrating the engine yourself
+
+`scripts/intrinsic_value_lab.py` runs every model over the local fundamentals cache offline and
+reports the cross-sectional distribution. The yardstick is the **median margin of safety**: across
+a broad universe the typical stock is priced roughly where the market clears, so a well-calibrated
+engine sits near zero. A model claiming the median listed company is worth a third of its price
+is not being conservative — it is making a claim it cannot cash.
+
+```bash
+python scripts/intrinsic_value_lab.py              # the whole cache
+python scripts/intrinsic_value_lab.py --limit 300  # a quick pass
+```
 
 ## Part 15: Interactive Stock Charts
 
@@ -966,6 +1062,12 @@ The **Market Screener** allows you to discover high-probability investment oppor
     *   **S&P 500 / Russell 2000:** Screen major indices.
     *   **All Database Stocks:** Screen every ticker across all universes in the system.
 2.  Click **"Execute Screen"**. The system fetches live data and calculates intrinsic values in real-time.
+
+> [!NOTE]
+> Some rows come back **without** a fair value. That is deliberate: where a company has no
+> sustained free cash flow, no positive earnings and no dividend, the engine refuses to value it
+> rather than printing a number it cannot defend (see [Part 14](#part-14-intrinsic-value-analysis)).
+> Refusals are cached like any other result, so they do not slow a re-run.
 
 ### 🤖 AI Score & Audit
 For any stock in the screener or your watchlist, you can trigger an **AI Audit**. This generates a **scorecard-based AI Score** (0-100) based on:

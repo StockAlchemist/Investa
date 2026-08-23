@@ -24,13 +24,13 @@ Investa is a comprehensive portfolio management solution with a modern **Web Das
 * **Contribution Analysis:** See exactly how much each holding contributes to your total portfolio return.
 * **Customizable Layouts:** A **Layout Configurator** on every tab lets you toggle and arrange widgets (including "Sector Contribution" and "Top Contributors") to build your own views; your layout persists across sessions.
 * **Fundamental Data:** Built-in viewer for company profiles, financials, and balance sheets.
-* **Intrinsic Value Analysis:** Automated **DCF (Income & Revenue-based)** and **Graham's Revised Formula** calculations **(with NAV support for ETFs)** with **Monte Carlo simulations**, **currency normalization**, and **stability logic (Growth Capping & Linear Fading)**.
+* **Intrinsic Value Analysis:** Twelve valuation models — **DCF**, **D-CFO**, **D-NI**, **DDM**, **Graham**, **EPV**, **Peter Lynch**, **PEG**, **PSG**, and historical **P/E / P/B / P/S** multiples — of which a **business-aware subset is blended** into one fair value (free cash flow for operating companies, net income for financials, cash flow and distributions for REITs), each weighted by its own **Monte Carlo** uncertainty. Ships a **confidence score**, a **bear/bull range**, an **earnings-power floor**, **NAV for ETFs**, **currency normalization** — and a **refusal** where the fundamentals cannot support a valuation, in place of a fabricated number.
 * **AI Portfolio Review:** Intelligent AI-powered analysis of your portfolio holdings, providing personalized insights, risk assessments, and diversification suggestions.
 * **Data Robustness:** Built-in **Ticker Normalization** (e.g., mapping `BRK.B` to `BRK-B`) and sanitization to prevent batch-fetch failures.
 * **User Authentication:** Secure login and registration system with multi-user support.
 * **HTTPS Support:** Built-in Tailscale Serve configuration for secure, encrypted access on local networks and mobile devices.
-* **Valuation Overrides:** Fully customizable valuation parameters (growth rates, discount rates, etc.) for each stock via the Settings menu or individual detail views.
-* **Batch Recalculation:** Dedicated scripts for bulk updating valuations for large universes like the S&P 500.
+* **Valuation Overrides:** Every model input (growth, discount rate, base cash flow, multiples) is adjustable from sliders in the stock's Valuation tab, re-blending the fair value live; per-symbol defaults can also be pinned in `manual_overrides.json`.
+* **Batch Valuation:** The Market Screener values whole universes (S&P 500, Russell 2000, "All Stocks") in the background and caches the result, so a screen over thousands of symbols reads from a shared store rather than recomputing.
 * **IBKR Integration:** Automated syncing of transactions from Interactive Brokers via Web Flex Service with a staging area for review and approval.
 * **Brokerage Statement Import:** Import transactions directly from **PDF / image statements** — deterministic parsers for **Interactive Brokers** and **Webull**, plus an AI fallback for other brokers — with an import-review step that flags already-imported rows to prevent duplicates.
 * **Annualized Performance:** Key metrics like **IRR (MWR)** are clearly labeled as **"Ann."** when displayed as annualized returns for better clarity.

@@ -4,6 +4,10 @@
  * for real-time parameter tweaking and comparison.
  */
 
+/** The credible output band the backend publishes and clamps to. */
+export const MIN_IV_TO_PRICE = 0.1;
+export const MAX_IV_TO_PRICE = 5.0;
+
 export type ValuationModelKey =
     | 'dcf'
     | 'dcfo'
@@ -707,6 +711,16 @@ export function calculateCustomModelValue(
     }
 }
 
+/**
+ * Re-blend the models after the user has moved a slider.
+ *
+ * The weights are the backend's own `model_weights`, not a second copy of the
+ * weighting rules: they encode which models may describe this business *and*
+ * how tightly each one pinned its answer (reliability from its Monte Carlo
+ * band), neither of which can be recomputed here. Editing a parameter changes
+ * what a model says, never whether it gets a vote. `sector` is still accepted
+ * for older cached responses that predate `model_weights`.
+ */
 export function calculateBlendedScore(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     intrinsicValue: any,
@@ -751,22 +765,29 @@ export function calculateBlendedScore(
         }
     });
 
-    const isFinancial = ['financial', 'bank', 'insurance', 'real estate', 'utilities'].some((k) =>
-        (sector || '').toLowerCase().includes(k)
-    );
+    const backendWeights: Record<string, number> | undefined = intrinsicValue.model_weights;
+    const profile: string =
+        intrinsicValue.blend_profile ??
+        (['financial', 'bank', 'insurance'].some((k) => (sector || '').toLowerCase().includes(k))
+            ? 'financial'
+            : 'operating');
 
-    // Weights matching backend
-    const weights: Record<string, number> = isFinancial
-        ? { ddm: 0.35, graham: 0.35, dcf: 0.3 }
-        : customModelValues.ddm != null
-          ? { dcf: 0.5, graham: 0.3, ddm: 0.2 }
-          : { dcf: 0.6, graham: 0.4 };
+    // Priors only — the fallback for a cached response with no weights on it.
+    const fallbackPriors: Record<string, Record<string, number>> = {
+        financial: { dni: 0.85, ddm: 0.15 },
+        reit: { dcfo: 0.5, ddm: 0.5 },
+        operating: { dcf: 0.55, graham: 0.3, ddm: 0.15 },
+    };
+    const weights: Record<string, number> =
+        backendWeights && Object.keys(backendWeights).length > 0
+            ? backendWeights
+            : (fallbackPriors[profile] ?? fallbackPriors.operating);
 
     const contributions: { key: string; val: number; weight: number }[] = [];
-    ['dcf', 'graham', 'ddm'].forEach((k) => {
+    Object.entries(weights).forEach(([k, w]) => {
         const val = customModelValues[k];
-        if (val != null && val > 0 && isFinite(val)) {
-            contributions.push({ key: k, val, weight: weights[k] || 0.33 });
+        if (val != null && val > 0 && isFinite(val) && w > 0) {
+            contributions.push({ key: k, val, weight: w });
         }
     });
 
@@ -774,6 +795,14 @@ export function calculateBlendedScore(
     if (contributions.length > 0) {
         const totalW = contributions.reduce((acc, c) => acc + c.weight, 0);
         customAverage = contributions.reduce((acc, c) => acc + c.val * c.weight, 0) / totalW;
+        // The same credible band the backend applies, so a slider cannot produce
+        // a headline the API would have refused to publish.
+        if (currentPrice && currentPrice > 0) {
+            customAverage = Math.min(
+                Math.max(customAverage, MIN_IV_TO_PRICE * currentPrice),
+                MAX_IV_TO_PRICE * currentPrice
+            );
+        }
     } else {
         customAverage = intrinsicValue.average_intrinsic_value ?? null;
     }

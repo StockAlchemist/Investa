@@ -32,7 +32,29 @@ Portfolio/tags screens have data).
 - [ ] Submit invalid input (empty symbol, negative price) → inline validation message.
 - [ ] Save a real transaction → appears with the correct signed total; delete it.
 
-## 4. Symbol search & PDF import (quick smoke)
+## 4. Valuation tab (live re-blend + refusals)
+
+- [ ] Stock Detail → **Valuation** on a large cap (e.g. `AAPL`): blended value, margin of
+      safety, and a **Confidence** bar all render; the weight chips under it sum to 100%.
+- [ ] "How this blend was built" names the profile and lists any held-out model with its
+      reason (a sub-60%-payout dividend payer should show **DDM held out** plus a
+      dividend-only floor).
+- [ ] A bank (`JPM`) blends **D-NI**; a REIT (`SPG`) blends **D-CFO** and the distribution.
+      Neither should show a DCF weight. A REIT whose DDM was refused (payout over 150% of
+      depreciation-charged net income, e.g. `O`) correctly blends D-CFO alone, at lower
+      confidence — that is not a bug.
+- [ ] Open a model card → edit a parameter (drag growth or discount rate) → **that model's
+      value and the blended headline both move**, with the default shown alongside; the
+      headline never exceeds 5x or falls below 0.1x spot. **Reset All to Defaults** restores.
+- [ ] A Mean P/E card shows a **median traded** multiple with its year span and a "Usually
+      Traded At" range — never today's P/E (that would make the fair value equal the price).
+- [ ] A company with no dividend, no positive EPS and no free cash flow shows **Not valued**
+      with a reason, not a number.
+- [ ] **iPhone**: scroll the whole Valuation tab top to bottom on a stock with all twelve
+      model cards expanded (**All Methods**) — no blank frames, no crash. This tab has the
+      deepest view tree in the app.
+
+## 5. Symbol search & PDF import (quick smoke)
 
 - [ ] Search box: type a ticker → results dropdown → tap → Stock Detail opens.
 - [ ] Transactions → Import → **Choose PDF / Image…** → file panel opens (no crash) → pick a statement → edit a review row → import → rows land with correct signs.

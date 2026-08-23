@@ -145,6 +145,61 @@ describe('valuationCalculator', () => {
             expect(res.customAverage).toBeGreaterThan(120);
             expect(res.customMarginOfSafety).toBeGreaterThan(20);
         });
+
+        it('follows the weights the backend shipped, not a second copy of them', () => {
+            // The backend derives weights from what the business is and from
+            // each model's own Monte Carlo band; recomputing them here would
+            // drift. A model with no weight must not vote even when it has a
+            // value, and the relative weights must be honoured.
+            const iv = {
+                current_price: 100,
+                average_intrinsic_value: 120,
+                blend_profile: 'financial',
+                model_weights: { dni: 0.7, graham: 0.3 },
+                models: {
+                    dni: { intrinsic_value: 200, parameters: { base_eps: 5 } },
+                    graham: {
+                        intrinsic_value: 100,
+                        parameters: { eps: 4, growth_rate_pct: 10, bond_yield_proxy: 4.4 },
+                    },
+                    // Present, valued, and deliberately unweighted by the backend.
+                    dcf: { intrinsic_value: 1000, parameters: { base_fcf: 10 } },
+                },
+            };
+
+            const res = calculateBlendedScore(iv, { graham: { eps: 4.0000001 } });
+            // 0.7 * 200 + 0.3 * 100 = 170, and nothing from the 1000 DCF.
+            expect(res.customAverage).toBeCloseTo(170, 6);
+        });
+
+        it('clamps a custom blend to the same credible band as the backend', () => {
+            const iv = {
+                current_price: 10,
+                average_intrinsic_value: 12,
+                model_weights: { dcf: 1.0 },
+                models: {
+                    dcf: {
+                        intrinsic_value: 12,
+                        parameters: {
+                            discount_rate: 0.1,
+                            growth_rate: 0.05,
+                            terminal_growth_rate: 0.02,
+                            projection_years: 10,
+                            base_fcf: 10,
+                            total_cash: 0,
+                            total_debt: 0,
+                            shares_outstanding: 1,
+                        },
+                    },
+                },
+            };
+
+            // Crank growth to the top of the band: unclamped this runs far past
+            // 5x spot, which is a number the API would never have published.
+            const res = calculateBlendedScore(iv, { dcf: { growth_rate: 0.25 } });
+            expect(res.customModelValues.dcf!).toBeGreaterThan(50);
+            expect(res.customAverage).toBeCloseTo(50, 6);
+        });
     });
 
     describe('MODEL_PARAM_CONFIGS', () => {

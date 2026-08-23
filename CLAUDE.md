@@ -61,7 +61,7 @@ The backend separates concerns across large modules. Key files:
 | `market_data.py` | yfinance integration, price caching, fallbacks |
 | `db_utils.py` | SQLite ORM, all database operations |
 | `finutils.py` | Low-level financial math |
-| `financial_ratios.py` | DCF valuation, financial ratios |
+| `financial_ratios.py` | Twelve intrinsic-value models, the business-aware blend, financial ratios |
 | `server/refresh_worker.py` | Background tasks (price refresh, etc.) |
 | `server/ai_analyzer.py` | Per-stock Gemini AI analysis |
 | `server/screener_service.py` | Market screener logic |

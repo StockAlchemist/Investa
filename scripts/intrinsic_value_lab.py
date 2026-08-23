@@ -30,6 +30,8 @@ import sys
 from io import StringIO
 from typing import Any, Dict, List, Optional
 
+from functools import lru_cache
+
 import numpy as np
 import pandas as pd
 
@@ -42,6 +44,22 @@ import market_data  # noqa: E402
 
 CACHE_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "data", "cache", "fundamentals_cache")
+)
+
+# Month-end closes for ~5,400 tickers back to 2011, built for the ranking
+# backtest. The historical valuation multiples need one price per fiscal period
+# end, so monthly resolution is ample, and reusing this panel keeps the harness
+# offline — the production path fetches daily closes through the market data
+# provider instead.
+PRICE_PANEL = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "data",
+        "cache",
+        "backtest",
+        "monthly_prices.pkl",
+    )
 )
 
 # Percentiles reported for every distribution. p50 is the headline: it is the
@@ -80,6 +98,30 @@ def _load_statement(symbol: str, kind: str) -> Optional[pd.DataFrame]:
         return None
     merged = market_data._with_edgar_history(symbol, kind, "annual", df)
     return None if merged is None or merged.empty else merged
+
+
+@lru_cache(maxsize=1)
+def _price_panel() -> Optional[pd.DataFrame]:
+    """Adjusted month-end closes, tickers in columns. None if the panel is absent."""
+    try:
+        panel = pd.read_pickle(PRICE_PANEL)
+    except Exception as e:
+        print(f"  (no price panel at {PRICE_PANEL}: {e})", file=sys.stderr)
+        return None
+    frame = panel.get("Adj Close") if isinstance(panel, dict) else panel
+    if frame is None or getattr(frame, "empty", True):
+        return None
+    frame.index = pd.to_datetime(frame.index)
+    return frame
+
+
+def _load_prices(symbol: str) -> Optional[pd.DataFrame]:
+    """One symbol's price history in the shape `_price_on_or_before` expects."""
+    panel = _price_panel()
+    if panel is None or symbol not in panel.columns:
+        return None
+    series = panel[symbol].dropna()
+    return None if series.empty else series.to_frame("Close")
 
 
 def _load_info(symbol: str) -> Optional[dict]:
@@ -127,12 +169,25 @@ def evaluate(symbols: List[str], iterations: int = 2000) -> List[Dict[str, Any]]
                 _load_statement(sym, "balance_sheet"),
                 _load_statement(sym, "cashflow"),
                 iterations=iterations,
+                prices_df=_load_prices(sym),
             )
         except Exception as exc:  # a model that raises is itself a finding
             rows.append({"symbol": sym, "price": price, "crashed": str(exc)})
             continue
 
         models = res.get("models", {}) or {}
+        # Every model's value, so blend design can be swept offline from the CSV
+        # instead of re-running twelve models per candidate weighting.
+        per_model = {
+            f"iv_{k}": (v or {}).get("intrinsic_value") for k, v in models.items()
+        }
+        per_model.update(
+            {
+                f"mc_{k}_{stat}": ((v or {}).get("mc") or {}).get(stat)
+                for k, v in models.items()
+                for stat in ("bear", "base", "bull")
+            }
+        )
         dcf = models.get("dcf", {}) or {}
         graham = models.get("graham", {}) or {}
         ddm = models.get("ddm", {}) or {}
@@ -142,6 +197,7 @@ def evaluate(symbols: List[str], iterations: int = 2000) -> List[Dict[str, Any]]
 
         rows.append(
             {
+                **per_model,
                 "symbol": sym,
                 "price": float(price),
                 "quote_type": (info.get("quoteType") or "").upper(),
@@ -166,6 +222,12 @@ def evaluate(symbols: List[str], iterations: int = 2000) -> List[Dict[str, Any]]
                 "status": res.get("valuation_status"),
                 "spread_pct": res.get("model_spread_pct"),
                 "note": res.get("valuation_note"),
+                "eps": info.get("trailingEps"),
+                "payout_ratio": info.get("payoutRatio"),
+                "market_cap": info.get("marketCap"),
+                "industry": info.get("industry"),
+                "n_blended": len(res.get("model_weights") or {}) or None,
+                "confidence": res.get("valuation_confidence"),
             }
         )
         if (i + 1) % 200 == 0:
@@ -176,6 +238,24 @@ def evaluate(symbols: List[str], iterations: int = 2000) -> List[Dict[str, Any]]
 def _finite(values) -> np.ndarray:
     arr = np.asarray([v for v in values if v is not None], dtype=float)
     return arr[np.isfinite(arr)] if arr.size else arr
+
+
+def _spearman(xs, ys) -> Optional[float]:
+    """Rank correlation, pairwise-complete. No scipy dependency."""
+    pairs = [
+        (float(x), float(y))
+        for x, y in zip(xs, ys)
+        if x is not None and y is not None and np.isfinite(x) and np.isfinite(y)
+    ]
+    if len(pairs) < 30:
+        return None
+    a = np.asarray([p[0] for p in pairs])
+    b = np.asarray([p[1] for p in pairs])
+    ra = pd.Series(a).rank().to_numpy()
+    rb = pd.Series(b).rank().to_numpy()
+    if ra.std() == 0 or rb.std() == 0:
+        return None
+    return float(np.corrcoef(ra, rb)[0, 1])
 
 
 def _dist(name: str, values, unit: str = "") -> Optional[Dict[str, Any]]:
@@ -248,6 +328,29 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         [abs(r["dcf_iv"] - r["graham_iv"]) / r["price"] * 100.0 for r in both],
     )
 
+    # The one external check available offline: a fair value that tracks value
+    # rather than noise should rank stocks roughly the way earnings yield does.
+    # Not a proof of predictive power -- there is no point-in-time data here --
+    # but a blend that loses this has stopped measuring cheapness.
+    print("\nRANK AGREEMENT WITH EARNINGS YIELD (Spearman rho of MOS vs E/P)")
+    rho_ep = _spearman(
+        [r.get("mos_pct") for r in equities],
+        [
+            (r["eps"] / r["price"]) if r.get("eps") is not None else None
+            for r in equities
+        ],
+    )
+    print(f"  rho(MOS, E/P) = {rho_ep:+.3f}" if rho_ep is not None else "  (no data)")
+
+    blended_counts: Dict[int, int] = {}
+    for r in equities:
+        if r.get("n_blended"):
+            blended_counts[r["n_blended"]] = blended_counts.get(r["n_blended"], 0) + 1
+    if blended_counts:
+        print("\nMODELS PER BLEND")
+        for k, v in sorted(blended_counts.items()):
+            print(f"  {k} model(s){'':<16} {v:>5}  ({v / max(1, len(equities)):>6.1%})")
+
     print("\nMODEL VARIANTS USED")
     variants: Dict[str, int] = {}
     for r in equities:
@@ -307,7 +410,9 @@ def report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "mos_graham": graham_mos,
         "mos_lynch": lynch_mos,
         "spread": spread,
+        "rho_mos_ep": rho_ep,
         "absurd_frac": len(absurd) / max(1, len(equities)),
+        "status_counts": statuses,
     }
 
 

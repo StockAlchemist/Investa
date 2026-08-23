@@ -36,6 +36,7 @@ try:
         calculate_current_valuation_ratios,
         get_comprehensive_intrinsic_value,
         get_intrinsic_value_for_symbol,
+        load_price_history_for_multiples,
         to_trailing_twelve_months,
     )
 
@@ -675,7 +676,11 @@ def get_stock_analysis(
                 # immediately when "Analyze" is clicked, updating the screener row live.
                 logging.info(f"Recalculating Intrinsic Value for {symbol}...")
                 iv_results = get_comprehensive_intrinsic_value(
-                    fund_data, financials_df, balance_sheet_df, cashflow_df
+                    fund_data,
+                    financials_df,
+                    balance_sheet_df,
+                    cashflow_df,
+                    prices_df=load_price_history_for_multiples(mdp, yf_symbol),
                 )
 
                 # Serialize the entire result for storage

@@ -20,6 +20,9 @@ import {
     BookOpen,
     SlidersHorizontal,
     RotateCcw,
+    CheckCircle2,
+    AlertTriangle,
+    ChevronDown,
 } from 'lucide-react';
 import {
     ResponsiveContainer,
@@ -34,6 +37,7 @@ import {
 import { Badge } from '../../ui/badge';
 import { cn, formatCurrency, formatPercent as formatPercentShared } from '../../../lib/utils';
 import ValuationComparisonChart from '../ValuationComparisonChart';
+import type { IntrinsicValueResponse, IntrinsicValueModel } from '@/lib/api';
 import {
     ValuationModelKey,
     MODEL_PARAM_CONFIGS,
@@ -182,20 +186,45 @@ const LimitationCallout = ({
     whenToUse?: string;
     keyLimitation?: string;
 }) => {
+    const [expanded, setExpanded] = useState(false);
     const suited = bestSuitedFor || whenToUse;
     const caveats = keyCaveats || keyLimitation;
+    if (!suited && !caveats) return null;
     return (
-        <div className="bg-secondary/40 border border-border/40 rounded-xl p-3 text-[11px] space-y-1.5 mt-4">
-            {suited && (
-                <div className="flex items-start gap-1.5">
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0">Best Suited For:</span>
-                    <span className="text-muted-foreground leading-tight">{suited}</span>
-                </div>
-            )}
-            {caveats && (
-                <div className="flex items-start gap-1.5">
-                    <span className="font-bold text-amber-600 dark:text-amber-400 flex-shrink-0">Key Caveats:</span>
-                    <span className="text-muted-foreground leading-tight">{caveats}</span>
+        <div className="bg-secondary/40 border border-border/40 rounded-xl text-[11px] mt-4">
+            <button
+                type="button"
+                onClick={() => setExpanded(v => !v)}
+                aria-expanded={expanded}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
+            >
+                <span className="flex items-center gap-1.5 font-bold uppercase tracking-wide text-[10px] text-muted-foreground">
+                    <Info className="w-3 h-3" />
+                    Best Suited For &amp; Key Caveats
+                </span>
+                <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+            </button>
+            {expanded && (
+                <div className="px-3 pb-3 space-y-2">
+                    {suited && (
+                        <div className="space-y-0.5">
+                            <div className="flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-emerald-600 dark:text-emerald-400">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Best Suited For
+                            </div>
+                            <p className="text-muted-foreground leading-tight">{suited}</p>
+                        </div>
+                    )}
+                    {suited && caveats && <div className="border-t border-border/40" />}
+                    {caveats && (
+                        <div className="space-y-0.5">
+                            <div className="flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-amber-600 dark:text-amber-400">
+                                <AlertTriangle className="w-3 h-3" />
+                                Key Caveats
+                            </div>
+                            <p className="text-muted-foreground leading-tight">{caveats}</p>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -374,7 +403,206 @@ const ParameterEditor: React.FC<ParameterEditorProps> = ({
     );
 };
 
-type FilterCategory = 'all' | 'cash_earnings' | 'multiples_growth' | 'floors_relative';
+/**
+ * The parenthetical the backend appends to a disagreement note — e.g.
+ * "(dcf=392.89, graham=671.56, ddm=14.48)". Those figures are in the company's
+ * native currency, so strip them and re-render the same models below in whatever
+ * currency the rest of the tab is showing. If the backend wording ever changes,
+ * the pattern stops matching and the note simply renders as it was sent.
+ */
+const MODEL_DETAIL_PATTERN = /\s*\((?:dcf|graham|ddm)=-?[\d.]+(?:,\s*(?:dcf|graham|ddm)=-?[\d.]+)*\)/gi;
+
+/**
+ * A blended estimate the backend does not fully stand behind. Two statuses carry
+ * that doubt: `low_confidence` (the contributing models sit further apart than
+ * the blend is large) and `clamped` (raw output was so far from spot that it was
+ * pulled back into the credible band, so the headline is not the number the
+ * models actually produced). The macOS and iOS clients surface both; the web app
+ * used to drop them and show the headline with no caveat at all.
+ */
+const ValuationCaveatBanner: React.FC<{
+    intrinsicValue: IntrinsicValueResponse;
+    currency: string;
+    fxRate: number;
+}> = ({ intrinsicValue, currency, fxRate }) => {
+    const status = intrinsicValue.valuation_status;
+    const note = intrinsicValue.valuation_note;
+    if (!note || (status !== 'low_confidence' && status !== 'clamped')) return null;
+
+    // Clamped is the stronger of the two claims — the displayed value was altered,
+    // not merely averaged over noisy models — so it gets the louder colour.
+    const isClamped = status === 'clamped';
+    const Icon = isClamped ? AlertCircle : AlertTriangle;
+
+    const models = (intrinsicValue.models ?? {}) as Record<string, IntrinsicValueModel | undefined>;
+    const contributions = Object.keys(intrinsicValue.model_weights ?? {})
+        .map((key) => ({ key, value: models[key]?.intrinsic_value }))
+        .filter((c): c is { key: string; value: number } => typeof c.value === 'number' && Number.isFinite(c.value));
+
+    return (
+        <div className={cn(
+            "rounded-2xl border p-5 flex items-start gap-3",
+            isClamped ? "bg-rose-500/10 border-rose-500/30" : "bg-amber-500/10 border-amber-500/30"
+        )}>
+            <Icon className={cn("w-5 h-5 shrink-0 mt-0.5", isClamped ? "text-rose-500" : "text-amber-500")} />
+            <div className="space-y-2 min-w-0">
+                <p className={cn(
+                    "text-xs font-bold uppercase tracking-wider",
+                    isClamped ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"
+                )}>
+                    {isClamped ? "Output outside credible range" : "Models disagree"}
+                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                    {note.replace(MODEL_DETAIL_PATTERN, '')}
+                </p>
+                {contributions.length > 1 && (
+                    <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                        {contributions.map(({ key, value }) => (
+                            <span key={key} className="px-2 py-0.5 bg-background/60 rounded font-semibold tabular-nums">
+                                <span className="uppercase text-muted-foreground">{key}</span>{' '}
+                                {formatCurrency(value * fxRate, currency)}
+                            </span>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+/**
+ * How much the backend stands behind the number, as a bar. Confidence is
+ * continuous — the models' own Monte Carlo bands, how far apart they landed,
+ * and how many of them there were — so it is shown as a level rather than the
+ * old pass/fail that read as fine at 99% disagreement and alarming at 101%.
+ */
+const ConfidenceMeter: React.FC<{ confidence?: number }> = ({ confidence }) => {
+    if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return null;
+    const pct = Math.max(0, Math.min(1, confidence));
+    const tone = pct >= 0.66 ? 'bg-emerald-500' : pct >= 0.4 ? 'bg-amber-500' : 'bg-rose-500';
+    return (
+        <div className="mt-3 w-full max-w-[190px]">
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                <span className="uppercase font-semibold tracking-wider">Confidence</span>
+                <span className="font-bold tabular-nums">{(pct * 100).toFixed(0)}%</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-secondary/70 overflow-hidden">
+                <div className={cn('h-full rounded-full transition-all', tone)} style={{ width: `${pct * 100}%` }} />
+            </div>
+        </div>
+    );
+};
+
+const BLEND_PROFILE_LABEL: Record<string, string> = {
+    financial: 'Financial — valued on discounted net income, not free cash flow',
+    reit: 'REIT — valued on cash from operations and the distribution, since net income is charged with non-cash depreciation',
+    operating: 'Operating company — valued on discounted free cash flow',
+};
+
+/**
+ * The composition of the blend: which models were held out and why, and the
+ * floors that travel beside the estimate rather than inside it. A model can be
+ * excluded because it does not describe this business (a DCF of a bank) or
+ * because it prices only part of it (a DDM of a company that retains most of
+ * its earnings) — in both cases the number is still worth seeing, just not
+ * worth averaging in.
+ */
+const BlendComposition: React.FC<{
+    intrinsicValue: IntrinsicValueResponse;
+    currency: string;
+    fxRate: number;
+}> = ({ intrinsicValue, currency, fxRate }) => {
+    const exclusions = Object.entries(intrinsicValue.blend_exclusions ?? {});
+    const floors = [
+        { label: 'Earnings power floor', hint: 'Current earnings, no growth', value: intrinsicValue.earnings_power_floor },
+        { label: 'Dividend-only value', hint: 'What the dividend stream alone is worth', value: intrinsicValue.dividend_discount_floor },
+    ].filter((f) => typeof f.value === 'number' && Number.isFinite(f.value));
+    const profile = intrinsicValue.blend_profile;
+    if (!exclusions.length && !floors.length && !profile) return null;
+
+    return (
+        <div className="rounded-2xl border border-border/60 bg-muted/40 p-5 space-y-3">
+            <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-muted-foreground" />
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">How this blend was built</p>
+            </div>
+            {profile && BLEND_PROFILE_LABEL[profile] && (
+                <p className="text-sm text-muted-foreground leading-relaxed">{BLEND_PROFILE_LABEL[profile]}.</p>
+            )}
+            {floors.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {floors.map((f) => (
+                        <div key={f.label} className="px-3 py-2 rounded-xl bg-background/70 border border-border/50">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground">{f.label}</p>
+                            <p className="text-sm font-bold tabular-nums">{formatCurrency((f.value as number) * fxRate, currency)}</p>
+                            <p className="text-[10px] text-muted-foreground">{f.hint}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {exclusions.length > 0 && (
+                <ul className="space-y-1.5">
+                    {exclusions.map(([key, reason]) => (
+                        <li key={key} className="text-xs text-muted-foreground flex gap-2">
+                            <span className="uppercase font-bold text-foreground/70 shrink-0">{key}</span>
+                            <span className="leading-relaxed">held out — {reason}</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+};
+
+/**
+ * The interquartile range of the multiples this company has actually traded at.
+ * The median alone reads as an opinion; "usually 12.4x-19.1x over 15 years" is
+ * the record it was taken from, and it is what tells the reader whether today's
+ * multiple is unusual or ordinary.
+ */
+const TradedRangeItem: React.FC<{
+    params: Record<string, unknown> | undefined;
+    digits?: number;
+}> = ({ params, digits = 1 }) => {
+    const p25 = params?.multiple_p25 as number | undefined;
+    const p75 = params?.multiple_p75 as number | undefined;
+    const n = params?.multiple_observations as number | undefined;
+    if (typeof p25 !== 'number' || typeof p75 !== 'number' || !n) return null;
+    return (
+        <ParamItem
+            label="Usually Traded At"
+            value={`${p25.toFixed(digits)}x – ${p75.toFixed(digits)}x (${n}y)`}
+        />
+    );
+};
+
+/** Selector sentinels: show only the backend's best-fit method, or every available model. */
+const BEST_FIT = '__best_fit__';
+const ALL_METHODS = '__all__';
+
+type ModelCategory = 'cash_earnings' | 'multiples_growth' | 'floors_relative';
+
+const MODEL_CATEGORY_LABELS: Record<ModelCategory, string> = {
+    cash_earnings: 'Cash Flow & Earnings',
+    multiples_growth: 'Multiples & Growth',
+    floors_relative: 'Floors & Relative',
+};
+
+/** Every model the tab can render, in display order, with its selector label. */
+const MODEL_CATALOG: { key: ValuationModelKey; label: string; category: ModelCategory }[] = [
+    { key: 'dcf', label: 'Discounted Free Cash Flow (DCF)', category: 'cash_earnings' },
+    { key: 'dcfo', label: 'Discounted Cash from Operations (D-CFO)', category: 'cash_earnings' },
+    { key: 'dni', label: 'Discounted Net Income (D-NI)', category: 'cash_earnings' },
+    { key: 'ddm', label: 'Dividend Discount Model (DDM)', category: 'cash_earnings' },
+    { key: 'mean_pe', label: 'Mean P/E Ratio', category: 'multiples_growth' },
+    { key: 'peg', label: 'PEG Ratio Fair Value', category: 'multiples_growth' },
+    { key: 'mean_pb', label: 'Mean P/B Ratio', category: 'multiples_growth' },
+    { key: 'mean_ps', label: 'Mean P/S Ratio', category: 'multiples_growth' },
+    { key: 'psg', label: 'Price-to-Sales Growth (PSG)', category: 'multiples_growth' },
+    { key: 'graham', label: "Graham's Formula", category: 'floors_relative' },
+    { key: 'lynch', label: 'Peter Lynch Fair Value', category: 'floors_relative' },
+    { key: 'epv', label: 'Earnings Power Value (EPV Floor)', category: 'floors_relative' },
+];
 
 export const ValuationTab: React.FC<ValuationTabProps> = ({
     symbol,
@@ -383,7 +611,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
     currency,
     fxRate
 }) => {
-    const [categoryFilter, setCategoryFilter] = useState<FilterCategory>('all');
+    const [methodFilter, setMethodFilter] = useState<string>(BEST_FIT);
     const [viewingDistribution, setViewingDistribution] = useState<string | null>(null);
     const [customOverrides, setCustomOverrides] = useState<Record<string, Record<string, number>>>({});
     const [editingModelKeys, setEditingModelKeys] = useState<Set<string>>(new Set());
@@ -406,6 +634,24 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
     const displayAverage = hasAnyCustom && customAverage != null ? customAverage : average_intrinsic_value;
     const displayMos = hasAnyCustom && customMarginOfSafety != null ? customMarginOfSafety : margin_of_safety_pct;
     const hasDisplayValue = displayAverage !== null && displayAverage !== undefined;
+
+    // --- Method selector -------------------------------------------------
+    // Only models the backend actually returned are offered; the best-fit
+    // method is the default view so the tab opens on one card, not twelve.
+    const availableModels = MODEL_CATALOG.filter((m) => models?.[m.key]);
+    const recommendedKey = recommended_method?.method_key;
+    const bestFitKey = availableModels.some((m) => m.key === recommendedKey) ? recommendedKey : undefined;
+    // A selection can go stale when the user switches to a stock lacking that model.
+    const effectiveFilter =
+        methodFilter !== BEST_FIT && methodFilter !== ALL_METHODS && !availableModels.some((m) => m.key === methodFilter)
+            ? BEST_FIT
+            : methodFilter;
+    const showModel = (key: ValuationModelKey) => {
+        if (effectiveFilter === ALL_METHODS) return true;
+        if (effectiveFilter === BEST_FIT) return bestFitKey ? key === bestFitKey : true;
+        return key === effectiveFilter;
+    };
+    const visibleCount = availableModels.filter((m) => showModel(m.key)).length;
 
     const toggleEditing = (key: string) => {
         setEditingModelKeys((prev) => {
@@ -634,11 +880,12 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                             <p className="text-sm font-semibold mb-1">
                                 {formatCurrency((intrinsicValue.range.bear ?? 0) * fxRate, currency)} — {formatCurrency((intrinsicValue.range.bull ?? 0) * fxRate, currency)}
                             </p>
-                            <span className="text-[10px] text-muted-foreground">Bear (10th) to Bull (90th)</span>
+                            <span className="text-[10px] text-muted-foreground">Bear (10th) to Bull (90th), from the blended models</span>
                         </>
                     ) : (
                         <p className="text-sm text-muted-foreground">Range unavailable</p>
                     )}
+                    <ConfidenceMeter confidence={intrinsicValue.valuation_confidence} />
                     {intrinsicValue.model_weights && Object.keys(intrinsicValue.model_weights).length > 0 && (
                         <div className="mt-2 flex items-center gap-1.5 flex-wrap justify-center text-[10px] text-muted-foreground">
                             {Object.entries(intrinsicValue.model_weights).map(([k, w]) => (
@@ -650,6 +897,12 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
                 </div>
             </div>
+
+            {/* Blend caveats the backend attaches to the headline number. */}
+            <ValuationCaveatBanner intrinsicValue={intrinsicValue} currency={currency} fxRate={fxRate} />
+
+            {/* What was left out of the blend, and the floors that sit beside it. */}
+            <BlendComposition intrinsicValue={intrinsicValue} currency={currency} fxRate={fxRate} />
 
             {/* Recommended Method Banner */}
             {recommended_method && recommended_method.method_key !== 'none' && (
@@ -709,52 +962,41 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                 customBlendedValue={hasAnyCustom ? customAverage : undefined}
             />
 
-            {/* Filter Categories */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                <button
-                    onClick={() => setCategoryFilter('all')}
-                    className={cn(
-                        "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
-                        categoryFilter === 'all'
-                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                            : "bg-muted text-muted-foreground hover:text-foreground"
-                    )}
+            {/* Method selector — defaults to the best-fit model */}
+            <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="valuation-method-select" className="text-xs font-semibold text-muted-foreground">
+                    Valuation method
+                </label>
+                <select
+                    id="valuation-method-select"
+                    value={effectiveFilter}
+                    onChange={(e) => setMethodFilter(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg bg-secondary text-xs font-semibold text-foreground border border-border/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 cursor-pointer"
+                    aria-label="Valuation method"
                 >
-                    All Methods (12)
-                </button>
-                <button
-                    onClick={() => setCategoryFilter('cash_earnings')}
-                    className={cn(
-                        "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
-                        categoryFilter === 'cash_earnings'
-                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                            : "bg-muted text-muted-foreground hover:text-foreground"
-                    )}
-                >
-                    Cash Flow & Earnings (DCF, D-CFO, D-NI, DDM)
-                </button>
-                <button
-                    onClick={() => setCategoryFilter('multiples_growth')}
-                    className={cn(
-                        "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
-                        categoryFilter === 'multiples_growth'
-                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                            : "bg-muted text-muted-foreground hover:text-foreground"
-                    )}
-                >
-                    Multiples & Growth (P/E, PEG, P/B, P/S, PSG)
-                </button>
-                <button
-                    onClick={() => setCategoryFilter('floors_relative')}
-                    className={cn(
-                        "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
-                        categoryFilter === 'floors_relative'
-                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                            : "bg-muted text-muted-foreground hover:text-foreground"
-                    )}
-                >
-                    Floors & Relative (EPV, Graham, Lynch)
-                </button>
+                    <option value={BEST_FIT}>
+                        {bestFitKey
+                            ? `Best Fit — ${MODEL_CATALOG.find((m) => m.key === bestFitKey)?.label}`
+                            : 'Best Fit (none selected)'}
+                    </option>
+                    <option value={ALL_METHODS}>All Methods ({availableModels.length})</option>
+                    {(Object.keys(MODEL_CATEGORY_LABELS) as ModelCategory[]).map((cat) => {
+                        const group = availableModels.filter((m) => m.category === cat);
+                        if (group.length === 0) return null;
+                        return (
+                            <optgroup key={cat} label={MODEL_CATEGORY_LABELS[cat]}>
+                                {group.map((m) => (
+                                    <option key={m.key} value={m.key}>{m.label}</option>
+                                ))}
+                            </optgroup>
+                        );
+                    })}
+                </select>
+                {effectiveFilter === BEST_FIT && bestFitKey && (
+                    <span className="text-[11px] text-muted-foreground">
+                        Showing the best-fit model only — switch above to compare others.
+                    </span>
+                )}
             </div>
 
             {/* Models Breakdown */}
@@ -767,9 +1009,9 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     </p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className={cn("grid grid-cols-1 gap-8", visibleCount > 1 && "md:grid-cols-2")}>
                     {/* 1. DCF Model (Primary Method) */}
-                    {(categoryFilter === 'all' || categoryFilter === 'cash_earnings') && models.dcf && (
+                    {showModel('dcf') && models.dcf && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'dcf' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -849,7 +1091,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 2. Discounted Cash from Operations (D-CFO) */}
-                    {(categoryFilter === 'all' || categoryFilter === 'cash_earnings') && models.dcfo && (
+                    {showModel('dcfo') && models.dcfo && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'dcfo' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -923,7 +1165,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 3. Discounted Net Income (D-NI) */}
-                    {(categoryFilter === 'all' || categoryFilter === 'cash_earnings') && models.dni && (
+                    {showModel('dni') && models.dni && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'dni' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -997,7 +1239,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 4. Multi-Stage Dividend Discount Model (DDM) */}
-                    {(categoryFilter === 'all' || categoryFilter === 'cash_earnings') && models.ddm && (
+                    {showModel('ddm') && models.ddm && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'ddm' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1068,7 +1310,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 5. Mean P/E Ratio */}
-                    {(categoryFilter === 'all' || categoryFilter === 'multiples_growth') && models.mean_pe && (
+                    {showModel('mean_pe') && models.mean_pe && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'mean_pe' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1114,6 +1356,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                                 label="Multiple Source"
                                                 value={models.mean_pe.parameters.pe_source || 'Historical Baseline'}
                                             />
+                                            <TradedRangeItem params={models.mean_pe.parameters} digits={1} />
                                             <ParamItem
                                                 label="Fair Multiplier"
                                                 value={`${(customOverrides.mean_pe?.applied_pe ?? models.mean_pe.parameters.applied_pe ?? 0).toFixed(1)}x EPS`}
@@ -1136,7 +1379,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 6. PEG Ratio Fair Value */}
-                    {(categoryFilter === 'all' || categoryFilter === 'multiples_growth') && models.peg && (
+                    {showModel('peg') && models.peg && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'peg' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1207,7 +1450,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 7. Mean P/B Ratio */}
-                    {(categoryFilter === 'all' || categoryFilter === 'multiples_growth') && models.mean_pb && (
+                    {showModel('mean_pb') && models.mean_pb && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'mean_pb' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1252,6 +1495,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                                 label="Benchmark Source"
                                                 value={models.mean_pb.parameters.pb_source || 'Industry Standard'}
                                             />
+                                            <TradedRangeItem params={models.mean_pb.parameters} digits={2} />
                                             <ParamItem
                                                 label="Sector Classification"
                                                 value={models.mean_pb.parameters.sector || 'Financial/Asset'}
@@ -1274,7 +1518,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 8. Mean P/S Ratio */}
-                    {(categoryFilter === 'all' || categoryFilter === 'multiples_growth') && models.mean_ps && (
+                    {showModel('mean_ps') && models.mean_ps && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'mean_ps' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1319,6 +1563,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                                 label="Multiple Source"
                                                 value={models.mean_ps.parameters.ps_source || 'Historical Mean'}
                                             />
+                                            <TradedRangeItem params={models.mean_ps.parameters} digits={2} />
                                             <ParamItem
                                                 label="Fair Multiplier"
                                                 value={`${(customOverrides.mean_ps?.applied_ps ?? models.mean_ps.parameters.applied_ps ?? 0).toFixed(2)}x Sales`}
@@ -1341,7 +1586,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 9. Price-to-Sales Growth (PSG) */}
-                    {(categoryFilter === 'all' || categoryFilter === 'multiples_growth') && models.psg && (
+                    {showModel('psg') && models.psg && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'psg' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1413,7 +1658,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 10. Benjamin Graham's Revised Formula */}
-                    {(categoryFilter === 'all' || categoryFilter === 'floors_relative') && models.graham && (
+                    {showModel('graham') && models.graham && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'graham' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1488,7 +1733,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 11. Peter Lynch Fair Value */}
-                    {(categoryFilter === 'all' || categoryFilter === 'floors_relative') && models.lynch && (
+                    {showModel('lynch') && models.lynch && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'lynch' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
@@ -1557,7 +1802,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     )}
 
                     {/* 12. Earnings Power Value (EPV Floor) */}
-                    {(categoryFilter === 'all' || categoryFilter === 'floors_relative') && models.epv && (
+                    {showModel('epv') && models.epv && (
                         <div className={cn(
                             "bg-muted rounded-2xl p-6 transition-all",
                             recommended_method?.method_key === 'epv' && "ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/5",
