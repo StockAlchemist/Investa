@@ -134,13 +134,17 @@ extension View {
 /// Standardized section label view (10px uppercase, font-weight 800, tracking 1.5).
 struct SectionLabel: View {
     let title: String
+    /// Headers that are too long for a compact width can opt into wrapping
+    /// instead of being truncated mid-word.
+    var lineLimit: Int = 1
     var body: some View {
         Text(title)
             .font(.system(size: 10, weight: .heavy))
             .tracking(1.5)
             .textCase(.uppercase)
             .foregroundStyle(Color.sectionText)
-            .lineLimit(1)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

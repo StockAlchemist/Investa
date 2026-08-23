@@ -733,22 +733,31 @@ enum StockValuationCalculator {
             )
         }
 
-        // Determine weights
-        let isFinancial = sector?.lowercased().contains("financial") == true || sector?.lowercased().contains("bank") == true
+        // The backend's own weights: they encode which models may describe this
+        // business *and* how tightly each pinned its answer (reliability from
+        // its Monte Carlo band), neither of which can be recomputed here.
+        // Editing a parameter changes what a model says, never whether it votes.
+        // The priors below are only a fallback for a cached response sent
+        // before the API carried weights; `sector` serves the same purpose.
         let weights: [String: Double]
-        if isFinancial {
-            weights = ["ddm": 0.35, "graham": 0.35, "dcf": 0.30]
-        } else if customValues["ddm"] != nil && (customValues["ddm"] ?? 0) > 0 {
-            weights = ["dcf": 0.50, "graham": 0.30, "ddm": 0.20]
+        if let shipped = iv.modelWeights, !shipped.isEmpty {
+            weights = shipped
         } else {
-            weights = ["dcf": 0.60, "graham": 0.40]
+            let haystack = (iv.blendProfile ?? sector ?? "").lowercased()
+            if haystack.contains("reit") {
+                weights = ["dcfo": 0.50, "ddm": 0.50]
+            } else if ["financial", "bank", "insurance"].contains(where: { haystack.contains($0) }) {
+                weights = ["dni": 0.85, "ddm": 0.15]
+            } else {
+                weights = ["dcf": 0.55, "graham": 0.30, "ddm": 0.15]
+            }
         }
 
         var totalWeight: Double = 0.0
         var weightedSum: Double = 0.0
 
-        for (k, w) in weights {
-            if let val = customValues[k], val > 0 {
+        for (k, w) in weights where w > 0 {
+            if let val = customValues[k], val > 0, val.isFinite {
                 weightedSum += val * w
                 totalWeight += w
             }
@@ -756,7 +765,13 @@ enum StockValuationCalculator {
 
         var customAvg: Double? = nil
         if totalWeight > 0 {
-            customAvg = round((weightedSum / totalWeight) * 100.0) / 100.0
+            var blended = weightedSum / totalWeight
+            // The same credible band the backend clamps to, so a slider cannot
+            // produce a headline the API would have refused to publish.
+            if let spot = iv.currentPrice, spot > 0 {
+                blended = min(max(blended, 0.1 * spot), 5.0 * spot)
+            }
+            customAvg = round(blended * 100.0) / 100.0
         } else if let first = customValues.values.first {
             customAvg = first
         }

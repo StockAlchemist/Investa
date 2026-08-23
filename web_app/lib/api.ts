@@ -1122,8 +1122,18 @@ export interface IntrinsicValueResponse {
     model_spread_pct?: number | null;
     /** Normalized weight actually applied to each contributing model. */
     model_weights?: Record<string, number>;
+    /** Reliability (0-1) derived from each contributing model's own MC band. */
+    model_reliability?: Record<string, number>;
+    /** 0-1. How much the backend stands behind the blended value. */
+    valuation_confidence?: number;
+    /** Which family of models was allowed to set the value for this business. */
+    blend_profile?: 'operating' | 'financial' | 'reit';
+    /** Models held out of the blend, keyed by model, with the reason why. */
+    blend_exclusions?: Record<string, string>;
     /** Value of current earning power with zero growth. */
     earnings_power_floor?: number;
+    /** What the dividend stream alone is worth, when the DDM is held out. */
+    dividend_discount_floor?: number;
     /** Peter Lynch Fair Value estimate. */
     lynch_fair_value?: number;
 }

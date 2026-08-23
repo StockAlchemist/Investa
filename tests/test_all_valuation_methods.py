@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import pytest
 import financial_ratios as fr
@@ -103,12 +102,25 @@ def test_discounted_net_income():
 
 
 def test_mean_pe_valuation():
+    """The multiple comes from what the company has traded at, not from today's.
+
+    `trailingPE` is price/EPS, so multiplying it back by EPS returned the quote
+    itself. The model now takes the median of the traded record and refuses
+    when there is none.
+    """
     info = _sample_info(trailingEps=4.0, trailingPE=22.0)
-    res = fr.calculate_intrinsic_value_mean_pe(info)
-    assert "intrinsic_value" in res
-    assert res["intrinsic_value"] == pytest.approx(4.0 * 22.0, rel=1e-3)
+    history = {"value": 15.0, "n": 12, "span": "2013-2024", "low": 12.0, "high": 19.0}
+
+    res = fr.calculate_intrinsic_value_mean_pe(info, history=history)
+    assert res["intrinsic_value"] == pytest.approx(4.0 * 15.0, rel=1e-3)
     assert res["model"] == "Mean P/E Ratio"
-    assert res["parameters"]["applied_pe"] == 22.0
+    assert res["parameters"]["applied_pe"] == 15.0
+    assert res["parameters"]["multiple_observations"] == 12
+    assert "22" not in res["parameters"]["pe_source"], "must not read the trailing P/E"
+
+    refused = fr.calculate_intrinsic_value_mean_pe(info)
+    assert "intrinsic_value" not in refused
+    assert "No traded P/E history" in refused["error"]
 
 
 def test_mean_pe_negative_eps_rejected():
@@ -129,6 +141,7 @@ def test_peg_ratio_fair_value():
 
 
 def test_mean_pb_valuation_bank_benchmark():
+    """The sector benchmark survives only where there is no traded record."""
     info = _sample_info(sector="Financial Services", bookValue=50.0)
     res = fr.calculate_intrinsic_value_mean_pb(info)
     assert "intrinsic_value" in res
@@ -137,15 +150,38 @@ def test_mean_pb_valuation_bank_benchmark():
     assert res["parameters"]["applied_pb"] == 1.30
     assert res["intrinsic_value"] == pytest.approx(50.0 * 1.30, rel=1e-3)
 
+    # ...and the company's own history takes precedence over it.
+    history = {"value": 0.9, "n": 11, "span": "2014-2024", "low": 0.7, "high": 1.1}
+    own = fr.calculate_intrinsic_value_mean_pb(info, history=history)
+    assert own["intrinsic_value"] == pytest.approx(50.0 * 0.9, rel=1e-3)
+
+
+def test_mean_pb_non_financial_refuses_without_history():
+    """`priceToBook` x book value is the price; there is no fallback to it."""
+    res = fr.calculate_intrinsic_value_mean_pb(
+        _sample_info(sector="Technology", bookValue=40.0, priceToBook=2.5)
+    )
+    assert "intrinsic_value" not in res
+    assert "No traded P/B history" in res["error"]
+
 
 def test_mean_ps_valuation():
-    info = _sample_info(totalRevenue=50_000_000, sharesOutstanding=1_000_000, priceToSalesTrailing12Months=2.5)
-    res = fr.calculate_intrinsic_value_mean_ps(info)
-    assert "intrinsic_value" in res
+    info = _sample_info(
+        totalRevenue=50_000_000,
+        sharesOutstanding=1_000_000,
+        priceToSalesTrailing12Months=2.5,
+    )
+    history = {"value": 2.0, "n": 9, "span": "2016-2024", "low": 1.6, "high": 2.6}
+
+    res = fr.calculate_intrinsic_value_mean_ps(info, history=history)
     assert res["model"] == "Mean P/S Ratio"
-    # SPS = $50, P/S = 2.5 => IV = $125
+    # SPS = $50, median traded P/S = 2.0 => IV = $100
     assert res["parameters"]["sales_per_share"] == 50.0
-    assert res["intrinsic_value"] == pytest.approx(125.0, rel=1e-3)
+    assert res["intrinsic_value"] == pytest.approx(100.0, rel=1e-3)
+
+    refused = fr.calculate_intrinsic_value_mean_ps(info)
+    assert "intrinsic_value" not in refused
+    assert "No traded P/S history" in refused["error"]
 
 
 def test_psg_valuation_unprofitable_growth():

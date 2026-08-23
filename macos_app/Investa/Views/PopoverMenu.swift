@@ -15,6 +15,15 @@ struct PopoverMenu<Label: View, Content: View>: View {
 
     @State private var open = false
 
+    /// A popover sizes itself to its content, and content wider than the screen
+    /// is simply clipped — on an iPhone a menu of long titles hung off the left
+    /// edge. Cap the width per platform so `MenuRow` titles wrap instead.
+    #if os(iOS)
+    private static var widthCap: CGFloat { 320 }
+    #else
+    private static var widthCap: CGFloat { 480 }
+    #endif
+
     init(minWidth: CGFloat = 220, maxHeight: CGFloat = 480,
          @ViewBuilder content: @escaping () -> Content,
          @ViewBuilder label: @escaping () -> Label) {
@@ -32,6 +41,7 @@ struct PopoverMenu<Label: View, Content: View>: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(minWidth: minWidth)
+                .frame(maxWidth: max(minWidth, Self.widthCap))
                 .frame(maxHeight: maxHeight)
                 #if os(iOS)
                 .presentationCompactAdaptation(.popover)
@@ -57,7 +67,9 @@ struct MenuRow: View {
                 if let systemImage {
                     Image(systemName: systemImage).frame(width: 20)
                 }
-                Text(title).fixedSize(horizontal: true, vertical: false)
+                Text(title)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
                 Spacer(minLength: 16)
                 if let trailing {
                     Text(trailing).foregroundStyle(.secondary)
@@ -90,7 +102,9 @@ struct MenuToggleRow: View {
                 if let systemImage {
                     Image(systemName: systemImage).frame(width: 20)
                 }
-                Text(title).fixedSize(horizontal: true, vertical: false)
+                Text(title)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
                 Spacer(minLength: 16)
                 if let trailing {
                     Text(trailing).font(.caption2.weight(.medium)).foregroundStyle(.secondary)

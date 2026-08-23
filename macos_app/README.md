@@ -26,7 +26,11 @@ as a sheet from any holding/watchlist/screener row.
 
 **Stock Detail** opens as a sheet (double-click / "View Details" on a holding,
 watchlist, or screener row): fundamentals, price chart, intrinsic value, earnings,
-and an on-demand AI review. **Register** is available from the login screen.
+and an on-demand AI review. The Valuation tab mirrors the web app model for model
+— the blended fair value with its confidence meter and weights, how the blend was
+built (business profile, floors, models held out and why), the best-fit method,
+and a card per model whose parameters can be edited in place to re-blend live.
+**Register** is available from the login screen.
 
 Auth → networking → models → SwiftUI + Swift Charts throughout.
 

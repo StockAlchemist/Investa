@@ -37,7 +37,10 @@ def _statements(fcf_by_year, revenue=1e10, ebit=1.2e9):
         ],
     )
     balance = pd.DataFrame(
-        {y: [2e10] for y in years}, index=["Total Stockholder Equity"]
+        # The share count is what lets a period be priced into a P/E; real
+        # balance sheets carry it (371 of 373 in the local cache).
+        {y: [2e10, 5e8] for y in years},
+        index=["Total Stockholder Equity", "Ordinary Shares Number"],
     )
     return financials, balance, cashflow
 
@@ -399,20 +402,216 @@ def test_statement_alias_resolution():
     assert fcf == pytest.approx(1.4e9)
 
 
-def test_sector_aware_blending_financials():
-    """Financials/Banks/REITs should blend DDM and Graham with proper weights."""
+# --- The blend -------------------------------------------------------------
+
+
+def test_financials_are_valued_on_earnings_not_free_cash_flow():
+    """A bank has no meaningful capex, so the DCF is not a weaker view of it.
+
+    Every model still runs and is still shown; what changes is which ones are
+    allowed to set the headline number.
+    """
+    fin, bal, cf = _statements([1e9] * 5)
+    info = _info(sector="Financial Services", trailingEps=6.0)
+    res = fr.get_comprehensive_intrinsic_value(info, fin, bal, cf, iterations=200)
+
+    assert res["blend_profile"] == "financial"
+    assert "dcf" in res["models"], "the DCF is still computed and displayed"
+    assert "dcf" not in res["model_weights"], "but it must not vote on a bank"
+    assert "dni" in res["model_weights"]
+
+
+def test_utilities_are_not_financials():
+    """The old weight table lumped them in; a utility has real capex and FCF."""
+    fin, bal, cf = _statements([1e9] * 5)
+    res = fr.get_comprehensive_intrinsic_value(
+        _info(sector="Utilities"), fin, bal, cf, iterations=200
+    )
+    assert res["blend_profile"] == "operating"
+    assert "dcf" in res["model_weights"]
+
+
+def test_ddm_is_gated_on_payout_and_reported_as_a_floor_when_held_out():
+    """Below the gate the DDM values the dividend, not the company.
+
+    Measured over the cached universe its margin of safety tracks payout ratio
+    at rho=+0.64 while the DCF's is flat, which is what a model that prices the
+    dividend rather than the business looks like.
+    """
+    fin, bal, cf = _statements([1e9] * 5)
+    common = dict(sector="Financial Services", dividendRate=4.0, trailingEps=6.0)
+
+    low = fr.get_comprehensive_intrinsic_value(
+        _info(payoutRatio=0.50, **common), fin, bal, cf, iterations=200
+    )
+    assert "ddm" not in low["model_weights"]
+    assert low["models"]["ddm"].get("intrinsic_value") is not None
+    assert low["dividend_discount_floor"] > 0, "held out, but still reported"
+    assert "ddm" in low["blend_exclusions"]
+
+    high = fr.get_comprehensive_intrinsic_value(
+        _info(payoutRatio=0.85, **common), fin, bal, cf, iterations=200
+    )
+    assert "ddm" in high["model_weights"]
+    assert "dividend_discount_floor" not in high
+
+
+def test_reits_are_valued_on_cash_flow_and_the_dividend():
+    """Net income is charged with a large non-cash depreciation for a REIT, so
+    every earnings model understates it. Cash from operations is the closest
+    thing here to FFO, and a REIT distributes ~90% of taxable income by statute,
+    which is why the payout gate does not apply to it."""
     fin, bal, cf = _statements([1e9] * 5)
     info = _info(
-        sector="Financial Services",
+        sector="Real Estate",
+        industry="REIT - Retail",
         dividendRate=4.0,
-        payoutRatio=0.50,
-        trailingEps=6.0,
+        payoutRatio=1.25,  # normal for a REIT; would look unsustainable elsewhere
     )
     res = fr.get_comprehensive_intrinsic_value(info, fin, bal, cf, iterations=200)
-    assert "ddm" in res["models"]
-    assert "dcf" in res["models"]
-    assert "graham" in res["models"]
-    assert "lynch" in res["models"]
-    # Model weights should include ddm, graham, dcf
-    assert "ddm" in res["model_weights"]
-    assert res["model_weights"]["ddm"] > 0.25
+
+    assert res["blend_profile"] == "reit"
+    assert set(res["model_weights"]) <= {"dcfo", "ddm"}
+    assert "graham" not in res["model_weights"], "EPS is depreciation-charged here"
+    assert "ddm" in res["model_weights"], "a REIT must distribute; the gate is waived"
+
+
+def test_property_developers_are_not_reits():
+    """Sector alone said 'Real Estate'; a developer sells buildings rather than
+    distributing rent, so it belongs with operating companies."""
+    fin, bal, cf = _statements([1e9] * 5)
+    res = fr.get_comprehensive_intrinsic_value(
+        _info(sector="Real Estate", industry="Real Estate - Development"),
+        fin,
+        bal,
+        cf,
+        iterations=200,
+    )
+    assert res["blend_profile"] == "operating"
+    assert "dcf" in res["model_weights"]
+
+
+# --- Historical valuation multiples ---------------------------------------
+
+
+def _prices(per_year, start_year=2019):
+    """Month-end closes so each fiscal year end has a quote to be priced at."""
+    idx = pd.date_range(f"{start_year}-01-31", periods=len(per_year) * 12, freq="ME")
+    values = [p for p in per_year for _ in range(12)]
+    return pd.DataFrame({"Close": values}, index=idx)
+
+
+def test_historical_multiples_are_the_traded_record_not_todays_quote():
+    fin, bal, cf = _statements([1e9] * 6)
+    # Net income 8e8 on 5e8 shares = EPS 1.60; at $16 that is a 10x P/E every year.
+    multiples = fr.historical_mean_multiples(fin, bal, cf, _prices([16.0] * 6))
+
+    assert multiples["pe"]["value"] == pytest.approx(10.0, rel=0.02)
+    assert multiples["pe"]["n"] >= 4
+    assert "-" in multiples["pe"]["span"]
+    assert multiples["pb"]["value"] > 0
+
+
+def test_a_multiple_needs_enough_history_to_be_a_median():
+    fin, bal, cf = _statements([1e9] * 2)
+    assert fr.historical_mean_multiples(fin, bal, cf, _prices([16.0] * 2)) == {}
+    assert fr.historical_mean_multiples(fin, bal, cf, None) == {}
+
+
+def test_multiple_models_ignore_the_quote_entirely():
+    """The signature of the defect was IV == price to the cent. These models
+    must now return the same value whatever the stock is quoted at."""
+    fin, bal, cf = _statements([1e9] * 6)
+    prices = _prices([16.0] * 6)
+
+    def valued(spot):
+        info = _info(
+            currentPrice=spot,
+            regularMarketPrice=spot,
+            # A real feed moves the trailing multiples with the quote.
+            trailingPE=spot / 1.6,
+            priceToBook=spot / 40.0,
+            priceToSalesTrailing12Months=spot / 20.0,
+        )
+        res = fr.get_comprehensive_intrinsic_value(
+            info, fin, bal, cf, iterations=200, prices_df=prices
+        )
+        return {k: (res["models"][k] or {}).get("intrinsic_value") for k in
+                ("mean_pe", "mean_pb", "mean_ps")}
+
+    cheap, rich = valued(40.0), valued(160.0)
+    assert cheap["mean_pe"] is not None
+    for key in ("mean_pe", "mean_pb", "mean_ps"):
+        assert cheap[key] == pytest.approx(rich[key], rel=1e-9), (
+            f"{key} moved with the quote"
+        )
+
+
+def test_multiples_refuse_without_price_history():
+    fin, bal, cf = _statements([1e9] * 6)
+    res = fr.get_comprehensive_intrinsic_value(_info(), fin, bal, cf, iterations=200)
+    assert "intrinsic_value" not in res["models"]["mean_pe"]
+    assert "No traded P/E history" in res["models"]["mean_pe"]["error"]
+
+
+def test_price_multiples_never_enter_the_blend():
+    """mean_pe/pb/ps fall back to the *trailing* multiple, i.e. to price."""
+    fin, bal, cf = _statements([1e9] * 5)
+    res = fr.get_comprehensive_intrinsic_value(
+        _info(trailingPE=20.0, priceToBook=2.5), fin, bal, cf, iterations=200
+    )
+    assert set(res["model_weights"]) <= {"dcf", "dni", "graham", "ddm"}
+
+
+def test_weight_falls_with_a_models_own_uncertainty():
+    """Reliability is the model's Monte Carlo band, not a constant."""
+    tight = {"intrinsic_value": 50.0, "mc": {"bear": 48.0, "base": 50.0, "bull": 52.0}}
+    wide = {"intrinsic_value": 50.0, "mc": {"bear": 10.0, "base": 50.0, "bull": 150.0}}
+    assert fr._model_reliability(tight) > fr._model_reliability(wide)
+    assert fr._model_reliability({"intrinsic_value": 50.0}) == 1.0, (
+        "no simulation is not evidence of uncertainty"
+    )
+
+    blend = fr.blend_intrinsic_values(
+        {"dcf": tight, "graham": dict(wide, intrinsic_value=100.0)}, _info()
+    )
+    prior_ratio = (
+        fr.MODEL_BLEND_PRIORS_OPERATING["dcf"]
+        / fr.MODEL_BLEND_PRIORS_OPERATING["graham"]
+    )
+    assert blend["weights"]["dcf"] / blend["weights"]["graham"] > prior_ratio
+    assert blend["value"] < 100.0
+
+
+def test_confidence_is_continuous_and_falls_with_disagreement():
+    agree = fr.blend_intrinsic_values(
+        {"dcf": {"intrinsic_value": 50.0}, "graham": {"intrinsic_value": 52.0}}, _info()
+    )
+    disagree = fr.blend_intrinsic_values(
+        {"dcf": {"intrinsic_value": 20.0}, "graham": {"intrinsic_value": 200.0}},
+        _info(),
+    )
+    assert 0.0 < disagree["confidence"] < agree["confidence"] <= 1.0
+    assert disagree["confidence"] < fr.LOW_CONFIDENCE_THRESHOLD
+
+
+def test_reported_range_comes_from_the_models_that_set_the_value():
+    """The band used to average all twelve simulations, including models with
+    no weight in the headline, so it could sit off-centre from the number."""
+    fin, bal, cf = _statements([1e9] * 5)
+    res = fr.get_comprehensive_intrinsic_value(_info(), fin, bal, cf, iterations=2000)
+    rng = res.get("range")
+    assert rng and rng["bear"] < rng["bull"]
+    assert rng["bear"] <= res["average_intrinsic_value"] * 1.35
+    assert rng["bull"] >= res["average_intrinsic_value"] * 0.65
+
+
+def test_same_company_values_the_same_twice():
+    """Reliability weights are drawn from simulations; unseeded, the headline
+    would move between two calls on the same company."""
+    fin, bal, cf = _statements([1e9] * 5)
+    a = fr.get_comprehensive_intrinsic_value(_info(), fin, bal, cf, iterations=500)
+    b = fr.get_comprehensive_intrinsic_value(_info(), fin, bal, cf, iterations=500)
+    assert a["average_intrinsic_value"] == pytest.approx(
+        b["average_intrinsic_value"], rel=1e-12
+    )

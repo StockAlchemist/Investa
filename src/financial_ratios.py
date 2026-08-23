@@ -13,6 +13,9 @@
 SPDX-License-Identifier: MIT
 """
 
+import contextlib
+import hashlib
+
 import pandas as pd
 import numpy as np
 import logging
@@ -69,14 +72,71 @@ MIN_MARKET_CAP_FOR_VALUATION = 5e7
 MAX_IV_TO_PRICE = 5.0
 MIN_IV_TO_PRICE = 0.1
 
-# Blend weights for the central fair-value estimate.
+# --- The central blend ------------------------------------------------------
 #
-# EPV is deliberately absent from the central blend. It is a *floor* — the value
-# of current earning power with no growth. EPV is computed and reported on its own.
-# DDM is included dynamically for dividend-paying companies and financials/REITs.
-MODEL_BLEND_WEIGHTS = {"dcf": 0.50, "graham": 0.30, "ddm": 0.20}
-MODEL_BLEND_WEIGHTS_NO_DDM = {"dcf": 0.60, "graham": 0.40}
-MODEL_BLEND_WEIGHTS_FINANCIAL = {"ddm": 0.35, "graham": 0.35, "dcf": 0.30}
+# Prior weights, before each model's own uncertainty is applied. Membership is
+# chosen by what the business *is*, because a model that cannot describe the
+# company does not become informative by being averaged in:
+#
+#  - A bank has no meaningful capex or free cash flow, so the DCF is not a
+#    weaker view of it — it is not a view of it at all. Financials are valued
+#    on discounted net income, the same rule the best-fit framework already
+#    states and the blend used to ignore.
+#  - EPV stays out. It is the value of current earning power with no growth —
+#    a *floor*, reported beside the estimate as `earnings_power_floor`.
+#  - The price multiples (mean P/E, P/B, P/S) stay out because they are anchored
+#    to the current price: with no historical multiple to hand they fall back to
+#    the *trailing* multiple, so intrinsic value collapses to price exactly. A
+#    model that returns the number it is meant to judge cannot vote on it.
+#  - A REIT reports net income after a large non-cash depreciation charge, so
+#    every earnings model understates it — the two that describe it are cash
+#    from operations (the closest thing here to FFO) and the dividend, which a
+#    REIT is required to pay out of ~90% of taxable income.
+#  - Graham's formula is not applied to financials: it prices an industrial
+#    earnings stream against a bond yield and has no notion of leverage or
+#    regulatory capital, which is why it calls the median bank 42% cheap.
+MODEL_BLEND_PRIORS_OPERATING = {"dcf": 0.55, "graham": 0.30, "ddm": 0.15}
+MODEL_BLEND_PRIORS_FINANCIAL = {"dni": 0.85, "ddm": 0.15}
+MODEL_BLEND_PRIORS_REIT = {"dcfo": 0.50, "ddm": 0.50}
+
+# The DDM values the *dividend*, not the company: for a business paying out a
+# third of its earnings it returns roughly a third of the value, and blending it
+# at a fixed weight for every dividend payer was the single largest calibration
+# defect in the previous blend. Measured over the cached universe, DDM margin of
+# safety tracks payout ratio at rho=+0.64 (median MOS -83% below a quarter
+# payout, -38% above 80%) while the DCF's is flat across the same buckets. It
+# only describes the whole company when nearly all distributable cash is paid
+# out; below that it is reported as `dividend_discount_floor` instead. REITs are
+# exempt: they distribute by statute, and their payout ratio reads above 1.0
+# only because the denominator is depreciation-charged net income.
+DDM_MIN_PAYOUT_FOR_BLEND = 0.60
+
+# Each model ships a Monte Carlo band already. Turning that band into weight is
+# nearly free and it is the honest answer to "how much do I trust this model for
+# *this* company": cv = (p90 - p10) / (2 x p50), so a model whose own simulation
+# spans a factor of two is worth less than one that spans ten percent. The floor
+# keeps a wide-but-relevant model from being silenced entirely.
+RELIABILITY_CV_REF = 0.60
+RELIABILITY_FLOOR = 0.25
+
+# Historical valuation multiples. The market's own record of what it has paid
+# for this company's earnings, book and sales, period by period, priced at each
+# fiscal period end. A *median* over that record, not a mean: one trough-earnings
+# year can put a P/E in the hundreds without saying anything about the normal
+# multiple. Observations outside the bands are dropped as data errors rather
+# than clipped, and below the minimum count the model refuses — the alternative
+# was falling back to the trailing multiple, which made intrinsic value equal
+# price exactly.
+HISTORICAL_MULTIPLE_MIN_OBSERVATIONS = 4
+HISTORICAL_MULTIPLE_BANDS = {
+    "pe": (2.0, 80.0),
+    "pb": (0.15, 20.0),
+    "ps": (0.05, 30.0),
+}
+
+# Below this the estimate is published as low confidence. Calibrated so that the
+# old ">100% disagreement" rule still lands on the wrong side of it.
+LOW_CONFIDENCE_THRESHOLD = 0.40
 
 # Canonical accounting statement aliases mapping GAAP/IFRS variations
 STATEMENT_ALIASES: Dict[str, List[str]] = {
@@ -802,6 +862,92 @@ def calculate_key_ratios_timeseries(
 
     ratios_df = pd.DataFrame(ratios_data_list).set_index("Period")
     return ratios_df.sort_index(ascending=False)
+
+
+_HISTORICAL_MULTIPLE_COLUMNS = {
+    "pe": "P/E Ratio",
+    "pb": "P/B Ratio",
+    "ps": "P/S Ratio",
+}
+
+
+def historical_mean_multiples(
+    financials_df: Optional[pd.DataFrame],
+    balance_sheet_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame] = None,
+    prices_df: Optional[Any] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """What the market has historically paid for this company's fundamentals.
+
+    Each fiscal period is priced with the quote as of that period end, giving one
+    P/E, P/B and P/S observation per year; the median across them is the multiple
+    the model applies. That is a fact about the company's own trading history —
+    "it usually changes hands at 14x and is at 22x" — as distinct from the
+    trailing multiple, which is today's price divided by today's earnings and so
+    carries no information a price does not already carry.
+
+    Returns `{}` for any multiple without enough usable history. Callers must
+    treat that as a refusal, not as a cue to substitute the current multiple.
+    """
+    if prices_df is None:
+        return {}
+    try:
+        ratios = calculate_key_ratios_timeseries(
+            financials_df, balance_sheet_df, cashflow_df, prices_df=prices_df
+        )
+    except Exception as e:
+        logging.debug(f"historical_mean_multiples: ratio timeseries failed: {e}")
+        return {}
+    if ratios is None or ratios.empty:
+        return {}
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, column in _HISTORICAL_MULTIPLE_COLUMNS.items():
+        if column not in ratios.columns:
+            continue
+        series = pd.to_numeric(ratios[column], errors="coerce").dropna()
+        low, high = HISTORICAL_MULTIPLE_BANDS[key]
+        usable = series[(series >= low) & (series <= high)]
+        if len(usable) < HISTORICAL_MULTIPLE_MIN_OBSERVATIONS:
+            continue
+
+        periods = [str(p)[:4] for p in usable.index]
+        span = f"{min(periods)}-{max(periods)}" if periods else ""
+        out[key] = {
+            "value": float(np.median(usable.values)),
+            "n": int(len(usable)),
+            "span": span,
+            "low": float(np.percentile(usable.values, 25)),
+            "high": float(np.percentile(usable.values, 75)),
+            "dropped": int(len(series) - len(usable)),
+        }
+    return out
+
+
+def load_price_history_for_multiples(
+    mdp: Any, yf_symbol: str, years: int = 15
+) -> Optional[Any]:
+    """Daily closes far enough back to median a multiple across a cycle.
+
+    Best-effort: the historical multiples are the only thing that needs it, and
+    those models refuse cleanly when it is missing.
+    """
+    try:
+        from datetime import timedelta
+
+        from utils_time import get_est_today
+
+        end = get_est_today()
+        hist, _ = mdp.get_historical_data(
+            [yf_symbol], end - timedelta(days=365 * years + 30), end
+        )
+        if hist and yf_symbol in hist:
+            frame = hist[yf_symbol]
+            if frame is not None and len(frame):
+                return frame
+    except Exception as e:
+        logging.debug(f"Price history unavailable for {yf_symbol}: {e}")
+    return None
 
 
 def calculate_current_valuation_ratios(
@@ -1719,7 +1865,9 @@ def run_monte_carlo_mean_pe(
     """Runs a vectorized Monte Carlo simulation for Mean P/E Valuation."""
     try:
         eps_samples = np.random.normal(eps, max(0.1, abs(eps) * 0.15), iterations)
-        pe_samples = np.random.normal(applied_pe, max(1.5, applied_pe * 0.18), iterations)
+        pe_samples = np.random.normal(
+            applied_pe, max(1.5, applied_pe * 0.18), iterations
+        )
 
         eps_samples = np.clip(eps_samples, 0.01, eps * 2.5)
         pe_samples = np.clip(pe_samples, 5.0, 45.0)
@@ -1744,13 +1892,17 @@ def run_monte_carlo_peg(
         growth_samples = np.random.normal(
             applied_growth_pct, max(1.5, abs(applied_growth_pct) * 0.25), iterations
         )
-        peg_samples = np.random.normal(target_peg, max(0.1, target_peg * 0.15), iterations)
+        peg_samples = np.random.normal(
+            target_peg, max(0.1, target_peg * 0.15), iterations
+        )
 
         eps_samples = np.clip(eps_samples, 0.01, eps * 2.5)
         growth_samples = np.clip(growth_samples, 2.0, 40.0)
         peg_samples = np.clip(peg_samples, 0.5, 2.5)
 
-        fair_pe = np.clip(peg_samples * (growth_samples + dividend_yield_pct), 5.0, 35.0)
+        fair_pe = np.clip(
+            peg_samples * (growth_samples + dividend_yield_pct), 5.0, 35.0
+        )
         intrinsic_values = eps_samples * fair_pe
         return _generate_mc_stats(intrinsic_values)
     except Exception as e:
@@ -1768,7 +1920,9 @@ def run_monte_carlo_mean_pb(
         bv_samples = np.random.normal(
             book_value_per_share, max(0.1, book_value_per_share * 0.08), iterations
         )
-        pb_samples = np.random.normal(applied_pb, max(0.15, applied_pb * 0.18), iterations)
+        pb_samples = np.random.normal(
+            applied_pb, max(0.15, applied_pb * 0.18), iterations
+        )
 
         bv_samples = np.clip(bv_samples, 0.01, book_value_per_share * 2.0)
         pb_samples = np.clip(pb_samples, 0.4, 8.0)
@@ -1790,7 +1944,9 @@ def run_monte_carlo_mean_ps(
         sps_samples = np.random.normal(
             sales_per_share, max(0.1, sales_per_share * 0.10), iterations
         )
-        ps_samples = np.random.normal(applied_ps, max(0.2, applied_ps * 0.18), iterations)
+        ps_samples = np.random.normal(
+            applied_ps, max(0.2, applied_ps * 0.18), iterations
+        )
 
         sps_samples = np.clip(sps_samples, 0.01, sales_per_share * 2.0)
         ps_samples = np.clip(ps_samples, 0.4, 15.0)
@@ -1976,7 +2132,6 @@ def run_monte_carlo_lynch(
     except Exception as e:
         logging.error(f"Monte Carlo Lynch failed: {e}")
         return {}
-
 
 
 def calculate_intrinsic_value_dcf(
@@ -2844,11 +2999,17 @@ def calculate_intrinsic_value_mean_pe(
     financials_df: Optional[pd.DataFrame] = None,
     mean_pe: Optional[float] = None,
     eps: Optional[float] = None,
+    history: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Mean P/E Ratio Valuation.
     Best Suited For: Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.
     Key Caveats: Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.
+
+    The multiple is the median P/E this company has actually traded at, one
+    observation per fiscal year (`history`, from `historical_mean_multiples`).
+    It used to fall back to `trailingPE`, which is price/EPS — multiplying it
+    back by EPS returned the current price to the cent, for 60% of the universe.
     """
     try:
         if eps is None:
@@ -2863,17 +3024,19 @@ def calculate_intrinsic_value_mean_pe(
 
         pe_source = "caller-supplied"
         if mean_pe is None:
-            hist_pe = (
-                ticker_info.get("trailingPE")
-                or ticker_info.get("forwardPE")
-                or ticker_info.get("regularMarketPE")
+            if not history or not history.get("value"):
+                return {
+                    "error": (
+                        "No traded P/E history to average — a fair multiple must "
+                        "come from what this company has actually changed hands at"
+                    ),
+                    "diagnostics": {"eps": eps},
+                }
+            mean_pe = float(history["value"])
+            pe_source = (
+                f"Median traded P/E {mean_pe:.1f}x "
+                f"({history['n']} years, {history['span']})"
             )
-            if hist_pe and 5.0 <= hist_pe <= 45.0:
-                mean_pe = hist_pe
-                pe_source = f"Historical P/E anchor ({hist_pe:.1f}x)"
-            else:
-                mean_pe = 17.5  # Long-run S&P 500 median baseline
-                pe_source = "Market baseline (17.5x)"
 
         applied_pe = float(np.clip(mean_pe, 5.0, 45.0))
         intrinsic_value = eps * applied_pe
@@ -2893,6 +3056,10 @@ def calculate_intrinsic_value_mean_pe(
                 "mean_pe": mean_pe,
                 "applied_pe": applied_pe,
                 "pe_source": pe_source,
+                "multiple_observations": (history or {}).get("n"),
+                "multiple_span": (history or {}).get("span"),
+                "multiple_p25": (history or {}).get("low"),
+                "multiple_p75": (history or {}).get("high"),
             },
         }
     except Exception as e:
@@ -2981,6 +3148,7 @@ def calculate_intrinsic_value_mean_pb(
     balance_sheet_df: Optional[pd.DataFrame] = None,
     book_value_per_share: Optional[float] = None,
     mean_pb: Optional[float] = None,
+    history: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Mean P/B Ratio Valuation.
@@ -3018,20 +3186,31 @@ def calculate_intrinsic_value_mean_pb(
         pb_source = "caller-supplied"
 
         if mean_pb is None:
-            if "bank" in sector or "financial" in sector:
+            # The company's own traded record first. The sector benchmarks that
+            # used to come first (1.30x banks, 1.05x REIT NAV) are a claim about
+            # the average bank, not about this one; they survive only as a last
+            # resort where that average is a real domain prior. The `priceToBook`
+            # fallback is gone outright — book value times price/book is price.
+            if history and history.get("value"):
+                mean_pb = float(history["value"])
+                pb_source = (
+                    f"Median traded P/B {mean_pb:.2f}x "
+                    f"({history['n']} years, {history['span']})"
+                )
+            elif "bank" in sector or "financial" in sector:
                 mean_pb = 1.30  # Standard 1.2 - 1.4x banking benchmark
-                pb_source = "Banking benchmark (1.30x)"
+                pb_source = "Banking benchmark (1.30x) — no traded history"
             elif "real estate" in sector or "reit" in sector:
                 mean_pb = 1.05  # Price/NAV benchmark
-                pb_source = "REIT NAV benchmark (1.05x)"
+                pb_source = "REIT NAV benchmark (1.05x) — no traded history"
             else:
-                hist_pb = ticker_info.get("priceToBook")
-                if hist_pb and 0.5 <= hist_pb <= 8.0:
-                    mean_pb = hist_pb
-                    pb_source = f"MRQ P/B anchor ({hist_pb:.2f}x)"
-                else:
-                    mean_pb = 1.80
-                    pb_source = "Market baseline (1.80x)"
+                return {
+                    "error": (
+                        "No traded P/B history to average — a fair multiple must "
+                        "come from what this company has actually changed hands at"
+                    ),
+                    "diagnostics": {"book_value_per_share": book_value_per_share},
+                }
 
         applied_pb = float(np.clip(mean_pb, 0.4, 8.0))
         intrinsic_value = book_value_per_share * applied_pb
@@ -3052,6 +3231,10 @@ def calculate_intrinsic_value_mean_pb(
                 "applied_pb": applied_pb,
                 "pb_source": pb_source,
                 "sector": ticker_info.get("sector"),
+                "multiple_observations": (history or {}).get("n"),
+                "multiple_span": (history or {}).get("span"),
+                "multiple_p25": (history or {}).get("low"),
+                "multiple_p75": (history or {}).get("high"),
             },
         }
     except Exception as e:
@@ -3064,6 +3247,7 @@ def calculate_intrinsic_value_mean_ps(
     balance_sheet_df: Optional[pd.DataFrame] = None,
     sales_per_share: Optional[float] = None,
     mean_ps: Optional[float] = None,
+    history: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Mean P/S Ratio Valuation.
@@ -3095,13 +3279,19 @@ def calculate_intrinsic_value_mean_ps(
 
         ps_source = "caller-supplied"
         if mean_ps is None:
-            hist_ps = ticker_info.get("priceToSalesTrailing12Months")
-            if hist_ps and 0.5 <= hist_ps <= 15.0:
-                mean_ps = hist_ps
-                ps_source = f"TTM P/S anchor ({hist_ps:.2f}x)"
-            else:
-                mean_ps = 2.50
-                ps_source = "Market baseline (2.50x)"
+            if not history or not history.get("value"):
+                return {
+                    "error": (
+                        "No traded P/S history to average — a fair multiple must "
+                        "come from what this company has actually changed hands at"
+                    ),
+                    "diagnostics": {"sales_per_share": sales_per_share},
+                }
+            mean_ps = float(history["value"])
+            ps_source = (
+                f"Median traded P/S {mean_ps:.2f}x "
+                f"({history['n']} years, {history['span']})"
+            )
 
         applied_ps = float(np.clip(mean_ps, 0.4, 15.0))
         intrinsic_value = sales_per_share * applied_ps
@@ -3121,6 +3311,10 @@ def calculate_intrinsic_value_mean_ps(
                 "mean_ps": mean_ps,
                 "applied_ps": applied_ps,
                 "ps_source": ps_source,
+                "multiple_observations": (history or {}).get("n"),
+                "multiple_span": (history or {}).get("span"),
+                "multiple_p25": (history or {}).get("low"),
+                "multiple_p75": (history or {}).get("high"),
             },
         }
     except Exception as e:
@@ -3399,6 +3593,173 @@ def recommend_best_valuation_method(
     }
 
 
+def _stable_mc_seed(ticker_info: Dict[str, Any]) -> int:
+    """A seed that depends on the company, not on when it was asked about."""
+    key = str(
+        ticker_info.get("symbol")
+        or ticker_info.get("shortName")
+        or ticker_info.get("longName")
+        or "investa"
+    )
+    return int.from_bytes(hashlib.blake2b(key.encode(), digest_size=4).digest(), "big")
+
+
+@contextlib.contextmanager
+def _deterministic_draws(ticker_info: Dict[str, Any]):
+    """Seed the global RNG for one company's simulations, then put it back."""
+    state = np.random.get_state()
+    np.random.seed(_stable_mc_seed(ticker_info))
+    try:
+        yield
+    finally:
+        np.random.set_state(state)
+
+
+def _blend_profile(ticker_info: Dict[str, Any]) -> str:
+    """Which family of models can describe this business at all.
+
+    Two groups the old weight table got wrong by lumping them in with banks:
+
+    - A *utility* has real capex and real free cash flow, so the DCF describes
+      it. Its high payout is picked up by the dividend gate on its own.
+    - A *property developer* is not a REIT. It sells buildings rather than
+      distributing rent, so it belongs with operating companies; only the trusts
+      themselves get the REIT treatment.
+    """
+    sector = (ticker_info.get("sector") or "").lower()
+    industry = (ticker_info.get("industry") or "").lower()
+    if "reit" in industry or "reit" in sector:
+        return "reit"
+    if any(k in f"{sector} {industry}" for k in ("financial", "bank", "insurance")):
+        return "financial"
+    return "operating"
+
+
+def _model_reliability(model_res: Optional[Dict[str, Any]]) -> float:
+    """Confidence in one model's own number, from its Monte Carlo dispersion.
+
+    Returns 1.0 when the model ran no simulation — absence of evidence about
+    uncertainty is not evidence of uncertainty, and penalising it would quietly
+    prefer whichever models happen to simulate.
+    """
+    mc = (model_res or {}).get("mc") or {}
+    bear, base, bull = mc.get("bear"), mc.get("base"), mc.get("bull")
+    try:
+        if bear is None or base is None or bull is None:
+            return 1.0
+        bear, base, bull = float(bear), float(base), float(bull)
+    except (TypeError, ValueError):
+        return 1.0
+    if not np.isfinite(base) or base <= 0 or not np.isfinite(bull - bear):
+        return 1.0
+    cv = (bull - bear) / (2.0 * base)
+    if not np.isfinite(cv) or cv < 0:
+        return 1.0
+    return float(
+        np.clip(1.0 / (1.0 + (cv / RELIABILITY_CV_REF) ** 2), RELIABILITY_FLOOR, 1.0)
+    )
+
+
+def _ddm_describes_the_company(ticker_info: Dict[str, Any], profile: str) -> bool:
+    """True when the dividend is substantially the whole distributable cash."""
+    if profile == "reit":
+        return True
+    payout = ticker_info.get("payoutRatio")
+    try:
+        payout = float(payout)
+    except (TypeError, ValueError):
+        return False
+    return bool(np.isfinite(payout) and payout >= DDM_MIN_PAYOUT_FOR_BLEND)
+
+
+def blend_intrinsic_values(
+    models: Dict[str, Any], ticker_info: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Combine the model estimates into one fair value, with its confidence.
+
+    Weight is `prior x reliability`: the prior says which models can describe
+    this kind of business, the reliability says how tightly each one pinned its
+    own answer for this company. A weighted *arithmetic* mean aggregates them —
+    a geometric mean and a Huber down-weight of outlying models were both
+    measured on the cached universe and both made calibration and rank agreement
+    with earnings yield slightly worse, so neither is here.
+    """
+    profile = _blend_profile(ticker_info)
+    priors = {
+        "financial": MODEL_BLEND_PRIORS_FINANCIAL,
+        "reit": MODEL_BLEND_PRIORS_REIT,
+    }.get(profile, MODEL_BLEND_PRIORS_OPERATING)
+
+    contributions: List[Dict[str, Any]] = []
+    excluded: Dict[str, str] = {}
+
+    for key, prior in priors.items():
+        model_res = models.get(key) or {}
+        iv = model_res.get("intrinsic_value")
+        if iv is None or not np.isfinite(iv) or iv <= 0:
+            continue
+        if key == "ddm" and not _ddm_describes_the_company(ticker_info, profile):
+            excluded[key] = (
+                "Payout ratio below "
+                f"{DDM_MIN_PAYOUT_FOR_BLEND:.0%} — the dividend is not the whole "
+                "of distributable cash, so DDM values the dividend rather than "
+                "the company"
+            )
+            continue
+        reliability = _model_reliability(model_res)
+        contributions.append(
+            {
+                "key": key,
+                "value": float(iv),
+                "prior": float(prior),
+                "reliability": reliability,
+                "weight": float(prior) * reliability,
+            }
+        )
+
+    if not contributions:
+        return {
+            "value": None,
+            "profile": profile,
+            "weights": {},
+            "contributions": [],
+            "spread_pct": None,
+            "confidence": 0.0,
+            "excluded": excluded,
+        }
+
+    total_weight = sum(c["weight"] for c in contributions)
+    value = sum(c["value"] * c["weight"] for c in contributions) / total_weight
+    weights = {c["key"]: c["weight"] / total_weight for c in contributions}
+
+    values = [c["value"] for c in contributions]
+    spread_pct = (
+        (max(values) - min(values)) / value * 100.0
+        if len(values) > 1 and value > 0
+        else None
+    )
+
+    # Confidence is continuous, not a cliff: how tightly the models pinned their
+    # own answers, how far apart they landed, and how many of them there were.
+    mean_reliability = float(np.mean([c["reliability"] for c in contributions]))
+    spread_frac = (spread_pct or 0.0) / 100.0
+    dispersion_factor = 1.0 / (1.0 + (spread_frac / 0.75) ** 2)
+    breadth_factor = {1: 0.75, 2: 0.90}.get(len(contributions), 1.0)
+    confidence = float(
+        np.clip(mean_reliability * dispersion_factor * breadth_factor, 0.0, 1.0)
+    )
+
+    return {
+        "value": float(value),
+        "profile": profile,
+        "weights": weights,
+        "contributions": contributions,
+        "spread_pct": spread_pct,
+        "confidence": confidence,
+        "excluded": excluded,
+    }
+
+
 def get_comprehensive_intrinsic_value(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame] = None,
@@ -3406,6 +3767,7 @@ def get_comprehensive_intrinsic_value(
     cashflow_df: Optional[pd.DataFrame] = None,
     overrides: Optional[Dict[str, Any]] = None,
     iterations: int = 10000,
+    prices_df: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Consolidates multiple intrinsic value models into a single advice object.
@@ -3417,6 +3779,13 @@ def get_comprehensive_intrinsic_value(
     )
 
     overrides = overrides or {}
+
+    # What the market has paid for this company historically, one observation
+    # per fiscal year. Empty without price history, and the three multiple
+    # models refuse rather than reaching for today's multiple.
+    traded_multiples = historical_mean_multiples(
+        financials_df, balance_sheet_df, cashflow_df, prices_df
+    )
 
     # Extract DCF overrides
     dcf_discount = overrides.get("dcf_discount_rate")
@@ -3479,6 +3848,7 @@ def get_comprehensive_intrinsic_value(
         financials_df,
         eps=overrides.get("mean_pe_eps", graham_eps),
         mean_pe=overrides.get("mean_pe_multiple"),
+        history=traded_multiples.get("pe"),
     )
 
     peg_res = calculate_intrinsic_value_peg(
@@ -3494,6 +3864,7 @@ def get_comprehensive_intrinsic_value(
         balance_sheet_df,
         book_value_per_share=overrides.get("mean_pb_bvps"),
         mean_pb=overrides.get("mean_pb_multiple"),
+        history=traded_multiples.get("pb"),
     )
 
     mean_ps_res = calculate_intrinsic_value_mean_ps(
@@ -3502,6 +3873,7 @@ def get_comprehensive_intrinsic_value(
         balance_sheet_df,
         sales_per_share=overrides.get("mean_ps_sps"),
         mean_ps=overrides.get("mean_ps_multiple"),
+        history=traded_multiples.get("ps"),
     )
 
     psg_res = calculate_intrinsic_value_psg(
@@ -3549,154 +3921,144 @@ def get_comprehensive_intrinsic_value(
         eps=overrides.get("lynch_eps", graham_eps),
     )
 
-    # Run Monte Carlo simulations for all 12 valuation models
-    if "intrinsic_value" in dcf_res and "parameters" in dcf_res:
-        params = dcf_res["parameters"]
-        mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
-        dcf_res["mc"] = run_monte_carlo_dcf(
-            ticker_info,
-            params["base_fcf"],
-            mc_growth,
-            params["discount_rate"],
-            params["projection_years"],
-            params["terminal_growth_rate"],
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in dcfo_res and "parameters" in dcfo_res:
-        params = dcfo_res["parameters"]
-        mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
-        dcfo_res["mc"] = run_monte_carlo_dcfo(
-            ticker_info,
-            params["base_cfo"],
-            mc_growth,
-            params["discount_rate"],
-            params["projection_years"],
-            params["terminal_growth_rate"],
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in dni_res and "parameters" in dni_res:
-        params = dni_res["parameters"]
-        mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
-        dni_res["mc"] = run_monte_carlo_dni(
-            params["base_eps"],
-            mc_growth,
-            params["discount_rate"],
-            params["projection_years"],
-            params["terminal_growth_rate"],
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in mean_pe_res and "parameters" in mean_pe_res:
-        params = mean_pe_res["parameters"]
-        mean_pe_res["mc"] = run_monte_carlo_mean_pe(
-            params["eps"],
-            params["applied_pe"],
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in peg_res and "parameters" in peg_res:
-        params = peg_res["parameters"]
-        peg_res["mc"] = run_monte_carlo_peg(
-            params["eps"],
-            params.get("applied_growth_pct", params.get("growth_rate_pct", 10.0)),
-            params.get("dividend_yield_pct", 0.0),
-            params.get("target_peg", 1.0),
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in mean_pb_res and "parameters" in mean_pb_res:
-        params = mean_pb_res["parameters"]
-        mean_pb_res["mc"] = run_monte_carlo_mean_pb(
-            params["book_value_per_share"],
-            params["applied_pb"],
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in mean_ps_res and "parameters" in mean_ps_res:
-        params = mean_ps_res["parameters"]
-        mean_ps_res["mc"] = run_monte_carlo_mean_ps(
-            params["sales_per_share"],
-            params["applied_ps"],
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in psg_res and "parameters" in psg_res:
-        params = psg_res["parameters"]
-        gm = params.get("gross_margin_pct", 50.0) / 100.0 if "gross_margin_pct" in params else 0.50
-        psg_res["mc"] = run_monte_carlo_psg(
-            params["sales_per_share"],
-            params.get("applied_growth_pct", params.get("revenue_growth_pct", 15.0)),
-            gm,
-            params.get("target_psg", 1.0),
-            iterations=iterations,
-        )
-
-    if "intrinsic_value" in graham_res and "parameters" in graham_res:
-        params = graham_res["parameters"]
-        if "eps" in params:
-            mc_growth_pct = params.get(
-                "applied_growth_pct", params.get("growth_rate_pct", 0)
-            )
-            graham_res["mc"] = run_monte_carlo_graham(
-                params["eps"],
-                mc_growth_pct,
-                params["bond_yield_proxy"],
+    # Monte Carlo, seeded per company. The draws feed the reliability weights
+    # below, so unseeded sampling would make the headline fair value wobble
+    # between two calls on the same company — small, but a valuation that
+    # changes on refresh is not a valuation. The global RNG is restored on the
+    # way out so callers keep their own stream.
+    with _deterministic_draws(ticker_info):
+        # Run Monte Carlo simulations for all 12 valuation models
+        if "intrinsic_value" in dcf_res and "parameters" in dcf_res:
+            params = dcf_res["parameters"]
+            mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
+            dcf_res["mc"] = run_monte_carlo_dcf(
+                ticker_info,
+                params["base_fcf"],
+                mc_growth,
+                params["discount_rate"],
+                params["projection_years"],
+                params["terminal_growth_rate"],
                 iterations=iterations,
             )
 
-    if "intrinsic_value" in ddm_res and "parameters" in ddm_res:
-        params = ddm_res["parameters"]
-        ddm_res["mc"] = run_monte_carlo_ddm(
-            params["base_dividend"],
-            params["applied_growth"],
-            params["discount_rate"],
-            params["projection_years"],
-            params["terminal_growth_rate"],
-            iterations=iterations,
-        )
+        if "intrinsic_value" in dcfo_res and "parameters" in dcfo_res:
+            params = dcfo_res["parameters"]
+            mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
+            dcfo_res["mc"] = run_monte_carlo_dcfo(
+                ticker_info,
+                params["base_cfo"],
+                mc_growth,
+                params["discount_rate"],
+                params["projection_years"],
+                params["terminal_growth_rate"],
+                iterations=iterations,
+            )
 
-    if "intrinsic_value" in epv_res and "parameters" in epv_res:
-        params = epv_res["parameters"]
-        epv_res["mc"] = run_monte_carlo_epv(
-            ticker_info,
-            params["normalized_ebit"],
-            params["tax_rate"],
-            params["discount_rate"],
-            iterations=iterations,
-        )
+        if "intrinsic_value" in dni_res and "parameters" in dni_res:
+            params = dni_res["parameters"]
+            mc_growth = params.get("applied_growth", params.get("growth_rate", 0.05))
+            dni_res["mc"] = run_monte_carlo_dni(
+                params["base_eps"],
+                mc_growth,
+                params["discount_rate"],
+                params["projection_years"],
+                params["terminal_growth_rate"],
+                iterations=iterations,
+            )
 
-    if "intrinsic_value" in lynch_res and "parameters" in lynch_res:
-        params = lynch_res["parameters"]
-        lynch_res["mc"] = run_monte_carlo_lynch(
-            params["eps"],
-            params.get("growth_rate_pct", 10.0),
-            params.get("dividend_yield_pct", 0.0),
-            iterations=iterations,
-        )
+        if "intrinsic_value" in mean_pe_res and "parameters" in mean_pe_res:
+            params = mean_pe_res["parameters"]
+            mean_pe_res["mc"] = run_monte_carlo_mean_pe(
+                params["eps"],
+                params["applied_pe"],
+                iterations=iterations,
+            )
 
-    # Simulated bear/bull bounds, collected from whichever models ran.
-    bear_values: List[float] = []
-    bull_values: List[float] = []
-    for model_res in (
-        dcf_res,
-        dcfo_res,
-        dni_res,
-        mean_pe_res,
-        peg_res,
-        mean_pb_res,
-        mean_ps_res,
-        psg_res,
-        graham_res,
-        ddm_res,
-        epv_res,
-        lynch_res,
-    ):
-        mc = model_res.get("mc")
-        if mc and mc.get("bear") is not None and mc.get("bull") is not None:
-            bear_values.append(mc["bear"])
-            bull_values.append(mc["bull"])
+        if "intrinsic_value" in peg_res and "parameters" in peg_res:
+            params = peg_res["parameters"]
+            peg_res["mc"] = run_monte_carlo_peg(
+                params["eps"],
+                params.get("applied_growth_pct", params.get("growth_rate_pct", 10.0)),
+                params.get("dividend_yield_pct", 0.0),
+                params.get("target_peg", 1.0),
+                iterations=iterations,
+            )
+
+        if "intrinsic_value" in mean_pb_res and "parameters" in mean_pb_res:
+            params = mean_pb_res["parameters"]
+            mean_pb_res["mc"] = run_monte_carlo_mean_pb(
+                params["book_value_per_share"],
+                params["applied_pb"],
+                iterations=iterations,
+            )
+
+        if "intrinsic_value" in mean_ps_res and "parameters" in mean_ps_res:
+            params = mean_ps_res["parameters"]
+            mean_ps_res["mc"] = run_monte_carlo_mean_ps(
+                params["sales_per_share"],
+                params["applied_ps"],
+                iterations=iterations,
+            )
+
+        if "intrinsic_value" in psg_res and "parameters" in psg_res:
+            params = psg_res["parameters"]
+            gm = (
+                params.get("gross_margin_pct", 50.0) / 100.0
+                if "gross_margin_pct" in params
+                else 0.50
+            )
+            psg_res["mc"] = run_monte_carlo_psg(
+                params["sales_per_share"],
+                params.get(
+                    "applied_growth_pct", params.get("revenue_growth_pct", 15.0)
+                ),
+                gm,
+                params.get("target_psg", 1.0),
+                iterations=iterations,
+            )
+
+        if "intrinsic_value" in graham_res and "parameters" in graham_res:
+            params = graham_res["parameters"]
+            if "eps" in params:
+                mc_growth_pct = params.get(
+                    "applied_growth_pct", params.get("growth_rate_pct", 0)
+                )
+                graham_res["mc"] = run_monte_carlo_graham(
+                    params["eps"],
+                    mc_growth_pct,
+                    params["bond_yield_proxy"],
+                    iterations=iterations,
+                )
+
+        if "intrinsic_value" in ddm_res and "parameters" in ddm_res:
+            params = ddm_res["parameters"]
+            ddm_res["mc"] = run_monte_carlo_ddm(
+                params["base_dividend"],
+                params["applied_growth"],
+                params["discount_rate"],
+                params["projection_years"],
+                params["terminal_growth_rate"],
+                iterations=iterations,
+            )
+
+        if "intrinsic_value" in epv_res and "parameters" in epv_res:
+            params = epv_res["parameters"]
+            epv_res["mc"] = run_monte_carlo_epv(
+                ticker_info,
+                params["normalized_ebit"],
+                params["tax_rate"],
+                params["discount_rate"],
+                iterations=iterations,
+            )
+
+        if "intrinsic_value" in lynch_res and "parameters" in lynch_res:
+            params = lynch_res["parameters"]
+            lynch_res["mc"] = run_monte_carlo_lynch(
+                params["eps"],
+                params.get("growth_rate_pct", 10.0),
+                params.get("dividend_yield_pct", 0.0),
+                iterations=iterations,
+            )
 
     current_price = ticker_info.get("currentPrice") or ticker_info.get(
         "regularMarketPrice"
@@ -3715,6 +4077,8 @@ def get_comprehensive_intrinsic_value(
                 "average_intrinsic_value": nav_price,
                 "valuation_note": f"Valuation based on Net Asset Value (NAV) for {quote_type}.",
                 "valuation_status": "nav",
+                # NAV is reported by the fund, not estimated from models.
+                "valuation_confidence": 1.0,
                 "recommended_method": {
                     "method_key": "nav",
                     "name": "Net Asset Value (NAV)",
@@ -3789,30 +4153,13 @@ def get_comprehensive_intrinsic_value(
     if ineligible:
         results["average_intrinsic_value"] = None
         results["valuation_status"] = "ineligible"
+        results["valuation_confidence"] = 0.0
         results["valuation_note"] = ineligible
         return results
 
-    # --- Sector-Aware Reliability-Weighted Blend -----------------------------
-    sector = (ticker_info.get("sector") or "").lower()
-    is_financial = any(
-        k in sector
-        for k in ("financial", "bank", "insurance", "real estate", "utilities")
-    )
-
-    if is_financial:
-        blend_weights = MODEL_BLEND_WEIGHTS_FINANCIAL
-    elif ddm_res.get("intrinsic_value") is not None:
-        blend_weights = MODEL_BLEND_WEIGHTS
-    else:
-        blend_weights = MODEL_BLEND_WEIGHTS_NO_DDM
-
-    contributions: List[Dict[str, Any]] = []
-    for key, model_res in (("dcf", dcf_res), ("graham", graham_res), ("ddm", ddm_res)):
-        iv = model_res.get("intrinsic_value")
-        if iv is not None and np.isfinite(iv) and iv > 0:
-            contributions.append(
-                {"key": key, "value": float(iv), "weight": blend_weights.get(key, 0.33)}
-            )
+    # --- Business-aware, uncertainty-weighted blend --------------------------
+    blend = blend_intrinsic_values(models_map, ticker_info)
+    contributions = blend["contributions"]
 
     # EPV travels alongside the estimate as the no-growth floor, not inside it.
     epv_iv = epv_res.get("intrinsic_value")
@@ -3823,14 +4170,26 @@ def get_comprehensive_intrinsic_value(
     if lynch_iv is not None and np.isfinite(lynch_iv) and lynch_iv > 0:
         results["lynch_fair_value"] = float(lynch_iv)
 
+    # A DDM held out by the payout gate is still worth showing — it is what the
+    # dividend stream alone is worth, which is a floor in the same sense as EPV.
+    ddm_iv = ddm_res.get("intrinsic_value")
+    if "ddm" in blend["excluded"] and ddm_iv is not None and np.isfinite(ddm_iv):
+        results["dividend_discount_floor"] = float(ddm_iv)
+
+    results["blend_profile"] = blend["profile"]
+    if blend["excluded"]:
+        results["blend_exclusions"] = blend["excluded"]
+
     if not contributions:
-        reasons = [
-            m.get("error")
-            for m in (dcf_res, epv_res, graham_res, ddm_res)
-            if m.get("error")
-        ]
+        eligible = {
+            "financial": (dni_res, ddm_res),
+            "reit": (dcfo_res, ddm_res),
+        }.get(blend["profile"], (dcf_res, graham_res, ddm_res))
+        reasons = [m.get("error") for m in eligible if m.get("error")]
+        reasons += list(blend["excluded"].values())
         results["average_intrinsic_value"] = None
         results["valuation_status"] = "no_model"
+        results["valuation_confidence"] = 0.0
         results["valuation_note"] = (
             "No model could value this company: " + "; ".join(dict.fromkeys(reasons))
             if reasons
@@ -3838,18 +4197,11 @@ def get_comprehensive_intrinsic_value(
         )
         return results
 
-    total_weight = sum(c["weight"] for c in contributions)
-    avg_intrinsic = sum(c["value"] * c["weight"] for c in contributions) / total_weight
-
-    results["model_weights"] = {
-        c["key"]: c["weight"] / total_weight for c in contributions
-    }
-
-    # Disagreement is information: report it rather than resolving it by fiat.
-    values = [c["value"] for c in contributions]
-    spread_pct = None
-    if len(values) > 1 and avg_intrinsic > 0:
-        spread_pct = (max(values) - min(values)) / avg_intrinsic * 100
+    avg_intrinsic = blend["value"]
+    results["model_weights"] = blend["weights"]
+    results["model_reliability"] = {c["key"]: c["reliability"] for c in contributions}
+    spread_pct = blend["spread_pct"]
+    confidence = blend["confidence"]
 
     # --- Output sanity band --------------------------------------------------
     status = "ok"
@@ -3871,6 +4223,10 @@ def get_comprehensive_intrinsic_value(
             avg_intrinsic = clamped
             status = "clamped"
 
+    if status == "clamped":
+        # The published number is no longer the one the models produced.
+        confidence *= 0.5
+
     if spread_pct is not None and spread_pct > 100:
         detail = ", ".join(
             "{}={:.2f}".format(c["key"], c["value"]) for c in contributions
@@ -3878,28 +4234,48 @@ def get_comprehensive_intrinsic_value(
         notes.append(
             f"Models disagree by {spread_pct:.0f}% of the blended value ({detail})."
         )
-        if status == "ok":
-            status = "low_confidence"
+
+    if confidence < LOW_CONFIDENCE_THRESHOLD and status == "ok":
+        status = "low_confidence"
+        if not notes:
+            notes.append(
+                f"Low confidence ({confidence:.0%}): the contributing models are "
+                "individually uncertain or few in number."
+            )
 
     if not np.isfinite(avg_intrinsic):
         avg_intrinsic = None
         status = "no_model"
+        confidence = 0.0
 
     results["average_intrinsic_value"] = avg_intrinsic
     results["valuation_status"] = status
+    results["valuation_confidence"] = round(float(confidence), 3)
     results["model_spread_pct"] = spread_pct
     if notes:
         results["valuation_note"] = " ".join(notes)
 
-    # Probabilistic range from whichever simulations ran.
-    if bear_values and bull_values:
+    # Probabilistic range, built from the *contributing* models at their blend
+    # weights. Averaging all twelve simulations produced a band around a number
+    # nothing in it had computed — it could sit off-centre from the headline or
+    # fail to contain it at all.
+    weighted_bear, weighted_bull, band_weight = 0.0, 0.0, 0.0
+    for c in contributions:
+        mc = (models_map.get(c["key"]) or {}).get("mc") or {}
+        bear, bull = mc.get("bear"), mc.get("bull")
+        if bear is None or bull is None:
+            continue
+        if not (np.isfinite(bear) and np.isfinite(bull)):
+            continue
+        w = blend["weights"].get(c["key"], 0.0)
+        weighted_bear += bear * w
+        weighted_bull += bull * w
+        band_weight += w
+    if band_weight > 0:
         results["range"] = {
-            "bear": sum(bear_values) / len(bear_values),
-            "bull": sum(bull_values) / len(bull_values),
+            "bear": weighted_bear / band_weight,
+            "bull": weighted_bull / band_weight,
         }
-        for k, v in results["range"].items():
-            if v is not None and (np.isnan(v) or np.isinf(v)):
-                results["range"][k] = None
 
     if current_price and avg_intrinsic:
         mos = ((avg_intrinsic - current_price) / current_price) * 100
@@ -4026,6 +4402,7 @@ def get_intrinsic_value_for_symbol(
             cashflow,
             overrides=symbol_overrides,
             iterations=iterations,
+            prices_df=load_price_history_for_multiples(mdp, yf_symbol),
         )
 
         return results
