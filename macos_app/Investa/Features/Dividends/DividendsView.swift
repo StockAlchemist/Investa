@@ -64,7 +64,7 @@ struct DividendsView: View {
 
     private var header: some View {
         HStack {
-            Text("Income").font(.title2.bold())
+            Text("Income").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
         }
@@ -80,7 +80,7 @@ struct DividendsView: View {
                 if isInitialLoading {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text("Loading income…").font(.callout).foregroundStyle(.secondary)
+                        Text("Loading income…").appFont(.callout).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 60)
@@ -113,7 +113,7 @@ struct DividendsView: View {
             if isInitialLoading {
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("Loading income…").font(.callout).foregroundStyle(.secondary)
+                    Text("Loading income…").appFont(.callout).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

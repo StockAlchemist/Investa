@@ -86,12 +86,12 @@ struct ScreenerView: View {
                     inputCard
                     if viewModel.isRefreshing {
                         Label("Updating live prices…", systemImage: "binoculars")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                             .padding(.horizontal, 10).padding(.vertical, 6)
                             .background(.background.secondary, in: Capsule())
                     }
                     if let error = viewModel.errorMessage {
-                        Text(error).foregroundStyle(.red).font(.callout)
+                        Text(error).foregroundStyle(.red).appFont(.callout)
                     }
                     ScreenerResultsView(viewModel: viewModel, currency: cur)
                 }
@@ -112,12 +112,12 @@ struct ScreenerView: View {
                     inputCard
                     if viewModel.isRefreshing {
                         Label("Updating live prices…", systemImage: "binoculars")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                             .padding(.horizontal, 10).padding(.vertical, 6)
                             .background(.background.secondary, in: Capsule())
                     }
                     if let error = viewModel.errorMessage {
-                        Text(error).foregroundStyle(.red).font(.callout)
+                        Text(error).foregroundStyle(.red).appFont(.callout)
                     }
                     ScreenerResultsView(viewModel: viewModel, currency: cur)
                 }
@@ -134,10 +134,10 @@ struct ScreenerView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Market Explorer").font(.title2.bold())
+            Text("Market Explorer").appFont(.title2.bold())
                 .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
             Text("Identify opportunities using intrinsic-value models and AI fundamental audits.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.vertical, 12)
@@ -147,18 +147,18 @@ struct ScreenerView: View {
 
     private var inputCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Initial Parameters", systemImage: "line.3.horizontal.decrease.circle").font(.headline)
+            Label("Initial Parameters", systemImage: "line.3.horizontal.decrease.circle").appFont(.headline)
             #if os(iOS)
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Universe").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Universe").appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Picker("", selection: $universe) {
                         ForEach(ScreenerUniverse.allCases) { Text($0.label).tag($0) }
                     }.labelsHidden()
                 }
                 if universe == .watchlist {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Target Portfolio").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Target Portfolio").appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Picker("", selection: $watchlistId) {
                             ForEach(viewModel.watchlists) { Text($0.name).tag(String($0.id)) }
                         }.labelsHidden()
@@ -166,14 +166,14 @@ struct ScreenerView: View {
                 }
                 if universe == .narrative {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("AI Search Prompt", systemImage: "sparkles").font(.caption.weight(.semibold)).foregroundStyle(.cyan)
+                        Label("AI Search Prompt", systemImage: "sparkles").appFont(.caption.weight(.semibold)).foregroundStyle(.cyan)
                         TextField("e.g. high-growth tech with margin of safety > 20%", text: $prompt)
                             .textFieldStyle(.roundedBorder)
                     }
                 }
                 if universe == .manual {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Manual Symbols").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Manual Symbols").appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         TextField("e.g. AAPL, MSFT, NVDA", text: $manualText)
                             .textFieldStyle(.roundedBorder)
                     }
@@ -193,14 +193,14 @@ struct ScreenerView: View {
             #else
             HStack(alignment: .bottom, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Universe").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Universe").appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Picker("", selection: $universe) {
                         ForEach(ScreenerUniverse.allCases) { Text($0.label).tag($0) }
                     }.labelsHidden().frame(width: 240)
                 }
                 if universe == .watchlist {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Target Portfolio").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Target Portfolio").appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Picker("", selection: $watchlistId) {
                             ForEach(viewModel.watchlists) { Text($0.name).tag(String($0.id)) }
                         }.labelsHidden().frame(width: 180)
@@ -208,14 +208,14 @@ struct ScreenerView: View {
                 }
                 if universe == .narrative {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("AI Search Prompt", systemImage: "sparkles").font(.caption.weight(.semibold)).foregroundStyle(.cyan)
+                        Label("AI Search Prompt", systemImage: "sparkles").appFont(.caption.weight(.semibold)).foregroundStyle(.cyan)
                         TextField("e.g. high-growth tech with margin of safety > 20%", text: $prompt)
                             .textFieldStyle(.roundedBorder).frame(minWidth: 280)
                     }
                 }
                 if universe == .manual {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Manual Symbols").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("Manual Symbols").appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         TextField("e.g. AAPL, MSFT, NVDA", text: $manualText)
                             .textFieldStyle(.roundedBorder).frame(minWidth: 240)
                     }
@@ -237,7 +237,7 @@ struct ScreenerView: View {
                   ? "Narrative Search uses AI to translate natural language into a query. Works best on cached stocks."
                   : "Screening large universes may take 1–5 min on the first run to build the cache. Subsequent runs are instant.",
                   systemImage: universe == .narrative ? "sparkles" : "info.circle")
-                .font(.caption2).foregroundStyle(.secondary)
+                .appFont(.caption2).foregroundStyle(.secondary)
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
         }

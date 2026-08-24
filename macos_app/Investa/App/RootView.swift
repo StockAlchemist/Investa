@@ -19,10 +19,10 @@ struct RootView: View {
                     .environmentObject(appState)
             }
         }
-        // App-wide typography bump: the UI is caption-heavy and runs small, and
-        // there's room to spare, so lift every semantic font one Dynamic Type
-        // step (≈ +13%). Fixed `.system(size:)` accents are scaled to match in
-        // their call sites so badges keep pace with the body text.
+        // App-wide typography bump on iOS: the UI is caption-heavy and runs
+        // small, so lift every semantic font one Dynamic Type step (≈ +13%).
+        // macOS ignores this modifier entirely — it has no Dynamic Type — and
+        // gets its bump from `\.appFontScale` instead (see AppFont.swift).
         .dynamicTypeSize(.xLarge)
         .toastOverlay()
         .task {

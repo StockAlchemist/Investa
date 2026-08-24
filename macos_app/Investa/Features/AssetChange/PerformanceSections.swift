@@ -100,8 +100,8 @@ struct PerfKpiStrip: View {
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(title: label)
                 .minimumScaleFactor(0.7)
-            Text(value).font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
-            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+            Text(value).appFont(.title3.bold()).foregroundStyle(tone).lineLimit(1)
+            if let sub { Text(sub).appFont(.caption2).foregroundStyle(.secondary) }
         }
         .padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -297,20 +297,20 @@ struct ReturnsChart: View {
             HStack(spacing: 0) {
                 Button { count = max(1, count - 1) } label: {
                     Image(systemName: "minus")
-                        .font(.caption2.weight(.medium))
+                        .appFont(.caption2.weight(.medium))
                         .frame(width: 26, height: 26)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
 
                 Text("\(count)")
-                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .appFont(.caption.weight(.semibold).monospacedDigit())
                     .frame(minWidth: 24)
                     .lineLimit(1)
 
                 Button { count = min(200, count + 1) } label: {
                     Image(systemName: "plus")
-                        .font(.caption2.weight(.medium))
+                        .appFont(.caption2.weight(.medium))
                         .frame(width: 26, height: 26)
                 }
                 .buttonStyle(.plain)
@@ -404,28 +404,28 @@ struct MonthlyHeatmap: View {
     @ViewBuilder private func heatGrid(_ g: (years: [Int], values: [Int: [Double?]], totals: [Int: Double]), flexible: Bool) -> some View {
         Grid(alignment: .center, horizontalSpacing: 3, verticalSpacing: 3) {
             GridRow {
-                Text("Year").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+                Text("Year").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
                 ForEach(months, id: \.self) {
-                    Text($0).font(.caption2).foregroundStyle(.secondary)
+                    Text($0).appFont(.caption2).foregroundStyle(.secondary)
                         .frame(maxWidth: flexible ? .infinity : nil)
                 }
-                Text("Total").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                Text("Total").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             }
             ForEach(g.years, id: \.self) { y in
                 GridRow {
-                    Text(String(y)).font(.caption.weight(.bold))
+                    Text(String(y)).appFont(.caption.weight(.bold))
                         .lineLimit(1).fixedSize()
                         .gridColumnAlignment(.leading)
                     ForEach(0..<12, id: \.self) { mi in
                         let v = g.values[y]?[mi] ?? nil
                         Text(v.map { String(format: "%.1f", $0) } ?? "")
-                            .font(.caption2).monospacedDigit()
+                            .appFont(.caption2).monospacedDigit()
                             .frame(width: flexible ? nil : 40, height: 24)
                             .frame(maxWidth: flexible ? .infinity : nil, maxHeight: 24)
                             .background(cellColor(v), in: RoundedRectangle(cornerRadius: 4))
                     }
                     Text(g.totals[y].map { "\($0 > 0 ? "+" : "")\(String(format: "%.1f%%", $0))" } ?? "—")
-                        .font(.caption.weight(.bold)).monospacedDigit()
+                        .appFont(.caption.weight(.bold)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.7)
                         .foregroundStyle(Fmt.tint(for: g.totals[y]))
                 }
@@ -433,18 +433,18 @@ struct MonthlyHeatmap: View {
             Divider().gridCellColumns(14)
             let avgs = monthlyAverages(g)
             GridRow {
-                Text("Avg").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+                Text("Avg").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
                 ForEach(0..<12, id: \.self) { mi in
                     let a = avgs[mi]
                     Text(a.map { String(format: "%.1f", $0) } ?? "")
-                        .font(.caption2.weight(.bold)).monospacedDigit()
+                        .appFont(.caption2.weight(.bold)).monospacedDigit()
                         .frame(width: flexible ? nil : 40, height: 24)
                         .frame(maxWidth: flexible ? .infinity : nil, maxHeight: 24)
                         .background(cellColor(a), in: RoundedRectangle(cornerRadius: 4))
                 }
                 let overall = avgs.compactMap { $0 }
                 Text(overall.isEmpty ? "—" : "\(overall.reduce(0, +) / Double(overall.count) > 0 ? "+" : "")\(String(format: "%.1f%%", overall.reduce(0, +) / Double(overall.count)))")
-                    .font(.caption.weight(.bold)).monospacedDigit()
+                    .appFont(.caption.weight(.bold)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.7)
                     .foregroundStyle(Fmt.tint(for: overall.isEmpty ? nil : overall.reduce(0, +) / Double(overall.count)))
             }
@@ -501,14 +501,14 @@ struct DrawdownTimeline: View {
                                                                value: String(format: "%.2f%%", s.series[i].1))])
                 }
                 .frame(height: 200)
-                if let t = s.trough { Text("Deepest trough on \(t)").font(.caption2).foregroundStyle(.secondary) }
+                if let t = s.trough { Text("Deepest trough on \(t)").appFont(.caption2).foregroundStyle(.secondary) }
             }
         }
     }
     private func stat(_ l: String, _ v: String, _ tone: Color) -> some View {
         VStack(alignment: .leading) {
-            Text(l).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(v).font(.title3.bold()).foregroundStyle(tone)
+            Text(l).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(v).appFont(.title3.bold()).foregroundStyle(tone)
         }
     }
 }
@@ -565,7 +565,7 @@ struct BenchmarkScoreboard: View {
                         Text("TE").lineLimit(1)
                         Text("IR").lineLimit(1)
                         Text("Excess").lineLimit(1)
-                    }.font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    }.appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                     Divider()
                     ForEach(data) { r in
                         GridRow {
@@ -576,11 +576,11 @@ struct BenchmarkScoreboard: View {
                             Text(String(format: "%.1f%%", r.trackingError)).lineLimit(1).minimumScaleFactor(0.8)
                             Text(String(format: "%.2f", r.informationRatio)).lineLimit(1).minimumScaleFactor(0.8)
                             Text(signed(r.excessReturn) + "%").foregroundStyle(Fmt.tint(for: r.excessReturn)).lineLimit(1).minimumScaleFactor(0.8)
-                        }.font(.caption).monospacedDigit()
+                        }.appFont(.caption).monospacedDigit()
                     }
                 }
                 Text("α annualized excess vs beta-adjusted benchmark · β sensitivity · R² correlation² · TE tracking error · IR excess ÷ TE.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .appFont(.caption2).foregroundStyle(.secondary)
             }
         }
         .task(id: signature) { await load() }
@@ -608,7 +608,7 @@ struct BenchmarkScoreboard: View {
                     MenuToggleRow(title: acc, isOn: accounts.contains(acc)) { toggle(acc) }
                 }
             } label: {
-                Text(accountsLabel).font(.caption).lineLimit(1)
+                Text(accountsLabel).appFont(.caption).lineLimit(1)
             }
             .fixedSize()
         }

@@ -134,11 +134,11 @@ struct ToastBannerView: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: item.style.icon)
-                .font(.system(size: 16, weight: .bold))
+                .appFont(.system(size: 16, weight: .bold))
                 .foregroundStyle(item.style.color)
 
             Text(item.message)
-                .font(.system(size: 13, weight: .medium))
+                .appFont(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
@@ -147,7 +147,7 @@ struct ToastBannerView: View {
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(.system(size: 11, weight: .bold))
                     .foregroundStyle(.secondary)
                     .padding(6)
                     .background(Color.primary.opacity(0.06), in: Circle())

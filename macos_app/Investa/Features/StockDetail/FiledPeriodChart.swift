@@ -93,7 +93,7 @@ struct FiledPeriodChart: View {
                         Text(periodType == .quarterly
                              ? MarketTime.monthYear(date)
                              : MarketTime.year(date))
-                            .font(.caption2)
+                            .appFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -104,7 +104,7 @@ struct FiledPeriodChart: View {
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
                 if let v = value.as(Double.self) {
                     AxisValueLabel {
-                        Text(format(v)).font(.caption2).foregroundStyle(.secondary)
+                        Text(format(v)).appFont(.caption2).foregroundStyle(.secondary)
                     }
                 }
             }

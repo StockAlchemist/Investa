@@ -26,16 +26,16 @@ struct ChartTooltipCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             if !content.title.isEmpty {
-                Text(content.title).font(.caption2.bold())
+                Text(content.title).appFont(.caption2.bold())
             }
             ForEach(content.rows) { r in
                 HStack(spacing: 6) {
                     if let c = r.color {
                         RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 8, height: 8)
                     }
-                    Text(r.label).font(.caption2).foregroundStyle(.secondary)
+                    Text(r.label).appFont(.caption2).foregroundStyle(.secondary)
                     Spacer(minLength: 12)
-                    Text(r.value).font(.caption2.monospacedDigit().weight(.semibold))
+                    Text(r.value).appFont(.caption2.monospacedDigit().weight(.semibold))
                 }
             }
         }

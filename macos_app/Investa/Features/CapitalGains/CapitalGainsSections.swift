@@ -33,14 +33,14 @@ private struct CGSection<Content: View>: View {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 8) {
                 SectionLabel(title: title)
-                if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
+                if let subtitle { Text(subtitle).appFont(.caption2).foregroundStyle(.secondary) }
                 if let trailing { trailing }
             }
             #else
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     SectionLabel(title: title)
-                    if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
+                    if let subtitle { Text(subtitle).appFont(.caption2).foregroundStyle(.secondary) }
                 }
                 Spacer(); if let trailing { trailing }
             }
@@ -120,13 +120,13 @@ struct UnrealizedTaxSection: View {
 
     private func summaryTile(_ label: String, _ value: Double, _ sub: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(label).appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
             HStack(spacing: 4) {
                 Text("\(value >= 0 ? "+" : "")\(Fmt.currency(value, code: currency))")
-                    .font(.title3.bold()).foregroundStyle(value >= 0 ? .green : .red)
-                Image(systemName: value >= 0 ? "arrow.up.right" : "arrow.down.right").font(.caption2).foregroundStyle(value >= 0 ? .green : .red)
+                    .appFont(.title3.bold()).foregroundStyle(value >= 0 ? .green : .red)
+                Image(systemName: value >= 0 ? "arrow.up.right" : "arrow.down.right").appFont(.caption2).foregroundStyle(value >= 0 ? .green : .red)
             }
-            Text(sub).font(.caption2).foregroundStyle(.secondary)
+            Text(sub).appFont(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(12).background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
@@ -136,7 +136,7 @@ struct UnrealizedTaxSection: View {
     private func harvestCard(_ harvest: [CLot]) -> some View {
         CGSection(title: "Tax-loss harvesting candidates",
                   subtitle: "Lots with unrealized loss > \(Fmt.currency(minHarvestLoss, code: currency)). Sorted by deepest loss.",
-                  trailing: harvest.count > maxCandidates ? AnyView(Button("Show more (\(harvest.count - maxCandidates))") { maxCandidates += 10 }.font(.caption)) : nil) {
+                  trailing: harvest.count > maxCandidates ? AnyView(Button("Show more (\(harvest.count - maxCandidates))") { maxCandidates += 10 }.appFont(.caption)) : nil) {
             if harvest.isEmpty {
                 Text("No lots with significant unrealized losses — nothing to harvest right now.").foregroundStyle(.secondary)
             } else {
@@ -153,29 +153,29 @@ struct UnrealizedTaxSection: View {
                                 .buttonStyle(.plain)
                                 termBadge(c.isLT)
                                 if let acc = c.account {
-                                    Text(acc).foregroundStyle(.secondary).font(.caption2)
+                                    Text(acc).foregroundStyle(.secondary).appFont(.caption2)
                                 }
                                 Spacer()
                                 Text("\(Fmt.currency(c.gain, code: currency))").foregroundStyle(.red).fontWeight(.bold)
                             }
                             HStack {
-                                Text("Acquired \(MarketTime.formatted(c.date))").font(.caption2).foregroundStyle(.secondary)
+                                Text("Acquired \(MarketTime.formatted(c.date))").appFont(.caption2).foregroundStyle(.secondary)
                                 Spacer()
-                                Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.red).font(.caption.weight(.bold))
+                                Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.red).appFont(.caption.weight(.bold))
                             }
                             Divider()
                             HStack(spacing: 0) {
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text("Qty").font(.caption).foregroundStyle(.secondary)
-                                    Text(Fmt.number(c.qty)).font(.caption.bold()).lineLimit(1)
+                                    Text("Qty").appFont(.caption).foregroundStyle(.secondary)
+                                    Text(Fmt.number(c.qty)).appFont(.caption.bold()).lineLimit(1)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text("Cost").font(.caption).foregroundStyle(.secondary)
-                                    Text(Fmt.currency(c.cost, code: currency)).font(.caption.bold()).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
+                                    Text("Cost").appFont(.caption).foregroundStyle(.secondary)
+                                    Text(Fmt.currency(c.cost, code: currency)).appFont(.caption.bold()).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text("Value").font(.caption).foregroundStyle(.secondary)
-                                    Text(Fmt.currency(c.value, code: currency)).font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.75)
+                                    Text("Value").appFont(.caption).foregroundStyle(.secondary)
+                                    Text(Fmt.currency(c.value, code: currency)).appFont(.caption.bold()).lineLimit(1).minimumScaleFactor(0.75)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
@@ -189,7 +189,7 @@ struct UnrealizedTaxSection: View {
                     GridRow {
                         Text("Symbol").gridColumnAlignment(.leading); Text("Acquired").gridColumnAlignment(.leading)
                         Text("Qty"); Text("Cost"); Text("Value"); Text("Loss"); Text("Term").gridColumnAlignment(.leading)
-                    }.font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    }.appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                     Divider()
                     ForEach(harvest.prefix(maxCandidates)) { c in
                         GridRow {
@@ -210,12 +210,12 @@ struct UnrealizedTaxSection: View {
                             Text(Fmt.currency(c.value, code: currency))
                             Text("\(Fmt.currency(c.gain, code: currency)) (\(String(format: "%.1f", c.gainPct))%)").foregroundStyle(.red).fontWeight(.bold)
                             termBadge(c.isLT).gridColumnAlignment(.leading)
-                        }.font(.caption).monospacedDigit()
+                        }.appFont(.caption).monospacedDigit()
                     }
                 }
                 #endif
                 Label("Watch the wash-sale rule: selling at a loss and rebuying substantially the same security within 30 days disallows the deduction.",
-                      systemImage: "info.circle").font(.caption2).foregroundStyle(.secondary)
+                      systemImage: "info.circle").appFont(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -234,7 +234,7 @@ struct UnrealizedTaxSection: View {
                 ForEach(ripening.prefix(8)) { c in ripeningRow(c) }
             }
             Text("Holding ≥30 more days converts these gains to LTCG treatment (typically lower tax).")
-                .font(.caption2).foregroundStyle(.secondary)
+                .appFont(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -266,7 +266,7 @@ struct UnrealizedTaxSection: View {
                         Spacer(minLength: 8)
                         countdownBadge(c.daysToLong)
                     }
-                    .font(.caption2)
+                    .appFont(.caption2)
                 }
             }
             .contentShape(Rectangle())
@@ -279,7 +279,7 @@ struct UnrealizedTaxSection: View {
     /// runs off the right edge.
     private func countdownBadge(_ days: Int) -> some View {
         Text("\(days)d")
-            .font(.caption2.weight(.bold)).monospacedDigit()
+            .appFont(.caption2.weight(.bold)).monospacedDigit()
             .lineLimit(1)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Color.orange.opacity(0.15), in: Capsule())
@@ -287,7 +287,7 @@ struct UnrealizedTaxSection: View {
     }
 
     private func termBadge(_ isLT: Bool) -> some View {
-        Text(isLT ? "LT" : "ST").font(.caption2.weight(.bold))
+        Text(isLT ? "LT" : "ST").appFont(.caption2.weight(.bold))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background((isLT ? Color.green : .orange).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
             .foregroundStyle(isLT ? .green : .orange)
@@ -370,9 +370,9 @@ struct CapitalGainsKpiStrip: View {
     }
     private func tile(_ label: String, _ value: String, _ sub: String, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(value).font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
-            Text(sub).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            Text(label).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(value).appFont(.title3.bold()).foregroundStyle(tone).lineLimit(1)
+            Text(sub).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
         .gridTile(alignment: .leading)
         .padding(12).background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
@@ -382,17 +382,17 @@ struct CapitalGainsKpiStrip: View {
         HStack {
             Image(systemName: tone == .green ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis").foregroundStyle(tone)
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text(label).appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
                 Button {
                     appState.openStock(v.0)
                 } label: {
                     Text(v.0).fontWeight(.bold).foregroundStyle(.indigo)
                 }
                 .buttonStyle(.plain)
-                Text(v.1).font(.caption2).foregroundStyle(.secondary)
+                Text(v.1).appFont(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            Text("\(prefix)\(Fmt.currency(v.2, code: currency))").font(.title3.bold()).foregroundStyle(tone)
+            Text("\(prefix)\(Fmt.currency(v.2, code: currency))").appFont(.title3.bold()).foregroundStyle(tone)
         }
         .padding(12).frame(maxWidth: .infinity)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
@@ -439,7 +439,7 @@ struct AnnualRealizedGainsCard: View {
                     AxisMarks(preset: .aligned, values: labeledYears(data.map(\.year))) { value in
                         AxisValueLabel {
                             if let y = value.as(String.self) {
-                                Text(y).font(.caption2).foregroundStyle(.secondary)
+                                Text(y).appFont(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -450,7 +450,7 @@ struct AnnualRealizedGainsCard: View {
                         AxisGridLine().foregroundStyle(Color.secondary.opacity(0.2))
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
-                                Text(cgAxis(v)).font(.caption2).foregroundStyle(.secondary)
+                                Text(cgAxis(v)).appFont(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -561,8 +561,8 @@ struct RealizedGainsTable: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    TableColumn("Account", value: \.account) { Text($0.account).font(.caption).foregroundStyle(.secondary) }
-                    TableColumn("Type", value: \.type) { Text($0.type).font(.caption).foregroundStyle(.secondary) }
+                    TableColumn("Account", value: \.account) { Text($0.account).appFont(.caption).foregroundStyle(.secondary) }
+                    TableColumn("Type", value: \.type) { Text($0.type).appFont(.caption).foregroundStyle(.secondary) }
                     TableColumn("Qty", value: \.quantity) { Text(Fmt.number($0.quantity)).monospacedDigit() }
                     TableColumn("Proceeds", value: \.proceeds) { Text(Fmt.currency($0.proceeds, code: currency)).monospacedDigit() }
                     TableColumn("Cost Basis", value: \.cost) { Text(Fmt.currency($0.cost, code: currency)).monospacedDigit() }
@@ -585,31 +585,31 @@ struct RealizedGainsTable: View {
                 Button {
                     appState.openStock(r.symbol)
                 } label: {
-                    Text(r.symbol).font(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                    Text(r.symbol).appFont(.headline).fontWeight(.bold).foregroundStyle(.indigo)
                 }
                 .buttonStyle(.plain)
-                Text(r.type).font(.caption.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
+                Text(r.type).appFont(.caption.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
                 Spacer()
                 Text(Fmt.currency(r.gain, code: currency)).fontWeight(.medium).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gain))
             }
             HStack {
-                Text(MarketTime.formatted(r.date)).font(.caption2).foregroundStyle(.secondary)
+                Text(MarketTime.formatted(r.date)).appFont(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Text(r.account).font(.caption2).foregroundStyle(.tertiary)
+                Text(r.account).appFont(.caption2).foregroundStyle(.tertiary)
             }
             Divider()
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Proceeds").font(.caption).foregroundStyle(.secondary)
-                    Text(Fmt.currency(r.proceeds, code: currency)).font(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                    Text("Proceeds").appFont(.caption).foregroundStyle(.secondary)
+                    Text(Fmt.currency(r.proceeds, code: currency)).appFont(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Cost").font(.caption).foregroundStyle(.secondary)
-                    Text(Fmt.currency(r.cost, code: currency)).font(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                    Text("Cost").appFont(.caption).foregroundStyle(.secondary)
+                    Text(Fmt.currency(r.cost, code: currency)).appFont(.caption.bold()).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Gain").font(.caption).foregroundStyle(.secondary)
-                    Text(Fmt.percent(r.gainPct, includeSign: true)).font(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct)).lineLimit(1)
+                    Text("Gain").appFont(.caption).foregroundStyle(.secondary)
+                    Text(Fmt.percent(r.gainPct, includeSign: true)).appFont(.caption.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gainPct)).lineLimit(1)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
         }

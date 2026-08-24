@@ -50,7 +50,7 @@ struct CapitalGainsView: View {
 
     private var header: some View {
         HStack {
-            Text("Capital Gains").font(.title2.bold())
+            Text("Capital Gains").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
         }
@@ -64,7 +64,7 @@ struct CapitalGainsView: View {
                 header
                 Divider()
                 if let error = viewModel.errorMessage {
-                    Text(error).foregroundStyle(.red).font(.callout).padding(12)
+                    Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
                 }
                 VStack(spacing: 20) {
                     if vis("unrealizedTax") { UnrealizedTaxSection(holdings: viewModel.holdings, currency: cur) }
@@ -83,7 +83,7 @@ struct CapitalGainsView: View {
             header
             Divider()
             if let error = viewModel.errorMessage {
-                Text(error).foregroundStyle(.red).font(.callout).padding(12)
+                Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
             }
             ScrollView {
                 VStack(spacing: 20) {

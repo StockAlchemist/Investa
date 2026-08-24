@@ -147,7 +147,7 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack {
-            Text("Dashboard").font(.title2.bold())
+            Text("Dashboard").appFont(.title2.bold())
             Spacer()
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
@@ -343,7 +343,7 @@ struct DashboardView: View {
             Spacer()
             Button("Retry") { reload() }
         }
-        .font(.callout)
+        .appFont(.callout)
         .padding(12)
         .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
         .foregroundStyle(.red)

@@ -303,7 +303,7 @@ struct MainView: View {
                         
                         if geo.size.width > 450 {
                             Text("Investa")
-                                .font(.title3).bold()
+                                .appFont(.title3).bold()
                                 .foregroundColor(.primary)
                         }
                     }
@@ -374,28 +374,28 @@ struct IndexStrip: View {
                 let isUp = (index.change ?? 0) >= 0
                 HStack(spacing: 2) {
                     Text(shortName(index.name))
-                        .font(.caption.weight(.bold))
+                        .appFont(.caption.weight(.bold))
                         .foregroundStyle(.primary)
                     
                     Text(Fmt.number(index.price))
-                        .font(.caption.monospacedDigit())
+                        .appFont(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .padding(.leading, 2)
                         
                     if let change = index.change {
                         Text("\(isUp ? "+" : "")\(Fmt.number(change))")
-                            .font(.caption.monospacedDigit())
+                            .appFont(.caption.monospacedDigit())
                             .foregroundStyle(isUp ? Color.green : Color.red)
                             .padding(.leading, 2)
                     }
                     
                     HStack(spacing: 0) {
                         Text("(")
-                            .font(.caption.monospacedDigit())
+                            .appFont(.caption.monospacedDigit())
                         Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                            .font(.system(size: 9))
+                            .appFont(.system(size: 9))
                         Text(String(format: "%.2f%%)", abs(index.changesPercentage ?? 0)))
-                            .font(.caption.monospacedDigit())
+                            .appFont(.caption.monospacedDigit())
                     }
                     .foregroundStyle(isUp ? Color.green : Color.red)
                     .padding(.leading, 2)
@@ -417,14 +417,14 @@ struct IndexStrip: View {
                 let isUp = (index.change ?? 0) >= 0
                 HStack(spacing: 2) {
                     Text(shortName(index.name))
-                        .font(.caption.weight(.bold))
+                        .appFont(.caption.weight(.bold))
                         .foregroundStyle(.primary)
                     
                     HStack(spacing: 0) {
                         Image(systemName: isUp ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                            .font(.system(size: 9))
+                            .appFont(.system(size: 9))
                         Text(String(format: "%.2f%%", abs(index.changesPercentage ?? 0)))
-                            .font(.caption.monospacedDigit())
+                            .appFont(.caption.monospacedDigit())
                     }
                     .foregroundStyle(isUp ? Color.green : Color.red)
                     .padding(.leading, 2)

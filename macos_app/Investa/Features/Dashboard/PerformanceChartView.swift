@@ -211,8 +211,8 @@ struct PerformanceChartView: View {
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 7) {
-                    Image(systemName: "chart.xyaxis.line").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
-                    Text("Performance").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
+                    Image(systemName: "chart.xyaxis.line").appFont(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
+                    Text("Performance").appFont(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
                         .foregroundStyle(.secondary)
                     if isLoading {
                         ProgressView().controlSize(.small)
@@ -223,8 +223,8 @@ struct PerformanceChartView: View {
                     HStack(spacing: 16) {
                         ForEach(stats) { s in
                             HStack(spacing: 6) {
-                                Text(s.label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                                Text(s.text).font(.callout.weight(.bold))
+                                Text(s.label).appFont(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+                                Text(s.text).appFont(.callout.weight(.bold))
                                     .foregroundStyle(s.positive ? .green : .red)
                                     .lineLimit(1).minimumScaleFactor(0.7)
                             }
@@ -263,7 +263,7 @@ struct PerformanceChartView: View {
             HStack(spacing: 6) {
                 ForEach(Period.allCases) { p in
                     Button { period = p } label: {
-                        Text(p.label).font(.caption.weight(.semibold))
+                        Text(p.label).appFont(.caption.weight(.semibold))
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(period == p ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
                             .foregroundStyle(period == p ? .white : .secondary)
@@ -275,10 +275,10 @@ struct PerformanceChartView: View {
 
     private var customDateRow: some View {
         HStack(spacing: 8) {
-            Text("FROM").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+            Text("FROM").appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customFrom, in: ...customTo, displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
-            Text("TO").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+            Text("TO").appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customTo, in: customFrom...Date(), displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
             Spacer()

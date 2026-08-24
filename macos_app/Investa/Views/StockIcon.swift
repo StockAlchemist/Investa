@@ -145,13 +145,13 @@ struct StockIcon: View {
         let color = palette[abs(hash(symbol)) % palette.count]
         return color.overlay(
             Text(symbol.prefix(1).uppercased())
-                .font(.system(size: side * 0.5, weight: .bold)).foregroundStyle(.white))
+                .appFont(.system(size: side * 0.5, weight: .bold)).foregroundStyle(.white))
     }
 
     private var cashMonogram: some View {
         let sym = symbol.contains("฿") || symbol.uppercased().contains("THB") ? "฿" : "$"
         return Color.gray.opacity(0.2).overlay(
-            Text(sym).font(.system(size: side * 0.55, weight: .bold)).foregroundStyle(.primary))
+            Text(sym).appFont(.system(size: side * 0.55, weight: .bold)).foregroundStyle(.primary))
     }
 
     private func hash(_ s: String) -> Int {

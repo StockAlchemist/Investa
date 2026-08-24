@@ -139,7 +139,7 @@ struct SectionLabel: View {
     var lineLimit: Int = 1
     var body: some View {
         Text(title)
-            .font(.system(size: 10, weight: .heavy))
+            .appFont(.system(size: 10, weight: .heavy))
             .tracking(1.5)
             .textCase(.uppercase)
             .foregroundStyle(Color.sectionText)
@@ -163,7 +163,7 @@ struct SemanticBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold))
+            .appFont(.system(size: 11, weight: .bold))
             .monospacedDigit()
             .foregroundStyle(effectiveTint)
             .padding(.horizontal, 7)
@@ -186,8 +186,8 @@ struct EmptyHint: View {
     var systemImage: String = "tray"
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: systemImage).font(.title3).foregroundStyle(.tertiary)
-            Text(text).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Image(systemName: systemImage).appFont(.title3).foregroundStyle(.tertiary)
+            Text(text).appFont(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)

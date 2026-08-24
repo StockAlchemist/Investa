@@ -39,7 +39,7 @@ struct GlobalControlBar<Trailing: View>: View {
                 ProgressView().controlSize(.small).frame(width: 16, height: 16)
             } else {
                 Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                    Image(systemName: "arrow.clockwise").font(.body)
+                    Image(systemName: "arrow.clockwise").appFont(.body)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.primary)
@@ -59,10 +59,10 @@ struct GlobalControlBar<Trailing: View>: View {
         if let open = appState.marketIsOpen {
             HStack(spacing: 5) {
                 Image(systemName: "circle.fill")
-                    .font(.system(size: 7))
+                    .appFont(.system(size: 7))
                     .symbolEffect(.pulse, options: .repeating, isActive: open)
                 Text(open ? "LIVE" : "CLOSED")
-                    .font(.system(size: 11, weight: .bold)).tracking(0.5)
+                    .appFont(.system(size: 11, weight: .bold)).tracking(0.5)
             }
             .foregroundStyle(open ? Color.green : .secondary)
             .padding(.horizontal, 8).padding(.vertical, 3)
@@ -74,7 +74,7 @@ struct GlobalControlBar<Trailing: View>: View {
     @ViewBuilder private var lastUpdatedLabel: some View {
         if let ts = appState.lastUpdated {
             Text(ts.formatted(date: .omitted, time: .shortened))
-                .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                .appFont(.system(size: 11, weight: .medium)).monospacedDigit()
                 .foregroundStyle(.secondary)
         }
     }
@@ -86,12 +86,12 @@ struct GlobalControlBar<Trailing: View>: View {
         if let open = appState.marketIsOpen {
             HStack(spacing: 4) {
                 Image(systemName: "circle.fill")
-                    .font(.system(size: 7))
+                    .appFont(.system(size: 7))
                     .symbolEffect(.pulse, options: .repeating, isActive: open)
                     .foregroundStyle(open ? Color.green : .secondary)
                 if let ts = appState.lastUpdated {
                     Text(ts.formatted(date: .omitted, time: .shortened))
-                        .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                        .appFont(.system(size: 11, weight: .medium)).monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
             }
@@ -118,15 +118,15 @@ struct GlobalControlBar<Trailing: View>: View {
                     HStack(spacing: 12) {
                         accountMenu
                             .labelStyle(.iconOnly)
-                            .font(.body)
+                            .appFont(.body)
                             .padding(.leading, 12)
                         if TabLayout.hasLayout(section) {
                             PopoverMenu { layoutMenuContent } label: {
-                                Image(systemName: "slider.horizontal.3").font(.body)
+                                Image(systemName: "slider.horizontal.3").appFont(.body)
                             }
                         }
                         Button { appState.showClosed.toggle() } label: {
-                            Image(systemName: appState.showClosed ? "eye" : "eye.slash").font(.body)
+                            Image(systemName: appState.showClosed ? "eye" : "eye.slash").appFont(.body)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(appState.showClosed ? .primary : .secondary)
@@ -141,7 +141,7 @@ struct GlobalControlBar<Trailing: View>: View {
                     ProgressView().controlSize(.small).frame(width: 16, height: 16)
                 } else {
                     Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                        Image(systemName: "arrow.clockwise").font(.body)
+                        Image(systemName: "arrow.clockwise").appFont(.body)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.primary)
@@ -177,7 +177,7 @@ struct GlobalControlBar<Trailing: View>: View {
             trailing
         } label: {
             Image(systemName: "ellipsis.circle")
-                .font(.title3)
+                .appFont(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
@@ -262,7 +262,7 @@ struct GlobalControlBar<Trailing: View>: View {
         HStack(spacing: 8) {
             if showFXRate, appState.displayCurrency != "USD", let rate = appState.currentFXRateToUSD {
                 Text("1 USD = \(String(format: "%.2f", rate)) \(appState.displayCurrency)")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -277,7 +277,7 @@ struct GlobalControlBar<Trailing: View>: View {
                 HStack(spacing: 4) {
                     Text(appState.displayCurrency)
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 16))
+                        .appFont(.system(size: 16))
                 }
             }
             .fixedSize()

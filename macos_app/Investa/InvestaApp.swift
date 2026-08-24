@@ -6,16 +6,21 @@ struct InvestaApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(auth)
-                .tint(Theme.brand)
-                // Force Gregorian app-wide so chart date axes (and SwiftUI date
-                // rendering) don't show the Buddhist era under a Thai locale.
-                // Financial dates are stored as ISO yyyy-MM-dd.
-                .gregorianCalendar()
-                // iPhone-only: shrink semantic text one notch (iPad/macOS unchanged).
-                .iPhoneTextScale()
-                .macMinSize(width: 900, height: 600)
+            // Publishes `\.appFontScale` from the width of the window, so every
+            // `.appFont(…)` inside grows with it rather than staying at the
+            // 10–13pt AppKit picks for a laptop screen. See AppFont.swift.
+            WindowFontScale {
+                RootView()
+                    .environmentObject(auth)
+                    .tint(Theme.brand)
+                    // Force Gregorian app-wide so chart date axes (and SwiftUI date
+                    // rendering) don't show the Buddhist era under a Thai locale.
+                    // Financial dates are stored as ISO yyyy-MM-dd.
+                    .gregorianCalendar()
+                    // iPhone-only: shrink semantic text one notch (iPad/macOS unchanged).
+                    .iPhoneTextScale()
+                    .macMinSize(width: 900, height: 600)
+            }
         }
         #if os(macOS)
         .windowResizability(.contentMinSize)

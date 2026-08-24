@@ -23,14 +23,14 @@ private struct ISection<Content: View>: View {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 8) {
                 SectionLabel(title: title)
-                if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
+                if let subtitle { Text(subtitle).appFont(.caption2).foregroundStyle(.secondary) }
                 if let trailing { trailing }
             }
             #else
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     SectionLabel(title: title)
-                    if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary) }
+                    if let subtitle { Text(subtitle).appFont(.caption2).foregroundStyle(.secondary) }
                 }
                 Spacer(); if let trailing { trailing }
             }
@@ -104,9 +104,9 @@ struct IncomeKpiStrip: View {
                 .minimumScaleFactor(0.7)
             // A figure shrinks before it truncates — a clipped currency amount
             // is a wrong number, not a tight one.
-            Text(value).font(.title3.bold()).foregroundStyle(tone)
+            Text(value).appFont(.title3.bold()).foregroundStyle(tone)
                 .lineLimit(1).minimumScaleFactor(0.6)
-            Text(sub).font(.caption2).foregroundStyle(.secondary)
+            Text(sub).appFont(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .gridTile()
@@ -151,7 +151,7 @@ struct IncomeProjectorCard: View {
             AxisGridLine()
             AxisValueLabel {
                 if let s = value.as(String.self) {
-                    Text(String(s.prefix(3))).font(.caption2).fixedSize()
+                    Text(String(s.prefix(3))).appFont(.caption2).fixedSize()
                 }
             }
         }
@@ -250,10 +250,10 @@ struct DividendCalendarSection: View {
                             Text(ev.symbol).fontWeight(.bold)
                                 .lineLimit(1).minimumScaleFactor(0.8)
                             if ev.status == "estimated" {
-                                Label("est.", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
+                                Label("est.", systemImage: "clock").appFont(.caption2).foregroundStyle(.orange)
                                     .lineLimit(1)
                             } else {
-                                Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.green)
+                                Image(systemName: "checkmark.seal.fill").appFont(.caption2).foregroundStyle(.green)
                             }
                             Spacer(minLength: 8)
                             VStack(alignment: .trailing, spacing: 1) {
@@ -267,7 +267,7 @@ struct DividendCalendarSection: View {
                                      : "Ex \(eventDay(ev.exDividendDate, ev.marketTimezone))")
                                 Text("Pay \(eventDay(ev.dividendDate, ev.marketTimezone))")
                             }
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .appFont(.caption2).foregroundStyle(.secondary)
                             .lineLimit(1)
                             Text(Fmt.currency(ev.amount, code: currency)).fontWeight(.bold).foregroundStyle(.green)
                                 .lineLimit(1).minimumScaleFactor(0.7)
@@ -312,12 +312,12 @@ struct TopPayersCard: View {
             ForEach(Array(data.enumerated()), id: \.element.id) { idx, row in
                 Button { onSelect(row.symbol) } label: {
                     HStack(spacing: 10) {
-                        Text("\(idx + 1)").font(.caption2.bold()).foregroundStyle(.secondary).frame(width: 18, alignment: .trailing)
+                        Text("\(idx + 1)").appFont(.caption2.bold()).foregroundStyle(.secondary).frame(width: 18, alignment: .trailing)
                         StockIcon(symbol: row.symbol, size: 26, scalesWithText: true)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(row.symbol).fontWeight(.bold)
-                                Text("· \(row.count) \(row.count == 1 ? "pay" : "pays")").font(.caption2).foregroundStyle(.secondary)
+                                Text("· \(row.count) \(row.count == 1 ? "pay" : "pays")").appFont(.caption2).foregroundStyle(.secondary)
                             }
                             GeometryReader { g in
                                 ZStack(alignment: .leading) {
@@ -327,8 +327,8 @@ struct TopPayersCard: View {
                             }.frame(height: 6)
                         }
                         VStack(alignment: .trailing, spacing: 1) {
-                            Text(Fmt.currency(row.gross, code: currency)).font(.caption.bold()).foregroundStyle(.green)
-                            Text(String(format: "%.1f%% of top", row.pct)).font(.caption2).foregroundStyle(.secondary)
+                            Text(Fmt.currency(row.gross, code: currency)).appFont(.caption.bold()).foregroundStyle(.green)
+                            Text(String(format: "%.1f%% of top", row.pct)).appFont(.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }.buttonStyle(.plain)
@@ -365,8 +365,8 @@ struct ByAccountCard: View {
                     HStack {
                         Text(acc.account).fontWeight(.bold).lineLimit(1)
                         Spacer()
-                        Text(String(format: "%.1f%%", pct)).font(.caption2).foregroundStyle(.secondary)
-                        Text(Fmt.currency(acc.gross12m, code: currency)).font(.caption.bold()).foregroundStyle(.green)
+                        Text(String(format: "%.1f%%", pct)).appFont(.caption2).foregroundStyle(.secondary)
+                        Text(Fmt.currency(acc.gross12m, code: currency)).appFont(.caption.bold()).foregroundStyle(.green)
                     }
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
@@ -427,7 +427,7 @@ struct AnnualDividendsCard: View {
                         .annotation(position: .top) {
                             if showYoY, let y = row.yoy {
                                 Text("\(y > 0 ? "+" : "")\(String(format: "%.0f", y))%")
-                                    .font(.caption2.bold()).foregroundStyle(y >= 0 ? .green : .red)
+                                    .appFont(.caption2.bold()).foregroundStyle(y >= 0 ? .green : .red)
                             }
                         }
                 }
@@ -437,7 +437,7 @@ struct AnnualDividendsCard: View {
                         AxisTick()
                         AxisValueLabel {
                             if let s = value.as(String.self) {
-                                Text("'\(s.suffix(2))").font(.caption2).fixedSize()
+                                Text("'\(s.suffix(2))").appFont(.caption2).fixedSize()
                             }
                         }
                     }
@@ -514,7 +514,7 @@ struct DividendTransactionsCard: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    TableColumn("Account", value: \.account) { Text($0.account).font(.caption).foregroundStyle(.secondary) }
+                    TableColumn("Account", value: \.account) { Text($0.account).appFont(.caption).foregroundStyle(.secondary) }
                     TableColumn("Gross", value: \.gross) { Text(Fmt.currency($0.gross, code: currency)).monospacedDigit().foregroundStyle(.green) }
                     TableColumn("Tax", value: \.tax) { Text($0.tax > 0 ? Fmt.currency($0.tax, code: currency) : "—").monospacedDigit().foregroundStyle(.red) }
                     TableColumn("Net", value: \.net) { Text(Fmt.currency($0.net, code: currency)).fontWeight(.bold).monospacedDigit() }
@@ -531,24 +531,24 @@ struct DividendTransactionsCard: View {
                 Button {
                     appState.openStock(r.symbol)
                 } label: {
-                    Text(r.symbol).font(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                    Text(r.symbol).appFont(.headline).fontWeight(.bold).foregroundStyle(.indigo)
                 }
                 .buttonStyle(.plain)
                 Spacer()
                 Text(Fmt.currency(r.net, code: currency)).fontWeight(.bold).monospacedDigit()
             }
             HStack {
-                Text(MarketTime.formatted(r.date)).font(.caption2).foregroundStyle(.secondary)
+                Text(MarketTime.formatted(r.date)).appFont(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Text(r.account).font(.caption2).foregroundStyle(.tertiary)
+                Text(r.account).appFont(.caption2).foregroundStyle(.tertiary)
             }
             Divider()
             HStack {
-                Text("Gross").font(.caption).foregroundStyle(.secondary)
-                Text(Fmt.currency(r.gross, code: currency)).font(.caption.bold()).monospacedDigit().foregroundStyle(.green)
+                Text("Gross").appFont(.caption).foregroundStyle(.secondary)
+                Text(Fmt.currency(r.gross, code: currency)).appFont(.caption.bold()).monospacedDigit().foregroundStyle(.green)
                 Spacer()
-                Text("Tax").font(.caption).foregroundStyle(.secondary)
-                Text(r.tax > 0 ? Fmt.currency(r.tax, code: currency) : "—").font(.caption.bold()).monospacedDigit().foregroundStyle(.red)
+                Text("Tax").appFont(.caption).foregroundStyle(.secondary)
+                Text(r.tax > 0 ? Fmt.currency(r.tax, code: currency) : "—").appFont(.caption.bold()).monospacedDigit().foregroundStyle(.red)
             }
         }
         .padding(14)

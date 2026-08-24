@@ -51,20 +51,20 @@ struct AccountsSettings: View {
     private var availableCurrenciesCard: some View {
         SettingsCard(title: "Currency Management", icon: "dollarsign.circle", iconColor: .orange) {
             Text("Add or remove currencies available for manual accounts.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 
             let currencies = (settings?.availableCurrencies ?? []).sorted()
             if currencies.isEmpty {
                 Text("No additional currencies defined.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
                 FlowChipsRemovable(items: currencies) { remove($0, currencies) }
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Add a Currency").font(.caption2).foregroundStyle(.secondary)
+                Text("Add a Currency").appFont(.caption2).foregroundStyle(.secondary)
                 HStack {
                     TextField("e.g. SGD", text: $newCurrency)
                         .textFieldStyle(.roundedBorder)
@@ -90,13 +90,13 @@ struct AccountsSettings: View {
     private var perAccountCard: some View {
         SettingsCard(title: "Account Preferences", icon: "slider.horizontal.3", iconColor: .purple) {
             Text("Configure currency, cash management mode, and closure date for each account.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 
             let configurableAccounts = accounts.filter { $0 != "All Accounts" }
             if configurableAccounts.isEmpty { 
                 Text("No accounts found.")
-                    .font(.caption).foregroundStyle(.secondary) 
+                    .appFont(.caption).foregroundStyle(.secondary) 
                     .padding(.vertical, 8)
             } else {
                 VStack(spacing: 12) {
@@ -107,14 +107,14 @@ struct AccountsSettings: View {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 if isClosed {
-                                    Text(acc).font(.headline).strikethrough().foregroundStyle(.secondary)
+                                    Text(acc).appFont(.headline).strikethrough().foregroundStyle(.secondary)
                                     Text("CLOSED")
-                                        .font(.system(size: 10, weight: .bold))
+                                        .appFont(.system(size: 10, weight: .bold))
                                         .padding(.horizontal, 6).padding(.vertical, 2)
                                         .background(Color.secondary.opacity(0.2))
                                         .cornerRadius(4)
                                 } else {
-                                    Text(acc).font(.headline).fontWeight(.bold)
+                                    Text(acc).appFont(.headline).fontWeight(.bold)
                                 }
                                 Spacer()
                             }
@@ -223,13 +223,13 @@ struct AccountsSettings: View {
     private var cashYieldCard: some View {
         SettingsCard(title: "Cash Yield Management", icon: "percent", iconColor: .teal) {
             Text("Configure annual interest rates and interest-free thresholds for your cash balances to estimate future yield.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 
             let cashAccounts = accountsWithCash()
             if cashAccounts.isEmpty { 
                 Text("No accounts with cash balances found.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
                 VStack(spacing: 12) {
@@ -241,11 +241,11 @@ struct AccountsSettings: View {
                         
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                Text(acc).font(.headline).fontWeight(.bold)
+                                Text(acc).appFont(.headline).fontWeight(.bold)
                                 Spacer()
                                 VStack(alignment: .trailing, spacing: 2) {
-                                    Text("Balance").font(.caption2).foregroundStyle(.secondary)
-                                    Text(balance.formatted(.currency(code: appState.displayCurrency))).font(.subheadline).monospacedDigit().fontWeight(.bold)
+                                    Text("Balance").appFont(.caption2).foregroundStyle(.secondary)
+                                    Text(balance.formatted(.currency(code: appState.displayCurrency))).appFont(.subheadline).monospacedDigit().fontWeight(.bold)
                                 }
                             }
                             
@@ -267,9 +267,9 @@ struct AccountsSettings: View {
                                         .textFieldStyle(.roundedBorder)
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Est. Annual Interest").font(.caption2).foregroundStyle(.secondary)
+                                    Text("Est. Annual Interest").appFont(.caption2).foregroundStyle(.secondary)
                                     Text(interest.formatted(.currency(code: appState.displayCurrency)))
-                                        .font(.body).monospacedDigit().fontWeight(.bold).foregroundStyle(.green)
+                                        .appFont(.body).monospacedDigit().fontWeight(.bold).foregroundStyle(.green)
                                         .padding(.vertical, 4)
                                 }
                             }
@@ -308,7 +308,7 @@ struct AccountsSettings: View {
     }
 
     private func labeled<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 2) { Text(label).font(.caption2).foregroundStyle(.secondary); content() }
+        VStack(alignment: .leading, spacing: 2) { Text(label).appFont(.caption2).foregroundStyle(.secondary); content() }
     }
     private func bind(_ map: Binding<[String: String]>, _ key: String, default def: String = "") -> Binding<String> {
         Binding(get: { map.wrappedValue[key] ?? def }, set: { map.wrappedValue[key] = $0 })
@@ -329,12 +329,12 @@ struct SymbolsSettings: View {
         VStack(spacing: 16) {
             SettingsCard(title: "Add Symbol Mapping", icon: "map", iconColor: .blue) {
                 Text("Resolve custom or broker-specific tickers to a real Yahoo Finance symbol.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 
                 HStack(alignment: .bottom, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Portfolio Symbol").font(.caption2).foregroundStyle(.secondary)
+                        Text("Portfolio Symbol").appFont(.caption2).foregroundStyle(.secondary)
                         TextField("e.g. MY-FUND", text: $mapFrom)
                             .textFieldStyle(.roundedBorder)
                     }
@@ -344,7 +344,7 @@ struct SymbolsSettings: View {
                         .padding(.bottom, 6)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Yahoo Finance Ticker").font(.caption2).foregroundStyle(.secondary)
+                        Text("Yahoo Finance Ticker").appFont(.caption2).foregroundStyle(.secondary)
                         TextField("e.g. VTSAX", text: $mapTo)
                             .textFieldStyle(.roundedBorder)
                     }
@@ -360,15 +360,15 @@ struct SymbolsSettings: View {
                 let sortedMap = (settings?.userSymbolMap ?? [:]).sorted(by: { $0.key < $1.key })
                 if sortedMap.isEmpty {
                     Text("No symbol mappings defined.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                         .padding(.vertical, 8)
                 } else {
                     ScrollView(.horizontal, showsIndicators: true) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 16) {
-                                Text("Portfolio Symbol").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 140, alignment: .leading)
+                                Text("Portfolio Symbol").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 140, alignment: .leading)
                                 Text("").frame(width: 20)
-                                Text("Mapped Ticker").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 140, alignment: .leading)
+                                Text("Mapped Ticker").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 140, alignment: .leading)
                                 Spacer().frame(width: 40) // Actions
                             }
                             Divider()
@@ -376,7 +376,7 @@ struct SymbolsSettings: View {
                                 HStack(spacing: 16) {
                                     Text(from).fontWeight(.bold).frame(width: 140, alignment: .leading).lineLimit(1)
                                     Image(systemName: "arrow.right").foregroundStyle(.secondary).frame(width: 20)
-                                    Text(to).font(.body).monospacedDigit().foregroundStyle(.blue).frame(width: 140, alignment: .leading).lineLimit(1)
+                                    Text(to).appFont(.body).monospacedDigit().foregroundStyle(.blue).frame(width: 140, alignment: .leading).lineLimit(1)
                                     
                                     Button(role: .destructive) { removeMap(from) } label: { Image(systemName: "trash") }
                                         .buttonStyle(.borderless).foregroundStyle(.red)
@@ -392,12 +392,12 @@ struct SymbolsSettings: View {
             
             SettingsCard(title: "Exclude a Symbol", icon: "xmark.circle", iconColor: .red) {
                 Text("Excluded symbols are skipped during portfolio calculations and data fetches.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 
                 HStack(alignment: .bottom, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Symbol to Exclude").font(.caption2).foregroundStyle(.secondary)
+                        Text("Symbol to Exclude").appFont(.caption2).foregroundStyle(.secondary)
                         TextField("e.g. TEST-SYM", text: $excludeSym)
                             .textFieldStyle(.roundedBorder)
                     }
@@ -419,7 +419,7 @@ struct SymbolsSettings: View {
                 let excluded = (settings?.userExcludedSymbols ?? []).sorted()
                 if excluded.isEmpty {
                     Text("No excluded symbols.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                         .padding(.vertical, 8)
                 } else {
                     FlowChipsRemovable(items: excluded, backgroundColor: Color.red.opacity(0.1), borderColor: Color.red.opacity(0.3), textColor: .red) { sym in
@@ -466,7 +466,7 @@ struct OverridesSettings: View {
             if isEditing {
                 SettingsCard(title: sym.isEmpty ? "Add Override" : "Edit Override", icon: "pencil.and.outline", iconColor: .green) {
                     Text("Set a manual price, asset type, or any metadata field for a symbol.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     
                     #if os(macOS)
@@ -507,19 +507,19 @@ struct OverridesSettings: View {
             SettingsCard(title: "Active Overrides", icon: "slider.horizontal.3", iconColor: .green) {
                 if overrides.isEmpty {
                     Text("No manual overrides defined.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                         .padding(.vertical, 8)
                 } else {
                     ScrollView(.horizontal, showsIndicators: true) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 16) {
-                                Text("Symbol").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
-                                Text("Price").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
-                                Text("Asset Type").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
-                                Text("Sector").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
-                                Text("Country").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
-                                Text("Industry").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
-                                Text("Market").font(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+                                Text("Symbol").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+                                Text("Price").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                                Text("Asset Type").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
+                                Text("Sector").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
+                                Text("Country").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+                                Text("Industry").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
+                                Text("Market").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
                                 Spacer().frame(width: 60) // Actions
                             }
                             Divider()
@@ -528,11 +528,11 @@ struct OverridesSettings: View {
                                     Text(o.symbol).fontWeight(.bold).frame(width: 80, alignment: .leading).lineLimit(1)
                                     Text(o.price.map { Fmt.number($0) } ?? "—").monospacedDigit().frame(width: 80, alignment: .trailing)
                                     
-                                    Text(o.meta["asset_type"] ?? "—").font(.caption).frame(width: 100, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["sector"] ?? "—").font(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["geography"] ?? "—").font(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["industry"] ?? "—").font(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["exchange"] ?? "—").font(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
+                                    Text(o.meta["asset_type"] ?? "—").appFont(.caption).frame(width: 100, alignment: .leading).lineLimit(1)
+                                    Text(o.meta["sector"] ?? "—").appFont(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
+                                    Text(o.meta["geography"] ?? "—").appFont(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
+                                    Text(o.meta["industry"] ?? "—").appFont(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
+                                    Text(o.meta["exchange"] ?? "—").appFont(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
                                     
                                     HStack(spacing: 8) {
                                         Button { edit(o) } label: { Image(systemName: "pencil") }
@@ -551,7 +551,7 @@ struct OverridesSettings: View {
     }
     
     private func labeled<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 2) { Text(label).font(.caption2).foregroundStyle(.secondary); content() }
+        VStack(alignment: .leading, spacing: 2) { Text(label).appFont(.caption2).foregroundStyle(.secondary); content() }
     }
 
     private func clear() { sym = ""; price = ""; assetType = ""; sector = ""; geo = ""; industry = ""; exchange = "" }
@@ -615,7 +615,7 @@ struct AdvancedSettings: View {
     private var benchmarksCard: some View {
         SettingsCard(title: "Benchmarks", icon: "chart.line.uptrend.xyaxis", iconColor: .purple) {
             Text("Select indices and specific symbols to compare your portfolio performance against.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 
             #if os(macOS)
@@ -631,7 +631,7 @@ struct AdvancedSettings: View {
                         HStack {
                             Image(systemName: on ? "checkmark.square.fill" : "square")
                                 .foregroundStyle(on ? Color.purple : .secondary)
-                            Text(b).font(.caption).fontWeight(.medium)
+                            Text(b).appFont(.caption).fontWeight(.medium)
                             Spacer()
                         }
                         .padding(8)
@@ -650,7 +650,7 @@ struct AdvancedSettings: View {
             Divider().padding(.vertical, 4)
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Custom Ticker").font(.caption2).foregroundStyle(.secondary)
+                Text("Custom Ticker").appFont(.caption2).foregroundStyle(.secondary)
                 HStack {
                     TextField("e.g. AAPL", text: $benchmarksText)
                         .textFieldStyle(.roundedBorder)
@@ -680,7 +680,7 @@ struct AdvancedSettings: View {
     private var webhookCard: some View {
         SettingsCard(title: "Webhook Integration", icon: "waveform.path.ecg", iconColor: .cyan) {
             Text("Trigger a background data refresh externally by providing the secret key.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 
             HStack(spacing: 12) {
@@ -697,7 +697,7 @@ struct AdvancedSettings: View {
     private var ibkrCard: some View {
         SettingsCard(title: "Interactive Brokers Sync", icon: "slider.horizontal.3", iconColor: .blue) {
             Text("Sync transactions using IBKR Flex Web Service. Requires an active Activity Flex Query.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 
             #if os(macOS)
@@ -708,11 +708,11 @@ struct AdvancedSettings: View {
             
             LazyVGrid(columns: cols, alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Flex Token").font(.caption2).foregroundStyle(.secondary)
+                    Text("Flex Token").appFont(.caption2).foregroundStyle(.secondary)
                     TextField("Token", text: $ibkrToken).textFieldStyle(.roundedBorder)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Query ID").font(.caption2).foregroundStyle(.secondary)
+                    Text("Query ID").appFont(.caption2).foregroundStyle(.secondary)
                     TextField("ID", text: $ibkrQuery).textFieldStyle(.roundedBorder)
                 }
             }
@@ -732,7 +732,7 @@ struct AdvancedSettings: View {
         SettingsCard(title: "Advanced System Settings", icon: "gearshape", iconColor: .gray) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Backend Base URL").font(.caption2).foregroundStyle(.secondary)
+                    Text("Backend Base URL").appFont(.caption2).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
                         TextField("Base URL", text: $serverURL).textFieldStyle(.roundedBorder).frame(maxWidth: 300)
                         Button("Save") { APIConfig.baseURL = serverURL }.buttonStyle(.bordered)
@@ -740,7 +740,7 @@ struct AdvancedSettings: View {
                 }
                 Divider()
                 HStack {
-                    Text("Clear Server Cache").font(.caption2).foregroundStyle(.secondary)
+                    Text("Clear Server Cache").appFont(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     Button("Clear Cache") { Task { await vm.clearCache() } }.buttonStyle(.bordered)
                 }
@@ -764,8 +764,8 @@ private struct FlowChipsRemovable: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(items, id: \.self) { item in
                 HStack(spacing: 4) {
-                    Text(item).font(.caption)
-                    Button { onRemove(item) } label: { Image(systemName: "xmark.circle.fill").font(.caption2) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    Text(item).appFont(.caption)
+                    Button { onRemove(item) } label: { Image(systemName: "xmark.circle.fill").appFont(.caption2) }.buttonStyle(.plain).foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(.background.tertiary, in: Capsule())
@@ -787,24 +787,24 @@ struct AccountSecuritySettings: View {
         VStack(spacing: 16) {
             SettingsCard(title: "Profile Information", icon: "person.crop.circle", iconColor: .cyan) {
                 Text("Identifiers and display name shown across the app.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 
                 if let user = auth.currentUser {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Username").font(.caption2).foregroundStyle(.secondary)
+                                Text("Username").appFont(.caption2).foregroundStyle(.secondary)
                                 Text(user.username)
-                                    .font(.system(.body, design: .monospaced))
+                                    .appFont(.system(.body, design: .monospaced))
                                     .padding(.horizontal, 12).padding(.vertical, 8)
                                     .background(Color.primary.opacity(0.05))
                                     .cornerRadius(8)
                             }
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("User ID").font(.caption2).foregroundStyle(.secondary)
+                                Text("User ID").appFont(.caption2).foregroundStyle(.secondary)
                                 Text("\(user.id)")
-                                    .font(.system(.body, design: .monospaced))
+                                    .appFont(.system(.body, design: .monospaced))
                                     .padding(.horizontal, 12).padding(.vertical, 8)
                                     .background(Color.primary.opacity(0.05))
                                     .cornerRadius(8)
@@ -812,7 +812,7 @@ struct AccountSecuritySettings: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Alias (Display Name)").font(.caption2).foregroundStyle(.secondary)
+                            Text("Alias (Display Name)").appFont(.caption2).foregroundStyle(.secondary)
                             HStack {
                                 TextField("e.g. My Portfolio", text: $alias)
                                     .textFieldStyle(.roundedBorder)
@@ -822,9 +822,9 @@ struct AccountSecuritySettings: View {
                                     .disabled(alias == user.alias)
                             }
                             HStack(spacing: 4) {
-                                Image(systemName: "info.circle").font(.caption2).foregroundStyle(.secondary)
+                                Image(systemName: "info.circle").appFont(.caption2).foregroundStyle(.secondary)
                                 Text("This name will be displayed in the user menu. Leave empty to use username.")
-                                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                                    .appFont(.system(size: 11)).foregroundStyle(.secondary)
                             }.padding(.top, 2)
                         }
                     }
@@ -834,7 +834,7 @@ struct AccountSecuritySettings: View {
             
             SettingsCard(title: "Security", icon: "lock.shield", iconColor: .orange) {
                 Text("Change your login password.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 
                 Button("Change Password...") { showPassword = true }
@@ -846,10 +846,10 @@ struct AccountSecuritySettings: View {
                 // Sign Out
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Image(systemName: "iphone").font(.headline)
-                        Text("Sign Out Device").font(.headline)
+                        Image(systemName: "iphone").appFont(.headline)
+                        Text("Sign Out Device").appFont(.headline)
                     }
-                    Text("End your current session on this device.").font(.caption).foregroundStyle(.secondary)
+                    Text("End your current session on this device.").appFont(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button(action: { auth.logout() }) {
                         HStack {
@@ -868,10 +868,10 @@ struct AccountSecuritySettings: View {
                 // Danger Zone
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Image(systemName: "exclamationmark.triangle.fill").font(.headline).foregroundStyle(.red)
-                        Text("Danger Zone").font(.headline).foregroundStyle(.red)
+                        Image(systemName: "exclamationmark.triangle.fill").appFont(.headline).foregroundStyle(.red)
+                        Text("Danger Zone").appFont(.headline).foregroundStyle(.red)
                     }
-                    Text("Permanently delete your account and all associated data.").font(.caption).foregroundStyle(.red.opacity(0.8))
+                    Text("Permanently delete your account and all associated data.").appFont(.caption).foregroundStyle(.red.opacity(0.8))
                     Spacer()
                     Button(action: { confirmDelete = true }) {
                         HStack {

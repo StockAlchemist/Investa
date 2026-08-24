@@ -362,10 +362,10 @@ struct StockPriceChartView: View {
 
     private var customDateRow: some View {
         HStack(spacing: 8) {
-            Text("FROM").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+            Text("FROM").appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customFrom, in: ...customTo, displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
-            Text("TO").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+            Text("TO").appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             DatePicker("", selection: $customTo, in: customFrom...Date(), displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.compact).fixedSize().gregorianCalendar()
             Spacer()
@@ -417,10 +417,10 @@ struct StockPriceChartView: View {
         if let s = stats, view != .tradingView {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if !hidePrice, let last = pts.last {
-                    Text(Fmt.currency(last.value, code: currency)).font(.title.bold())
+                    Text(Fmt.currency(last.value, code: currency)).appFont(.title.bold())
                 }
                 Text("\(Fmt.currency(s.change, code: currency)) (\(String(format: "%.2f%%", s.pct)))")
-                    .font(.callout.weight(.medium)).foregroundStyle(s.change >= 0 ? .green : .red)
+                    .appFont(.callout.weight(.medium)).foregroundStyle(s.change >= 0 ? .green : .red)
             }
             // Never let a tight row wrap this into a multi-line column.
             .lineLimit(1).minimumScaleFactor(0.7)
@@ -451,7 +451,7 @@ struct StockPriceChartView: View {
             HStack(spacing: 6) {
                 ForEach(periods, id: \.1) { label, value in
                     Button { period = value } label: {
-                        Text(label).font(.caption.weight(.semibold))
+                        Text(label).appFont(.caption.weight(.semibold))
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(period == value ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
                             .foregroundStyle(period == value ? .white : .secondary)
@@ -463,7 +463,7 @@ struct StockPriceChartView: View {
 
     private var overlayRow: some View {
         HStack(spacing: 8) {
-            Text("OVERLAYS").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+            Text("OVERLAYS").appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             // Scrolls so the pills keep their natural width instead of being
             // squeezed (which wrapped "Dividends"/"Earnings" onto two lines).
             ScrollView(.horizontal, showsIndicators: false) {
@@ -479,7 +479,7 @@ struct StockPriceChartView: View {
 
     private var benchmarkRow: some View {
         HStack(spacing: 8) {
-            Text("BENCHMARKS").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+            Text("BENCHMARKS").appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(benchmarks, id: \.key) { b in
@@ -495,7 +495,7 @@ struct StockPriceChartView: View {
 
     private func toggleChip(_ label: String, _ on: Bool, _ color: Color, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label).font(.system(size: 11, weight: .bold))
+            Text(label).appFont(.system(size: 11, weight: .bold))
                 .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(on ? color : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
@@ -506,7 +506,7 @@ struct StockPriceChartView: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Circle().fill(on ? .white : color).frame(width: 7, height: 7)
-                Text(label).font(.system(size: 11, weight: .bold))
+                Text(label).appFont(.system(size: 11, weight: .bold))
                     .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 9).padding(.vertical, 4)
@@ -665,7 +665,7 @@ struct StockPriceChartView: View {
                 .foregroundStyle(Color(hex: 0x64748b)).lineStyle(.init(lineWidth: 1.5, dash: [5, 5]))
                 .annotation(position: .top, alignment: .trailing) {
                     Text("AVG COST: \(Fmt.currency(a, code: currency))")
-                        .font(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: 0x64748b))
+                        .appFont(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: 0x64748b))
                 }
         }
         ForEach(eventMarks) { m in
@@ -673,7 +673,7 @@ struct StockPriceChartView: View {
             PointMark(x: .value("X", x), y: .value("y", m.y))
                 .symbolSize(150).foregroundStyle(m.kind.color)
                 .annotation(position: .overlay) {
-                    Text(m.kind.letter).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                    Text(m.kind.letter).appFont(.system(size: 10, weight: .bold)).foregroundStyle(.white)
                 }
         }
     }

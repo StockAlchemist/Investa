@@ -139,14 +139,14 @@ struct BuffettRankView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Buffett & Value Ranking")
-                .font(.title2.bold())
+                .appFont(.title2.bold())
 
             Text("""
                  Every US-listed common stock, scored 60% on business quality and 40% on value. \
                  Quality gates run first — a company that fails one is excluded rather than ranked \
                  low, because cheapness never rescues a broken business.
                  """)
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -166,8 +166,8 @@ struct BuffettRankView: View {
 
     private func statistic(_ label: String, _ value: Int?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption2).foregroundStyle(.secondary)
-            Text(value.map(String.init) ?? "—").font(.headline)
+            Text(label).appFont(.caption2).foregroundStyle(.secondary)
+            Text(value.map(String.init) ?? "—").appFont(.headline)
         }
     }
 
@@ -208,7 +208,7 @@ struct BuffettRankView: View {
 
                 if !viewModel.search.trimmingCharacters(in: .whitespaces).isEmpty {
                     Text("\(viewModel.totalMatches) match\(viewModel.totalMatches == 1 ? "" : "es")")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -230,10 +230,10 @@ struct BuffettRankView: View {
             let term = viewModel.search.trimmingCharacters(in: .whitespaces)
             VStack(spacing: 6) {
                 Text(term.isEmpty ? "No companies on this page." : "No ranked company matches “\(term)”.")
-                    .font(.callout)
+                    .appFont(.callout)
                 if !term.isEmpty {
                     Text("It may have been excluded by a quality gate — check the Excluded tab.")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -260,7 +260,7 @@ struct BuffettRankView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Text(row.rank.map(String.init) ?? "—")
-                    .font(.callout.monospacedDigit())
+                    .appFont(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -272,10 +272,10 @@ struct BuffettRankView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(row.symbol).font(.headline)
+                        Text(row.symbol).appFont(.headline)
                         if row.model != .generic {
                             Text(row.model.shortLabel)
-                                .font(.caption2.weight(.semibold))
+                                .appFont(.caption2.weight(.semibold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Color.secondary.opacity(0.15), in: Capsule())
                         }
@@ -284,7 +284,7 @@ struct BuffettRankView: View {
                         // Two lines rather than one: at phone width a single
                         // line ends in an ellipsis for most of the market.
                         Text(name)
-                            .font(.caption)
+                            .appFont(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -296,19 +296,19 @@ struct BuffettRankView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     HStack(spacing: 3) {
                         Text(score(row.compositeScore))
-                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .appFont(.title3.monospacedDigit().weight(.semibold))
                             .foregroundStyle(tint(row.compositeScore))
                         // Flagged next to the score it modified, so a company
                         // demoted for thin data is distinguishable from one
                         // that is honestly mediocre.
                         if row.isConfidenceReduced {
                             Image(systemName: "arrowtriangle.down.fill")
-                                .font(.system(size: 9))
+                                .appFont(.system(size: 9))
                                 .foregroundStyle(.orange)
                         }
                     }
                     Text("Q \(score(row.qualityScore)) · V \(score(row.valueScore))")
-                        .font(.subheadline.monospacedDigit())
+                        .appFont(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -346,12 +346,12 @@ struct BuffettRankView: View {
     private func pillarCell(_ value: String, _ label: String, _ tone: Color) -> some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(.callout.monospacedDigit().weight(.semibold))
+                .appFont(.callout.monospacedDigit().weight(.semibold))
                 .foregroundStyle(tone)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label)
-                .font(.caption2)
+                .appFont(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -368,7 +368,7 @@ struct BuffettRankView: View {
                  rather than an index. A gate only fires on something the filings actually show — \
                  missing data never fails a company, it lowers its confidence instead.
                  """)
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(12)
@@ -379,7 +379,7 @@ struct BuffettRankView: View {
                 Text(viewModel.search.trimmingCharacters(in: .whitespaces).isEmpty
                      ? "No exclusions on this page."
                      : "No excluded company matches “\(viewModel.search.trimmingCharacters(in: .whitespaces))”.")
-                    .font(.callout)
+                    .appFont(.callout)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 30)
             }
@@ -391,10 +391,10 @@ struct BuffettRankView: View {
                         // tabs read as one list seen two ways.
                         StockIcon(symbol: item.symbol, size: isPhoneLayout ? 26 : 30)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.symbol).font(.headline)
+                            Text(item.symbol).appFont(.headline)
                             if let name = item.name, !name.isEmpty {
                                 Text(name)
-                                    .font(.caption)
+                                    .appFont(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -405,7 +405,7 @@ struct BuffettRankView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(item.reasonList, id: \.self) { reason in
                                 Text(reason)
-                                    .font(.caption)
+                                    .appFont(.caption)
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(Color.secondary.opacity(0.12), in: Capsule())
                             }
@@ -414,7 +414,7 @@ struct BuffettRankView: View {
                         Spacer()
 
                         Text(item.periodCount.map { "\($0)y" } ?? "—")
-                            .font(.callout.monospacedDigit())
+                            .appFont(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                     .padding(10)
@@ -437,7 +437,7 @@ struct BuffettRankView: View {
             Text(viewModel.showingExclusions
                  ? "Rows \(first)–\(first + size - 1)"
                  : "\(viewModel.totalMatches == 0 ? 0 : first)–\(min(first + size - 1, viewModel.totalMatches)) of \(viewModel.totalMatches)")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             Button("Next") { Task { await viewModel.changePage(by: 1) } }

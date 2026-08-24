@@ -13,7 +13,7 @@ private struct Card<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 7) {
                 if let icon {
-                    Image(systemName: icon).font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
+                    Image(systemName: icon).appFont(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
                 }
                 SectionLabel(title: title)
                 Spacer(minLength: 0)
@@ -154,7 +154,7 @@ struct PortfolioHeroCard: View {
                     withAnimation(.easeInOut(duration: 0.15)) { period = p }
                 } label: {
                     Text(p.rawValue)
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(.system(size: 11, weight: .bold))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4.5)
                         .background(
@@ -173,15 +173,15 @@ struct PortfolioHeroCard: View {
     private func periodReturnText(pct: Double, absV: Double) -> some View {
         HStack(spacing: 4) {
             Text("\(pct >= 0 ? "+" : "")\(String(format: "%.2f%%", pct))")
-                .font(.system(size: 13, weight: .bold))
+                .appFont(.system(size: 13, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(Fmt.tint(for: pct))
             Text("(\(pct >= 0 ? "+" : "")\(Fmt.currency(absV, code: currency)))")
-                .font(.system(size: 11, weight: .medium))
+                .appFont(.system(size: 11, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
             Text(period.rawValue)
-                .font(.system(size: 10, weight: .bold))
+                .appFont(.system(size: 10, weight: .bold))
                 .textCase(.uppercase)
                 .foregroundStyle(.secondary)
         }
@@ -194,7 +194,7 @@ struct PortfolioHeroCard: View {
         return VStack(alignment: .leading, spacing: compact ? 4 : 6) {
             HStack(spacing: 6) {
                 Image(systemName: "wallet.pass")
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.sectionText)
                 SectionLabel(title: "Total Portfolio Value")
                 if isLoading {
@@ -214,7 +214,7 @@ struct PortfolioHeroCard: View {
 
     private var valueText: some View {
         Text(Fmt.currency(metrics?.marketValue, code: currency))
-            .font(.system(size: compact ? 34 : 42, weight: .black, design: .rounded))
+            .appFont(.system(size: compact ? 34 : 42, weight: .black, design: .rounded))
             .monospacedDigit()
             .minimumScaleFactor(0.5).lineLimit(1)
     }
@@ -223,20 +223,20 @@ struct PortfolioHeroCard: View {
         if let g = dayGL {
             HStack(spacing: 5) {
                 Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(.system(size: 13, weight: .bold))
                 Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))")
-                    .font(.system(size: 16, weight: .semibold))
+                    .appFont(.system(size: 16, weight: .semibold))
                     .monospacedDigit()
                 if let p = dayGLPct {
                     Text("\(p >= 0 ? "+" : "")\(String(format: "%.2f%%", p))")
-                        .font(.system(size: 12, weight: .bold))
+                        .appFont(.system(size: 12, weight: .bold))
                         .monospacedDigit()
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2.5)
                         .background((positive ? Color.up : Color.down).opacity(0.12), in: Capsule())
                         .overlay(Capsule().strokeBorder((positive ? Color.up : Color.down).opacity(0.25), lineWidth: 0.8))
                 }
-                Text("today").font(.caption).foregroundStyle(.secondary)
+                Text("today").appFont(.caption).foregroundStyle(.secondary)
             }
             .foregroundStyle(positive ? Color.up : Color.down)
             .lineLimit(1).minimumScaleFactor(0.7)
@@ -268,14 +268,14 @@ struct PortfolioHeroCard: View {
                 .minimumScaleFactor(0.7)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(Fmt.percent(value, includeSign: true))
-                    .font(.system(size: 18, weight: .bold))
+                    .appFont(.system(size: 18, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(Fmt.tint(for: value))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                 if let sub {
                     Text(sub)
-                        .font(.system(size: 10, weight: .medium))
+                        .appFont(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -357,12 +357,12 @@ struct TodayStripCard: View {
     private var marketCol: some View {
         let top = indices.sorted { abs($0.changesPercentage ?? 0) > abs($1.changesPercentage ?? 0) }.prefix(3)
         return VStack(alignment: .leading, spacing: 6) {
-            Label("Market Today", systemImage: "globe").font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Label("Market Today", systemImage: "globe").appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
             if let you = portfolioDayPct {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(you >= 0 ? "+" : "")\(String(format: "%.2f%%", you))")
-                        .font(.title3.bold()).foregroundStyle(Fmt.tint(for: you))
-                    Text("you").font(.caption2).foregroundStyle(.secondary)
+                        .appFont(.title3.bold()).foregroundStyle(Fmt.tint(for: you))
+                    Text("you").appFont(.caption2).foregroundStyle(.secondary)
                 }
             }
             ForEach(Array(top)) { idx in
@@ -375,11 +375,11 @@ struct TodayStripCard: View {
                         .foregroundStyle(Fmt.tint(for: idx.change))
                     if let d = delta {
                         Text("(\(d >= 0 ? "+" : "")\(String(format: "%.2f", d)))")
-                            .font(.caption2).monospacedDigit()
+                            .appFont(.caption2).monospacedDigit()
                             .foregroundStyle((d >= 0 ? Color.up : Color.down).opacity(0.7))
                             .frame(width: 48, alignment: .trailing)
                     }
-                }.font(.caption)
+                }.appFont(.caption)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -388,9 +388,9 @@ struct TodayStripCard: View {
     private func moverCol(_ title: String, _ rows: [Mover], _ positive: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: positive ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis")
-                .font(.caption2).textCase(.uppercase).foregroundStyle(positive ? Color.up : Color.down)
+                .appFont(.caption2).textCase(.uppercase).foregroundStyle(positive ? Color.up : Color.down)
             if rows.isEmpty {
-                Text("No movers.").font(.caption).foregroundStyle(.secondary)
+                Text("No movers.").appFont(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(rows, id: \.symbol) { r in
                     Button { onSelectSymbol(r.symbol) } label: {
@@ -401,12 +401,12 @@ struct TodayStripCard: View {
                             Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))")
                                 .fontWeight(.bold).foregroundStyle(positive ? Color.up : Color.down)
                             Text(compactChange(r.contribution))
-                                .font(.caption2).monospacedDigit()
+                                .appFont(.caption2).monospacedDigit()
                                 .foregroundStyle((positive ? Color.up : Color.down).opacity(0.8))
                                 .lineLimit(1).minimumScaleFactor(0.7)
                                 .frame(width: 66, alignment: .trailing)
                         }
-                        .font(.caption)
+                        .appFont(.caption)
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .contentShape(Rectangle())
                         .rowHover()
@@ -533,7 +533,7 @@ struct UpcomingEventsCard: View {
     private var confirmedButton: some View {
         Button { showConfirmed = true } label: {
             Text("Confirmed (\(confirmedCount)) →")
-                .font(.system(size: 11, weight: .semibold)).textCase(.uppercase).tracking(0.5)
+                .appFont(.system(size: 11, weight: .semibold)).textCase(.uppercase).tracking(0.5)
                 .foregroundStyle(confirmedCount == 0 ? Color.secondary : Theme.brand)
         }
         .buttonStyle(.plain).disabled(confirmedCount == 0)
@@ -556,16 +556,16 @@ struct UpcomingEventsCard: View {
                                 HStack(spacing: 6) {
                                     // fixedSize: the ticker is the row's identity, so it
                                     // must never be the thing that truncates.
-                                    Text(ev.symbol).font(.callout.weight(.bold)).lineLimit(1).fixedSize()
+                                    Text(ev.symbol).appFont(.callout.weight(.bold)).lineLimit(1).fixedSize()
                                     badge(ev)
                                 }
                                 if let name = ev.name, !name.isEmpty {
-                                    Text(name).font(.caption2).foregroundStyle(.secondary)
+                                    Text(name).appFont(.caption2).foregroundStyle(.secondary)
                                         .lineLimit(1).truncationMode(.tail)
                                 }
                             }
                             Spacer(minLength: 6)
-                            Text(relativeDay(ev.date, ev.marketTimezone)).font(.caption).textCase(.uppercase)
+                            Text(relativeDay(ev.date, ev.marketTimezone)).appFont(.caption).textCase(.uppercase)
                                 .foregroundStyle(isSoon(ev) ? Color.up : .secondary)
                                 .lineLimit(1).fixedSize()
                             trailing(ev)
@@ -602,13 +602,13 @@ struct UpcomingEventsCard: View {
                 Image(systemName: "chart.bar.fill")
                 if !text.isEmpty { Text(text) }
             }
-            .font(.caption2).foregroundStyle(Theme.earnings)
+            .appFont(.caption2).foregroundStyle(Theme.earnings)
             .lineLimit(1).fixedSize()
         case .dividend(let d):
             if d.status == "estimated" {
-                Label("est.", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
+                Label("est.", systemImage: "clock").appFont(.caption2).foregroundStyle(.orange)
             } else {
-                Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(Color.up)
+                Image(systemName: "checkmark.seal.fill").appFont(.caption2).foregroundStyle(Color.up)
             }
         }
     }
@@ -619,7 +619,7 @@ struct UpcomingEventsCard: View {
     @ViewBuilder private func trailing(_ ev: TimelineEvent) -> some View {
         switch ev {
         case .dividend(let d):
-            Text(Fmt.currency(d.amount, code: currency)).font(.callout.weight(.bold)).foregroundStyle(Color.up)
+            Text(Fmt.currency(d.amount, code: currency)).appFont(.callout.weight(.bold)).foregroundStyle(Color.up)
         case .earnings(let e) where e.isReported:
             if let actual = e.epsActual {
                 // A beat is green and a miss red, matching every other
@@ -627,19 +627,19 @@ struct UpcomingEventsCard: View {
                 let tint: Color = e.surprisePct.map { $0 >= 0 ? Color.up : Color.down } ?? Theme.earnings
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(String(format: "%.2f EPS", actual))
-                        .font(.callout.weight(.bold)).foregroundStyle(tint)
+                        .appFont(.callout.weight(.bold)).foregroundStyle(tint)
                     if let surprise = e.surprisePct {
                         Text(String(format: "%+.1f%%", surprise))
-                            .font(.caption2.weight(.semibold)).foregroundStyle(tint)
+                            .appFont(.caption2.weight(.semibold)).foregroundStyle(tint)
                     }
                 }
             } else {
                 // Reported, but Yahoo has not attached the figures yet.
-                Text("Reported").font(.callout.weight(.bold)).foregroundStyle(.secondary)
+                Text("Reported").appFont(.callout.weight(.bold)).foregroundStyle(.secondary)
             }
         case .earnings(let e):
             Text(e.epsEstimate.map { String(format: "%.2f EPS", $0) } ?? "Report")
-                .font(.callout.weight(.bold)).foregroundStyle(Theme.earnings)
+                .appFont(.callout.weight(.bold)).foregroundStyle(Theme.earnings)
         }
     }
 
@@ -666,13 +666,13 @@ struct ActionableInsightsCard: View {
         let hasAny = !summaries.isEmpty
         return Card(title: "Actionable Insights", icon: "lightbulb",
                     accessory: AnyView(Text("\(summaries.count) item\(summaries.count == 1 ? "" : "s")")
-                        .font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary))) {
+                        .appFont(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary))) {
             if !hasAny {
                 VStack(spacing: 4) {
-                    Image(systemName: "sparkles").font(.title3).foregroundStyle(.tertiary)
-                    Text("Nothing to flag today.").font(.callout).foregroundStyle(.secondary)
+                    Image(systemName: "sparkles").appFont(.title3).foregroundStyle(.tertiary)
+                    Text("Nothing to flag today.").appFont(.callout).foregroundStyle(.secondary)
                     Text("No ripening lots, drift breaches, or new value buys.")
-                        .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        .appFont(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
             } else {
@@ -691,14 +691,14 @@ struct ActionableInsightsCard: View {
 
     private func insightRow(_ ins: InsightSummary) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: ins.icon).font(.caption).foregroundStyle(ins.tone.color)
+            Image(systemName: ins.icon).appFont(.caption).foregroundStyle(ins.tone.color)
                 .frame(width: 28, height: 28).background(ins.tone.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 1) {
-                Text(ins.title).font(.callout.weight(.semibold))
-                if let sub = ins.sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+                Text(ins.title).appFont(.callout.weight(.semibold))
+                if let sub = ins.sub { Text(sub).appFont(.caption2).foregroundStyle(.secondary) }
             }
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right").appFont(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 6).padding(.vertical, 5)
         .contentShape(Rectangle())
@@ -870,7 +870,7 @@ private struct SingleDonut: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(title).appFont(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if slices.isEmpty {
                 ContentUnavailableView("No active holdings", systemImage: "chart.pie").frame(height: side)
@@ -916,7 +916,7 @@ private struct SingleDonut: View {
                 HStack(spacing: 3) {
                     StockIcon(symbol: item.slice.name, size: 18 * scale)
                     Text(item.slice.name)
-                        .font(.system(size: 10 * scale, weight: .bold)).foregroundStyle(.primary).lineLimit(1)
+                        .appFont(.system(size: 10 * scale, weight: .bold)).foregroundStyle(.primary).lineLimit(1)
                 }
                 .padding(.horizontal, 4).padding(.vertical, 2)
                 .background(.background, in: Capsule())
@@ -935,10 +935,10 @@ private struct SingleDonut: View {
             VStack(spacing: 2) {
                 if let a = active {
                     StockIcon(symbol: a.name, size: 27 * scale)
-                    Text(a.name).font(.system(size: 13 * scale, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
-                    Text(value(of: a)).font(.system(size: 18 * scale, weight: .bold)).foregroundStyle(tint(of: a))
+                    Text(a.name).appFont(.system(size: 13 * scale, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(value(of: a)).appFont(.system(size: 18 * scale, weight: .bold)).foregroundStyle(tint(of: a))
                         .lineLimit(1).minimumScaleFactor(0.4)
-                    Text(subtitle(of: a)).font(.system(size: 14 * scale, weight: .bold)).foregroundStyle(subtitleTint(of: a))
+                    Text(subtitle(of: a)).appFont(.system(size: 14 * scale, weight: .bold)).foregroundStyle(subtitleTint(of: a))
                         .lineLimit(1).minimumScaleFactor(0.4)
                 } else {
                     PopoverMenu(minWidth: 180) {
@@ -947,16 +947,16 @@ private struct SingleDonut: View {
                         }
                     } label: {
                         HStack(spacing: 3) {
-                            Text(metric.label).font(.system(size: 11 * scale, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                            Image(systemName: "chevron.down").font(.system(size: 9 * scale)).foregroundStyle(.secondary)
+                            Text(metric.label).appFont(.system(size: 11 * scale, weight: .semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                            Image(systemName: "chevron.down").appFont(.system(size: 9 * scale)).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(.background.tertiary, in: Capsule())
                         .overlay(Capsule().strokeBorder(.white.opacity(0.06), lineWidth: 1))
                     }.fixedSize()
-                    Text(value(of: nil)).font(.system(size: 18 * scale, weight: .bold)).foregroundStyle(tint(of: nil))
+                    Text(value(of: nil)).appFont(.system(size: 18 * scale, weight: .bold)).foregroundStyle(tint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.4)
-                    Text(subtitle(of: nil)).font(.system(size: 14 * scale, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
+                    Text(subtitle(of: nil)).appFont(.system(size: 14 * scale, weight: .bold)).foregroundStyle(subtitleTint(of: nil))
                         .lineLimit(1).minimumScaleFactor(0.4)
                 }
             }
@@ -1010,7 +1010,7 @@ struct PortfolioHealthCard: View {
     @State private var showAnalysis = false
     var body: some View {
         Card(title: "Portfolio Health", icon: "waveform.path.ecg",
-             accessory: AnyView(Image(systemName: "info.circle").font(.caption).foregroundStyle(.secondary))) {
+             accessory: AnyView(Image(systemName: "info.circle").appFont(.caption).foregroundStyle(.secondary))) {
             HStack(spacing: 24) {
                 // Left side: Circular Progress
                 VStack(spacing: 8) {
@@ -1023,13 +1023,13 @@ struct PortfolioHealthCard: View {
                             .rotationEffect(.degrees(-90))
                         
                         Text(String(format: "%g", health.overallScore))
-                            .font(.title2.bold())
+                            .appFont(.title2.bold())
                             .foregroundStyle(color(health.overallScore))
                     }
                     .frame(width: 80, height: 80)
                     
                     Text(health.rating)
-                        .font(.subheadline.weight(.semibold))
+                        .appFont(.subheadline.weight(.semibold))
                         .foregroundStyle(color(health.overallScore))
                 }
                 .padding(.leading, 8)
@@ -1043,15 +1043,15 @@ struct PortfolioHealthCard: View {
                     ], id: \.1) { icon, name, comp in
                         HStack(spacing: 12) {
                             Image(systemName: icon)
-                                .font(.body.weight(.medium))
+                                .appFont(.body.weight(.medium))
                             Text(name.uppercased())
-                                .font(.caption.weight(.bold))
+                                .appFont(.caption.weight(.bold))
                                 .tracking(0.5)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
                             Spacer()
                             Text(String(format: "%g", comp.score))
-                                .font(.subheadline.weight(.bold))
+                                .appFont(.subheadline.weight(.bold))
                                 .foregroundStyle(color(comp.score))
                         }
                     }
@@ -1102,9 +1102,9 @@ struct RiskMetricsCard: View {
 
     private func cell(_ t: String, _ v: String, _ tint: Color) -> some View {
         VStack(spacing: 4) {
-            Text(t).font(.system(size: 10, weight: .bold)).textCase(.uppercase).tracking(0.5)
+            Text(t).appFont(.system(size: 10, weight: .bold)).textCase(.uppercase).tracking(0.5)
                 .foregroundStyle(.secondary).lineLimit(1)
-            Text(v).font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(tint)
+            Text(v).appFont(.title3.weight(.bold)).monospacedDigit().foregroundStyle(tint)
                 .lineLimit(1).minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 12).padding(.horizontal, 6)
@@ -1150,10 +1150,10 @@ struct SectorAttributionCard: View {
         let tone: Color = s.gain >= 0 ? .up : .down
         return VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Text(s.sector).font(.caption.weight(.semibold)).foregroundStyle(.primary.opacity(0.85)).lineLimit(1)
+                Text(s.sector).appFont(.caption.weight(.semibold)).foregroundStyle(.primary.opacity(0.85)).lineLimit(1)
                 Spacer()
                 Text("\(attrCurrency(s.gain, currency)) (\(attrPct(s.contribution)))")
-                    .font(.caption.bold()).foregroundStyle(tone).monospacedDigit()
+                    .appFont(.caption.bold()).foregroundStyle(tone).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
             GeometryReader { geo in
@@ -1187,7 +1187,7 @@ struct TopContributorsCard: View {
                 }
                 Divider().padding(.top, 4)
                 Button { showAll = true } label: {
-                    Text("View All Contributors").font(.system(size: 11, weight: .bold)).textCase(.uppercase).tracking(1.5)
+                    Text("View All Contributors").appFont(.system(size: 11, weight: .bold)).textCase(.uppercase).tracking(1.5)
                         .frame(maxWidth: .infinity).padding(.vertical, 6).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
             }
@@ -1216,25 +1216,25 @@ private struct ContributorRow: View {
                 StockIcon(symbol: firstSymbol(stock.symbol), size: large ? 34 : 20)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
-                        Text(stock.symbol).font((large ? Font.body : Font.callout).weight(.bold)).lineLimit(1)
+                        Text(stock.symbol).appFont((large ? AppFont.body : AppFont.callout).weight(.bold)).lineLimit(1)
                         if stock.value > 0 {
-                            Text("HELD").font(.system(size: 9, weight: .bold))
+                            Text("HELD").appFont(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 4).padding(.vertical, 1)
                                 .background(Color.up.opacity(0.12), in: Capsule()).foregroundStyle(Color.up)
                         }
                     }
-                    Text(stock.name).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(stock.name).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         .frame(maxWidth: large ? .infinity : 130, alignment: .leading)
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 1) {
                     HStack(spacing: 3) {
-                        Image(systemName: stock.gain >= 0 ? "arrow.up.right" : "arrow.down.right").font(.system(size: 10))
+                        Image(systemName: stock.gain >= 0 ? "arrow.up.right" : "arrow.down.right").appFont(.system(size: 10))
                         Text("\(attrCurrency(stock.gain, currency)) (\(attrPct(stock.contribution)))")
-                            .font((large ? Font.callout : Font.caption).weight(.bold)).monospacedDigit()
+                            .appFont((large ? AppFont.callout : AppFont.caption).weight(.bold)).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.7)
                     }.foregroundStyle(tone)
-                    Text(stock.sector).font(.system(size: 10)).foregroundStyle(Color(hex: 0x06b6d4)).textCase(.uppercase).lineLimit(1)
+                    Text(stock.sector).appFont(.system(size: 10)).foregroundStyle(Color(hex: 0x06b6d4)).textCase(.uppercase).lineLimit(1)
                 }
             }
             .padding(.vertical, large ? 8 : 4).padding(.horizontal, large ? 12 : 4)
@@ -1275,13 +1275,13 @@ private struct AllContributorsSheet: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("All Contributors").font(.title2.bold())
+                    Text("All Contributors").appFont(.title2.bold())
                     Text("Impact of individual holdings on performance")
-                        .font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+                        .appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
                 }
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain).font(.title2).foregroundStyle(.secondary)
+                    .buttonStyle(.plain).appFont(.title2).foregroundStyle(.secondary)
             }
             .padding(20)
             HStack {
@@ -1372,7 +1372,7 @@ struct AllocationDonutCard: View {
                             Text(total > 0 ? String(format: "%.1f%%", s.value / total * 100) : "—")
                                 .monospacedDigit().foregroundStyle(.secondary)
                         }
-                        .font(.caption)
+                        .appFont(.caption)
                     }
                 }
             }
@@ -1426,12 +1426,12 @@ struct DividendCalendarCard: View {
                             .buttonStyle(.plain)
                             .frame(width: 70, alignment: .leading)
                             VStack(alignment: .leading) {
-                                Text("Ex: \(MarketTime.formatted(ev.exDividendDate))").font(.caption)
-                                Text("Pay: \(MarketTime.formatted(ev.dividendDate))").font(.caption2).foregroundStyle(.secondary)
+                                Text("Ex: \(MarketTime.formatted(ev.exDividendDate))").appFont(.caption)
+                                Text("Pay: \(MarketTime.formatted(ev.dividendDate))").appFont(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if ev.status == "estimated" {
-                                Text("est.").font(.caption2).foregroundStyle(.orange)
+                                Text("est.").appFont(.caption2).foregroundStyle(.orange)
                             }
                             Text(Fmt.currency(ev.amount, code: currency)).monospacedDigit()
                         }

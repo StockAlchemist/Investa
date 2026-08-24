@@ -71,7 +71,7 @@ struct TxKpiStrip: View {
             // Activity counts
             #if os(iOS)
             VStack(alignment: .leading, spacing: 16) {
-                Text("Activity").font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text("Activity").appFont(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
                 
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 16) {
                     kpiStat("Transactions", "\(c.counts.total)")
@@ -91,7 +91,7 @@ struct TxKpiStrip: View {
             }
             #else
             HStack(spacing: 16) {
-                Text("Activity").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text("Activity").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
                 Spacer()
                 activity("\(c.counts.total)", "transactions")
                 if c.counts.buy + c.counts.sell > 0 {
@@ -117,8 +117,8 @@ struct TxKpiStrip: View {
 
     private func activity(_ value: String, _ label: String, tint: Color = .primary) -> some View {
         HStack(spacing: 4) {
-            Text(value).font(.callout.bold()).foregroundStyle(tint).monospacedDigit()
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+            Text(value).appFont(.callout.bold()).foregroundStyle(tint).monospacedDigit()
+            Text(label).appFont(.caption2).foregroundStyle(.secondary)
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -127,7 +127,7 @@ struct TxKpiStrip: View {
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(title: label)
                 .minimumScaleFactor(0.7)
-            Text(value).font(.headline).foregroundStyle(valueColor).monospacedDigit()
+            Text(value).appFont(.headline).foregroundStyle(valueColor).monospacedDigit()
         }
     }
 
@@ -137,14 +137,14 @@ struct TxKpiStrip: View {
             HStack {
                 HStack(spacing: 4) {
                     Image(systemName: positive ? "arrow.down.right" : "arrow.up.right")
-                    Text("\(positive ? "+" : "−")\(compact(abs(row.netFlow)))").font(.title2.bold()).monospacedDigit()
+                    Text("\(positive ? "+" : "−")\(compact(abs(row.netFlow)))").appFont(.title2.bold()).monospacedDigit()
                 }
                 .foregroundStyle(positive ? .green : .red)
                 Spacer()
-                Text(row.currency).font(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2)
+                Text(row.currency).appFont(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2)
                     .background(.quaternary, in: Capsule())
             }
-            Text("net cash flow").font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text("net cash flow").appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
             HStack {
                 kv("In", row.b.inflow > 0 ? compact(row.b.inflow) : "—", .primary)
                 Spacer()
@@ -163,8 +163,8 @@ struct TxKpiStrip: View {
 
     private func kv(_ k: String, _ v: String, _ tone: Color, trailing: Bool = false) -> some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 1) {
-            Text(k).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(v).font(.caption.bold()).foregroundStyle(tone).monospacedDigit()
+            Text(k).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(v).appFont(.caption.bold()).foregroundStyle(tone).monospacedDigit()
         }
     }
 }

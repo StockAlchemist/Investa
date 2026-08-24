@@ -106,7 +106,7 @@ struct WatchlistView: View {
 
     private var header: some View {
         HStack {
-            Text("Watchlist").font(.title2.bold())
+            Text("Watchlist").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
         }
@@ -166,7 +166,7 @@ struct WatchlistView: View {
             HStack(spacing: 8) {
                 ForEach(viewModel.watchlists) { wl in
                     Button { viewModel.activeId = wl.id } label: {
-                        Text(wl.name).font(.callout.weight(.medium))
+                        Text(wl.name).appFont(.callout.weight(.medium))
                             .padding(.horizontal, 12).padding(.vertical, 6)
                             .background(viewModel.activeId == wl.id ? Color.accentColor : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
                             .foregroundStyle(viewModel.activeId == wl.id ? .white : .primary)
@@ -186,7 +186,7 @@ struct WatchlistView: View {
         HStack(spacing: 8) {
             ForEach(viewModel.watchlists) { wl in
                 Button { viewModel.activeId = wl.id } label: {
-                    Text(wl.name).font(.callout.weight(.medium))
+                    Text(wl.name).appFont(.callout.weight(.medium))
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(viewModel.activeId == wl.id ? Color.accentColor : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
                         .foregroundStyle(viewModel.activeId == wl.id ? .white : .primary)
@@ -214,7 +214,7 @@ struct WatchlistView: View {
                     Button { Task { await viewModel.renameList(name: renameName); renaming = false } } label: { Image(systemName: "checkmark") }
                     Button { renaming = false } label: { Image(systemName: "xmark") }
                 } else {
-                    Text(currentListName).font(.headline)
+                    Text(currentListName).appFont(.headline)
                     Button { renameName = currentListName; renaming = true } label: { Image(systemName: "pencil") }.buttonStyle(.borderless)
                     if viewModel.watchlists.count > 1 {
                         Button { Task { await viewModel.deleteList(currency: cur) } } label: { Image(systemName: "trash") }
@@ -235,11 +235,11 @@ struct WatchlistView: View {
         #if os(iOS)
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Symbol").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text("Symbol").appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
                 TextField("e.g. AAPL, BTC-USD", text: $newSymbol).textFieldStyle(.roundedBorder)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Note (optional)").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text("Note (optional)").appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
                 TextField("Add a description…", text: $newNote).textFieldStyle(.roundedBorder)
             }
             Button {
@@ -255,11 +255,11 @@ struct WatchlistView: View {
         #else
         HStack(alignment: .bottom, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Symbol").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text("Symbol").appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
                 TextField("e.g. AAPL, BTC-USD", text: $newSymbol).textFieldStyle(.roundedBorder).frame(width: 180)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Note (optional)").font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text("Note (optional)").appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
                 TextField("Add a description…", text: $newNote).textFieldStyle(.roundedBorder)
             }
             Button {
@@ -310,35 +310,35 @@ struct WatchlistView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Button { appState.openStock(item.symbol) } label: {
-                    HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 27); Text(item.symbol).font(.headline).fontWeight(.bold) }
+                    HStack(spacing: 6) { StockIcon(symbol: item.symbol, size: 27); Text(item.symbol).appFont(.headline).fontWeight(.bold) }
                 }.buttonStyle(.plain)
                 Spacer()
-                Text(item.price.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").font(.headline).monospacedDigit()
+                Text(item.price.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").appFont(.headline).monospacedDigit()
             }
             HStack {
-                Text(item.name ?? "-").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(item.name ?? "-").appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Text(Fmt.percent(item.dayChangePct, includeSign: true)).font(.subheadline.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))
+                Text(Fmt.percent(item.dayChangePct, includeSign: true)).appFont(.subheadline.bold()).monospacedDigit().foregroundStyle(Fmt.tint(for: item.dayChangePct))
             }
             Divider()
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Mkt Cap").font(.caption2).foregroundStyle(.secondary)
-                    Text(item.marketCap.map { Fmt.number($0, fractionDigits: 0) } ?? "-").monospacedDigit().font(.caption)
+                    Text("Mkt Cap").appFont(.caption2).foregroundStyle(.secondary)
+                    Text(item.marketCap.map { Fmt.number($0, fractionDigits: 0) } ?? "-").monospacedDigit().appFont(.caption)
                 }
                 Spacer()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Intrinsic").font(.caption2).foregroundStyle(.secondary)
-                    Text(item.intrinsicValue.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").monospacedDigit().font(.caption)
+                    Text("Intrinsic").appFont(.caption2).foregroundStyle(.secondary)
+                    Text(item.intrinsicValue.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").monospacedDigit().appFont(.caption)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("AI").font(.caption2).foregroundStyle(.secondary)
-                    Text(item.aiScore.map { String(format: "%.1f", $0) } ?? "-").monospacedDigit().font(.caption)
+                    Text("AI").appFont(.caption2).foregroundStyle(.secondary)
+                    Text(item.aiScore.map { String(format: "%.1f", $0) } ?? "-").monospacedDigit().appFont(.caption)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("7D").font(.caption2).foregroundStyle(.secondary)
+                    Text("7D").appFont(.caption2).foregroundStyle(.secondary)
                     sparkline(item.sparkline)
                 }
             }
@@ -367,9 +367,9 @@ struct WatchlistView: View {
             sortHeader("Div", .div, .trailing)
             sortHeader("AI", .ai, .trailing)
             sortHeader("Intrinsic", .intrinsic, .trailing)
-            Text("Sent.").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            Text("Cat.").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            Text("7D").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+            Text("Sent.").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text("Cat.").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text("7D").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
             sortHeader("Note", .note, .leading)
             Text("").gridColumnAlignment(.trailing)
         }
@@ -378,8 +378,8 @@ struct WatchlistView: View {
     private func sortHeader(_ label: String, _ key: WLSort, _ align: Alignment) -> some View {
         Button { if sortKey == key { sortAsc.toggle() } else { sortKey = key; sortAsc = true } } label: {
             HStack(spacing: 2) {
-                Text(label).font(.caption2.weight(.semibold))
-                if sortKey == key { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").font(.system(size: 9)) }
+                Text(label).appFont(.caption2.weight(.semibold))
+                if sortKey == key { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").appFont(.system(size: 9)) }
             }.foregroundStyle(sortKey == key ? Color.accentColor : .secondary)
         }
         .buttonStyle(.plain)
@@ -401,14 +401,14 @@ struct WatchlistView: View {
             Text(item.aiScore.map { String(format: "%.1f", $0) } ?? "-").monospacedDigit()
             Text(item.intrinsicValue.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").monospacedDigit().foregroundStyle(.secondary)
             sentimentCell(item.sentiment)
-            Text(item.catalystCount > 0 ? "\(item.catalystCount)" : "–").font(.caption2)
+            Text(item.catalystCount > 0 ? "\(item.catalystCount)" : "–").appFont(.caption2)
                 .foregroundStyle(item.catalystCount > 0 ? .orange : .secondary)
             sparkline(item.sparkline).gridColumnAlignment(.leading)
             noteCell(item).gridColumnAlignment(.leading)
             Button { Task { await viewModel.remove(symbol: item.symbol, currency: cur) } } label: { Image(systemName: "trash") }
                 .buttonStyle(.borderless).foregroundStyle(.red).gridColumnAlignment(.trailing)
         }
-        .font(.caption)
+        .appFont(.caption)
         .padding(.vertical, 6)
     }
 
@@ -471,8 +471,8 @@ struct WatchlistKpiStrip: View {
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(title: label)
                 .minimumScaleFactor(0.7)
-            Text(value).font(.title3.bold()).foregroundStyle(tone)
-            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+            Text(value).appFont(.title3.bold()).foregroundStyle(tone)
+            if let sub { Text(sub).appFont(.caption2).foregroundStyle(.secondary) }
         }
         .padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -480,12 +480,12 @@ struct WatchlistKpiStrip: View {
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(title: label)
                 .minimumScaleFactor(0.7)
-            Text(value).font(.title3.bold()).foregroundStyle(tone)
+            Text(value).appFont(.title3.bold()).foregroundStyle(tone)
             if let symbol {
                 Button {
                     appState.openStock(symbol)
                 } label: {
-                    Text(symbol).font(.caption2.bold()).foregroundStyle(Color.brandIndigo)
+                    Text(symbol).appFont(.caption2.bold()).foregroundStyle(Color.brandIndigo)
                 }
                 .buttonStyle(.plain)
             }

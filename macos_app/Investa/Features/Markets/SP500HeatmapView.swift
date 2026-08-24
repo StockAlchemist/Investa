@@ -639,7 +639,7 @@ private struct TreemapView: View {
                         if node.type == 1 { // Sector
                             if node.showHeader {
                                 Text(node.name.uppercased())
-                                    .font(.system(size: 11, weight: .bold))
+                                    .appFont(.system(size: 11, weight: .bold))
                                     .foregroundStyle(palette.headerText)
                                     // Padding inside the frame, so the header cannot
                                     // overhang the box it belongs to.
@@ -652,7 +652,7 @@ private struct TreemapView: View {
                         } else if node.type == 2 { // Industry
                             if node.showHeader {
                                 Text(node.name.uppercased())
-                                    .font(.system(size: 9, weight: .semibold))
+                                    .appFont(.system(size: 9, weight: .semibold))
                                     .foregroundStyle(palette.headerText.opacity(0.9))
                                     .padding(.leading, 3)
                                     .frame(width: node.frame.width, height: industryHeaderHeight, alignment: .leading)
@@ -671,13 +671,13 @@ private struct TreemapView: View {
                                     VStack(spacing: 1) {
                                         if node.frame.width > 32 && node.frame.height > 18 {
                                             Text(node.name)
-                                                .font(.system(size: node.frame.width > 60 ? 11 : 8, weight: .heavy))
+                                                .appFont(.system(size: node.frame.width > 60 ? 11 : 8, weight: .heavy))
                                                 .foregroundStyle(node.textColor ?? .white)
                                                 .lineLimit(1)
                                         }
                                         if node.frame.width > 44 && node.frame.height > 30, let mv = node.metricVal {
                                             Text(metric.formatValue(mv))
-                                                .font(.system(size: node.frame.width > 60 ? 9 : 7, weight: .semibold))
+                                                .appFont(.system(size: node.frame.width > 60 ? 9 : 7, weight: .semibold))
                                                 .foregroundStyle((node.textColor ?? .white).opacity(0.9))
                                                 .monospacedDigit()
                                                 .lineLimit(1)
@@ -839,7 +839,7 @@ struct SP500HeatmapView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("S&P 500 Heatmap", systemImage: "square.grid.3x3").font(.title3.bold())
+            Label("S&P 500 Heatmap", systemImage: "square.grid.3x3").appFont(.title3.bold())
 
 // Controls
             #if os(iOS)
@@ -916,7 +916,7 @@ struct SP500HeatmapView: View {
                 let (legendLow, legendHigh) = metric.domain
                 HStack {
                     Text(metric.formatValue(legendLow))
-                        .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                        .appFont(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
                     LinearGradient(
                         colors: [0, 0.25, 0.5, 0.75, 1].map { t in
                             heatFill(legendLow + t * (legendHigh - legendLow), metric: metric, palette: palette).color
@@ -926,10 +926,10 @@ struct SP500HeatmapView: View {
                     .frame(width: 140, height: 8)
                     .clipShape(Capsule())
                     Text(metric.formatValue(legendHigh))
-                        .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                        .appFont(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
                     Spacer()
                     Text("\(node.companyCount) of \(filteredItems.count) stocks · \(node.children.count) \(sectorFilter == "All" && !(mapWidth > 0 && mapWidth < flatLayoutWidth) ? "sectors" : "groups")")
-                        .font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.6))
+                        .appFont(.system(size: 10)).foregroundStyle(.secondary.opacity(0.6))
                 }
             }
         }

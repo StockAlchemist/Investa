@@ -104,7 +104,7 @@ struct ScreenerResultsView: View {
                             if viewModel.reviewingSymbol == item.id, viewModel.reviews[item.id] == nil {
                                 VStack(spacing: 16) {
                                     ProgressView()
-                                    Text("Generating AI audit…").font(.callout).foregroundStyle(.secondary)
+                                    Text("Generating AI audit…").appFont(.callout).foregroundStyle(.secondary)
                                 }
                                 .frame(maxWidth: .infinity).padding(40)
                             } else if let rev = viewModel.reviews[item.id] {
@@ -132,8 +132,8 @@ struct ScreenerResultsView: View {
         #if os(iOS)
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Scan Results", systemImage: "target").font(.headline)
-                Text("\(filtered.count) of \(viewModel.results.count)").font(.caption).foregroundStyle(.secondary)
+                Label("Scan Results", systemImage: "target").appFont(.headline)
+                Text("\(filtered.count) of \(viewModel.results.count)").appFont(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 TextField("Search…", text: $search).textFieldStyle(.roundedBorder)
@@ -143,8 +143,8 @@ struct ScreenerResultsView: View {
         }
         #else
         HStack {
-            Label("Scan Results", systemImage: "target").font(.headline)
-            Text("\(filtered.count) of \(viewModel.results.count)").font(.caption).foregroundStyle(.secondary)
+            Label("Scan Results", systemImage: "target").appFont(.headline)
+            Text("\(filtered.count) of \(viewModel.results.count)").appFont(.caption).foregroundStyle(.secondary)
             Spacer()
             TextField("Search…", text: $search).textFieldStyle(.roundedBorder).frame(width: 160)
             Button { showFilters.toggle() } label: { Image(systemName: "slider.horizontal.3") }
@@ -178,8 +178,8 @@ struct ScreenerResultsView: View {
     }
     private func stat(_ l: String, _ v: String, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(l).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(v).font(.headline).foregroundStyle(tone)
+            Text(l).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(v).appFont(.headline).foregroundStyle(tone)
         }
     }
 
@@ -189,7 +189,7 @@ struct ScreenerResultsView: View {
             field("Min MOS %", $minMOS)
             field("Max P/E", $maxPE)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Market Cap").font(.caption2).foregroundStyle(.secondary)
+                Text("Market Cap").appFont(.caption2).foregroundStyle(.secondary)
                 Picker("", selection: $marketCap) { ForEach(capOptions, id: \.key) { Text($0.label).tag($0.key) } }
                     .labelsHidden()
             }
@@ -201,7 +201,7 @@ struct ScreenerResultsView: View {
             field("Min MOS %", $minMOS)
             field("Max P/E", $maxPE)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Market Cap").font(.caption2).foregroundStyle(.secondary)
+                Text("Market Cap").appFont(.caption2).foregroundStyle(.secondary)
                 Picker("", selection: $marketCap) { ForEach(capOptions, id: \.key) { Text($0.label).tag($0.key) } }
                     .labelsHidden().fixedSize()
             }
@@ -213,7 +213,7 @@ struct ScreenerResultsView: View {
     }
     private func field(_ label: String, _ binding: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+            Text(label).appFont(.caption2).foregroundStyle(.secondary)
             TextField("", text: binding).textFieldStyle(.roundedBorder).frame(width: 80)
         }
     }
@@ -231,7 +231,7 @@ struct ScreenerResultsView: View {
             sortButton("MOS", .mos, align: .trailing).frame(width: 90, alignment: .trailing)
             sortButton("P/E", .pe, align: .trailing).frame(width: 56, alignment: .trailing)
             sortButton("AI Score", .aiScore, align: .trailing).frame(width: 80, alignment: .trailing)
-            Text("AI Audit").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).frame(width: 110, alignment: .trailing)
+            Text("AI Audit").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).frame(width: 110, alignment: .trailing)
         }
         #endif
     }
@@ -240,8 +240,8 @@ struct ScreenerResultsView: View {
             if sortKey == key { sortAsc.toggle() } else { sortKey = key; sortAsc = false }
         } label: {
             HStack(spacing: 2) {
-                Text(label).font(.caption2.weight(.semibold))
-                if sortKey == key { Image(systemName: sortAsc ? "chevron.up" : "chevron.down").font(.system(size: 9)) }
+                Text(label).appFont(.caption2.weight(.semibold))
+                if sortKey == key { Image(systemName: sortAsc ? "chevron.up" : "chevron.down").appFont(.system(size: 9)) }
             }
             .foregroundStyle(sortKey == key ? Color.accentColor : .secondary)
         }
@@ -257,8 +257,8 @@ struct ScreenerResultsView: View {
                 HStack(spacing: 8) {
                     StockIcon(symbol: row.symbol, size: 26)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(row.symbol).font(.callout.bold())
-                        Text(row.name ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Text(row.symbol).appFont(.callout.bold())
+                        Text(row.name ?? "").appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
             }.buttonStyle(.plain)
@@ -273,7 +273,7 @@ struct ScreenerResultsView: View {
             aiScoreCell(row.aiScore).frame(width: 80, alignment: .trailing)
             auditButton(row).frame(width: 110, alignment: .trailing)
         }
-        .font(.callout)
+        .appFont(.callout)
         .padding(.vertical, 4)
         #endif
     }
@@ -286,31 +286,31 @@ struct ScreenerResultsView: View {
                     HStack(spacing: 8) {
                         StockIcon(symbol: row.symbol, size: 26)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(row.symbol).font(.callout.bold())
-                            Text(row.name ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            Text(row.symbol).appFont(.callout.bold())
+                            Text(row.name ?? "").appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
                 }.buttonStyle(.plain)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(Fmt.currency(row.price, code: "USD")).monospacedDigit().fontWeight(.bold)
-                    Text("P/E: \(row.peRatio.map { String(format: "%.1f", $0) } ?? "-")").font(.caption2).foregroundStyle(.secondary)
+                    Text("P/E: \(row.peRatio.map { String(format: "%.1f", $0) } ?? "-")").appFont(.caption2).foregroundStyle(.secondary)
                 }
             }
             Divider()
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("MOS").font(.caption2).foregroundStyle(.secondary)
+                    Text("MOS").appFont(.caption2).foregroundStyle(.secondary)
                     mosCell(row.marginOfSafety)
                 }
                 Spacer()
                 VStack(alignment: .center, spacing: 2) {
-                    Text("Intrinsic").font(.caption2).foregroundStyle(.secondary)
-                    Text(row.intrinsicValue.map { Fmt.currency($0, code: "USD") } ?? "-").monospacedDigit().font(.caption.bold())
+                    Text("Intrinsic").appFont(.caption2).foregroundStyle(.secondary)
+                    Text(row.intrinsicValue.map { Fmt.currency($0, code: "USD") } ?? "-").monospacedDigit().appFont(.caption.bold())
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("AI Score").font(.caption2).foregroundStyle(.secondary)
+                    Text("AI Score").appFont(.caption2).foregroundStyle(.secondary)
                     aiScoreCell(row.aiScore)
                 }
             }
@@ -324,17 +324,17 @@ struct ScreenerResultsView: View {
         if let mos {
             let tone: Color = mos > 15 ? .green : (mos > 0 ? .cyan : .red)
             HStack(spacing: 2) {
-                Image(systemName: mos > 0 ? "arrow.up.right" : "arrow.down.right").font(.system(size: 10))
+                Image(systemName: mos > 0 ? "arrow.up.right" : "arrow.down.right").appFont(.system(size: 10))
                 Text(String(format: "%.1f%%", mos)).monospacedDigit()
             }.foregroundStyle(tone).fontWeight(.bold)
-        } else { Text("N/A").foregroundStyle(.secondary.opacity(0.5)).font(.caption) }
+        } else { Text("N/A").foregroundStyle(.secondary.opacity(0.5)).appFont(.caption) }
     }
 
     @ViewBuilder private func aiScoreCell(_ score: Double?) -> some View {
         if let s = score {
             let tone: Color = s >= 8 ? .green : (s >= 6 ? .cyan : (s >= 4 ? .orange : .red))
             Text(String(format: "%.1f/10", s)).monospacedDigit().fontWeight(.bold).foregroundStyle(tone)
-        } else { Text("N/A").foregroundStyle(.secondary.opacity(0.5)).font(.caption) }
+        } else { Text("N/A").foregroundStyle(.secondary.opacity(0.5)).appFont(.caption) }
     }
 
     private func auditButton(_ row: ScreenerResult) -> some View {
@@ -352,7 +352,7 @@ struct ScreenerResultsView: View {
                 Label("Analyze", systemImage: "brain")
             }
         }
-        .font(.caption2.weight(.bold))
+        .appFont(.caption2.weight(.bold))
         .buttonStyle(.bordered)
         .tint((row.hasAIReview ?? false) ? .purple : nil)
         .disabled(viewModel.reviewingSymbol == row.symbol)
@@ -361,17 +361,17 @@ struct ScreenerResultsView: View {
     private func reviewPanel(_ symbol: String, _ rev: ScreenReview) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("AI Technical & Fundamental Audit", systemImage: "sparkles").font(.subheadline.weight(.bold))
+                Label("AI Technical & Fundamental Audit", systemImage: "sparkles").appFont(.subheadline.weight(.bold))
                 Spacer()
                 Button { Task { await viewModel.review(symbol, force: true) } } label: {
-                    Label("Regenerate", systemImage: "arrow.clockwise").font(.caption2)
+                    Label("Regenerate", systemImage: "arrow.clockwise").appFont(.caption2)
                 }.buttonStyle(.borderless)
             }
             if let card = rev.scorecard, !card.isEmpty {
                 FlowChips(items: card.sorted { $0.key < $1.key }.map { (key: $0.key, value: $0.value) })
             }
             if let summary = rev.summary, !summary.isEmpty {
-                Text("“\(summary)”").font(.callout).italic().padding(10)
+                Text("“\(summary)”").appFont(.callout).italic().padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
             }
@@ -380,8 +380,8 @@ struct ScreenerResultsView: View {
                     ForEach(analysis.sorted { $0.key < $1.key }, id: \.key) { k, v in
                         VStack(alignment: .leading, spacing: 3) {
                             Label(k.replacingOccurrences(of: "_", with: " ").capitalized, systemImage: "chevron.right")
-                                .font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-                            Text(v).font(.caption).foregroundStyle(.primary.opacity(0.85))
+                                .appFont(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                            Text(v).appFont(.caption).foregroundStyle(.primary.opacity(0.85))
                         }
                     }
                 }
@@ -400,9 +400,9 @@ private struct FlowChips: View {
             ForEach(items, id: \.key) { item in
                 HStack {
                     Text(item.key.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .appFont(.caption2).foregroundStyle(.secondary)
                     Spacer()
-                    Text("\(Int(item.value))/10").font(.caption.bold())
+                    Text("\(Int(item.value))/10").appFont(.caption.bold())
                         .foregroundStyle(item.value >= 8 ? .green : (item.value >= 6 ? .cyan : .orange))
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)

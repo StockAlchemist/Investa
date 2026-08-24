@@ -172,7 +172,7 @@ struct TradingViewChartView: View {
                         ProgressView()
                     case .failed:
                         Text("TradingView couldn't be reached. Check your connection, or use the Price or Return % view.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .appFont(.callout).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center).padding(.horizontal, 24)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(.background)
@@ -252,7 +252,7 @@ struct TradingViewFullScreenChip: View {
                 Image(systemName: systemImage)
                 Text(title.uppercased())
             }
-            .font(.system(size: 11, weight: .bold))
+            .appFont(.system(size: 11, weight: .bold))
             .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 9).padding(.vertical, 4)
             .background(Color.gray.opacity(0.15), in: Capsule())
