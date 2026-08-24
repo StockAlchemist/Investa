@@ -229,11 +229,13 @@ struct AllocationDriftCard: View {
         let tone: Color = r.target == 0 ? .secondary : (alert ? .down : (warn ? .orange : .up))
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text(r.bucket).appFont(.caption.weight(.medium)).lineLimit(1)
-                    Spacer()
+                HStack(spacing: 6) {
+                    Text(r.bucket).appFont(.caption.weight(.medium))
+                    Spacer(minLength: 0)
+                    // The figures keep their size; a long bucket name is what gives way.
                     Text("\(String(format: "%.1f", r.current))% / \(String(format: "%.1f", r.target))%")
                         .appFont(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                        .layoutPriority(1)
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -252,14 +254,24 @@ struct AllocationDriftCard: View {
                     .frame(width: 50).multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder)
             } else {
                 HStack(spacing: 2) {
-                    if alert { Image(systemName: "exclamationmark.triangle.fill").appFont(.caption2) }
-                    if r.drift != 0 { Image(systemName: r.drift > 0 ? "arrow.up.right" : "arrow.down.right").appFont(.caption2) }
+                    if alert {
+                        Image(systemName: "exclamationmark.triangle.fill").appFont(.caption2).imageScale(.small)
+                    }
+                    if r.drift != 0 {
+                        Image(systemName: r.drift > 0 ? "arrow.up.right" : "arrow.down.right")
+                            .appFont(.caption2).imageScale(.small)
+                    }
                     Text("\(r.drift > 0 ? "+" : "")\(String(format: "%.1f", r.drift))").appFont(.caption.bold()).monospacedDigit()
                 }
-                .foregroundStyle(tone).frame(width: 64, alignment: .trailing)
+                .foregroundStyle(tone).frame(width: 72, alignment: .trailing)
             }
         }
         .padding(.vertical, 2)
+        // Every figure in the row — the bucket, the current/target pair and the drift
+        // in its fixed-width cell — stays on one line and shrinks instead of wrapping,
+        // so "-58.1" cannot break into "-58." / "1" at an accessibility type size.
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
     }
 
     private func startEdit() {

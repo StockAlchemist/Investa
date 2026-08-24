@@ -262,7 +262,7 @@ export default function AllocationDrift({
                                 ) : (
                                     <span
                                         className={cn(
-                                            'flex items-center gap-0.5 text-[11px] font-bold tabular-nums w-14 justify-end',
+                                            'flex items-center gap-0.5 text-[11px] font-bold tabular-nums w-[4.5rem] shrink-0 justify-end whitespace-nowrap',
                                             r.target === 0
                                                 ? 'text-muted-foreground/60'
                                                 : isAlert
@@ -272,11 +272,11 @@ export default function AllocationDrift({
                                                         : 'text-emerald-500',
                                         )}
                                     >
-                                        {isAlert && <AlertTriangle className="w-3 h-3" />}
+                                        {isAlert && <AlertTriangle className="w-3 h-3 shrink-0" />}
                                         {drift > 0
-                                            ? <ArrowUpRight className="w-3 h-3" />
+                                            ? <ArrowUpRight className="w-3 h-3 shrink-0" />
                                             : drift < 0
-                                                ? <ArrowDownRight className="w-3 h-3" />
+                                                ? <ArrowDownRight className="w-3 h-3 shrink-0" />
                                                 : null}
                                         {drift > 0 ? '+' : ''}{drift.toFixed(1)}
                                     </span>
