@@ -93,7 +93,7 @@ describe('formatCalendarDate', () => {
     it('formats the calendar day itself rather than a local instant', () => {
         // A date-only value localized in a negative-offset zone would slide back
         // to Aug 4; pinning to UTC keeps the day the market named.
-        expect(formatCalendarDate('2026-08-05')).toMatch(/Aug 5, 2026/);
+        expect(formatCalendarDate('2026-08-05')).toBe('05 Aug 2026');
         expect(formatCalendarDate('2026-08-05', { month: 'short', day: 'numeric' })).toMatch(/Aug 5/);
     });
 

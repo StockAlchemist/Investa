@@ -6,6 +6,16 @@ private let cgDayFormatter: DateFormatter = {
 }()
 private func cgParseDay(_ s: String) -> Date? { cgDayFormatter.date(from: String(s.prefix(10))) }
 
+/// "Aug 28" for an acquisition, with the year only when it falls outside the
+/// current market year — a lot bought last December is still short-term, and
+/// a bare "Dec 12" would read as this year's.
+private func cgShortDay(_ iso: String) -> String {
+    guard let day = MarketTime.calendarDay(iso), let today = MarketTime.today(timeZone: nil) else { return iso }
+    return MarketTime.year(day) == MarketTime.year(today)
+        ? MarketTime.shortDay(iso)
+        : MarketTime.formatted(iso)
+}
+
 private func cgCompact(_ v: Double, _ code: String) -> String {
     let a = abs(v)
     if a >= 1_000_000 { return String(format: "%@%.2fM", v < 0 ? "-" : "", a / 1_000_000) }
@@ -59,12 +69,15 @@ struct UnrealizedTaxSection: View {
     }
 
     private var lots: [CLot] {
-        let now = Date(); let cal = Calendar.current
         var out: [CLot] = []
         for h in holdings {
             for raw in h.raw["lots"]?.arrayValue ?? [] {
-                guard let dStr = raw["Date"]?.stringValue, let d = cgParseDay(dStr) else { continue }
-                let heldDays = cal.dateComponents([.day], from: d, to: now).day ?? 0
+                guard let dStr = raw["Date"]?.stringValue, cgParseDay(dStr) != nil else { continue }
+                // Counted on the market's clock, never the device's. Investa runs
+                // on a Bangkok calendar that is up to a day ahead of New York, and
+                // a day is the whole margin this card is about: it decides both
+                // `isLT` and the countdown to the 365-day boundary.
+                let heldDays = -(MarketTime.dayDiff(dStr, timeZone: nil) ?? 0)
                 out.append(CLot(symbol: h.symbol, account: h.account, date: String(dStr.prefix(10)),
                                 qty: raw["Quantity"]?.doubleValue ?? 0,
                                 cost: raw["Cost Basis"]?.doubleValue ?? 0,
@@ -146,7 +159,7 @@ struct UnrealizedTaxSection: View {
                                 Text("\(Fmt.currency(c.gain, code: currency))").foregroundStyle(.red).fontWeight(.bold)
                             }
                             HStack {
-                                Text("Acquired \(c.date)").font(.caption2).foregroundStyle(.secondary)
+                                Text("Acquired \(MarketTime.formatted(c.date))").font(.caption2).foregroundStyle(.secondary)
                                 Spacer()
                                 Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.red).font(.caption.weight(.bold))
                             }
@@ -192,7 +205,7 @@ struct UnrealizedTaxSection: View {
                                 }
                             }
                             .gridColumnAlignment(.leading)
-                            Text(c.date).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+                            Text(MarketTime.formatted(c.date)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
                             Text(Fmt.number(c.qty)); Text(Fmt.currency(c.cost, code: currency)).foregroundStyle(.secondary)
                             Text(Fmt.currency(c.value, code: currency))
                             Text("\(Fmt.currency(c.gain, code: currency)) (\(String(format: "%.1f", c.gainPct))%)").foregroundStyle(.red).fontWeight(.bold)
@@ -207,26 +220,70 @@ struct UnrealizedTaxSection: View {
         }
     }
 
+    /// Lots days away from long-term treatment.
+    ///
+    /// Was one run-on line per lot — icon, ticker, "acquired 2025-08-28", gain,
+    /// countdown — which at a large type size had nowhere to go: `SCBRMS&P500`
+    /// wrapped mid-ticker onto a second line and took the row's alignment with
+    /// it. A ticker is an identifier and must never break, so the row is now two
+    /// lines by construction, the shape the harvesting card beside it already
+    /// uses.
     private func ripeningCard(_ ripening: [CLot]) -> some View {
         CGSection(title: "Ripening to long-term within 30 days") {
-            ForEach(ripening.prefix(8)) { c in
-                HStack {
-                    Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                    Button {
-                        appState.openStock(c.symbol)
-                    } label: {
-                        Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
-                    }
-                    .buttonStyle(.plain)
-                    Text("acquired \(c.date)").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("+\(Fmt.currency(c.gain, code: currency))").foregroundStyle(.green).monospacedDigit()
-                    Text("\(c.daysToLong)d").foregroundStyle(.orange).fontWeight(.bold).monospacedDigit()
-                }.font(.caption)
+            VStack(spacing: 10) {
+                ForEach(ripening.prefix(8)) { c in ripeningRow(c) }
             }
             Text("Holding ≥30 more days converts these gains to LTCG treatment (typically lower tax).")
                 .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func ripeningRow(_ c: CLot) -> some View {
+        Button {
+            appState.openStock(c.symbol)
+        } label: {
+            HStack(spacing: 10) {
+                StockIcon(symbol: c.symbol, size: 26, scalesWithText: true)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                            // Shrinks, then truncates. Never wraps: half a
+                            // ticker on a second line is not the ticker.
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                        Spacer(minLength: 8)
+                        Text("+\(Fmt.currency(c.gain, code: currency))")
+                            .fontWeight(.bold).foregroundStyle(.green).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    HStack(spacing: 6) {
+                        Text("acquired \(cgShortDay(c.date))")
+                            .foregroundStyle(.secondary).lineLimit(1)
+                        if let acc = c.account, !acc.isEmpty {
+                            Text("· \(acc)").foregroundStyle(.tertiary)
+                                .lineLimit(1).layoutPriority(-1)
+                        }
+                        Spacer(minLength: 8)
+                        countdownBadge(c.daysToLong)
+                    }
+                    .font(.caption2)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The countdown carries the card's whole argument — how long the reader has
+    /// to wait — so it is a badge rather than the last word of a sentence that
+    /// runs off the right edge.
+    private func countdownBadge(_ days: Int) -> some View {
+        Text("\(days)d")
+            .font(.caption2.weight(.bold)).monospacedDigit()
+            .lineLimit(1)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(Color.orange.opacity(0.15), in: Capsule())
+            .foregroundStyle(.orange)
     }
 
     private func termBadge(_ isLT: Bool) -> some View {
@@ -317,7 +374,7 @@ struct CapitalGainsKpiStrip: View {
             Text(value).font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
             Text(sub).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .gridTile(alignment: .leading)
         .padding(12).background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
     }
@@ -495,7 +552,7 @@ struct RealizedGainsTable: View {
                 }
                 #else
                 Table(rows, sortOrder: $sortOrder) {
-                    TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
+                    TableColumn("Date", value: \.date) { Text(MarketTime.formatted($0.date)).foregroundStyle(.secondary) }
                     TableColumn("Symbol", value: \.symbol) { row in
                         Button {
                             appState.openStock(row.symbol)
@@ -536,7 +593,7 @@ struct RealizedGainsTable: View {
                 Text(Fmt.currency(r.gain, code: currency)).fontWeight(.medium).monospacedDigit().foregroundStyle(Fmt.tint(for: r.gain))
             }
             HStack {
-                Text(r.date).font(.caption2).foregroundStyle(.secondary)
+                Text(MarketTime.formatted(r.date)).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 Text(r.account).font(.caption2).foregroundStyle(.tertiary)
             }

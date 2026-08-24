@@ -111,6 +111,21 @@ enum Fmt {
         return "\(sign)\(symbol)\(num)\(suffix)"
     }
 
+    /// A currency amount without cents — for lists where the cents are noise
+    /// and the ~35pt they cost is what pushes a row into truncation. A rounded
+    /// figure is still the figure; an ellipsised one is a different number.
+    static func currencyWhole(_ value: Double?, code: String, signed: Bool = false) -> String {
+        guard let value else { return "—" }
+        let sign = value < 0 ? "-" : (signed ? "+" : "")
+        return "\(sign)\(symbol(code))\(number(Swift.abs(value).rounded(), fractionDigits: 0))"
+    }
+
+    /// A share count: whole where the lot is whole, four places where it isn't.
+    /// "350" rather than "350.0000" is most of a column's width in a lot list.
+    static func shares(_ value: Double) -> String {
+        number(value, fractionDigits: value == value.rounded() ? 0 : 4)
+    }
+
     static func number(_ value: Double?, fractionDigits: Int = 2) -> String {
         guard let value else { return "—" }
         let f = NumberFormatter()

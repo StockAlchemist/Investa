@@ -37,21 +37,31 @@ enum MarketTime {
     /// while leaving month names localized.
     private static let gregorian = Calendar(identifier: .gregorian)
 
-    /// "Jul 29, 2026" — a calendar day, so it renders in UTC to match the parser.
+    /// "29 Jul 2026" — `DD MMM YYYY`, the app's one date notation.
+    ///
+    /// An explicit pattern rather than `dateStyle = .medium`, which orders the
+    /// parts by the device's locale: the same lot would read "Jul 29, 2026" on
+    /// a US phone and "29/07/2026" on a British one, and a list of dates that
+    /// changes shape with the reader is not a format. Month names stay
+    /// localized; only the order and the zero-padded day are fixed, so figures
+    /// line up down a column.
+    ///
+    /// Renders in UTC to match the parser — a calendar day is a day, not an
+    /// instant, and must not slide for a viewer west of UTC.
     private static let mediumFormatter: DateFormatter = {
         let f = DateFormatter()
         f.calendar = gregorian
-        f.dateStyle = .medium
-        f.timeStyle = .none
+        f.dateFormat = "dd MMM yyyy"
         f.timeZone = utc
         return f
     }()
 
-    /// "Jul 29" — the compact form for rows too narrow for a full date.
+    /// "29 Jul" — the same notation with the year dropped, for a row or axis
+    /// with no room for it. Day-first like the full form; never "Jul 29".
     private static let shortDayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.calendar = gregorian
-        f.setLocalizedDateFormatFromTemplate("MMMd")
+        f.dateFormat = "dd MMM"
         f.timeZone = utc
         return f
     }()
@@ -121,17 +131,29 @@ enum MarketTime {
         return target <= cutoff
     }
 
-    /// "Jul 29, 2026" for a date-only string; the input is returned unchanged if
+    /// "29 Jul 2026" for a date-only string; the input is returned unchanged if
     /// it isn't a date.
     static func formatted(_ iso: String) -> String {
         guard let d = calendarDay(iso) else { return iso }
         return mediumFormatter.string(from: d)
     }
 
-    /// "Jul 29" for a date-only string.
+    /// "29 Jul 2026" for a day already parsed by `calendarDay(_:)`. Only for
+    /// calendar days: an intraday timestamp would render in UTC and can name
+    /// the wrong day.
+    static func formatted(_ day: Date) -> String {
+        mediumFormatter.string(from: day)
+    }
+
+    /// "29 Jul" for a date-only string.
     static func shortDay(_ iso: String) -> String {
         guard let d = calendarDay(iso) else { return iso }
         return shortDayFormatter.string(from: d)
+    }
+
+    /// "29 Jul" for a day already parsed by `calendarDay(_:)`.
+    static func shortDay(_ day: Date) -> String {
+        shortDayFormatter.string(from: day)
     }
 
     /// "Jul 2026" for a date-only string.

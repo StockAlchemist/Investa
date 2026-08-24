@@ -1426,8 +1426,8 @@ struct DividendCalendarCard: View {
                             .buttonStyle(.plain)
                             .frame(width: 70, alignment: .leading)
                             VStack(alignment: .leading) {
-                                Text("Ex: \(ev.exDividendDate)").font(.caption)
-                                Text("Pay: \(ev.dividendDate)").font(.caption2).foregroundStyle(.secondary)
+                                Text("Ex: \(MarketTime.formatted(ev.exDividendDate))").font(.caption)
+                                Text("Pay: \(MarketTime.formatted(ev.dividendDate))").font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if ev.status == "estimated" {

@@ -9,6 +9,21 @@ struct PositionHistoryChartView: View {
     @State private var viewMode: ViewMode = .value
     @State private var period: String = "1y"
     @State private var selectedBenchmarks: [String] = []
+    /// The width the card was offered — what decides whether the view switch
+    /// can share a row with the period pills, and how many date labels the
+    /// axis can carry.
+    @State private var width: CGFloat = 0
+
+    /// Eight period pills want ~350pt on their own. Below this the 155pt view
+    /// switch beside them leaves room for three, and the row stops reading as a
+    /// set of choices.
+    private var stackedControls: Bool { prefersStackedLayout(measuredWidth: width, needs: 500) }
+
+    /// "MMM 'yy" is about 48pt at the axis font.
+    private var xLabelCount: Int {
+        guard width > 0 else { return 3 }
+        return max(2, min(5, Int((width - 60) / 56)))
+    }
 
     enum ViewMode: String, CaseIterable {
         case value = "Value"
@@ -48,9 +63,14 @@ struct PositionHistoryChartView: View {
             // Chart Area
             chartArea
         }
-        .padding(14)
+        // The same chrome `card(...)` gives every other card on this page: same
+        // inset, and filling the column so the stack reads as one width.
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1))
+        // Must be the *offered* width. See `readingContainerWidth`.
+        .readingContainerWidth { width = $0 }
         .task {
             await reloadHistory()
         }
@@ -68,55 +88,27 @@ struct PositionHistoryChartView: View {
 
     // MARK: - Header
 
+    /// Title, status badge, subtitle, controls.
+    ///
+    /// Every part of the first row used to be `fixedSize(horizontal: true)`,
+    /// which is a demand rather than a preference: at a large type size
+    /// "Position History" plus "+$249,895.65 (+125.41%)" asked for more width
+    /// than the page has, so this card rendered wider than every other card
+    /// beside it. Nothing here pins its width any more — the badge takes a line
+    /// of its own when the row cannot hold both.
     @ViewBuilder
     private var headerRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: viewMode == .value ? "chart.pie.fill" : "chart.line.uptrend.xyaxis")
-                        .foregroundStyle(viewMode == .value ? Color.indigo : Color.green)
-                        .font(.system(size: 14))
-                    Text("Position History")
-                        .font(.headline)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 8) {
+                    titleGroup
+                    Spacer(minLength: 8)
+                    statusBadge
                 }
-
-                if let last = pts.last {
-                    if last.shares < 1e-6 {
-                        if viewMode == .value {
-                            Text("Closed Position")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.secondary.opacity(0.12), in: Capsule())
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        } else {
-                            let isPositive = last.returnPct >= 0
-                            Text("\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct))")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(isPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12), in: Capsule())
-                                .foregroundStyle(isPositive ? Color.green : Color.red)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                    } else {
-                        let isPositive = viewMode == .value ? (last.unrealizedGain >= 0) : (last.returnPct >= 0)
-                        Text(viewMode == .value
-                             ? "\(last.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(last.unrealizedGain, currency: currency)) (\(Fmt.percent(last.unrealizedGainPct)))"
-                             : "\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct))")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(isPositive ? Color.green.opacity(0.12) : Color.red.opacity(0.12), in: Capsule())
-                            .foregroundStyle(isPositive ? Color.green : Color.red)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    titleGroup
+                    statusBadge
                 }
-
-                Spacer()
             }
 
             Text(viewMode == .value
@@ -127,22 +119,74 @@ struct PositionHistoryChartView: View {
                 .lineLimit(1)
 
             // Controls Row: View Switcher and Period Selector
-            HStack(spacing: 8) {
-                Picker("", selection: $viewMode) {
-                    ForEach(ViewMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
+            Group {
+                if stackedControls {
+                    VStack(alignment: .leading, spacing: 8) {
+                        viewModePicker.frame(maxWidth: .infinity)
+                        periodRow
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        viewModePicker.frame(width: 155)
+                        periodRow
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 155)
-
-                periodRow
             }
             .padding(.top, 2)
         }
     }
 
     // MARK: - Controls
+
+    private var titleGroup: some View {
+        HStack(spacing: 6) {
+            Image(systemName: viewMode == .value ? "chart.pie.fill" : "chart.line.uptrend.xyaxis")
+                .foregroundStyle(viewMode == .value ? Color.indigo : Color.green)
+                .font(.system(size: 14))
+            Text("Position History")
+                .font(.headline)
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }
+    }
+
+    /// The position's headline number: its return once closed, its unrealized
+    /// gain while open.
+    @ViewBuilder private var statusBadge: some View {
+        if let last = pts.last {
+            let closed = last.shares < 1e-6
+            if closed, viewMode == .value {
+                badge("Closed Position", tint: .secondary, background: Color.secondary.opacity(0.12))
+            } else if viewMode == .value {
+                badge("\(last.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(last.unrealizedGain, currency: currency)) (\(Fmt.percent(last.unrealizedGainPct)))",
+                      tint: last.unrealizedGain >= 0 ? .green : .red,
+                      background: (last.unrealizedGain >= 0 ? Color.green : Color.red).opacity(0.12))
+            } else {
+                badge("\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct))",
+                      tint: last.returnPct >= 0 ? .green : .red,
+                      background: (last.returnPct >= 0 ? Color.green : Color.red).opacity(0.12))
+            }
+        }
+    }
+
+    private func badge(_ text: String, tint: Color, background: Color) -> some View {
+        Text(text)
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(background, in: Capsule())
+            .foregroundStyle(tint)
+            // Shrinks rather than demanding. See `headerRow`.
+            .lineLimit(1).minimumScaleFactor(0.7)
+    }
+
+    private var viewModePicker: some View {
+        Picker("", selection: $viewMode) {
+            ForEach(ViewMode.allCases, id: \.self) { mode in
+                Text(mode.rawValue).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
 
     private var periodRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -235,9 +279,9 @@ struct PositionHistoryChartView: View {
         let f = DateFormatter()
         f.timeZone = TimeZone(identifier: "America/New_York")
         if ["1m", "3m", "6m"].contains(period.lowercased()) {
-            f.dateFormat = "MMM d"
+            f.dateFormat = "dd MMM"
         } else {
-            f.dateFormat = "MMM ''yy"
+            f.dateFormat = "MMM yyyy"
         }
         return f.string(from: d)
     }
@@ -355,7 +399,7 @@ struct PositionHistoryChartView: View {
         }
         .chartYScale(domain: yDomain)
         .chartYAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { v in
+            AxisMarks(values: .automatic(desiredCount: width >= 340 ? 5 : 4)) { v in
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
                 AxisValueLabel {
                     if let d = v.as(Double.self) {
@@ -369,7 +413,7 @@ struct PositionHistoryChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { value in
+            AxisMarks(values: .automatic(desiredCount: xLabelCount)) { value in
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
                 if let date = value.as(Date.self) {
                     AxisValueLabel {

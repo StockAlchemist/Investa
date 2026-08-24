@@ -53,3 +53,29 @@ private struct ContainerWidthReader: ViewModifier {
         }
     }
 }
+
+/// Whether a width-driven layout should take its narrow, stacked shape.
+///
+/// Two rules, both learned the hard way, and both about the same failure:
+///
+/// **Default to stacked until measured.** A layout that renders its wide shape
+/// first demands the wide shape's minimum width. Inside a vertical `ScrollView`
+/// — which sizes itself to its widest descendant and re-proposes that width to
+/// everything in it — that demand becomes the container's width, the probe then
+/// faithfully reports the *inflated* width, and the layout stays wide forever.
+/// The page never recovers, and every scroller in it now has its trailing edge
+/// off-display where no gesture reaches. Guessing narrow can only under-fill for
+/// one layout pass; guessing wide latches.
+///
+/// **The wide shape must have no hard minimum near `needs`.** `fixedSize()`, a
+/// pinned `frame(width:)` on something incompressible, a `Text` that can neither
+/// wrap nor scale — any of these turn "prefers more room" into "demands more
+/// room", which is the same latch by another route. Let text compress with
+/// `lineLimit` + `minimumScaleFactor` instead.
+///
+/// - Parameters:
+///   - measuredWidth: the last width reported by `readingContainerWidth`; 0 before the first.
+///   - needs: the width the wide shape wants in order to be legible.
+func prefersStackedLayout(measuredWidth: CGFloat, needs: CGFloat) -> Bool {
+    measuredWidth <= 0 || measuredWidth < needs
+}

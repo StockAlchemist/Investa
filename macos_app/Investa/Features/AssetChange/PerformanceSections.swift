@@ -496,7 +496,7 @@ struct DrawdownTimeline: View {
                     LineMark(x: .value("Date", item.0), y: .value("Drawdown", item.1)).foregroundStyle(.red)
                 }
                 .chartHoverTooltip(s.series.map(\.0)) { i in
-                    ChartTooltipContent(title: Self.ddFmt.string(from: s.series[i].0),
+                    ChartTooltipContent(title: MarketTime.formatted(s.series[i].0),
                                         rows: [ChartTooltipRow(color: .red, label: "Drawdown",
                                                                value: String(format: "%.2f%%", s.series[i].1))])
                 }
@@ -511,7 +511,6 @@ struct DrawdownTimeline: View {
             Text(v).font(.title3.bold()).foregroundStyle(tone)
         }
     }
-    static let ddFmt: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; return f }()
 }
 
 // MARK: - Benchmark scoreboard (mirrors performance/BenchmarkScoreboard.tsx)

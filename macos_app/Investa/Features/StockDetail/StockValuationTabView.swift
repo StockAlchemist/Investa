@@ -330,66 +330,13 @@ struct StockValuationTabView: View {
         }
     }
 
-    /// The three valuation summary cards (intrinsic value / current price / margin of safety).
+    /// The valuation headline. One card rather than three: the price and the
+    /// blended intrinsic value are drawn on a single scale, so the distance
+    /// between them *is* the margin of safety instead of a third number the
+    /// reader has to relate back to the other two by hand.
     @ViewBuilder
     private func valuationSummaryCards(_ iv: IntrinsicValueResponse) -> some View {
-        let hasCustom = blendedResult.hasAnyCustom
-        let activeAvg = hasCustom ? blendedResult.customAverage : iv.averageIntrinsicValue
-        let activeMos = hasCustom ? (blendedResult.customMarginOfSafety ?? 0) : (iv.marginOfSafetyPct ?? 0)
-        let hasValue = activeAvg != nil
-
-        let intrinsic = valuationCard(
-            label: iv.status == .nav ? "Net Asset Value" : (hasCustom ? "Custom Blended Value" : "Blended Intrinsic Value"),
-            value: hasValue ? Fmt.currency(activeAvg, code: nativeCur) : "Not valued",
-            valueColor: hasCustom ? .orange : (hasValue ? .indigo : .secondary),
-            tint: hasCustom ? Color.orange.opacity(0.08) : nil
-        ) {
-            if hasCustom, let defAvg = iv.averageIntrinsicValue, let actAvg = activeAvg, defAvg > 0 {
-                let diff = ((actAvg - defAvg) / defAvg) * 100
-                Text("Default: \(Fmt.currency(defAvg, code: nativeCur)) (\(Fmt.percent(diff, includeSign: true)))")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(diff >= 0 ? Color.green : Color.red)
-                    .multilineTextAlignment(.center)
-            }
-            if hasValue, let r = iv.range {
-                Text("Range: \(Fmt.currency(r.bear, code: nativeCur)) - \(Fmt.currency(r.bull, code: nativeCur))")
-                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            if hasValue, let floor = iv.earningsPowerFloor {
-                Text("No-growth floor: \(Fmt.currency(floor, code: nativeCur))")
-                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            if hasValue, !hasCustom, let confidence = iv.valuationConfidence {
-                ConfidenceMeter(confidence: confidence)
-            }
-        }
-
-        let current = valuationCard(
-            label: "Current Price",
-            value: Fmt.currency(iv.currentPrice, code: nativeCur),
-            valueColor: .primary
-        ) { EmptyView() }
-
-        let safety = valuationCard(
-            label: "Margin of Safety",
-            value: hasValue ? Fmt.percent(activeMos, includeSign: true) : "—",
-            valueColor: hasValue ? (activeMos >= 0 ? .green : .red) : .secondary,
-            tint: hasValue ? (activeMos >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1)) : nil
-        ) {
-            if hasCustom, let origMos = iv.marginOfSafetyPct {
-                Text("Default MOS: \(Fmt.percent(origMos, includeSign: true))")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-
-        if hSizeClass == .compact {
-            VStack(spacing: 12) { intrinsic; current; safety }
-        } else {
-            HStack(spacing: 16) { intrinsic; current; safety }
-        }
+        ValuationHeadlineCard(iv: iv, blendedResult: blendedResult, nativeCur: nativeCur)
     }
 
     private func valuationNoteTitle(_ iv: IntrinsicValueResponse) -> String {
@@ -402,31 +349,6 @@ struct StockValuationTabView: View {
         }
     }
 
-    private func valuationCard<Sub: View>(
-        label: String,
-        value: String,
-        valueColor: Color,
-        tint: Color? = nil,
-        @ViewBuilder sub: () -> Sub
-    ) -> some View {
-        VStack(spacing: 8) {
-            Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
-                .multilineTextAlignment(.center)
-            Text(value).font(.system(size: 32, weight: .bold)).foregroundStyle(valueColor)
-                .lineLimit(1).minimumScaleFactor(0.5)
-            sub()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(hSizeClass == .compact ? 16 : 24)
-        .background {
-            if let tint {
-                RoundedRectangle(cornerRadius: 16).fill(tint)
-            } else {
-                RoundedRectangle(cornerRadius: 16).fill(Color.cardBg)
-            }
-        }
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cardBorder, lineWidth: 1))
-    }
 
     private func paramRow(_ label: String, _ val: String, _ isNote: Bool = false, isCustom: Bool = false, defVal: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1002,34 +924,572 @@ struct StockValuationTabView: View {
 }
 
 
+/// The valuation headline: the blended intrinsic value, the margin of safety,
+/// and — the part three separate stat cards could never show — where today's
+/// price actually sits inside the range the models produced.
+///
+/// The scale is the whole point. A reader looking at "$502.40" beside "$341.83"
+/// has to do the arithmetic and then guess how much of the gap is signal; a
+/// reader looking at the price sitting near the bottom of a wide bear-to-bull
+/// band can see both at once.
+private struct ValuationHeadlineCard: View {
+    let iv: IntrinsicValueResponse
+    let blendedResult: BlendedValuationResult
+    let nativeCur: String
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+
+    private var isCompact: Bool { hSizeClass == .compact }
+    private var hasCustom: Bool { blendedResult.hasAnyCustom }
+    private var value: Double? { hasCustom ? blendedResult.customAverage : iv.averageIntrinsicValue }
+    private var mos: Double? { hasCustom ? blendedResult.customMarginOfSafety : iv.marginOfSafetyPct }
+
+    /// Custom parameters recolor the whole card amber, the way the alert bar and
+    /// the edited model cards already do, so an edited number never reads as the
+    /// backend's own.
+    private var accent: Color { hasCustom ? .brandAmber : .brandIndigo }
+    private var mosTint: Color {
+        guard let mos else { return .secondary }
+        return mos >= 0 ? .up : .down
+    }
+
+    /// The margin-of-safety pill takes the right half of a phone's header row,
+    /// so the compact label is the short form rather than a truncated long one.
+    private var valueLabel: String {
+        if iv.status == .nav { return "Net Asset Value" }
+        if isCompact { return hasCustom ? "Custom Value" : "Blended Value" }
+        return hasCustom ? "Custom Blended Value" : "Blended Intrinsic Value"
+    }
+
+    /// The short form of the blend profile. `BlendCompositionCard` below spells
+    /// out what it means; here it is only a tag on the headline number.
+    private var profileTag: String? {
+        switch iv.blendProfile {
+        case "financial": return "Financial"
+        case "reit": return "REIT"
+        case "operating": return "Operating company"
+        default: return nil
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: isCompact ? 14 : 18) {
+            HStack(alignment: .top, spacing: isCompact ? 10 : 16) {
+                valueBlock
+                Spacer(minLength: 8)
+                if isCompact { marginPill } else { marginBlock }
+            }
+
+            if let v = value, v > 0, v.isFinite, let price = iv.currentPrice, price > 0 {
+                ValuationValueLine(
+                    value: v,
+                    price: price,
+                    bear: hasCustom ? nil : iv.range?.bear,
+                    bull: hasCustom ? nil : iv.range?.bull,
+                    accent: accent,
+                    gapTint: mosTint,
+                    currencyCode: nativeCur
+                )
+            }
+
+            if isCompact { compactFooter } else { footer }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(isCompact ? 16 : 22)
+        .card(.hero)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.heroRadius, style: .continuous)
+                .strokeBorder(hasCustom ? Color.brandAmber.opacity(0.35) : .clear, lineWidth: 1)
+                .allowsHitTesting(false)
+        )
+    }
+
+    // MARK: - Headline
+
+    private var valueBlock: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                SectionLabel(title: valueLabel)
+                if hasCustom {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.brandAmber)
+                }
+            }
+            Text(value.map { Fmt.currency($0, code: nativeCur) } ?? "Not valued")
+                .font(.system(size: isCompact ? 34 : 42, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(value == nil ? Color.secondary : accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            subline
+        }
+    }
+
+    @ViewBuilder
+    private var subline: some View {
+        if hasCustom, let defaultValue = iv.averageIntrinsicValue, defaultValue > 0, let active = value {
+            let diff = ((active - defaultValue) / defaultValue) * 100
+            HStack(spacing: 4) {
+                Text("Default \(Fmt.currency(defaultValue, code: nativeCur))")
+                    .foregroundStyle(.secondary)
+                Text(Fmt.percent(diff, fractionDigits: 1, includeSign: true))
+                    .foregroundStyle(diff >= 0 ? Color.up : Color.down)
+            }
+            .font(.caption.weight(.semibold))
+            .monospacedDigit()
+        } else if let profileTag {
+            Text(profileTag)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var marginBlock: some View {
+        VStack(alignment: isCompact ? .leading : .trailing, spacing: 3) {
+            SectionLabel(title: "Margin of Safety")
+            Text(mos.map { Fmt.percent($0, fractionDigits: 1, includeSign: true) } ?? "—")
+                .font(.system(size: isCompact ? 26 : 30, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(mos == nil ? Color.secondary : mosTint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(marginCaption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            (mos == nil ? Color.secondary : mosTint).opacity(0.10),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private var marginCaption: String {
+        guard let mos else { return "No estimate available" }
+        return mos >= 0 ? "Undervalued vs market" : "Overvalued vs market"
+    }
+
+    /// "vs market" is what a phone drops first: the word beside a signed
+    /// percentage is already understood as being about the price.
+    private var marginCaptionShort: String {
+        guard let mos else { return "No estimate" }
+        return mos >= 0 ? "Undervalued" : "Overvalued"
+    }
+
+    /// The iPhone version of `marginBlock`: same three lines, sized to sit
+    /// beside the headline number rather than under it, which is what let the
+    /// card lose a whole stacked block of height.
+    private var marginPill: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            SectionLabel(title: "Margin of Safety")
+            Text(mos.map { Fmt.percent($0, fractionDigits: 1, includeSign: true) } ?? "—")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(mos == nil ? Color.secondary : mosTint)
+            Text(marginCaptionShort)
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.6)
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            (mos == nil ? Color.secondary : mosTint).opacity(0.10),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    /// On a phone the footer chips wrapped to one row each, three rows of mostly
+    /// empty capsule. The same facts fit across one strip when they share it as
+    /// columns and drop their icons.
+    @ViewBuilder
+    private var compactFooter: some View {
+        let confidence = hasCustom ? nil : iv.valuationConfidence
+        if confidence != nil || !footerChips.isEmpty {
+            HStack(spacing: 0) {
+                if let confidence {
+                    let pct = min(max(confidence, 0), 1)
+                    ValuationStatColumn(
+                        label: "Confidence",
+                        value: "\(Int((pct * 100).rounded()))%",
+                        tint: pct >= 0.66 ? .up : (pct >= 0.4 ? Color.brandAmber : .down),
+                        meter: pct
+                    )
+                    if !footerChips.isEmpty { statDivider }
+                }
+                ForEach(Array(footerChips.enumerated()), id: \.element.id) { index, chip in
+                    ValuationStatColumn(label: chip.label, value: chip.value)
+                    if index < footerChips.count - 1 { statDivider }
+                }
+            }
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var statDivider: some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.18))
+            .frame(width: 1, height: 26)
+    }
+
+    // MARK: - Footer
+
+    /// The qualifiers that belong beside the number rather than inside it: how
+    /// far apart the models landed, and the value the company is worth if it
+    /// never grows again.
+    @ViewBuilder
+    private var footer: some View {
+        if !footerChips.isEmpty || (!hasCustom && iv.valuationConfidence != nil) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { footerContent }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 8) { footerContent }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var footerContent: some View {
+        if !hasCustom, let confidence = iv.valuationConfidence {
+            ConfidenceMeter(confidence: confidence)
+        }
+        ForEach(footerChips) { chip in
+            ValuationFactChip(icon: chip.icon, label: chip.label, value: chip.value)
+        }
+    }
+
+    private var footerChips: [ValuationFact] {
+        var out: [ValuationFact] = []
+        if let floor = iv.earningsPowerFloor, floor > 0, floor.isFinite {
+            out.append(.init(icon: "anchor", label: "No-growth floor",
+                             value: Fmt.currency(floor, code: nativeCur)))
+        }
+        if let weights = iv.modelWeights, !weights.isEmpty {
+            out.append(.init(icon: "square.stack.3d.up", label: "Blended",
+                             value: "\(weights.count) model\(weights.count == 1 ? "" : "s")"))
+        }
+        return out
+    }
+}
+
+/// One column of the iPhone footer strip: a wrapped caption over its value,
+/// with an optional meter for the confidence level.
+private struct ValuationStatColumn: View {
+    let label: String
+    let value: String
+    var tint: Color? = nil
+    var meter: Double? = nil
+
+    var body: some View {
+        VStack(spacing: 3) {
+            SectionLabel(title: label, lineLimit: 2)
+                .frame(height: 26, alignment: .top)
+            Text(value)
+                .font(.system(size: 13, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(tint ?? .primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if let meter, let tint {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 44, height: 4)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(tint).frame(width: max(3, 44 * meter), height: 4)
+                    }
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) \(value)")
+    }
+}
+
+/// One footer fact: an SF Symbol, a label, and a value.
+private struct ValuationFact: Identifiable {
+    let icon: String
+    let label: String
+    let value: String
+    var id: String { label }
+}
+
+/// A labelled fact that sits under the headline number without competing with it.
+private struct ValuationFactChip: View {
+    let icon: String
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.sectionText)
+            Text(label)
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.8)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.sectionText)
+            Text(value)
+                .font(.system(size: 11, weight: .bold))
+                .monospacedDigit()
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color.secondary.opacity(0.09), in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) \(value)")
+    }
+}
+
+/// Price and intrinsic value on one scale, with the models' bear-to-bull band
+/// behind them and the gap between the two — the margin of safety — drawn as a
+/// solid bar through the middle of it.
+///
+/// Mirrors `ValueLine` in `web_app/components/stock-detail/ValuationHeadlineCard.tsx`.
+private struct ValuationValueLine: View {
+    let value: Double
+    let price: Double
+    let bear: Double?
+    let bull: Double?
+    let accent: Color
+    let gapTint: Color
+    let currencyCode: String
+
+    @Environment(\.horizontalSizeClass) private var hSizeClass
+
+    private let trackHeight: CGFloat = 10
+    private let gapHeight: CGFloat = 4
+    private let markerSize: CGFloat = 15
+
+    private var isCompact: Bool { hSizeClass == .compact }
+
+    /// Regular widths hang labels above and below the bar; the compact layout
+    /// names the two dots in a legend instead, so the bar is all the row holds.
+    private var trackY: CGFloat { isCompact ? markerSize / 2 : 38 }
+
+    private var hasBand: Bool {
+        guard let bear, let bull else { return false }
+        return bear.isFinite && bull.isFinite && bull > bear && bear > 0
+    }
+
+    private var plotted: [Double] {
+        var points = [value, price]
+        if hasBand, let bear, let bull { points += [bear, bull] }
+        return points.filter { $0.isFinite && $0 > 0 }
+    }
+
+    /// The domain runs a little past the outermost value so no marker lands on
+    /// the very edge of the track, where its label would have nowhere to sit.
+    private var domain: (lo: Double, hi: Double) {
+        let rawLo = plotted.min() ?? 0
+        let rawHi = plotted.max() ?? 1
+        let pad = (rawHi - rawLo) * 0.08
+        let fallback = abs(rawHi) * 0.08
+        let inset = pad > 0 ? pad : (fallback > 0 ? fallback : 1)
+        return (rawLo - inset, rawHi + inset)
+    }
+
+    private func x(_ v: Double, in width: CGFloat) -> CGFloat {
+        let (lo, hi) = domain
+        guard hi > lo else { return width / 2 }
+        return CGFloat((min(max(v, lo), hi) - lo) / (hi - lo)) * width
+    }
+
+    /// Labels are centered on their marker but kept inside the card; 40pt is the
+    /// widest half a currency label runs to at this type size.
+    private func clamped(_ position: CGFloat, in width: CGFloat) -> CGFloat {
+        min(max(position, 40), max(width - 40, 40))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isCompact { legendRow }
+
+            GeometryReader { geo in
+                track(in: max(geo.size.width, 1))
+            }
+            .frame(height: isCompact ? markerSize : 84)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityText)
+
+            if hasBand, let bear, let bull {
+                HStack(spacing: 0) {
+                    if !isCompact { Spacer(minLength: 0) }
+                    bandLegend(bear: bear, bull: bull)
+                }
+            }
+        }
+    }
+
+    /// The two dots, named. A phone has no room to hang a label off each marker
+    /// without the labels colliding whenever price and value sit close together,
+    /// and the legend orders itself by which of the two is lower on the scale so
+    /// it still reads left-to-right against the bar.
+    private var legendRow: some View {
+        HStack(spacing: 8) {
+            legendItem(color: price <= value ? .primary : accent,
+                       amount: price <= value ? price : value,
+                       caption: price <= value ? "Price" : "Intrinsic")
+            Spacer(minLength: 8)
+            legendItem(color: price <= value ? accent : .primary,
+                       amount: price <= value ? value : price,
+                       caption: price <= value ? "Intrinsic" : "Price")
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+
+    private func legendItem(color: Color, amount: Double, caption: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(Fmt.currency(amount, code: currencyCode))
+                .font(.system(size: 13, weight: .bold))
+                .monospacedDigit()
+            Text(caption)
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.7)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.sectionText)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func track(in w: CGFloat) -> some View {
+        let xValue = x(value, in: w)
+        let xPrice = x(price, in: w)
+        return ZStack(alignment: .topLeading) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(width: w, height: trackHeight)
+                .position(x: w / 2, y: trackY)
+
+            if hasBand, let bear, let bull {
+                let xBear = x(bear, in: w)
+                let xBull = x(bull, in: w)
+                Capsule()
+                    .fill(accent.opacity(0.25))
+                    .frame(width: max(xBull - xBear, 2), height: trackHeight)
+                    .position(x: (xBear + xBull) / 2, y: trackY)
+            }
+
+            // The gap runs through the middle of the band so both stay readable.
+            Capsule()
+                .fill(gapTint)
+                .frame(width: max(abs(xValue - xPrice), 2), height: gapHeight)
+                .position(x: (xValue + xPrice) / 2, y: trackY)
+
+            marker(fill: accent, x: xValue)
+            marker(fill: .primary, x: xPrice)
+
+            if !isCompact {
+                // The headline already carries the intrinsic value, so the marker
+                // only has to say which of the two dots it is.
+                Text("Intrinsic value")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(0.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(accent)
+                    .fixedSize()
+                    .position(x: clamped(xValue, in: w), y: 12)
+
+                VStack(spacing: 1) {
+                    Text(Fmt.currency(price, code: currencyCode))
+                        .font(.system(size: 13, weight: .bold))
+                        .monospacedDigit()
+                    Text("Price")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.7)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.sectionText)
+                }
+                .fixedSize()
+                .position(x: clamped(xPrice, in: w), y: 64)
+            }
+        }
+    }
+
+    private func bandLegend(bear: Double, bull: Double) -> some View {
+        HStack(spacing: 6) {
+            Capsule().fill(accent.opacity(0.25)).frame(width: 16, height: 6)
+            Text("Model range")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.8)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.sectionText)
+            Text("\(Fmt.currency(bear, code: currencyCode)) – \(Fmt.currency(bull, code: currencyCode))")
+                .font(.system(size: 11, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+
+    private var accessibilityText: String {
+        var text = "Price \(Fmt.currency(price, code: currencyCode)), intrinsic value \(Fmt.currency(value, code: currencyCode))"
+        if hasBand, let bear, let bull {
+            text += ", model range \(Fmt.currency(bear, code: currencyCode)) to \(Fmt.currency(bull, code: currencyCode))"
+        }
+        return text
+    }
+
+    private func marker(fill: Color, x: CGFloat) -> some View {
+        Circle()
+            .fill(fill)
+            .frame(width: markerSize, height: markerSize)
+            .overlay(Circle().strokeBorder(Color.cardBg, lineWidth: 2))
+            .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
+            .position(x: x, y: trackY)
+    }
+}
+
 /// How much the backend stands behind the number, as a bar. Confidence is
 /// continuous — the models' own Monte Carlo bands, how far apart they landed,
 /// and how many of them there were — so it reads as a level rather than the old
 /// pass/fail that looked fine at 99% disagreement and alarming at 101%.
+///
+/// Shaped as a chip so it sits in the headline card's footer row beside the
+/// other qualifiers instead of claiming a stat card of its own.
 private struct ConfidenceMeter: View {
     let confidence: Double
 
+    private let barWidth: CGFloat = 54
+
     private var pct: Double { min(max(confidence, 0), 1) }
-    private var tint: Color { pct >= 0.66 ? .green : (pct >= 0.4 ? .orange : .red) }
+    private var tint: Color { pct >= 0.66 ? .up : (pct >= 0.4 ? Color.brandAmber : .down) }
 
     var body: some View {
-        VStack(spacing: 3) {
-            HStack {
-                Text("Confidence").font(.caption2.weight(.semibold)).textCase(.uppercase)
-                Spacer(minLength: 6)
-                Text("\(Int((pct * 100).rounded()))%").font(.caption2.weight(.bold)).monospacedDigit()
-            }
-            .foregroundStyle(.secondary)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.2))
-                    Capsule().fill(tint).frame(width: max(2, geo.size.width * pct))
+        HStack(spacing: 7) {
+            Text("Confidence")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.8)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.sectionText)
+            Capsule()
+                .fill(Color.secondary.opacity(0.2))
+                .frame(width: barWidth, height: 5)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(tint).frame(width: max(3, barWidth * pct), height: 5)
                 }
-            }
-            .frame(height: 5)
+            Text("\(Int((pct * 100).rounded()))%")
+                .font(.system(size: 11, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(tint)
         }
-        .frame(maxWidth: 180)
-        .padding(.top, 4)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color.secondary.opacity(0.09), in: Capsule())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Valuation confidence \(Int((pct * 100).rounded())) percent")
     }
@@ -1063,6 +1523,12 @@ private struct BlendCompositionCard: View {
         return out
     }
 
+    /// The weights used to live as chips on the summary card; they belong with
+    /// the rest of the blend's construction, heaviest model first.
+    private var weights: [(String, Double)] {
+        (iv.modelWeights ?? [:]).sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
+    }
+
     private var profileLine: String? {
         switch iv.blendProfile {
         case "financial": return "Financial — valued on discounted net income, not free cash flow."
@@ -1072,43 +1538,119 @@ private struct BlendCompositionCard: View {
         }
     }
 
+    /// The width the card was offered, and the reader's type size. Both decide
+    /// whether the two floor tiles can sit abreast: at an accessibility size
+    /// "EARNINGS POWER FLOOR" alone needs most of a phone's width, so the
+    /// answer is no however wide the card is.
+    @State private var width: CGFloat = 0
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var stackedFloors: Bool {
+        typeSize.isAccessibilitySize || prefersStackedLayout(measuredWidth: width, needs: 320)
+    }
+
     var body: some View {
-        if exclusions.isEmpty && floors.isEmpty && profileLine == nil {
+        if exclusions.isEmpty && floors.isEmpty && weights.isEmpty && profileLine == nil {
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 Label("How this blend was built", systemImage: "square.stack.3d.up")
                     .font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
 
                 if let profileLine {
                     Text(profileLine).font(.subheadline).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if !floors.isEmpty {
-                    HStack(spacing: 10) {
-                        ForEach(floors, id: \.0) { label, value, hint in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(label).font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
-                                Text(Fmt.currency(value, code: currencyCode)).font(.callout.weight(.bold)).monospacedDigit()
-                                Text(hint).font(.caption2).foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                }
-
-                ForEach(exclusions, id: \.0) { key, reason in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text(key.uppercased()).font(.caption2.weight(.black)).foregroundStyle(.primary.opacity(0.7))
-                        Text("held out — \(reason)").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                if !weights.isEmpty { weightsRow }
+                if !floors.isEmpty { floorTiles }
+                if !exclusions.isEmpty { exclusionNotes }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            // Must be the *offered* width. See `readingContainerWidth`.
+            .readingContainerWidth { width = $0 }
+        }
+    }
+
+    /// Wraps rather than squeezes. A blend can carry four models, and four
+    /// chips shrunk to 75% of a 10pt font to stay on one line is a row nobody
+    /// can read — the label is the whole point of a weight chip.
+    private var weightsRow: some View {
+        WrappingRow(spacing: 6, lineSpacing: 6) {
+            // In the flow rather than above it, so the label keeps its place
+            // beside the chips at a normal type size and only gives up the line
+            // when they genuinely need it. Padded to the chips' height so the
+            // row's top alignment reads as centred.
+            SectionLabel(title: "Weights")
+                .padding(.vertical, 3)
+            ForEach(weights, id: \.0) { key, weight in
+                Text("\(key.uppercased()) \(Int((weight * 100).rounded()))%")
+                    .font(.system(size: 10, weight: .semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+            }
+        }
+    }
+
+    @ViewBuilder private var floorTiles: some View {
+        if stackedFloors {
+            VStack(spacing: 8) {
+                ForEach(floors, id: \.0) { floor in floorTile(floor.0, floor.1, floor.2) }
+            }
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(floors, id: \.0) { floor in floorTile(floor.0, floor.1, floor.2) }
+            }
+        }
+    }
+
+    /// A floor is a sanity check on the blend, so the number leads and the
+    /// name explains it. `maxHeight` so two tiles abreast agree on a height
+    /// even when one caption wraps further than the other.
+    private func floorTile(_ label: String, _ value: Double, _ hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(Fmt.currency(value, code: currencyCode))
+                .font(.title3.weight(.bold)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(hint)
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(10)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// A held-out model, as a heading and a reason rather than one paragraph
+    /// with the model's name hanging off its left edge — at a large type size
+    /// that indent strands "DDM" on a line of its own above four lines of
+    /// explanation, and it stops reading as a sentence about DDM at all.
+    private var exclusionNotes: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(exclusions, id: \.0) { key, reason in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "minus.circle")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("\(key.uppercased()) held out")
+                            .font(.caption2.weight(.black)).textCase(.uppercase)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(.primary.opacity(0.7))
+                    Text(reason)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 }

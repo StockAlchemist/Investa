@@ -156,8 +156,8 @@ struct TxKpiStrip: View {
                 kv("Tax", row.b.tax > 0 ? compact(row.b.tax) : "—", row.b.tax > 0 ? .orange : .secondary, trailing: true)
             }
         }
+        .gridTile(alignment: .leading)
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
     }
 

@@ -25,7 +25,7 @@ import {
     fetchStockPositionHistory,
     StockPositionHistoryPoint,
 } from '@/lib/api';
-import { formatCurrency, cn } from '@/lib/utils';
+import { formatCurrency, formatCompactNumber, cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface PositionPerformanceGraphProps {
@@ -430,8 +430,11 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
             {/* Chart Area */}
             <div className="h-64 sm:h-72 w-full pt-2">
                 {isLoading ? (
-                    <div className="h-full w-full flex items-center justify-center">
+                    <div className="h-full w-full relative">
                         <Skeleton className="h-full w-full rounded-xl" />
+                        <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+                            Loading position history…
+                        </span>
                     </div>
                 ) : error ? (
                     <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
@@ -464,8 +467,10 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                     tickLine={false}
                                     axisLine={false}
                                     tick={{ fontSize: 10, fill: 'currentColor', opacity: 0.6 }}
-                                    tickFormatter={(v) => formatCurrency(v, currency)}
-                                    width={75}
+                                    // Compact ticks: a full THB/JPY figure (฿7,361,571.00)
+                                    // overflows the axis gutter and gets clipped.
+                                    tickFormatter={(v) => formatCompactNumber(v, currency)}
+                                    width={62}
                                 />
                                 <Tooltip
                                     content={<CustomTooltip view={view} currency={currency} />}

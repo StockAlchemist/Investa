@@ -1116,7 +1116,7 @@ struct HoldingsTableView: View {
                     if h == "Symbol" {
                         HStack(spacing: 3) {
                             Text("↳").font(.system(size: 10)).foregroundStyle(.tertiary)
-                            Text("Lot: \(lot["Date"]?.stringValue?.prefix(10) ?? "")").italic().lineLimit(1).fixedSize()
+                            Text("Lot: \(MarketTime.formatted(lot["Date"]?.stringValue ?? ""))").italic().lineLimit(1).fixedSize()
                         }
                     } else {
                         Text(lotCell(lot, h, r.price)).monospacedDigit().lineLimit(1)

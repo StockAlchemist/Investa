@@ -65,25 +65,42 @@ struct StockDetailView: View {
 
     var body: some View {
         #if os(iOS)
-        ScrollView {
-            VStack(spacing: 0) {
-                header
-                tabBar
-                Divider()
-                Group {
-                    switch tab {
-                    case .overview: overviewTab
-                    case .position: positionTab
-                    case .chart: chartTab
-                    case .analysis: analysisTab
-                    case .financials: financialsTab
-                    case .ratios: ratiosTab
-                    case .valuation: StockValuationTabView(viewModel: viewModel)
-                    case .holdings: holdingsTab
-                    case .news: newsTab
+        // The whole page — header, tab strip and content — shares one vertical
+        // ScrollView, and a ScrollView takes its width from its widest
+        // descendant and re-proposes that width to everything inside it. So a
+        // single card that *demands* more room than the screen has does not
+        // merely overflow itself: it shifts the entire page off the right edge,
+        // and takes every horizontal scroller's trailing end somewhere no
+        // gesture can reach.
+        //
+        // The cap comes from a GeometryReader placed *outside* the ScrollView,
+        // so it reports the room the page actually has and can never be
+        // inflated by the content it is capping — unlike a probe inside, which
+        // would measure the overflow it was meant to prevent and latch. A card
+        // that still over-reaches now clips at the screen edge on its own
+        // instead of moving everything else.
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 0) {
+                    header
+                    tabBar
+                    Divider()
+                    Group {
+                        switch tab {
+                        case .overview: overviewTab
+                        case .position: positionTab
+                        case .chart: chartTab
+                        case .analysis: analysisTab
+                        case .financials: financialsTab
+                        case .ratios: ratiosTab
+                        case .valuation: StockValuationTabView(viewModel: viewModel)
+                        case .holdings: holdingsTab
+                        case .news: newsTab
+                        }
                     }
+                    .padding(20)
                 }
-                .padding(20)
+                .frame(maxWidth: geo.size.width)
             }
         }
         .task { await viewModel.loadAll() }
@@ -768,7 +785,8 @@ struct StockDetailView: View {
                 Text("-").font(.title3.weight(.bold))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
+        .gridTile()
+        .padding(16)
         .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -859,7 +877,8 @@ struct StockDetailView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
+        .gridTile()
+        .padding(16)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -1018,7 +1037,7 @@ struct StockDetailView: View {
                                 Text(c.impact).font(.system(size: 10, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
                                     .padding(.horizontal, 4).padding(.vertical, 2).overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.3)))
                             }
-                            Text(c.date).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                            Text(MarketTime.formatted(c.date)).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                         }.padding(.bottom, i < catalysts.count - 1 ? 12 : 0)
                     }
                 }
@@ -1035,39 +1054,21 @@ struct StockDetailView: View {
             // The statement picker and the period switch stay put through
             // loading and empty states: "quarterly has nothing for this
             // company" is only actionable if Annual is still one tap away.
-            HStack(alignment: .center, spacing: 12) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        let tabs = [("income", "Income", "receipt"), ("balance", "Balance", "scalemass"), ("cash", "Cash Flow", "wallet.pass"), ("equity", "Equity", "person.2")]
-                        ForEach(tabs, id: \.0) { t in
-                            Button { finType = t.0; chartSlots = []; showAllMetrics = false } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: t.2).font(.system(size: 16))
-                                    Text(t.1)
-                                }
-                                .font(.caption.weight(.bold))
-                                .padding(.horizontal, 16).padding(.vertical, 8)
-                                .foregroundStyle(finType == t.0 ? Color.white : .secondary)
-                                .background(finType == t.0 ? Color.indigo : Color.secondary.opacity(0.15), in: Capsule())
-                            }.buttonStyle(.plain)
-                        }
-                    }
+            StatementTypeBar(
+                statement: finType,
+                period: viewModel.financialsPeriod,
+                onSelectStatement: { type in
+                    finType = type
+                    chartSlots = []
+                    showAllMetrics = false
+                },
+                onSelectPeriod: { p in
+                    chartSlots = []
+                    showAllMetrics = false
+                    chartRange = nil
+                    Task { await viewModel.loadFinancials(period: p) }
                 }
-                Picker("", selection: Binding(
-                    get: { viewModel.financialsPeriod },
-                    set: { p in
-                        chartSlots = []
-                        showAllMetrics = false
-                        chartRange = nil
-                        Task { await viewModel.loadFinancials(period: p) }
-                    }
-                )) {
-                    ForEach(StatementPeriod.allCases) { p in Text(p.title).tag(p) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 190)
-            }
+            )
 
             if viewModel.isLoadingFinancials {
                 ProgressView().frame(maxWidth: .infinity).padding(40)
@@ -1117,20 +1118,19 @@ struct StockDetailView: View {
         }
 
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center) {
-                Text("\(period.title) trend")
-                    .font(.caption.weight(.bold)).textCase(.uppercase).foregroundStyle(.secondary)
-                Text("\(periods.count) \(period == .quarterly ? "quarters" : "years")")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                Spacer()
-                Picker("", selection: Binding(
-                    get: { range }, set: { chartRange = $0 }
-                )) {
-                    ForEach(StatementRange.allCases) { r in Text(r.rawValue).tag(r) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 170)
-            }
+            StatementTrendHeader(
+                period: period,
+                periodCount: periods.count,
+                range: Binding(get: { range }, set: { chartRange = $0 })
+            )
 
+            // Stays inside the card's padding. Bleeding this row to the card
+            // edge with negative padding is the obvious polish and it is a
+            // trap: the over-wide child inflates the page's vertical
+            // ScrollView, which re-proposes the inflated width to everything
+            // in it, and the whole screen shifts off the right edge — header,
+            // tabs and this card's own scrollers, whose trailing ends then sit
+            // where no amount of scrolling reaches them. See `readingContainerWidth`.
             metricChips(chartable, slots: slots, colors: colors)
 
             if series.isEmpty {
@@ -1719,10 +1719,9 @@ struct StockDetailView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// The ratio history runs as far back as the filings do, so the x-axis plots
-    /// the period end itself rather than a year string: two fiscal years can end
-    /// in the same calendar year, and as categories they would collapse onto one
-    /// point. Dates are read at UTC midnight so a period end never slides a day.
+    /// One ratio across the filings. The drawing is `FiledPeriodChart`, which
+    /// is also what the Key Metrics cards use — the two were separate copies of
+    /// the same chart with separately wrong axis rules.
     private func ratioChart(
         _ title: String,
         _ data: [[String: JSONValue]],
@@ -1732,63 +1731,14 @@ struct StockDetailView: View {
         isCount: Bool = false,
         periodType: StatementPeriod = .annual
     ) -> some View {
-        // Parsed once rather than inside the chart body: the hover tooltip needs
-        // the same x-values the marks are drawn at to find the nearest period.
-        let points: [(period: Date, iso: String, value: Double)] = data.reversed().compactMap { item in
-            guard let val = item[key]?.doubleValue,
-                  let dateStr = item["Period"]?.stringValue,
-                  let period = MarketTime.calendarDay(dateStr) else { return nil }
-            return (period, dateStr, val)
-        }
-        // Sixty quarterly points would be a row of touching dots; the line
-        return card(title) {
-            Chart {
-                ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                    BarMark(x: .value("Period", p.period), y: .value(title, p.value))
-                        .foregroundStyle(color.gradient)
-                        .cornerRadius(3)
-                }
-            }
-            .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 5)) { value in
-                    AxisGridLine()
-                    AxisValueLabel {
-                        if let date = value.as(Date.self) {
-                            // Four quarters a year would all read "2026".
-                            Text(periodType == .quarterly
-                                 ? MarketTime.monthYear(date)
-                                 : MarketTime.year(date))
-                        }
-                    }
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisGridLine()
-                    AxisValueLabel {
-                        if let v = value.as(Double.self) {
-                            // A raw share count is unreadable on an axis;
-                            // 15.00B is the same number said usefully.
-                            Text(ratioValueLabel(v, isPercent: isPercent, isCount: isCount))
-                        }
-                    }
-                }
-            }
-            .frame(height: 200)
-            // Five axis ticks across nineteen filed years leave most periods
-            // unlabelled; the tooltip is how a particular year is read off.
-            .chartHoverTooltip(points.map(\.period)) { i in
-                guard points.indices.contains(i) else { return nil }
-                let p = points[i]
-                return ChartTooltipContent(
-                    title: MarketTime.formatted(p.iso),
-                    rows: [ChartTooltipRow(
-                        color: color,
-                        label: title,
-                        value: ratioValueLabel(p.value, isPercent: isPercent, isCount: isCount)
-                    )]
-                )
-            }
+        card(title) {
+            FiledPeriodChart(
+                points: FiledPeriodChart.points(data, key: key),
+                color: color,
+                periodType: periodType,
+                label: title,
+                format: { ratioValueLabel($0, isPercent: isPercent, isCount: isCount) }
+            )
         }
     }
 
@@ -1955,7 +1905,8 @@ struct StockDetailView: View {
                                 Text(Fmt.currency(unreal + ret.realizedGain, currency: cur)).font(.subheadline.bold())
                                 Text("Unreal: \(Fmt.currency(unreal, currency: cur)) · Real: \(Fmt.currency(ret.realizedGain, currency: cur))").font(.caption2).foregroundStyle(.secondary)
                             }
-                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .gridTile()
+                            .padding(12)
                             .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -1963,7 +1914,8 @@ struct StockDetailView: View {
                                 Text("+\(Fmt.currency(ret.lifetimeDividends, currency: cur))").font(.subheadline.bold()).foregroundStyle(.green)
                                 Text("YoC: \(ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct!) : "—")").font(.caption2).foregroundStyle(.secondary)
                             }
-                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .gridTile()
+                            .padding(12)
                             .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -1971,7 +1923,8 @@ struct StockDetailView: View {
                                 Text("\(ret.fxGainLoss >= 0 ? "+" : "")\(Fmt.currency(ret.fxGainLoss, currency: cur))").font(.subheadline.bold()).foregroundStyle(ret.fxGainLoss >= 0 ? .green : .red)
                                 Text("\(ret.fxGainLossPct >= 0 ? "+" : "")\(Fmt.percent(ret.fxGainLossPct)) on cost").font(.caption2).foregroundStyle(.secondary)
                             }
-                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .gridTile()
+                            .padding(12)
                             .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -1979,7 +1932,8 @@ struct StockDetailView: View {
                                 Text("-\(Fmt.currency(ret.commissions + ret.withholdingTaxes, currency: cur))").font(.subheadline.bold()).foregroundStyle(.red)
                                 Text("Fees: \(Fmt.currency(ret.commissions, currency: cur)) · Tax: \(Fmt.currency(ret.withholdingTaxes, currency: cur))").font(.caption2).foregroundStyle(.secondary)
                             }
-                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .gridTile()
+                            .padding(12)
                             .background(Color.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                         }
                     }
@@ -1990,44 +1944,19 @@ struct StockDetailView: View {
                     card("Open FIFO Tax Lots (\(pos.openLots.count))") {
                         VStack(spacing: 8) {
                             ForEach(pos.openLots) { lot in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack(alignment: .center) {
-                                        HStack(spacing: 6) {
-                                            Text(lot.date)
-                                                .font(.subheadline.weight(.semibold))
-                                                .lineLimit(1)
-                                                .fixedSize(horizontal: true, vertical: false)
-                                            Text(lot.account)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                            Text(lot.taxTerm == "long_term" ? "Long-Term" : "Short-Term")
-                                                .font(.system(size: 9, weight: .bold))
-                                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                                .background(lot.taxTerm == "long_term" ? Color.green.opacity(0.15) : Color.blue.opacity(0.15), in: Capsule())
-                                                .foregroundStyle(lot.taxTerm == "long_term" ? Color.green : Color.blue)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer(minLength: 8)
-                                        Text(Fmt.currency(lot.marketValueDisplay, currency: cur))
-                                            .font(.subheadline.weight(.semibold))
-                                            .lineLimit(1)
-                                    }
-
-                                    HStack(alignment: .center) {
-                                        Text("\(Fmt.number(lot.quantity, fractionDigits: 4)) shares @ \(Fmt.currency(lot.costPerShareLocal, currency: pos.localCurrency))")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 8)
-                                        Text("\(lot.unrealizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(lot.unrealizedGainDisplay, currency: cur)) (\(Fmt.percent(lot.unrealizedGainPct)))")
-                                            .font(.caption.weight(.medium))
-                                            .foregroundStyle(lot.unrealizedGainDisplay >= 0 ? .green : .red)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                .padding(10)
-                                .background(Color.gray.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                                LotDetailRow(
+                                    title: MarketTime.formatted(lot.date),
+                                    badge: lot.taxTerm == "long_term"
+                                        ? (text: "LT", tint: .green)
+                                        : (text: "ST", tint: .blue),
+                                    headline: Fmt.currencyWhole(lot.marketValueDisplay, code: cur),
+                                    detail: "\(Fmt.shares(lot.quantity)) sh @ \(Fmt.currency(lot.costPerShareLocal, currency: pos.localCurrency))",
+                                    detailValue: Fmt.currencyWhole(lot.unrealizedGainDisplay, code: cur, signed: true),
+                                    detailTint: lot.unrealizedGainDisplay >= 0 ? .green : .red,
+                                    footnote: lot.account,
+                                    footnoteValue: Fmt.percent(lot.unrealizedGainPct, includeSign: true),
+                                    footnoteTint: lot.unrealizedGainPct >= 0 ? .green : .red
+                                )
                             }
                         }
                     }
@@ -2038,38 +1967,14 @@ struct StockDetailView: View {
                     card("Closed Trades & Realized Sells (\(pos.closedTrades.count))") {
                         VStack(spacing: 8) {
                             ForEach(pos.closedTrades) { trade in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack(alignment: .center) {
-                                        HStack(spacing: 6) {
-                                            Text(trade.sellDate)
-                                                .font(.subheadline.weight(.semibold))
-                                                .lineLimit(1)
-                                                .fixedSize(horizontal: true, vertical: false)
-                                            Text(trade.account)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer(minLength: 8)
-                                        Text("Proceeds: \(Fmt.currency(trade.proceedsDisplay, currency: cur))")
-                                            .font(.caption.weight(.medium))
-                                            .lineLimit(1)
-                                    }
-
-                                    HStack(alignment: .center) {
-                                        Text("Sold \(Fmt.number(trade.quantitySold, fractionDigits: 4)) shares @ \(Fmt.currency(trade.salePrice, currency: pos.localCurrency))")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 8)
-                                        Text("Gain: \(trade.realizedGainDisplay >= 0 ? "+" : "")\(Fmt.currency(trade.realizedGainDisplay, currency: cur))")
-                                            .font(.subheadline.weight(.bold))
-                                            .foregroundStyle(trade.realizedGainDisplay >= 0 ? .green : .red)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                .padding(10)
-                                .background(Color.gray.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                                LotDetailRow(
+                                    title: MarketTime.formatted(trade.sellDate),
+                                    headline: Fmt.currencyWhole(trade.proceedsDisplay, code: cur),
+                                    detail: "\(Fmt.shares(trade.quantitySold)) sh @ \(Fmt.currency(trade.salePrice, currency: pos.localCurrency))",
+                                    detailValue: "Gain \(Fmt.currencyWhole(trade.realizedGainDisplay, code: cur, signed: true))",
+                                    detailTint: trade.realizedGainDisplay >= 0 ? .green : .red,
+                                    footnote: trade.account
+                                )
                             }
                         }
                     }
@@ -2106,14 +2011,48 @@ struct StockDetailView: View {
                 }
                 Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
             }
-            HStack(alignment: .bottom) {
-                Text(value).font(.title3.weight(.bold)).foregroundStyle(icon == nil ? iconTint : .primary).lineLimit(1).minimumScaleFactor(0.6)
-                Spacer()
-                if let sub { Text(sub).font(.caption2.weight(.bold)).foregroundStyle(subTint ?? iconTint) }
+            // The figure and its percentage used to share one line with no way
+            // out: the figure could shrink only to 0.6, and the percentage —
+            // one unbreakable word with no `lineLimit` — could not shrink at
+            // all. Together they demanded more than a two-column tile is
+            // offered on a phone, the grid row overflowed, and a vertical
+            // ScrollView adopts an over-wide child as its own width and
+            // re-proposes it to everything in it. That is how two tiles pushed
+            // this whole page off the right edge. `ViewThatFits` drops the
+            // percentage onto its own line rather than demanding the room.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .bottom, spacing: 6) {
+                    valueText(value, icon: icon, iconTint: iconTint)
+                    Spacer(minLength: 4)
+                    subText(sub, subTint ?? iconTint)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    valueText(value, icon: icon, iconTint: iconTint)
+                    subText(sub, subTint ?? iconTint)
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
+        .gridTile()
+        .padding(16)
         .background(bgTint ?? Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func valueText(_ value: String, icon: String?, iconTint: Color) -> some View {
+        Text(value)
+            .font(.title3.weight(.bold))
+            .foregroundStyle(icon == nil ? iconTint : .primary)
+            .lineLimit(1).minimumScaleFactor(0.6)
+    }
+
+    @ViewBuilder private func subText(_ sub: String?, _ tint: Color) -> some View {
+        if let sub {
+            Text(sub)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(tint)
+                // A single unbreakable word demands its full width unless it is
+                // allowed to shrink; without this it is a hard minimum.
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
     }
 
     private func compact(_ v: Double) -> String {
@@ -2123,8 +2062,6 @@ struct StockDetailView: View {
         if a >= 1_000 { return String(format: "%.1fK", v / 1_000) }
         return Fmt.number(v, fractionDigits: 0)
     }
-
-    static let dateFmt: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; return f }()
 
     static func md(_ s: String) -> AttributedString {
         (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)

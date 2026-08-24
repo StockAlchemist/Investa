@@ -1188,6 +1188,45 @@ async def get_stock_position(
         )
 
 
+def _position_local_currency(df_sym: pd.DataFrame, account_currency_map: Dict) -> str:
+    """The currency a position's ledger is denominated in (defaults to USD)."""
+    if (
+        "Local Currency" in df_sym.columns
+        and not df_sym["Local Currency"].dropna().empty
+    ):
+        return str(df_sym["Local Currency"].dropna().iloc[0]).upper().strip()
+    if account_currency_map:
+        acc_name = (
+            df_sym["Account"].dropna().iloc[0]
+            if "Account" in df_sym.columns and not df_sym["Account"].dropna().empty
+            else None
+        )
+        if acc_name and acc_name in account_currency_map:
+            return account_currency_map[acc_name].upper().strip()
+    return "USD"
+
+
+def _usd_fx_pair(currency_code: str) -> Optional[str]:
+    """The Yahoo pair quoting ``currency_code`` per USD (None for USD itself)."""
+    code = (currency_code or "").upper().strip()
+    if not code or code == "USD":
+        return None
+    # THB=X is not quoted by Yahoo; the explicit USDTHB=X pair is.
+    return "USDTHB=X" if code == "THB" else f"{code}=X"
+
+
+def _fx_rate_series(fx_df: Optional[pd.DataFrame], index: pd.Index) -> pd.Series:
+    """Daily rate series aligned to ``index``; all 1.0 when the pair is missing."""
+    if fx_df is None or fx_df.empty:
+        return pd.Series(1.0, index=index)
+    rate_c = next((c for c in ("price", "Close", "rate") if c in fx_df.columns), None)
+    if rate_c is None:
+        return pd.Series(1.0, index=index)
+    s = pd.to_numeric(fx_df[rate_c], errors="coerce").copy()
+    s.index = pd.to_datetime(s.index, utc=True)
+    return s.reindex(index).ffill().bfill().fillna(1.0).astype(float)
+
+
 @router.get("/stock/{symbol}/position_history")
 async def get_stock_position_history(
     symbol: str,
@@ -1292,23 +1331,27 @@ async def get_stock_position_history(
 
         calc_start_date = min(first_tx_date, display_start_date)
 
-        # 1. Historical FX for currency conversions
-        _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
-            df=df,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map=user_symbol_map,
-            user_excluded_symbols=user_excluded_symbols,
-            account_currency_map=account_currency_map,
-            original_csv_file_path=original_csv_path,
-            start_date=calc_start_date,
-            end_date=end_date,
-            interval="D",
-            benchmark_symbols_yf=[],
-            display_currency=currency,
-            include_accounts=accounts if isinstance(accounts, list) else None,
-            account_cash_mode_map=account_cash_mode_map,
-            db_mtime=db_mtime,
-        )
+        # 1. Historical FX for currency conversions.
+        # Only this position's own currency pair is needed, so fetch that series
+        # directly instead of recomputing the whole portfolio's daily history
+        # (which is what this used to do just to read one FX column out of it).
+        target_curr_upper = currency.upper()
+        local_curr = _position_local_currency(df_sym, account_currency_map)
+
+        historical_fx_yf: Dict[str, pd.DataFrame] = {}
+        local_pair = _usd_fx_pair(local_curr)
+        target_pair = _usd_fx_pair(target_curr_upper)
+        if local_curr != target_curr_upper:
+            wanted = [p for p in (local_pair, target_pair) if p]
+            historical_fx_yf, _fx_err = await asyncio.to_thread(
+                get_mdp().get_historical_fx_rates,
+                wanted,
+                calc_start_date - timedelta(days=10),
+                end_date,
+                "1d",
+                True,
+                f"PROC_FX_HIST_{'_'.join(sorted(wanted))}",
+            )
 
         # 2. Benchmarks mapping
         mapped_benchmarks = []
@@ -1407,42 +1450,23 @@ async def get_stock_position_history(
 
         raw_price_series = price_adjusted_series * factors
 
-        # 4. FX series for display currency conversion
-        target_curr_upper = currency.upper()
-        # Find default account currency or from transaction
-        local_curr = "USD"
-        if (
-            "Local Currency" in df_sym.columns
-            and not df_sym["Local Currency"].dropna().empty
-        ):
-            local_curr = str(df_sym["Local Currency"].dropna().iloc[0]).upper().strip()
-        elif account_currency_map:
-            acc_name = (
-                df_sym["Account"].dropna().iloc[0]
-                if "Account" in df_sym.columns and not df_sym["Account"].dropna().empty
-                else None
-            )
-            if acc_name and acc_name in account_currency_map:
-                local_curr = account_currency_map[acc_name].upper().strip()
-
+        # 4. FX series for display currency conversion. Yahoo's pairs are all
+        # quoted per USD, so display/local = (display per USD) / (local per USD).
+        # A local currency other than USD used to be ignored, which showed a SET
+        # position's raw baht under a "$" label.
         fx_series = pd.Series(1.0, index=raw_price_series.index)
         if local_curr != target_curr_upper and historical_fx_yf:
-            fx_pair = f"{target_curr_upper}=X"
-            if fx_pair not in historical_fx_yf and target_curr_upper == "THB":
-                fx_pair = "USDTHB=X"
-            if fx_pair in historical_fx_yf:
-                fx_df = historical_fx_yf[fx_pair]
-                rate_c = (
-                    "price"
-                    if "price" in fx_df.columns
-                    else ("Close" if "Close" in fx_df.columns else "rate")
-                )
-                if rate_c in fx_df.columns:
-                    s = fx_df[rate_c].copy()
-                    s.index = pd.to_datetime(s.index, utc=True)
-                    fx_series = (
-                        s.reindex(raw_price_series.index).ffill().bfill().fillna(1.0)
-                    )
+            local_per_usd = _fx_rate_series(
+                historical_fx_yf.get(local_pair), raw_price_series.index
+            )
+            target_per_usd = _fx_rate_series(
+                historical_fx_yf.get(target_pair), raw_price_series.index
+            )
+            fx_series = (
+                (target_per_usd / local_per_usd)
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(1.0)
+            )
 
         # 5. Benchmark price series
         bm_series_dict = {}

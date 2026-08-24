@@ -35,7 +35,19 @@ final class LogoLoader {
 struct StockIcon: View {
     let symbol: String
     var size: CGFloat = 18
+    /// Grows the tile with the reader's Dynamic Type setting. On for icons that
+    /// sit beside body-sized text in a list row — at an accessibility size a
+    /// fixed 20pt logo next to a 24pt ticker reads as a stray dot rather than as
+    /// the company's mark. Off by default, because the icons drawn into a
+    /// geometry-sized frame (donut ring labels, treemap tiles) must stay keyed
+    /// to that frame and not to the type size.
+    var scalesWithText: Bool = false
     @State private var loader = LogoLoader()
+    @ScaledMetric(relativeTo: .body) private var typeScale: CGFloat = 1
+
+    /// Capped: past about 1.8× the tile stops being an icon beside a row and
+    /// starts being the row.
+    private var side: CGFloat { scalesWithText ? size * min(typeScale, 1.8) : size }
 
     // Ticker → brand domain. Used both for Clearbit (accurate logos) and the
     // favicon fallback. Covers the large/mid caps FMP commonly mis-serves.
@@ -103,11 +115,11 @@ struct StockIcon: View {
                     monogram
                 }
             } else {
-                RoundedRectangle(cornerRadius: size * 0.22).fill(.gray.opacity(0.15))
+                RoundedRectangle(cornerRadius: side * 0.22).fill(.gray.opacity(0.15))
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: side * 0.22))
         .task(id: symbol) {
             if !isCash && PlatformImage(named: symbol.lowercased()) == nil {
                 await loader.load(symbol: symbol, sources: sources)
@@ -123,8 +135,8 @@ struct StockIcon: View {
         image
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .padding(size * 0.16)
-            .frame(width: size, height: size)
+            .padding(side * 0.16)
+            .frame(width: side, height: side)
             .background(bgColor)
     }
 
@@ -133,13 +145,13 @@ struct StockIcon: View {
         let color = palette[abs(hash(symbol)) % palette.count]
         return color.overlay(
             Text(symbol.prefix(1).uppercased())
-                .font(.system(size: size * 0.5, weight: .bold)).foregroundStyle(.white))
+                .font(.system(size: side * 0.5, weight: .bold)).foregroundStyle(.white))
     }
 
     private var cashMonogram: some View {
         let sym = symbol.contains("฿") || symbol.uppercased().contains("THB") ? "฿" : "$"
         return Color.gray.opacity(0.2).overlay(
-            Text(sym).font(.system(size: size * 0.55, weight: .bold)).foregroundStyle(.primary))
+            Text(sym).font(.system(size: side * 0.55, weight: .bold)).foregroundStyle(.primary))
     }
 
     private func hash(_ s: String) -> Int {

@@ -4,6 +4,7 @@ import { Minus, Plus } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
+import { formatCalendarDate } from '../../lib/market_time';
 
 interface ReturnsChartProps {
     data: AssetChangeData | null;
@@ -203,7 +204,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                     <div className="bg-background/98 backdrop-blur-2xl p-3 rounded-xl border border-border/60 shadow-2xl">
                                         <p className="font-medium text-foreground mb-1 text-sm">
                                             {typeof label === 'string' && !isNaN(Date.parse(label))
-                                                ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                                                ? formatCalendarDate(label)
                                                 : label}
                                         </p>
                                         <div className="space-y-1">
