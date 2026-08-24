@@ -61,12 +61,12 @@ struct AccountGroupManagerView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "person.2.fill")
                         .foregroundStyle(Color.indigo)
-                        .font(.title3)
+                        .appFont(.title3)
                     Text("Custom Account Groups")
-                        .font(.title3.bold())
+                        .appFont(.title3.bold())
                 }
                 Text("Create custom groups of accounts for quick filtering. Drag or use arrows to reorder.")
-                    .font(.subheadline)
+                    .appFont(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
@@ -80,7 +80,7 @@ struct AccountGroupManagerView: View {
                         Image(systemName: "plus")
                         Text("Create Group")
                     }
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(.system(size: 13, weight: .semibold))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                 }
@@ -99,9 +99,9 @@ struct AccountGroupManagerView: View {
                 HStack(spacing: 8) {
                     Image(systemName: editingGroupName != nil ? "pencil" : "plus.circle.fill")
                         .foregroundStyle(Color.indigo)
-                        .font(.headline)
+                        .appFont(.headline)
                     Text(editingGroupName != nil ? "Edit Group" : "New Account Group")
-                        .font(.headline.bold())
+                        .appFont(.headline.bold())
                 }
 
                 Spacer()
@@ -110,7 +110,7 @@ struct AccountGroupManagerView: View {
                     cancelForm()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
+                        .appFont(.system(size: 12, weight: .bold))
                         .foregroundStyle(.secondary)
                         .padding(6)
                         .background(Color.primary.opacity(0.06), in: Circle())
@@ -124,23 +124,23 @@ struct AccountGroupManagerView: View {
             // Group Name Input
             VStack(alignment: .leading, spacing: 6) {
                 Text("GROUP NAME")
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(.system(size: 11, weight: .bold))
                     .foregroundStyle(.secondary)
 
                 TextField("e.g. Retirement, Short Term", text: $groupNameInput)
                     .textFieldStyle(.roundedBorder)
-                    .font(.body)
+                    .appFont(.body)
             }
 
             // Account Selection Section
             VStack(alignment: .leading, spacing: 8) {
                 Text("SELECT ACCOUNTS")
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(.system(size: 11, weight: .bold))
                     .foregroundStyle(.secondary)
 
                 if configurableAccounts.isEmpty {
                     Text("No configurable accounts available.")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     let columns = [GridItem(.adaptive(minimum: 150), spacing: 8)]
@@ -152,11 +152,11 @@ struct AccountGroupManagerView: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                        .font(.system(size: 15, weight: .medium))
+                                        .appFont(.system(size: 15, weight: .medium))
                                         .foregroundStyle(isSelected ? Color.indigo : Color.secondary)
 
                                     Text(acc)
-                                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                                        .appFont(.system(size: 13, weight: isSelected ? .semibold : .regular))
                                         .foregroundStyle(isSelected ? Color.indigo : Color.primary)
                                         .lineLimit(1)
 
@@ -188,7 +188,7 @@ struct AccountGroupManagerView: View {
 
                     HStack {
                         Text("\(selectedAccounts.count) account\(selectedAccounts.count == 1 ? "" : "s") selected")
-                            .font(.system(size: 11, weight: .medium))
+                            .appFont(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -236,13 +236,13 @@ struct AccountGroupManagerView: View {
             if orderedGroupNames.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "person.2")
-                        .font(.system(size: 32))
+                        .appFont(.system(size: 32))
                         .foregroundStyle(Color.secondary.opacity(0.6))
                     Text("No groups defined yet.")
-                        .font(.body)
+                        .appFont(.body)
                         .foregroundStyle(.secondary)
                     Text("Create custom account groups to quickly filter dashboard metrics and views.")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(Color.secondary.opacity(0.8))
                 }
                 .frame(maxWidth: .infinity)
@@ -268,7 +268,7 @@ struct AccountGroupManagerView: View {
             // Drag / Grip indicator & Reorder buttons
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 14))
+                    .appFont(.system(size: 14))
                     .foregroundStyle(Color.secondary.opacity(0.7))
                     .frame(width: 18)
 
@@ -277,7 +277,7 @@ struct AccountGroupManagerView: View {
                         moveGroup(name, by: -1)
                     } label: {
                         Image(systemName: "chevron.up")
-                            .font(.system(size: 10, weight: .bold))
+                            .appFont(.system(size: 10, weight: .bold))
                             .foregroundStyle(index > 0 ? Color.primary : Color.secondary.opacity(0.3))
                     }
                     .buttonStyle(.plain)
@@ -287,7 +287,7 @@ struct AccountGroupManagerView: View {
                         moveGroup(name, by: 1)
                     } label: {
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
+                            .appFont(.system(size: 10, weight: .bold))
                             .foregroundStyle(index < orderedGroupNames.count - 1 ? Color.primary : Color.secondary.opacity(0.3))
                     }
                     .buttonStyle(.plain)
@@ -299,10 +299,10 @@ struct AccountGroupManagerView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(name)
-                        .font(.headline.bold())
+                        .appFont(.headline.bold())
 
                     Text("\(members.count)")
-                        .font(.system(size: 11, weight: .semibold))
+                        .appFont(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -311,12 +311,12 @@ struct AccountGroupManagerView: View {
 
                 if members.isEmpty {
                     Text("No accounts assigned")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(Color.secondary.opacity(0.7))
                         .italic()
                 } else {
                     Text(members.joined(separator: ", "))
-                        .font(.system(size: 12, design: .monospaced))
+                        .appFont(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -330,7 +330,7 @@ struct AccountGroupManagerView: View {
                     startEditing(name: name, accounts: members)
                 } label: {
                     Image(systemName: "pencil")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color.indigo)
                         .padding(8)
                         .background(Color.indigo.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -343,7 +343,7 @@ struct AccountGroupManagerView: View {
                     showingDeleteAlert = true
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color.red)
                         .padding(8)
                         .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))

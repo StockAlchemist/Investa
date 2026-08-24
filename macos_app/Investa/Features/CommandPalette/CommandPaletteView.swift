@@ -39,9 +39,9 @@ struct CommandPaletteView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search pages or symbols…", text: $query).textFieldStyle(.plain).font(.title3).focused($focused)
+                TextField("Search pages or symbols…", text: $query).textFieldStyle(.plain).appFont(.title3).focused($focused)
                 if loading { ProgressView().controlSize(.small) }
-                Text("esc").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 5).padding(.vertical, 2)
+                Text("esc").appFont(.caption2).foregroundStyle(.secondary).padding(.horizontal, 5).padding(.vertical, 2)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
             }
             .padding(16)
@@ -51,13 +51,13 @@ struct CommandPaletteView: View {
                     ForEach(["Portfolio", "Tools", "Settings"], id: \.self) { group in
                         let items = filteredNav.filter { $0.group == group }
                         if !items.isEmpty {
-                            Text(group.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(group.uppercased()).appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                                 .padding(.horizontal, 12).padding(.top, 8)
                             ForEach(items) { cmd in navRow(cmd) }
                         }
                     }
                     if !results.isEmpty {
-                        Text("STOCKS").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("STOCKS").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                             .padding(.horizontal, 12).padding(.top, 8)
                         ForEach(results) { stockRow($0) }
                     }
@@ -83,7 +83,7 @@ struct CommandPaletteView: View {
             dismiss()
         } label: {
             HStack { Image(systemName: cmd.icon).frame(width: 20).foregroundStyle(.secondary); Text(cmd.label); Spacer()
-                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary) }
+                Image(systemName: "chevron.right").appFont(.caption2).foregroundStyle(.secondary) }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .contentShape(Rectangle())
         }
@@ -98,7 +98,7 @@ struct CommandPaletteView: View {
                 Text(r.name).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 if !r.type.isEmpty {
-                    Text(r.type.uppercased()).font(.caption2.weight(.bold))
+                    Text(r.type.uppercased()).appFont(.caption2.weight(.bold))
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(.tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                 }

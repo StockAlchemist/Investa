@@ -114,7 +114,7 @@ struct PositionHistoryChartView: View {
             Text(viewMode == .value
                  ? "Market value & cost basis over time\(pts.last?.shares ?? 0 < 1e-6 ? " (Position closed)" : "")"
                  : "Holding return % over selected period")
-                .font(.caption2)
+                .appFont(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
@@ -142,9 +142,9 @@ struct PositionHistoryChartView: View {
         HStack(spacing: 6) {
             Image(systemName: viewMode == .value ? "chart.pie.fill" : "chart.line.uptrend.xyaxis")
                 .foregroundStyle(viewMode == .value ? Color.indigo : Color.green)
-                .font(.system(size: 14))
+                .appFont(.system(size: 14))
             Text("Position History")
-                .font(.headline)
+                .appFont(.headline)
                 .lineLimit(1).minimumScaleFactor(0.8)
         }
     }
@@ -170,7 +170,7 @@ struct PositionHistoryChartView: View {
 
     private func badge(_ text: String, tint: Color, background: Color) -> some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .appFont(.caption2.weight(.bold))
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(background, in: Capsule())
             .foregroundStyle(tint)
@@ -196,7 +196,7 @@ struct PositionHistoryChartView: View {
                         period = value
                     } label: {
                         Text(label)
-                            .font(.caption2.weight(.semibold))
+                            .appFont(.caption2.weight(.semibold))
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(period == value ? Color.accentColor : Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
                             .foregroundStyle(period == value ? .white : .secondary)
@@ -210,7 +210,7 @@ struct PositionHistoryChartView: View {
     private var benchmarkRow: some View {
         HStack(spacing: 8) {
             Text("COMPARE")
-                .font(.system(size: 10, weight: .bold))
+                .appFont(.system(size: 10, weight: .bold))
                 .foregroundStyle(.secondary)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -229,7 +229,7 @@ struct PositionHistoryChartView: View {
                                     .fill(isSelected ? .white : b.color)
                                     .frame(width: 6, height: 6)
                                 Text(b.name)
-                                    .font(.system(size: 10, weight: .bold))
+                                    .appFont(.system(size: 10, weight: .bold))
                             }
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(isSelected ? b.color : Color.gray.opacity(0.12), in: Capsule())
@@ -406,7 +406,7 @@ struct PositionHistoryChartView: View {
                         Text(viewMode == .value
                              ? Fmt.compact(d, code: currency)
                              : "\(d >= 0 ? "+" : "")\(Fmt.number(d, fractionDigits: 0))%")
-                            .font(.caption2)
+                            .appFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -418,7 +418,7 @@ struct PositionHistoryChartView: View {
                 if let date = value.as(Date.self) {
                     AxisValueLabel {
                         Text(formatXDate(date))
-                            .font(.caption2)
+                            .appFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }

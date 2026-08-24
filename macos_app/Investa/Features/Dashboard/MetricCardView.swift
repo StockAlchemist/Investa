@@ -37,7 +37,7 @@ struct MetricCardView: View {
                 // Row 1: Section Label + Top-right Icon Badge
                 HStack(alignment: .top, spacing: 6) {
                     Text(card.title)
-                        .font(.system(size: 10, weight: .heavy))
+                        .appFont(.system(size: 10, weight: .heavy))
                         .tracking(1.2)
                         .textCase(.uppercase)
                         .foregroundStyle(Color.sectionText)
@@ -47,7 +47,7 @@ struct MetricCardView: View {
                     Spacer(minLength: 4)
 
                     Image(systemName: card.icon)
-                        .font(.system(size: 10, weight: .semibold))
+                        .appFont(.system(size: 10, weight: .semibold))
                         .foregroundStyle(card.accent)
                         .frame(width: 22, height: 22)
                         .background(card.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -56,7 +56,7 @@ struct MetricCardView: View {
 
                 // Row 2: Large primary value (single line, tabular digits)
                 Text(card.value)
-                    .font(.system(size: 19, weight: .bold))
+                    .appFont(.system(size: 19, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(card.tint)
                     .lineLimit(1)

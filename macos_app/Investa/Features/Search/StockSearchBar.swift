@@ -51,7 +51,7 @@ struct StockSearchBar: View {
                 if loading {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
+                    Image(systemName: "magnifyingglass").appFont(.caption).foregroundStyle(.secondary)
                 }
             }
             .frame(width: 16, height: 16)
@@ -60,7 +60,7 @@ struct StockSearchBar: View {
             // but is hidden and clipped away while the bar is collapsed.
             TextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
-                .font(.callout)
+                .appFont(.callout)
                 .focused($focused)
                 .autocorrectionDisabled()
                 #if os(iOS)
@@ -75,7 +75,7 @@ struct StockSearchBar: View {
                 Button {
                     query = ""; results = []; focused = true
                 } label: {
-                    Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
+                    Image(systemName: "xmark.circle.fill").appFont(.caption).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -139,11 +139,11 @@ struct StockSearchBar: View {
                 StockIcon(symbol: r.symbol, size: 26)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(r.symbol).font(.callout.bold())
+                        Text(r.symbol).appFont(.callout.bold())
                         typeBadge(r.type)
                     }
                     if !r.name.isEmpty {
-                        Text(r.name).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Text(r.name).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer()
@@ -157,7 +157,7 @@ struct StockSearchBar: View {
     @ViewBuilder private func typeBadge(_ type: String) -> some View {
         if !type.isEmpty {
             Text(typeLabel(type))
-                .font(.system(size: 10, weight: .bold))
+                .appFont(.system(size: 10, weight: .bold))
                 .textCase(.uppercase)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(typeColor(type).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))

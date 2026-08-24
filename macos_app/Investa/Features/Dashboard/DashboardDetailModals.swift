@@ -184,16 +184,16 @@ private struct SheetHeader: View {
     let dismiss: () -> Void
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: icon).font(.title2).foregroundStyle(tint)
+            Image(systemName: icon).appFont(.title2).foregroundStyle(tint)
                 .frame(width: 44, height: 44)
                 .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.title2.bold())
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                Text(title).appFont(.title2.bold())
+                Text(subtitle).appFont(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.plain).font(.title2).foregroundStyle(.secondary)
+                .buttonStyle(.plain).appFont(.title2).foregroundStyle(.secondary)
         }
         .padding(20)
     }
@@ -229,7 +229,7 @@ struct InsightsDetailSheet: View {
                     if shows(.undervalued), !details.undervalued.isEmpty { undervaluedSection }
                     if !isAll, currentEmpty {
                         VStack(spacing: 8) {
-                            Image(systemName: "sparkles").font(.title).foregroundStyle(.tertiary)
+                            Image(systemName: "sparkles").appFont(.title).foregroundStyle(.tertiary)
                             Text("No records to show.").foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity).padding(.vertical, 40)
                     }
@@ -255,11 +255,11 @@ struct InsightsDetailSheet: View {
 
     private func sectionHeader(_ icon: String, _ tone: InsightTone, _ title: String, _ desc: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon).font(.callout).foregroundStyle(tone.color)
+            Image(systemName: icon).appFont(.callout).foregroundStyle(tone.color)
                 .frame(width: 32, height: 32).background(tone.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout.bold())
-                Text(desc).font(.caption).foregroundStyle(.secondary)
+                Text(title).appFont(.callout.bold())
+                Text(desc).appFont(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -281,7 +281,7 @@ struct InsightsDetailSheet: View {
                         Text("Unrealized").frame(width: 90, alignment: .trailing)
                         Text("Days Left").frame(width: 70, alignment: .trailing)
                     }
-                    .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+                    .appFont(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
                     ForEach(details.ripening) { lot in
                         HStack {
@@ -293,7 +293,7 @@ struct InsightsDetailSheet: View {
                                     Text(lot.symbol).fontWeight(.bold).foregroundStyle(.indigo)
                                 }
                                 .buttonStyle(.plain)
-                                if let a = lot.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                                if let a = lot.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Text(displayDate(lot.date)).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
                             Text(Fmt.number(lot.quantity, fractionDigits: 0)).frame(width: 60, alignment: .trailing)
@@ -301,7 +301,7 @@ struct InsightsDetailSheet: View {
                                 .frame(width: 90, alignment: .trailing)
                             Text("\(lot.daysRemaining)d").fontWeight(.bold).foregroundStyle(.orange).frame(width: 70, alignment: .trailing)
                         }
-                        .font(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
+                        .appFont(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
                         Divider()
                     }
                 }
@@ -318,12 +318,12 @@ struct InsightsDetailSheet: View {
                     dismiss()
                     appState.openStock(lot.symbol)
                 } label: {
-                    Text(lot.symbol).font(.callout.bold()).foregroundStyle(.indigo)
+                    Text(lot.symbol).appFont(.callout.bold()).foregroundStyle(.indigo)
                 }
                 .buttonStyle(.plain)
-                if let a = lot.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                if let a = lot.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
                 Spacer()
-                Text("\(lot.daysRemaining)d left").font(.caption.bold()).foregroundStyle(.orange)
+                Text("\(lot.daysRemaining)d left").appFont(.caption.bold()).foregroundStyle(.orange)
             }
             HStack(alignment: .top) {
                 cardMetric("Acquired", displayDate(lot.date), align: .leading)
@@ -341,8 +341,8 @@ struct InsightsDetailSheet: View {
     private func cardMetric(_ label: String, _ value: String, tint: Color = .primary,
                             align: HorizontalAlignment) -> some View {
         VStack(alignment: align, spacing: 2) {
-            Text(label).font(.system(size: 10, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
-            Text(value).font(.caption).fontWeight(.semibold).foregroundStyle(tint).monospacedDigit()
+            Text(label).appFont(.system(size: 10, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+            Text(value).appFont(.caption).fontWeight(.semibold).foregroundStyle(tint).monospacedDigit()
         }
     }
 
@@ -356,18 +356,18 @@ struct InsightsDetailSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(d.bucket).font(.callout.bold())
-                            Text(d.dim).font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
+                            Text(d.bucket).appFont(.callout.bold())
+                            Text(d.dim).appFont(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text("\(overweight ? "+" : "")\(String(format: "%.1f", d.drift))%")
-                            .font(.callout.weight(.black)).monospacedDigit().foregroundStyle(tone)
+                            .appFont(.callout.weight(.black)).monospacedDigit().foregroundStyle(tone)
                     }
                     HStack {
                         Text("Current ").foregroundStyle(.secondary) + Text(String(format: "%.1f%%", d.currentPct)).fontWeight(.semibold)
                         Spacer()
                         Text("Target ").foregroundStyle(.secondary) + Text(String(format: "%.1f%%", d.targetPct)).fontWeight(.semibold)
-                    }.font(.caption).monospacedDigit()
+                    }.appFont(.caption).monospacedDigit()
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule().fill(.quaternary)
@@ -397,7 +397,7 @@ struct InsightsDetailSheet: View {
                         Text("Position").frame(width: 100, alignment: .trailing)
                         Text("Margin of Safety").frame(width: 120, alignment: .trailing)
                     }
-                    .font(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
+                    .appFont(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6).background(.background.secondary)
                     ForEach(details.undervalued) { u in
                         HStack {
@@ -409,7 +409,7 @@ struct InsightsDetailSheet: View {
                                     Text(u.symbol).fontWeight(.bold).foregroundStyle(.indigo)
                                 }
                                 .buttonStyle(.plain)
-                                if let a = u.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                                if let a = u.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Text(u.intrinsic.map { Fmt.currency($0, code: currency) } ?? "—").foregroundStyle(.secondary)
                                 .frame(width: 100, alignment: .trailing)
@@ -418,7 +418,7 @@ struct InsightsDetailSheet: View {
                             Text(String(format: "%.1f%%", u.mos)).fontWeight(.bold).foregroundStyle(Color.up)
                                 .frame(width: 120, alignment: .trailing)
                         }
-                        .font(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
+                        .appFont(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
                         Divider()
                     }
                 }
@@ -435,12 +435,12 @@ struct InsightsDetailSheet: View {
                     dismiss()
                     appState.openStock(u.symbol)
                 } label: {
-                    Text(u.symbol).font(.callout.bold()).foregroundStyle(.indigo)
+                    Text(u.symbol).appFont(.callout.bold()).foregroundStyle(.indigo)
                 }
                 .buttonStyle(.plain)
-                if let a = u.account { Text(a).font(.caption2).foregroundStyle(.secondary) }
+                if let a = u.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
                 Spacer()
-                Text(String(format: "%.1f%% MOS", u.mos)).font(.caption.bold()).foregroundStyle(Color.up)
+                Text(String(format: "%.1f%% MOS", u.mos)).appFont(.caption.bold()).foregroundStyle(Color.up)
             }
             HStack(alignment: .top) {
                 cardMetric("Intrinsic", u.intrinsic.map { Fmt.currency($0, code: currency) } ?? "—",
@@ -491,14 +491,14 @@ struct ConfirmedDividendsSheet: View {
                                     VStack(alignment: .leading, spacing: 1) {
                                         HStack(spacing: 5) {
                                             Text(ev.symbol).fontWeight(.bold)
-                                            Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(Color.up)
+                                            Image(systemName: "checkmark.seal.fill").appFont(.caption2).foregroundStyle(Color.up)
                                         }
                                         if let name = ev.name, !name.isEmpty {
-                                            Text(name).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                            Text(name).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                                         }
                                     }
                                     Spacer()
-                                    Text(displayDate(ev.dividendDate)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                                    Text(displayDate(ev.dividendDate)).appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                                     Text(Fmt.currency(ev.amount, code: currency)).fontWeight(.bold).foregroundStyle(Color.up)
                                         .monospacedDigit().frame(width: 100, alignment: .trailing)
                                 }
@@ -538,20 +538,20 @@ struct HealthAnalysisSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Weighting + legend
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Overall Score").font(.callout.bold())
+                        Text("Overall Score").appFont(.callout.bold())
                         Text("The overall score is a weighted average of three key pillars:")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                         HStack(spacing: 10) {
                             weightCell("40%", "Diversification", .up)
                             weightCell("40%", "Efficiency", .up)
                             weightCell("20%", "Stability", Theme.brand)
                         }
-                        Text("Score Legend").font(.system(size: 11, weight: .bold)).textCase(.uppercase)
+                        Text("Score Legend").appFont(.system(size: 11, weight: .bold)).textCase(.uppercase)
                             .foregroundStyle(.secondary).tracking(1).padding(.top, 4)
                         HStack(spacing: 14) {
                             legendDot(.red, "0-39 Critical"); legendDot(.yellow, "40-59 Fair")
                             legendDot(.up, "60-79 Good"); legendDot(Theme.brand, "80-100 Excellent")
-                        }.font(.system(size: 11))
+                        }.appFont(.system(size: 11))
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
@@ -578,8 +578,8 @@ struct HealthAnalysisSheet: View {
 
     private func weightCell(_ pct: String, _ label: String, _ tint: Color) -> some View {
         VStack(spacing: 3) {
-            Text(pct).font(.callout.bold()).foregroundStyle(tint)
-            Text(label).font(.system(size: 11)).textCase(.uppercase).foregroundStyle(.secondary)
+            Text(pct).appFont(.callout.bold()).foregroundStyle(tint)
+            Text(label).appFont(.system(size: 11)).textCase(.uppercase).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 8)
         .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
@@ -593,11 +593,11 @@ struct HealthAnalysisSheet: View {
                                   _ comp: PortfolioHealth.Component, _ desc: String, _ range: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
-                Image(systemName: icon).font(.caption).foregroundStyle(tint)
-                Text(title).font(.callout.bold())
+                Image(systemName: icon).appFont(.caption).foregroundStyle(tint)
+                Text(title).appFont(.callout.bold())
                 Spacer()
                 if let m = comp.metric {
-                    Text(m).font(.caption.monospaced())
+                    Text(m).appFont(.caption.monospaced())
                         .padding(.horizontal, 8).padding(.vertical, 2)
                         .background((comp.score >= 60 ? Color.up : .yellow).opacity(0.12), in: Capsule())
                         .foregroundStyle(comp.score >= 60 ? Color.up : .yellow)
@@ -605,9 +605,9 @@ struct HealthAnalysisSheet: View {
             }
             (Text("Score: ").foregroundStyle(.secondary)
                 + Text("\(Int(comp.score))").fontWeight(.bold) + Text("/100").foregroundStyle(.secondary))
-                .font(.caption)
-            Text(desc).font(.caption).foregroundStyle(.secondary)
-            Text(range).font(.system(size: 11)).foregroundStyle(.secondary)
+                .appFont(.caption)
+            Text(desc).appFont(.caption).foregroundStyle(.secondary)
+            Text(range).appFont(.system(size: 11)).foregroundStyle(.secondary)
                 .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
         }
@@ -668,9 +668,9 @@ struct MetricExplanationSheet: View {
                         block("Interpretation", e.interpretation)
                         if let formula = e.formula {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Approx. Formula").font(.system(size: 11, weight: .bold)).textCase(.uppercase)
+                                Text("Approx. Formula").appFont(.system(size: 11, weight: .bold)).textCase(.uppercase)
                                     .foregroundStyle(.secondary).tracking(1)
-                                Text(formula).font(.callout.monospaced()).foregroundStyle(Theme.brand)
+                                Text(formula).appFont(.callout.monospaced()).foregroundStyle(Theme.brand)
                                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                                     .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 8))
                             }
@@ -689,9 +689,9 @@ struct MetricExplanationSheet: View {
 
     private func block(_ heading: String, _ body: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(heading).font(.system(size: 11, weight: .bold)).textCase(.uppercase)
+            Text(heading).appFont(.system(size: 11, weight: .bold)).textCase(.uppercase)
                 .foregroundStyle(.secondary).tracking(1)
-            Text(body).font(.callout).foregroundStyle(.primary.opacity(0.9))
+            Text(body).appFont(.callout).foregroundStyle(.primary.opacity(0.9))
         }
     }
 }

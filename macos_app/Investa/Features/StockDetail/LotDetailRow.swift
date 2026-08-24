@@ -30,15 +30,15 @@ struct LotDetailRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                Text(title).font(.subheadline.weight(.semibold))
+                Text(title).appFont(.subheadline.weight(.semibold))
                 if let badge { badgeView(badge) }
                 Spacer(minLength: 8)
-                Text(headline).font(.subheadline.weight(.semibold)).monospacedDigit()
+                Text(headline).appFont(.subheadline.weight(.semibold)).monospacedDigit()
             }
             HStack(spacing: 8) {
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+                Text(detail).appFont(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 8)
-                Text(detailValue).font(.caption.weight(.semibold)).foregroundStyle(detailTint).monospacedDigit()
+                Text(detailValue).appFont(.caption.weight(.semibold)).foregroundStyle(detailTint).monospacedDigit()
             }
             if footnote != nil || footnoteValue != nil {
                 HStack(spacing: 8) {
@@ -48,7 +48,7 @@ struct LotDetailRow: View {
                         Text(footnoteValue).fontWeight(.semibold).foregroundStyle(footnoteTint).monospacedDigit()
                     }
                 }
-                .font(.caption2)
+                .appFont(.caption2)
             }
         }
         // One line each, always — applied to the stack so no figure added later
@@ -62,7 +62,7 @@ struct LotDetailRow: View {
 
     private func badgeView(_ badge: (text: String, tint: Color)) -> some View {
         Text(badge.text)
-            .font(.system(size: 9, weight: .black))
+            .appFont(.system(size: 9, weight: .black))
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(badge.tint.opacity(0.15), in: Capsule())
             .foregroundStyle(badge.tint)

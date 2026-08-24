@@ -59,7 +59,7 @@ struct MarketTrendPanel: View {
                     .padding(.vertical, 10)
             } else if available.isEmpty {
                 Label("Market trend unavailable", systemImage: "exclamationmark.triangle")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 6)
             } else {
@@ -76,12 +76,12 @@ struct MarketTrendPanel: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("Market trend")
-                .font(.caption2.weight(.semibold))
+                .appFont(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
             Spacer(minLength: 8)
             Text("\(smaMonths)-month average")
-                .font(.caption2.weight(.semibold))
+                .appFont(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .textCase(.uppercase)
         }
@@ -102,7 +102,7 @@ struct MarketTrendPanel: View {
                         "\(index.label) unavailable — not enough price history for \(index.symbol).",
                         systemImage: "exclamationmark.triangle"
                     )
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 7)
                 }
@@ -124,7 +124,7 @@ struct MarketTrendPanel: View {
             Text("Set at \(setAt), governing \(Self.month(first.governsMonth)); next checked "
                  + "\(MarketTime.shortDay(first.nextDecisionDate)) — readings only change on "
                  + "month-end closes. Context only — no strategy acts on these.")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
@@ -197,23 +197,23 @@ struct MarketTrendRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(signal.signalName ?? label)
-                    .font(.subheadline.weight(.semibold))
+                    .appFont(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Text(signal.signalSymbol)
-                    .font(.caption2.weight(.medium))
+                    .appFont(.caption2.weight(.medium))
                     .foregroundStyle(.tertiary)
 
                 Spacer(minLength: 8)
 
                 Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
-                    .font(.caption.weight(.bold))
+                    .appFont(.caption.weight(.bold))
                     .foregroundStyle(accent)
                 Text(signal.state.label)
-                    .font(.subheadline.weight(.bold))
+                    .appFont(.subheadline.weight(.bold))
                     .foregroundStyle(accent)
                 if let marginPct {
                     Text(String(format: "%@%.1f%%", marginPct >= 0 ? "+" : "", marginPct))
-                        .font(.caption.weight(.medium))
+                        .appFont(.caption.weight(.medium))
                         .monospacedDigit()
                         .foregroundStyle(accent)
                         .help("\(MarketTime.shortDay(signal.decisionDate)) close "
@@ -240,14 +240,14 @@ struct MarketTrendRow: View {
         if signal.wouldFlip {
             let target = signal.provisionalState == .up ? "up" : "down"
             Text("**On track to turn \(target)** at the next month-end close.")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
             let direction = isUp ? "down below" : "up above"
             let distance = signal.distancePct.map { String(format: " — now %.1f%% away.", abs($0)) } ?? "."
             Text("Turns \(direction) **\(Self.money(signal.flipClose))**\(distance)")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

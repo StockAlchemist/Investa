@@ -1,7 +1,7 @@
 'use client';
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Scale, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Scale, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Holding, fetchSettings } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
@@ -19,6 +19,12 @@ const DIMS: { key: BucketDim; label: string; field: keyof Holding | 'Sector' | '
     { key: 'country', label: 'Country', field: 'Country' },
 ];
 
+// Buckets within this share of the portfolio are treated as on target. It is
+// also the point at which an unclassified holding stops being noise: once the
+// Unknown bucket clears it, every other bucket's *current* weight is understated
+// by more than the card's own precision, so no trade it suggests can be trusted.
+const TOLERANCE = 0.005;
+
 function isUnknown(v: unknown): boolean {
     if (v == null) return true;
     const s = String(v).trim().toUpperCase();
@@ -31,19 +37,29 @@ export default function RebalanceHelper({ holdings, currency }: RebalanceHelperP
     const [dim, setDim] = useState<BucketDim>('quoteType');
     const settingsQuery = useQuery({ queryKey: ['settings', user?.username], queryFn: fetchSettings, staleTime: 5 * 60 * 1000 });
 
-    const { rows, total, hasTargets } = useMemo(() => {
+    const { rows, total, hasTargets, unknownValue, unknownSymbols } = useMemo(() => {
         const mvKey = `Market Value (${currency})`;
         const dimDef = DIMS.find(d => d.key === dim)!;
         const targets = (settingsQuery.data?.target_allocation as Record<string, Record<string, number>> | undefined)?.[dim] ?? {};
 
         const agg: Record<string, number> = {};
+        let unknownVal = 0;
+        const unknownSyms = new Set<string>();
         for (const h of holdings) {
             const v = Math.max(0, (h[mvKey] as number) || 0);
             const raw = dimDef.field === 'Country'
                 ? ((h['geography'] as string) || (h['Country'] as string))
                 : (h[dimDef.field] as unknown);
-            const cat = isUnknown(raw) ? 'Unknown' : (raw as string);
+            const unclassified = isUnknown(raw);
+            const cat = unclassified ? 'Unknown' : (raw as string);
             agg[cat] = (agg[cat] || 0) + v;
+            // A holding lands here when its metadata fetch failed, not because it
+            // belongs to some residual asset class — track the symbols so the
+            // reader can see which positions are missing their classification.
+            if (unclassified && v > 0) {
+                unknownVal += v;
+                if (h.Symbol) unknownSyms.add(String(h.Symbol));
+            }
         }
         const tot = Object.values(agg).reduce((s, v) => s + v, 0);
 
@@ -61,8 +77,21 @@ export default function RebalanceHelper({ holdings, currency }: RebalanceHelperP
             .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
         const targetSum = Object.values(targets).reduce((s, v) => s + v, 0);
-        return { rows: out, total: tot, hasTargets: targetSum > 0 };
+        return {
+            rows: out,
+            total: tot,
+            hasTargets: targetSum > 0,
+            unknownValue: unknownVal,
+            unknownSymbols: Array.from(unknownSyms).sort(),
+        };
     }, [holdings, currency, dim, settingsQuery.data]);
+
+    // Trades are priced off every bucket's current weight, and an unclassified
+    // holding drags all of them down at once. Suggesting a sale of "Unknown"
+    // would be telling the reader to sell the very positions the Buy rows are
+    // asking them to buy back — so suppress the trades until it resolves.
+    const unknownShare = total > 0 ? unknownValue / total : 0;
+    const blocked = unknownShare >= TOLERANCE;
 
     return (
         <div className="metric-card p-5">
@@ -92,6 +121,32 @@ export default function RebalanceHelper({ holdings, currency }: RebalanceHelperP
                     No targets set for {DIMS.find(d => d.key === dim)!.label.toLowerCase()}.
                     Set them in the drift card above to see suggested rebalancing trades.
                 </p>
+            ) : blocked ? (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+                    <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <div className="space-y-2 text-xs leading-relaxed">
+                            <p className="font-semibold text-foreground">
+                                No trades suggested — {(unknownShare * 100).toFixed(1)}% of the portfolio
+                                is unclassified.
+                            </p>
+                            <p className="text-muted-foreground">
+                                {formatCurrency(unknownValue, currency)} of holdings have no{' '}
+                                {DIMS.find(d => d.key === dim)!.label.toLowerCase()}, so every bucket&apos;s
+                                current weight is understated and any trade sized against it would be
+                                wrong. &quot;Unknown&quot; is missing data, not an asset class — selling it
+                                would mean selling the same positions the buy rows ask you to buy back.
+                            </p>
+                            {unknownSymbols.length > 0 && (
+                                <p className="text-muted-foreground">
+                                    Affected: <span className="font-semibold text-foreground">{unknownSymbols.join(', ')}</span>.
+                                    Their market data usually fills in on the next refresh; a symbol that
+                                    stays unclassified can be given one in Settings → Manual Overrides.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
             ) : (
                 <>
                     <div className="overflow-x-auto">

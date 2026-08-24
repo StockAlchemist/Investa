@@ -150,10 +150,10 @@ struct StockValuationTabView: View {
                     let tint: Color = iv.isRefusal ? .secondary : .orange
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: iv.isRefusal ? "info.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(tint).font(.title3)
+                            .foregroundStyle(tint).appFont(.title3)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(valuationNoteTitle(iv)).font(.caption.weight(.bold)).foregroundStyle(tint).textCase(.uppercase)
-                            Text(note).font(.subheadline.italic()).foregroundStyle(tint)
+                            Text(valuationNoteTitle(iv)).appFont(.caption.weight(.bold)).foregroundStyle(tint).textCase(.uppercase)
+                            Text(note).appFont(.subheadline.italic()).foregroundStyle(tint)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -178,7 +178,7 @@ struct StockValuationTabView: View {
                 if (f?.isETF ?? false) && (iv.models?.dcf == nil && iv.models?.graham == nil) {
                     card("Why standard models aren't shown?") {
                         Text("Traditional valuation methods like Discounted Cash Flow (DCF) and Graham's Formula rely on free cash flow and earnings growth, which are company-specific metrics. For ETFs, which are baskets of many securities, these metrics cannot be reliably aggregated or projected. Therefore, intrinsic value modeling is not applicable.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .appFont(.callout).foregroundStyle(.secondary)
                     }
                 }
             } else if viewModel.isLoadingFinancials {
@@ -197,13 +197,13 @@ struct StockValuationTabView: View {
         HStack(spacing: 12) {
             Image(systemName: "sparkles")
                 .foregroundStyle(.orange)
-                .font(.title3)
+                .appFont(.title3)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Custom Parameters Active")
-                    .font(.caption.weight(.bold))
+                    .appFont(.caption.weight(.bold))
                     .foregroundStyle(.orange)
                 Text("Intrinsic values and composite score are recalculated in real time.")
-                    .font(.caption2)
+                    .appFont(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -215,7 +215,7 @@ struct StockValuationTabView: View {
                     Image(systemName: "arrow.counterclockwise")
                     Text("Reset All Defaults")
                 }
-                .font(.caption.weight(.bold))
+                .appFont(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -233,7 +233,7 @@ struct StockValuationTabView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 Text("Valuation Method")
-                    .font(.caption.weight(.bold))
+                    .appFont(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                 Spacer(minLength: 8)
@@ -259,10 +259,10 @@ struct StockValuationTabView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text(selectionLabel)
-                            .font(.subheadline.weight(.semibold))
+                            .appFont(.subheadline.weight(.semibold))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                        Image(systemName: "chevron.up.chevron.down").appFont(.caption2)
                     }
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 12)
@@ -273,7 +273,7 @@ struct StockValuationTabView: View {
 
             if effectiveFilter == Self.bestFitSentinel, bestFitKey != nil {
                 Text("Showing the best-fit model only — switch above to compare others.")
-                    .font(.caption2)
+                    .appFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -358,11 +358,11 @@ struct StockValuationTabView: View {
                     Circle().fill(Color.orange).frame(width: 5, height: 5)
                 }
             }
-            Text(val).font(isNote ? .caption : .subheadline.weight(.semibold))
+            Text(val).appFont(isNote ? .caption : .subheadline.weight(.semibold))
                 .foregroundStyle(isCustom ? Color.orange : (isNote ? Color.secondary : .primary))
             if isCustom, let defVal {
                 Text("Default: \(defVal)")
-                    .font(.system(size: 9))
+                    .appFont(.system(size: 9))
                     .foregroundStyle(.secondary)
             }
         }
@@ -438,7 +438,7 @@ struct StockValuationTabView: View {
                 if let n = p["note"]?.stringValue {
                     VStack(alignment: .leading, spacing: 6) {
                         SectionLabel(title: "Note")
-                        Text(n).font(.caption).foregroundStyle(.secondary)
+                        Text(n).appFont(.caption).foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
                 }
@@ -468,7 +468,7 @@ struct StockValuationTabView: View {
                     Text("/").opacity(0.5)
                     Text("Y").fontWeight(.bold)
                 }
-                .font(.system(.body, design: .monospaced))
+                .appFont(.system(.body, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .padding()
@@ -499,9 +499,9 @@ struct StockValuationTabView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Graham's Intrinsic Value Formula")
-                    .font(.headline)
+                    .appFont(.headline)
                 Text("This is Benjamin Graham's revised formula for calculating the intrinsic value of a stock, adapted for modern markets.")
-                    .font(.subheadline)
+                    .appFont(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -512,7 +512,7 @@ struct StockValuationTabView: View {
                     explanationRow("4.4", "Historic Yield", "The historic average yield of high-grade corporate bonds.")
                     explanationRow("Y", "Current Yield", "The current yield of AAA-rated corporate bonds (\(Fmt.number(y, fractionDigits: 1))%).")
                 }
-                .font(.caption)
+                .appFont(.caption)
             }
             .padding(24)
         }
@@ -534,10 +534,10 @@ struct StockValuationTabView: View {
     private func grahamLegend(_ symbol: String, _ desc: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text(symbol)
-                .font(.caption.weight(.bold))
+                .appFont(.caption.weight(.bold))
                 .frame(width: 70, alignment: .trailing)
             Text(desc)
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -562,7 +562,7 @@ struct StockValuationTabView: View {
                 if let n = p["note"]?.stringValue {
                     VStack(alignment: .leading, spacing: 6) {
                         SectionLabel(title: "Note")
-                        Text(n).font(.caption).foregroundStyle(.secondary)
+                        Text(n).appFont(.caption).foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
                 }
@@ -599,7 +599,7 @@ struct StockValuationTabView: View {
                 if let n = p["note"]?.stringValue {
                     VStack(alignment: .leading, spacing: 6) {
                         SectionLabel(title: "Note")
-                        Text(n).font(.caption).foregroundStyle(.secondary)
+                        Text(n).appFont(.caption).foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
                 }
@@ -823,7 +823,7 @@ struct StockValuationTabView: View {
         HStack(spacing: 6) {
             Image(systemName: "sparkles").foregroundStyle(.yellow)
             Text("Best-Fit Valuation Method")
-                .font(.caption.weight(.bold))
+                .appFont(.caption.weight(.bold))
                 .foregroundStyle(.indigo)
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -836,12 +836,12 @@ struct StockValuationTabView: View {
         if let val = rec.intrinsicValue {
             HStack(spacing: 8) {
                 Text(Fmt.currency(val, code: nativeCur))
-                    .font(.headline.weight(.bold))
+                    .appFont(.headline.weight(.bold))
                     .foregroundStyle(.indigo)
                 if let cp = currentPrice, cp > 0 {
                     let up = ((val - cp) / cp) * 100
                     Text(Fmt.percent(up, includeSign: true))
-                        .font(.caption.weight(.bold))
+                        .appFont(.caption.weight(.bold))
                         .foregroundStyle(up >= 0 ? Color.green : Color.red)
                 }
             }
@@ -868,10 +868,10 @@ struct StockValuationTabView: View {
             }
 
             Text(rec.name ?? "Valuation Method")
-                .font(.title3.weight(.bold))
+                .appFont(.title3.weight(.bold))
                 .fixedSize(horizontal: false, vertical: true)
             if let r = rec.rationale {
-                Text(r).font(.subheadline).foregroundStyle(.secondary)
+                Text(r).appFont(.subheadline).foregroundStyle(.secondary)
             }
 
             if let suited = rec.bestSuitedFor ?? rec.whenToUse, let caveats = rec.keyCaveats ?? rec.keyLimitation {
@@ -915,7 +915,7 @@ struct StockValuationTabView: View {
 
     private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.headline)
+            Text(title).appFont(.headline)
             content()
         }
         .padding(24).frame(maxWidth: .infinity, alignment: .leading)
@@ -1011,12 +1011,12 @@ private struct ValuationHeadlineCard: View {
                 SectionLabel(title: valueLabel)
                 if hasCustom {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .bold))
+                        .appFont(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color.brandAmber)
                 }
             }
             Text(value.map { Fmt.currency($0, code: nativeCur) } ?? "Not valued")
-                .font(.system(size: isCompact ? 34 : 42, weight: .bold, design: .rounded))
+                .appFont(.system(size: isCompact ? 34 : 42, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(value == nil ? Color.secondary : accent)
                 .lineLimit(1)
@@ -1035,11 +1035,11 @@ private struct ValuationHeadlineCard: View {
                 Text(Fmt.percent(diff, fractionDigits: 1, includeSign: true))
                     .foregroundStyle(diff >= 0 ? Color.up : Color.down)
             }
-            .font(.caption.weight(.semibold))
+            .appFont(.caption.weight(.semibold))
             .monospacedDigit()
         } else if let profileTag {
             Text(profileTag)
-                .font(.caption.weight(.medium))
+                .appFont(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
         }
     }
@@ -1048,13 +1048,13 @@ private struct ValuationHeadlineCard: View {
         VStack(alignment: isCompact ? .leading : .trailing, spacing: 3) {
             SectionLabel(title: "Margin of Safety")
             Text(mos.map { Fmt.percent($0, fractionDigits: 1, includeSign: true) } ?? "—")
-                .font(.system(size: isCompact ? 26 : 30, weight: .bold, design: .rounded))
+                .appFont(.system(size: isCompact ? 26 : 30, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(mos == nil ? Color.secondary : mosTint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(marginCaption)
-                .font(.caption2)
+                .appFont(.caption2)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
@@ -1085,11 +1085,11 @@ private struct ValuationHeadlineCard: View {
         VStack(alignment: .trailing, spacing: 1) {
             SectionLabel(title: "Margin of Safety")
             Text(mos.map { Fmt.percent($0, fractionDigits: 1, includeSign: true) } ?? "—")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .appFont(.system(size: 24, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(mos == nil ? Color.secondary : mosTint)
             Text(marginCaptionShort)
-                .font(.system(size: 9, weight: .heavy))
+                .appFont(.system(size: 9, weight: .heavy))
                 .tracking(0.6)
                 .textCase(.uppercase)
                 .foregroundStyle(.secondary)
@@ -1194,7 +1194,7 @@ private struct ValuationStatColumn: View {
             SectionLabel(title: label, lineLimit: 2)
                 .frame(height: 26, alignment: .top)
             Text(value)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(.system(size: 13, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(tint ?? .primary)
                 .lineLimit(1)
@@ -1232,15 +1232,15 @@ private struct ValuationFactChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 9, weight: .bold))
+                .appFont(.system(size: 9, weight: .bold))
                 .foregroundStyle(Color.sectionText)
             Text(label)
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(.system(size: 10, weight: .heavy))
                 .tracking(0.8)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.sectionText)
             Text(value)
-                .font(.system(size: 11, weight: .bold))
+                .appFont(.system(size: 11, weight: .bold))
                 .monospacedDigit()
         }
         .lineLimit(1)
@@ -1354,10 +1354,10 @@ private struct ValuationValueLine: View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(Fmt.currency(amount, code: currencyCode))
-                .font(.system(size: 13, weight: .bold))
+                .appFont(.system(size: 13, weight: .bold))
                 .monospacedDigit()
             Text(caption)
-                .font(.system(size: 9, weight: .heavy))
+                .appFont(.system(size: 9, weight: .heavy))
                 .tracking(0.7)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.sectionText)
@@ -1396,7 +1396,7 @@ private struct ValuationValueLine: View {
                 // The headline already carries the intrinsic value, so the marker
                 // only has to say which of the two dots it is.
                 Text("Intrinsic value")
-                    .font(.system(size: 10, weight: .heavy))
+                    .appFont(.system(size: 10, weight: .heavy))
                     .tracking(0.8)
                     .textCase(.uppercase)
                     .foregroundStyle(accent)
@@ -1405,10 +1405,10 @@ private struct ValuationValueLine: View {
 
                 VStack(spacing: 1) {
                     Text(Fmt.currency(price, code: currencyCode))
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(.system(size: 13, weight: .bold))
                         .monospacedDigit()
                     Text("Price")
-                        .font(.system(size: 9, weight: .heavy))
+                        .appFont(.system(size: 9, weight: .heavy))
                         .tracking(0.7)
                         .textCase(.uppercase)
                         .foregroundStyle(Color.sectionText)
@@ -1423,12 +1423,12 @@ private struct ValuationValueLine: View {
         HStack(spacing: 6) {
             Capsule().fill(accent.opacity(0.25)).frame(width: 16, height: 6)
             Text("Model range")
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(.system(size: 10, weight: .heavy))
                 .tracking(0.8)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.sectionText)
             Text("\(Fmt.currency(bear, code: currencyCode)) – \(Fmt.currency(bull, code: currencyCode))")
-                .font(.system(size: 11, weight: .bold))
+                .appFont(.system(size: 11, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
@@ -1472,7 +1472,7 @@ private struct ConfidenceMeter: View {
     var body: some View {
         HStack(spacing: 7) {
             Text("Confidence")
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(.system(size: 10, weight: .heavy))
                 .tracking(0.8)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.sectionText)
@@ -1483,7 +1483,7 @@ private struct ConfidenceMeter: View {
                     Capsule().fill(tint).frame(width: max(3, barWidth * pct), height: 5)
                 }
             Text("\(Int((pct * 100).rounded()))%")
-                .font(.system(size: 11, weight: .bold))
+                .appFont(.system(size: 11, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(tint)
         }
@@ -1555,10 +1555,10 @@ private struct BlendCompositionCard: View {
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 Label("How this blend was built", systemImage: "square.stack.3d.up")
-                    .font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                    .appFont(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
 
                 if let profileLine {
-                    Text(profileLine).font(.subheadline).foregroundStyle(.secondary)
+                    Text(profileLine).appFont(.subheadline).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -1587,7 +1587,7 @@ private struct BlendCompositionCard: View {
                 .padding(.vertical, 3)
             ForEach(weights, id: \.0) { key, weight in
                 Text("\(key.uppercased()) \(Int((weight * 100).rounded()))%")
-                    .font(.system(size: 10, weight: .semibold))
+                    .appFont(.system(size: 10, weight: .semibold))
                     .monospacedDigit()
                     .lineLimit(1)
                     .padding(.horizontal, 6)
@@ -1615,13 +1615,13 @@ private struct BlendCompositionCard: View {
     private func floorTile(_ label: String, _ value: Double, _ hint: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                .appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
                 .fixedSize(horizontal: false, vertical: true)
             Text(Fmt.currency(value, code: currencyCode))
-                .font(.title3.weight(.bold)).monospacedDigit()
+                .appFont(.title3.weight(.bold)).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.6)
             Text(hint)
-                .font(.caption2).foregroundStyle(.secondary)
+                .appFont(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1639,14 +1639,14 @@ private struct BlendCompositionCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Image(systemName: "minus.circle")
-                            .font(.system(size: 10, weight: .bold))
+                            .appFont(.system(size: 10, weight: .bold))
                         Text("\(key.uppercased()) held out")
-                            .font(.caption2.weight(.black)).textCase(.uppercase)
+                            .appFont(.caption2.weight(.black)).textCase(.uppercase)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(.primary.opacity(0.7))
                     Text(reason)
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1671,13 +1671,13 @@ private struct LimitationCallout: View {
                     withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "info.circle").font(.system(size: 9, weight: .bold))
+                        Image(systemName: "info.circle").appFont(.system(size: 9, weight: .bold))
                         Text("Best Suited For & Key Caveats".uppercased())
-                            .font(.caption2.weight(.bold))
+                            .appFont(.caption2.weight(.bold))
                             .tracking(0.5)
                         Spacer(minLength: 8)
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
+                            .appFont(.system(size: 9, weight: .bold))
                             .rotationEffect(.degrees(expanded ? 180 : 0))
                     }
                     .foregroundStyle(.secondary)
@@ -1701,14 +1701,14 @@ private struct LimitationCallout: View {
     private func limitationLine(_ icon: String, _ tint: Color, _ label: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 9, weight: .bold)).foregroundStyle(tint)
+                Image(systemName: icon).appFont(.system(size: 9, weight: .bold)).foregroundStyle(tint)
                 Text(label.uppercased())
-                    .font(.caption2.weight(.bold))
+                    .appFont(.caption2.weight(.bold))
                     .tracking(0.5)
                     .foregroundStyle(tint)
             }
             Text(text)
-                .font(.caption2)
+                .appFont(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1747,7 +1747,7 @@ struct ValuationModelCard<Details: View>: View {
             modelCardHeader()
 
             if let e = model.error {
-                Text(e).font(.callout).foregroundStyle(.red)
+                Text(e).appFont(.callout).foregroundStyle(.red)
             } else {
                 if editingModelKeys.contains(modelKey) {
                     modelParameterEditor()
@@ -1788,12 +1788,12 @@ struct ValuationModelCard<Details: View>: View {
         } label: {
             VStack(spacing: 4) {
                 Text(label)
-                    .font(.system(size: 9, weight: .bold))
+                    .appFont(.system(size: 9, weight: .bold))
                     .foregroundStyle(color)
                     .textCase(.uppercase)
                     .lineLimit(1)
                 Text(Fmt.currency(value, code: nativeCur))
-                    .font(.subheadline.weight(.bold))
+                    .appFont(.subheadline.weight(.bold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -1834,7 +1834,7 @@ struct ValuationModelCard<Details: View>: View {
                     HStack(spacing: 4) {
                         Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chart.bar.xaxis")
                         Text(isExpanded ? "Hide Chart" : "Show Distribution")
-                            .font(.system(size: 10, weight: .bold))
+                            .appFont(.system(size: 10, weight: .bold))
                     }
                     .foregroundStyle(Color.brandIndigo)
                     .fixedSize(horizontal: true, vertical: false)
@@ -1867,7 +1867,7 @@ struct ValuationModelCard<Details: View>: View {
 
                         HStack {
                             Text("Monte Carlo Simulation (10,000 iterations)")
-                                .font(.system(size: 10))
+                                .appFont(.system(size: 10))
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Button {
@@ -1882,7 +1882,7 @@ struct ValuationModelCard<Details: View>: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                    Text("Full Modal").font(.system(size: 10, weight: .semibold))
+                                    Text("Full Modal").appFont(.system(size: 10, weight: .semibold))
                                 }
                                 .foregroundStyle(Color.brandIndigo)
                             }
@@ -1906,18 +1906,18 @@ struct ValuationModelCard<Details: View>: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: icon).foregroundStyle(color)
             Text(title)
-                .font(.headline)
+                .appFont(.headline)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             if let p = primaryBadge {
-                Text(p).font(.system(size: 9, weight: .bold)).foregroundStyle(.green)
+                Text(p).appFont(.system(size: 9, weight: .bold)).foregroundStyle(.green)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.green.opacity(0.15), in: Capsule())
                     .fixedSize()
             }
             if isCustom {
                 Text("CUSTOM")
-                    .font(.system(size: 8, weight: .black))
+                    .appFont(.system(size: 8, weight: .black))
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 5).padding(.vertical, 2)
                     .background(Color.orange.opacity(0.15), in: Capsule())
@@ -1930,7 +1930,7 @@ struct ValuationModelCard<Details: View>: View {
     private func modelCardValuePill(isCustom: Bool, activeVal: Double?) -> some View {
         if model.error == nil, let v = activeVal {
             Text(Fmt.currency(v, code: nativeCur))
-                .font(.subheadline.weight(.bold))
+                .appFont(.subheadline.weight(.bold))
                 .foregroundStyle(isCustom ? Color.orange : color)
                 .lineLimit(1)
                 .fixedSize()
@@ -1948,7 +1948,7 @@ struct ValuationModelCard<Details: View>: View {
                 Image(systemName: "slider.horizontal.3")
                 Text(isEditing ? "Done" : "Edit")
             }
-            .font(.system(size: 10, weight: .bold))
+            .appFont(.system(size: 10, weight: .bold))
             .foregroundStyle(isEditing ? .white : Color.primary)
             .lineLimit(1)
             .fixedSize()
@@ -1962,7 +1962,7 @@ struct ValuationModelCard<Details: View>: View {
                 customOverrides.removeValue(forKey: modelKey)
             } label: {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 10, weight: .bold))
+                    .appFont(.system(size: 10, weight: .bold))
                     .foregroundStyle(.secondary)
                     .padding(5)
                     .background(Color.secondary.opacity(0.12), in: Circle())
@@ -1977,7 +1977,7 @@ struct ValuationModelCard<Details: View>: View {
         if isCustom, let defVal = defaultVal, let actVal = activeVal, defVal > 0, abs(actVal - defVal) > 0.001 {
             let diff = ((actVal - defVal) / defVal) * 100
             Text("Def: \(Fmt.currency(defVal, code: nativeCur)) (\(Fmt.percent(diff, includeSign: true)))")
-                .font(.system(size: 10, weight: .bold))
+                .appFont(.system(size: 10, weight: .bold))
                 .foregroundStyle(diff >= 0 ? Color.green : Color.red)
                 .lineLimit(1)
         }
@@ -2038,14 +2038,14 @@ struct ValuationModelCard<Details: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Label("Custom Parameters", systemImage: "slider.horizontal.3")
-                        .font(.caption.weight(.bold))
+                        .appFont(.caption.weight(.bold))
                         .foregroundStyle(.indigo)
                     Spacer()
                     if hasModifications {
                         Button("Reset Card Defaults") {
                             customOverrides.removeValue(forKey: modelKey)
                         }
-                        .font(.system(size: 10, weight: .bold))
+                        .appFont(.system(size: 10, weight: .bold))
                         .foregroundStyle(.orange)
                         .buttonStyle(.plain)
                     }
@@ -2066,7 +2066,7 @@ struct ValuationModelCard<Details: View>: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(cfg.label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                Text(cfg.label).appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 Spacer()
                                 if isCustom {
                                     Button("Revert") {
@@ -2078,7 +2078,7 @@ struct ValuationModelCard<Details: View>: View {
                                             customOverrides[modelKey] = map
                                         }
                                     }
-                                    .font(.system(size: 9, weight: .bold))
+                                    .appFont(.system(size: 9, weight: .bold))
                                     .foregroundStyle(.orange)
                                     .buttonStyle(.plain)
                                 }
@@ -2098,7 +2098,7 @@ struct ValuationModelCard<Details: View>: View {
                                                     : Fmt.number(currentVal, fractionDigits: 2)))))
 
                                 Text(displayVal)
-                                    .font(.subheadline.weight(.bold))
+                                    .appFont(.subheadline.weight(.bold))
                                     .foregroundStyle(isCustom ? Color.orange : Color.primary)
 
                                 Spacer()
@@ -2138,7 +2138,7 @@ struct ValuationModelCard<Details: View>: View {
                                             : Fmt.number(defVal, fractionDigits: 2))))
 
                             Text("Default: \(displayDef)")
-                                .font(.system(size: 9))
+                                .appFont(.system(size: 9))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -2181,14 +2181,14 @@ private struct ValuationSpectrumSection: View {
         let tint = undervaluedCount > total / 2 ? Color.green : Color.orange
         let title = VStack(alignment: .leading, spacing: 4) {
             Label("Valuation Comparison Spectrum", systemImage: "chart.bar.xaxis")
-                .font(.headline)
+                .appFont(.headline)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Cross-method valuation distribution compared against current price (\(Fmt.currency(currentPrice, code: nativeCur)))")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         let tally = Text("\(undervaluedCount)/\(total) Undervalued")
-            .font(.caption2.weight(.bold))
+            .appFont(.caption2.weight(.bold))
             .foregroundStyle(tint)
             .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -2280,18 +2280,18 @@ private struct ValuationSpectrumSection: View {
                 // Axis Labels
                 HStack {
                     Text(Fmt.compact(minBound, code: nativeCur))
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        .appFont(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                     Spacer()
                     if currentPrice > 0 {
                         Text("Current: \(Fmt.currency(currentPrice, code: nativeCur))")
-                            .font(.caption2.weight(.bold))
+                            .appFont(.caption2.weight(.bold))
                             .foregroundStyle(.primary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Color.primary.opacity(0.1), in: Capsule())
                     }
                     Spacer()
                     Text(Fmt.compact(maxBound, code: nativeCur))
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        .appFont(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                 }
 
                 // Blended Intrinsic Value Row (if available)
@@ -2304,14 +2304,14 @@ private struct ValuationSpectrumSection: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "sparkles").foregroundStyle(isBlendedCustom ? .orange : .yellow)
                                 Text(isBlendedCustom ? "Custom Blended Value" : "Blended Intrinsic Value")
-                                    .font(.caption.weight(.bold))
+                                    .appFont(.caption.weight(.bold))
                             }
                             Spacer()
                             Text(Fmt.currency(avg, code: nativeCur))
-                                .font(.caption.weight(.bold))
+                                .appFont(.caption.weight(.bold))
                                 .foregroundStyle(isBlendedCustom ? Color.orange : Color.indigo)
                             Text(Fmt.percent(up, includeSign: true))
-                                .font(.caption2.weight(.bold))
+                                .appFont(.caption2.weight(.bold))
                                 .foregroundStyle(isUnder ? Color.green : Color.red)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background((isUnder ? Color.green : Color.red).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
@@ -2374,24 +2374,24 @@ private struct ValuationSpectrumSection: View {
                             HStack {
                                 HStack(spacing: 4) {
                                     Circle().fill(item.tint).frame(width: 6, height: 6)
-                                    Text(item.name).font(.caption.weight(.medium)).foregroundStyle(.primary)
+                                    Text(item.name).appFont(.caption.weight(.medium)).foregroundStyle(.primary)
                                     if item.isRecommended {
-                                        Text("BEST-FIT").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                                        Text("BEST-FIT").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.white)
                                             .padding(.horizontal, 4).padding(.vertical, 1)
                                             .background(Color.indigo, in: Capsule())
                                     }
                                     if item.isCustom {
-                                        Text("CUSTOM").font(.system(size: 7, weight: .bold)).foregroundStyle(.orange)
+                                        Text("CUSTOM").appFont(.system(size: 7, weight: .bold)).foregroundStyle(.orange)
                                             .padding(.horizontal, 3).padding(.vertical, 1)
                                             .background(Color.orange.opacity(0.15), in: Capsule())
                                     }
                                 }
                                 Spacer()
                                 Text(Fmt.currency(item.value, code: nativeCur))
-                                    .font(.caption.weight(.bold))
+                                    .appFont(.caption.weight(.bold))
                                     .foregroundStyle(item.isCustom ? Color.orange : Color.primary)
                                 Text(Fmt.percent(up, includeSign: true))
-                                    .font(.system(size: 10, weight: .bold))
+                                    .appFont(.system(size: 10, weight: .bold))
                                     .foregroundStyle(isUnder ? Color.green : Color.red)
                                     .padding(.horizontal, 5).padding(.vertical, 1)
                                     .background((isUnder ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
@@ -2483,7 +2483,7 @@ struct HistogramChartView: View {
                     .foregroundStyle(.red)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                     .annotation(position: .top) {
-                        Text("Bear").font(.system(size: 8, weight: .bold)).foregroundStyle(.red)
+                        Text("Bear").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.red)
                     }
             }
 
@@ -2492,7 +2492,7 @@ struct HistogramChartView: View {
                     .foregroundStyle(Color.brandIndigo)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                     .annotation(position: .top) {
-                        Text("Median").font(.system(size: 8, weight: .bold)).foregroundStyle(Color.brandIndigo)
+                        Text("Median").appFont(.system(size: 8, weight: .bold)).foregroundStyle(Color.brandIndigo)
                     }
             }
 
@@ -2501,7 +2501,7 @@ struct HistogramChartView: View {
                     .foregroundStyle(Color.brandEmerald)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                     .annotation(position: .top) {
-                        Text("Bull").font(.system(size: 8, weight: .bold)).foregroundStyle(Color.brandEmerald)
+                        Text("Bull").appFont(.system(size: 8, weight: .bold)).foregroundStyle(Color.brandEmerald)
                     }
             }
 
@@ -2510,7 +2510,7 @@ struct HistogramChartView: View {
                     .foregroundStyle(.purple)
                     .lineStyle(StrokeStyle(lineWidth: 2))
                     .annotation(position: .bottom) {
-                        Text("Price").font(.system(size: 8, weight: .bold)).foregroundStyle(.purple)
+                        Text("Price").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.purple)
                     }
             }
         }
@@ -2520,7 +2520,7 @@ struct HistogramChartView: View {
                 if let d = val.as(Double.self) {
                     AxisValueLabel {
                         Text(Fmt.currency(d, code: currency))
-                            .font(.system(size: 9))
+                            .appFont(.system(size: 9))
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
@@ -2558,12 +2558,12 @@ struct DistributionModalView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.title)
-                        .font(isPhoneLayout ? .title3.weight(.bold) : .title2.weight(.bold))
+                        .appFont(isPhoneLayout ? .title3.weight(.bold) : .title2.weight(.bold))
                         .lineLimit(2)
                         .minimumScaleFactor(0.7)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("Monte Carlo Simulation (10,000 iterations)")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -2573,7 +2573,7 @@ struct DistributionModalView: View {
                     dismiss()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
+                        .appFont(.title2)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -2609,13 +2609,13 @@ struct DistributionModalView: View {
     private func scenarioCard(_ label: String, _ val: Double?, _ color: Color) -> some View {
         VStack(spacing: 4) {
             Text(label)
-                .font(.caption2.weight(.bold))
+                .appFont(.caption2.weight(.bold))
                 .foregroundStyle(color)
                 .textCase(.uppercase)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(Fmt.currency(val, code: item.nativeCur))
-                .font(.headline.weight(.bold))
+                .appFont(.headline.weight(.bold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)

@@ -18,7 +18,7 @@ struct LoginView: View {
                     .scaledToFit()
                     .frame(height: 88)
                 Text("Investa")
-                    .font(.largeTitle.bold())
+                    .appFont(.largeTitle.bold())
                 Text(isRegistering ? "Create an account" : "Sign in to your portfolio")
                     .foregroundStyle(.secondary)
             }
@@ -34,7 +34,7 @@ struct LoginView: View {
 
                 if let error = auth.errorMessage {
                     Text(error)
-                        .font(.callout)
+                        .appFont(.callout)
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,7 +56,7 @@ struct LoginView: View {
                     isRegistering.toggle()
                 }
                 .buttonStyle(.plain)
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.tint)
             }
             .frame(width: 280)
@@ -66,7 +66,7 @@ struct LoginView: View {
                 showingServerSettings = true
             } label: {
                 Label("Server: \(activeServerURL)", systemImage: "network")
-                    .font(.caption)
+                    .appFont(.caption)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
@@ -95,9 +95,9 @@ struct LoginView: View {
 
     private var serverSettingsSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Backend Server").font(.headline)
+            Text("Backend Server").appFont(.headline)
             Text("The address of the Investa FastAPI backend.")
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.secondary)
             TextField("http://localhost:8000/api", text: $serverURL)
                 .textFieldStyle(.roundedBorder)

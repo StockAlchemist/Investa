@@ -10,8 +10,8 @@ private struct Section_<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 7) {
-                if let icon { Image(systemName: icon).font(.caption.weight(.semibold)).foregroundStyle(Theme.brand) }
-                Text(title).font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase).foregroundStyle(.secondary)
+                if let icon { Image(systemName: icon).appFont(.caption.weight(.semibold)).foregroundStyle(Theme.brand) }
+                Text(title).appFont(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 if let trailing { trailing }
             }
@@ -130,9 +130,9 @@ struct ConcentrationKpiStrip: View {
 
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(value).font(.title3.bold()).monospacedDigit().foregroundStyle(tone).lineLimit(1)
-            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+            Text(label).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(value).appFont(.title3.bold()).monospacedDigit().foregroundStyle(tone).lineLimit(1)
+            if let sub { Text(sub).appFont(.caption2).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -142,18 +142,18 @@ struct ConcentrationKpiStrip: View {
 
     private func tileWithSymbol(_ label: String, _ symbol: String?, _ sub: String?, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(label).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
             if let symbol, !symbol.isEmpty && !symbol.uppercased().hasPrefix("CASH") && symbol != "$CASH" && symbol != "–" {
                 Button {
                     appState.openStock(symbol)
                 } label: {
-                    Text(symbol).font(.title3.bold()).foregroundStyle(.indigo).lineLimit(1)
+                    Text(symbol).appFont(.title3.bold()).foregroundStyle(.indigo).lineLimit(1)
                 }
                 .buttonStyle(.plain)
             } else {
-                Text(symbol ?? "–").font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
+                Text(symbol ?? "–").appFont(.title3.bold()).foregroundStyle(tone).lineLimit(1)
             }
-            if let sub { Text(sub).font(.caption2).foregroundStyle(.secondary) }
+            if let sub { Text(sub).appFont(.caption2).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -212,13 +212,13 @@ struct AllocationDriftCard: View {
         if editing {
             HStack(spacing: 6) {
                 Text("Σ \(String(format: "%.1f%%", draftSum))")
-                    .font(.caption.bold()).foregroundStyle(abs(draftSum - 100) < 0.5 ? .up : .orange)
+                    .appFont(.caption.bold()).foregroundStyle(abs(draftSum - 100) < 0.5 ? .up : .orange)
                 Button { commit() } label: { Image(systemName: "checkmark") }.tint(.up)
                 Button { editing = false; draft = [:] } label: { Image(systemName: "xmark") }
             }
         } else {
             Button(targetSum > 0 ? "Edit targets" : "Set targets") { startEdit() }
-                .font(.caption)
+                .appFont(.caption)
         }
     }
 
@@ -230,10 +230,10 @@ struct AllocationDriftCard: View {
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(r.bucket).font(.caption.weight(.medium)).lineLimit(1)
+                    Text(r.bucket).appFont(.caption.weight(.medium)).lineLimit(1)
                     Spacer()
                     Text("\(String(format: "%.1f", r.current))% / \(String(format: "%.1f", r.target))%")
-                        .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                        .appFont(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -252,9 +252,9 @@ struct AllocationDriftCard: View {
                     .frame(width: 50).multilineTextAlignment(.trailing).textFieldStyle(.roundedBorder)
             } else {
                 HStack(spacing: 2) {
-                    if alert { Image(systemName: "exclamationmark.triangle.fill").font(.caption2) }
-                    if r.drift != 0 { Image(systemName: r.drift > 0 ? "arrow.up.right" : "arrow.down.right").font(.caption2) }
-                    Text("\(r.drift > 0 ? "+" : "")\(String(format: "%.1f", r.drift))").font(.caption.bold()).monospacedDigit()
+                    if alert { Image(systemName: "exclamationmark.triangle.fill").appFont(.caption2) }
+                    if r.drift != 0 { Image(systemName: r.drift > 0 ? "arrow.up.right" : "arrow.down.right").appFont(.caption2) }
+                    Text("\(r.drift > 0 ? "+" : "")\(String(format: "%.1f", r.drift))").appFont(.caption.bold()).monospacedDigit()
                 }
                 .foregroundStyle(tone).frame(width: 64, alignment: .trailing)
             }
@@ -290,10 +290,46 @@ struct RebalanceHelperCard: View {
 
     private struct Row: Identifiable { let bucket: String; let currentPct: Double; let targetPct: Double; let delta: Double; var id: String { bucket } }
 
-    private var data: (rows: [Row], total: Double, hasTargets: Bool) {
+    /// Buckets within this share of the portfolio are treated as on target. It is
+    /// also the point at which an unclassified holding stops being noise: once the
+    /// Unknown bucket clears it, every other bucket's *current* weight is
+    /// understated by more than the card's own precision, so no trade it suggests
+    /// can be trusted.
+    private static let tolerance = 0.005
+
+    private struct Plan {
+        let rows: [Row]
+        let total: Double
+        let hasTargets: Bool
+        /// Value sitting in the "Unknown" bucket, and the symbols that put it there.
+        let unknownValue: Double
+        let unknownSymbols: [String]
+
+        var unknownShare: Double { total > 0 ? unknownValue / total : 0 }
+        /// Trades are priced off every bucket's current weight, and an unclassified
+        /// holding drags all of them down at once. Suggesting a sale of "Unknown"
+        /// would be telling the reader to sell the very positions the buy rows ask
+        /// them to buy back — so suppress the trades until it resolves.
+        var blocked: Bool { unknownShare >= RebalanceHelperCard.tolerance }
+    }
+
+    private var data: Plan {
         let targets = vm.targets[dim] ?? [:]
         var agg: [String: Double] = [:]
-        for h in holdings { agg[PortfolioBucket.value(h, key: bucketKey), default: 0] += h.marketValue(currency: currency) ?? 0 }
+        var unknownValue = 0.0
+        var unknownSymbols = Set<String>()
+        for h in holdings {
+            let bucket = PortfolioBucket.value(h, key: bucketKey)
+            let value = h.marketValue(currency: currency) ?? 0
+            agg[bucket, default: 0] += value
+            // A holding lands here when its metadata fetch failed, not because it
+            // belongs to some residual asset class — keep the symbols so the reader
+            // can see which positions are missing their classification.
+            if bucket == "Unknown", value > 0 {
+                unknownValue += value
+                unknownSymbols.insert(h.symbol)
+            }
+        }
         let total = agg.values.reduce(0, +)
         let buckets = Set(agg.keys).union(targets.keys)
         let rows = buckets.map { b -> Row in
@@ -301,7 +337,33 @@ struct RebalanceHelperCard: View {
             let tp = targets[b] ?? 0
             return Row(bucket: b, currentPct: total > 0 ? cv / total * 100 : 0, targetPct: tp, delta: tp / 100 * total - cv)
         }.filter { $0.targetPct > 0 || $0.currentPct > 0 }.sorted { abs($0.delta) > abs($1.delta) }
-        return (rows, total, targets.values.reduce(0, +) > 0)
+        return Plan(rows: rows, total: total, hasTargets: targets.values.reduce(0, +) > 0,
+                    unknownValue: unknownValue, unknownSymbols: unknownSymbols.sorted())
+    }
+
+    /// Prose, so every line wraps to the height it needs rather than truncating.
+    @ViewBuilder
+    private func unclassifiedWarning(_ d: Plan) -> some View {
+        let label = dims.first { $0.key == dim }!.label.lowercased()
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.brandAmber)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("No trades suggested — \(String(format: "%.1f", d.unknownShare * 100))% of the portfolio is unclassified.")
+                    .appFont(.caption.weight(.semibold))
+                Text("\(Fmt.currency(d.unknownValue, code: currency)) of holdings have no \(label), so every bucket's current weight is understated and any trade sized against it would be wrong. \"Unknown\" is missing data, not an asset class — selling it would mean selling the same positions the buy rows ask you to buy back.")
+                    .appFont(.caption).foregroundStyle(.secondary)
+                if !d.unknownSymbols.isEmpty {
+                    Text("Affected: \(d.unknownSymbols.joined(separator: ", ")). Their market data usually fills in on the next refresh; a symbol that stays unclassified can be given one in Settings → Manual Overrides.")
+                        .appFont(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Color.brandAmber.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.brandAmber.opacity(0.35), lineWidth: 1))
     }
 
     var body: some View {
@@ -312,6 +374,8 @@ struct RebalanceHelperCard: View {
             if !d.hasTargets {
                 EmptyHint(text: "No targets set for \(dims.first { $0.key == dim }!.label.lowercased()). Set them in the drift card above to see suggested trades.",
                           systemImage: "slider.horizontal.3")
+            } else if d.blocked {
+                unclassifiedWarning(d)
             } else {
                 ForEach(d.rows) { r in
                     VStack(spacing: 4) {
@@ -319,7 +383,7 @@ struct RebalanceHelperCard: View {
                             Text(r.bucket).fontWeight(.bold).lineLimit(1)
                             Spacer()
                             Text("\(String(format: "%.1f", r.currentPct))% → \(String(format: "%.1f", r.targetPct))%")
-                                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                                .appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                             Group {
                                 if abs(r.delta) < max(0.005 * d.total, 0.01) {
                                     Text("On target").foregroundStyle(.secondary)
@@ -328,14 +392,14 @@ struct RebalanceHelperCard: View {
                                         .foregroundStyle(r.delta > 0 ? .up : .down)
                                 }
                             }
-                            .font(.caption.weight(.semibold)).frame(width: 120, alignment: .trailing)
+                            .appFont(.caption.weight(.semibold)).frame(width: 120, alignment: .trailing)
                         }
                         Divider()
                     }
                     .padding(.vertical, 2)
                 }
                 Text("Trades to align each bucket with its target weight at the current value (\(Fmt.currency(d.total, code: currency))). Within 0.5% is on target.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .appFont(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -412,7 +476,7 @@ struct PortfolioTreemapView: View {
                 }
                 .frame(height: 320)
                 Text("\(items.count) holdings · \(Fmt.compact(total, code: currency)) · click a tile for detail")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+                    .appFont(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
             }
         }
     }
@@ -421,7 +485,7 @@ struct PortfolioTreemapView: View {
         HStack(spacing: 2) {
             ForEach(dims, id: \.key) { d in
                 Button { dim = d.key } label: {
-                    Text(d.label).font(.caption.weight(.semibold))
+                    Text(d.label).appFont(.caption.weight(.semibold))
                         .lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(dim == d.key ? Theme.brand : Color.clear, in: RoundedRectangle(cornerRadius: 6))
@@ -440,9 +504,9 @@ struct PortfolioTreemapView: View {
                 RoundedRectangle(cornerRadius: 3).fill(leaf.color)
                 if showLabel {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(leaf.symbol).font(.system(size: 13, weight: .bold)).foregroundStyle(.white).lineLimit(1)
+                        Text(leaf.symbol).appFont(.system(size: 13, weight: .bold)).foregroundStyle(.white).lineLimit(1)
                         if showPct {
-                            Text(String(format: "%.1f%%", leaf.pct)).font(.system(size: 11))
+                            Text(String(format: "%.1f%%", leaf.pct)).appFont(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.8)).monospacedDigit()
                         }
                     }
@@ -462,13 +526,13 @@ struct PortfolioTreemapView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 RoundedRectangle(cornerRadius: 2).fill(leaf.color).frame(width: 8, height: 8)
-                Text(leaf.symbol).font(.caption.bold())
+                Text(leaf.symbol).appFont(.caption.bold())
             }
-            Text(leaf.group).font(.caption2).foregroundStyle(.secondary)
+            Text(leaf.group).appFont(.caption2).foregroundStyle(.secondary)
             HStack(spacing: 4) {
                 Text(Fmt.compact(leaf.size, code: currency)).fontWeight(.medium)
                 Text("· \(String(format: "%.1f%%", leaf.pct))").foregroundStyle(.secondary)
-            }.font(.caption2).monospacedDigit()
+            }.appFont(.caption2).monospacedDigit()
         }
         .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary, lineWidth: 1))
@@ -642,7 +706,7 @@ struct HoldingsHeatmapView: View {
         HStack(spacing: 2) {
             ForEach(options, id: \.0) { opt in
                 Button { selection.wrappedValue = opt.0 } label: {
-                    Text(opt.1).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(opt.1).appFont(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                         .frame(maxWidth: fill ? .infinity : nil)
                         .padding(.horizontal, fill ? 4 : 8).padding(.vertical, 4)
                         .background(selection.wrappedValue == opt.0 ? (brand ? Theme.brand : Color.accentColor) : Color.clear,
@@ -663,9 +727,9 @@ struct HoldingsHeatmapView: View {
                 }
                 if showLabel {
                     HStack(spacing: 5) {
-                        Text(name.uppercased()).font(.system(size: 10, weight: .bold)).tracking(0.4)
+                        Text(name.uppercased()).appFont(.system(size: 10, weight: .bold)).tracking(0.4)
                         Text(String(format: "%.0f%%", totalValue > 0 ? leaves.reduce(0) { $0 + $1.value } / totalValue * 100 : 0))
-                            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.6)).monospacedDigit()
+                            .appFont(.system(size: 10)).foregroundStyle(.white.opacity(0.6)).monospacedDigit()
                     }
                     .foregroundStyle(.white.opacity(0.95))
                     .padding(.horizontal, 5).padding(.vertical, 2)
@@ -692,9 +756,9 @@ struct HoldingsHeatmapView: View {
             RoundedRectangle(cornerRadius: 2).fill(leaf.color)
             if showLabel {
                 VStack(spacing: 1) {
-                    Text(leaf.symbol).font(.system(size: 11, weight: .heavy)).foregroundStyle(.white).lineLimit(1)
+                    Text(leaf.symbol).appFont(.system(size: 11, weight: .heavy)).foregroundStyle(.white).lineLimit(1)
                     if showPct, let pctText {
-                        Text(pctText).font(.system(size: 10, weight: .semibold))
+                        Text(pctText).appFont(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.92)).monospacedDigit()
                     }
                 }
@@ -733,16 +797,16 @@ struct HoldingsHeatmapView: View {
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 RoundedRectangle(cornerRadius: 2).fill(leaf.color).frame(width: 9, height: 9)
-                Text(leaf.symbol).font(.caption.bold())
+                Text(leaf.symbol).appFont(.caption.bold())
                 // In flat ("None") mode the bucket is the synthetic "All" — omit it.
-                if group != "None" { Text(leaf.group).font(.caption2).foregroundStyle(.secondary) }
+                if group != "None" { Text(leaf.group).appFont(.caption2).foregroundStyle(.secondary) }
             }
             HStack(spacing: 5) {
                 Text(Fmt.compact(leaf.value, code: currency)).fontWeight(.medium)
                 Text("·").foregroundStyle(.secondary)
                 Text(metric.label).foregroundStyle(.secondary)
                 Text(perf).fontWeight(.bold).foregroundStyle(perfColor)
-            }.font(.caption2).monospacedDigit()
+            }.appFont(.caption2).monospacedDigit()
         }
         .padding(.horizontal, 9).padding(.vertical, 6)
         .background(.background, in: RoundedRectangle(cornerRadius: 8))
@@ -757,14 +821,14 @@ struct HoldingsHeatmapView: View {
 
     private var legend: some View {
         HStack {
-            Text("−\(Int(metric.clamp))%").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+            Text("−\(Int(metric.clamp))%").appFont(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
             LinearGradient(colors: [-1.0, -0.5, 0, 0.5, 1.0].map { heat($0 * metric.clamp) },
                            startPoint: .leading, endPoint: .trailing)
                 .frame(width: 150, height: 10).clipShape(Capsule())
-            Text("+\(Int(metric.clamp))%").font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+            Text("+\(Int(metric.clamp))%").appFont(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
             Spacer()
             Text("\(holdingCount) holdings · \(Fmt.compact(totalValue, code: currency))")
-                .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+                .appFont(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 }
@@ -837,8 +901,8 @@ struct AllocationDonutChart: View {
 
     private var clickHint: some View {
         HStack(spacing: 3) {
-            Image(systemName: "cursorarrow.click").font(.system(size: 10))
-            Text("Click slice").font(.system(size: 11))
+            Image(systemName: "cursorarrow.click").appFont(.system(size: 10))
+            Text("Click slice").appFont(.system(size: 11))
         }.foregroundStyle(.secondary)
     }
 
@@ -887,14 +951,14 @@ struct AllocationDonutChart: View {
     private var centerLabel: some View {
         VStack(spacing: 3) {
             if let a = active {
-                Text(a.name).font(.caption).textCase(.uppercase).foregroundStyle(.secondary).lineLimit(1)
-                Text(Fmt.compact(a.value, code: currency)).font(.title3.bold()).monospacedDigit()
+                Text(a.name).appFont(.caption).textCase(.uppercase).foregroundStyle(.secondary).lineLimit(1)
+                Text(Fmt.compact(a.value, code: currency)).appFont(.title3.bold()).monospacedDigit()
                 Text(String(format: "%.1f%%", total > 0 ? a.value / total * 100 : 0))
-                    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                    .appFont(.callout).foregroundStyle(.secondary).monospacedDigit()
             } else {
-                Text("Total").font(.caption).textCase(.uppercase).foregroundStyle(.secondary)
-                Text(Fmt.compact(total, code: currency)).font(.title3.bold()).monospacedDigit()
-                Text("\(slices.count) \(slices.count == 1 ? "group" : "groups")").font(.callout).foregroundStyle(.secondary)
+                Text("Total").appFont(.caption).textCase(.uppercase).foregroundStyle(.secondary)
+                Text(Fmt.compact(total, code: currency)).appFont(.title3.bold()).monospacedDigit()
+                Text("\(slices.count) \(slices.count == 1 ? "group" : "groups")").appFont(.callout).foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -915,7 +979,7 @@ struct AllocationDonutChart: View {
                 Text(Fmt.compact(s.value, code: currency)).foregroundStyle(.secondary.opacity(0.7)).monospacedDigit()
                     .frame(minWidth: 52, alignment: .trailing)
             }
-            .font(.caption)
+            .appFont(.caption)
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background(bg, in: RoundedRectangle(cornerRadius: 6))
             .overlay { if isSel { RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.brand.opacity(0.3), lineWidth: 1) } }
@@ -930,19 +994,19 @@ struct AllocationDonutChart: View {
         return VStack(alignment: .leading, spacing: 8) {
             Divider().padding(.top, 4)
             HStack(spacing: 6) {
-                Text("Holdings in").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
-                Text(slice.name).font(.caption.bold()).lineLimit(1)
-                Text("· \(rows.count) \(rows.count == 1 ? "stock" : "stocks")").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Holdings in").appFont(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
+                Text(slice.name).appFont(.caption.bold()).lineLimit(1)
+                Text("· \(rows.count) \(rows.count == 1 ? "stock" : "stocks")").appFont(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button("Close") { selectedBucket = nil }
-                    .font(.system(size: 11, weight: .semibold)).textCase(.uppercase).buttonStyle(.plain).foregroundStyle(.secondary)
+                    .appFont(.system(size: 11, weight: .semibold)).textCase(.uppercase).buttonStyle(.plain).foregroundStyle(.secondary)
             }
             if rows.isEmpty {
-                Text("No matching holdings.").font(.caption).foregroundStyle(.secondary)
+                Text("No matching holdings.").appFont(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(rows.prefix(12)) { drillRowView($0) }
                 if rows.count > 12 {
-                    Text("+ \(rows.count - 12) more").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("+ \(rows.count - 12) more").appFont(.system(size: 11)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -957,13 +1021,13 @@ struct AllocationDonutChart: View {
                         Button {
                             appState.openStock(r.symbol)
                         } label: {
-                            Text(r.symbol).font(.caption.bold()).foregroundStyle(.indigo).lineLimit(1)
+                            Text(r.symbol).appFont(.caption.bold()).foregroundStyle(.indigo).lineLimit(1)
                         }
                         .buttonStyle(.plain)
                     } else {
-                        Text(r.symbol).font(.caption.bold()).lineLimit(1)
+                        Text(r.symbol).appFont(.caption.bold()).lineLimit(1)
                     }
-                    if !r.name.isEmpty { Text(r.name).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+                    if !r.name.isEmpty { Text(r.name).appFont(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -973,9 +1037,9 @@ struct AllocationDonutChart: View {
                 }.frame(height: 5)
             }
             VStack(alignment: .trailing, spacing: 1) {
-                Text(String(format: "%.1f%%", r.pctOfBucket)).font(.caption.bold()).monospacedDigit()
+                Text(String(format: "%.1f%%", r.pctOfBucket)).appFont(.caption.bold()).monospacedDigit()
                 Text("\(String(format: "%.1f%%", r.pctOfPortfolio)) of total")
-                    .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                    .appFont(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
             }
         }
     }

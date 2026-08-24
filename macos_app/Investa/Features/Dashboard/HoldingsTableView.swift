@@ -98,6 +98,7 @@ struct HoldingsTableView: View {
 
     @EnvironmentObject private var appState: AppState
     @Environment(\.horizontalSizeClass) var hSizeClass
+    @Environment(\.appFontScale) private var fontScale
     @State private var visibleColumns = defaultVisibleColumns
     @State private var sortKey = "Mkt Val"
     @State private var sortAsc = false
@@ -121,6 +122,11 @@ struct HoldingsTableView: View {
     struct TagEdit: Identifiable { let id = UUID(); let symbol: String; let accounts: [String]; let tags: [String] }
 
     private let rowHeight: CGFloat = 46
+    /// A table laid out in fixed points has to grow with the type inside it. At
+    /// a scaled font a share count that fitted an 80pt column ellipsises, and a
+    /// truncated figure is a different number — so the column widths and the
+    /// locked row heights take the same multiplier the fonts do.
+    private func colWidth(_ h: String) -> CGFloat { columnWidth(h) * fontScale }
     // Lot rows need a fixed height too: the pinned Symbol column and the
     // scrollable columns render lots independently, so a content-sized height
     // (italic date text vs. monospaced numbers) diverges and drifts the two
@@ -286,7 +292,7 @@ struct HoldingsTableView: View {
         }.sorted { ($0.agg["Mkt Val"] ?? 0) > ($1.agg["Mkt Val"] ?? 0) }
     }
 
-    private var totalWidth: CGFloat { visibleColumns.reduce(0) { $0 + columnWidth($1) } }
+    private var totalWidth: CGFloat { visibleColumns.reduce(0) { $0 + colWidth($1) } }
 
     // MARK: Body
 
@@ -330,8 +336,8 @@ struct HoldingsTableView: View {
             if let firstCol = visibleColumns.first {
                 let pinnedCols = [firstCol]
                 let scrollCols = Array(visibleColumns.dropFirst())
-                let fw = columnWidth(firstCol)
-                let scrollWidth = scrollCols.reduce(0) { $0 + columnWidth($1) }
+                let fw = colWidth(firstCol)
+                let scrollWidth = scrollCols.reduce(0) { $0 + colWidth($1) }
 
                 // Pinned first column — renders only the first column's cells.
                 VStack(alignment: .leading, spacing: 0) {
@@ -370,17 +376,17 @@ struct HoldingsTableView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "tablecells").font(.caption.weight(.semibold)).foregroundStyle(Color.brandIndigo)
+            Image(systemName: "tablecells").appFont(.caption.weight(.semibold)).foregroundStyle(Color.brandIndigo)
             #if !os(iOS)
             SectionLabel(title: "Holdings")
             #endif
             Text(groupBy != nil ? "\(baseRows.count) items · \(groups.count) groups" : "\(baseRows.count)")
-                .font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+                .appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 2)
                 .background(Color.cardBorder.opacity(0.25), in: Capsule())
             Spacer()
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
+                Image(systemName: "magnifyingglass").appFont(.caption).foregroundStyle(.secondary)
                 TextField("Search symbol…", text: $search).textFieldStyle(.plain).frame(width: 160)
                 if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary) }
             }
@@ -446,9 +452,9 @@ struct HoldingsTableView: View {
     private var columnsButton: some View {
         Button { showColumns.toggle() } label: {
             HStack(spacing: 5) {
-                Image(systemName: "slider.horizontal.3").font(.caption)
-                Text("Columns").font(.subheadline.weight(.medium))
-                Text("\(visibleColumns.count)").font(.system(size: 11, weight: .bold))
+                Image(systemName: "slider.horizontal.3").appFont(.caption)
+                Text("Columns").appFont(.subheadline.weight(.medium))
+                Text("\(visibleColumns.count)").appFont(.system(size: 11, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.brand.opacity(0.15), in: Capsule()).foregroundStyle(Theme.brand)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -462,9 +468,9 @@ struct HoldingsTableView: View {
     private var columnsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Visible Columns").font(.caption.bold())
+                Text("Visible Columns").appFont(.caption.bold())
                 Spacer()
-                Button("Reset") { visibleColumns = defaultVisibleColumns }.font(.caption2.weight(.semibold)).buttonStyle(.plain).foregroundStyle(Theme.brand)
+                Button("Reset") { visibleColumns = defaultVisibleColumns }.appFont(.caption2.weight(.semibold)).buttonStyle(.plain).foregroundStyle(Theme.brand)
             }
             .padding(10).background(.background.tertiary)
             Divider()
@@ -472,15 +478,15 @@ struct HoldingsTableView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(columnPickerGroups, id: \.label) { group in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(group.label).font(.system(size: 10, weight: .bold)).tracking(1.5).textCase(.uppercase).foregroundStyle(.secondary)
+                            Text(group.label).appFont(.system(size: 10, weight: .bold)).tracking(1.5).textCase(.uppercase).foregroundStyle(.secondary)
                             LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 3) {
                                 ForEach(group.cols, id: \.self) { col in
                                     let on = visibleColumns.contains(col)
                                     Button { toggleColumn(col) } label: {
                                         HStack(spacing: 6) {
                                             Image(systemName: on ? "checkmark.square.fill" : "square")
-                                                .foregroundStyle(on ? Theme.brand : .secondary).font(.caption)
-                                            Text(col).font(.caption).foregroundStyle(on ? Theme.brand : .primary).lineLimit(1)
+                                                .foregroundStyle(on ? Theme.brand : .secondary).appFont(.caption)
+                                            Text(col).appFont(.caption).foregroundStyle(on ? Theme.brand : .primary).lineLimit(1)
                                             Spacer(minLength: 0)
                                         }
                                         .padding(.horizontal, 6).padding(.vertical, 3)
@@ -509,8 +515,8 @@ struct HoldingsTableView: View {
 
     private func toolLabel(_ icon: String, _ title: String, active: Bool) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).font(.caption)
-            Text(title).font(.subheadline.weight(.medium))
+            Image(systemName: icon).appFont(.caption)
+            Text(title).appFont(.subheadline.weight(.medium))
         }
         .foregroundStyle(active ? .white : .primary)
         .padding(.horizontal, 14).padding(.vertical, 8)
@@ -602,11 +608,11 @@ struct HoldingsTableView: View {
                             sortArrow(h)
                         }
                     }
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    .appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     // Pad inside the frame (matching `cell`) so each header is exactly
                     // columnWidth wide and stays aligned with the data columns below.
                     .padding(.horizontal, 8)
-                    .frame(width: columnWidth(h), alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
+                    .frame(width: colWidth(h), alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
                     .padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }.buttonStyle(.plain)
@@ -616,7 +622,7 @@ struct HoldingsTableView: View {
     }
 
     @ViewBuilder private func sortArrow(_ h: String) -> some View {
-        if sortKey == h { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.brand) }
+        if sortKey == h { Image(systemName: sortAsc ? "arrow.up" : "arrow.down").appFont(.system(size: 9, weight: .bold)).foregroundStyle(Theme.brand) }
     }
 
     // MARK: Bodies
@@ -675,9 +681,9 @@ struct HoldingsTableView: View {
             HStack(spacing: 8) {
                 // Chevron + name + count live on the pinned side (or the full row).
                 if part != .stats {
-                    Image(systemName: expandedGroups.contains(g.key) ? "chevron.down" : "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                    Image(systemName: expandedGroups.contains(g.key) ? "chevron.down" : "chevron.right").appFont(.caption2).foregroundStyle(.secondary)
                     Text(g.key).fontWeight(.semibold)
-                    Text("\(g.rows.count)").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(g.rows.count)").appFont(.caption2).foregroundStyle(.secondary)
                         .padding(.horizontal, 6).padding(.vertical, 1).background(.background.tertiary, in: Capsule())
                 }
                 // Aggregate stats live on the scroll side (or the full row).
@@ -691,7 +697,7 @@ struct HoldingsTableView: View {
                     }.padding(.trailing, 8)
                 }
             }
-            .font(.subheadline)
+            .appFont(.subheadline)
             .padding(.horizontal, 8).padding(.vertical, 9)
             .frame(width: width, alignment: .leading)
             .background(.background.secondary.opacity(0.6))
@@ -701,8 +707,8 @@ struct HoldingsTableView: View {
 
     private func groupStat(_ label: String?, _ value: Double?, _ color: Color, pct: Bool = false) -> some View {
         HStack(spacing: 4) {
-            if let label { Text("\(label):").font(.caption2).foregroundStyle(.secondary) }
-            Text(pct ? pctString(value) : Fmt.currency(value, code: currency)).font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(color)
+            if let label { Text("\(label):").appFont(.caption2).foregroundStyle(.secondary) }
+            Text(pct ? pctString(value) : Fmt.currency(value, code: currency)).appFont(.caption.weight(.medium)).monospacedDigit().foregroundStyle(color)
         }
     }
 
@@ -730,15 +736,15 @@ struct HoldingsTableView: View {
     private func iosGroupHeaderRow(_ g: HGroup) -> some View {
         Button { toggleGroup(g.key) } label: {
             HStack(spacing: 8) {
-                Image(systemName: expandedGroups.contains(g.key) ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.secondary)
-                Text(g.key).font(.subheadline.weight(.semibold))
-                Text("\(g.rows.count)").font(.caption2).foregroundStyle(.secondary)
+                Image(systemName: expandedGroups.contains(g.key) ? "chevron.down" : "chevron.right").appFont(.caption).foregroundStyle(.secondary)
+                Text(g.key).appFont(.subheadline.weight(.semibold))
+                Text("\(g.rows.count)").appFont(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 1).background(.background.tertiary, in: Capsule())
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     FittedMoney(value: g.agg["Mkt Val"], code: currency)
-                        .font(.caption.weight(.bold)).monospacedDigit().lineLimit(1)
-                    Text(pctString(g.agg["Day Chg %"])).font(.caption2).monospacedDigit().foregroundStyle(glColor(g.agg["Day Chg %"]))
+                        .appFont(.caption.weight(.bold)).monospacedDigit().lineLimit(1)
+                    Text(pctString(g.agg["Day Chg %"])).appFont(.caption2).monospacedDigit().foregroundStyle(glColor(g.agg["Day Chg %"]))
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
@@ -771,7 +777,7 @@ struct HoldingsTableView: View {
                         Spacer()
                         Image(systemName: expandedLots.contains(r.symbol) ? "chevron.up" : "chevron.down")
                     }
-                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    .appFont(.caption2.weight(.medium)).foregroundStyle(.secondary)
                     .padding(.top, 4)
                 }.buttonStyle(.plain)
             }
@@ -794,10 +800,10 @@ struct HoldingsTableView: View {
             // count are the most compressible things in the row, so they wrap
             // ("GOO/G") as soon as anything else needs the width.
             VStack(alignment: .leading, spacing: 4) {
-                Text(r.symbol).font(.headline.weight(.bold))
+                Text(r.symbol).appFont(.headline.weight(.bold))
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Text("\(Fmt.number(r.num["Quantity"])) shs")
-                    .font(.caption2)
+                    .appFont(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1).minimumScaleFactor(0.8)
             }
@@ -810,7 +816,7 @@ struct HoldingsTableView: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 Text(money.string(r.num["Mkt Val"], code: currency))
-                    .font(.subheadline.weight(.bold))
+                    .appFont(.subheadline.weight(.bold))
                     .monospacedDigit()
                     .lineLimit(1)
 
@@ -825,13 +831,13 @@ struct HoldingsTableView: View {
                         // legitimately disagree.
                         if let dayChg = r.num["Day Chg"] {
                             Text(money.signedString(dayChg, code: currency))
-                                .font(.system(size: 11, weight: .semibold))
+                                .appFont(.system(size: 11, weight: .semibold))
                                 .monospacedDigit()
                                 .foregroundStyle(glColor(dayChg))
                                 .lineLimit(1)
                         }
                         Text(pctString(dayChgPct))
-                            .font(.system(size: 11, weight: .bold))
+                            .appFont(.system(size: 11, weight: .bold))
                             .padding(.horizontal, 4).padding(.vertical, 2)
                             .background(glColor(dayChgPct).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                             .foregroundStyle(glColor(dayChgPct))
@@ -846,7 +852,7 @@ struct HoldingsTableView: View {
             // comfortable without costing horizontal space.
             Button { withAnimation(.easeInOut(duration: 0.18)) { toggleCard(r) } } label: {
                 Image(systemName: isCardExpanded(r) ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
+                    .appFont(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 44)
                     .contentShape(Rectangle())
@@ -865,7 +871,7 @@ struct HoldingsTableView: View {
             Divider()
             VStack(alignment: .leading, spacing: 4) {
                 Text("1M Trend")
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase)
+                    .appFont(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase)
                 Chart(Array(r.trend1m.enumerated()), id: \.offset) { i, v in
                     AreaMark(x: .value("i", i),
                              yStart: .value("Min", chartDomain(r.trend1m).lowerBound),
@@ -893,7 +899,7 @@ struct HoldingsTableView: View {
             LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 10) {
                 ForEach(extras, id: \.self) { h in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(shortColumnName(h)).font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase).lineLimit(1)
+                        Text(shortColumnName(h)).appFont(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary).textCase(.uppercase).lineLimit(1)
                         iosExtraCell(h, r)
                     }
                 }
@@ -907,15 +913,15 @@ struct HoldingsTableView: View {
         case "% of Total", "Contribution %": progressCell(r.num[h])
         case "AI Score": aiScoreCell(r.num["AI Score"])
         case "Intrinsic Value":
-            intrinsicCell(r).font(.caption2.weight(.medium))
+            intrinsicCell(r).appFont(.caption2.weight(.medium))
         case "Tags": tagsCellEditable(r)
         case "Account", "Sector", "Industry":
             Text(textValue(r, h).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
-                .font(.caption2)
+                .appFont(.caption2)
                 .foregroundStyle(h == "Account" ? .primary : .secondary).lineLimit(1)
         default:
             Text(format(r.num[h], h))
-                .font(.caption2.weight(.medium)).monospacedDigit()
+                .appFont(.caption2.weight(.medium)).monospacedDigit()
                 .foregroundStyle(cellColor(h, r.num[h]))
                 .lineLimit(1)
         }
@@ -929,11 +935,11 @@ struct HoldingsTableView: View {
         let g = lot["Unreal. Gain"]?.doubleValue ?? ((mkt() ?? 0) - (cost ?? 0))
         
         return HStack {
-            Text("↳ \(date)").font(.caption2).foregroundStyle(.tertiary)
+            Text("↳ \(date)").appFont(.caption2).foregroundStyle(.tertiary)
             Spacer()
-            Text("\(Fmt.number(qty)) shs").font(.caption2).foregroundStyle(.secondary)
+            Text("\(Fmt.number(qty)) shs").appFont(.caption2).foregroundStyle(.secondary)
             Spacer()
-            Text(format(g, "Unreal. G/L")).font(.caption2).monospacedDigit().foregroundStyle(glColor(g))
+            Text(format(g, "Unreal. G/L")).appFont(.caption2).monospacedDigit().foregroundStyle(glColor(g))
         }
     }
 
@@ -951,7 +957,7 @@ struct HoldingsTableView: View {
         // area fill from bleeding into the row below.
         return cellContent(h, r)
             .padding(.horizontal, 8)
-            .frame(width: columnWidth(h), height: rowHeight, alignment: align)
+            .frame(width: colWidth(h), height: rowHeight * fontScale, alignment: align)
             .background(heatmapHeaders.contains(h) ? heatmapColor(r.num[h]) : .clear)
             .clipped()
     }
@@ -966,11 +972,11 @@ struct HoldingsTableView: View {
         case "Tags": tagsCellEditable(r)
         case "Account", "Sector", "Industry":
             Text(textValue(r, h).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
-                .font(.footnote)
+                .appFont(.footnote)
                 .foregroundStyle(h == "Account" ? .primary : .secondary).lineLimit(1)
         default:
             Text(format(r.num[h], h))
-                .font(.footnote).monospacedDigit()
+                .appFont(.footnote).monospacedDigit()
                 .foregroundStyle(cellColor(h, r.num[h])).lineLimit(1)
         }
     }
@@ -980,18 +986,18 @@ struct HoldingsTableView: View {
             StockIcon(symbol: r.symbol, size: 15)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Button { appState.openStock(r.symbol) } label: { Text(r.symbol).font(.footnote.weight(.bold)).lineLimit(1).fixedSize() }.buttonStyle(.plain)
+                    Button { appState.openStock(r.symbol) } label: { Text(r.symbol).appFont(.footnote.weight(.bold)).lineLimit(1).fixedSize() }.buttonStyle(.plain)
                     if !r.lots.isEmpty {
                         Button { toggleLot(r.symbol) } label: {
                             Image(systemName: expandedLots.contains(r.symbol) ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 10)).foregroundStyle(expandedLots.contains(r.symbol) ? Theme.brand : .secondary)
+                                .appFont(.system(size: 10)).foregroundStyle(expandedLots.contains(r.symbol) ? Theme.brand : .secondary)
                         }.buttonStyle(.plain)
                     }
                 }
                 if !r.lots.isEmpty {
                     HStack(spacing: 2) {
-                        Image(systemName: "square.stack.3d.up").font(.system(size: 9))
-                        Text("\(r.lots.count) Lots").font(.system(size: 10))
+                        Image(systemName: "square.stack.3d.up").appFont(.system(size: 9))
+                        Text("\(r.lots.count) Lots").appFont(.system(size: 10))
                     }.foregroundStyle(.secondary)
                 }
             }
@@ -1009,7 +1015,7 @@ struct HoldingsTableView: View {
             .chartYScale(domain: chartDomain(r.trend1m)).chartXAxis(.hidden).chartYAxis(.hidden)
             .frame(height: 28).clipped()
         } else {
-            Text("no data").font(.system(size: 10)).foregroundStyle(.tertiary)
+            Text("no data").appFont(.system(size: 10)).foregroundStyle(.tertiary)
         }
     }
 
@@ -1020,7 +1026,7 @@ struct HoldingsTableView: View {
                 Rectangle().fill((val < 0 ? Color.down : Theme.brand).opacity(0.22))
                     .frame(width: geo.size.width * min(1, abs(val) / 100))
             }
-            Text(pctString(v)).font(.caption.weight(.medium)).monospacedDigit()
+            Text(pctString(v)).appFont(.caption.weight(.medium)).monospacedDigit()
                 .foregroundStyle(val < 0 ? Color.down : .primary)
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 5)
         }
@@ -1029,7 +1035,7 @@ struct HoldingsTableView: View {
 
     @ViewBuilder private func aiScoreCell(_ v: Double?) -> some View {
         if let v, v > 0 {
-            Text(String(format: "%.1f", v)).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+            Text(String(format: "%.1f", v)).appFont(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(v >= 8 ? Color.up : (v >= 6 ? .orange : Color.down), in: RoundedRectangle(cornerRadius: 4))
         } else { Text("—").foregroundStyle(.tertiary) }
@@ -1048,9 +1054,9 @@ struct HoldingsTableView: View {
             VStack(alignment: align, spacing: 3) {
                 HStack(spacing: 4) {
                     Text(Fmt.currency(iv, code: currency))
-                        .font(.footnote)
+                        .appFont(.footnote)
                         .foregroundStyle(tone)
-                    if let m = r.mos { Text("(\(String(format: "%.1f", abs(m)))%)").font(.system(size: 10)).foregroundStyle(.secondary) }
+                    if let m = r.mos { Text("(\(String(format: "%.1f", abs(m)))%)").appFont(.system(size: 10)).foregroundStyle(.secondary) }
                 }
                 .monospacedDigit()
                 .lineLimit(1)
@@ -1083,7 +1089,7 @@ struct HoldingsTableView: View {
         } label: {
             HStack(spacing: 4) {
                 tagsCell(r.tags)
-                Image(systemName: "pencil").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Image(systemName: "pencil").appFont(.system(size: 9)).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -1096,7 +1102,7 @@ struct HoldingsTableView: View {
         else {
             HStack(spacing: 3) {
                 ForEach(tags.prefix(3), id: \.self) { t in
-                    Text(t.uppercased()).font(.system(size: 10, weight: .bold)).tracking(0.5)
+                    Text(t.uppercased()).appFont(.system(size: 10, weight: .bold)).tracking(0.5)
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(badgeColor(t).opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
                         .foregroundStyle(badgeColor(t))
@@ -1115,7 +1121,7 @@ struct HoldingsTableView: View {
                 Group {
                     if h == "Symbol" {
                         HStack(spacing: 3) {
-                            Text("↳").font(.system(size: 10)).foregroundStyle(.tertiary)
+                            Text("↳").appFont(.system(size: 10)).foregroundStyle(.tertiary)
                             Text("Lot: \(MarketTime.formatted(lot["Date"]?.stringValue ?? ""))").italic().lineLimit(1).fixedSize()
                         }
                     } else {
@@ -1127,12 +1133,12 @@ struct HoldingsTableView: View {
                 // A fixed height (matching `cell`) keeps the pinned Symbol column
                 // and the scrollable columns aligned — they lay out lots separately.
                 .padding(.horizontal, 8)
-                .frame(width: columnWidth(h), height: lotRowHeight, alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
+                .frame(width: colWidth(h), height: lotRowHeight * fontScale, alignment: leftAlignedHeaders.contains(h) ? .leading : .trailing)
                 .clipped()
                 .foregroundStyle(.secondary)
             }
         }
-        .font(.caption)
+        .appFont(.caption)
         .background(.background.secondary.opacity(0.35))
     }
 
@@ -1285,7 +1291,7 @@ private struct TagEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Edit Tags").font(.title2.bold()).padding(20)
+            Text("Edit Tags").appFont(.title2.bold()).padding(20)
             Divider()
             Form {
                 Section {
@@ -1297,7 +1303,7 @@ private struct TagEditorSheet: View {
                 } footer: {
                     Text("Comma-separated, e.g. Core, Speculative, Dividend")
                 }
-                if let error { Text(error).foregroundStyle(.red).font(.callout) }
+                if let error { Text(error).foregroundStyle(.red).appFont(.callout) }
             }
             .formStyle(.grouped)
             Divider()

@@ -52,8 +52,8 @@ struct ProjectionCardView: View {
 
     private var header: some View {
         HStack(spacing: 7) {
-            Image(systemName: "chart.line.uptrend.xyaxis").font(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
-            Text("Projected Value").font(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
+            Image(systemName: "chart.line.uptrend.xyaxis").appFont(.caption.weight(.semibold)).foregroundStyle(Theme.brand)
+            Text("Projected Value").appFont(.caption.weight(.semibold)).tracking(0.8).textCase(.uppercase)
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -73,9 +73,9 @@ struct ProjectionCardView: View {
 
     private func stat(_ label: String, _ value: String) -> some View {
         HStack(spacing: 6) {
-            Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
+            Text(label).appFont(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
                 .lineLimit(1)
-            Text(value).font(.callout.weight(.bold)).lineLimit(1)
+            Text(value).appFont(.callout.weight(.bold)).lineLimit(1)
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -155,7 +155,7 @@ struct ProjectionCardView: View {
                     Text("Range (10–90%)").frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .font(.system(size: 11, weight: .bold)).textCase(.uppercase).tracking(0.5)
+            .appFont(.system(size: 11, weight: .bold)).textCase(.uppercase).tracking(0.5)
             .foregroundStyle(.secondary)
             .padding(.bottom, 6)
 
@@ -178,7 +178,7 @@ struct ProjectionCardView: View {
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
-                .font(.subheadline)
+                .appFont(.subheadline)
                 .padding(.vertical, 8)
             }
         }
@@ -186,7 +186,7 @@ struct ProjectionCardView: View {
 
     private var footnote: some View {
         Text("Compounds the portfolio's historical annualized return and volatility forward (lognormal model). The median is the central estimate; the band shows the 10th–90th percentile range. Past performance does not guarantee future results — longer horizons are far more uncertain.")
-            .font(.caption2).foregroundStyle(.secondary)
+            .appFont(.caption2).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

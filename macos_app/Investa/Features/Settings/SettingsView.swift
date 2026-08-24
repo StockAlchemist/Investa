@@ -116,11 +116,11 @@ struct SettingsSidebarItem: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 18))
+                    .appFont(.system(size: 18))
                     .foregroundStyle(isActive ? tab.color : .secondary)
                 
                 Text(tab.rawValue)
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(.system(size: 14, weight: .medium))
                     .foregroundStyle(isActive ? .primary : .secondary)
                 
                 Spacer()
@@ -172,16 +172,16 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Settings")
-                        .font(.system(size: 32, weight: .heavy, design: .default))
+                        .appFont(.system(size: 32, weight: .heavy, design: .default))
                         .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
                     
                     if viewModel.isLoading { ProgressView().controlSize(.small).padding(.leading, 8) }
                     Spacer()
-                    if let s = viewModel.status { Text(s).font(.caption).foregroundStyle(.secondary) }
+                    if let s = viewModel.status { Text(s).appFont(.caption).foregroundStyle(.secondary) }
                 }
                 
                 Text("Manage application settings, preferences, and account configurations.")
-                    .font(.body)
+                    .appFont(.body)
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 24)
@@ -227,16 +227,16 @@ struct SettingsView: View {
                         .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
                     
                     Image(systemName: tab.icon)
-                        .font(.system(size: 24))
+                        .appFont(.system(size: 24))
                         .foregroundStyle(tab.color)
                 }
                 .frame(width: 48, height: 48)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(tab.rawValue)
-                        .font(.title3.bold())
+                        .appFont(.title3.bold())
                     Text(tab.description)
-                        .font(.subheadline)
+                        .appFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -284,7 +284,7 @@ struct SettingsCard<Content: View>: View {
                     Image(systemName: icon)
                         .foregroundStyle(iconColor ?? .primary)
                 }
-                Text(title).font(.headline)
+                Text(title).appFont(.headline)
             }
             content
         }

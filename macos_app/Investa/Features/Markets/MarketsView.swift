@@ -71,7 +71,7 @@ struct MarketsView: View {
 
     private var header: some View {
         HStack {
-            Text("Markets").font(.title2.bold())
+            Text("Markets").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
         }
@@ -131,12 +131,12 @@ struct MarketsView: View {
 
     private var indicesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Market Indices").font(.title3.bold())
+            Text("Market Indices").appFont(.title3.bold())
             if viewModel.indices.isEmpty {
                 if viewModel.isLoading {
                     HStack { Spacer(); ProgressView(); Spacer() }.frame(height: 120)
                 } else {
-                    Text("No market data available.").font(.callout).foregroundStyle(.secondary)
+                    Text("No market data available.").appFont(.callout).foregroundStyle(.secondary)
                 }
             } else {
                 let isCompact: Bool = {
@@ -173,12 +173,12 @@ struct MarketsView: View {
 
     private func newsSection(_ title: String, _ news: [MarketNewsItem]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(title, systemImage: "newspaper").font(.title3.bold())
+            Label(title, systemImage: "newspaper").appFont(.title3.bold())
             if news.isEmpty {
                 if viewModel.isLoading {
                     HStack { Spacer(); ProgressView().controlSize(.small); Spacer() }.frame(height: 60)
                 } else {
-                    Text("No news available.").font(.callout).foregroundStyle(.secondary)
+                    Text("No news available.").appFont(.callout).foregroundStyle(.secondary)
                 }
             } else {
                 #if os(iOS)
@@ -225,22 +225,22 @@ private struct IndexCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(index.name ?? "Index").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase).tracking(1).lineLimit(1)
-                        Text(priceText).font(.system(size: 32, weight: .bold)).monospacedDigit()
+                        Text(index.name ?? "Index").appFont(.system(size: 11, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase).tracking(1).lineLimit(1)
+                        Text(priceText).appFont(.system(size: 32, weight: .bold)).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.4)
                     }
                     Spacer(minLength: 6)
                     HStack(spacing: 3) {
-                        Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right").font(.caption2)
+                        Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right").appFont(.caption2)
                         Text("\(isUp ? "+" : "")\(String(format: "%.2f%%", index.changesPercentage ?? 0))")
                             .fontWeight(.bold).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.5).fixedSize(horizontal: true, vertical: false)
                     }
-                    .font(.caption).foregroundStyle(isUp ? .green : .red)
+                    .appFont(.caption).foregroundStyle(isUp ? .green : .red)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background((isUp ? Color.green : .red).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 }
-                Text("\(isUp ? "+" : "")\(String(format: "%.2f", index.change ?? 0)) pts").font(.caption.weight(.semibold)).monospacedDigit()
+                Text("\(isUp ? "+" : "")\(String(format: "%.2f", index.change ?? 0)) pts").appFont(.caption.weight(.semibold)).monospacedDigit()
                     .foregroundStyle(isUp ? .green : .red)
             }
             .padding(16)
@@ -258,7 +258,7 @@ private struct IndexCard: View {
             } else {
                 Spacer().frame(height: 16)
             }
-            Text("7D Trend").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
+            Text("7D Trend").appFont(.system(size: 11, weight: .medium)).foregroundStyle(.secondary.opacity(0.7))
                 .padding(.horizontal, 16).padding(.bottom, 10).padding(.top, 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -343,9 +343,9 @@ private struct IndexGraphSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text(index.name ?? "Index").font(.title2.bold())
+                    Text(index.name ?? "Index").appFont(.title2.bold())
                     HStack(spacing: 10) {
-                        Text(Fmt.number(index.price)).font(.title3).monospacedDigit()
+                        Text(Fmt.number(index.price)).appFont(.title3).monospacedDigit()
                         Text("\(isUp ? "+" : "")\(Fmt.number(index.change)) (\(Fmt.percent(index.changesPercentage, includeSign: true)))")
                             .foregroundStyle(isUp ? .green : .red).fontWeight(.semibold)
                     }
@@ -354,7 +354,7 @@ private struct IndexGraphSheet: View {
                 // An iPhone's width can't carry the title, the picker and the
                 // close button on one line — there it gets a row of its own.
                 if tvSymbol != nil && !isPhoneLayout { modePicker.fixedSize() }
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).font(.title2).foregroundStyle(.secondary)
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).appFont(.title2).foregroundStyle(.secondary)
             }
             if tvSymbol != nil && isPhoneLayout { modePicker.frame(maxWidth: .infinity) }
 
@@ -365,7 +365,7 @@ private struct IndexGraphSheet: View {
                     HStack(spacing: 6) {
                         ForEach(periods, id: \.1) { label, value in
                             Button { period = value } label: {
-                                Text(label).font(.caption.weight(.semibold))
+                                Text(label).appFont(.caption.weight(.semibold))
                                     .padding(.horizontal, 10).padding(.vertical, 4)
                                     .background(period == value ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
                                     .foregroundStyle(period == value ? .white : .secondary)
@@ -472,7 +472,7 @@ private struct YourMoversSection: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 6) {
                     Image(systemName: "chart.bar")
-                        .font(.caption.weight(.semibold))
+                        .appFont(.caption.weight(.semibold))
                         .foregroundStyle(Color.brand)
                     SectionLabel(title: "Your Movers Today")
                 }
@@ -500,16 +500,16 @@ private struct YourMoversSection: View {
     private func column(_ title: String, _ rows: [Mover], _ positive: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: positive ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis")
-                .font(.caption2).textCase(.uppercase).foregroundStyle(positive ? Color.up : Color.down)
-            if rows.isEmpty { Text("No movers.").font(.caption).foregroundStyle(.secondary) }
+                .appFont(.caption2).textCase(.uppercase).foregroundStyle(positive ? Color.up : Color.down)
+            if rows.isEmpty { Text("No movers.").appFont(.caption).foregroundStyle(.secondary) }
             ForEach(rows, id: \.symbol) { r in
                 Button { onPick(r.symbol) } label: {
                     HStack {
                         Text(r.symbol).fontWeight(.bold).lineLimit(1)
                         Spacer(minLength: 6)
-                        if let p = r.price { Text(Fmt.currency(p, code: currency)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                        if let p = r.price { Text(Fmt.currency(p, code: currency)).appFont(.caption).foregroundStyle(.secondary).lineLimit(1) }
                         Text("\(r.pct >= 0 ? "+" : "")\(String(format: "%.2f%%", r.pct))").fontWeight(.bold).foregroundStyle(positive ? Color.up : Color.down).lineLimit(1)
-                    }.font(.caption)
+                    }.appFont(.caption)
                 }.buttonStyle(.plain)
             }
         }
@@ -540,18 +540,18 @@ private struct NewsCard: View {
                         .frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title).font(.callout.weight(.semibold)).multilineTextAlignment(.leading).lineLimit(2)
+                    Text(item.title).appFont(.callout.weight(.semibold)).multilineTextAlignment(.leading).lineLimit(2)
                     HStack(spacing: 6) {
                         if let sym = item.symbol, !sym.isEmpty {
-                            Text(sym).font(.caption2.weight(.bold)).foregroundStyle(Color.brandIndigo)
+                            Text(sym).appFont(.caption2.weight(.bold)).foregroundStyle(Color.brandIndigo)
                                 .padding(.horizontal, 5).padding(.vertical, 1).background(Color.brandIndigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                         }
-                        Text(item.provider).font(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase).lineLimit(1)
+                        Text(item.provider).appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase).lineLimit(1)
                         if !item.pubDate.isEmpty {
-                            Text("· \(timeAgo(item.pubDate))").font(.caption2).foregroundStyle(.secondary)
+                            Text("· \(timeAgo(item.pubDate))").appFont(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "arrow.up.right.square").font(.caption2).foregroundStyle(.secondary)
+                        Image(systemName: "arrow.up.right.square").appFont(.caption2).foregroundStyle(.secondary)
                     }
                 }
             }

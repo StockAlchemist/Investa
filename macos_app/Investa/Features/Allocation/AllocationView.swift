@@ -95,7 +95,7 @@ struct AllocationView: View {
 
     private var header: some View {
         HStack {
-            Text("Portfolio").font(.title2.bold())
+            Text("Portfolio").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
         }
@@ -107,7 +107,7 @@ struct AllocationView: View {
         if viewModel.isLoading {
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Loading holdings…").font(.callout).foregroundStyle(.secondary)
+                Text("Loading holdings…").appFont(.callout).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 200)
             .padding(.vertical, 40)

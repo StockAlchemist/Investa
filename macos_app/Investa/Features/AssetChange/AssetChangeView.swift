@@ -67,7 +67,7 @@ struct AssetChangeView: View {
 
     private var header: some View {
         HStack {
-            Text("Performance").font(.title2.bold())
+            Text("Performance").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
         }
@@ -81,7 +81,7 @@ struct AssetChangeView: View {
                 header
                 Divider()
                 if let error = viewModel.errorMessage {
-                    Text(error).foregroundStyle(.red).font(.callout).padding(12)
+                    Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
                 }
                 VStack(spacing: 20) {
                     if vis("kpiStrip") {
@@ -104,7 +104,7 @@ struct AssetChangeView: View {
             header
             Divider()
             if let error = viewModel.errorMessage {
-                Text(error).foregroundStyle(.red).font(.callout).padding(12)
+                Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
             }
             ScrollView {
                 VStack(spacing: 20) {

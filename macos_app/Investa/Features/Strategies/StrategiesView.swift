@@ -117,18 +117,18 @@ struct StrategiesView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Strategies").font(.title2.weight(.bold))
+            Text("Strategies").appFont(.title2.weight(.bold))
             Text("Fixed rules, not live suggestions. Each was backtested point-in-time; "
                  + "the returns below assume the rule is followed mechanically. "
                  + "Nothing here places an order.")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("**Individual stocks only — no leverage, no funds.** Each strategy holds "
                  + "the ranked companies directly and stays fully invested; there is no "
                  + "defensive mode and no index or cash ETF. None of them out-returns the "
                  + "NASDAQ-100 over 2013–2025.")
-                .font(.caption2)
+                .appFont(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -163,7 +163,7 @@ struct StrategiesView: View {
 
             ForEach(model.allocation?.warnings ?? [], id: \.self) { warning in
                 Label(warning, systemImage: "info.circle")
-                    .font(.caption)
+                    .appFont(.caption)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
@@ -206,10 +206,10 @@ struct StrategiesView: View {
     private func title(_ strategy: StrategyDefinition) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(strategy.name) — today's allocation")
-                .font(.headline)
+                .appFont(.headline)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Weights are the rule; share counts are indicative and move with price.")
-                .font(.caption2).foregroundStyle(.secondary)
+                .appFont(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -217,14 +217,14 @@ struct StrategiesView: View {
     private var capitalField: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("AMOUNT TO ALLOCATE")
-                .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                .appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 .lineLimit(1).minimumScaleFactor(0.8)
             HStack(spacing: 8) {
                 // The symbol sits outside the field: it says which currency the
                 // amount is in without becoming text the user has to type past
                 // or delete.
                 Text(Fmt.symbol(appState.displayCurrency))
-                    .font(.callout.weight(.medium))
+                    .appFont(.callout.weight(.medium))
                     .foregroundStyle(.secondary)
                 TextField("100,000", text: Binding(
                     get: { capitalText },
@@ -271,7 +271,7 @@ struct StrategiesView: View {
 
     private func rules(_ strategy: StrategyDefinition) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("THE RULE").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text("THE RULE").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
 
             let ranking = strategy.ranking
             Label {
@@ -280,7 +280,7 @@ struct StrategiesView: View {
                      + (ranking.maxPerSector.map { ", max \($0) per industry" } ?? "")
                      + (ranking.minMarketCap.map { ", min $\(Int($0 / 1_000_000_000))B market cap" } ?? "")
                      + ". \(ranking.rebalance).")
-                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                    .appFont(.caption).fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(.secondary)
             }
@@ -288,7 +288,7 @@ struct StrategiesView: View {
             Label {
                 Text("Fully invested at all times — no market timing, no cash position, "
                      + "no funds.")
-                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                    .appFont(.caption).fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "checkmark.shield").foregroundStyle(.secondary)
             }
@@ -299,10 +299,10 @@ struct StrategiesView: View {
 
     private func risks(_ strategy: StrategyDefinition) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("WHAT IT COSTS YOU").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text("WHAT IT COSTS YOU").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(strategy.risks, id: \.self) { risk in
                 Label {
-                    Text(risk).font(.caption).foregroundStyle(.secondary)
+                    Text(risk).appFont(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
@@ -322,23 +322,23 @@ private struct StrategyCard: View {
             HStack(alignment: .top) {
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.caption.weight(.bold))
+                        .appFont(.caption.weight(.bold))
                         .foregroundStyle(Theme.brand)
                         .accessibilityHidden(true)
                 }
-                Text(strategy.name).font(.subheadline.weight(.semibold))
+                Text(strategy.name).appFont(.subheadline.weight(.semibold))
                     .foregroundStyle(isSelected ? Theme.brand : .primary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 6)
                 if strategy.isDefault {
                     Text("Recommended")
-                        .font(.caption2.weight(.medium))
+                        .appFont(.caption2.weight(.medium))
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(Color.secondary.opacity(0.15)))
                 }
             }
             Text(strategy.summary)
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             BacktestStats(backtest: strategy.backtest, compact: true)
         }
@@ -376,9 +376,9 @@ private struct BacktestStats: View {
         VStack(alignment: .leading, spacing: 2) {
             // A stat is unreadable without its label, so a tight column shrinks
             // the label rather than truncating it to "Max drawdo…".
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+            Text(label).appFont(.caption2).foregroundStyle(.secondary)
                 .lineLimit(1).minimumScaleFactor(0.75)
-            Text(value).font(.callout.weight(.bold)).monospacedDigit()
+            Text(value).appFont(.callout.weight(.bold)).monospacedDigit()
                 .foregroundStyle(tone ?? .primary)
         }
     }
@@ -389,6 +389,8 @@ private struct BacktestStats: View {
 }
 
 private struct SleeveSection: View {
+    @Environment(\.appFontScale) private var fontScale
+    private var cols: SleeveWidths { SleeveWidths(scale: fontScale) }
     let sleeve: StrategySleeve
     let currency: String
     let ageDays: Int?
@@ -402,12 +404,12 @@ private struct SleeveSection: View {
             // middle of the weight-and-date phrase.
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(sleeve.label).font(.subheadline.weight(.semibold))
+                    Text(sleeve.label).appFont(.subheadline.weight(.semibold))
                     Spacer(minLength: 8)
                     provenance
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(sleeve.label).font(.subheadline.weight(.semibold))
+                    Text(sleeve.label).appFont(.subheadline.weight(.semibold))
                     provenance
                 }
             }
@@ -416,7 +418,7 @@ private struct SleeveSection: View {
 
             if sleeve.positions.isEmpty {
                 Text("No positions — the sleeve could not be built.")
-                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 6)
+                    .appFont(.caption).foregroundStyle(.secondary).padding(.vertical, 6)
             } else {
                 ForEach(sleeve.positions) { position in
                     Button { onSelect(position.symbol) } label: {
@@ -441,35 +443,35 @@ private struct SleeveSection: View {
                     .fontWeight(isStale ? .semibold : .regular)
             }
         }
-        .font(.caption).monospacedDigit()
+        .appFont(.caption).monospacedDigit()
         .lineLimit(1).minimumScaleFactor(0.75)
     }
 
     /// Column labels, so the trailing numbers are identifiable without having
     /// to infer them from their format — the web table has a header row.
     private var columnHeader: some View {
-        HStack(spacing: SleeveColumns.spacing) {
+        HStack(spacing: cols.spacing) {
             Text("SYMBOL")
             Spacer(minLength: 6)
             if SleeveColumns.showsIndustry {
-                Text("INDUSTRY").frame(width: SleeveColumns.industry, alignment: .leading)
+                Text("INDUSTRY").frame(width: cols.industry, alignment: .leading)
             }
             Text(isPhoneLayout ? "WT" : "WEIGHT")
-                .frame(width: SleeveColumns.weight, alignment: .trailing)
-            Text("AMOUNT").frame(width: SleeveColumns.amount, alignment: .trailing)
+                .frame(width: cols.weight, alignment: .trailing)
+            Text("AMOUNT").frame(width: cols.amount, alignment: .trailing)
             Text(sleeve.priceSource == .snapshot
                  ? (isPhoneLayout ? "STORED" : "PRICE (STORED)")
                  : "PRICE")
-                .frame(width: SleeveColumns.price, alignment: .trailing)
-            Text("SHARES").frame(width: SleeveColumns.shares, alignment: .trailing)
+                .frame(width: cols.price, alignment: .trailing)
+            Text("SHARES").frame(width: cols.shares, alignment: .trailing)
         }
-        .font(.caption2.weight(.semibold))
+        .appFont(.caption2.weight(.semibold))
         .foregroundStyle(.secondary)
         .lineLimit(1)
     }
 }
 
-private extension Text {
+private extension View {
     /// A fixed-width numeric column that never wraps: outsized values (a
     /// four-digit share price, a five-digit share count) shrink to fit the
     /// column instead of breaking onto a second line.
@@ -483,6 +485,20 @@ private extension Text {
 /// Fixed widths for the sleeve table's numeric columns. At Mac spacing the
 /// four columns total ~306pt with gaps — wider than the space a ~390pt phone
 /// leaves inside its card, which crushed the symbol column to an ellipsis.
+/// The sleeve table's columns at the window's font scale. The constants below
+/// are sized for unscaled type; on a wide window the type grows, and a column
+/// that doesn't grow with it just pushes its number back down through
+/// `minimumScaleFactor` — a bigger table of the same small figures.
+private struct SleeveWidths {
+    let scale: CGFloat
+    var spacing: CGFloat { SleeveColumns.spacing * scale }
+    var industry: CGFloat { SleeveColumns.industry * scale }
+    var weight: CGFloat { SleeveColumns.weight * scale }
+    var amount: CGFloat { SleeveColumns.amount * scale }
+    var price: CGFloat { SleeveColumns.price * scale }
+    var shares: CGFloat { SleeveColumns.shares * scale }
+}
+
 private enum SleeveColumns {
     static let spacing: CGFloat = isPhoneLayout ? 6 : 10
     static let weight: CGFloat = isPhoneLayout ? 38 : 48
@@ -499,6 +515,8 @@ private enum SleeveColumns {
 }
 
 private struct PositionRow: View {
+    @Environment(\.appFontScale) private var fontScale
+    private var cols: SleeveWidths { SleeveWidths(scale: fontScale) }
     let position: StrategyPosition
     let currency: String
 
@@ -516,16 +534,16 @@ private struct PositionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: SleeveColumns.spacing) {
+        HStack(spacing: cols.spacing) {
             StockIcon(symbol: position.symbol, size: isPhoneLayout ? 20 : 24)
             VStack(alignment: .leading, spacing: 1) {
-                Text(position.symbol).font(.caption.weight(.semibold))
+                Text(position.symbol).appFont(.caption.weight(.semibold))
                     .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 if let subtitle {
-                    Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subtitle).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 if let inlineIndustry {
-                    Text(inlineIndustry).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(inlineIndustry).appFont(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
             Spacer(minLength: 6)
@@ -534,22 +552,22 @@ private struct PositionRow: View {
                 // so a reader can see the concentration the rule allowed rather
                 // than having to recognise it from the tickers.
                 Text(position.industry ?? "—")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .appFont(.caption2).foregroundStyle(.secondary)
                     .lineLimit(1).minimumScaleFactor(0.75)
-                    .frame(width: SleeveColumns.industry, alignment: .leading)
+                    .frame(width: cols.industry, alignment: .leading)
             }
             Text("\(String(format: "%.1f", position.weight * 100))%")
-                .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
-                .numericCell(width: SleeveColumns.weight)
+                .appFont(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                .numericCell(width: cols.weight)
             Text(Fmt.currency(position.amount, code: currency))
-                .font(.caption).monospacedDigit()
-                .numericCell(width: SleeveColumns.amount)
+                .appFont(.caption).monospacedDigit()
+                .numericCell(width: cols.amount)
             Text(position.price.map { String(format: "%.2f", $0) } ?? "—")
-                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                .numericCell(width: SleeveColumns.price)
+                .appFont(.caption).monospacedDigit().foregroundStyle(.secondary)
+                .numericCell(width: cols.price)
             Text(position.shares.map { "\($0)" } ?? "—")
-                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                .numericCell(width: SleeveColumns.shares)
+                .appFont(.caption).monospacedDigit().foregroundStyle(.secondary)
+                .numericCell(width: cols.shares)
         }
         .padding(.vertical, 3)
     }

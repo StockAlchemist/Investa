@@ -181,11 +181,11 @@ struct TransactionsView: View {
 
     private var header: some View {
         HStack {
-            Text("Transactions").font(.title2.bold())
+            Text("Transactions").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
             Text("Showing \(sorted.count) of \(viewModel.transactions.count)")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
     }
@@ -372,10 +372,10 @@ struct TransactionsView: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Review Import (\(reviewTransactions.count))").font(.title2.bold())
+                    Text("Review Import (\(reviewTransactions.count))").appFont(.title2.bold())
                     if reviewDuplicateCount > 0 {
                         Label("\(reviewDuplicateCount) already in your table (highlighted)", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(.orange)
+                            .appFont(.caption).foregroundStyle(.orange)
                     }
                 }
                 Spacer()
@@ -398,7 +398,7 @@ struct TransactionsView: View {
                     Text("Account").frame(width: 114, alignment: .leading).padding(.leading, 6)
                     Spacer()
                 }
-                .font(.caption2.weight(.semibold))
+                .appFont(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 16).padding(.vertical, 6)
                 Divider()
@@ -421,7 +421,7 @@ struct TransactionsView: View {
                                         .fontWeight(.bold).textCase(.uppercase)
                                     if isDuplicate {
                                         Label("Duplicate", systemImage: "exclamationmark.triangle.fill")
-                                            .font(.system(size: 10, weight: .bold))
+                                            .appFont(.system(size: 10, weight: .bold))
                                             .foregroundStyle(.orange)
                                             .padding(.horizontal, 5).padding(.vertical, 2)
                                             .background(.orange.opacity(0.15), in: Capsule())
@@ -441,26 +441,26 @@ struct TransactionsView: View {
                                         ForEach(Transaction.allTypes, id: \.self) { Text($0).tag($0) }
                                     }
                                     .labelsHidden().pickerStyle(.menu)
-                                    .font(.caption.weight(.bold))
+                                    .appFont(.caption.weight(.bold))
                                     Spacer()
                                     TextField("Qty", text: Binding(
                                         get: { reviewTransactions[i].quantity == 0 ? "" : Fmt.number(reviewTransactions[i].quantity) },
                                         set: { if let v = Double($0) { reviewTransactions[i].quantity = v } }))
                                         .decimalKeyboard()
-                                        .multilineTextAlignment(.trailing).monospacedDigit().font(.caption).frame(width: 70)
-                                    Text("@").font(.caption2).foregroundStyle(.tertiary)
+                                        .multilineTextAlignment(.trailing).monospacedDigit().appFont(.caption).frame(width: 70)
+                                    Text("@").appFont(.caption2).foregroundStyle(.tertiary)
                                     TextField("Price", text: Binding(
                                         get: { reviewTransactions[i].pricePerShare == 0 ? "" : Fmt.number(reviewTransactions[i].pricePerShare) },
                                         set: { if let v = Double($0) { reviewTransactions[i].pricePerShare = v } }))
                                         .decimalKeyboard()
-                                        .multilineTextAlignment(.trailing).monospacedDigit().font(.caption).frame(width: 70)
+                                        .multilineTextAlignment(.trailing).monospacedDigit().appFont(.caption).frame(width: 70)
                                 }
                                 // Row 3: Date (editable) | Account (editable) | Delete
                                 HStack {
                                     TextField("YYYY-MM-DD", text: Binding(
                                         get: { String(reviewTransactions[i].date.prefix(10)) },
                                         set: { reviewTransactions[i].date = $0 }))
-                                        .font(.caption2).foregroundStyle(.secondary).frame(width: 90)
+                                        .appFont(.caption2).foregroundStyle(.secondary).frame(width: 90)
                                     Spacer()
                                     TextField("Account", text: Binding(
                                         get: { reviewTransactions[i].account },
@@ -495,7 +495,7 @@ struct TransactionsView: View {
                                         .fontWeight(.medium).textCase(.uppercase)
                                     if isDuplicate {
                                         Image(systemName: "exclamationmark.triangle.fill")
-                                            .font(.system(size: 10))
+                                            .appFont(.system(size: 10))
                                             .foregroundStyle(.orange)
                                             .help("This transaction already exists in your table")
                                     }
@@ -526,7 +526,7 @@ struct TransactionsView: View {
                                 Button(role: .destructive) { reviewTransactions.remove(at: i) } label: { Image(systemName: "trash") }
                                     .buttonStyle(.borderless).foregroundStyle(.red)
                             }
-                            .font(.callout).padding(.vertical, 6).padding(.horizontal, 16)
+                            .appFont(.callout).padding(.vertical, 6).padding(.horizontal, 16)
                             .background(isDuplicate ? Color.orange.opacity(0.08) : Color.clear)
                             Divider()
                             #endif
@@ -559,7 +559,7 @@ struct TransactionsView: View {
         VStack(alignment: .leading, spacing: 8) {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 8) {
-                Label("\(viewModel.pendingIbkr.count) pending IBKR", systemImage: "tray.full").font(.headline)
+                Label("\(viewModel.pendingIbkr.count) pending IBKR", systemImage: "tray.full").appFont(.headline)
                 HStack {
                     Button("Approve All") { Task { await viewModel.approvePending(viewModel.pendingIbkr.compactMap { $0.id }) } }
                         .buttonStyle(.borderedProminent).tint(.green)
@@ -574,28 +574,28 @@ struct TransactionsView: View {
                             Button {
                                 appState.openStock(tx.symbol)
                             } label: {
-                                Text(tx.symbol).font(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                                Text(tx.symbol).appFont(.headline).fontWeight(.bold).foregroundStyle(.indigo)
                             }
                             .buttonStyle(.plain)
                         } else {
-                            Text(tx.symbol).font(.headline).fontWeight(.bold)
+                            Text(tx.symbol).appFont(.headline).fontWeight(.bold)
                         }
                         Spacer()
                         Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).fontWeight(.bold).monospacedDigit()
                     }
                     HStack {
-                        Text(tx.type).font(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
+                        Text(tx.type).appFont(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
                         Spacer()
                         if tx.quantity != 0 {
-                            Text("\(Fmt.number(tx.quantity))").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            Text("\(Fmt.number(tx.quantity))").appFont(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }
                     }
                     HStack {
-                        Text(tx.displayDate).font(.caption2).foregroundStyle(.secondary)
+                        Text(tx.displayDate).appFont(.caption2).foregroundStyle(.secondary)
                         Spacer()
                         if let id = tx.id {
-                            Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.green).font(.title3)
-                            Button { Task { await viewModel.rejectPending([id]) } } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.red).font(.title3)
+                            Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.green).appFont(.title3)
+                            Button { Task { await viewModel.rejectPending([id]) } } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.red).appFont(.title3)
                         }
                     }
                 }
@@ -603,7 +603,7 @@ struct TransactionsView: View {
             }
             #else
             HStack {
-                Label("\(viewModel.pendingIbkr.count) pending IBKR transactions", systemImage: "tray.full").font(.headline)
+                Label("\(viewModel.pendingIbkr.count) pending IBKR transactions", systemImage: "tray.full").appFont(.headline)
                 Spacer()
                 Button("Approve All") { Task { await viewModel.approvePending(viewModel.pendingIbkr.compactMap { $0.id }) } }
                     .buttonStyle(.borderedProminent).tint(.green)
@@ -627,7 +627,7 @@ struct TransactionsView: View {
                     }
                     Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
                     Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).monospacedDigit().frame(width: 100, alignment: .trailing)
-                    Text(tx.account).font(.caption).foregroundStyle(.secondary)
+                    Text(tx.account).appFont(.caption).foregroundStyle(.secondary)
                     Spacer()
                     if let id = tx.id {
                         Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle") }
@@ -636,7 +636,7 @@ struct TransactionsView: View {
                             .buttonStyle(.borderless).foregroundStyle(.red)
                     }
                 }
-                .font(.callout).padding(.vertical, 3)
+                .appFont(.callout).padding(.vertical, 3)
                 Divider()
             }
             #endif
@@ -651,9 +651,9 @@ struct TransactionsView: View {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
                 Text("\(duplicateCount) potential duplicate \(duplicateCount == 1 ? "transaction" : "transactions") detected")
-                    .font(.callout)
+                    .appFont(.callout)
                 Spacer()
-                Text(showDuplicatesOnly ? "Showing — tap to clear" : "Review").font(.caption.bold())
+                Text(showDuplicatesOnly ? "Showing — tap to clear" : "Review").appFont(.caption.bold())
             }
             .padding(12)
             .background(.orange.opacity(showDuplicatesOnly ? 0.2 : 0.1), in: RoundedRectangle(cornerRadius: 8))
@@ -686,7 +686,7 @@ struct TransactionsView: View {
                         Button {
                             if on { filterTypes.remove(type) } else { filterTypes.insert(type) }
                         } label: {
-                            Text(type).font(.caption.weight(.medium))
+                            Text(type).appFont(.caption.weight(.medium))
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(on ? Self.typeColor(type).opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
                                 .foregroundStyle(on ? Self.typeColor(type) : Color.gray)
@@ -700,7 +700,7 @@ struct TransactionsView: View {
                 HStack(spacing: 6) {
                     ForEach(TxDatePreset.allCases) { p in
                         Button { datePreset = p } label: {
-                            Text(p.label).font(.caption.weight(.medium))
+                            Text(p.label).appFont(.caption.weight(.medium))
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(datePreset == p ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
                                 .foregroundStyle(datePreset == p ? Color.accentColor : Color.gray)
@@ -720,7 +720,7 @@ struct TransactionsView: View {
             HStack(spacing: 6) {
                 ForEach(TxDatePreset.allCases) { p in
                     Button { datePreset = p } label: {
-                        Text(p.label).font(.caption.weight(.medium))
+                        Text(p.label).appFont(.caption.weight(.medium))
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(datePreset == p ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.15), in: Capsule())
                             .foregroundStyle(datePreset == p ? Color.accentColor : Color.gray)
@@ -754,7 +754,7 @@ struct TransactionsView: View {
             TableColumn("Date", value: \.date) { Text($0.displayDate).foregroundStyle(.secondary) }
                 .width(min: 90, ideal: 110)
             TableColumn("Type", value: \.type) { tx in
-                Text(tx.type.uppercased()).font(.caption2.weight(.bold))
+                Text(tx.type.uppercased()).appFont(.caption2.weight(.bold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
                     .foregroundStyle(Self.typeColor(tx.type))
@@ -784,7 +784,7 @@ struct TransactionsView: View {
                     .foregroundStyle(tx.totalAmountColor)
             }
             .width(min: 90, ideal: 120)
-            TableColumn("Account", value: \.account) { Text($0.account).font(.caption).foregroundStyle(.secondary) }
+            TableColumn("Account", value: \.account) { Text($0.account).appFont(.caption).foregroundStyle(.secondary) }
                 .width(min: 90, ideal: 130)
             TableColumn("") { tx in
                 HStack(spacing: 4) {
@@ -822,19 +822,19 @@ struct TransactionsView: View {
                             appState.openStock(tx.symbol)
                         } label: {
                             Text(Self.rowTitle(tx))
-                                .font(.subheadline.weight(.bold))
+                                .appFont(.subheadline.weight(.bold))
                                 .foregroundStyle(.indigo)
                                 .lineLimit(1)
                         }
                         .buttonStyle(.plain)
                     } else {
                         Text(Self.rowTitle(tx))
-                            .font(.subheadline.weight(.bold))
+                            .appFont(.subheadline.weight(.bold))
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
                     Text(Fmt.currency(tx.displayTotalAmount, code: tx.localCurrency))
-                        .font(.subheadline.weight(.bold))
+                        .appFont(.subheadline.weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(tx.totalAmountColor)
                         .fixedSize(horizontal: true, vertical: false)
@@ -844,7 +844,7 @@ struct TransactionsView: View {
                 HStack(alignment: .center, spacing: 6) {
                     if !tx.symbol.isEmpty {
                         Text(tx.type.uppercased())
-                            .font(.system(size: 9, weight: .bold))
+                            .appFont(.system(size: 9, weight: .bold))
                             .padding(.horizontal, 4).padding(.vertical, 2)
                             .background(Self.typeColor(tx.type).opacity(0.15), in: Capsule())
                             .foregroundStyle(Self.typeColor(tx.type))
@@ -860,7 +860,7 @@ struct TransactionsView: View {
                         let qDisp = displayQty(for: tx)
                         let pDisp = displayPrice(for: tx)
                         Text(tx.pricePerShare != 0 && pDisp != "-" ? "\(qDisp) @ \(pDisp)" : qDisp)
-                            .font(.caption)
+                            .appFont(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -870,14 +870,14 @@ struct TransactionsView: View {
                 // Row 3: Date, Account, Menu
                 HStack(spacing: 8) {
                     Text(tx.displayDate)
-                        .font(.caption2)
+                        .appFont(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: true, vertical: false)
                     
                     Spacer(minLength: 4)
                     
                     Text(tx.account)
-                        .font(.caption2)
+                        .appFont(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                     
@@ -886,7 +886,7 @@ struct TransactionsView: View {
                         MenuRow(title: "Delete", systemImage: "trash", role: .destructive) { pendingDelete = tx }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
-                            .font(.system(size: 18))
+                            .appFont(.system(size: 18))
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -907,7 +907,7 @@ struct TransactionsView: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(message); Spacer(); Button("Retry") { reload() } }
-            .font(.callout).padding(12).foregroundStyle(.red)
+            .appFont(.callout).padding(12).foregroundStyle(.red)
             .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 20).padding(.top, 12)
     }
 

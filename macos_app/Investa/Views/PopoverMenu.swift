@@ -107,10 +107,10 @@ struct MenuToggleRow: View {
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 16)
                 if let trailing {
-                    Text(trailing).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    Text(trailing).appFont(.caption2.weight(.medium)).foregroundStyle(.secondary)
                 }
                 Image(systemName: "checkmark")
-                    .font(.caption.weight(.bold))
+                    .appFont(.caption.weight(.bold))
                     .foregroundStyle(.tint)
                     .opacity(isOn ? 1 : 0)
             }
@@ -128,7 +128,7 @@ struct MenuSectionHeader: View {
     init(_ title: String) { self.title = title }
     var body: some View {
         Text(title)
-            .font(.caption2.weight(.semibold))
+            .appFont(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
             .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 3)

@@ -123,7 +123,7 @@ struct StockKeyMetricsView: View {
                     HStack {
                         HStack(spacing: 6) {
                             Image(systemName: "square.grid.3x3").foregroundStyle(Color.brandIndigo)
-                            Text("Key Metrics").font(.headline)
+                            Text("Key Metrics").appFont(.headline)
                         }
                         Spacer()
                         if viewModel != nil {
@@ -154,7 +154,7 @@ struct StockKeyMetricsView: View {
             } else {
                 HStack(alignment: .center) {
                     HStack(spacing: 8) {
-                        Label("Key Metrics", systemImage: "square.grid.3x3").font(.headline)
+                        Label("Key Metrics", systemImage: "square.grid.3x3").appFont(.headline)
 
                         if viewModel != nil {
                             Picker("", selection: $viewMode) {
@@ -196,7 +196,7 @@ struct StockKeyMetricsView: View {
             Text("red").foregroundStyle(Color.down).fontWeight(.semibold)
             Text("trails a typical S&P 500 company")
         }
-        .font(.caption2)
+        .appFont(.caption2)
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .minimumScaleFactor(0.8)
@@ -254,12 +254,12 @@ struct StockKeyMetricsView: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(label)
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(value)
-                    .font(.caption.weight(.semibold))
+                    .appFont(.caption.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(tone)
                     .lineLimit(1)
@@ -289,7 +289,7 @@ struct StockKeyMetricsView: View {
                             selectedGroup = grp
                         } label: {
                             Text(grp)
-                                .font(.caption.weight(.semibold))
+                                .appFont(.caption.weight(.semibold))
                                 .padding(.horizontal, 10).padding(.vertical, 5)
                                 .background(selectedGroup == grp ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
                                 .foregroundStyle(selectedGroup == grp ? Color.white : Color.secondary)
@@ -332,14 +332,14 @@ struct StockKeyMetricsView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(def.title)
-                    .font(.caption.weight(.bold))
+                    .appFont(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if let last = points.last {
                     Text(formatRatioVal(last.value, isPercent: def.isPercent, isCount: def.isCount))
-                        .font(.caption.weight(.bold))
+                        .appFont(.caption.weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(def.color)
                         .lineLimit(1)
@@ -347,7 +347,7 @@ struct StockKeyMetricsView: View {
             }
 
             if points.isEmpty {
-                Text("No data filed").font(.caption2).foregroundStyle(.secondary)
+                Text("No data filed").appFont(.caption2).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).frame(height: 140)
             } else {
                 FiledPeriodChart(

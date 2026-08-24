@@ -92,20 +92,20 @@ struct AIView: View {
         #if os(iOS)
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Portfolio AI Review").font(.title2.bold())
+                Text("Portfolio AI Review").appFont(.title2.bold())
                     .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
                 Text("AI-driven insights and recommendations for your portfolio.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                 if let gen = viewModel.review?.generatedAt, !gen.isEmpty {
-                    Label("Generated \(gen)", systemImage: "clock").font(.caption2).foregroundStyle(.secondary)
+                    Label("Generated \(gen)", systemImage: "clock").appFont(.caption2).foregroundStyle(.secondary)
                 }
             }
             if let o = overall {
                 HStack(spacing: 8) {
-                    Text(o.grade).font(.system(size: 34, weight: .black)).foregroundStyle(tone(o.avg))
+                    Text(o.grade).appFont(.system(size: 34, weight: .black)).foregroundStyle(tone(o.avg))
                     VStack(alignment: .leading) {
-                        Text("Overall").font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-                        Text("\(String(format: "%.1f", o.avg))/10").font(.caption.bold()).foregroundStyle(tone(o.avg))
+                        Text("Overall").appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+                        Text("\(String(format: "%.1f", o.avg))/10").appFont(.caption.bold()).foregroundStyle(tone(o.avg))
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
@@ -123,21 +123,21 @@ struct AIView: View {
         #else
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Portfolio AI Review").font(.title2.bold())
+                Text("Portfolio AI Review").appFont(.title2.bold())
                     .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
                 Text("AI-driven insights and recommendations for your portfolio.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                 if let gen = viewModel.review?.generatedAt, !gen.isEmpty {
-                    Label("Generated \(gen)", systemImage: "clock").font(.caption2).foregroundStyle(.secondary)
+                    Label("Generated \(gen)", systemImage: "clock").appFont(.caption2).foregroundStyle(.secondary)
                 }
             }
             Spacer()
             if let o = overall {
                 HStack(spacing: 8) {
-                    Text(o.grade).font(.system(size: 34, weight: .black)).foregroundStyle(tone(o.avg))
+                    Text(o.grade).appFont(.system(size: 34, weight: .black)).foregroundStyle(tone(o.avg))
                     VStack(alignment: .leading) {
-                        Text("Overall").font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-                        Text("\(String(format: "%.1f", o.avg))/10").font(.caption.bold()).foregroundStyle(tone(o.avg))
+                        Text("Overall").appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
+                        Text("\(String(format: "%.1f", o.avg))/10").appFont(.caption.bold()).foregroundStyle(tone(o.avg))
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
@@ -203,8 +203,8 @@ struct AIView: View {
 
     private var unavailable: some View {
         VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.red)
-            Text("Unable to generate analysis").font(.headline)
+            Image(systemName: "exclamationmark.triangle").appFont(.largeTitle).foregroundStyle(.red)
+            Text("Unable to generate analysis").appFont(.headline)
             Text(viewModel.errorMessage ?? viewModel.review?.message ?? "Generate an AI review of your portfolio.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button { Task { await viewModel.load(currency: cur, accounts: appState.accountsQuery, refresh: true) } } label: {
@@ -215,7 +215,7 @@ struct AIView: View {
     }
 
     private func banner(_ msg: String, warning: String) -> some View {
-        HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(msg).font(.callout); Spacer() }
+        HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(msg).appFont(.callout); Spacer() }
             .foregroundStyle(.yellow).padding(12)
             .background(.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -238,10 +238,10 @@ struct AIView: View {
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack { Image(systemName: icon).foregroundStyle(tone(s)); Spacer() }
-                Text(title).font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
+                Text(title).appFont(.caption).foregroundStyle(.secondary).textCase(.uppercase)
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text(String(format: "%.1f", s)).font(.title.bold()).foregroundStyle(tone(s))
-                    Text("/10").font(.caption).foregroundStyle(.secondary)
+                    Text(String(format: "%.1f", s)).appFont(.title.bold()).foregroundStyle(tone(s))
+                    Text("/10").appFont(.caption).foregroundStyle(.secondary)
                 }
                 ProgressView(value: max(0, min(s, 10)), total: 10).tint(tone(s))
             }
@@ -256,8 +256,8 @@ struct AIView: View {
 
     private func sectionCard(_ title: String, _ body: String, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline).foregroundStyle(accent)
-            Text(Self.md(body)).font(.callout).foregroundStyle(.primary.opacity(0.9))
+            Text(title).appFont(.headline).foregroundStyle(accent)
+            Text(Self.md(body)).appFont(.callout).foregroundStyle(.primary.opacity(0.9))
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
@@ -291,8 +291,8 @@ struct AIView: View {
 
     private func analysisCard(_ title: String, _ body: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.subheadline.weight(.semibold))
-            Text(Self.md(body)).font(.caption).foregroundStyle(.secondary)
+            Text(title).appFont(.subheadline.weight(.semibold))
+            Text(Self.md(body)).appFont(.caption).foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -302,12 +302,12 @@ struct AIView: View {
 
     private func recommendationsCard(_ review: PortfolioAIReview) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Actionable Recommendations", systemImage: "lightbulb").font(.headline).foregroundStyle(.pink)
+            Label("Actionable Recommendations", systemImage: "lightbulb").appFont(.headline).foregroundStyle(.pink)
             if let rec = review.analysis?.actionableRecommendations, !rec.isEmpty {
-                Text(Self.md(rec)).font(.callout)
+                Text(Self.md(rec)).appFont(.callout)
             } else if let recs = review.recommendations, !recs.isEmpty {
                 ForEach(Array(recs.enumerated()), id: \.offset) { _, r in
-                    Label(r, systemImage: "circle.fill").font(.callout).labelStyle(BulletStyle())
+                    Label(r, systemImage: "circle.fill").appFont(.callout).labelStyle(BulletStyle())
                 }
             } else {
                 Text("No recommendations.").foregroundStyle(.secondary)
@@ -322,7 +322,7 @@ struct AIView: View {
 
     private func optimizationHub(_ opts: [PortfolioAIReview.Optimization]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("AI Optimization Hub", systemImage: "bolt.fill").font(.headline).foregroundStyle(.orange)
+            Label("AI Optimization Hub", systemImage: "bolt.fill").appFont(.headline).foregroundStyle(.orange)
             #if os(iOS)
             LazyVStack(spacing: 12) {
                 ForEach(opts) { opt in optimizationCard(opt) }
@@ -333,40 +333,40 @@ struct AIView: View {
             }
             #endif
             Text("Suggestions are anchored in business fundamentals and intrinsic value, not market timing. Verify against your own thesis.")
-                .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                .appFont(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: .infinity)
         }
     }
 
     private func optimizationCard(_ opt: PortfolioAIReview.Optimization) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                Image(systemName: optIcon(opt.type)).foregroundStyle(optTint(opt.type)).font(.title3)
+                Image(systemName: optIcon(opt.type)).foregroundStyle(optTint(opt.type)).appFont(.title3)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(opt.title).font(.callout.weight(.bold))
+                    Text(opt.title).appFont(.callout.weight(.bold))
                     if !opt.symbol.isEmpty && opt.symbol != "N/A" {
                         Button {
                             appState.openStock(opt.symbol)
                         } label: {
-                            Text(opt.symbol).font(.caption2.weight(.bold)).foregroundStyle(.indigo)
+                            Text(opt.symbol).appFont(.caption2.weight(.bold)).foregroundStyle(.indigo)
                         }
                         .buttonStyle(.plain)
                     } else if !opt.symbol.isEmpty {
-                        Text(opt.symbol).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                        Text(opt.symbol).appFont(.caption2.weight(.bold)).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
-                Text("\(opt.priority) Priority").font(.caption2.weight(.bold))
+                Text("\(opt.priority) Priority").appFont(.caption2.weight(.bold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(priorityColor(opt.priority).opacity(0.2), in: Capsule())
                     .foregroundStyle(priorityColor(opt.priority))
             }
-            Text(opt.description).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+            Text(opt.description).appFont(.caption).foregroundStyle(.secondary).lineLimit(4)
             HStack {
-                Label("\(opt.action) Recommended", systemImage: "arrow.up.right").font(.caption2.weight(.bold))
+                Label("\(opt.action) Recommended", systemImage: "arrow.up.right").appFont(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if !opt.symbol.isEmpty && opt.symbol != "N/A" {
-                    Button("Details") { appState.openStock(opt.symbol) }.font(.caption2).buttonStyle(.borderless)
+                    Button("Details") { appState.openStock(opt.symbol) }.appFont(.caption2).buttonStyle(.borderless)
                 }
             }
         }
@@ -396,16 +396,16 @@ struct AIView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Score Explanation").font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
+                    Text("Score Explanation").appFont(.caption).foregroundStyle(.secondary).textCase(.uppercase)
                     HStack(spacing: 8) {
-                        Text(m.title).font(.title3.bold()).foregroundStyle(tone(m.score))
-                        Text("\(String(format: "%.1f", m.score))/10").font(.headline).foregroundStyle(tone(m.score))
+                        Text(m.title).appFont(.title3.bold()).foregroundStyle(tone(m.score))
+                        Text("\(String(format: "%.1f", m.score))/10").appFont(.headline).foregroundStyle(tone(m.score))
                     }
                 }
                 Spacer()
-                Button { detail = nil } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).font(.title2).foregroundStyle(.secondary)
+                Button { detail = nil } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).appFont(.title2).foregroundStyle(.secondary)
             }
-            ScrollView { Text(Self.md(m.content)).font(.callout).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView { Text(Self.md(m.content)).appFont(.callout).frame(maxWidth: .infinity, alignment: .leading) }
         }
         #if os(iOS)
         .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)

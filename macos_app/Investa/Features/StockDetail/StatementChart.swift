@@ -324,7 +324,7 @@ struct StatementChartView: View {
             ForEach(series) { s in
                 HStack(spacing: 5) {
                     RoundedRectangle(cornerRadius: 2).fill(s.color).frame(width: 9, height: 9)
-                    Text(s.label).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(s.label).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         }
@@ -377,7 +377,7 @@ struct StatementChartView: View {
                 // The edge labels hang inward instead.
                 AxisValueLabel(anchor: edgeAnchor(iso)) {
                     if let iso {
-                        Text(statementPeriodLabel(iso, periodType)).font(.caption2)
+                        Text(statementPeriodLabel(iso, periodType)).appFont(.caption2)
                     }
                 }
             }
@@ -391,7 +391,7 @@ struct StatementChartView: View {
                 AxisGridLine().foregroundStyle(.secondary.opacity(0.15))
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
-                        Text(formatStatementValue(v)).font(.caption2)
+                        Text(formatStatementValue(v)).appFont(.caption2)
                     }
                 }
             }
@@ -473,10 +473,10 @@ struct StatementTypeBar: View {
                     ForEach(Self.tabs, id: \.0) { t in
                         Button { onSelectStatement(t.0) } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: t.2).font(.system(size: 16))
+                                Image(systemName: t.2).appFont(.system(size: 16))
                                 Text(t.1)
                             }
-                            .font(.caption.weight(.bold))
+                            .appFont(.caption.weight(.bold))
                             .padding(.horizontal, 16).padding(.vertical, 8)
                             .foregroundStyle(statement == t.0 ? Color.white : .secondary)
                             .background(
@@ -544,11 +544,11 @@ struct StatementTrendHeader: View {
     private var title: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("\(period.title) trend")
-                .font(.caption.weight(.bold)).textCase(.uppercase)
+                .appFont(.caption.weight(.bold)).textCase(.uppercase)
                 .foregroundStyle(.secondary)
                 .lineLimit(1).minimumScaleFactor(0.7)
             Text("\(periodCount) \(period == .quarterly ? "quarters" : "years")")
-                .font(.caption2).foregroundStyle(.tertiary)
+                .appFont(.caption2).foregroundStyle(.tertiary)
                 .lineLimit(1).minimumScaleFactor(0.7)
                 .layoutPriority(-1)
         }
@@ -656,20 +656,20 @@ struct StatementChangeStrip: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 if dot { Circle().fill(series.color).frame(width: 7, height: 7) }
-                Text(title).font(.caption2.weight(.bold)).textCase(.uppercase)
+                Text(title).appFont(.caption2.weight(.bold)).textCase(.uppercase)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(value)
-                    .font(.title3.bold().monospacedDigit())
+                    .appFont(.title3.bold().monospacedDigit())
                     .foregroundStyle(tone == nil ? Color.primary : (tone! >= 0 ? .green : .red))
                     // A figure never wraps: it shrinks, then it truncates.
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 if let footnote {
-                    Text(footnote).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(footnote).appFont(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
         }

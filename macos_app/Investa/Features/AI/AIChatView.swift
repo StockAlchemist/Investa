@@ -109,7 +109,7 @@ struct AIChatLauncher: View {
 
     private var bubble: some View {
         Image(systemName: "sparkles")
-            .font(.title2.weight(.semibold))
+            .appFont(.title2.weight(.semibold))
             .foregroundStyle(.white)
             .frame(width: diameter, height: diameter)
             .background(
@@ -171,16 +171,16 @@ struct AIChatView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles")
-                .font(.callout.weight(.semibold)).foregroundStyle(.white)
+                .appFont(.callout.weight(.semibold)).foregroundStyle(.white)
                 .frame(width: 32, height: 32)
                 .background(LinearGradient(colors: [Color(hex: 0x6366f1), Color(hex: 0xa855f7)],
                                            startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 1) {
-                Text("Investa AI").font(.headline)
+                Text("Investa AI").appFont(.headline)
                 HStack(spacing: 5) {
                     Circle().fill(.green).frame(width: 6, height: 6)
                     Text(vm.messages.isEmpty ? "ONLINE" : "MEMORY ACTIVE")
-                        .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                        .appFont(.system(size: 10, weight: .bold)).tracking(0.8)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -230,7 +230,7 @@ struct AIChatView: View {
             if isUser { Spacer(minLength: 40) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
                 Text(Self.markdown(text))
-                    .font(.callout)
+                    .appFont(.callout)
                     .textSelection(.enabled)
                     .foregroundStyle(isUser ? .white : .primary)
                     .padding(.horizontal, 12).padding(.vertical, 9)
@@ -238,7 +238,7 @@ struct AIChatView: View {
                         isUser ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.background.secondary),
                         in: RoundedRectangle(cornerRadius: 14))
                 Text(isUser ? "You" : "Investa AI")
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                    .appFont(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
             }
             if !isUser { Spacer(minLength: 40) }
         }
@@ -248,7 +248,7 @@ struct AIChatView: View {
         HStack {
             HStack(spacing: 5) {
                 ProgressView().controlSize(.small)
-                Text("Thinking…").font(.caption).foregroundStyle(.secondary)
+                Text("Thinking…").appFont(.caption).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
@@ -267,7 +267,7 @@ struct AIChatView: View {
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
             Button(action: vm.send) {
                 Image(systemName: "arrow.up")
-                    .font(.callout.weight(.bold)).foregroundStyle(.white)
+                    .appFont(.callout.weight(.bold)).foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(Color.accentColor, in: Circle())
             }

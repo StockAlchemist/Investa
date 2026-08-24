@@ -71,7 +71,7 @@ struct TransactionEditView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(existing == nil ? "Add Transaction" : "Edit Transaction")
-                .font(.title2.bold())
+                .appFont(.title2.bold())
                 .padding(20)
             Divider()
 
@@ -135,13 +135,13 @@ struct TransactionEditView: View {
                             .disabled(isAccountAutoCash)
                         if isAccountAutoCash {
                             Text("Not available: this account uses Auto cash mode")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .appFont(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
 
                 if let error {
-                    Text(error).foregroundStyle(.red).font(.callout)
+                    Text(error).foregroundStyle(.red).appFont(.callout)
                 }
             }
             .formStyle(.grouped)
@@ -206,7 +206,7 @@ struct TransactionEditView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.secondary)
             }
         }
