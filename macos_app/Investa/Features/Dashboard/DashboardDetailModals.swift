@@ -362,6 +362,7 @@ struct InsightsDetailSheet: View {
                         Spacer()
                         Text("\(overweight ? "+" : "")\(String(format: "%.1f", d.drift))%")
                             .appFont(.callout.weight(.black)).monospacedDigit().foregroundStyle(tone)
+                            .layoutPriority(1)
                     }
                     HStack {
                         Text("Current ").foregroundStyle(.secondary) + Text(String(format: "%.1f%%", d.currentPct)).fontWeight(.semibold)
@@ -375,6 +376,10 @@ struct InsightsDetailSheet: View {
                         }
                     }.frame(height: 6)
                 }
+                // Bucket, dim, the current/target pair and the drift figure are data:
+                // one line each, shrinking rather than wrapping or ellipsising.
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .padding(12)
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.quaternary, lineWidth: 1))
             }
