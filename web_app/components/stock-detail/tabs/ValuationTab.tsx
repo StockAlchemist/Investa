@@ -37,6 +37,7 @@ import {
 import { Badge } from '../../ui/badge';
 import { cn, formatCurrency, formatPercent as formatPercentShared } from '../../../lib/utils';
 import ValuationComparisonChart from '../ValuationComparisonChart';
+import ValuationHeadlineCard from '../ValuationHeadlineCard';
 import type { IntrinsicValueResponse, IntrinsicValueModel } from '@/lib/api';
 import {
     ValuationModelKey,
@@ -470,29 +471,6 @@ const ValuationCaveatBanner: React.FC<{
     );
 };
 
-/**
- * How much the backend stands behind the number, as a bar. Confidence is
- * continuous — the models' own Monte Carlo bands, how far apart they landed,
- * and how many of them there were — so it is shown as a level rather than the
- * old pass/fail that read as fine at 99% disagreement and alarming at 101%.
- */
-const ConfidenceMeter: React.FC<{ confidence?: number }> = ({ confidence }) => {
-    if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return null;
-    const pct = Math.max(0, Math.min(1, confidence));
-    const tone = pct >= 0.66 ? 'bg-emerald-500' : pct >= 0.4 ? 'bg-amber-500' : 'bg-rose-500';
-    return (
-        <div className="mt-3 w-full max-w-[190px]">
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-                <span className="uppercase font-semibold tracking-wider">Confidence</span>
-                <span className="font-bold tabular-nums">{(pct * 100).toFixed(0)}%</span>
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-secondary/70 overflow-hidden">
-                <div className={cn('h-full rounded-full transition-all', tone)} style={{ width: `${pct * 100}%` }} />
-            </div>
-        </div>
-    );
-};
-
 const BLEND_PROFILE_LABEL: Record<string, string> = {
     financial: 'Financial — valued on discounted net income, not free cash flow',
     reit: 'REIT — valued on cash from operations and the distribution, since net income is charged with non-cash depreciation',
@@ -518,7 +496,10 @@ const BlendComposition: React.FC<{
         { label: 'Dividend-only value', hint: 'What the dividend stream alone is worth', value: intrinsicValue.dividend_discount_floor },
     ].filter((f) => typeof f.value === 'number' && Number.isFinite(f.value));
     const profile = intrinsicValue.blend_profile;
-    if (!exclusions.length && !floors.length && !profile) return null;
+    // The weights used to live as chips on the summary card; they belong with
+    // the rest of the blend's construction, heaviest model first.
+    const weights = Object.entries(intrinsicValue.model_weights ?? {}).sort((a, b) => b[1] - a[1]);
+    if (!exclusions.length && !floors.length && !profile && !weights.length) return null;
 
     return (
         <div className="rounded-2xl border border-border/60 bg-muted/40 p-5 space-y-3">
@@ -528,6 +509,19 @@ const BlendComposition: React.FC<{
             </div>
             {profile && BLEND_PROFILE_LABEL[profile] && (
                 <p className="text-sm text-muted-foreground leading-relaxed">{BLEND_PROFILE_LABEL[profile]}.</p>
+            )}
+            {weights.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-0.5">Weights</span>
+                    {weights.map(([key, w]) => (
+                        <span
+                            key={key}
+                            className="px-1.5 py-0.5 rounded bg-background/70 border border-border/50 text-[10px] font-semibold uppercase tabular-nums"
+                        >
+                            {key} {(w * 100).toFixed(0)}%
+                        </span>
+                    ))}
+                </div>
             )}
             {floors.length > 0 && (
                 <div className="flex flex-wrap gap-2">
@@ -627,13 +621,11 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
     if (!intrinsicValue) return null;
     const { models, average_intrinsic_value, margin_of_safety_pct, current_price, recommended_method } = intrinsicValue;
     const status = intrinsicValue.valuation_status;
-    const hasDefaultValue = average_intrinsic_value !== null && average_intrinsic_value !== undefined;
     const isRefusal = status === "ineligible" || status === "no_model";
 
     // Effective active blended value & margin of safety
     const displayAverage = hasAnyCustom && customAverage != null ? customAverage : average_intrinsic_value;
     const displayMos = hasAnyCustom && customMarginOfSafety != null ? customMarginOfSafety : margin_of_safety_pct;
-    const hasDisplayValue = displayAverage !== null && displayAverage !== undefined;
 
     // --- Method selector -------------------------------------------------
     // Only models the backend actually returned are offered; the best-fit
@@ -813,90 +805,15 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                 </div>
             )}
 
-            {/* Summary Header */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className={cn(
-                    "p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
-                    hasAnyCustom ? "bg-amber-500/5 border border-amber-500/30" : "bg-muted"
-                )}>
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 flex items-center gap-1">
-                        {status === "nav" ? "Net Asset Value" : (hasAnyCustom ? "Custom Blended Value" : "Blended Intrinsic Value")}
-                        {hasAnyCustom && <Sparkles className="w-3 h-3 text-amber-500" />}
-                    </p>
-                    {hasDisplayValue ? (
-                        <p className={cn("text-3xl font-bold", hasAnyCustom ? "text-amber-600 dark:text-amber-400" : "text-indigo-500")}>
-                            {formatCurrency((displayAverage ?? 0) * fxRate, currency)}
-                        </p>
-                    ) : (
-                        <p className="text-2xl font-bold text-muted-foreground">Not valued</p>
-                    )}
-                    {hasAnyCustom && hasDefaultValue && (
-                        <div className="mt-1 text-[11px] text-muted-foreground">
-                            Default: {formatCurrency((average_intrinsic_value ?? 0) * fxRate, currency)}{' '}
-                            <span className={cn("font-bold", (displayAverage! - average_intrinsic_value) >= 0 ? "text-emerald-500" : "text-rose-500")}>
-                                ({(displayAverage! - average_intrinsic_value) >= 0 ? '+' : ''}
-                                {(((displayAverage! - average_intrinsic_value) / average_intrinsic_value) * 100).toFixed(1)}%)
-                            </span>
-                        </div>
-                    )}
-                    {hasDisplayValue && current_price && (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                            Spot: {formatCurrency((current_price ?? 0) * fxRate, currency)}
-                        </div>
-                    )}
-                </div>
-
-                <div className={cn(
-                    "p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
-                    hasAnyCustom ? "bg-amber-500/5 border border-amber-500/30" : "bg-muted"
-                )}>
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Margin of Safety</p>
-                    {displayMos !== null && displayMos !== undefined ? (
-                        <p className={cn(
-                            "text-3xl font-bold",
-                            displayMos > 0 ? "text-emerald-500" : "text-rose-500"
-                        )}>
-                            {displayMos > 0 ? "+" : ""}{displayMos.toFixed(1)}%
-                        </p>
-                    ) : (
-                        <p className="text-2xl font-bold text-muted-foreground">—</p>
-                    )}
-                    {hasAnyCustom && margin_of_safety_pct != null && (
-                        <div className="mt-1 text-[11px] text-muted-foreground">
-                            Default MOS: {margin_of_safety_pct > 0 ? '+' : ''}{margin_of_safety_pct.toFixed(1)}%
-                        </div>
-                    )}
-                    <span className="text-[10px] text-muted-foreground mt-1">
-                        {displayMos !== null && displayMos !== undefined
-                            ? (displayMos > 0 ? "Undervalued vs Market" : "Overvalued vs Market")
-                            : "No estimate available"}
-                    </span>
-                </div>
-
-                <div className="bg-muted p-6 rounded-2xl flex flex-col items-center justify-center text-center">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Confidence & Range</p>
-                    {intrinsicValue.range && hasDefaultValue ? (
-                        <>
-                            <p className="text-sm font-semibold mb-1">
-                                {formatCurrency((intrinsicValue.range.bear ?? 0) * fxRate, currency)} — {formatCurrency((intrinsicValue.range.bull ?? 0) * fxRate, currency)}
-                            </p>
-                            <span className="text-[10px] text-muted-foreground">Bear (10th) to Bull (90th), from the blended models</span>
-                        </>
-                    ) : (
-                        <p className="text-sm text-muted-foreground">Range unavailable</p>
-                    )}
-                    <ConfidenceMeter confidence={intrinsicValue.valuation_confidence} />
-                    {intrinsicValue.model_weights && Object.keys(intrinsicValue.model_weights).length > 0 && (
-                        <div className="mt-2 flex items-center gap-1.5 flex-wrap justify-center text-[10px] text-muted-foreground">
-                            {Object.entries(intrinsicValue.model_weights).map(([k, w]) => (
-                                <span key={k} className="px-1.5 py-0.5 bg-secondary/50 rounded uppercase font-semibold">
-                                    {k}: {((w as number) * 100).toFixed(0)}%
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
+            {/* Headline: value, margin of safety, and where the price sits in the range. */}
+            <ValuationHeadlineCard
+                intrinsicValue={intrinsicValue}
+                displayAverage={displayAverage}
+                displayMos={displayMos}
+                hasAnyCustom={hasAnyCustom}
+                currency={currency}
+                fxRate={fxRate}
+            />
 
             {/* Blend caveats the backend attaches to the headline number. */}
             <ValuationCaveatBanner intrinsicValue={intrinsicValue} currency={currency} fxRate={fxRate} />

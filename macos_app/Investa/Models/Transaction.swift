@@ -20,8 +20,10 @@ struct Transaction: Codable, Sendable, Identifiable {
     var toAccount: String?
     var autoAddCash: Bool?
 
+    /// `DD MMM YYYY`, the app's one date notation — never the raw ISO string
+    /// the API ships.
     var displayDate: String {
-        return String(date.prefix(10))
+        MarketTime.formatted(date)
     }
 
     enum CodingKeys: String, CodingKey {

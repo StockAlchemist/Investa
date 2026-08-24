@@ -5,6 +5,7 @@ import TableSkeleton from './skeletons/TableSkeleton';
 import { formatCurrency } from '../lib/utils';
 import { isWithinMarketMonths } from '../lib/market_time';
 import { useStockModal } from '@/context/StockModalContext';
+import { formatCalendarDate } from '../lib/market_time';
 
 interface DividendEvent {
     symbol: string;
@@ -108,10 +109,10 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                                     </div>
                                 </td>
                                 <td className="px-6 py-3 text-muted-foreground">
-                                    {event.ex_dividend_date ? new Date(event.ex_dividend_date).toLocaleDateString() : '-'}
+                                    {event.ex_dividend_date ? formatCalendarDate(event.ex_dividend_date) : '-'}
                                 </td>
                                 <td className="px-6 py-3 text-foreground">
-                                    {new Date(event.dividend_date).toLocaleDateString()}
+                                    {formatCalendarDate(event.dividend_date)}
                                 </td>
                                 <td className="px-6 py-3">
                                     {event.status === 'confirmed' ? (

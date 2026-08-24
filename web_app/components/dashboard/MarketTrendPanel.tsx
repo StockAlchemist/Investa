@@ -4,7 +4,7 @@ import React from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 import { fetchTrendSignal, MARKET_TREND_INDICES, type TrendSignal } from '@/lib/api';
-import { formatCalendarDate } from '@/lib/market_time';
+import { formatCalendarDayMonth } from '@/lib/market_time';
 import { cn } from '@/lib/utils';
 
 /**
@@ -58,7 +58,7 @@ const monthLabel = (yyyymm: string): string => {
 
 /** `2026-06-30` -> `30 Jun`, pinned to UTC — these are calendar days, not instants. */
 const dayLabel = (iso: string): string =>
-    formatCalendarDate(iso, { day: 'numeric', month: 'short' });
+    formatCalendarDayMonth(iso);
 
 /**
  * Whether a reading has everything the panel states about it.

@@ -25,7 +25,7 @@ import {
     periodAxisLabel,
     toggleSlot
 } from '../../../lib/statement_chart';
-import { formatCalendarDate } from '../../../lib/market_time';
+import { formatCalendarDayMonth } from '../../../lib/market_time';
 import { cn } from '../../../lib/utils';
 import { Skeleton } from '../../ui/skeleton';
 import { RANKING_CONFIG } from '../constants';
@@ -33,7 +33,7 @@ import { StatementChart, MetricChangeStrip } from '../components/StatementChart'
 import { Sparkline } from '../components/Sparkline';
 
 function fiscalPeriodDay(iso: string): string {
-    return formatCalendarDate(iso, { month: 'short', day: 'numeric' });
+    return formatCalendarDayMonth(iso);
 }
 
 function formatCompact(val: number | undefined): string {

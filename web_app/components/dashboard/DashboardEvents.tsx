@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { BarChart3, CalendarClock, CheckCircle2, Clock, X } from 'lucide-react';
 import { DividendEvent, EarningsEvent } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
-import { formatCalendarDate, marketDayDiff } from '../../lib/market_time';
+import { formatCalendarDate, formatCalendarDayMonth, marketDayDiff } from '../../lib/market_time';
 import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from '../StockIcon';
 
@@ -40,7 +40,7 @@ function relativeDay(iso: string, timeZone?: string | null): string {
     if (diffDays === 1) return 'tomorrow';
     if (diffDays < 0) return `${-diffDays}d ago`;
     if (diffDays < 7) return `${diffDays}d`;
-    return formatCalendarDate(iso, { month: 'short', day: 'numeric' });
+    return formatCalendarDayMonth(iso);
 }
 
 function fullDate(iso: string): string {

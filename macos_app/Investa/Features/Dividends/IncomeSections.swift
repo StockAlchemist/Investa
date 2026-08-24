@@ -77,7 +77,10 @@ struct IncomeKpiStrip: View {
         let yoyPct: Double? = mt.priorYtd > 0 ? (mt.ytd - mt.priorYtd) / mt.priorYtd * 100 : nil
         let taxEff: Double? = mt.trailing12m > 0 ? (mt.trailing12m - mt.trailing12mTax) / mt.trailing12m * 100 : nil
         let tileCount = 3 + (expectedDividends != nil ? 1 : 0) + (dividendYield != nil ? 1 : 0) + (taxEff != nil ? 1 : 0)
-        return ISection(title: "Income") {
+        // No heading, as the web card has none: this is the first card under a
+        // page already titled "Income", and an `ISection(title: "Income")` put
+        // that word on screen twice in a row. The tiles name themselves.
+        return VStack(alignment: .leading, spacing: 12) {
             KpiRow(count: tileCount, minTileWidth: 150) {
                 tile("YTD Received", compactCurrency(mt.ytd, currency),
                      yoyPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% YoY" } ?? "vs prior YTD",
@@ -92,15 +95,21 @@ struct IncomeKpiStrip: View {
                 }
             }
         }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .card(.standard)
     }
     private func tile(_ label: String, _ value: String, _ sub: String, _ tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(title: label)
                 .minimumScaleFactor(0.7)
-            Text(value).font(.title3.bold()).foregroundStyle(tone).lineLimit(1)
+            // A figure shrinks before it truncates — a clipped currency amount
+            // is a wrong number, not a tight one.
+            Text(value).font(.title3.bold()).foregroundStyle(tone)
+                .lineLimit(1).minimumScaleFactor(0.6)
             Text(sub).font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .gridTile()
     }
 }
 
@@ -114,16 +123,31 @@ struct IncomeProjectorCard: View {
     private var segs: [Seg] {
         income.flatMap { row in row.segments.map { Seg(month: row.month, symbol: $0.symbol, amount: $0.amount) } }
     }
+    @State private var width: CGFloat = 0
+
     private var projectorMonths: [String] {
         var seen = Set<String>(); var out: [String] = []
         for s in segs where !seen.contains(s.month) { seen.insert(s.month); out.append(s.month) }
         return out
     }
 
+    /// Every month that fits. A band scale draws a mark for every category it
+    /// is given, and twelve `.fixedSize()` month labels want ~310pt — more than
+    /// a phone card has once the y axis is paid for, so they overprint into a
+    /// smear rather than truncating. Thinned to alternate months when the room
+    /// isn't there; the tooltip names the month either way.
+    private var axisMonths: [String] {
+        let months = income.map(\.month)
+        let capacity = width > 0 ? max(3, Int((width - 60) / 30)) : 6
+        guard months.count > capacity else { return months }
+        let step = Int(ceil(Double(months.count) / Double(capacity)))
+        return months.enumerated().filter { $0.offset % step == 0 }.map(\.element)
+    }
+
     /// 3-letter month labels with `.fixedSize()` so the band-scale axis doesn't
     /// clip "Jun 2026" down to "J…".
     private var monthAxis: some AxisContent {
-        AxisMarks { value in
+        AxisMarks(values: axisMonths) { value in
             AxisGridLine()
             AxisValueLabel {
                 if let s = value.as(String.self) {
@@ -131,6 +155,16 @@ struct IncomeProjectorCard: View {
                 }
             }
         }
+    }
+
+    /// One legend entry per paying symbol, which a forty-payer portfolio turns
+    /// into a wall of chips taller than the chart it explains. Past what a
+    /// couple of rows can carry, the tooltip is the legend — it already lists
+    /// the symbols for the month under the finger, largest first.
+    private var legendFits: Bool {
+        let symbols = Set(segs.map(\.symbol)).count
+        guard width > 0 else { return symbols <= 6 }
+        return symbols <= max(3, Int(width / 70)) * 2
     }
 
     var body: some View {
@@ -153,7 +187,7 @@ struct IncomeProjectorCard: View {
                         .foregroundStyle(by: .value("Symbol", s.symbol))
                 }
                 .chartXAxis { monthAxis }
-                .chartLegend(.visible)
+                .chartLegend(legendFits ? .visible : .hidden)
                 .chartHoverTooltip(projectorMonths) { i in
                     let month = projectorMonths[i]
                     let rows = segs.filter { $0.month == month }.sorted { $0.amount > $1.amount }
@@ -167,6 +201,8 @@ struct IncomeProjectorCard: View {
                 .frame(height: 280)
             }
         }
+        // Must be the *offered* width. See `readingContainerWidth`.
+        .readingContainerWidth { width = $0 }
     }
 }
 
@@ -177,6 +213,19 @@ struct DividendCalendarSection: View {
     let currency: String
     var onSelect: (String) -> Void = { _ in }
     @State private var horizon = "3m"
+
+    /// "Sep 10", with the year only when the payment falls outside the current
+    /// year on its own exchange — the 1-year horizon runs into January, where
+    /// a bare "Jan 15" would read as the past. ISO strings cost roughly twice
+    /// the width for no more meaning in a list that is already sorted by date.
+    private func eventDay(_ iso: String, _ zone: String?) -> String {
+        guard let day = MarketTime.calendarDay(iso) else { return iso }
+        guard let today = MarketTime.today(timeZone: zone),
+              MarketTime.year(day) == MarketTime.year(today) else {
+            return MarketTime.formatted(iso)
+        }
+        return MarketTime.shortDay(iso)
+    }
 
     private var filtered: [DividendEvent] {
         // The horizon runs from today on each payment's own exchange, not from the
@@ -196,18 +245,30 @@ struct DividendCalendarSection: View {
             } else {
                 ForEach(filtered) { ev in
                     Button { onSelect(ev.symbol) } label: {
-                        HStack {
+                        HStack(spacing: 8) {
+                            StockIcon(symbol: ev.symbol, size: 26, scalesWithText: true)
                             Text(ev.symbol).fontWeight(.bold)
+                                .lineLimit(1).minimumScaleFactor(0.8)
                             if ev.status == "estimated" {
                                 Label("est.", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
+                                    .lineLimit(1)
                             } else {
                                 Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.green)
                             }
-                            Spacer()
-                            VStack(alignment: .trailing) {
-                                Text("Ex \(ev.exDividendDate)").font(.caption2).foregroundStyle(.secondary)
-                                Text("Pay \(ev.dividendDate)").font(.caption2).foregroundStyle(.secondary)
+                            Spacer(minLength: 8)
+                            VStack(alignment: .trailing, spacing: 1) {
+                                // An estimated payment has no ex-date yet. The
+                                // label still holds its line so the two-line
+                                // block keeps a stable height down the list,
+                                // but it says so rather than trailing off after
+                                // "Ex" with nothing behind it.
+                                Text(ev.exDividendDate.isEmpty
+                                     ? "Ex \u{2014}"
+                                     : "Ex \(eventDay(ev.exDividendDate, ev.marketTimezone))")
+                                Text("Pay \(eventDay(ev.dividendDate, ev.marketTimezone))")
                             }
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1)
                             Text(Fmt.currency(ev.amount, code: currency)).fontWeight(.bold).foregroundStyle(.green)
                                 .lineLimit(1).minimumScaleFactor(0.7)
                                 .frame(minWidth: 90, alignment: .trailing)
@@ -252,7 +313,7 @@ struct TopPayersCard: View {
                 Button { onSelect(row.symbol) } label: {
                     HStack(spacing: 10) {
                         Text("\(idx + 1)").font(.caption2.bold()).foregroundStyle(.secondary).frame(width: 18, alignment: .trailing)
-                        StockIcon(symbol: row.symbol, size: 18)
+                        StockIcon(symbol: row.symbol, size: 26, scalesWithText: true)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(row.symbol).fontWeight(.bold)
@@ -444,7 +505,7 @@ struct DividendTransactionsCard: View {
                 }
                 #else
                 Table(rows, sortOrder: $sortOrder) {
-                    TableColumn("Date", value: \.date) { Text($0.date).foregroundStyle(.secondary) }
+                    TableColumn("Date", value: \.date) { Text(MarketTime.formatted($0.date)).foregroundStyle(.secondary) }
                     TableColumn("Symbol", value: \.symbol) { row in
                         Button {
                             appState.openStock(row.symbol)
@@ -477,7 +538,7 @@ struct DividendTransactionsCard: View {
                 Text(Fmt.currency(r.net, code: currency)).fontWeight(.bold).monospacedDigit()
             }
             HStack {
-                Text(r.date).font(.caption2).foregroundStyle(.secondary)
+                Text(MarketTime.formatted(r.date)).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 Text(r.account).font(.caption2).foregroundStyle(.tertiary)
             }

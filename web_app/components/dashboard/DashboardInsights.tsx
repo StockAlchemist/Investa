@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Holding, fetchSettings } from '../../lib/api';
 import { cn, formatCurrency } from '../../lib/utils';
 import { useStockModal } from '@/context/StockModalContext';
+import { formatCalendarDate } from '../../lib/market_time';
 
 interface DashboardInsightsProps {
     holdings: Holding[];
@@ -386,7 +387,7 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                                     )}
                                                 </td>
                                                 <td className="px-3 py-2 text-muted-foreground tabular-nums">
-                                                    {new Date(lot.date).toLocaleDateString()}
+                                                    {formatCalendarDate(lot.date)}
                                                 </td>
                                                 <td className="px-3 py-2 text-right tabular-nums">{lot.quantity.toLocaleString()}</td>
                                                 <td className="px-3 py-2 text-right tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">

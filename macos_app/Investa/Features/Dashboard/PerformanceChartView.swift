@@ -452,9 +452,9 @@ struct PerformanceChartView: View {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
         if period == .oneDay || period == .fiveDays {
-            f.timeZone = TimeZone(identifier: "America/New_York"); f.dateFormat = "EEE, MMM d h:mm a"
+            f.timeZone = TimeZone(identifier: "America/New_York"); f.dateFormat = "EEE, dd MMM h:mm a"
         } else {
-            f.dateStyle = .medium
+            f.dateFormat = "dd MMM yyyy"
         }
         return f.string(from: d)
     }
@@ -469,7 +469,7 @@ struct PerformanceChartView: View {
             f.timeZone = TimeZone(identifier: "America/New_York")
             f.dateFormat = "E"
         } else if period == .oneMonth {
-            f.dateFormat = "MMM d"
+            f.dateFormat = "dd MMM"
         } else if period == .oneYear || period == .ytd {
             f.dateFormat = "MMM"
         } else {

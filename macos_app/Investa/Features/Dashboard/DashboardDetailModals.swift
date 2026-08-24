@@ -456,7 +456,7 @@ struct InsightsDetailSheet: View {
 
     private func displayDate(_ iso: String) -> String {
         guard let d = insightDateFmt.date(from: String(iso.prefix(10))) else { return iso }
-        let f = DateFormatter(); f.dateStyle = .medium; return f.string(from: d)
+        return MarketTime.formatted(d)
     }
 }
 

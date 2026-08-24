@@ -327,12 +327,7 @@ struct StockKeyMetricsView: View {
     }
 
     private func chartCard(_ def: MetricChartDef, history: [[String: JSONValue]], period: StatementPeriod) -> some View {
-        let points: [(period: Date, iso: String, value: Double)] = history.reversed().compactMap { item in
-            guard let val = item[def.dataKey]?.doubleValue,
-                  let dateStr = item["Period"]?.stringValue,
-                  let period = MarketTime.calendarDay(dateStr) else { return nil }
-            return (period, dateStr, val)
-        }
+        let points = FiledPeriodChart.points(history, key: def.dataKey)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -341,64 +336,28 @@ struct StockKeyMetricsView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .lineLimit(1)
-                Spacer()
+                Spacer(minLength: 8)
                 if let last = points.last {
                     Text(formatRatioVal(last.value, isPercent: def.isPercent, isCount: def.isCount))
                         .font(.caption.weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(def.color)
+                        .lineLimit(1)
                 }
             }
 
             if points.isEmpty {
-                Text("No data filed").font(.caption2).foregroundStyle(.secondary).frame(height: 140)
+                Text("No data filed").font(.caption2).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).frame(height: 140)
             } else {
-                Chart {
-                    ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                        BarMark(x: .value("Period", p.period), y: .value(def.title, p.value))
-                            .foregroundStyle(def.color.gradient)
-                            .cornerRadius(3)
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
-                        if let date = value.as(Date.self) {
-                            AxisValueLabel {
-                                Text(period == .quarterly ? MarketTime.monthYear(date) : MarketTime.year(date))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
-                        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
-                        if let v = value.as(Double.self) {
-                            AxisValueLabel {
-                                Text(formatRatioVal(v, isPercent: def.isPercent, isCount: def.isCount))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                .frame(height: 140)
-                .chartHoverTooltip(points.map(\.period)) { i in
-                    guard points.indices.contains(i) else { return nil }
-                    let p = points[i]
-                    return ChartTooltipContent(
-                        title: MarketTime.formatted(p.iso),
-                        rows: [
-                            ChartTooltipRow(
-                                color: def.color,
-                                label: def.title,
-                                value: formatRatioVal(p.value, isPercent: def.isPercent, isCount: def.isCount)
-                            )
-                        ]
-                    )
-                }
+                FiledPeriodChart(
+                    points: points,
+                    color: def.color,
+                    periodType: period,
+                    height: 140,
+                    label: def.title,
+                    format: { formatRatioVal($0, isPercent: def.isPercent, isCount: def.isCount) }
+                )
             }
         }
         .padding(12)

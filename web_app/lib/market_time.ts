@@ -91,11 +91,37 @@ export function isWithinMarketMonths(
  */
 export function formatCalendarDate(
     iso: string | null | undefined,
-    options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' },
+    options?: Intl.DateTimeFormatOptions,
 ): string {
     const day = calendarDay(iso);
     if (!day) return typeof iso === 'string' ? iso : '';
     const d = new Date(`${day}T00:00:00Z`);
     if (isNaN(d.getTime())) return day;
-    return d.toLocaleDateString(undefined, { calendar: 'gregory', ...options, timeZone: 'UTC' });
+    if (options) {
+        return d.toLocaleDateString(undefined, { calendar: 'gregory', ...options, timeZone: 'UTC' });
+    }
+    // `DD MMM YYYY`, assembled rather than delegated to `toLocaleDateString`,
+    // which orders the parts by the viewer's locale: the same lot would read
+    // "Aug 5, 2026" for one reader and "05/08/2026" for another, and neither
+    // would match the native clients. Month names stay localized; only the
+    // order and the zero-padded day are fixed, so dates line up down a column.
+    return `${pad2(d.getUTCDate())} ${shortMonth(d)} ${d.getUTCFullYear()}`;
+}
+
+/** `DD MMM` — the same notation with the year dropped, for an axis or a row
+ *  with no room for it. Day-first like the full form; never "Aug 5". */
+export function formatCalendarDayMonth(iso: string | null | undefined): string {
+    const day = calendarDay(iso);
+    if (!day) return typeof iso === 'string' ? iso : '';
+    const d = new Date(`${day}T00:00:00Z`);
+    if (isNaN(d.getTime())) return day;
+    return `${pad2(d.getUTCDate())} ${shortMonth(d)}`;
+}
+
+function pad2(n: number): string {
+    return String(n).padStart(2, '0');
+}
+
+function shortMonth(d: Date): string {
+    return d.toLocaleDateString(undefined, { calendar: 'gregory', month: 'short', timeZone: 'UTC' });
 }
