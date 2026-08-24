@@ -95,6 +95,7 @@ try:
         INDEX_DISPLAY_NAMES,
         METADATA_CACHE_FILE_NAME,  # <-- ADDED
         METADATA_CACHE_DURATION_DAYS,  # <-- ADDED
+        METADATA_PLACEHOLDER_RETRY_HOURS,
         METADATA_SCHEMA_VERSION,
         QUOTE_BACKFILL_MAX_AGE_HOURS,
         EXCHANGE_SUFFIX_CURRENCY,
@@ -108,6 +109,7 @@ except ImportError:
     YFINANCE_CACHE_DURATION_HOURS = 4
     CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1
     QUOTE_BACKFILL_MAX_AGE_HOURS = 96
+    METADATA_PLACEHOLDER_RETRY_HOURS = 6
     EXCHANGE_SUFFIX_CURRENCY = {"BK": "THB"}
 
     YFINANCE_INDEX_TICKER_MAP = {}
@@ -118,6 +120,74 @@ except ImportError:
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = (
         "yf_portfolio_hist_raw_adjusted"  # Keep as prefix for basename construction
     )
+
+
+# --- Metadata Cache Helpers ---
+# The classification fields the allocation, drift and rebalance views bucket on.
+# A cached entry that has none of them is useless to those views: every holding
+# it covers renders as "Unknown".
+_CLASSIFICATION_KEYS = ("quoteType", "sector", "country")
+
+
+def is_unclassified_metadata(entry: Optional[Dict[str, Any]]) -> bool:
+    """True when a cached metadata entry carries no usable classification.
+
+    This is the signature of a *failed* fetch: `_ensure_metadata_batch` persists
+    a placeholder with every field None when yfinance returns nothing, so a dead
+    ticker cannot stampede the API on each request. Those placeholders must
+    expire in hours, not the 30 days a real entry gets — see
+    `placeholder_retry_delay`.
+
+    A fund that genuinely has no sector or country is NOT unclassified: Yahoo
+    still returns its quoteType, so it keeps its full cache life.
+    """
+    if not entry:
+        return True
+    return all(entry.get(k) in (None, "") for k in _CLASSIFICATION_KEYS)
+
+
+def placeholder_retry_delay(attempts: int) -> timedelta:
+    """How long to sit on a failed-fetch placeholder before trying again.
+
+    Doubles per consecutive failure, from METADATA_PLACEHOLDER_RETRY_HOURS up to
+    the full METADATA_CACHE_DURATION_DAYS. The two ends are both deliberate: a
+    symbol knocked out by a transient yfinance outage is classified again within
+    hours (it would otherwise sit in the allocation views' "Unknown" bucket for a
+    month), while a ticker that is simply dead — delisted, or a typo like APPL —
+    backs off to the old monthly cadence instead of retrying forever.
+    """
+    ceiling = timedelta(days=METADATA_CACHE_DURATION_DAYS)
+    base = timedelta(hours=METADATA_PLACEHOLDER_RETRY_HOURS)
+    if attempts <= 1:
+        return min(base, ceiling)
+    # 2 ** 12 * 6h already exceeds any sane ceiling; cap the shift so a corrupt
+    # counter can't overflow the multiplication.
+    return min(base * (2 ** min(attempts - 1, 12)), ceiling)
+
+
+def placeholder_needs_retry(
+    entry: Optional[Dict[str, Any]], now: Optional[datetime] = None
+) -> bool:
+    """True when `entry` is a failed-fetch placeholder that is due for a retry.
+
+    The single rule shared by the read path (`_ensure_metadata_batch`) and the
+    background repair worker, so the two cannot drift apart.
+    """
+    if not is_unclassified_metadata(entry):
+        return False
+    entry = entry or {}
+    ts_str = entry.get("timestamp")
+    if not ts_str:
+        return True
+    try:
+        entry_ts = datetime.fromisoformat(ts_str)
+    except (TypeError, ValueError):
+        return True
+    now = now or datetime.now(timezone.utc)
+    attempts = entry.get("placeholder_attempts") or 1
+    if not isinstance(attempts, int) or attempts < 1:
+        attempts = 1
+    return (now - entry_ts) >= placeholder_retry_delay(attempts)
 
 
 # --- Exchange Inference Helpers ---
@@ -1616,6 +1686,9 @@ class MarketDataProvider:
         results = {}
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
+        # Consecutive failure counts carried forward onto any placeholder we end
+        # up rewriting, so the retry backoff lengthens instead of resetting.
+        prior_placeholder_attempts: Dict[str, int] = {}
 
         # 1. Check fragmented cache first
         for sym in yf_symbols:
@@ -1647,8 +1720,26 @@ class MarketDataProvider:
                             if entry_version >= METADATA_SCHEMA_VERSION or all(
                                 k in cached_meta for k in v3_keys
                             ):
-                                results[sym] = cached_meta
-                                continue
+                                # --- 1.2 Placeholder expiry ---
+                                # Validity above is judged on key *presence*, so a
+                                # failed-fetch placeholder (every value None) passes
+                                # it and would be served for the full 30 days —
+                                # parking each affected holding in the "Unknown"
+                                # allocation bucket for a month. Retry those on a
+                                # backoff instead, so a transient yfinance outage
+                                # heals on the next portfolio load.
+                                if placeholder_needs_retry(cached_meta, now_ts):
+                                    prior_placeholder_attempts[sym] = (
+                                        cached_meta.get("placeholder_attempts") or 1
+                                    )
+                                    logging.info(
+                                        f"Metadata cache for {sym} carries no "
+                                        f"classification (failed fetch placeholder). "
+                                        f"Retrying."
+                                    )
+                                else:
+                                    results[sym] = cached_meta
+                                    continue
                             else:
                                 logging.debug(
                                     f"Metadata cache for {sym} is schema v{entry_version} "
@@ -1756,6 +1847,11 @@ class MarketDataProvider:
                             "quoteType": None,
                             "timestamp": now_ts.isoformat(),
                             "schema_version": METADATA_SCHEMA_VERSION,
+                            # Nth consecutive failure; drives the retry backoff.
+                            "placeholder_attempts": prior_placeholder_attempts.get(
+                                sym, 0
+                            )
+                            + 1,
                         }
                         # yfinance fully failed — try FMP from scratch
                         _maybe_enrich_with_fmp(meta_entry, sym)

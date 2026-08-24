@@ -44,6 +44,23 @@ INDEX_REFRESH_ENABLED = os.getenv("INVESTA_INDEX_REFRESH_ENABLED", "1") != "0"
 _V3_REQUIRED_KEYS = ("exchange", "country", "sector", "industry", "quoteType")
 
 
+def _is_expired_placeholder(entry: dict) -> bool:
+    """True for a failed-fetch placeholder that is due for another attempt.
+
+    `_ensure_metadata_batch` persists an all-None entry when yfinance returns
+    nothing, and that entry passes the key-presence check above. Left alone it
+    parks every affected holding in the allocation views' "Unknown" bucket, so
+    the worker repairs it in the background rather than waiting for a user to
+    open the portfolio that touches it.
+
+    The rule itself lives in market_data so the worker and the read path cannot
+    disagree about which entries are due.
+    """
+    from market_data import placeholder_needs_retry  # local — keeps cold-start fast
+
+    return placeholder_needs_retry(entry)
+
+
 def _find_stale_symbols(cache_dir: str, current_version: int, limit: int) -> List[str]:
     """Scan the metadata cache and return up to `limit` symbols that need refresh."""
     if not os.path.isdir(cache_dir):
@@ -69,6 +86,10 @@ def _find_stale_symbols(cache_dir: str, current_version: int, limit: int) -> Lis
         except (json.JSONDecodeError, OSError):
             continue
 
+        # A placeholder from a failed fetch is stale whatever its version says.
+        if _is_expired_placeholder(entry):
+            stale.append(fname[:-5])  # strip .json
+            continue
         # Skip entries that are already at the current version.
         if entry.get("schema_version", 0) >= current_version:
             continue
@@ -99,10 +120,23 @@ def _refresh_batch_sync(symbols: List[str]) -> int:
 
     # Force re-fetch by deleting the stale files first; the batch fetcher
     # writes fresh entries (with current schema_version) afterwards.
+    #
+    # Placeholders are the exception, due for retry or not: the batch fetcher
+    # already decides when to retry one, and deleting it would throw away its
+    # consecutive-failure count — resetting the backoff to hours and putting a
+    # permanently dead ticker back on an endless retry loop.
     cache_dir = os.path.join(config.get_app_data_dir(), "cache", "metadata_cache")
     deleted = 0
     for sym in symbols:
         path = os.path.join(cache_dir, sym + ".json")
+        try:
+            from market_data import is_unclassified_metadata
+
+            with open(path, "r") as f:
+                if is_unclassified_metadata(json.load(f)):
+                    continue
+        except (ImportError, json.JSONDecodeError, OSError):
+            pass
         try:
             os.remove(path)
             deleted += 1

@@ -74,6 +74,14 @@ METADATA_CACHE_FILE_NAME = (
     "yf_metadata_cache.json"  # Long-lived cache for static data (Name, Currency)
 )
 METADATA_CACHE_DURATION_DAYS = 30
+# How long a *failed* metadata fetch is honoured before it is retried. When
+# yfinance returns nothing for a symbol we still persist an entry (all
+# classification fields None) so a dead ticker can't stampede the API on every
+# request. That placeholder must NOT live for METADATA_CACHE_DURATION_DAYS:
+# every holding it covers falls into the allocation views' "Unknown" bucket,
+# which silently misstates sector/country/asset-type weights — and the
+# Rebalance Helper would price trades off those weights.
+METADATA_PLACEHOLDER_RETRY_HOURS = 6
 # Schema version for per-symbol metadata cache files.
 # Bump when adding required fields; entries with a lower (or missing) version are
 # treated as stale and re-fetched. History:
