@@ -55,6 +55,46 @@ def load_actions(conn: sqlite3.Connection) -> dict[str, set[str]]:
     return out
 
 
+def load_split_ratios(conn: sqlite3.Connection) -> dict[str, list[tuple[str, float]]]:
+    """{symbol: [(ex-date, ratio), ...]} sorted by date."""
+    out: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    try:
+        rows = conn.execute(
+            "SELECT symbol, date, value FROM corporate_action "
+            "WHERE kind = 'split' AND value > 0 ORDER BY symbol, date"
+        )
+    except sqlite3.OperationalError:
+        return out
+    for symbol, day, ratio in rows:
+        out[symbol].append((day, float(ratio)))
+    return out
+
+
+def traded_price(stored: float, day: str, splits: list[tuple[str, float]]) -> float:
+    """
+    Undo the back-adjustment to recover roughly what the share actually traded at.
+
+    The price floor exists to skip tick noise, and tick noise is a property of
+    the *traded* price, not the adjusted one. A stock that changed hands at
+    $0.05 before a 1:68 and a 1:7 reverse split is stored at ~$24, so a
+    one-tick wiggle reads as a 40% move and floods the report — LFVN and TRAK
+    alone produced 117 such lines. Scaling back by the splits still ahead of
+    the date puts the floor back on the number that was actually quoted.
+    """
+    if not splits:
+        return stored
+    factor = 1.0
+    for ex_date, ratio in splits:
+        if ex_date > day:
+            factor *= ratio
+    # adjusted = raw / factor, so raw = adjusted * factor. AAPL on 2020-08-27
+    # stores 125.01 with a 4:1 split still ahead of it: 125.01 * 4 = 500.04,
+    # which is what it actually closed at. A 1:68 reverse split carries a ratio
+    # of 1/68, so the same multiplication correctly scales a sub-penny stock
+    # back *down*.
+    return stored * factor
+
+
 def scan(
     db_path: str,
     threshold: float,
@@ -65,6 +105,7 @@ def scan(
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         splits = load_actions(conn)
+        ratios = load_split_ratios(conn)
 
         query = (
             "SELECT symbol, date, close FROM daily_ohlcv "
@@ -88,11 +129,14 @@ def scan(
                 prev_symbol, prev_day, prev_close = sym, day, close
                 continue
 
+            # The floor applies to what the share actually traded at, not to the
+            # back-adjusted figure — see traded_price.
+            sym_splits = ratios.get(sym, [])
             if (
                 prev_close
                 and close
-                and prev_close >= min_price
-                and close >= min_price
+                and traded_price(prev_close, prev_day, sym_splits) >= min_price
+                and traded_price(close, day, sym_splits) >= min_price
             ):
                 ratio = prev_close / close
                 if ratio > threshold or ratio < 1.0 / threshold:
