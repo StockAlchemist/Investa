@@ -4,6 +4,7 @@ import { CircleDollarSign, Target, TrendingUp, TrendingDown, Hash, ArrowUpRight,
 import { CapitalGain } from '../../lib/api';
 import { formatCompactNumber, formatCurrency, cn } from '../../lib/utils';
 import { useStockModal } from '@/context/StockModalContext';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface CapitalGainsKpiStripProps {
     data: CapitalGain[];
@@ -161,7 +162,7 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                                     >
                                         {m.biggestWin.symbol}
                                     </button>
-                                    <div className="text-[10px] text-muted-foreground/60 tabular-nums">{m.biggestWin.date}</div>
+                                    <div className="text-[10px] text-muted-foreground/60 tabular-nums">{formatCalendarDate(m.biggestWin.date)}</div>
                                 </div>
                             </div>
                             <div className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
@@ -182,7 +183,7 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                                     >
                                         {m.biggestLoss.symbol}
                                     </button>
-                                    <div className="text-[10px] text-muted-foreground/60 tabular-nums">{m.biggestLoss.date}</div>
+                                    <div className="text-[10px] text-muted-foreground/60 tabular-nums">{formatCalendarDate(m.biggestLoss.date)}</div>
                                 </div>
                             </div>
                             <div className="text-lg font-bold tabular-nums text-red-600 dark:text-red-400">

@@ -9,6 +9,7 @@ import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
 import { Scale, Search, X, Download, Calendar } from 'lucide-react';
 import CapitalGainsKpiStrip from './capital-gains/CapitalGainsKpiStrip';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
@@ -294,7 +295,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                         {item.Symbol}
                                     </h3>
                                     <div className="text-xs text-muted-foreground">
-                                        {item.Date} • {item.Account}
+                                        {formatCalendarDate(item.Date)} • {item.Account}
                                     </div>
                                 </div>
                                 <div className="text-right">
@@ -381,7 +382,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                             ) : (
                                 visibleData.map((item, index) => (
                                     <tr key={index} className="hover:bg-accent/5 transition-colors">
-                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{formatCalendarDate(item.Date)}</td>
                                         <td
                                             className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
                                             onClick={() => openStockDetail(item.Symbol, currency)}

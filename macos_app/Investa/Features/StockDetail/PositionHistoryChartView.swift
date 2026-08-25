@@ -402,6 +402,7 @@ struct PositionHistoryChartView: View {
                              : "\(d >= 0 ? "+" : "")\(Fmt.number(d, fractionDigits: 0))%")
                             .appFont(.caption2)
                             .foregroundStyle(.secondary)
+                            .fixedSize()
                     }
                 }
             }
@@ -414,6 +415,7 @@ struct PositionHistoryChartView: View {
                         Text(formatXDate(date))
                             .appFont(.caption2)
                             .foregroundStyle(.secondary)
+                            .fixedSize()
                     }
                 }
             }
@@ -458,6 +460,6 @@ struct PositionHistoryChartView: View {
             }
         }
 
-        return ChartTooltipContent(title: p.date, rows: rows)
+        return ChartTooltipContent(title: MarketTime.formatted(p.date), rows: rows)
     }
 }

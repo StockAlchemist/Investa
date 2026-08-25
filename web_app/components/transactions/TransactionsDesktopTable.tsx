@@ -4,6 +4,7 @@ import { Transaction } from '../../lib/api';
 import { SortableKey } from './types';
 import { formatTransactionType, getTotalAmountStyle, dupKey } from './transactionsUtils';
 import StockTicker from '../StockTicker';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface TransactionsDesktopTableProps {
     transactions: Transaction[];
@@ -146,7 +147,7 @@ export const TransactionsDesktopTable: React.FC<TransactionsDesktopTableProps> =
                                     {/* Date */}
                                     <td className="py-3 px-4 whitespace-nowrap text-muted-foreground tabular-nums">
                                         <div className="flex items-center gap-1.5">
-                                            <span>{(tx.Date || '').split('T')[0].split(' ')[0]}</span>
+                                            <span>{formatCalendarDate(tx.Date)}</span>
                                             {isDup && (
                                                 <span
                                                     className="inline-flex items-center gap-0.5 px-1.5 py-0.2 text-[9px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded border border-amber-500/30"

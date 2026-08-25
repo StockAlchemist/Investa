@@ -16,6 +16,7 @@ import { ImportReviewModal } from './transactions/ImportReviewModal';
 import TxKpiStrip from './transactions/TxKpiStrip';
 import TransactionModal from './TransactionModal';
 import TableSkeleton from './skeletons/TableSkeleton';
+import { formatCalendarDate } from '@/lib/market_time';
 
 export type { TransactionsTableProps };
 
@@ -119,7 +120,7 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
             alert("Cannot delete transaction without ID");
             return;
         }
-        if (window.confirm(`Are you sure you want to delete transaction ${tx.Symbol} on ${tx.Date}?`)) {
+        if (window.confirm(`Are you sure you want to delete transaction ${tx.Symbol} on ${formatCalendarDate(tx.Date)}?`)) {
             try {
                 await deleteTransaction(tx.id);
                 queryClient.invalidateQueries({ queryKey: ['transactions'] });

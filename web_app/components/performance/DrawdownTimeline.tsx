@@ -4,6 +4,7 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tool
 import { TrendingDown } from 'lucide-react';
 import { PerformanceData } from '../../lib/api';
 import { cn } from '../../lib/utils';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface DrawdownTimelineProps {
     history: PerformanceData[] | null;
@@ -124,7 +125,7 @@ export default function DrawdownTimeline({ history, isLoading }: DrawdownTimelin
             )}
             {maxDDDate && (
                 <p className={cn('text-[10px] text-muted-foreground/60 mt-2 tabular-nums')}>
-                    Deepest trough on {maxDDDate}
+                    Deepest trough on {formatCalendarDate(maxDDDate)}
                 </p>
             )}
         </div>

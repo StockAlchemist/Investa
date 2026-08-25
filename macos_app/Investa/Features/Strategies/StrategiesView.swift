@@ -435,7 +435,7 @@ private struct SleeveSection: View {
     private var provenance: some View {
         HStack(spacing: 4) {
             Text("\(Int(sleeve.weight * 100))% · \(Fmt.currency(sleeve.amount, code: currency))"
-                 + (sleeve.rankedAt.map { " · ranked \($0.prefix(10))" } ?? ""))
+                 + (sleeve.rankedAt.map { " · ranked \(MarketTime.formatted($0))" } ?? ""))
                 .foregroundStyle(.secondary)
             if let ageDays {
                 Text(ageDays == 0 ? "(today)" : "(\(ageDays)d ago)")

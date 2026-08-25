@@ -367,7 +367,7 @@ struct StatementChartView: View {
                 // The edge labels hang inward instead.
                 AxisValueLabel(anchor: edgeAnchor(iso)) {
                     if let iso {
-                        Text(statementPeriodLabel(iso, periodType)).appFont(.caption2)
+                        Text(statementPeriodLabel(iso, periodType)).appFont(.caption2).fixedSize()
                     }
                 }
             }
@@ -381,7 +381,7 @@ struct StatementChartView: View {
                 AxisGridLine().foregroundStyle(.secondary.opacity(0.15))
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
-                        Text(formatStatementValue(v)).appFont(.caption2)
+                        Text(formatStatementValue(v)).appFont(.caption2).fixedSize()
                     }
                 }
             }

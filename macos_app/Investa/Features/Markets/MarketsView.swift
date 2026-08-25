@@ -432,7 +432,7 @@ private struct IndexGraphSheet: View {
                 RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.4)).lineStyle(.init(lineWidth: 1, dash: [3, 3]))
             }
             .chartYScale(domain: chartDomain(pts.map(\.ret) + [0]))
-            .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "%.1f%%", d)) } } } }
+            .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "%.1f%%", d)).fixedSize() } } } }
             .chartHoverTooltip(pts.map(\.date)) { i in
                 let f = MarketTime.formatter(intradayPeriod ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy",
                                              timeZone: MarketTime.defaultZone)

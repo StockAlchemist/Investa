@@ -18,6 +18,7 @@ import { fetchStockAnalysis } from '../../../lib/api';
 import { Badge } from '../../ui/badge';
 import { Skeleton } from '../../ui/skeleton';
 import { cn } from '../../../lib/utils';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface AnalysisTabProps {
     symbol: string;
@@ -302,7 +303,7 @@ export const AnalysisTab: React.FC<AnalysisTabProps> = ({ symbol, isOpen }) => {
                                                 {c.impact}
                                             </Badge>
                                         </div>
-                                        <p className="text-[11px] font-medium text-muted-foreground">{c.date}</p>
+                                        <p className="text-[11px] font-medium text-muted-foreground">{formatCalendarDate(c.date)}</p>
                                     </div>
                                 </div>
                             ))

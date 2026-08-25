@@ -930,12 +930,12 @@ struct HoldingsTableView: View {
     private func iosLotRow(_ r: HRow, _ lot: JSONValue) -> some View {
         let qty = lot["Quantity"]?.doubleValue ?? 0
         let cost = lot["Cost Basis"]?.doubleValue
-        let date = lot["Date"]?.stringValue?.prefix(10) ?? ""
+        let date = String(lot["Date"]?.stringValue?.prefix(10) ?? "")
         func mkt() -> Double? { lot["Market Value"]?.doubleValue ?? ((r.num["Price"] ?? 0) > 0 ? (r.num["Price"]!) * qty : nil) }
         let g = lot["Unreal. Gain"]?.doubleValue ?? ((mkt() ?? 0) - (cost ?? 0))
         
         return HStack {
-            Text("↳ \(date)").appFont(.caption2).foregroundStyle(.tertiary)
+            Text("↳ \(MarketTime.formatted(date))").appFont(.caption2).foregroundStyle(.tertiary)
             Spacer()
             Text("\(Fmt.number(qty)) shs").appFont(.caption2).foregroundStyle(.secondary)
             Spacer()

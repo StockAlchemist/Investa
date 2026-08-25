@@ -10,6 +10,7 @@ import { Search, X, ChevronDown, ChevronUp, CircleDollarSign, Calendar } from 'l
 import IncomeKpiStrip from './income/IncomeKpiStrip';
 import TopPayers from './income/TopPayers';
 import ByAccount from './income/ByAccount';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface DividendProps {
     data: Dividend[] | null;
@@ -332,7 +333,7 @@ export default function Dividend({
                             ) : (
                                 visibleData.map((item, index) => (
                                     <tr key={index} className="hover:bg-accent/5 transition-colors">
-                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{formatCalendarDate(item.Date)}</td>
                                         <td
                                             className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-indigo-500 transition-colors"
                                             onClick={() => openStockDetail(item.Symbol, currency)}
@@ -380,7 +381,7 @@ export default function Dividend({
                                         <StockIcon symbol={item.Symbol} size={24} />
                                         {item.Symbol}
                                     </h3>
-                                    <div className="text-xs text-muted-foreground">{item.Date} • {item.Account}</div>
+                                    <div className="text-xs text-muted-foreground">{formatCalendarDate(item.Date)} • {item.Account}</div>
                                 </div>
                                 <div className="text-right">
                                     <div className="text-lg font-bold text-emerald-500">

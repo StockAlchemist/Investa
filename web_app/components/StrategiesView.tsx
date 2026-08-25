@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from '@/components/StockIcon';
 import { cn, formatCurrency, CURRENCY_SYMBOLS } from '@/lib/utils';
+import { formatCalendarDate } from '@/lib/market_time';
 import {
     fetchStrategies,
     fetchStrategyAllocation,
@@ -419,7 +420,7 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
                                 <h3 className="font-semibold text-sm">{sleeve.label}</h3>
                                 <span className="text-xs text-muted-foreground tabular-nums">
                                     {(sleeve.weight * 100).toFixed(0)}% · {formatCurrency(sleeve.amount, currency)}
-                                    {sleeve.ranked_at && <> · ranked {sleeve.ranked_at.slice(0, 10)}</>}
+                                    {sleeve.ranked_at && <> · ranked {formatCalendarDate(sleeve.ranked_at)}</>}
                                     {allocation.ranking_age_days != null && (
                                         <span className={cn(
                                             allocation.ranking_is_stale && 'text-amber-600 dark:text-amber-400 font-semibold',

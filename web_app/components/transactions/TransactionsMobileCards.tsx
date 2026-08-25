@@ -3,6 +3,7 @@ import { Pencil, Trash2, AlertCircle } from 'lucide-react';
 import { Transaction } from '../../lib/api';
 import { formatTransactionType, getTotalAmountStyle, dupKey } from './transactionsUtils';
 import StockTicker from '../StockTicker';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface TransactionsMobileCardsProps {
     transactions: Transaction[];
@@ -42,7 +43,7 @@ export const TransactionsMobileCards: React.FC<TransactionsMobileCardsProps> = (
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground font-medium tabular-nums">
-                                    {(tx.Date || '').split('T')[0].split(' ')[0]}
+                                    {formatCalendarDate(tx.Date)}
                                 </span>
                                 {isDup && (
                                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 text-[9px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded border border-amber-500/30">

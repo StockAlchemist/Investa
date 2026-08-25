@@ -319,7 +319,7 @@ struct PerformanceChartView: View {
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 5)) { value in
                         if let date = value.as(Date.self) {
-                            AxisValueLabel { Text(xAxisLabel(for: date, period: period)) }
+                            AxisValueLabel { Text(xAxisLabel(for: date, period: period)).fixedSize() }
                         }
                     }
                 }
@@ -352,7 +352,7 @@ struct PerformanceChartView: View {
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 5)) { value in
                         if let idx = value.as(Int.self), idx >= 0, idx < dates.count {
-                            AxisValueLabel { Text(xAxisLabel(for: dates[idx], period: period)) }
+                            AxisValueLabel { Text(xAxisLabel(for: dates[idx], period: period)).fixedSize() }
                         }
                     }
                 }
@@ -369,6 +369,7 @@ struct PerformanceChartView: View {
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
                         Text(formatAxis(v, domain: domain, isPercent: view != .value))
+                            .fixedSize()
                     }
                 }
             }
@@ -379,6 +380,7 @@ struct PerformanceChartView: View {
                         AxisValueLabel {
                             Text(String(format: "%.2f", valueYToFX(y, valueDomain: domain, fxDomain: fxDomain)))
                                 .foregroundStyle(Theme.fx)
+                                .fixedSize()
                         }
                     }
                 }

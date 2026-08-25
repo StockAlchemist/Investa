@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, CheckCircle, XCircle } from 'lucide-react';
 import { Transaction, fetchPendingIbkr, approveIbkr, rejectIbkr } from '../../lib/api';
 import StockTicker from '../StockTicker';
+import { formatCalendarDate } from '@/lib/market_time';
 
 function getPendingTypeStyle(type: string): string {
     const t = (type || '').toUpperCase();
@@ -152,7 +153,7 @@ export const PendingIbkrBanner: React.FC = () => {
                                         className="rounded text-cyan-500"
                                     />
                                 </td>
-                                <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{tx.Date}</td>
+                                <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{formatCalendarDate(tx.Date)}</td>
                                 <td className="px-4 py-3">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${getPendingTypeStyle(tx.Type)}`}>
                                         {tx.Type}

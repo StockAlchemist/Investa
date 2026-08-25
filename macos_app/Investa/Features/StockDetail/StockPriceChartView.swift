@@ -607,6 +607,7 @@ struct StockPriceChartView: View {
                     if let d = v.as(Double.self) {
                         Text(view == .return_ ? String(format: "%.1f%%", d)
                                               : Fmt.number(d, fractionDigits: d < 10 ? 2 : 0))
+                            .fixedSize()
                     }
                 }
             }
@@ -617,11 +618,11 @@ struct StockPriceChartView: View {
                 if let dbl = v.as(Double.self) {
                     AxisValueLabel {
                         if isContinuous {
-                            Text(xLabel(Date(timeIntervalSince1970: dbl)))
+                            Text(xLabel(Date(timeIntervalSince1970: dbl))).fixedSize()
                         } else {
                             let idx = Int(round(dbl))
                             if idx >= 0 && idx < pts.count {
-                                Text(xLabel(pts[idx].date))
+                                Text(xLabel(pts[idx].date)).fixedSize()
                             }
                         }
                     }
