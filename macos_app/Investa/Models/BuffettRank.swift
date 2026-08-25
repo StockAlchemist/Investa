@@ -96,6 +96,15 @@ struct BuffettRankRow: Decodable, Sendable, Identifiable {
         return confidence < 0.999
     }
 
+    /// Whether the value score uses a free-cash-flow yield at all.
+    ///
+    /// Owner earnings are not derived for banks or insurers, so the pipeline
+    /// never computes one for them and `score_value` renormalises over the
+    /// metrics that are present — their value score is the earnings yield
+    /// alone. Worth distinguishing in the UI: a dash reads as data that went
+    /// missing, when this is a model that does not use the input.
+    var scoresFcfYield: Bool { model != .bank && model != .insurer }
+
     /// The five quality pillars in weighted order, for a compact breakdown.
     var pillars: [(label: String, value: Double?)] {
         [

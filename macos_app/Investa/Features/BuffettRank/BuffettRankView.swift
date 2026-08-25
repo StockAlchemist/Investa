@@ -2,471 +2,318 @@ import SwiftUI
 
 @MainActor
 final class BuffettRankViewModel: ObservableObject {
-    @Published var rows: [BuffettRankRow] = []
-    @Published var exclusions: [BuffettExclusion] = []
-    @Published var run: BuffettRankRun?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
+    @Published private(set) var rows: [BuffettRankRow] = []
+    @Published private(set) var exclusions: [BuffettExclusion] = []
+    @Published private(set) var run: BuffettRankRun?
+    /// Whether the run lookup has come back at all. Before it does, "no run
+    /// yet" and "still loading" look identical and must not be confused: one is
+    /// a permanent state with an instruction attached, the other is a spinner.
+    @Published private(set) var runResolved = false
+    @Published private(set) var isLoading = false
+    @Published private(set) var isLoadingMore = false
+    @Published private(set) var errorMessage: String?
 
     /// Nil means "all models". Filtering happens server-side because the
     /// ranking is paged out of a snapshot, not held in memory.
-    @Published var model: BuffettModel?
-    @Published var page = 0
-    @Published var showingExclusions = false
+    @Published private(set) var model: BuffettModel?
+    @Published private(set) var showingExclusions = false
 
-    /// Applied server-side across the whole run. Filtering the loaded page
-    /// instead would only ever search the ~100 rows already on screen, so a
-    /// company ranked below that would appear not to exist.
+    /// Applied server-side across the whole run. Filtering the loaded rows
+    /// instead would only ever search what is already on screen, so a company
+    /// ranked below that would appear not to exist.
     @Published var search = ""
-    @Published var totalMatches = 0
+    @Published private(set) var totalMatches = 0
 
     static let pageSize = 100
 
     private let api: APIClient
     private var searchTask: Task<Void, Never>?
+    private var loadedPages = 0
+    private var hasStarted = false
+    /// Bumped whenever the query changes. A page that lands after its filter
+    /// has moved on belongs to a list nobody is looking at any more, and
+    /// appending it would mix two result sets into one.
+    private var generation = 0
 
     init(api: APIClient = .shared) { self.api = api }
 
-    var isLastPage: Bool { (page + 1) * Self.pageSize >= totalMatches }
+    var hasRun: Bool { run != nil }
+    var loadedCount: Int { showingExclusions ? exclusions.count : rows.count }
+    var hasMore: Bool { loadedCount < totalMatches }
+    var trimmedSearch: String { search.trimmingCharacters(in: .whitespaces) }
 
-    func loadRun() async {
+    /// What the list is showing out of what matched — the count the pager used
+    /// to carry, now that the list runs on instead of paging.
+    var rangeCaption: String {
+        let noun = showingExclusions ? "excluded" : "ranked"
+        let total = Fmt.number(Double(totalMatches), fractionDigits: 0)
+        if hasMore {
+            return "Showing \(Fmt.number(Double(loadedCount), fractionDigits: 0)) of \(total) \(noun)"
+        }
+        return totalMatches == 1 ? "1 \(noun) company" : "All \(total) \(noun) companies"
+    }
+
+    func start() async {
+        guard !hasStarted else { return }
+        hasStarted = true
         // A 404 here is the normal state before the first batch run has
         // completed, so it must not surface as an error.
         run = try? await api.get("/buffett-rank/latest")
+        runResolved = true
+        await reload()
     }
 
-    func load() async {
+    /// Replaces the list from the first page. Every filter change goes through
+    /// here: keeping the loaded rows across a filter change would leave the old
+    /// result set on screen under the new heading.
+    func reload() async {
+        generation += 1
+        let token = generation
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer { if token == generation { isLoading = false } }
+        await fetch(page: 0, replacing: true, token: token)
+    }
 
+    /// Appends the next page. Called both by the button and by the footer
+    /// appearing, so reaching the end of the list is itself the request.
+    func loadMore() async {
+        guard !isLoading, !isLoadingMore, hasMore else { return }
+        let token = generation
+        isLoadingMore = true
+        defer { if token == generation { isLoadingMore = false } }
+        await fetch(page: loadedPages, replacing: false, token: token)
+    }
+
+    private func fetch(page: Int, replacing: Bool, token: Int) async {
         var query = [
             URLQueryItem(name: "limit", value: String(Self.pageSize)),
             URLQueryItem(name: "offset", value: String(page * Self.pageSize)),
         ]
-
-        let term = search.trimmingCharacters(in: .whitespaces)
-        if !term.isEmpty { query.append(URLQueryItem(name: "search", value: term)) }
+        if !trimmedSearch.isEmpty { query.append(URLQueryItem(name: "search", value: trimmedSearch)) }
 
         do {
             if showingExclusions {
                 // Searchable too: when a company is missing from the ranking,
                 // finding out why is the immediate next question.
-                let page: BuffettExclusionPage = try await api.get("/buffett-rank/exclusions", query: query)
-                exclusions = page.rows
-                totalMatches = page.total
+                let result: BuffettExclusionPage = try await api.get("/buffett-rank/exclusions", query: query)
+                guard token == generation else { return }
+                exclusions = replacing ? result.rows : exclusions + result.rows
+                totalMatches = result.total
             } else {
                 if let model { query.append(URLQueryItem(name: "model", value: model.rawValue)) }
-                let page: BuffettRankPage = try await api.get("/buffett-rank", query: query)
-                rows = page.rows
-                totalMatches = page.total
+                let result: BuffettRankPage = try await api.get("/buffett-rank", query: query)
+                guard token == generation else { return }
+                rows = replacing ? result.rows : rows + result.rows
+                totalMatches = result.total
             }
+            loadedPages = page + 1
         } catch let error as APIError {
+            guard token == generation else { return }
             errorMessage = error.errorDescription
         } catch {
+            guard token == generation else { return }
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Debounced so typing does not fire a request per keystroke. Any change
-    /// resets to the first page: staying on page 4 of a result set that now has
-    /// one match would show an empty list.
+    /// Debounced so typing does not fire a request per keystroke.
     func searchChanged() {
         searchTask?.cancel()
         searchTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled, let self else { return }
-            self.page = 0
-            await self.load()
+            await self.reload()
         }
     }
 
     func select(model newModel: BuffettModel?) async {
+        guard model != newModel else { return }
         model = newModel
-        page = 0
-        await load()
+        rows = []
+        await reload()
     }
 
     func setShowingExclusions(_ showing: Bool) async {
+        guard showingExclusions != showing else { return }
         showingExclusions = showing
-        page = 0
-        await load()
-    }
-
-    func changePage(by delta: Int) async {
-        page = max(0, page + delta)
-        await load()
+        totalMatches = 0
+        await reload()
     }
 }
 
+/// The Buffett & value ranking of every US listing.
+///
+/// Two lists behind one search: the companies that were ranked, and the (much
+/// larger) set that failed a quality gate. Each ranked row carries the evidence
+/// for its own position — five quality percentiles and the two yields the value
+/// half is made of — so the ranking can be argued with rather than trusted.
 struct BuffettRankView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = BuffettRankViewModel()
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                controls
+            VStack(alignment: .leading, spacing: 14) {
+                BuffettRankHero(run: viewModel.run)
 
-                if viewModel.isLoading && viewModel.rows.isEmpty && viewModel.exclusions.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
-                } else if let message = viewModel.errorMessage {
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 30)
-                } else if viewModel.showingExclusions {
-                    exclusionList
+                if viewModel.hasRun {
+                    BuffettRankControls(viewModel: viewModel)
+                    if viewModel.showingExclusions { exclusionNote }
+                    content
+                } else if viewModel.runResolved {
+                    noRunCard
                 } else {
-                    rankList
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
                 }
-
-                pager
             }
-            .padding(20)
+            .padding(Theme.gutter)
         }
         .navigationTitle("Rankings")
-        .task {
-            await viewModel.loadRun()
-            await viewModel.load()
-        }
+        .task { await viewModel.start() }
     }
 
-
-    // MARK: - Header
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Buffett & Value Ranking")
-                .appFont(.title2.bold())
-
-            Text("""
-                 Every US-listed common stock, scored 60% on business quality and 40% on value. \
-                 Quality gates run first — a company that fails one is excluded rather than ranked \
-                 low, because cheapness never rescues a broken business.
-                 """)
-                .appFont(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let run = viewModel.run {
-                HStack(spacing: 20) {
-                    statistic("Ranked", run.rankedCount)
-                    statistic("Excluded", run.excludedCount)
-                    statistic("Universe", run.universeSize)
-                }
-                .padding(.top, 4)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .card()
-    }
-
-    private func statistic(_ label: String, _ value: Int?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).appFont(.caption2).foregroundStyle(.secondary)
-            Text(value.map(String.init) ?? "—").appFont(.headline)
-        }
-    }
-
-    // MARK: - Controls
-
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Button("Ranked") { Task { await viewModel.setShowingExclusions(false) } }
-                    .buttonStyle(.borderedProminent)
-                    .opacity(viewModel.showingExclusions ? 0.5 : 1)
-
-                Button("Excluded") { Task { await viewModel.setShowingExclusions(true) } }
-                    .buttonStyle(.bordered)
-                    .opacity(viewModel.showingExclusions ? 1 : 0.5)
-            }
-
-            if !viewModel.showingExclusions {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        modelChip(nil, label: "All models")
-                        ForEach(BuffettModel.allCases) { model in
-                            modelChip(model, label: model.label)
-                        }
-                    }
-                }
-            }
-
-            // Search serves both tabs: when a company is missing from the
-            // ranking, looking it up in the excluded list is the very next
-            // thing you want to do.
-            HStack(spacing: 8) {
-                TextField(viewModel.showingExclusions ? "Search excluded stocks…" : "Search all ranked stocks…",
-                          text: $viewModel.search)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 320)
-                    .onChange(of: viewModel.search) { _, _ in viewModel.searchChanged() }
-
-                if !viewModel.search.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Text("\(viewModel.totalMatches) match\(viewModel.totalMatches == 1 ? "" : "es")")
-                        .appFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private func modelChip(_ model: BuffettModel?, label: String) -> some View {
-        let selected = viewModel.model == model
-        return Button(label) { Task { await viewModel.select(model: model) } }
-            .buttonStyle(.bordered)
-            .tint(selected ? .accentColor : .secondary)
-    }
-
-    // MARK: - Ranked list
+    // MARK: - Body states
 
     @ViewBuilder
-    private var rankList: some View {
-        if viewModel.rows.isEmpty {
-            let term = viewModel.search.trimmingCharacters(in: .whitespaces)
-            VStack(spacing: 6) {
-                Text(term.isEmpty ? "No companies on this page." : "No ranked company matches “\(term)”.")
-                    .appFont(.callout)
-                if !term.isEmpty {
-                    Text("It may have been excluded by a quality gate — check the Excluded tab.")
-                        .appFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 40)
+    private var content: some View {
+        if let message = viewModel.errorMessage, viewModel.loadedCount == 0 {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .appFont(.callout)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+        } else if viewModel.isLoading && viewModel.loadedCount == 0 {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+        } else if viewModel.loadedCount == 0 {
+            emptyState
+        } else if viewModel.showingExclusions {
+            BuffettExclusionList(viewModel: viewModel) { appState.openStock($0) }
         } else {
-            LazyVStack(spacing: 8) {
-                ForEach(viewModel.rows) { row in
-                    Button { appState.openStock(row.symbol) } label: {
-                        rankRow(row)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+            BuffettRankList(viewModel: viewModel) { appState.openStock($0) }
         }
     }
 
-    /// Rank column and logo sizes, shared by the row and by the indent that
-    /// keeps the pillar grid aligned under the company name on Mac.
-    private var rankColumnWidth: CGFloat { 30 }
-    private var logoSize: CGFloat { isPhoneLayout ? 30 : 34 }
-
-    private func rankRow(_ row: BuffettRankRow) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text(row.rank.map(String.init) ?? "—")
-                    .appFont(.callout.monospacedDigit())
+    private var emptyState: some View {
+        let term = viewModel.trimmedSearch
+        return VStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .appFont(.title3)
+                .foregroundStyle(.tertiary)
+            Text(term.isEmpty
+                 ? (viewModel.showingExclusions ? "No exclusions in this run." : "No companies in this run.")
+                 : "Nothing matches “\(term)”.")
+                .appFont(.callout)
+                .multilineTextAlignment(.center)
+            if !term.isEmpty && !viewModel.showingExclusions {
+                Text("It may have failed a quality gate — check the Excluded list.")
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .frame(width: rankColumnWidth, alignment: .trailing)
-
-                // The logo is what makes a 100-row list scannable: a company is
-                // recognised by its mark long before its ticker is read.
-                StockIcon(symbol: row.symbol, size: logoSize)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(row.symbol).appFont(.headline)
-                        if row.model != .generic {
-                            Text(row.model.shortLabel)
-                                .appFont(.caption2.weight(.semibold))
-                                .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(Color.secondary.opacity(0.15), in: Capsule())
-                        }
-                    }
-                    if let name = row.name, !name.isEmpty {
-                        // Two lines rather than one: at phone width a single
-                        // line ends in an ellipsis for most of the market.
-                        Text(name)
-                            .appFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    HStack(spacing: 3) {
-                        Text(score(row.compositeScore))
-                            .appFont(.title3.monospacedDigit().weight(.semibold))
-                            .foregroundStyle(tint(row.compositeScore))
-                        // Flagged next to the score it modified, so a company
-                        // demoted for thin data is distinguishable from one
-                        // that is honestly mediocre.
-                        if row.isConfidenceReduced {
-                            Image(systemName: "arrowtriangle.down.fill")
-                                .appFont(.system(size: 9))
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                    Text("Q \(score(row.qualityScore)) · V \(score(row.valueScore))")
-                        .appFont(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .layoutPriority(1)
+                    .multilineTextAlignment(.center)
             }
-
-            pillarGrid(row)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+
+    /// Before the first batch run there is nothing to show and nothing the app
+    /// can do about it — ranking every US listing is a job measured in minutes,
+    /// so it is started from the command line, never from a tap here.
+    private var noRunCard: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "chart.bar.doc.horizontal")
+                .appFont(.title)
+                .foregroundStyle(.tertiary)
+            Text("No ranking run yet").appFont(.headline)
+            Text("Build the first snapshot with `python src/buffett_rank_worker.py`, then reopen this tab.")
+                .appFont(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(28)
         .card()
     }
 
-    /// The pillar breakdown, always the same six columns.
-    ///
-    /// The last column is the earnings yield, the heaviest input to the value
-    /// score. It renders as a dash where the company reported no earnings for
-    /// the period. Dropping the column instead re-spaced every other one, so
-    /// scanning a single metric down the list meant re-finding its position on
-    /// each card.
-    private func pillarGrid(_ row: BuffettRankRow) -> some View {
-        HStack(spacing: 10) {
-            ForEach(row.pillars, id: \.label) { pillar in
-                pillarCell(score(pillar.value), pillarLabel(pillar.label), tint(pillar.value))
+    private var exclusionNote: some View {
+        Text("""
+             Most of the listed market is excluded, which is expected when ranking every listing \
+             rather than an index. A gate only fires on something the filings actually show — \
+             missing data never fails a company, it lowers its confidence instead.
+             """)
+            .appFont(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card()
+    }
+}
+
+// MARK: - Lists
+
+/// Kept as its own view, not a `@ViewBuilder` on the screen: a single `body`
+/// holding the whole page builds one enormous view type, which overflows the
+/// stack on iPhone before it ever renders.
+private struct BuffettRankList: View {
+    @ObservedObject var viewModel: BuffettRankViewModel
+    let onOpen: (String) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 8) {
+            ForEach(viewModel.rows) { row in
+                BuffettRankRowCard(row: row) { onOpen(row.symbol) }
             }
-            pillarCell(
-                row.earningsYield.map { Fmt.percent($0 / 100) } ?? "—",
-                "E/P",
-                row.earningsYield.map { $0 > 0 ? Color.green : .red } ?? .secondary
-            )
+            BuffettListFooter(viewModel: viewModel)
         }
-        .padding(.leading, isPhoneLayout ? 0 : rankColumnWidth + logoSize + 20)
     }
+}
 
-    private func pillarCell(_ value: String, _ label: String, _ tone: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .appFont(.callout.monospacedDigit().weight(.semibold))
-                .foregroundStyle(tone)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(label)
-                .appFont(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+private struct BuffettExclusionList: View {
+    @ObservedObject var viewModel: BuffettRankViewModel
+    let onOpen: (String) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 8) {
+            ForEach(viewModel.exclusions) { item in
+                BuffettExclusionCard(item: item) { onOpen(item.symbol) }
+            }
+            BuffettListFooter(viewModel: viewModel)
         }
-        .frame(maxWidth: .infinity)
     }
+}
 
-    // MARK: - Exclusions
+/// The end of the list: how much of the match set is on screen, and the next
+/// page. Replaces the previous/next pager, which on a phone meant scrolling a
+/// hundred rows to reach two buttons.
+private struct BuffettListFooter: View {
+    @ObservedObject var viewModel: BuffettRankViewModel
 
-    private var exclusionList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("""
-                 Most of the listed market is excluded, which is expected when ranking every listing \
-                 rather than an index. A gate only fires on something the filings actually show — \
-                 missing data never fails a company, it lowers its confidence instead.
-                 """)
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(viewModel.rangeCaption)
                 .appFont(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .card()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
-            if viewModel.exclusions.isEmpty {
-                Text(viewModel.search.trimmingCharacters(in: .whitespaces).isEmpty
-                     ? "No exclusions on this page."
-                     : "No excluded company matches “\(viewModel.search.trimmingCharacters(in: .whitespaces))”.")
-                    .appFont(.callout)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 30)
-            }
-
-            LazyVStack(spacing: 6) {
-                ForEach(viewModel.exclusions) { item in
-                    HStack(alignment: .top, spacing: 10) {
-                        // Same identity treatment as the ranked list, so the two
-                        // tabs read as one list seen two ways.
-                        StockIcon(symbol: item.symbol, size: isPhoneLayout ? 26 : 30)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.symbol).appFont(.headline)
-                            if let name = item.name, !name.isEmpty {
-                                Text(name)
-                                    .appFont(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .frame(width: isPhoneLayout ? 120 : 150, alignment: .leading)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            ForEach(item.reasonList, id: \.self) { reason in
-                                Text(reason)
-                                    .appFont(.caption)
-                                    .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Color.secondary.opacity(0.12), in: Capsule())
-                            }
-                        }
-
-                        Spacer()
-
-                        Text(item.periodCount.map { "\($0)y" } ?? "—")
-                            .appFont(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
+            if viewModel.hasMore {
+                if viewModel.isLoadingMore {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Load \(BuffettRankViewModel.pageSize) more") {
+                        Task { await viewModel.loadMore() }
                     }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .card()
+                    .buttonStyle(.bordered)
                 }
             }
         }
-    }
-
-    // MARK: - Paging
-
-    private var pager: some View {
-        let size = BuffettRankViewModel.pageSize
-        let first = viewModel.page * size + 1
-        return HStack {
-            Button("Previous") { Task { await viewModel.changePage(by: -1) } }
-                .disabled(viewModel.page == 0)
-            Spacer()
-            Text(viewModel.showingExclusions
-                 ? "Rows \(first)–\(first + size - 1)"
-                 : "\(viewModel.totalMatches == 0 ? 0 : first)–\(min(first + size - 1, viewModel.totalMatches)) of \(viewModel.totalMatches)")
-                .appFont(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("Next") { Task { await viewModel.changePage(by: 1) } }
-                // The exclusions list has no match count, so its Next stays
-                // enabled and simply lands on an empty page at the end.
-                .disabled(!viewModel.showingExclusions && viewModel.isLastPage)
-        }
-        .buttonStyle(.bordered)
-    }
-
-    // MARK: - Formatting
-
-    /// Full labels on Mac, abbreviated where a phone column cannot hold them.
-    private func pillarLabel(_ label: String) -> String {
-        guard isPhoneLayout else { return label }
-        return label == "Predictable" ? "Predict." : label
-    }
-
-    private func score(_ value: Double?) -> String {
-        guard let value else { return "—" }
-        return String(format: "%.0f", value)
-    }
-
-    /// One ramp for every percentile score, since they all share a 0–100 scale.
-    private func tint(_ value: Double?) -> Color {
-        guard let value else { return .secondary }
-        if value >= 70 { return .green }
-        if value >= 50 { return .cyan }
-        if value >= 30 { return .orange }
-        return .red
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        // Reaching the end of the list is the request for the next page; the
+        // button stays for anyone who lands here while a load is in flight.
+        .onAppear { Task { await viewModel.loadMore() } }
     }
 }
