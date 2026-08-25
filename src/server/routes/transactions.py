@@ -23,7 +23,7 @@ from db_utils import (
     update_transaction_in_db,
 )
 from finutils import is_cash_symbol
-from ibkr_connector import IBKRConnector
+from ibkr_connector import IBKRBusyError, IBKRConnector, IBKRError
 from server.auth import User
 from server.dependencies import (
     get_config_manager,
@@ -528,6 +528,24 @@ def update_holding_tags(
         raise HTTPException(status_code=500, detail="Failed to update holding tags")
 
 
+def _ibkr_error(status_code: int, code: str, message: str) -> JSONResponse:
+    """IBKR failures carry a message worth reading, so ship it under both the
+    key the web client reads (`message`) and the one the native clients read
+    (`detail`, FastAPI's convention). IBKR's own wording never names IBKR, so
+    say who is talking before quoting it."""
+    if "ibkr" not in message.lower():
+        message = f"IBKR: {message}"
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "error",
+            "code": code,
+            "message": message,
+            "detail": message,
+        },
+    )
+
+
 @router.post("/sync/ibkr")
 async def sync_ibkr(
     current_user: User = Depends(get_current_user),
@@ -547,13 +565,10 @@ async def sync_ibkr(
 
         if not token or not query_id:
             # We check here to provide a clear error to the user via the API
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "code": "CONFIG_MISSING",
-                    "message": "IBKR API not configured. Please set IBKR Token and Query ID in your settings.",
-                },
+            return _ibkr_error(
+                400,
+                "CONFIG_MISSING",
+                "IBKR API not configured. Please set IBKR Token and Query ID in your settings.",
             )
 
         _, _, _, _, _, _, db_path, _ = data
@@ -565,16 +580,21 @@ async def sync_ibkr(
         # Flex sync involves network I/O, run in threadpool to avoid blocking event loop
         try:
             new_transactions = await run_in_threadpool(connector.sync)
+        except IBKRBusyError as busy_err:
+            # IBKR has not finished generating the statement. Nothing is wrong
+            # with the query or the token, so this is not a server error and
+            # not worth a traceback — the user just has to come back shortly.
+            logging.warning(f"IBKR sync deferred: {busy_err}")
+            return _ibkr_error(409, "IBKR_BUSY", str(busy_err))
+        except IBKRError as ibkr_err:
+            if ibkr_err.is_config_error:
+                logging.warning(f"IBKR sync rejected: {ibkr_err}")
+                return _ibkr_error(400, "IBKR_CONFIG", str(ibkr_err))
+            logging.error(f"IBKR sync failed: {ibkr_err}")
+            return _ibkr_error(500, "SYNC_FAILED", str(ibkr_err))
         except Exception as sync_err:
             logging.error(f"Error in connector.sync: {sync_err}", exc_info=True)
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "status": "error",
-                    "code": "SYNC_FAILED",
-                    "message": "IBKR sync failed",
-                },
-            )
+            return _ibkr_error(500, "SYNC_FAILED", "IBKR sync failed")
 
         if not new_transactions:
             return {

@@ -201,6 +201,7 @@ struct TransactionsView: View {
                 if let error = viewModel.errorMessage { errorBanner(error) }
                 VStack(spacing: 16) {
                     TxKpiStrip(transactions: sorted, preferredCurrency: cur)
+                    if let status = viewModel.ibkrSyncStatus { ibkrSyncBanner(status) }
                     if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
                     if duplicateCount > 0 { duplicateBanner }
                     toolbar
@@ -256,6 +257,7 @@ struct TransactionsView: View {
     private var contentBody: some View {
         VStack(spacing: 16) {
             TxKpiStrip(transactions: sorted, preferredCurrency: cur)
+            if let status = viewModel.ibkrSyncStatus { ibkrSyncBanner(status) }
             if !viewModel.pendingIbkr.isEmpty { ibkrPendingCard }
             if duplicateCount > 0 { duplicateBanner }
             toolbar
@@ -274,8 +276,15 @@ struct TransactionsView: View {
             Button { showingAdd = true } label: { Image(systemName: "plus") }
                 .buttonStyle(.borderedProminent)
             importControl
-            Button { Task { await viewModel.syncIbkr() } } label: { Image(systemName: "arrow.triangle.2.circlepath") }
-                .buttonStyle(.bordered)
+            Button { Task { await viewModel.syncIbkr() } } label: {
+                if viewModel.isSyncingIbkr {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(viewModel.isSyncingIbkr)
             Spacer()
             Button { showFilters.toggle(); if !showFilters { resetFilters() } } label: {
                 Image(systemName: "line.3.horizontal.decrease.circle")
@@ -294,8 +303,18 @@ struct TransactionsView: View {
             Button { showingAdd = true } label: { Label("Add", systemImage: "plus") }
                 .buttonStyle(.borderedProminent)
             importControl
-            Button { Task { await viewModel.syncIbkr() } } label: { Label("IBKR Sync", systemImage: "arrow.triangle.2.circlepath") }
-                .buttonStyle(.bordered)
+            Button { Task { await viewModel.syncIbkr() } } label: {
+                if viewModel.isSyncingIbkr {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Syncing…")
+                    }
+                } else {
+                    Label("IBKR Sync", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(viewModel.isSyncingIbkr)
             if !selection.isEmpty {
                 Button(role: .destructive) { pendingBulkDelete = true } label: {
                     Label("Delete (\(selection.count))", systemImage: "trash")
@@ -903,6 +922,22 @@ struct TransactionsView: View {
             get: { Set(selection.map { Optional($0) }) },
             set: { selection = Set($0.compactMap { $0 }) }
         )
+    }
+
+    /// Outcome of the last IBKR sync — green on success, red on failure, with a
+    /// dismiss button. Mirrors the web app's sync feedback banner.
+    private func ibkrSyncBanner(_ status: TransactionsViewModel.SyncStatus) -> some View {
+        let tint: Color = status.isError ? .red : .green
+        return HStack(spacing: 10) {
+            Image(systemName: status.isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+            Text(status.message).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button { viewModel.ibkrSyncStatus = nil } label: { Image(systemName: "xmark") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+        }
+        .appFont(.callout).padding(12).foregroundStyle(tint)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func errorBanner(_ message: String) -> some View {

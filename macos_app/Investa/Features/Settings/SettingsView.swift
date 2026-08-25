@@ -20,6 +20,8 @@ final class SettingsViewModel: ObservableObject {
     @Published var settings: AppSettings?
     @Published var isLoading = false
     @Published var status: String?
+    /// Drives the "Sync Now" button's spinner while `/sync/ibkr` is in flight.
+    @Published var isSyncingIbkr = false
 
     private let api: APIClient
     init(api: APIClient = .shared) { self.api = api }
@@ -64,8 +66,11 @@ final class SettingsViewModel: ObservableObject {
         catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
     }
     func syncIbkr() async {
+        guard !isSyncingIbkr else { return }
+        isSyncingIbkr = true
+        defer { isSyncingIbkr = false }
         status = "Syncing IBKR…"
-        do { let _: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr"); status = "IBKR sync complete." }
+        do { let res: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr"); status = res.message ?? "IBKR sync complete." }
         catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
     }
     func updateProfile(alias: String) async {

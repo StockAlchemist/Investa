@@ -721,8 +721,18 @@ struct AdvancedSettings: View {
             HStack(spacing: 12) {
                 Button("Save Credentials") { Task { await vm.update("ibkr_token", ibkrToken); await vm.update("ibkr_query_id", ibkrQuery) } }
                     .buttonStyle(.borderedProminent)
-                Button("Sync Now") { Task { await vm.syncIbkr() } }
-                    .buttonStyle(.bordered)
+                Button { Task { await vm.syncIbkr() } } label: {
+                    if vm.isSyncingIbkr {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Syncing…")
+                        }
+                    } else {
+                        Text("Sync Now")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(vm.isSyncingIbkr)
             }
             .padding(.top, 4)
         }
