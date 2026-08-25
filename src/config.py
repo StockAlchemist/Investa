@@ -35,6 +35,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 IBKR_TOKEN = os.getenv("IBKR_TOKEN")
 IBKR_QUERY_ID = os.getenv("IBKR_QUERY_ID")
 
+# --- Thai SEC Open API ---
+# Daily NAVs for Thai mutual funds (SSF/RMF). No commercial data provider
+# carries these, so this is the only source for any fund held on SET.
+# Free self-service subscription key from https://secopendata.sec.or.th/sec-open-apis
+SEC_TH_API_KEY = os.getenv("SEC_TH_API_KEY")
+
 # --- Authentication Configuration ---
 # AUTH_SECRET_KEY is resolved below (after get_app_data_dir is defined):
 # the AUTH_SECRET_KEY env var wins; otherwise a per-installation random key
