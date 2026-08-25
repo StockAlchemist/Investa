@@ -56,7 +56,7 @@ struct IncomeKpiStrip: View {
 
     private var m: M {
         var out = M()
-        let now = Date(); let cal = Calendar.current
+        let now = Date(); let cal = MarketTime.localCalendar
         let year = cal.component(.year, from: now)
         let priorCutoff = cal.date(byAdding: .year, value: -1, to: now)!
         let oneYearAgo = cal.date(byAdding: .year, value: -1, to: now)!
@@ -292,7 +292,7 @@ struct TopPayersCard: View {
     private struct Row: Identifiable { let symbol: String; let gross: Double; let count: Int; var pct: Double; var id: String { symbol } }
 
     private var rows: [Row] {
-        let cutoff = Calendar.current.date(byAdding: .year, value: -1, to: Date())!
+        let cutoff = MarketTime.localCalendar.date(byAdding: .year, value: -1, to: Date())!
         var bySym: [String: (gross: Double, count: Int)] = [:]
         for d in dividends {
             if window == "12m", let dt = parseDay(d.date), dt < cutoff { continue }
@@ -346,7 +346,7 @@ struct ByAccountCard: View {
 
     private struct Row: Identifiable { let account: String; let gross: Double; var id: String { account } }
     private var rows: [Row] {
-        let cutoff = Calendar.current.date(byAdding: .year, value: -1, to: Date())!
+        let cutoff = MarketTime.localCalendar.date(byAdding: .year, value: -1, to: Date())!
         var byAcc: [String: Double] = [:]
         for d in dividends {
             if window == "12m", let dt = parseDay(d.date), dt < cutoff { continue }

@@ -118,7 +118,7 @@ struct ProjectionCardView: View {
             AxisMarks(values: [1, 5, 10, 15, 20]) { value in
                 AxisGridLine()
                 AxisValueLabel {
-                    if let y = value.as(Int.self) { Text("\(y)Y") }
+                    if let y = value.as(Int.self) { Text("\(y)Y").fixedSize() }
                 }
             }
         }
@@ -126,7 +126,7 @@ struct ProjectionCardView: View {
             AxisMarks { value in
                 AxisGridLine()
                 AxisValueLabel {
-                    if let v = value.as(Double.self) { Text(Fmt.compact(v, code: cur)) }
+                    if let v = value.as(Double.self) { Text(Fmt.compact(v, code: cur)).fixedSize() }
                 }
             }
         }

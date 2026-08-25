@@ -23,6 +23,7 @@ import { normalizeDividendYield } from "@/lib/dividend";
 import StockTicker from './StockTicker';
 import { TrendSparkline } from './ui/TrendSparkline';
 import WatchlistKpiStrip from './watchlist/WatchlistKpiStrip';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface WatchlistProps {
     currency: string;
@@ -667,7 +668,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                                     <div key={idx} className="text-left border-l-2 border-amber-500 pl-3 py-0.5">
                                                                         <p className="text-[12px] font-bold text-foreground leading-snug">{c.event}</p>
                                                                         <div className="flex items-center gap-2 mt-1">
-                                                                            <span className="text-[10px] text-muted-foreground font-medium">{c.date}</span>
+                                                                            <span className="text-[10px] text-muted-foreground font-medium">{formatCalendarDate(c.date)}</span>
                                                                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
                                                                                 c.impact === 'High' ? 'bg-red-500/10 text-red-500' : 
                                                                                 c.impact === 'Medium' ? 'bg-amber-500/10 text-amber-500' : 

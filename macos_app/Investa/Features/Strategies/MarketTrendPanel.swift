@@ -170,9 +170,7 @@ struct MarketTrendPanel: View {
         parser.dateFormat = "yyyy-MM"
         parser.timeZone = TimeZone(identifier: "UTC")
         guard let date = parser.date(from: value) else { return value }
-        let out = DateFormatter()
-        out.dateFormat = "MMMM yyyy"
-        out.timeZone = TimeZone(identifier: "UTC")
+        let out = MarketTime.formatter("MMMM yyyy", timeZone: TimeZone(identifier: "UTC"))
         return out.string(from: date)
     }
 }

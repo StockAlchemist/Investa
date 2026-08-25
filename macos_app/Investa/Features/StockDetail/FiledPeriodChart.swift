@@ -95,6 +95,7 @@ struct FiledPeriodChart: View {
                              : MarketTime.year(date))
                             .appFont(.caption2)
                             .foregroundStyle(.secondary)
+                            .fixedSize()
                     }
                 }
             }
@@ -104,7 +105,7 @@ struct FiledPeriodChart: View {
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
                 if let v = value.as(Double.self) {
                     AxisValueLabel {
-                        Text(format(v)).appFont(.caption2).foregroundStyle(.secondary)
+                        Text(format(v)).appFont(.caption2).foregroundStyle(.secondary).fixedSize()
                     }
                 }
             }

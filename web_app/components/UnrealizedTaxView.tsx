@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, AlertCircle, Info } from 'lucide-react';
 import { Holding, Lot } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { useStockModal } from '@/context/StockModalContext';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface Props {
     holdings: Holding[];
@@ -169,7 +170,7 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                                                 )}
                                             </td>
                                             <td className="py-1.5 px-3 text-muted-foreground tabular-nums">
-                                                {c.lot.Date}
+                                                {formatCalendarDate(c.lot.Date)}
                                             </td>
                                             <td className="py-1.5 px-3 text-right tabular-nums">
                                                 {c.lot.Quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}
@@ -228,7 +229,7 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                                         >
                                             {c.symbol}
                                         </button>
-                                        <span className="text-muted-foreground">acquired {c.lot.Date}</span>
+                                        <span className="text-muted-foreground">acquired {formatCalendarDate(c.lot.Date)}</span>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <span className="tabular-nums text-emerald-600 font-medium">

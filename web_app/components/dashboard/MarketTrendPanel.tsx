@@ -50,6 +50,7 @@ const monthLabel = (yyyymm: string): string => {
     const [year, month] = yyyymm.split('-').map(Number);
     if (!year || !month) return yyyymm;
     return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(undefined, {
+        calendar: 'gregory',
         month: 'long',
         year: 'numeric',
         timeZone: 'UTC',

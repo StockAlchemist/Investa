@@ -37,6 +37,66 @@ enum MarketTime {
     /// while leaving month names localized.
     private static let gregorian = Calendar(identifier: .gregorian)
 
+    /// The reader's own locale with the Gregorian calendar forced on.
+    ///
+    /// A device set to a Thai region defaults to the Buddhist era, so a
+    /// formatter that inherits it renders 23 August 2018 as "23 Aug 2561" — a
+    /// year no market, filing or trade confirmation has ever used. Setting only
+    /// `DateFormatter.calendar` is not enough on its own: a formatter takes its
+    /// calendar from its locale, so the calendar has to be baked into the
+    /// locale. Month and weekday names stay in the reader's language; only the
+    /// era changes.
+    static let displayLocale: Locale = gregorianLocale(.current)
+
+    /// `base` with the Gregorian calendar substituted, and nothing else touched.
+    static func gregorianLocale(_ base: Locale) -> Locale {
+        if base.calendar.identifier == .gregorian { return base }
+        var components = Locale.Components(locale: base)
+        components.calendar = .gregorian
+        return Locale(components: components)
+    }
+
+    /// The Gregorian calendar on the device's own zone — for arithmetic on dates
+    /// the reader picked ("a year ago", "the start of this year").
+    /// `Calendar.current` is the calendar the device *displays*, so on a Thai
+    /// device `component(.year:)` answers 2569 and any comparison against a year
+    /// parsed from the API is off by 543.
+    static var localCalendar: Calendar {
+        var cal = gregorian
+        cal.timeZone = .current
+        return cal
+    }
+
+    /// The US market's zone — the default for an axis or tooltip plotting a
+    /// series that does not name its own exchange.
+    static var defaultZone: TimeZone { zone(nil) }
+
+    /// A display formatter pinned to the Gregorian calendar, and to a market's
+    /// zone when one is given. Every user-visible date the app builds outside
+    /// this file goes through here: a bare `DateFormatter()` inherits the
+    /// device's calendar and prints the wrong year.
+    static func formatter(_ pattern: String, timeZone: TimeZone? = nil) -> DateFormatter {
+        let f = DateFormatter()
+        // Locale first — assigning one resets `calendar` to the locale's own.
+        f.locale = displayLocale
+        f.calendar = gregorian
+        f.dateFormat = pattern
+        if let timeZone { f.timeZone = timeZone }
+        return f
+    }
+
+    /// A formatter for the ISO `yyyy-MM-dd` the API speaks — fixed English and
+    /// Gregorian, since this is a wire format, not a notation a reader sees.
+    /// A device calendar leaking in here would send the backend "2569-08-25".
+    static func isoFormatter(timeZone: TimeZone? = nil) -> DateFormatter {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = gregorian
+        f.dateFormat = "yyyy-MM-dd"
+        if let timeZone { f.timeZone = timeZone }
+        return f
+    }
+
     /// "29 Jul 2026" — `DD MMM YYYY`, the app's one date notation.
     ///
     /// An explicit pattern rather than `dateStyle = .medium`, which orders the
@@ -50,6 +110,7 @@ enum MarketTime {
     /// instant, and must not slide for a viewer west of UTC.
     private static let mediumFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.locale = displayLocale
         f.calendar = gregorian
         f.dateFormat = "dd MMM yyyy"
         f.timeZone = utc
@@ -60,6 +121,7 @@ enum MarketTime {
     /// with no room for it. Day-first like the full form; never "Jul 29".
     private static let shortDayFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.locale = displayLocale
         f.calendar = gregorian
         f.dateFormat = "dd MMM"
         f.timeZone = utc
@@ -85,6 +147,7 @@ enum MarketTime {
     private static let yearFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = gregorian
         f.dateFormat = "yyyy"
         f.timeZone = utc
         return f

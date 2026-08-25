@@ -6,9 +6,9 @@ private let cgDayFormatter: DateFormatter = {
 }()
 private func cgParseDay(_ s: String) -> Date? { cgDayFormatter.date(from: String(s.prefix(10))) }
 
-/// "Aug 28" for an acquisition, with the year only when it falls outside the
+/// "28 Aug" for an acquisition, with the year only when it falls outside the
 /// current market year — a lot bought last December is still short-term, and
-/// a bare "Dec 12" would read as this year's.
+/// a bare "12 Dec" would read as this year's.
 private func cgShortDay(_ iso: String) -> String {
     guard let day = MarketTime.calendarDay(iso), let today = MarketTime.today(timeZone: nil) else { return iso }
     return MarketTime.year(day) == MarketTime.year(today)
@@ -439,7 +439,7 @@ struct AnnualRealizedGainsCard: View {
                     AxisMarks(preset: .aligned, values: labeledYears(data.map(\.year))) { value in
                         AxisValueLabel {
                             if let y = value.as(String.self) {
-                                Text(y).appFont(.caption2).foregroundStyle(.secondary)
+                                Text(y).appFont(.caption2).foregroundStyle(.secondary).fixedSize()
                             }
                         }
                     }
@@ -450,7 +450,7 @@ struct AnnualRealizedGainsCard: View {
                         AxisGridLine().foregroundStyle(Color.secondary.opacity(0.2))
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
-                                Text(cgAxis(v)).appFont(.caption2).foregroundStyle(.secondary)
+                                Text(cgAxis(v)).appFont(.caption2).foregroundStyle(.secondary).fixedSize()
                             }
                         }
                     }

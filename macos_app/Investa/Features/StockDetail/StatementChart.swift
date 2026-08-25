@@ -285,8 +285,6 @@ struct StatementChartView: View {
 
     private var hasNegative: Bool { series.contains { $0.values.contains { ($0 ?? 0) < 0 } } }
 
-    private var asLines: Bool { metrics.preferLines }
-
     /// Only as many period labels as fit. A categorical x-scale draws a mark
     /// for every category it is given, so thinning has to happen here — twenty
     /// quarter labels overprint into a smear, which no font size fixes.
@@ -339,24 +337,16 @@ struct StatementChartView: View {
                 // categorical scale would merge them into one column.
                 ForEach(Array(periods.enumerated()), id: \.offset) { i, period in
                     if let v = s.values.indices.contains(i) ? s.values[i] : nil {
-                        if asLines {
-                            LineMark(x: .value("Period", period), y: .value("Value", v))
-                                .foregroundStyle(s.color)
-                                .lineStyle(.init(lineWidth: 2))
-                                .interpolationMethod(.monotone)
-                                .position(by: .value("Series", s.label))
-                        } else {
-                            // Wider than the default: the space between
-                            // periods is worth less than a readable bar.
-                            BarMark(
-                                x: .value("Period", period),
-                                y: .value("Value", v),
-                                width: .ratio(0.9)
-                            )
-                                .foregroundStyle(s.color)
-                                .position(by: .value("Series", s.label))
-                                .cornerRadius(3)
-                        }
+                        // Wider than the default: the space between periods is
+                        // worth less than a readable bar.
+                        BarMark(
+                            x: .value("Period", period),
+                            y: .value("Value", v),
+                            width: .ratio(0.9)
+                        )
+                            .foregroundStyle(s.color)
+                            .position(by: .value("Series", s.label))
+                            .cornerRadius(3)
                     }
                 }
             }
@@ -377,7 +367,7 @@ struct StatementChartView: View {
                 // The edge labels hang inward instead.
                 AxisValueLabel(anchor: edgeAnchor(iso)) {
                     if let iso {
-                        Text(statementPeriodLabel(iso, periodType)).appFont(.caption2)
+                        Text(statementPeriodLabel(iso, periodType)).appFont(.caption2).fixedSize()
                     }
                 }
             }
@@ -391,7 +381,7 @@ struct StatementChartView: View {
                 AxisGridLine().foregroundStyle(.secondary.opacity(0.15))
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
-                        Text(formatStatementValue(v)).appFont(.caption2)
+                        Text(formatStatementValue(v)).appFont(.caption2).fixedSize()
                     }
                 }
             }

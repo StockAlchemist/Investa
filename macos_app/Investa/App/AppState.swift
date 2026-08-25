@@ -59,7 +59,7 @@ final class AppState: ObservableObject {
     @Published var selectedAccounts: Set<String> = []
     @Published var period: Period = .oneYear
     /// Custom date range for the performance graph (used when `period == .custom`).
-    @Published var customFrom: Date = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
+    @Published var customFrom: Date = MarketTime.localCalendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()
     @Published var customTo: Date = Date()
     @Published var showClosed: Bool = false
     @Published var benchmarks: [String] = []

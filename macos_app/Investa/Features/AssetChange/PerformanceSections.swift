@@ -54,7 +54,7 @@ struct PerfKpiStrip: View {
         let monthly = AssetChangeData.returns(data, period: "M", series: "Portfolio")
         out.ytd = metrics?.ytdReturn
         if out.ytd == nil, !monthly.isEmpty {
-            let latestYr = monthly.compactMap { AssetChangeData.year($0.0) }.max() ?? Calendar.current.component(.year, from: Date())
+            let latestYr = monthly.compactMap { AssetChangeData.year($0.0) }.max() ?? MarketTime.localCalendar.component(.year, from: Date())
             let ytdVals = monthly.filter { AssetChangeData.year($0.0) == latestYr }.map { $0.1 }
             out.ytd = compounded(ytdVals)
         }
@@ -128,7 +128,7 @@ struct ReturnsChart: View {
         ("Y", "Annual", 10), ("M", "Monthly", 12), ("W", "Weekly", 12), ("D", "Daily", 30),
     ]
 
-    private struct Bar: Identifiable { let id = UUID(); let date: String; let series: String; let value: Double }
+    private struct Bar: Identifiable { let id = UUID(); let iso: String; let date: String; let series: String; let value: Double }
 
     private var rows: [[String: JSONValue]] { Array((data[period] ?? []).suffix(count)) }
 
@@ -145,28 +145,43 @@ struct ReturnsChart: View {
             let sDate = shortDate(dateStr, period: period)
             for k in keys {
                 if let v = row[k]?.doubleValue {
-                    out.append(Bar(date: sDate, series: k.replacingOccurrences(of: " \(suffix)", with: ""), value: v))
+                    out.append(Bar(iso: dateStr, date: sDate, series: k.replacingOccurrences(of: " \(suffix)", with: ""), value: v))
                 }
             }
         }
         return out
     }
     
+    /// One bucket's label, in the app's notation: `2026` for a year,
+    /// `Mar 2026` for a month, `20 Mar` for a week or a day. Never the ISO
+    /// string, and never `03/20`, which reads as 3 April to half the world.
+    /// Doubles as the bar's category, so it has to stay unique per bucket — it
+    /// is, over the windows this chart draws (12 months, 12 weeks, 30 days).
     private func shortDate(_ d: String, period: String) -> String {
         guard d.count >= 10 else { return d }
-        let y = d.prefix(4)
-        let m = d.dropFirst(5).prefix(2)
-        let day = d.dropFirst(8).prefix(2)
         switch period {
-        case "Y": return String(y)
-        case "M":
-            let mInt = Int(m) ?? 1
-            let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-            let mStr = months[max(0, min(11, mInt - 1))]
-            return "\(mStr) '\(y.suffix(2))"
-        case "W", "D":
-            return "\(m)/\(day)"
-        default: return String(d.prefix(10))
+        case "Y": return String(d.prefix(4))
+        case "M": return MarketTime.monthYear(d)
+        default: return MarketTime.shortDay(d)
+        }
+    }
+
+    /// The bucket label trimmed to what the axis can show: a month is "Mar",
+    /// or its initial when the chart is narrow, and a year "'26". The tooltip
+    /// still names it in full.
+    private func axisLabel(_ dateStr: String) -> String {
+        if period == "M" { return String(dateStr.prefix(compact ? 1 : 3)) }
+        if compact && period == "Y" { return "'" + String(dateStr.suffix(2)) }
+        return dateStr
+    }
+
+    /// The same bucket named in full. An axis may drop the year; a tooltip has
+    /// the room to keep it.
+    private func tooltipTitle(_ iso: String, period: String) -> String {
+        switch period {
+        case "Y": return String(iso.prefix(4))
+        case "M": return MarketTime.monthYear(iso)
+        default: return MarketTime.formatted(iso)
         }
     }
 
@@ -218,15 +233,7 @@ struct ReturnsChart: View {
                 .chartXAxis {
                     AxisMarks(values: xAxisValues) { value in
                         if let dateStr = value.as(String.self) {
-                            AxisValueLabel {
-                                if compact && period == "M" {
-                                    Text(String(dateStr.prefix(1)))
-                                } else if compact && period == "Y" {
-                                    Text("'" + String(dateStr.suffix(2)))
-                                } else {
-                                    Text(dateStr)
-                                }
-                            }
+                            AxisValueLabel { Text(axisLabel(dateStr)).fixedSize() }
                         }
                     }
                 }
@@ -235,7 +242,7 @@ struct ReturnsChart: View {
                         AxisGridLine()
                         AxisValueLabel {
                             if let d = v.as(Double.self) {
-                                Text(formatAxis(d, isPercent: !valueMode))
+                                Text(formatAxis(d, isPercent: !valueMode)).fixedSize()
                             }
                         }
                     }
@@ -245,7 +252,8 @@ struct ReturnsChart: View {
                     let date = distinctDates[i]
                     let entries = bars.filter { $0.date == date }
                     guard !entries.isEmpty else { return nil }
-                    return ChartTooltipContent(title: date, rows: entries.map {
+                    return ChartTooltipContent(title: tooltipTitle(entries[0].iso, period: period),
+                                               rows: entries.map {
                         ChartTooltipRow(label: $0.series,
                                         value: valueMode ? Fmt.number($0.value, fractionDigits: 0)
                                                          : String(format: "%.2f%%", $0.value))
@@ -501,7 +509,7 @@ struct DrawdownTimeline: View {
                                                                value: String(format: "%.2f%%", s.series[i].1))])
                 }
                 .frame(height: 200)
-                if let t = s.trough { Text("Deepest trough on \(t)").appFont(.caption2).foregroundStyle(.secondary) }
+                if let t = s.trough { Text("Deepest trough on \(MarketTime.formatted(t))").appFont(.caption2).foregroundStyle(.secondary) }
             }
         }
     }

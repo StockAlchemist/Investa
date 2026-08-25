@@ -6,14 +6,12 @@ import {
     YAxis,
     Tooltip,
     ReferenceLine,
-    Line,
     Bar,
     ResponsiveContainer
 } from 'recharts';
 import { ChartPoint, ChartSeries } from '../types';
 import {
     StatementPeriod,
-    BAR_TO_LINE_THRESHOLD,
     formatStatementValue,
     isFiniteNumber
 } from '../../../lib/statement_chart';
@@ -73,7 +71,6 @@ export function StatementChart({ points, series, periodType }: {
     periodType: StatementPeriod;
 }) {
     const hasNegative = points.some(p => series.some(s => isFiniteNumber(p[s.key]) && (p[s.key] as number) < 0));
-    const asLines = points.length > BAR_TO_LINE_THRESHOLD;
 
     return (
         <div>
@@ -109,27 +106,10 @@ export function StatementChart({ points, series, periodType }: {
                         {hasNegative && <ReferenceLine y={0} stroke="currentColor" className="text-border" strokeWidth={1} />}
                         <Tooltip
                             wrapperStyle={{ opacity: 1, zIndex: 1000 }}
-                            cursor={
-                                asLines
-                                    ? { stroke: 'currentColor', className: 'text-muted-foreground', strokeWidth: 1, strokeDasharray: '3 3' }
-                                    : { fill: 'currentColor', className: 'text-muted-foreground', opacity: 0.08 }
-                            }
+                            cursor={{ fill: 'currentColor', className: 'text-muted-foreground', opacity: 0.08 }}
                             content={<StatementTooltip series={series} />}
                         />
-                        {series.map(s => (asLines ? (
-                            <Line
-                                key={s.key}
-                                type="monotone"
-                                dataKey={s.key}
-                                name={s.label}
-                                stroke={s.color}
-                                strokeWidth={2}
-                                dot={false}
-                                activeDot={{ r: 4, strokeWidth: 2 }}
-                                connectNulls
-                                animationDuration={600}
-                            />
-                        ) : (
+                        {series.map(s => (
                             <Bar
                                 key={s.key}
                                 dataKey={s.key}
@@ -138,7 +118,7 @@ export function StatementChart({ points, series, periodType }: {
                                 shape={<RoundedBar />}
                                 animationDuration={600}
                             />
-                        )))}
+                        ))}
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>

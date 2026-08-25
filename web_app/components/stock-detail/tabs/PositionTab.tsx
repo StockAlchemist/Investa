@@ -22,6 +22,7 @@ import { fetchStockPosition, StockPositionData } from '../../../lib/api';
 import { formatCurrency, cn } from '../../../lib/utils';
 import { Skeleton } from '../../ui/skeleton';
 import { PositionPerformanceGraph } from '../components/PositionPerformanceGraph';
+import { formatCalendarDate } from '@/lib/market_time';
 
 interface PositionTabProps {
     symbol: string;
@@ -358,7 +359,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                                         <td className="py-3 px-4 font-medium whitespace-nowrap">
                                             <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
                                                 <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                                <span className="tabular-nums">{lot.date}</span>
+                                                <span className="tabular-nums">{formatCalendarDate(lot.date)}</span>
                                             </div>
                                         </td>
                                         <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">{lot.account}</td>
@@ -431,7 +432,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                                         <td className="py-3 px-4 font-medium whitespace-nowrap">
                                             <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
                                                 <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                                <span className="tabular-nums">{trade.sell_date}</span>
+                                                <span className="tabular-nums">{formatCalendarDate(trade.sell_date)}</span>
                                             </div>
                                         </td>
                                         <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">{trade.account}</td>

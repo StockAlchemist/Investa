@@ -21,12 +21,6 @@ export const MAX_CHART_SERIES = 4;
 /** A hard ceiling on plotted periods, whatever range is asked for. */
 export const MAX_CHART_PERIODS = 80;
 
-/**
- * Past this many periods, grouped bars become hairlines and the chart is read
- * as a shape rather than a set of magnitudes — which is a line's job.
- */
-export const BAR_TO_LINE_THRESHOLD = 24;
-
 export type StatementRange = '5y' | '10y' | 'max';
 
 /**

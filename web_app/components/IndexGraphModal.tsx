@@ -49,6 +49,7 @@ const CustomTooltip = ({ active, payload, label, period }: {
             <div className="bg-background/60 backdrop-blur-xl p-4 rounded-2xl min-w-[280px] border border-border/50 shadow-2xl">
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 pb-2">
                     {new Date(label as string | number).toLocaleString([], {
+                        calendar: 'gregory',
                         timeZone: 'America/New_York',
                         month: 'short',
                         day: 'numeric',
@@ -340,7 +341,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                         if (period === '1d' || period === '5d') {
                                             return d.toLocaleTimeString([], { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
                                         }
-                                        return d.toLocaleDateString([], { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+                                        return d.toLocaleDateString([], { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
                                     }}
                                     tick={{ fontSize: 10, fontWeight: 700, fill: 'currentColor' }}
                                     axisLine={false}
