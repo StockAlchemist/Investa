@@ -449,31 +449,20 @@ struct PerformanceChartView: View {
     }
 
     private func tooltipString(_ d: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        if period == .oneDay || period == .fiveDays {
-            f.timeZone = TimeZone(identifier: "America/New_York"); f.dateFormat = "EEE, dd MMM h:mm a"
-        } else {
-            f.dateFormat = "dd MMM yyyy"
-        }
+        let f = period == .oneDay || period == .fiveDays
+            ? MarketTime.formatter("EEE, dd MMM h:mm a", timeZone: MarketTime.defaultZone)
+            : MarketTime.formatter("dd MMM yyyy")
         return f.string(from: d)
     }
 
     private func xAxisLabel(for d: Date, period: Period) -> String {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        if period == .oneDay {
-            f.timeZone = TimeZone(identifier: "America/New_York")
-            f.dateFormat = "h:mm a"
-        } else if period == .fiveDays {
-            f.timeZone = TimeZone(identifier: "America/New_York")
-            f.dateFormat = "E"
-        } else if period == .oneMonth {
-            f.dateFormat = "dd MMM"
-        } else if period == .oneYear || period == .ytd {
-            f.dateFormat = "MMM"
-        } else {
-            f.dateFormat = "yyyy"
+        let f: DateFormatter
+        switch period {
+        case .oneDay: f = MarketTime.formatter("h:mm a", timeZone: MarketTime.defaultZone)
+        case .fiveDays: f = MarketTime.formatter("E", timeZone: MarketTime.defaultZone)
+        case .oneMonth: f = MarketTime.formatter("dd MMM")
+        case .oneYear, .ytd: f = MarketTime.formatter("MMM")
+        default: f = MarketTime.formatter("yyyy")
         }
         return f.string(from: d)
     }

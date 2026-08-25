@@ -44,6 +44,46 @@ final class MarketTimeFormatTests: XCTestCase {
         XCTAssertEqual(MarketTime.formatted(day), "01 Jan 2026")
     }
 
+    // MARK: The year is the market's, not the device's
+
+    func testTheDisplayLocaleDropsADeviceEraCalendar() {
+        // A device set to a Thai region reckons in the Buddhist era, which would
+        // date a trade filed in 2018 to 2561.
+        let thai = MarketTime.gregorianLocale(Locale(identifier: "en_TH"))
+        XCTAssertEqual(thai.calendar.identifier, .gregorian)
+        XCTAssertEqual(MarketTime.displayLocale.calendar.identifier, .gregorian)
+    }
+
+    func testTheDisplayLocaleKeepsTheReaderSLanguage() {
+        // Only the calendar is swapped: month names still come from the reader's
+        // own locale, which is the half of the notation that stays localized.
+        let thai = MarketTime.gregorianLocale(Locale(identifier: "en_TH"))
+        XCTAssertEqual(thai.language.languageCode, Locale.Language(identifier: "en").languageCode)
+        XCTAssertEqual(thai.region, Locale.Region("TH"))
+    }
+
+    func testAFormatterNamesTheGregorianYearUnderAnEraLocale() {
+        // The chart tooltip that reported this: "Thu, 23 Aug 2561" for a day
+        // every exchange calls 2018.
+        let f = MarketTime.formatter("EEE, dd MMM yyyy", timeZone: TimeZone(identifier: "UTC"))
+        f.locale = MarketTime.gregorianLocale(Locale(identifier: "en_TH"))
+        let day = try? XCTUnwrap(MarketTime.calendarDay("2018-08-23"))
+        guard let day else { return }
+        let rendered = f.string(from: day)
+        XCTAssertTrue(rendered.hasSuffix("2018"), rendered)
+        XCTAssertFalse(rendered.contains("2561"), rendered)
+    }
+
+    func testTheWireFormatterWritesAGregorianISODay() {
+        // This one is not a notation but a payload: a Buddhist year here posts
+        // "2561-08-23" to the backend and stores a trade 543 years out.
+        let f = MarketTime.isoFormatter(timeZone: TimeZone(identifier: "UTC"))
+        let day = try? XCTUnwrap(MarketTime.calendarDay("2018-08-23"))
+        guard let day else { return }
+        XCTAssertEqual(f.string(from: day), "2018-08-23")
+        XCTAssertEqual(f.calendar.identifier, .gregorian)
+    }
+
     func testTransactionsShowTheNotationNotTheRawISOString() {
         let tx = Transaction(
             id: nil, date: "2024-01-15", account: "IBKR", symbol: "GOOG",

@@ -126,8 +126,14 @@ extension View {
     /// locale-specific calendar (e.g. the Buddhist era under a Thai locale).
     /// Transactions are stored as ISO `yyyy-MM-dd`, so the picker should always
     /// show Gregorian years regardless of the user's regional settings.
+    ///
+    /// The locale goes with it: a picker reads its era from the locale's own
+    /// calendar, so pinning `\.calendar` alone still leaves "2569" in the year
+    /// field. `MarketTime.displayLocale` is the reader's locale with only the
+    /// calendar swapped, so the month names stay in their language.
     func gregorianCalendar() -> some View {
         environment(\.calendar, Calendar(identifier: .gregorian))
+            .environment(\.locale, MarketTime.displayLocale)
     }
 
     /// Shrinks all semantic text on iPhone only. iPhone screens are narrow, so

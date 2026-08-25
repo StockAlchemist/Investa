@@ -54,7 +54,7 @@ struct PerfKpiStrip: View {
         let monthly = AssetChangeData.returns(data, period: "M", series: "Portfolio")
         out.ytd = metrics?.ytdReturn
         if out.ytd == nil, !monthly.isEmpty {
-            let latestYr = monthly.compactMap { AssetChangeData.year($0.0) }.max() ?? Calendar.current.component(.year, from: Date())
+            let latestYr = monthly.compactMap { AssetChangeData.year($0.0) }.max() ?? MarketTime.localCalendar.component(.year, from: Date())
             let ytdVals = monthly.filter { AssetChangeData.year($0.0) == latestYr }.map { $0.1 }
             out.ytd = compounded(ytdVals)
         }

@@ -110,10 +110,8 @@ struct TransactionsView: View {
     }
 
     private var dateRange: (from: String?, to: String?) {
-        let cal = Calendar.current; let now = Date()
-        func iso(_ d: Date) -> String {
-            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f.string(from: d)
-        }
+        let cal = MarketTime.localCalendar; let now = Date()
+        func iso(_ d: Date) -> String { MarketTime.isoFormatter().string(from: d) }
         switch datePreset {
         case .all: return (nil, nil)
         case .mtd: return (iso(cal.date(from: cal.dateComponents([.year, .month], from: now))!), nil)

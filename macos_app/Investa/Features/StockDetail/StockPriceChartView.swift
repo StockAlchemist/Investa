@@ -62,8 +62,8 @@ final class StockChartModel: ObservableObject {
         guard !pts.isEmpty else { return [] }
         let sma50 = sma(pts.map(\.value), 50), sma200 = sma(pts.map(\.value), 200)
         let cut = cutoff(period, lastDate: pts.last!.date)
-        let lowerTs = customFrom.map { Calendar.current.startOfDay(for: $0).timeIntervalSince1970 }
-        let upperTs = customTo.map { Calendar.current.startOfDay(for: $0).timeIntervalSince1970 + 86400 }
+        let lowerTs = customFrom.map { MarketTime.localCalendar.startOfDay(for: $0).timeIntervalSince1970 }
+        let upperTs = customTo.map { MarketTime.localCalendar.startOfDay(for: $0).timeIntervalSince1970 + 86400 }
         var out: [ChartPoint] = []
         for (i, p) in pts.enumerated() {
             let t = p.date.timeIntervalSince1970
@@ -113,7 +113,7 @@ final class StockChartModel: ObservableObject {
     static func cutoff(_ period: String, lastDate: Date) -> TimeInterval {
         let now = Date().timeIntervalSince1970, day = 86400.0
         switch period {
-        case "1d": return Calendar.current.startOfDay(for: lastDate).timeIntervalSince1970
+        case "1d": return MarketTime.localCalendar.startOfDay(for: lastDate).timeIntervalSince1970
         case "5d": return now - 5 * day
         case "1m": return now - 30 * day
         case "3m": return now - 90 * day
@@ -299,7 +299,7 @@ struct StockPriceChartView: View {
     @State private var showEarnings = false
     @State private var selectedBenchmarks: [String] = []
     @State private var showTradingViewFullScreen = false
-    @State private var customFrom = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
+    @State private var customFrom = MarketTime.localCalendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()
     @State private var customTo = Date()
 
     init(symbol: String, currency: String, avgCost: Double? = nil, fxRate: Double = 1,
@@ -709,14 +709,13 @@ struct StockPriceChartView: View {
     }
 
     private func xLabel(_ d: Date) -> String {
-        let f = DateFormatter(); f.timeZone = TimeZone(identifier: "America/New_York")
-        f.dateFormat = intraday ? "h:mm a" : "dd MMM"
+        let f = MarketTime.formatter(intraday ? "h:mm a" : "dd MMM", timeZone: MarketTime.defaultZone)
         return f.string(from: d)
     }
 
     private func tooltip(_ p: StockChartModel.ChartPoint) -> ChartTooltipContent {
-        let tf = DateFormatter(); tf.timeZone = TimeZone(identifier: "America/New_York")
-        tf.dateFormat = intraday ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy"
+        let tf = MarketTime.formatter(intraday ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy",
+                                      timeZone: MarketTime.defaultZone)
         var rows: [ChartTooltipRow] = []
         rows.append(ChartTooltipRow(color: Color(hex: 0x2563eb), label: symbol,
                                     value: view == .price ? Fmt.currency(p.value, code: currency)

@@ -434,8 +434,8 @@ private struct IndexGraphSheet: View {
             .chartYScale(domain: chartDomain(pts.map(\.ret) + [0]))
             .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "%.1f%%", d)) } } } }
             .chartHoverTooltip(pts.map(\.date)) { i in
-                let f = DateFormatter(); f.timeZone = TimeZone(identifier: "America/New_York")
-                f.dateFormat = intradayPeriod ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy"
+                let f = MarketTime.formatter(intradayPeriod ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy",
+                                             timeZone: MarketTime.defaultZone)
                 return ChartTooltipContent(title: f.string(from: pts[i].date),
                                            rows: [ChartTooltipRow(color: isUp ? .green : .red, label: index.name ?? "Index",
                                                                   value: String(format: "%.2f%%", pts[i].ret))])

@@ -407,20 +407,20 @@ export default function PerformanceGraph({
             return date.toLocaleTimeString(undefined, { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
         } else if (period === '5d') {
             // Show Day + Time for context
-            return date.toLocaleString(undefined, { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit' });
+            return date.toLocaleString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', weekday: 'short', hour: '2-digit' });
         } else if (period === '1m') {
             // Hourly for 1 month. Date + maybe Hour? Too crowded.
             // Just Date is probably fine, or Day.
-            return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+            return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
         } else if (['3y', '5y', '10y', 'all', 'custom'].includes(period)) {
             // Long periods or custom range: Show Month + Year if range is large
             const showYear = period !== 'custom' || !customToDate || !customFromDate || (new Date(customToDate).getTime() - new Date(customFromDate).getTime() > 1000 * 60 * 60 * 24 * 365);
             if (showYear) {
-                return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', year: 'numeric' });
+                return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', year: 'numeric' });
             }
-            return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+            return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
         }
-        return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+        return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
     };
 
     const formatYAxis = (tickItem: number) => {
@@ -444,6 +444,7 @@ export default function PerformanceGraph({
             if (period === '1d' || period === '5d' || period === '1m') { // 1M is hourly, so show time too? Yes.
                 // Actually 1M is 60m interval.
                 dateStr = dateObj.toLocaleString(undefined, {
+                    calendar: 'gregory',
                     timeZone: 'America/New_York',
                     weekday: 'short',
                     month: 'short',
@@ -453,6 +454,7 @@ export default function PerformanceGraph({
                 });
             } else {
                 dateStr = dateObj.toLocaleDateString(undefined, {
+                    calendar: 'gregory',
                     timeZone: 'America/New_York',
                     weekday: 'short',
                     year: 'numeric',

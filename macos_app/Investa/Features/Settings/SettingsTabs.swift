@@ -162,17 +162,17 @@ struct AccountsSettings: View {
                                     HStack(spacing: 8) {
                                         let binding = Binding<Date>(
                                             get: {
-                                                let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"
+                                                let formatter = MarketTime.isoFormatter()
                                                 return formatter.date(from: closureMap[acc] ?? "") ?? Date()
                                             },
                                             set: { newDate in
-                                                let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"
+                                                let formatter = MarketTime.isoFormatter()
                                                 closureMap[acc] = formatter.string(from: newDate)
                                             }
                                         )
                                         if closureDateStr.isEmpty {
                                             Button("Set Date") {
-                                                let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"
+                                                let formatter = MarketTime.isoFormatter()
                                                 closureMap[acc] = formatter.string(from: Date())
                                             }
                                             .buttonStyle(.bordered)
@@ -181,10 +181,12 @@ struct AccountsSettings: View {
                                             DatePicker("", selection: binding, displayedComponents: .date)
                                                 .labelsHidden()
                                                 .datePickerStyle(.graphical)
+                                                .gregorianCalendar()
                                             #else
                                             DatePicker("", selection: binding, displayedComponents: .date)
                                                 .labelsHidden()
                                                 .datePickerStyle(.compact)
+                                                .gregorianCalendar()
                                             #endif
                                         }
                                         if !closureDateStr.isEmpty {

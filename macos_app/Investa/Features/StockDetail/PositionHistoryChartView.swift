@@ -276,14 +276,8 @@ struct PositionHistoryChartView: View {
     }
 
     private func formatXDate(_ d: Date) -> String {
-        let f = DateFormatter()
-        f.timeZone = TimeZone(identifier: "America/New_York")
-        if ["1m", "3m", "6m"].contains(period.lowercased()) {
-            f.dateFormat = "dd MMM"
-        } else {
-            f.dateFormat = "MMM yyyy"
-        }
-        return f.string(from: d)
+        let pattern = ["1m", "3m", "6m"].contains(period.lowercased()) ? "dd MMM" : "MMM yyyy"
+        return MarketTime.formatter(pattern, timeZone: MarketTime.defaultZone).string(from: d)
     }
 
     private var chart: some View {
