@@ -2,8 +2,9 @@
 import React, { useMemo, useState } from 'react';
 import { Trophy } from 'lucide-react';
 import { Dividend } from '../../lib/api';
-import { formatCurrency, cn } from '../../lib/utils';
+import { formatCurrency } from '../../lib/utils';
 import StockIcon from '../StockIcon';
+import WindowToggle, { IncomeWindow } from './WindowToggle';
 import { useStockModal } from '@/context/StockModalContext';
 
 interface TopPayersProps {
@@ -12,10 +13,8 @@ interface TopPayersProps {
     limit?: number;
 }
 
-type Window = '12m' | 'all';
-
 export default function TopPayers({ dividends, currency, limit = 10 }: TopPayersProps) {
-    const [window, setWindow] = useState<Window>('12m');
+    const [window, setWindow] = useState<IncomeWindow>('12m');
     const { openStockDetail } = useStockModal();
 
     const rows = useMemo(() => {
@@ -57,26 +56,7 @@ export default function TopPayers({ dividends, currency, limit = 10 }: TopPayers
                     <Trophy className="w-3.5 h-3.5 text-amber-500" />
                     <h3 className="section-label">Top Dividend Payers</h3>
                 </div>
-                <div className="inline-flex rounded-lg bg-secondary p-0.5">
-                    <button
-                        onClick={() => setWindow('12m')}
-                        className={cn(
-                            'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                            window === '12m' ? 'bg-[#0097b2] text-white' : 'text-muted-foreground hover:text-foreground',
-                        )}
-                    >
-                        12M
-                    </button>
-                    <button
-                        onClick={() => setWindow('all')}
-                        className={cn(
-                            'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                            window === 'all' ? 'bg-[#0097b2] text-white' : 'text-muted-foreground hover:text-foreground',
-                        )}
-                    >
-                        All time
-                    </button>
-                </div>
+                <WindowToggle value={window} onChange={setWindow} />
             </div>
 
             <div className="space-y-2">

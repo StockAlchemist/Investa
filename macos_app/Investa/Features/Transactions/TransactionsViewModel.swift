@@ -6,6 +6,10 @@ final class TransactionsViewModel: ObservableObject {
         didSet { dripBuyKeysCache = nil }
     }
     @Published var pendingIbkr: [Transaction] = []
+    /// True while a `/sync/ibkr` round-trip is in flight, so the toolbar button
+    /// can spin and refuse a second tap (the web toolbar does the same).
+    @Published var isSyncingIbkr = false
+    @Published var ibkrSyncStatus: SyncStatus?
     @Published var isLoading = false
     @Published var isImporting = false
     @Published var errorMessage: String?
@@ -89,11 +93,43 @@ final class TransactionsViewModel: ObservableObject {
 
     // MARK: - IBKR
 
+    /// One-line outcome of an IBKR sync, shown as a banner above the toolbar.
+    struct SyncStatus: Identifiable, Sendable {
+        let id = UUID()
+        let message: String
+        let isError: Bool
+    }
+
     func syncIbkr() async {
-        statusMessage = "Syncing IBKR…"
-        let _: StatusResponse? = try? await api.send(method: "POST", path: "/sync/ibkr")
-        await loadPending()
-        statusMessage = pendingIbkr.isEmpty ? "No new IBKR transactions." : "\(pendingIbkr.count) pending IBKR transactions."
+        guard !isSyncingIbkr else { return }
+        isSyncingIbkr = true
+        ibkrSyncStatus = nil
+        defer { isSyncingIbkr = false }
+        do {
+            let res: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr")
+            await loadPending()
+            let fallback = pendingIbkr.isEmpty
+                ? "No new IBKR transactions."
+                : "\(pendingIbkr.count) pending IBKR transactions."
+            setSyncStatus(res.message ?? fallback, isError: false)
+        } catch let error as APIError {
+            setSyncStatus(error.errorDescription ?? "Failed to sync with IBKR", isError: true)
+        } catch {
+            setSyncStatus(error.localizedDescription, isError: true)
+        }
+    }
+
+    /// Publish a banner and clear it again after a few seconds, unless a newer
+    /// sync has replaced it in the meantime.
+    private func setSyncStatus(_ message: String, isError: Bool) {
+        let status = SyncStatus(message: message, isError: isError)
+        ibkrSyncStatus = status
+        let seconds: UInt64 = isError ? 8 : 6
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            guard let self, self.ibkrSyncStatus?.id == status.id else { return }
+            self.ibkrSyncStatus = nil
+        }
     }
     func loadPending() async {
         pendingIbkr = (try? await api.get("/sync/ibkr/pending")) ?? []

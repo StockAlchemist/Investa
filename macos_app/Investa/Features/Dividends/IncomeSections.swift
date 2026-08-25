@@ -337,36 +337,43 @@ struct TopPayersCard: View {
     }
 }
 
-// MARK: - By account (trailing 12M — mirrors income/ByAccount.tsx)
+// MARK: - By account (12M / all — mirrors income/ByAccount.tsx)
 
 struct ByAccountCard: View {
     let dividends: [Dividend]
     let currency: String
+    @State private var window = "12m"
 
-    private struct Row: Identifiable { let account: String; let gross12m: Double; var id: String { account } }
+    private struct Row: Identifiable { let account: String; let gross: Double; var id: String { account } }
     private var rows: [Row] {
         let cutoff = Calendar.current.date(byAdding: .year, value: -1, to: Date())!
         var byAcc: [String: Double] = [:]
         for d in dividends {
-            guard let dt = parseDay(d.date), dt >= cutoff else { continue }
+            if window == "12m", let dt = parseDay(d.date), dt < cutoff { continue }
             byAcc[d.account.isEmpty ? "—" : d.account, default: 0] += d.amountDisplay
         }
-        return byAcc.map { Row(account: $0.key, gross12m: $0.value) }.sorted { $0.gross12m > $1.gross12m }
+        return byAcc.map { Row(account: $0.key, gross: $0.value) }.sorted { $0.gross > $1.gross }
     }
 
     var body: some View {
         let data = rows
-        let total = data.reduce(0) { $0 + $1.gross12m }
-        ISection(title: "By Account") {
-            if data.isEmpty { Text("No dividends in the last year.").foregroundStyle(.secondary) }
+        let total = data.reduce(0) { $0 + $1.gross }
+        ISection(title: "By Account", trailing: AnyView(
+            Picker("", selection: $window) { Text("12M").tag("12m"); Text("All time").tag("all") }
+                .pickerStyle(.segmented).fixedSize())) {
+            if data.isEmpty {
+                Text(window == "12m" ? "No dividends in the last year." : "No dividends.")
+                    .foregroundStyle(.secondary)
+            }
             ForEach(data) { acc in
-                let pct = total > 0 ? acc.gross12m / total * 100 : 0
+                let pct = total > 0 ? acc.gross / total * 100 : 0
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
-                        Text(acc.account).fontWeight(.bold).lineLimit(1)
+                        Text(acc.account).fontWeight(.bold).lineLimit(1).minimumScaleFactor(0.8)
                         Spacer()
                         Text(String(format: "%.1f%%", pct)).appFont(.caption2).foregroundStyle(.secondary)
-                        Text(Fmt.currency(acc.gross12m, code: currency)).appFont(.caption.bold()).foregroundStyle(.green)
+                        Text(Fmt.currency(acc.gross, code: currency)).appFont(.caption.bold()).foregroundStyle(.green)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                     }
                     GeometryReader { g in
                         ZStack(alignment: .leading) {

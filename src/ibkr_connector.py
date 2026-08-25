@@ -13,6 +13,50 @@ FLEX_SEND_REQUEST_URL = "https://www.interactivebrokers.com/Universal/servlet/Fl
 # Note: The actual URL to get the statement comes from the SendRequest response,
 # but it usually points to the FlexStatementService.GetStatement servlet.
 
+# Flex Web Service error codes that mean "ask again in a moment" — the query is
+# valid, IBKR just has not finished (or is rate-limiting) this statement. Every
+# other code is a configuration problem the user has to fix themselves.
+TRANSIENT_FLEX_CODES = {
+    "1004",  # Statement is incomplete at this time.
+    "1005",  # Settlement data is not ready at this time.
+    "1006",  # FIFO P/L data is not ready at this time.
+    "1007",  # MTM P/L data is not ready at this time.
+    "1008",  # MTM and FIFO P/L data is not ready at this time.
+    "1009",  # Server is under heavy load; statement could not be generated.
+    "1018",  # Too many requests have been made from this token.
+    "1019",  # Statement generation in progress.
+    "1021",  # Statement could not be retrieved at this time.
+}
+
+# Codes that mean the token/query itself is wrong — retrying never helps.
+CONFIG_FLEX_CODES = {
+    "1010",  # Legacy Flex Queries are no longer supported.
+    "1011",  # Service account is inactive.
+    "1012",  # Token has expired.
+    "1013",  # IP restriction.
+    "1014",  # Query is invalid.
+    "1015",  # Token is invalid.
+    "1016",  # Account in invalid.
+    "1020",  # Invalid request or unable to validate request.
+}
+
+
+class IBKRError(Exception):
+    """A Flex Web Service call failed. Carries IBKR's own code and message."""
+
+    def __init__(self, message: str, code: Optional[str] = None):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+    @property
+    def is_config_error(self) -> bool:
+        return self.code in CONFIG_FLEX_CODES
+
+
+class IBKRBusyError(IBKRError):
+    """IBKR has not finished generating the statement — retry later, not now."""
+
 
 class IBKRConnector:
     """
@@ -35,78 +79,147 @@ class IBKRConnector:
             self.logger.error(f"IBKR API Request failed: {e}")
             return None
 
-    def request_report(self) -> Tuple[Optional[str], Optional[str]]:
+    @staticmethod
+    def _flex_error(root: ET.Element) -> Tuple[Optional[str], str]:
+        """Pull (ErrorCode, ErrorMessage) out of a Flex response."""
+        code_elem = root.find("ErrorCode")
+        msg_elem = root.find("ErrorMessage")
+        code = (
+            code_elem.text.strip() if code_elem is not None and code_elem.text else None
+        )
+        message = (
+            msg_elem.text.strip()
+            if msg_elem is not None and msg_elem.text
+            else "Unknown Error"
+        )
+        return code, message
+
+    @classmethod
+    def _envelope_error(cls, xml_content: str) -> Optional[Tuple[Optional[str], str]]:
+        """Return (code, message) when the payload is a Flex error envelope
+        rather than a statement, else None."""
+        try:
+            root = ET.fromstring(xml_content)
+        except ET.ParseError:
+            return None
+        code, message = cls._flex_error(root)
+        if code is None and root.findtext("Status") not in ("Fail", "Warn"):
+            return None
+        return code, message
+
+    @staticmethod
+    def _is_transient(code: Optional[str], message: str) -> bool:
+        """Transient by code, or — when IBKR omits the code — by its wording."""
+        if code:
+            return code in TRANSIENT_FLEX_CODES
+        text = message.lower()
+        return "try again shortly" in text or "in progress" in text
+
+    def request_report(self) -> Tuple[str, str]:
         """
         Initiates a Flex report request.
-        Returns (reference_code, download_url)
+        Returns (reference_code, download_url).
+
+        Raises `IBKRBusyError` when IBKR is still generating the statement and
+        `IBKRError` for anything else, so callers never have to guess what a
+        `(None, None)` return meant.
         """
         if not self.token or not self.query_id:
-            self.logger.error("IBKR Token or Query ID not configured.")
-            return None, None
+            raise IBKRError(
+                "IBKR Token or Query ID not configured. Set them in Settings.",
+                code="1015",
+            )
 
         params = {"t": self.token, "q": self.query_id, "v": "3"}
 
-        max_retries = 3
-        for attempt in range(max_retries):
+        # 5s then 15s: long enough for IBKR to finish a queued statement,
+        # short enough that the request does not outlive the client's patience.
+        backoff = [5, 15]
+        last_error: Optional[IBKRError] = None
+        for attempt in range(len(backoff) + 1):
             xml_resp = self._make_request(FLEX_SEND_REQUEST_URL, params)
             if not xml_resp:
-                return None, None
+                raise IBKRError(
+                    "Could not reach the IBKR Flex Web Service. Check your network and try again."
+                )
 
             try:
                 root = ET.fromstring(xml_resp)
-                status = (
-                    root.find("Status").text
-                    if root.find("Status") is not None
-                    else "Fail"
-                )
-
-                if status == "Success":
-                    reference_code = root.find("ReferenceCode").text
-                    url = root.find("Url").text
-                    self.logger.info(
-                        f"IBKR Report request successful. Ref: {reference_code}"
-                    )
-                    return reference_code, url
-                else:
-                    err_msg = (
-                        root.find("ErrorMessage").text
-                        if root.find("ErrorMessage") is not None
-                        else "Unknown Error"
-                    )
-
-                    if (
-                        "try again shortly" in err_msg.lower()
-                        or "statement could not be generated" in err_msg.lower()
-                    ):
-                        if attempt < max_retries - 1:
-                            wait_time = 15
-                            self.logger.warning(
-                                f"IBKR Report generation busy: {err_msg}. Retrying in {wait_time}s..."
-                            )
-                            time.sleep(wait_time)
-                            continue
-
-                    self.logger.error(f"IBKR Report request failed: {err_msg}")
-                    raise Exception(f"IBKR API Error: {err_msg}")
-            except Exception as e:
-                if "IBKR API Error" in str(e):
-                    raise e
+            except ET.ParseError as e:
                 self.logger.error(f"Failed to parse IBKR SendRequest response: {e}")
-                raise Exception(f"Failed to initiate IBKR sync: {str(e)}")
+                raise IBKRError(f"Failed to initiate IBKR sync: {e}") from e
 
-        return None, None
+            status_elem = root.find("Status")
+            status = status_elem.text if status_elem is not None else "Fail"
 
-    def download_report(self, reference_code: str, url: str) -> Optional[str]:
+            if status == "Success":
+                ref_elem = root.find("ReferenceCode")
+                url_elem = root.find("Url")
+                if ref_elem is None or url_elem is None:
+                    raise IBKRError(
+                        "IBKR accepted the request but returned no reference code."
+                    )
+                reference_code, url = ref_elem.text, url_elem.text
+                self.logger.info(
+                    f"IBKR Report request successful. Ref: {reference_code}"
+                )
+                return reference_code, url
+
+            code, err_msg = self._flex_error(root)
+            if not self._is_transient(code, err_msg):
+                self.logger.error(
+                    f"IBKR Report request failed ({code or 'no code'}): {err_msg}"
+                )
+                raise IBKRError(err_msg, code=code)
+
+            last_error = IBKRBusyError(err_msg, code=code)
+            if attempt < len(backoff):
+                wait_time = backoff[attempt]
+                self.logger.warning(
+                    f"IBKR Report generation busy ({code or 'no code'}): {err_msg}. "
+                    f"Retrying in {wait_time}s..."
+                )
+                time.sleep(wait_time)
+
+        self.logger.warning(
+            f"IBKR still busy after {len(backoff) + 1} attempts: {last_error}"
+        )
+        raise last_error
+
+    def download_report(self, reference_code: str, url: str) -> str:
         """Downloads the actual report XML using the reference code."""
         params = {"t": self.token, "q": reference_code, "v": "3"}
 
         # Sometimes IBKR needs a few seconds to prepare the report
         # Increased retries and wait time as first-time reports can be slow
         max_retries = 6
+        last_error: Optional[IBKRError] = None
         for i in range(max_retries):
             xml_content = self._make_request(url, params)
             if xml_content:
-                # Check if it's an actual report (FlexQueryResponse or FlexStatementResponse)
+                # An error envelope is also a <FlexStatementResponse>, so look
+                # for the failure first — matching on the root tag alone would
+                # hand IBKR's "please try again shortly" to the XML parser as
+                # if it were a statement.
+                error = self._envelope_error(xml_content)
+                if error is not None:
+                    code, err_msg = error
+                    self.logger.warning(
+                        f"Unexpected IBKR response (Attempt {i + 1}): {xml_content[:200]}..."
+                    )
+                    if not self._is_transient(code, err_msg):
+                        self.logger.error(
+                            f"IBKR report download failed ({code or 'no code'}): {err_msg}"
+                        )
+                        raise IBKRError(err_msg, code=code)
+                    last_error = IBKRBusyError(err_msg, code=code)
+                    self.logger.warning(
+                        f"IBKR Report still preparing ({code or 'no code'}), waiting 10s..."
+                    )
+                    time.sleep(10)
+                    continue
+
+                # Otherwise it is the report itself.
                 if (
                     "<FlexQueryResponse" in xml_content
                     or "<FlexStatementResponse" in xml_content
@@ -118,25 +231,13 @@ class IBKRConnector:
                     f"Unexpected IBKR response (Attempt {i + 1}): {xml_content[:200]}..."
                 )
 
-                # If we got a status=Warn or code=1018, it's still being prepared
-                try:
-                    if (
-                        "<Status>Warn</Status>" in xml_content
-                        or "<ErrorCode>1018</ErrorCode>" in xml_content
-                    ):
-                        self.logger.warning(
-                            "IBKR Report still preparing, waiting 10s..."
-                        )
-                        time.sleep(10)
-                        continue
-                except Exception:
-                    pass
-
             self.logger.error(f"Failed to download IBKR report (Attempt {i + 1})")
             time.sleep(5)
 
-        raise Exception(
-            "Failed to download IBKR report after 6 attempts. IBKR might be experiencing delays, or your query is still being generated. Please wait 1-2 minutes and try again."
+        raise IBKRBusyError(
+            "IBKR is still generating your statement (gave up after 6 attempts). "
+            "Please wait a minute or two and sync again.",
+            code=last_error.code if last_error else None,
         )
 
     def parse_activity_flex_xml(self, xml_content: str) -> List[Dict[str, Any]]:

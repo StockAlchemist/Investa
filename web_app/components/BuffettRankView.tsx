@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Info, Loader2, ShieldAlert, TrendingUp, TrendingDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, Info, Loader2, ShieldAlert, TrendingUp, TrendingDown } from 'lucide-react';
 import WatchlistStar from './WatchlistStar';
 import StockIcon from './StockIcon';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatPercent, cn } from "@/lib/utils";
+import { formatCalendarDate } from '@/lib/market_time';
 import { useStockModal } from '@/context/StockModalContext';
 import {
     fetchBuffettRankings,
@@ -35,6 +36,21 @@ const PILLARS: Array<{ key: keyof BuffettRankRow; label: string; weight: string 
     { key: 'capital_allocation', label: 'Capital', weight: '15%' },
 ];
 
+// The weights, spelled out. They are the whole argument for a company's
+// position, and a column headed "Capital" means nothing without them.
+const QUALITY_WEIGHTS: Array<[string, string]> = [
+    ['Returns on capital', '30'],
+    ['Financial strength', '20'],
+    ['Predictability', '20'],
+    ['Growth', '15'],
+    ['Capital allocation', '15'],
+];
+
+const VALUE_WEIGHTS: Array<[string, string]> = [
+    ['Earnings yield', '60'],
+    ['Free-cash-flow yield', '40'],
+];
+
 const PAGE_SIZE = 100;
 
 /** Percentile scores share one scale, so one colour ramp serves all of them. */
@@ -57,6 +73,82 @@ const fmtMoney = (value: number | null | undefined): string => {
     return `$${value.toFixed(2)}`;
 };
 
+/** One run count, carrying the swatch that ties it to the split bar. */
+const Statistic: React.FC<{
+    label: string;
+    value?: number | null;
+    text?: string;
+    dotClass?: string;
+}> = ({ label, value, text, dotClass }) => (
+    <div>
+        <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {dotClass && <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dotClass)} />}
+            {label}
+        </dt>
+        <dd className="text-lg font-semibold tabular-nums">
+            {text ?? (value === null || value === undefined ? '—' : value.toLocaleString())}
+        </dd>
+    </div>
+);
+
+const WeightGroup: React.FC<{
+    title: string;
+    items: Array<[string, string]>;
+    chipClass: string;
+    numberClass: string;
+}> = ({ title, items, chipClass, numberClass }) => (
+    <div>
+        <h3 className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground">
+            {title}
+        </h3>
+        <div className="mt-2 flex flex-wrap gap-2">
+            {items.map(([label, weight]) => (
+                <span
+                    key={label}
+                    className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-muted-foreground',
+                        chipClass
+                    )}
+                >
+                    {label}
+                    <b className={cn('font-bold tabular-nums', numberClass)}>{weight}</b>
+                </span>
+            ))}
+        </div>
+    </div>
+);
+
+/**
+ * How a company's position was arrived at.
+ *
+ * In place rather than in a doc nobody opens, and collapsed by default so the
+ * ranking itself stays the first thing on the screen.
+ */
+const MethodNote: React.FC = () => (
+    <div className="mt-3 space-y-3 rounded-lg bg-secondary/60 p-4">
+        <WeightGroup
+            title="Quality — 60% of the composite"
+            items={QUALITY_WEIGHTS}
+            chipClass="bg-cyan-500/10"
+            numberClass="text-cyan-700 dark:text-cyan-400"
+        />
+        <WeightGroup
+            title="Value — 40%"
+            items={VALUE_WEIGHTS}
+            chipClass="bg-indigo-500/10"
+            numberClass="text-indigo-600 dark:text-indigo-400"
+        />
+        <p className="text-xs text-muted-foreground">
+            Every figure is a percentile against the companies scored under the same model, so a
+            bank&apos;s leverage is judged against other banks and never against an industrial.
+            Fundamentals come from SEC EDGAR filings; missing ones lower a company&apos;s
+            confidence — and with it its score — rather than failing it outright. Banks and
+            insurers have no owner-earnings figure to derive a free-cash-flow yield from, so their
+            value score is the earnings yield alone.
+        </p>
+    </div>
+);
+
 interface BuffettRankViewProps {
     currency?: string;
 }
@@ -67,6 +159,7 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
     const [search, setSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [showExcluded, setShowExcluded] = useState(false);
+    const [showMethod, setShowMethod] = useState(false);
     const { openStockDetail } = useStockModal();
 
     // Debounced so typing does not fire a query per keystroke against a
@@ -122,6 +215,10 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
     const totalMatches = rankPage?.total ?? 0;
     const exclusionTotal = exclusionPage?.total ?? 0;
     const activeTotal = showExcluded ? exclusionTotal : totalMatches;
+    // Of what the run actually scored, not of the universe: the universe count
+    // includes listings dropped before scoring, and a bar that did not add up
+    // to its own total would be the wrong picture.
+    const rankedShare = (run?.ranked_count ?? 0) / Math.max((run?.ranked_count ?? 0) + (run?.excluded_count ?? 0), 1);
     const isLastPage = (page + 1) * PAGE_SIZE >= activeTotal;
 
     const changeModel = (next: BuffettModel | 'all') => {
@@ -145,36 +242,41 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
     return (
         <div className="space-y-4">
             <header className="rounded-xl border border-border bg-card p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                        <h1 className="text-xl font-semibold">Buffett &amp; Value Ranking</h1>
-                        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                            Every US-listed common stock, scored 60% on business quality and 40% on
-                            value. Quality gates run first — a company that fails one is excluded
-                            rather than ranked low, because cheapness never rescues a broken business.
-                        </p>
-                    </div>
-                    <dl className="flex gap-6 text-sm">
-                        <div>
-                            <dt className="text-muted-foreground">Ranked</dt>
-                            <dd className="text-lg font-semibold">{run.ranked_count ?? '—'}</dd>
-                        </div>
-                        <div>
-                            <dt className="text-muted-foreground">Excluded</dt>
-                            <dd className="text-lg font-semibold">{run.excluded_count ?? '—'}</dd>
-                        </div>
-                        <div>
-                            <dt className="text-muted-foreground">Universe</dt>
-                            <dd className="text-lg font-semibold">{run.universe_size ?? '—'}</dd>
-                        </div>
-                    </dl>
+                <h1 className="text-xl font-semibold">Buffett &amp; Value Ranking</h1>
+                <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
+                    Every US-listed common stock, scored 60% on business quality and 40% on
+                    value. Quality gates run first — a company that fails one is excluded
+                    rather than ranked low, because cheapness never rescues a broken business.
+                </p>
+
+                {/* The counts as the split they describe. Four fifths of the listed
+                    market fails a gate, and that proportion is the shape of the whole
+                    screen — three bare numbers never said so. */}
+                <div className="mt-4 flex h-2 gap-0.5" aria-hidden="true">
+                    <div
+                        className="rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400"
+                        style={{ width: `${(rankedShare * 100).toFixed(2)}%` }}
+                    />
+                    <div className="flex-1 rounded-full bg-muted-foreground/20" />
                 </div>
-                {run.finished_at && (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                        Snapshot from {new Date(run.finished_at).toLocaleString()}. Fundamentals come
-                        from SEC EDGAR filings; scores are percentiles within each valuation model.
-                    </p>
-                )}
+
+                <dl className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                    <Statistic label="Ranked" value={run.ranked_count} dotClass="bg-cyan-500" />
+                    <Statistic label="Excluded" value={run.excluded_count} dotClass="bg-muted-foreground/40" />
+                    <Statistic label="Universe" value={run.universe_size} />
+                    {run.finished_at && <Statistic label="Run" text={formatCalendarDate(run.finished_at)} />}
+                </dl>
+
+                <button
+                    type="button"
+                    onClick={() => setShowMethod((open) => !open)}
+                    className="mt-3 flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:underline dark:text-cyan-400"
+                    aria-expanded={showMethod}
+                >
+                    {showMethod ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    How it&apos;s scored
+                </button>
+                {showMethod && <MethodNote />}
             </header>
 
             <div className="flex flex-wrap items-center gap-2">

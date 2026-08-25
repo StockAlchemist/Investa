@@ -261,11 +261,12 @@ final class APIClient: Sendable {
         }
     }
 
-    /// Extract FastAPI's `{"detail": "..."}` error message when present.
+    /// Extract FastAPI's `{"detail": "..."}` error message when present, falling
+    /// back to `message` for the routes that answer in that shape (IBKR sync).
     private static func detail(from data: Data) -> String? {
         guard
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
-        return obj["detail"] as? String
+        return obj["detail"] as? String ?? obj["message"] as? String
     }
 }
