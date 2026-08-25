@@ -430,3 +430,57 @@ def test_coverage_reports_range_and_count(db):
 def test_empty_input_writes_nothing(db):
     assert db.upsert_fund_nav("SCBRM1", []) == 0
     assert db.get_fund_nav_coverage() == {}
+
+
+# --- valuation wiring ------------------------------------------------------
+
+
+def test_published_navs_are_preferred_over_the_flat_manual_override(db, monkeypatch):
+    """
+    A fund with a published series must be valued from it, not from the single
+    hand-entered number — that override held a 2010 position at today's NAV.
+    """
+    import pandas as pd
+
+    import portfolio_history
+
+    db.upsert_fund_nav("SCBRM1", [("2024-01-02", 10.0), ("2024-01-03", 11.0)])
+    monkeypatch.setattr(
+        portfolio_history, "MarketDatabase", lambda *a, **k: db, raising=False
+    )
+    monkeypatch.setattr("market_db.MarketDatabase", lambda *a, **k: db)
+
+    grid = pd.date_range("2024-01-01", "2024-01-04", freq="D", tz="UTC")
+    out = portfolio_history._fund_nav_series({7: "SCBRM1"}, grid)
+
+    assert 7 in out
+    assert list(out[7].values) == [10.0, 11.0]
+
+
+def test_symbols_without_published_navs_are_left_alone(db, monkeypatch):
+    """A miss must fall through silently so the manual override still applies."""
+    import pandas as pd
+
+    import portfolio_history
+
+    db.upsert_fund_nav("SCBRM1", [("2024-01-02", 10.0)])
+    monkeypatch.setattr("market_db.MarketDatabase", lambda *a, **k: db)
+
+    grid = pd.date_range("2024-01-01", "2024-01-04", freq="D", tz="UTC")
+    out = portfolio_history._fund_nav_series({1: "AAPL", 2: "ES-GQG"}, grid)
+
+    assert out == {}
+
+
+def test_fund_code_matching_ignores_case(db, monkeypatch):
+    import pandas as pd
+
+    import portfolio_history
+
+    db.upsert_fund_nav("SCBCHA-SSF", [("2024-01-02", 9.5)])
+    monkeypatch.setattr("market_db.MarketDatabase", lambda *a, **k: db)
+
+    grid = pd.date_range("2024-01-01", "2024-01-04", freq="D", tz="UTC")
+    out = portfolio_history._fund_nav_series({3: "scbcha-ssf"}, grid)
+
+    assert 3 in out

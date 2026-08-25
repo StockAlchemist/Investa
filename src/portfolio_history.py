@@ -985,6 +985,67 @@ def manual_prices_by_symbol_id(
     }
 
 
+def _fund_nav_series(
+    symbol_ids: Dict[int, str], date_range: pd.DatetimeIndex
+) -> Dict[int, pd.Series]:
+    """Published NAV series for any of `symbol_ids` the fund store covers.
+
+    Only symbols with no market feed reach here, so a miss is the ordinary case
+    and must stay cheap: one coverage read tells us which codes exist at all,
+    and only those are queried. A store that isn't there yet (pre-migration, or
+    a fresh clone) returns nothing rather than raising — valuation then falls
+    through to the manual override exactly as it did before.
+    """
+    if not symbol_ids:
+        return {}
+
+    try:
+        from market_db import MarketDatabase
+
+        db = MarketDatabase()
+        coverage = db.get_fund_nav_coverage()
+    except Exception as exc:
+        logging.debug(f"Fund NAV store unavailable: {exc}")
+        return {}
+
+    if not coverage:
+        return {}
+
+    # Match case-insensitively but query with the code as stored: the ledger
+    # normalizes symbols while the override file (which seeded these codes)
+    # keeps whatever case the user typed.
+    have = {str(code).upper().strip(): code for code in coverage}
+    start = date_range.min().date()
+    end = date_range.max().date()
+
+    out: Dict[int, pd.Series] = {}
+    for sym_id, symbol in symbol_ids.items():
+        stored_code = have.get(str(symbol).upper().strip())
+        if not stored_code:
+            continue
+        try:
+            frame = db.get_fund_nav(stored_code, start, end)
+        except Exception as exc:
+            logging.debug(f"Fund NAV read failed for {symbol}: {exc}")
+            continue
+        if frame is None or frame.empty or "price" not in frame.columns:
+            continue
+
+        series = frame["price"].dropna()
+        if series.empty:
+            continue
+        if not isinstance(series.index, pd.DatetimeIndex) or series.index.tz is None:
+            series = series.copy()
+            series.index = pd.to_datetime(series.index, utc=True)
+        out[sym_id] = series
+        logging.info(
+            f"Fund NAV: {symbol} valued from {len(series)} published NAVs "
+            f"({series.index.min().date()} to {series.index.max().date()})"
+        )
+
+    return out
+
+
 def align_prices_to_grid(
     price_series_by_id: Dict[int, pd.Series], date_range: pd.DatetimeIndex
 ) -> pd.DataFrame:
@@ -1069,12 +1130,34 @@ def _value_daily_holdings_vectorized(
                         ps.index = pd.to_datetime(ps.index, utc=True)
                     price_series_by_id[sym_id] = ps
 
+    # 1b. Published NAVs for holdings with no market feed.
+    #
+    # Thai mutual funds have no ticker and no quote, so they used to fall
+    # straight through to the single hand-entered override below — which meant
+    # a fund held since 2010 was valued at today's NAV on every day of its
+    # history. Flat, and wrong by whatever the fund had actually done since.
+    # The SEC publishes the daily series; fund_nav holds it.
+    #
+    # These join price_series_by_id rather than being written to the matrix
+    # directly so they get the same grid alignment as everything else — last
+    # observation carried forward across weekends and holidays, never
+    # interpolated.
+    nav_symbol_ids = {
+        sym_id: symbol
+        for sym_id, symbol in id_to_symbol.items()
+        if symbol and symbol != CASH_SYMBOL_CSV and sym_id not in price_series_by_id
+    }
+    if nav_symbol_ids:
+        for sym_id, series in _fund_nav_series(nav_symbol_ids, date_range).items():
+            price_series_by_id[sym_id] = series
+
     if price_series_by_id:
         price_matrix = align_prices_to_grid(price_series_by_id, date_range)
         for sym_id in price_series_by_id:
             daily_prices_aligned[:, sym_id] = price_matrix[sym_id].values
 
-    # 2. Where the market has nothing to say, use the NAV the user entered.
+    # 2. Where neither the market nor a published NAV has anything to say, use
+    # the NAV the user entered.
     # This is the same fallback order the summary applies (portfolio_analyzer:
     # market price, then the manual override, then the last transaction price),
     # so a fund with no price feed is worth the same on the graph as it is in
