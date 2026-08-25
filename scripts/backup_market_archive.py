@@ -60,7 +60,17 @@ DISPOSABLE_TABLES = ("intraday_ohlcv",)
 # in the whole backup despite being under a megabyte.
 EXTRA_DIRS = ("static_prices",)
 
-DEFAULT_RETAIN = {"core": 14, "full": 8}
+# Retention, sized against what a snapshot now actually costs rather than what
+# it cost when this was written. The Tier B backfill took daily_ohlcv from
+# 901k rows to 7.4M, and a core snapshot with it from 20 MB / 13 s to
+# 218 MB / 2 min. Fourteen dailies plus eight weeklies would be ~5 GB.
+#
+# The "small enough to push daily" premise the core/full split was built on
+# therefore no longer holds unqualified: 218 MB/day is a real upload, and a
+# Tier C fill would roughly quadruple it again. If a daily off-machine copy
+# still matters at that size, the answer is an incremental export of rows
+# changed since the last snapshot, not a smaller retention window.
+DEFAULT_RETAIN = {"core": 7, "full": 4}
 
 
 def default_db_path() -> str:
