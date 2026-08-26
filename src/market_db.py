@@ -28,10 +28,25 @@ ADJUST_SPLIT = "split"  # comparable across splits (the default, and today's beh
 ADJUST_TOTAL_RETURN = "total_return"  # splits + dividends reinvested
 VALID_ADJUSTMENTS = (ADJUST_NONE, ADJUST_SPLIT, ADJUST_TOTAL_RETURN)
 
-# A ratio outside this range is a data error, not a corporate action. Yahoo
-# occasionally emits a stray tiny value in the Stock Splits column; applying one
-# as a real split would rescale an entire history.
-_MIN_SPLIT_RATIO, _MAX_SPLIT_RATIO = 0.01, 1000.0
+# Sanity bounds on a split ratio. Deliberately very wide.
+#
+# These were 0.01-1000, on the theory that a stray tiny value would otherwise
+# "rescale an entire history". That reasoning was backwards and the bound did
+# real damage: the ratio the provider reports is the authority for the
+# adjustment it already applied to the prices it served, so recording it is what
+# *explains* a rescale, and discarding it is what leaves one unexplained.
+#
+# The Tier C backfill rejected 55 ratios, every one a reverse split steeper than
+# 100:1 — ordinary for serial-diluting micro-caps. ABVC was the proof: Yahoo
+# reported 0.0002 on 2015-08-13 and its stored close falls from 1,719.75 to
+# 0.3439 on that exact date, a real 5,000:1 reverse split it had not
+# back-adjusted. Dropping the action turned one explained event into 122
+# unexplained discontinuities, with 2005 prices reading over a million.
+#
+# So: mirror what the provider says, and let the verifier catch a genuine
+# absurdity. Only a zero, a negative or a value beyond any conceivable corporate
+# action is refused.
+_MIN_SPLIT_RATIO, _MAX_SPLIT_RATIO = 1e-6, 1e6
 
 
 class MarketDatabase:

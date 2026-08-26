@@ -137,7 +137,18 @@ def tier_members(tier: str) -> Tuple[List[str], List[str]]:
     return symbols, pairs
 
 
-def load_progress(tier: str) -> Dict[str, str]:
+def load_progress() -> Dict[str, str]:
+    """
+    {symbol: most recent done_through}, across ALL tiers.
+
+    Deliberately not filtered by tier. The tiers are nested — C contains B
+    contains A — so a symbol refreshed an hour ago under B is just as refreshed
+    when C comes past. Keying resume on (tier, symbol) meant a Tier C run
+    re-fetched all 1,291 symbols Tier B had just done: half an hour of Yahoo
+    traffic and rate-limit budget spent re-downloading identical data.
+
+    MAX() so the newest completion wins whichever tier recorded it.
+    """
     import sqlite3
 
     conn = sqlite3.connect(db_path(), timeout=60.0)
@@ -145,8 +156,8 @@ def load_progress(tier: str) -> Dict[str, str]:
         return {
             r[0]: r[1]
             for r in conn.execute(
-                "SELECT symbol, done_through FROM backfill_progress WHERE tier = ?",
-                (tier,),
+                "SELECT symbol, MAX(done_through) FROM backfill_progress "
+                "WHERE done_through IS NOT NULL GROUP BY symbol"
             )
             if r[1]
         }
@@ -205,6 +216,12 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true", help="skip symbols already done today")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--symbol",
+        action="append",
+        help="restrict to these symbols (repeatable); ignores --resume so a "
+        "targeted re-fetch is not skipped as already done",
+    )
     parser.add_argument("--skip-fx", action="store_true")
     parser.add_argument(
         "--mark-delisted",
@@ -223,8 +240,16 @@ def main() -> int:
     symbols, pairs = tier_members(args.tier)
     today = date.today()
 
-    done = load_progress(args.tier) if args.resume else {}
-    pending = [s for s in symbols if done.get(s) != today.isoformat()]
+    if args.symbol:
+        # A targeted re-fetch is always deliberate — never filtered by progress.
+        wanted = {s.upper() for s in args.symbol}
+        pending = [s for s in symbols if s.upper() in wanted]
+        missing = wanted - {s.upper() for s in pending}
+        if missing:
+            pending += sorted(missing)
+    else:
+        done = load_progress() if args.resume else {}
+        pending = [s for s in symbols if done.get(s) != today.isoformat()]
     if args.limit:
         pending = pending[: args.limit]
 

@@ -185,11 +185,24 @@ def main() -> int:
         print(f"No unexplained price discontinuities in {scope}.")
         return 0
 
+    # Severity first. At Tier C scale the report runs to thousands of lines and
+    # 40% of them are mild 1.4-2x moves on thin micro-caps — ordinary trading,
+    # not defects. The handful above 10x are the ones that look like a corporate
+    # action nobody recorded, and listing findings in symbol order buried them
+    # behind whatever came first alphabetically.
+    findings.sort(key=lambda f: max(f[5], 1.0 / f[5]) if f[5] else 0, reverse=True)
+
     by_symbol: dict[str, int] = defaultdict(int)
     for sym, *_ in findings:
         by_symbol[sym] += 1
 
-    print(f"{len(findings)} unexplained discontinuity(ies) across {len(by_symbol)} symbol(s):\n")
+    severe = sum(1 for f in findings if f[5] and max(f[5], 1.0 / f[5]) >= 3.0)
+    print(
+        f"{len(findings)} unexplained discontinuity(ies) across {len(by_symbol)} "
+        f"symbol(s); {severe} at 3x or worse.\n"
+        "Listed worst-first — a mild ratio on a thin stock is usually just a "
+        "thin stock.\n"
+    )
     for sym, prev_day, day, prev_close, close, ratio in findings[: args.limit]:
         print(f"  {sym:10} {prev_day} -> {day}  {prev_close:12.4f} -> {close:<12.4f} ratio {ratio:.3f}")
     if len(findings) > args.limit:

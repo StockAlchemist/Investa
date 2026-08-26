@@ -90,10 +90,25 @@ def test_splits_and_dividends_are_captured_from_the_price_frame(db):
     assert list(dividends["value"]) == [0.5]
 
 
-def test_absurd_split_ratios_are_rejected(db):
-    """A stray ratio would rescale an entire history; it must not be stored."""
-    frame = _frame(["2024-01-02"], [100.0], splits=[100000.0])
-    assert db.upsert_actions("TEST", frame) == 0
+def test_extreme_but_real_reverse_splits_are_kept(db):
+    """
+    A 5,000:1 reverse split is ordinary for a serial-diluting micro-cap, and the
+    provider's ratio is the authority for the adjustment it already applied. An
+    earlier 0.01 floor discarded 55 of these in one backfill; ABVC's real
+    2015-08-13 event (close 1,719.75 -> 0.3439) then read as 122 unexplained
+    discontinuities because nothing was left to explain it.
+    """
+    frame = _frame(["2015-08-13"], [0.3439], splits=[0.0002])
+    assert db.upsert_actions("ABVC", frame) == 1
+    stored = db.get_actions(["ABVC"])["ABVC"]
+    assert stored.iloc[0]["value"] == pytest.approx(0.0002)
+
+
+def test_ratios_beyond_any_corporate_action_are_still_rejected(db):
+    """The bound is a sanity check, not a judgement about plausible splits."""
+    for absurd in (0.0, -4.0, 1e9):
+        frame = _frame(["2024-01-02"], [100.0], splits=[absurd])
+        assert db.upsert_actions("TEST", frame) == 0
     assert db.get_actions(["TEST"]) == {}
 
 
