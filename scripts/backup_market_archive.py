@@ -8,24 +8,41 @@ Yahoo now serves BANPU.BK only from 2016-10-28 while the archive holds it from
 "Rebuild it from Yahoo" is not a recovery plan any more — a rebuild would
 silently truncate.
 
-Two tiers, because most of the archive is still disposable and the part that
-is not is small:
+Three tiers, because most of the archive is disposable, the part that is not is
+small, and what changes in a night is smaller still:
 
-  core  ~70 MB   everything except intraday_ohlcv, plus the static price tables
-                 and config. Intraday is 77% of the file, is read by almost
-                 nothing, and is regenerated on demand — excluding it turns a
-                 306 MB push into a ~20 MB one, which is what makes a *daily*
-                 off-machine copy practical.
-  full  ~306 MB  the whole database, intraday included. Weekly is plenty.
+  incremental  the small tables in full, plus the last N days of bars. This is
+               the daily shape. It carries exactly what a nightly delta writes,
+               so it stays small no matter how large the archive grows.
+  core         everything except intraday_ohlcv, plus the static price tables.
+               Intraday is most of the file and regenerates on demand.
+  full         the whole database, intraday included.
+
+Sizes move with the archive, and that is the point of having three. Measured as
+the archive grew:
+
+                 Tier A          Tier B           Tier C
+    core         20 MB / 13 s    218 MB / 2 min   ~700 MB / several min
+    full         68 MB / 39 s    —                ~2.5 GB
+
+`core` was introduced as the tier "small enough to push daily". At 700 MB that
+is no longer true, and a shorter retention window does not fix it — hence
+`incremental`, which is bounded by the delta rather than by the archive.
+
+What incremental does NOT carry: a repair to an old bar. Those are rare and the
+weekly `full` covers them, but a restore chain of incrementals alone is not a
+complete archive. Restore from the newest full or core, then apply what came
+after.
 
 `VACUUM INTO` is used rather than a file copy: it takes a consistent snapshot
 without stopping writers, and compacts as it goes. Every snapshot is then
 verified with PRAGMA integrity_check *before* it is allowed to displace an
 older one, so a corrupt copy can never rotate out a good one.
 
-    python scripts/backup_market_archive.py                 # core, daily
-    python scripts/backup_market_archive.py --mode full     # weekly
-    python scripts/backup_market_archive.py --dest /path/to/cloud/folder
+    python scripts/backup_market_archive.py --mode incremental   # daily
+    python scripts/backup_market_archive.py                      # core, weekly
+    python scripts/backup_market_archive.py --mode full          # monthly
+    python scripts/backup_market_archive.py --dest /cloud/folder
 
 The live database must stay on local disk. `db_utils.is_path_on_cloud_drive`
 degrades a synced path to journal_mode=DELETE, and two processes writing a
@@ -45,7 +62,7 @@ import sqlite3
 import sys
 import tarfile
 import tempfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -60,17 +77,15 @@ DISPOSABLE_TABLES = ("intraday_ohlcv",)
 # in the whole backup despite being under a megabyte.
 EXTRA_DIRS = ("static_prices",)
 
-# Retention, sized against what a snapshot now actually costs rather than what
-# it cost when this was written. The Tier B backfill took daily_ohlcv from
-# 901k rows to 7.4M, and a core snapshot with it from 20 MB / 13 s to
-# 218 MB / 2 min. Fourteen dailies plus eight weeklies would be ~5 GB.
-#
-# The "small enough to push daily" premise the core/full split was built on
-# therefore no longer holds unqualified: 218 MB/day is a real upload, and a
-# Tier C fill would roughly quadruple it again. If a daily off-machine copy
-# still matters at that size, the answer is an incremental export of rows
-# changed since the last snapshot, not a smaller retention window.
-DEFAULT_RETAIN = {"core": 7, "full": 4}
+# Retention per mode, sized against what each snapshot actually costs. A month
+# of dailies is cheap because incremental is bounded by the delta; core and full
+# are kept shallow because they are not.
+
+DEFAULT_RETAIN = {"incremental": 30, "core": 4, "full": 3}
+
+# Days of daily bars an incremental snapshot carries. Wider than the nightly
+# delta's window so a missed night is still covered by the next snapshot.
+INCREMENTAL_DAYS = 14
 
 
 def default_db_path() -> str:
@@ -106,11 +121,21 @@ def snapshot(db_path: str, target: str, mode: str) -> dict:
     finally:
         conn.close()
 
-    if mode == "core":
+    if mode in ("core", "incremental"):
         stripped = sqlite3.connect(target, timeout=120.0)
         try:
             for table in DISPOSABLE_TABLES:
                 stripped.execute(f'DROP TABLE IF EXISTS "{table}"')
+            if mode == "incremental":
+                # Keep every small table whole — corporate_action, fund_nav,
+                # share_count and sync_metadata are the irreplaceable part and
+                # are tiny. Only the bar tables are trimmed to the window.
+                cutoff = (date.today() - timedelta(days=INCREMENTAL_DAYS)).isoformat()
+                stripped.execute("DELETE FROM daily_ohlcv WHERE date < ?", (cutoff,))
+                try:
+                    stripped.execute("DELETE FROM daily_fx WHERE date < ?", (cutoff,))
+                except sqlite3.OperationalError:
+                    pass
             stripped.commit()
             # Reclaim the pages the dropped table was using, or the "core"
             # snapshot is the same size as the full one.
@@ -152,7 +177,8 @@ def build_archive(db_path: str, dest: str, mode: str, stamp: str) -> tuple[str, 
             "source": db_path,
             "snapshot_bytes": info["bytes"],
             "tables": info["tables"],
-            "excluded_tables": list(DISPOSABLE_TABLES) if mode == "core" else [],
+            "excluded_tables": list(DISPOSABLE_TABLES) if mode in ("core", "incremental") else [],
+            "bar_window_days": INCREMENTAL_DAYS if mode == "incremental" else None,
             "sha256_snapshot": sha256_of(snap_path),
         }
         with open(os.path.join(workdir, "manifest.json"), "w") as fh:
@@ -194,9 +220,11 @@ def main() -> int:
     parser.add_argument("--db", default=None)
     parser.add_argument(
         "--mode",
-        choices=("core", "full"),
+        choices=("incremental", "core", "full"),
         default="core",
-        help="core drops intraday (default, small enough to push daily); full keeps everything",
+        help="incremental = small tables + the last %d days of bars (daily); "
+        "core = everything but intraday (weekly); full = the lot (monthly)"
+        % INCREMENTAL_DAYS,
     )
     parser.add_argument("--dest", default=None, help="output directory (env INVESTA_BACKUP_DIR)")
     parser.add_argument("--retain", type=int, default=None, help="snapshots to keep for this mode")

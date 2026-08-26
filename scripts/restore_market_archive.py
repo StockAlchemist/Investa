@@ -13,11 +13,17 @@ Restoring onto an existing database is refused unless --force, and the current
 database is always copied aside first — a restore that silently overwrites live
 data is a worse failure than the one it is recovering from.
 
-A core snapshot carries no intraday_ohlcv (see backup_market_archive.py). That
-is deliberate and harmless on a cold start, because intraday regenerates on
-demand — but restoring one *over* a populated database would throw away
-intraday history that the snapshot simply never had. That case is called out
-rather than silently performed.
+Snapshots are not all equivalent, and restoring the wrong one over a populated
+database throws away what it never carried:
+
+  full         everything.
+  core         no intraday_ohlcv. Harmless on a cold start — intraday
+               regenerates on demand — but it would drop existing intraday.
+  incremental  the small tables in full plus a short window of bars. A
+               supplement to a core/full restore, never a substitute: restoring
+               one alone leaves an archive with two weeks of price history.
+
+Each case is called out rather than silently performed.
 """
 
 from __future__ import annotations
@@ -100,6 +106,14 @@ def restore(archive: str, db_path: str, force: bool) -> int:
                 "Note: this is a CORE snapshot and carries no intraday_ohlcv — "
                 "restoring it would drop whatever intraday history the live "
                 "database holds."
+            )
+        elif mode == "incremental":
+            window = manifest.get("bar_window_days")
+            print(
+                f"Note: this is an INCREMENTAL snapshot. It carries the small "
+                f"tables in full but only the last {window} days of bars, so it "
+                "is a supplement to a core/full restore, never a substitute for "
+                "one."
             )
         return 1
 

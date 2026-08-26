@@ -37,11 +37,16 @@ def _make_db(path: str, *, intraday_rows: int = 5) -> None:
         "INSERT INTO daily_ohlcv VALUES (?, ?, ?)",
         [("NLY", f"2002-06-{d:02d}", 77.6 + d) for d in range(1, 20)],
     )
-    conn.execute("INSERT INTO corporate_action VALUES ('AAPL','2020-08-31','split',4.0)")
+    conn.execute(
+        "INSERT INTO corporate_action VALUES ('AAPL','2020-08-31','split',4.0)"
+    )
     conn.execute("INSERT INTO fund_nav VALUES ('SCBRM1','2002-02-15',9.9995)")
     conn.executemany(
         "INSERT INTO intraday_ohlcv VALUES (?, ?, ?)",
-        [("AAPL", f"2026-08-25T10:{m:02d}:00", 300.0 + m) for m in range(intraday_rows)],
+        [
+            ("AAPL", f"2026-08-25T10:{m:02d}:00", 300.0 + m)
+            for m in range(intraday_rows)
+        ],
     )
     conn.commit()
     conn.close()
@@ -140,7 +145,9 @@ def test_a_corrupt_snapshot_is_not_installed(source_db, tmp_path, monkeypatch):
     monkeypatch.setattr(
         restore.sqlite3,
         "connect",
-        lambda *a, **k: (_ for _ in ()).throw(sqlite3.DatabaseError("file is not a database")),
+        lambda *a, **k: (_ for _ in ()).throw(
+            sqlite3.DatabaseError("file is not a database")
+        ),
     )
     target = str(tmp_path / "restored.db")
     with pytest.raises(sqlite3.DatabaseError):
@@ -181,5 +188,70 @@ def test_rotation_ignores_the_other_mode(source_db, tmp_path):
     backup.rotate(dest, "core", retain=1, dry_run=False)
     remaining = os.listdir(dest)
 
-    assert any("_full_" in f for f in remaining), "a core rotation must not touch full snapshots"
+    assert any("_full_" in f for f in remaining), (
+        "a core rotation must not touch full snapshots"
+    )
     assert sum("_core_" in f for f in remaining) == 1
+
+
+# --- incremental -----------------------------------------------------------
+
+
+def test_incremental_keeps_small_tables_whole_and_trims_bars(
+    source_db, tmp_path, monkeypatch
+):
+    """
+    The point of the mode: bounded by the delta, not by the archive. The small
+    tables are the irreplaceable part and are tiny, so they ride along in full.
+    """
+    monkeypatch.setattr(backup, "INCREMENTAL_DAYS", 7)
+    dest = str(tmp_path / "backups")
+    _, manifest = backup.build_archive(
+        source_db, dest, "incremental", "20260826_000000"
+    )
+
+    # 2002 bars are far outside the window; the actions and NAVs are not trimmed.
+    assert manifest["tables"]["daily_ohlcv"] == 0
+    assert manifest["tables"]["corporate_action"] == 1
+    assert manifest["tables"]["fund_nav"] == 1
+    assert "intraday_ohlcv" not in manifest["tables"]
+    assert manifest["bar_window_days"] == 7
+
+
+def test_incremental_keeps_bars_inside_the_window(source_db, tmp_path, monkeypatch):
+    import datetime as _dt
+
+    conn = sqlite3.connect(source_db)
+    recent = (_dt.date.today() - _dt.timedelta(days=2)).isoformat()
+    conn.execute("INSERT INTO daily_ohlcv VALUES ('NLY', ?, 99.0)", (recent,))
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(backup, "INCREMENTAL_DAYS", 7)
+    dest = str(tmp_path / "backups")
+    _, manifest = backup.build_archive(
+        source_db, dest, "incremental", "20260826_000000"
+    )
+    assert manifest["tables"]["daily_ohlcv"] == 1
+
+
+def test_incremental_is_far_smaller_than_core(source_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(backup, "INCREMENTAL_DAYS", 7)
+    dest = str(tmp_path / "backups")
+    inc, _ = backup.build_archive(source_db, dest, "incremental", "20260826_000000")
+    core, _ = backup.build_archive(source_db, dest, "core", "20260826_000001")
+    assert os.path.getsize(inc) <= os.path.getsize(core)
+
+
+def test_rotation_is_per_mode_across_all_three(source_db, tmp_path):
+    dest = str(tmp_path / "backups")
+    backup.build_archive(source_db, dest, "full", "20260820_000000")
+    backup.build_archive(source_db, dest, "core", "20260821_000000")
+    for day in (22, 23, 24):
+        backup.build_archive(source_db, dest, "incremental", f"202608{day}_000000")
+
+    backup.rotate(dest, "incremental", retain=1, dry_run=False)
+    names = os.listdir(dest)
+    assert sum("_incremental_" in f for f in names) == 1
+    assert sum("_core_" in f for f in names) == 1
+    assert sum("_full_" in f for f in names) == 1
