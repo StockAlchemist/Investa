@@ -93,6 +93,7 @@ class MarketDatabase:
                     adj_close REAL,
                     volume INTEGER,
                     interval TEXT DEFAULT '1d',
+                    source TEXT DEFAULT 'yahoo',
                     PRIMARY KEY (symbol, date, interval)
                 )
             """)
@@ -137,10 +138,21 @@ class MarketDatabase:
             """)
             conn.commit()
 
-    def upsert_ohlcv(self, symbol: str, df: pd.DataFrame, interval: str = "1d"):
+    def upsert_ohlcv(
+        self,
+        symbol: str,
+        df: pd.DataFrame,
+        interval: str = "1d",
+        source: str = "yahoo",
+    ):
         """
         Upserts OHLCV data from a DataFrame.
         DataFrame must have a DatetimeIndex.
+
+        `source` records who served the bar. It matters because bars no longer
+        come from one place: a repair adjudicated against an independent
+        reference rewrites them, and without provenance a corrected bar and an
+        original one are indistinguishable.
         """
         if df.empty:
             return
@@ -209,6 +221,7 @@ class MarketDatabase:
                 adj[i],
                 vols[i],
                 interval,
+                source,
             )
             for i in range(n)
         ]
@@ -216,14 +229,27 @@ class MarketDatabase:
         with self._write_lock, self._get_connection() as conn:
             cursor = conn.cursor()
             try:
-                cursor.executemany(
-                    """
-                    INSERT OR REPLACE INTO daily_ohlcv
-                    (symbol, date, open, high, low, close, adj_close, volume, interval)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    params,
-                )
+                # A database that predates the provenance migration still takes
+                # bars; it just cannot say where they came from.
+                if self._has_column(conn, "daily_ohlcv", "source"):
+                    cursor.executemany(
+                        """
+                        INSERT OR REPLACE INTO daily_ohlcv
+                        (symbol, date, open, high, low, close, adj_close, volume,
+                         interval, source)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        params,
+                    )
+                else:
+                    cursor.executemany(
+                        """
+                        INSERT OR REPLACE INTO daily_ohlcv
+                        (symbol, date, open, high, low, close, adj_close, volume, interval)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        [row[:9] for row in params],
+                    )
             except Exception as e_ins:
                 logging.error(f"DB Upsert Error for {symbol} ({n} rows): {e_ins}")
 

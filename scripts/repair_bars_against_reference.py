@@ -121,21 +121,37 @@ def find_bad_bars(conn: sqlite3.Connection, source: str) -> List[BadBar]:
     return found
 
 
-def repair(db: str, bars: List[BadBar]) -> int:
+def repair(db: str, bars: List[BadBar], source: str = "") -> int:
+    """Rewrite each bar by its factor, recording who said so.
+
+    The provenance half is not bookkeeping. A repaired bar is one this archive
+    changed on another provider's word, and once written it is indistinguishable
+    from a bar the original feed served — so a later question ("which prices did
+    we correct, and against what?") has no answer without it. `daily_ohlcv.source`
+    may be absent on an archive that predates the provenance migration, in which
+    case the repair still happens and simply cannot say.
+    """
     conn = sqlite3.connect(db, timeout=300.0)
     try:
+        has_source = any(
+            r[1] == "source" for r in conn.execute("PRAGMA table_info(daily_ohlcv)")
+        )
+        set_source = ", source = :src" if (has_source and source) else ""
         for bar in bars:
+            params = {"f": bar.factor, "s": bar.symbol, "d": bar.date}
+            if set_source:
+                params["src"] = source
             conn.execute(
-                """
+                f"""
                 UPDATE daily_ohlcv
                    SET open = open / :f, high = high / :f, low = low / :f,
                        close = close / :f,
                        adj_close = CASE WHEN adj_close IS NULL THEN NULL
                                         ELSE adj_close / :f END,
-                       volume = CAST(volume * :f AS INTEGER)
+                       volume = CAST(volume * :f AS INTEGER){set_source}
                  WHERE symbol = :s AND date = :d AND interval = '1d'
                 """,
-                {"f": bar.factor, "s": bar.symbol, "d": bar.date},
+                params,
             )
         conn.commit()
     finally:
@@ -227,7 +243,7 @@ def main() -> int:
 
     saved = backup(path)
     print(f"\nBacked up to {saved}")
-    print(f"Repaired {repair(path, bars)} bar(s).")
+    print(f"Repaired {repair(path, bars, source=args.source)} bar(s).")
 
     conn = connect_readonly(path)
     try:

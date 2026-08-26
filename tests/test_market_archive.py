@@ -335,3 +335,54 @@ def test_share_counts_update_in_place(db):
 def test_nonpositive_share_counts_are_ignored(db):
     assert db.upsert_share_counts({"AAA": 0.0, "BBB": -5.0}, date(2024, 1, 2)) == 0
     assert db.get_share_counts(["AAA", "BBB"]) == {}
+
+
+# --- bar provenance --------------------------------------------------------
+#
+# `daily_ohlcv` gained a `source` column once bars stopped coming from one
+# place: 34,120 of them were rewritten from an independent reference, and
+# without provenance a corrected bar and an original are indistinguishable.
+
+
+def test_a_stored_bar_records_who_served_it(db):
+    frame = pd.DataFrame(
+        {"Open": [10.0], "High": [11.0], "Low": [9.0], "Close": [10.5], "Volume": [100]},
+        index=pd.to_datetime(["2026-01-02"]),
+    )
+    db.upsert_ohlcv("TEST", frame)
+    db.upsert_ohlcv("REPAIRED", frame, source="tiingo")
+
+    with db._get_connection() as conn:
+        rows = dict(conn.execute("SELECT symbol, source FROM daily_ohlcv"))
+    assert rows["TEST"] == "yahoo", "the default names the feed everything came from"
+    assert rows["REPAIRED"] == "tiingo"
+
+
+def test_bars_still_store_on_an_archive_without_the_provenance_column(tmp_path):
+    """An archive that predates the migration takes bars; it just cannot say
+    where they came from."""
+    import sqlite3
+
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE daily_ohlcv (symbol TEXT, date TEXT, open REAL, high REAL,"
+        " low REAL, close REAL, adj_close REAL, volume INTEGER,"
+        " interval TEXT DEFAULT '1d', PRIMARY KEY (symbol, date, interval))"
+    )
+    conn.execute(
+        "CREATE TABLE sync_metadata (symbol TEXT PRIMARY KEY, last_synced TEXT,"
+        " inception_date TEXT, info_json TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    database = MarketDatabase(path)
+    frame = pd.DataFrame(
+        {"Open": [1.0], "High": [1.0], "Low": [1.0], "Close": [1.0], "Volume": [1]},
+        index=pd.to_datetime(["2026-01-02"]),
+    )
+    database.upsert_ohlcv("TEST", frame, source="tiingo")
+
+    with database._get_connection() as check:
+        assert check.execute("SELECT close FROM daily_ohlcv").fetchone()[0] == 1.0
