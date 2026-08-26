@@ -41,6 +41,13 @@ IBKR_QUERY_ID = os.getenv("IBKR_QUERY_ID")
 # Free self-service subscription key from https://secopendata.sec.or.th/sec-open-apis
 SEC_TH_API_KEY = os.getenv("SEC_TH_API_KEY")
 
+# --- Bank of Thailand API ---
+# The official THB rate, and the only source that reaches back before Apr 2005,
+# where the ECB's reference rates begin for THB. A bearer token from
+# https://portal.api.bot.or.th — issued per subscription, not per app, so an app
+# with no approved API product gets a 403 rather than an empty result.
+BOT_API_KEY = os.getenv("BOT_API_KEY")
+
 # --- Authentication Configuration ---
 # AUTH_SECRET_KEY is resolved below (after get_app_data_dir is defined):
 # the AUTH_SECRET_KEY env var wins; otherwise a per-installation random key

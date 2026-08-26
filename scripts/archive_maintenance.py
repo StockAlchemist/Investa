@@ -11,7 +11,9 @@ Steps, each skipped when it is not due:
 
   1. price delta      when the newest bar is older than the last trading day
   2. split check      whenever prices moved (a new bar can carry a new split)
-  3. official FX      when the newest ECB-sourced rate is behind the last trading day
+  3. official FX      when the newest ECB-sourced rate is behind the last trading
+                      day — the ECB, and the Bank of Thailand behind it when a
+                      token is configured
   4. incremental snap when the newest one is older than SNAPSHOT_MAX_AGE_HOURS
   5. core snapshot    when the newest one is older than CORE_MAX_AGE_DAYS
 
@@ -213,6 +215,27 @@ def plan(force: bool) -> Tuple[List[Tuple[str, List[str]]], List[str]]:
                 argv,
             )
         )
+        # The Bank of Thailand rides along on the same trigger. It is the
+        # official rate for the base currency and the only source before Apr
+        # 2005, and it costs nothing when there is nothing to do: the run asks
+        # only for windows holding a day the archive lacks, so an ordinary night
+        # makes zero requests. Skipped entirely without a token.
+        if config.BOT_API_KEY:
+            jobs.append(
+                (
+                    "official THB from the Bank of Thailand",
+                    [
+                        python,
+                        "scripts/backfill_fx_rates.py",
+                        "--provider",
+                        "bot",
+                        "--recent",
+                        "--apply",
+                    ],
+                )
+            )
+        else:
+            skipped.append("BOT rates — no BOT_API_KEY configured")
     else:
         skipped.append(f"official FX is current (newest ECB rate {newest_fx})")
 

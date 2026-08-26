@@ -43,10 +43,15 @@ import csv
 import io
 import logging
 import zipfile
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict
 from xml.etree import ElementTree
 
 import requests
+
+from fx_pairs import RateTable, split_pair  # noqa: F401  (re-exported)
+from fx_pairs import pair_rate as _pair_rate
+from fx_pairs import pair_series as _pair_series
+from fx_pairs import supported_pairs as _supported_pairs
 
 logger = logging.getLogger(__name__)
 
@@ -58,82 +63,32 @@ DEFAULT_TIMEOUT = 30
 
 # The reference rates are quoted per euro, so the euro is its own unit and never
 # appears as a column in the feed.
-_EUR = "EUR"
+UNIT = "EUR"
 
 _XML_NS = {"ecb": "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"}
 
 SOURCE = "ecb"
-
-# EUR-based rows: {'yyyy-MM-dd': {'USD': 1.1662, 'THB': 38.176, ...}}
-RateTable = Dict[str, Dict[str, float]]
 
 
 class ECBFXError(Exception):
     """The feed was unreachable or did not parse."""
 
 
-def split_pair(pair: str) -> Optional[Tuple[str, str]]:
-    """Yahoo-style pair name -> (base, quote), or None if it is not one.
-
-    The archive uses two spellings for the same number, and both have to keep
-    meaning what `portfolio_history` already assumes they mean:
-
-        THB=X      THB per USD     (three letters: USD is the implied base)
-        USDTHB=X   THB per USD     (the same series, spelled out)
-        THBUSD=X   USD per THB     (the inverse)
-
-    So a three-letter name is read as `USD{CUR}`, which is what makes `USD=X`
-    resolve to a flat 1.0 rather than to whatever a provider happens to return
-    for a currency against itself.
-    """
-    if not pair or not pair.upper().endswith("=X"):
-        return None
-    code = pair.upper()[:-2]
-    if len(code) == 3 and code.isalpha():
-        return "USD", code
-    if len(code) == 6 and code.isalpha():
-        return code[:3], code[3:]
-    return None
+# The reference rates are quoted per euro, so every pair here is a cross through
+# the euro. `UNIT` is what the shared helpers in fx_pairs need to know.
+def pair_rate(row, pair):
+    """This feed's rate for one day's row — see fx_pairs.pair_rate."""
+    return _pair_rate(row, pair, UNIT)
 
 
-def pair_rate(row: Dict[str, float], pair: str) -> Optional[float]:
-    """The pair's rate for one day's EUR-based row, or None if uncovered.
-
-    Both legs are crossed through the euro, so a pair is available only on a day
-    the ECB published *both* currencies — which is why THB and CNY series here
-    begin in Apr 2005 while EUR and JPY reach back to 1999.
-    """
-    legs = split_pair(pair)
-    if not legs:
-        return None
-    base, quote = legs
-
-    def leg(code: str) -> Optional[float]:
-        if code == _EUR:
-            return 1.0
-        value = row.get(code)
-        return value if value and value > 0 else None
-
-    base_rate, quote_rate = leg(base), leg(quote)
-    if base_rate is None or quote_rate is None:
-        return None
-    return quote_rate / base_rate
-
-
-def pair_series(rates: RateTable, pair: str) -> List[Tuple[str, float]]:
+def pair_series(rates, pair):
     """(date, rate) for every day the pair is derivable, oldest first."""
-    out = [
-        (day, value)
-        for day, row in rates.items()
-        if (value := pair_rate(row, pair)) is not None
-    ]
-    out.sort()
-    return out
+    return _pair_series(rates, pair, UNIT)
 
 
-def supported_pairs(rates: RateTable, candidates: Iterable[str]) -> List[str]:
+def supported_pairs(rates, candidates):
     """Those candidates the feed can actually price on at least one day."""
-    return [p for p in candidates if any(pair_rate(row, p) for row in rates.values())]
+    return _supported_pairs(rates, candidates, UNIT)
 
 
 def parse_hist_csv(data: bytes) -> RateTable:

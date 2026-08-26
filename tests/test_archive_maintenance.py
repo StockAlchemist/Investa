@@ -75,6 +75,37 @@ def test_a_routine_fx_run_reads_the_short_file(monkeypatch):
     assert "--recent" in fx
 
 
+def test_the_bank_of_thailand_rides_along_when_a_token_is_configured(monkeypatch):
+    """It is the official rate for the base currency and the only source before
+    Apr 2005, and it makes zero requests on a night with nothing missing."""
+    monkeypatch.setattr(am.config, "BOT_API_KEY", "a-token")
+    _setup(
+        monkeypatch,
+        newest_bar="2026-08-25",
+        inc_age_h=1,
+        core_age_h=8,
+        newest_fx="2026-08-21",
+    )
+    jobs, _ = am.plan(force=False)
+    argv = next(argv for label, argv in jobs if "Bank of Thailand" in label)
+    assert argv[argv.index("--provider") + 1] == "bot"
+    assert "--apply" in argv
+
+
+def test_without_a_token_the_bot_step_is_skipped_not_attempted(monkeypatch):
+    monkeypatch.setattr(am.config, "BOT_API_KEY", None)
+    _setup(
+        monkeypatch,
+        newest_bar="2026-08-25",
+        inc_age_h=1,
+        core_age_h=8,
+        newest_fx="2026-08-21",
+    )
+    jobs, skipped = am.plan(force=False)
+    assert not any("Bank of Thailand" in label for label, _ in jobs)
+    assert any("BOT_API_KEY" in reason for reason in skipped)
+
+
 def test_fx_is_due_when_it_has_never_run(monkeypatch):
     _setup(
         monkeypatch, newest_bar="2026-08-25", inc_age_h=1, core_age_h=8, newest_fx=None
