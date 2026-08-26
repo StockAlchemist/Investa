@@ -104,6 +104,7 @@ class MarketDatabase:
                     date TEXT,
                     rate REAL,
                     interval TEXT DEFAULT '1d',
+                    source TEXT DEFAULT 'yahoo',
                     PRIMARY KEY (pair, date, interval)
                 )
             """)
@@ -564,7 +565,13 @@ class MarketDatabase:
 
         return frame
 
-    def upsert_fx(self, pair: str, df: pd.DataFrame, interval: str = "1d"):
+    def upsert_fx(
+        self,
+        pair: str,
+        df: pd.DataFrame,
+        interval: str = "1d",
+        source: str = "yahoo",
+    ):
         """
         Upserts FX rate data from a DataFrame.
         DataFrame must have a DatetimeIndex and a column 'Close' or 'rate'.
@@ -580,23 +587,82 @@ class MarketDatabase:
         if not col:
             return
 
+        rows: List[Tuple[str, float]] = []
+        for timestamp, row in df.iterrows():
+            date_str = (
+                timestamp.strftime("%Y-%m-%d")
+                if hasattr(timestamp, "strftime")
+                else str(timestamp)[:10]
+            )
+            rows.append((date_str, row[col]))
+        self.upsert_fx_rows(pair, rows, interval=interval, source=source)
+
+    def upsert_fx_rows(
+        self,
+        pair: str,
+        rows: Sequence[Tuple[str, float]],
+        interval: str = "1d",
+        source: str = "yahoo",
+        fill_only: bool = False,
+    ) -> int:
+        """
+        Store (yyyy-MM-dd, rate) pairs, returning how many rows were written.
+
+        `fill_only` writes a day only if the archive has none, which is how a
+        second provider is allowed to contribute. The ECB's 14:15 CET fix and
+        Yahoo's close differ by ~0.2% on an ordinary day; letting one overwrite
+        the other would move every historical portfolio figure by that much
+        while making neither series more true. Gaps are the exception — there
+        the alternative is not a slightly different rate, it is the last known
+        rate carried forward for weeks.
+
+        `float()` is not decoration. sqlite3 has no adapter for a numpy scalar
+        but numpy scalars implement the buffer protocol, so one stores silently
+        as an 8-byte BLOB and reads back as bytes — which is exactly what
+        happened to `USD=X`, whose synthetic identity rate of 1 sat in the
+        archive as b'\\x01\\x00...' rather than 1.0.
+        """
+        clean: List[Tuple[str, str, float, str, str]] = []
+        for day, rate in rows:
+            if rate is None:
+                continue
+            try:
+                value = float(rate)
+            except (TypeError, ValueError):
+                continue
+            if value != value or value <= 0:  # NaN or nonsense
+                continue
+            clean.append((pair, str(day)[:10], value, interval, source))
+        if not clean:
+            return 0
+
+        verb = "INSERT OR IGNORE" if fill_only else "INSERT OR REPLACE"
         with self._write_lock, self._get_connection() as conn:
+            # A database that predates the provenance migration still takes
+            # rates; it just cannot say where they came from.
+            if self._has_column(conn, "daily_fx", "source"):
+                sql = f"""{verb} INTO daily_fx (pair, date, rate, interval, source)
+                          VALUES (?, ?, ?, ?, ?)"""
+                params = clean
+            else:
+                sql = f"""{verb} INTO daily_fx (pair, date, rate, interval)
+                          VALUES (?, ?, ?, ?)"""
+                params = [row[:4] for row in clean]
             cursor = conn.cursor()
-            for timestamp, row in df.iterrows():
-                date_str = (
-                    timestamp.strftime("%Y-%m-%d")
-                    if hasattr(timestamp, "strftime")
-                    else str(timestamp)[:10]
-                )
-                cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO daily_fx
-                    (pair, date, rate, interval)
-                    VALUES (?, ?, ?, ?)
-                """,
-                    (pair, date_str, row[col], interval),
-                )
+            cursor.executemany(sql, params)
+            written = cursor.rowcount
             conn.commit()
+        return written if written is not None and written >= 0 else 0
+
+    def _has_column(self, conn, table: str, column: str) -> bool:
+        """Cached PRAGMA lookup — schema shape does not change under a process."""
+        key = (table, column)
+        cache = self.__dict__.setdefault("_column_cache", {})
+        if key not in cache:
+            cache[key] = any(
+                row[1] == column for row in conn.execute(f"PRAGMA table_info({table})")
+            )
+        return cache[key]
 
     def get_ohlcv(
         self,

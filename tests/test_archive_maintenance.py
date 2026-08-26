@@ -16,8 +16,17 @@ sys.path.append(os.path.join(ROOT, "scripts"))
 import archive_maintenance as am  # noqa: E402
 
 
-def _setup(monkeypatch, *, newest_bar, inc_age_h, core_age_h, today=date(2026, 8, 26)):
+def _setup(
+    monkeypatch,
+    *,
+    newest_bar,
+    inc_age_h,
+    core_age_h,
+    today=date(2026, 8, 26),
+    newest_fx="2026-08-25",
+):
     monkeypatch.setattr(am, "newest_bar", lambda: newest_bar)
+    monkeypatch.setattr(am, "newest_official_fx", lambda: newest_fx)
     monkeypatch.setattr(am, "last_trading_day", lambda: today - timedelta(days=1))
     ages = {"incremental": inc_age_h, "core": core_age_h}
     # Signature is (mode, directory=None) — the incremental snapshot may live in
@@ -34,7 +43,44 @@ def test_nothing_is_due_when_everything_is_fresh(monkeypatch):
     _setup(monkeypatch, newest_bar="2026-08-25", inc_age_h=1, core_age_h=8)
     jobs, skipped = am.plan(force=False)
     assert jobs == []
-    assert len(skipped) == 4
+    assert len(skipped) == 5
+
+
+def test_official_fx_is_due_on_its_own_staleness_not_the_table_s(monkeypatch):
+    """The nightly price delta writes Yahoo rates into the same table, so a
+    current `daily_fx` says nothing about whether the official feed has run."""
+    _setup(
+        monkeypatch,
+        newest_bar="2026-08-25",
+        inc_age_h=1,
+        core_age_h=8,
+        newest_fx="2026-06-15",
+    )
+    jobs, _ = am.plan(force=False)
+    fx = next(argv for label, argv in jobs if "official FX" in label)
+    assert "--apply" in fx
+    assert "--recent" not in fx, "a two-month gap outruns the 90-day file's usefulness"
+
+
+def test_a_routine_fx_run_reads_the_short_file(monkeypatch):
+    _setup(
+        monkeypatch,
+        newest_bar="2026-08-25",
+        inc_age_h=1,
+        core_age_h=8,
+        newest_fx="2026-08-21",
+    )
+    jobs, _ = am.plan(force=False)
+    fx = next(argv for label, argv in jobs if "official FX" in label)
+    assert "--recent" in fx
+
+
+def test_fx_is_due_when_it_has_never_run(monkeypatch):
+    _setup(
+        monkeypatch, newest_bar="2026-08-25", inc_age_h=1, core_age_h=8, newest_fx=None
+    )
+    jobs, _ = am.plan(force=False)
+    assert any("official FX" in label for label, _ in jobs)
 
 
 def test_stale_prices_pull_the_split_check_with_them(monkeypatch):

@@ -11,8 +11,9 @@ Steps, each skipped when it is not due:
 
   1. price delta      when the newest bar is older than the last trading day
   2. split check      whenever prices moved (a new bar can carry a new split)
-  3. incremental snap when the newest one is older than SNAPSHOT_MAX_AGE_HOURS
-  4. core snapshot    when the newest one is older than CORE_MAX_AGE_DAYS
+  3. official FX      when the newest ECB-sourced rate is behind the last trading day
+  4. incremental snap when the newest one is older than SNAPSHOT_MAX_AGE_HOURS
+  5. core snapshot    when the newest one is older than CORE_MAX_AGE_DAYS
 
 The delta window widens with the gap: away for a fortnight, it asks for a
 fortnight plus an overlap rather than the usual five days. That overlap is what
@@ -56,6 +57,11 @@ CORE_MAX_AGE_DAYS = 7
 DELTA_OVERLAP_DAYS = 5
 DELTA_MAX_DAYS = 90
 
+# The ECB's 90-day file is 70 KB against ~640 KB for the whole history since
+# 1999, so a routine run reads the short one. Past this gap the short file would
+# leave a hole behind it, and the full history is worth the download.
+FX_RECENT_WINDOW_DAYS = 60
+
 
 def db_path() -> str:
     return os.path.join(config.get_app_data_dir(), config.DB_DIR, "market_data.db")
@@ -87,6 +93,28 @@ def newest_bar() -> Optional[str]:
     try:
         row = conn.execute(
             "SELECT MAX(date) FROM daily_ohlcv WHERE interval = '1d'"
+        ).fetchone()
+    finally:
+        conn.close()
+    return row[0] if row else None
+
+
+def newest_official_fx() -> Optional[str]:
+    """The newest ECB-sourced rate in the archive, or None if there is none.
+
+    Keyed on the source and not on `MAX(date)`: the nightly price delta writes
+    Yahoo rates into the same table, so the table as a whole is always current
+    and would say the official feed is up to date when it has never run.
+    """
+    if not os.path.exists(db_path()):
+        return None
+    conn = connect_readonly(db_path())
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(daily_fx)")}
+        if "source" not in columns:
+            return None  # pre-provenance archive: treat as never filled
+        row = conn.execute(
+            "SELECT MAX(date) FROM daily_fx WHERE source = 'ecb'"
         ).fetchone()
     finally:
         conn.close()
@@ -162,6 +190,31 @@ def plan(force: bool) -> Tuple[List[Tuple[str, List[str]]], List[str]]:
     else:
         skipped.append(f"prices are current (newest bar {newest})")
         skipped.append("split check — runs only when prices moved")
+
+    # Official FX. Cheap enough to be due most days: the 90-day file is 70 KB,
+    # and it fills only days Yahoo left empty, so a run that finds nothing to do
+    # costs one request. The point is that the currency conversion behind every
+    # portfolio figure stops depending on the price feed staying up — EUR, GBP
+    # and CNY sat frozen for two months the last time it did not.
+    newest_fx = newest_official_fx()
+    if force or not newest_fx or newest_fx < target:
+        argv = [python, "scripts/backfill_fx_rates.py", "--apply"]
+        gap = (
+            DELTA_MAX_DAYS
+            if not newest_fx
+            else (date.fromisoformat(target) - date.fromisoformat(newest_fx)).days
+        )
+        if gap <= FX_RECENT_WINDOW_DAYS:
+            argv.append("--recent")
+        jobs.append(
+            (
+                f"official FX from the ECB (newest ECB rate {newest_fx or 'none'}, "
+                f"want {target})",
+                argv,
+            )
+        )
+    else:
+        skipped.append(f"official FX is current (newest ECB rate {newest_fx})")
 
     offsite = offsite_dir()
     inc_age = newest_snapshot_age("incremental", offsite)
