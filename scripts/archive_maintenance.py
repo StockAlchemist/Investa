@@ -67,6 +67,19 @@ def backup_dir() -> str:
     )
 
 
+def offsite_dir() -> Optional[str]:
+    """Where the off-machine copy goes, if one is configured.
+
+    Only the incremental snapshot is sent there, and that is the whole point of
+    having three tiers. Incremental carries every small table whole — the
+    corporate actions, fund NAVs and share counts that cannot be re-downloaded —
+    plus a fortnight of bars, in about 7 MB. Core and full are 575 MB and ~700 MB
+    and exist for a fast local restore; pushing them too would cost 4.6 GB of
+    someone's Drive quota to duplicate history that Yahoo will still serve.
+    """
+    return os.environ.get("INVESTA_OFFSITE_DIR") or None
+
+
 def newest_bar() -> Optional[str]:
     if not os.path.exists(db_path()):
         return None
@@ -94,9 +107,9 @@ def last_trading_day() -> date:
     return day
 
 
-def newest_snapshot_age(mode: str) -> Optional[float]:
+def newest_snapshot_age(mode: str, directory: Optional[str] = None) -> Optional[float]:
     """Hours since the newest snapshot of this mode, or None if there is none."""
-    directory = backup_dir()
+    directory = directory or backup_dir()
     if not os.path.isdir(directory):
         return None
     prefix = f"market_archive_{mode}_"
@@ -150,13 +163,15 @@ def plan(force: bool) -> Tuple[List[Tuple[str, List[str]]], List[str]]:
         skipped.append(f"prices are current (newest bar {newest})")
         skipped.append("split check — runs only when prices moved")
 
-    inc_age = newest_snapshot_age("incremental")
+    offsite = offsite_dir()
+    inc_age = newest_snapshot_age("incremental", offsite)
     if force or inc_age is None or inc_age > SNAPSHOT_MAX_AGE_HOURS:
         age = "none yet" if inc_age is None else f"{inc_age:.0f}h old"
-        jobs.append(
-            (f"incremental snapshot ({age})",
-             [python, "scripts/backup_market_archive.py", "--mode", "incremental"])
-        )
+        where = f" -> {offsite}" if offsite else ""
+        argv = [python, "scripts/backup_market_archive.py", "--mode", "incremental"]
+        if offsite:
+            argv += ["--dest", offsite]
+        jobs.append((f"incremental snapshot ({age}){where}", argv))
     else:
         skipped.append(f"incremental snapshot is {inc_age:.0f}h old")
 
