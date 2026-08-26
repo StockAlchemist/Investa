@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Archive maintenance for a laptop.
+
+  cron is the wrong tool here: it skips a firing outright if the machine is
+  asleep, so an 02:30 line runs only on the nights you happen to leave the lid
+  open. launchd does not skip — from launchd.plist(5):
+
+      "Unlike cron which skips job invocations when the computer is asleep,
+       launchd will start the job the next time the computer wakes up. If
+       multiple intervals transpire before the computer is woken, those events
+       will be coalesced into one event upon wake from sleep."
+
+  Coalescing is exactly right, because the job it runs is staleness-driven
+  rather than schedule-driven: one firing after a fortnight away does the same
+  work as fourteen would have.
+
+  Install:
+      cp docs/ops/com.investa.archive-maintenance.plist ~/Library/LaunchAgents/
+      launchctl load ~/Library/LaunchAgents/com.investa.archive-maintenance.plist
+
+  Check / run now / remove:
+      launchctl list | grep investa
+      launchctl start com.investa.archive-maintenance
+      launchctl unload ~/Library/LaunchAgents/com.investa.archive-maintenance.plist
+
+  RunAtLoad fires it once on login too, which is the other half of the laptop
+  story: open the lid, the archive catches up.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.investa.archive-maintenance</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/kmatan/.pyenv/versions/3.12.9/bin/python3</string>
+        <string>scripts/archive_maintenance.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/kmatan/Investa</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>9</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/kmatan/Investa/data/logs/archive_maintenance.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/kmatan/Investa/data/logs/archive_maintenance.log</string>
+
+    <!-- Never let maintenance compete with the machine being used. -->
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
