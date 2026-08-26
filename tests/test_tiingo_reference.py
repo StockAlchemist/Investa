@@ -305,3 +305,63 @@ def test_identity_ignores_the_pair_that_straddles_an_ex_date(archive):
 
     ok, why = job.identity_check(conn, "X", ref)
     assert ok, why
+
+
+# --- the guard that was missing ---------------------------------------------
+
+
+def test_a_reference_missing_one_of_our_splits_is_refused(archive):
+    """The guard whose absence cost 15,588 bars.
+
+    KGEI: the archive records a 1:10 reverse split, Tiingo carries no split for
+    the symbol at all. Every earlier bar then disagrees by exactly 10x — which
+    is, by construction, one of the symbol's own recorded ratios. So the repair
+    "explains" the difference, divides by it, and lands the bar on the
+    reference's *unadjusted* basis. Nothing downstream catches it: the ratio
+    matches, the repaired value lands on the reference, and the identity check
+    passes because the two series move together. Only the event logs disagree.
+    """
+    path, conn = archive
+    conn.execute(
+        "INSERT INTO corporate_action (symbol, date, kind, value) "
+        "VALUES ('KGEI', '2022-05-19', 'split', 0.1)"
+    )
+    conn.commit()
+
+    ok, why = job.split_coverage_check(conn, "KGEI", [bar("2022-05-20", 1.0)])
+
+    assert not ok
+    assert "2022-05-19" in why and "different basis" in why
+
+
+def test_a_reference_carrying_our_splits_is_accepted(archive):
+    path, conn = archive
+    conn.execute(
+        "INSERT INTO corporate_action (symbol, date, kind, value) "
+        "VALUES ('BYND', '2026-08-14', 'split', 0.0333333333)"
+    )
+    conn.commit()
+
+    ok, why = job.split_coverage_check(
+        conn, "BYND", [bar("2026-08-14", 13.47, split=0.0333333333)]
+    )
+
+    assert ok, why
+
+
+def test_the_same_split_dated_a_day_apart_still_counts_as_carried(archive):
+    """Providers date one event a day apart routinely — BOTJ is 03-07 at Yahoo
+    and 03-08 at Tiingo. That is not a missing split, and refusing on it would
+    reject symbols whose reference is perfectly good."""
+    path, conn = archive
+    conn.execute(
+        "INSERT INTO corporate_action (symbol, date, kind, value) "
+        "VALUES ('BOTJ', '2005-03-07', 'split', 1.5)"
+    )
+    conn.commit()
+
+    ok, why = job.split_coverage_check(
+        conn, "BOTJ", [bar("2005-03-08", 16.0, split=1.5)]
+    )
+
+    assert ok, why

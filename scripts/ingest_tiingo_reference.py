@@ -56,12 +56,14 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import check_split_consistency as checker  # noqa: E402
 import config  # noqa: E402
 from db_utils import connect_readonly  # noqa: E402
+from ingest_tiingo_actions import archive_splits, duplicate_of, tiingo_splits  # noqa: E402
 from tiingo_provider import (  # noqa: E402
     SOURCE,
     TiingoError,
     TiingoNotConfiguredError,
     TiingoProvider,
     TiingoSymbolUnknown,
+    split_adjusted,
 )
 
 # A bar counts as disputed when the two providers differ by more than this.
@@ -144,6 +146,48 @@ def disputed_days(
         if closes.get(day) and abs(float(close) / closes[day] - 1.0) > DISPUTE_TOLERANCE
     ]
     return disputed[-MAX_REFERENCE_BARS:]
+
+
+def split_coverage_check(
+    conn: sqlite3.Connection, symbol: str, rows: List[dict]
+) -> tuple:
+    """Does the reference reflect every split the archive already records?
+
+    **The guard that was missing, and it cost 15,588 bars.** A reference is only
+    comparable if it is adjusted for the same events. When Tiingo does not carry
+    a split the archive does, its series sits a whole ratio away from the
+    archive's on every earlier bar — and that ratio is, by construction, exactly
+    one of the symbol's own recorded splits. So
+    `repair_bars_against_reference.py` sees a difference it can "explain",
+    divides by it, and pulls bars onto the reference's *unadjusted* basis.
+
+    KGEI is the worked example. The archive records a 1:10 reverse split on
+    2022-05-19; Tiingo has no split for KGEI at all. Every pre-2022 bar
+    therefore disagreed by 10x, the repair accepted 10.0 as a known ratio, and
+    the bars it rewrote landed on Tiingo's basis while the ones the max-error
+    guard refused stayed on Yahoo's. The result was a series alternating between
+    0.07 and 0.7 hundreds of times — a mixed basis, which is the exact
+    pathology this whole effort exists to remove.
+
+    Not caught by anything downstream: the ratio matches, the repaired value
+    lands on the reference, and the identity check passes because the two series
+    move together. Only the event logs disagree.
+    """
+    theirs = tiingo_splits(rows)
+    ours = archive_splits(conn, symbol)
+    unreflected = [
+        (day, ratio)
+        for day, ratio in sorted(ours.items())
+        if not duplicate_of(day, ratio, theirs)
+    ]
+    if unreflected:
+        day, ratio = unreflected[0]
+        return False, (
+            f"reference does not carry the archive's {day} x{ratio:g} split"
+            + (f" (+{len(unreflected) - 1} more)" if len(unreflected) > 1 else "")
+            + " — its series is on a different basis"
+        )
+    return True, f"reflects all {len(ours)} recorded split(s)"
 
 
 def identity_check(
@@ -293,7 +337,8 @@ def main() -> int:
         for symbol in symbols:
             ex_dates = queue[symbol]
             try:
-                closes = provider.reference_closes(symbol)
+                raw_rows = provider.fetch_prices(symbol)
+                closes = split_adjusted(raw_rows)
             except TiingoSymbolUnknown:
                 print(f"  {symbol:8} not carried by Tiingo (non-US?) — skipped")
                 unknown += 1
@@ -318,6 +363,11 @@ def main() -> int:
                     f"({min(ex_dates)}); cannot testify"
                 )
                 out_of_range += 1
+                continue
+            ok, why = split_coverage_check(conn, symbol, raw_rows)
+            if not ok:
+                print(f"  {symbol:8} REFUSED: {why}")
+                mismatched += 1
                 continue
             ok, why = identity_check(conn, symbol, closes)
             if not ok:
