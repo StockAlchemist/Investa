@@ -9,7 +9,6 @@ import os
 import sqlite3
 import sys
 
-import pytest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(os.path.join(ROOT, "src"))
