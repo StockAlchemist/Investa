@@ -141,20 +141,123 @@ def _download_prices(
     }
 
 
+def _archive_prices(
+    symbols: Sequence[str], start: str, end: str
+) -> Dict[str, pd.DataFrame]:
+    """
+    The same monthly panel, read from the local archive instead of Yahoo.
+
+    Worth doing for three reasons beyond speed: the backtest and the live
+    ranking then price off identical data, a result can be reproduced later
+    because the inputs are still on disk, and a re-run stops depending on Yahoo
+    still serving a symbol it has since dropped.
+
+    Conventions match `_download_prices` exactly — month-start index, the last
+    close of each month — because the cached panel those produced is the
+    reference every published backtest number came from.
+    """
+    import sqlite3
+
+    db = os.path.join(config.get_app_data_dir(), config.DB_DIR, "market_data.db")
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    wanted = sorted(set(symbols) | set(BENCHMARKS))
+
+    try:
+        # Last close of each month, in one pass. A window function beats 5,000
+        # per-symbol reads by orders of magnitude at this width.
+        rows = conn.execute(
+            """
+            SELECT symbol, ym, close FROM (
+                SELECT symbol,
+                       substr(date, 1, 7) AS ym,
+                       close,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY symbol, substr(date, 1, 7)
+                           ORDER BY date DESC
+                       ) AS rn
+                FROM daily_ohlcv
+                WHERE interval = '1d' AND close IS NOT NULL
+                  AND date >= ? AND date <= ?
+            ) WHERE rn = 1
+            """,
+            (start, end),
+        ).fetchall()
+
+        actions = conn.execute(
+            """
+            SELECT symbol, substr(date, 1, 7) AS ym, kind, value
+            FROM corporate_action
+            WHERE date >= ? AND date <= ?
+            """,
+            (start, end),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    keep = set(wanted)
+    frame = pd.DataFrame(
+        [(s, ym, c) for s, ym, c in rows if s in keep], columns=["symbol", "ym", "close"]
+    )
+    if frame.empty:
+        return {k: pd.DataFrame() for k in ("Close", "Adj Close", "Stock Splits")}
+
+    close = frame.pivot(index="ym", columns="symbol", values="close").sort_index()
+    close.index = pd.to_datetime(close.index + "-01")
+
+    splits = pd.DataFrame(0.0, index=close.index, columns=close.columns)
+    dividends = pd.DataFrame(0.0, index=close.index, columns=close.columns)
+    for symbol, ym, kind, value in actions:
+        if symbol not in keep or value is None:
+            continue
+        stamp = pd.Timestamp(f"{ym}-01")
+        if stamp not in close.index or symbol not in close.columns:
+            continue
+        if kind == "split":
+            # Several splits in one month compound, matching a monthly bar.
+            current = splits.at[stamp, symbol] or 1.0
+            splits.at[stamp, symbol] = (current if current else 1.0) * float(value)
+        elif kind == "dividend":
+            dividends.at[stamp, symbol] += float(value)
+
+    # Total return, the series `simulate` compounds. Same back-adjustment Yahoo's
+    # Adj Close uses: a distribution scales every earlier price by
+    # (1 - D / previous close), applied here at the monthly granularity the
+    # panel is built on.
+    prev = close.shift(1)
+    ratio = (1.0 - (dividends / prev)).where(prev > 0).clip(lower=0.01, upper=1.0)
+    ratio = ratio.fillna(1.0)
+    adj_factor = ratio[::-1].cumprod()[::-1].shift(-1).bfill().fillna(1.0)
+    adjusted = close * adj_factor
+
+    return {"Close": close, "Adj Close": adjusted, "Stock Splits": splits}
+
+
 def load_prices(
-    symbols: Sequence[str], start: str, end: str, refresh: bool = False
+    symbols: Sequence[str],
+    start: str,
+    end: str,
+    refresh: bool = False,
+    source: str = "archive",
 ) -> Dict[str, pd.DataFrame]:
     """Cached monthly price panel. Columns are symbols, index is month start."""
-    path = os.path.join(_cache_dir(), "monthly_prices.pkl")
+    path = os.path.join(_cache_dir(), f"monthly_prices_{source}.pkl")
+    legacy = os.path.join(_cache_dir(), "monthly_prices.pkl")
+    if source == "yahoo" and not os.path.exists(path) and os.path.exists(legacy):
+        path = legacy
+
     if not refresh and os.path.exists(path):
         panel = pd.read_pickle(path)
         missing = set(symbols) - set(panel["Close"].columns)
         if len(missing) < 50:
-            print(f"Prices: reusing cache ({panel['Close'].shape[1]} symbols)")
+            print(f"Prices: reusing {source} cache ({panel['Close'].shape[1]} symbols)")
             return panel
-        print(f"Prices: cache is missing {len(missing)} symbols, refetching")
+        print(f"Prices: cache is missing {len(missing)} symbols, rebuilding")
 
-    panel = _download_prices(list(symbols) + list(BENCHMARKS), start, end)
+    if source == "archive":
+        panel = _archive_prices(list(symbols), start, end)
+        print(f"Prices: built from the local archive ({panel['Close'].shape[1]} symbols)")
+    else:
+        panel = _download_prices(list(symbols) + list(BENCHMARKS), start, end)
     pd.to_pickle(panel, path)
     return panel
 
@@ -360,6 +463,12 @@ def main() -> int:
     )
     parser.add_argument("--refresh-prices", action="store_true")
     parser.add_argument(
+        "--price-source",
+        choices=("archive", "yahoo"),
+        default="archive",
+        help="where monthly prices come from (default: the local archive)",
+    )
+    parser.add_argument(
         "--rerank", action="store_true", help="ignore cached per-year rankings"
     )
     parser.add_argument("--out", default=None, help="write results as JSON")
@@ -389,6 +498,7 @@ def main() -> int:
         start=f"{args.start - 2}-01-01",
         end=f"{args.end + 1}-12-31",
         refresh=args.refresh_prices,
+        source=args.price_source,
     )
     close, adjusted = panel["Close"], panel["Adj Close"]
     factors = split_factors(
