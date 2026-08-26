@@ -35,6 +35,7 @@ from collections import defaultdict
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 import config  # noqa: E402
+from db_utils import connect_readonly  # noqa: E402
 
 
 def default_db_path() -> str:
@@ -102,7 +103,7 @@ def scan(
     symbol: str | None,
     as_of: str | None,
 ) -> list[tuple]:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn = connect_readonly(db_path)
     try:
         splits = load_actions(conn)
         ratios = load_split_ratios(conn)

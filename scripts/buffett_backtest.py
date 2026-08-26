@@ -54,6 +54,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "s
 import buffett_rank  # noqa: E402
 import buffett_value  # noqa: E402
 import config  # noqa: E402
+from db_utils import connect_readonly  # noqa: E402
 import edgar_provider  # noqa: E402
 import edgar_sic  # noqa: E402
 import universe  # noqa: E402
@@ -156,10 +157,9 @@ def _archive_prices(
     close of each month — because the cached panel those produced is the
     reference every published backtest number came from.
     """
-    import sqlite3
 
     db = os.path.join(config.get_app_data_dir(), config.DB_DIR, "market_data.db")
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    conn = connect_readonly(db)
     wanted = sorted(set(symbols) | set(BENCHMARKS))
 
     try:

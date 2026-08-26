@@ -154,7 +154,24 @@ def restore(archive: str, db_path: str, force: bool) -> int:
                     os.remove(stale)
 
         shutil.move(candidate, db_path)
-        print(f"restored -> {db_path}")
+
+        # VACUUM INTO writes a `delete`-journal database, so a restored file
+        # arrives without WAL however the original was configured. That is not
+        # cosmetic: under DELETE journalling a single writer blocks every
+        # reader, and the first restore here left the ranking worker locking the
+        # whole archive out of every other process. Put it back.
+        installed = sqlite3.connect(db_path, timeout=60.0)
+        try:
+            mode = installed.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            print(f"restored -> {db_path} (journal_mode={mode})")
+            if mode != "wal":
+                print(
+                    "  WARNING: could not enable WAL. On a cloud-synced path this "
+                    "is expected and correct; on local disk it means concurrent "
+                    "readers will block behind any writer."
+                )
+        finally:
+            installed.close()
         return 0
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

@@ -2193,3 +2193,25 @@ def initialize_global_database() -> Optional[sqlite3.Connection]:
 init_db = initialize_database
 
 # End of file
+
+
+def connect_readonly(db_path: str, timeout: float = 60.0) -> sqlite3.Connection:
+    """A read-only connection that works whatever journal mode the file is in.
+
+    `file:...?mode=ro` is the obvious way to promise "I will not write", and it
+    fails outright on a WAL database when no `-shm` file exists — SQLite needs
+    to create that shared-memory index before it can read, and mode=ro forbids
+    creating anything. Scripts using it appear to work for as long as something
+    else holds the database open, then break the first time they run alone.
+
+    So: try the strict form, and fall back to an ordinary connection with
+    `query_only` set, which is the same promise enforced a different way.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=timeout)
+        conn.execute("SELECT 1")
+        return conn
+    except sqlite3.OperationalError:
+        conn = sqlite3.connect(db_path, timeout=timeout)
+        conn.execute("PRAGMA query_only = 1")
+        return conn

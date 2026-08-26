@@ -35,7 +35,6 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import sys
 from datetime import datetime
 
@@ -44,6 +43,8 @@ from datetime import datetime
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO_ROOT, "src")
 sys.path.insert(0, SRC)
+
+from db_utils import connect_readonly  # noqa: E402
 
 SNAPSHOT_ROOT = os.path.join(REPO_ROOT, "data", "backups", "golden")
 MARKET_DB = os.path.join(REPO_ROOT, "data", "db", "market_data.db")
@@ -94,7 +95,7 @@ def capture_archive(as_of: str | None = None) -> dict:
 
     as_of = as_of or _default_as_of()
 
-    con = sqlite3.connect(f"file:{MARKET_DB}?mode=ro", uri=True)
+    con = connect_readonly(MARKET_DB)
     try:
         rows = con.execute(
             "SELECT symbol, date, close FROM daily_ohlcv "
@@ -250,7 +251,7 @@ def capture_ranking(top_n: int = 20) -> dict:
     if not os.path.exists(RANKS_DB):
         return {"error": "buffett_ranks.db not found"}
 
-    con = sqlite3.connect(f"file:{RANKS_DB}?mode=ro", uri=True)
+    con = connect_readonly(RANKS_DB)
     try:
         run = con.execute(
             "SELECT MAX(run_id) FROM rank_runs WHERE finished_at IS NOT NULL"

@@ -98,7 +98,9 @@ def test_restore_reproduces_the_data(source_db, tmp_path):
     target = str(tmp_path / "restored" / "market_data.db")
     assert restore.restore(archive, target, force=False) == 0
 
-    conn = sqlite3.connect(f"file:{target}?mode=ro", uri=True)
+    # Not mode=ro: the restore leaves the file in WAL, and a strict read-only
+    # URI cannot open a WAL database that has no -shm alongside it.
+    conn = sqlite3.connect(target)
     try:
         assert conn.execute("SELECT COUNT(*) FROM daily_ohlcv").fetchone()[0] == 19
         assert conn.execute(
@@ -255,3 +257,24 @@ def test_rotation_is_per_mode_across_all_three(source_db, tmp_path):
     assert sum("_incremental_" in f for f in names) == 1
     assert sum("_core_" in f for f in names) == 1
     assert sum("_full_" in f for f in names) == 1
+
+
+def test_restore_re_enables_wal(source_db, tmp_path):
+    """
+    VACUUM INTO writes a `delete`-journal database, so a restored file arrives
+    without WAL however the original was set up. Under DELETE journalling one
+    writer blocks every reader — a live restore here left a background worker
+    locking the archive out of every other process.
+    """
+    dest = str(tmp_path / "backups")
+    archive, _ = backup.build_archive(source_db, dest, "core", "20260826_000000")
+
+    # The snapshot itself is delete-journalled; that is what makes this matter.
+    target = str(tmp_path / "restored" / "market_data.db")
+    assert restore.restore(archive, target, force=False) == 0
+
+    conn = sqlite3.connect(target)
+    try:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    finally:
+        conn.close()

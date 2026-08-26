@@ -69,6 +69,7 @@ from typing import Dict, List, Optional, Tuple
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 import config  # noqa: E402
+from db_utils import connect_readonly  # noqa: E402
 
 # See the D7 repair: the range edge is not reliably inclusive once yfinance has
 # applied its own timezone handling, so the oldest bar is missed and keeps its
@@ -88,9 +89,8 @@ def db_path() -> str:
 
 def tier_members(tier: str) -> Tuple[List[str], List[str]]:
     """(symbols, fx_pairs) for a tier."""
-    import sqlite3
 
-    conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True)
+    conn = connect_readonly(db_path())
     try:
         symbols = [
             r[0]
@@ -121,7 +121,7 @@ def tier_members(tier: str) -> Tuple[List[str], List[str]]:
     if tier in ("B", "C"):
         ranks = os.path.join(config.get_app_data_dir(), config.DB_DIR, "buffett_ranks.db")
         if os.path.exists(ranks):
-            rconn = sqlite3.connect(f"file:{ranks}?mode=ro", uri=True)
+            rconn = connect_readonly(ranks)
             try:
                 run = rconn.execute(
                     "SELECT MAX(run_id) FROM rank_runs WHERE finished_at IS NOT NULL"

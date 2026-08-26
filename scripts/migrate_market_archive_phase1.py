@@ -82,6 +82,20 @@ NEW_TABLES: dict[str, str] = {
             PRIMARY KEY (symbol)
         )
     """,
+    # An independent provider's close for a given day, kept only where it is
+    # needed to adjudicate a disagreement. Not a second price history: a handful
+    # of bars either side of a suspected seam is enough to say which of two
+    # sources is on the right basis.
+    "reference_price": """
+        CREATE TABLE reference_price (
+            symbol TEXT NOT NULL,
+            date   TEXT NOT NULL,
+            close  REAL NOT NULL,
+            source TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (symbol, date, source)
+        )
+    """,
     "backfill_progress": """
         CREATE TABLE backfill_progress (
             tier         TEXT NOT NULL,
