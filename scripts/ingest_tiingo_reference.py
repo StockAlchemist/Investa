@@ -31,6 +31,11 @@ Fetching the whole series is not laziness: a split *after* a narrow window would
 be missed, and the reference would then sit on a basis of its own — worse than
 having no reference, because it looks like evidence.
 
+What is stored is every bar actually **in dispute**, wherever it falls, rather
+than a window around the flagged date. An unapplied split leaves every earlier
+bar wrong, not just the neighbourhood — see `disputed_days` for the run of BYND
+bars a fifteen-day window left behind.
+
 Only symbols the checker actually flagged are fetched, so the free tier's
 per-hour and per-month meters are spent on the queue and nothing else. Non-US
 tickers 404 and are reported, not retried — Tiingo carries no SET listings.
@@ -59,10 +64,16 @@ from tiingo_provider import (  # noqa: E402
     TiingoSymbolUnknown,
 )
 
-# Bars either side of a flagged ex-date to keep as reference. `reference_price`
-# exists to settle a disagreement, not to become a second price history, so only
-# the neighbourhood of a finding is stored.
-WINDOW_DAYS = 15
+# A bar counts as disputed when the two providers differ by more than this.
+# Matches repair_bars_against_reference.AGREEMENT_TOLERANCE: below it they are
+# quoting the same thing and rounding differently.
+DISPUTE_TOLERANCE = 0.03
+
+# A ceiling on how much evidence one symbol may contribute, newest first. An
+# unapplied split on a long history legitimately disputes thousands of bars, but
+# `reference_price` is not meant to become a second price history and a run that
+# wants more than this is worth looking at before it is trusted.
+MAX_REFERENCE_BARS = 5000
 
 # How far two series' daily moves may differ before they are treated as
 # different instruments. The same stock moves by the same percentage on both
@@ -90,20 +101,49 @@ def findings_by_symbol(path: str) -> Dict[str, List[str]]:
     return out
 
 
-def wanted_days(conn: sqlite3.Connection, symbol: str, ex_dates: List[str]) -> List[str]:
-    """The archive's own trading days within WINDOW_DAYS of each flagged date."""
-    days: set = set()
-    for ex in ex_dates:
-        rows = conn.execute(
-            """
-            SELECT date FROM daily_ohlcv
-            WHERE symbol = ? AND interval = '1d'
-              AND date BETWEEN date(?, ?) AND date(?, ?)
-            """,
-            (symbol, ex, f"-{WINDOW_DAYS} days", ex, f"+{WINDOW_DAYS} days"),
-        ).fetchall()
-        days.update(r[0] for r in rows)
-    return sorted(days)
+def disputed_days(
+    conn: sqlite3.Connection, symbol: str, closes: Dict[str, float]
+) -> List[str]:
+    """Every archive day that actually disagrees with the reference.
+
+    This replaced a fixed ±15-day window around each flagged ex-date, which was
+    inherited from the IBKR workflow where bars were collected by hand and a
+    window was all anyone could reasonably gather. Against an API that returns
+    the whole series for one request, it is an arbitrary limit — and the wrong
+    shape for the commonest defect.
+
+    BYND is the worked example. Its 1:30 reverse split of 2026-08-14 was never
+    applied to a run of earlier bars, and the archive held:
+
+        07-20  17.85   07-23  0.56   07-30  16.68   (after the first repair)
+        07-21  18.30   07-24  0.559  07-31  16.98
+        07-22  17.91   07-29  0.531  08-03  18.36
+
+    The window reached back fifteen days from the ex-date, so it repaired from
+    07-30 and left 07-23..07-29 exactly as wrong as before — bracketed by
+    correct bars on both sides, and still enough of a discontinuity for the
+    checker to keep flagging the symbol. Nineteen of twenty-five repaired
+    symbols stayed flagged for this reason.
+
+    So the reference is now every bar in dispute, wherever it falls. That keeps
+    `reference_price` to its purpose — evidence about a disagreement, not a
+    second price history — because a bar the two providers agree on is not
+    evidence about anything.
+    """
+    rows = conn.execute(
+        """
+        SELECT date, close FROM daily_ohlcv
+        WHERE symbol = ? AND interval = '1d' AND close > 0
+        ORDER BY date
+        """,
+        (symbol,),
+    ).fetchall()
+    disputed = [
+        day
+        for day, close in rows
+        if closes.get(day) and abs(float(close) / closes[day] - 1.0) > DISPUTE_TOLERANCE
+    ]
+    return disputed[-MAX_REFERENCE_BARS:]
 
 
 def identity_check(
@@ -285,13 +325,17 @@ def main() -> int:
                 mismatched += 1
                 continue
 
-            days = wanted_days(conn, symbol, ex_dates)
-            rows = [(d, closes[d]) for d in days if d in closes]
-            missing = len(days) - len(rows)
+            days = disputed_days(conn, symbol, closes)
+            rows = [(d, closes[d]) for d in days]
+            if not rows:
+                print(
+                    f"  {symbol:8} agrees with the reference everywhere — "
+                    f"nothing to adjudicate"
+                )
+                continue
             print(
-                f"  {symbol:8} {len(rows):3d} reference bar(s) around "
-                f"{', '.join(ex_dates[:3])}"
-                + (f"  ({missing} not carried)" if missing else "")
+                f"  {symbol:8} {len(rows):4d} disputed bar(s), "
+                f"{rows[0][0]} → {rows[-1][0]}  (flagged {', '.join(ex_dates[:2])})"
             )
             if rows and args.apply:
                 written += store(path, symbol, rows)
