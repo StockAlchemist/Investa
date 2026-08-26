@@ -51,6 +51,20 @@ RATIO_TOLERANCE = 0.04
 # Below this the two providers are quoting the same thing; ordinary rounding.
 AGREEMENT_TOLERANCE = 0.03
 
+# How far the repaired value may still sit from the reference before the repair
+# is refused as unconvincing. A good repair lands *on* the reference: dividing by
+# the right ratio reproduces the other provider's price. Landing merely near it
+# means the ratio was accepted on RATIO_TOLERANCE's generosity rather than
+# because it explains the bar — BOTJ 2005-03-07 wants a 0.9091 factor for a
+# disagreement that is really 0.9445, and would be written 3.9% away from the
+# only evidence there is.
+#
+# The other thing this catches is precision, not logic: KGEI's archive bars are
+# stored rounded to a cent (1.60), so dividing by 10 gives 0.16 where the truth
+# is 0.155. Directionally right, and still not something to write as if it were
+# measured.
+DEFAULT_MAX_ERROR = 0.02
+
 
 class BadBar(NamedTuple):
     symbol: str
@@ -149,6 +163,13 @@ def main() -> int:
     )
     parser.add_argument("--db", default=None)
     parser.add_argument("--source", default="ibkr", help="reference_price source to trust")
+    parser.add_argument(
+        "--max-error",
+        type=float,
+        default=DEFAULT_MAX_ERROR,
+        help="refuse a repair that would land further than this from the "
+        f"reference (default {DEFAULT_MAX_ERROR:.0%}); 0 disables the check",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -159,6 +180,16 @@ def main() -> int:
     conn = connect_readonly(path)
     try:
         bars = find_bad_bars(conn, args.source)
+        if args.max_error:
+            unconvincing = [
+                b
+                for b in bars
+                if b.reference
+                and abs(b.repaired - b.reference) / abs(b.reference) > args.max_error
+            ]
+            bars = [b for b in bars if b not in unconvincing]
+        else:
+            unconvincing = []
         total_refs = conn.execute(
             "SELECT COUNT(*) FROM reference_price WHERE source = ?", (args.source,)
         ).fetchone()[0]
@@ -166,6 +197,18 @@ def main() -> int:
         conn.close()
 
     print(f"{total_refs} reference close(s) from '{args.source}'")
+    if unconvincing:
+        print(
+            f"{len(unconvincing)} repair(s) refused: the result would not land on "
+            f"the reference (>{args.max_error:.0%} away)"
+        )
+        for b in unconvincing:
+            off = abs(b.repaired - b.reference) / abs(b.reference) * 100
+            print(
+                f"  {b.symbol:8}{b.date:12}{b.archive:12.4f}{b.reference:12.4f}"
+                f"{b.factor:10.4f}{b.repaired:12.4f}  {off:5.1f}% off"
+            )
+        print()
     if not bars:
         print("No bar disagrees with the reference by a known split ratio.")
         return 0
