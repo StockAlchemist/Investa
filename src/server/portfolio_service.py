@@ -415,12 +415,25 @@ async def _get_historical_performance_cached(
     include_accounts: Optional[List[str]],
     account_cash_mode_map: Dict[str, str],  # NEW
     db_mtime: float,
+    force: bool = False,
 ) -> Tuple[pd.DataFrame, Dict, Dict, str]:
     """
     Wrapper for calculate_historical_performance that uses a shared in-memory
     stale-while-revalidate cache: a rolled-over freshness window serves the
     previous result instantly and refreshes in the background, while concurrent
     callers coalesce onto one computation (prevents the thundering-herd effect).
+
+    `force` skips **both** caches on this path — the in-memory SWR entry and the
+    on-disk daily-results feather. It has to skip both to mean anything: the
+    feather's key is built from the transactions, the dates and the display
+    settings, and carries no component of the market data the series is computed
+    from. So a rate or a bar corrected in the archive today is invisible until
+    the key moves of its own accord tomorrow, when `end_date` rolls.
+
+    That is tolerable for a dashboard and fatal for the golden gate, which
+    compares two runs on the same day: without this it hands back the same
+    cached frame twice and reports "unchanged" whatever happened underneath. It
+    is how a 999.0 exchange rate produced a bit-identical portfolio value.
     """
     # Create a unique key for the request parameters and data state. Freshness is
     # tracked per entry by the SWR cache, so no time bucket goes in the key; a
@@ -468,9 +481,13 @@ async def _get_historical_performance_cached(
                 user_excluded_symbols=user_excluded_symbols,
                 original_csv_file_path=original_csv_file_path,
                 account_cash_mode_map=account_cash_mode_map,  # PASSING IT HERE
+                use_daily_results_cache=not force,
             )
 
         return await run_in_threadpool(run_calc)
+
+    if force:
+        return await compute()
 
     return await _PORTFOLIO_HISTORY_CACHE.get_or_compute(
         cache_key, ttl_seconds, compute
@@ -1112,6 +1129,7 @@ async def _calculate_historical_performance_internal(
             interval=calc_interval,
             account_cash_mode_map=account_cash_mode_map,
             db_mtime=data[7],  # db_mtime
+            force=force,
         )
         logging.info(
             f"API History: Calc returned daily_df with {len(daily_df)} rows. Columns: {list(daily_df.columns)}"

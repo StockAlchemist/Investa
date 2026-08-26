@@ -183,7 +183,14 @@ def capture_portfolio(users: list[str], currency: str = "THB", as_of: str | None
                     data=data,
                     return_df=True,
                     interval="1d",
-                    force=True,  # bypass caches: we want a real recompute
+                    # Bypass caches: we want a real recompute. This was a no-op
+                    # until 26 Aug 2026 — `force` was accepted and never used,
+                    # so both snapshots were served the same on-disk
+                    # daily-results feather and the layer reported "unchanged"
+                    # whatever the archive did. Anything that makes `force`
+                    # partial again silently disarms this whole gate; the
+                    # contract is pinned in tests/test_history_force_recompute.py.
+                    force=True,
                 )
             )
             out[username] = _summarize_value_series(df, as_of)
