@@ -37,6 +37,9 @@ def db(tmp_path):
                 symbol TEXT NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL,
                 value REAL NOT NULL, currency TEXT, source TEXT NOT NULL,
                 ingested_at TEXT NOT NULL, PRIMARY KEY (symbol, date, kind));
+            CREATE TABLE IF NOT EXISTS share_count (
+                symbol TEXT NOT NULL, shares REAL NOT NULL, as_of TEXT NOT NULL,
+                source TEXT NOT NULL, PRIMARY KEY (symbol));
             """
         )
         cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_metadata)")}
@@ -198,7 +201,10 @@ def test_a_split_added_later_does_not_rewrite_stored_rows(db):
     # The split happens tomorrow and is recorded as an event.
     db.upsert_actions("TEST", _frame(["2024-01-05"], [100.0], splits=[4.0]))
 
-    assert list(db.get_ohlcv("TEST", *window, adjust=ADJUST_SPLIT)["Close"]) == [100.0, 101.0]
+    assert list(db.get_ohlcv("TEST", *window, adjust=ADJUST_SPLIT)["Close"]) == [
+        100.0,
+        101.0,
+    ]
     # ... while the archive itself is untouched.
     assert list(db.get_ohlcv("TEST", *window, adjust=ADJUST_NONE)["Close"]) == quoted
 
@@ -218,9 +224,7 @@ def test_volume_moves_opposite_to_price(db):
 
 def test_total_return_reinvests_dividends(db):
     """A dividend scales earlier prices by (1 - D/prev_close)."""
-    frame = _frame(
-        ["2024-01-03", "2024-01-04"], [100.0, 99.0], dividends=[0.0, 1.0]
-    )
+    frame = _frame(["2024-01-03", "2024-01-04"], [100.0, 99.0], dividends=[0.0, 1.0])
     db.upsert_ohlcv("TEST", frame)
     db.upsert_actions("TEST", frame)
     db.set_price_basis("TEST", BASIS_RAW)
@@ -288,3 +292,46 @@ def test_integrity_check_ignores_the_still_moving_session(db, monkeypatch):
     consistent, reason = db.check_integrity("TEST", settled)
     assert not consistent
     assert "2024-01-04" in reason
+
+
+# --- share counts and latest closes ----------------------------------------
+
+
+def test_latest_close_is_the_most_recent_bar(db):
+    db.upsert_ohlcv("AAA", _frame(["2024-01-02", "2024-01-05"], [10.0, 12.0]))
+    db.upsert_ohlcv("BBB", _frame(["2024-01-03"], [20.0]))
+
+    closes = db.get_latest_closes(["AAA", "BBB", "MISSING"])
+    assert closes == {"AAA": 12.0, "BBB": 20.0}
+
+
+def test_latest_close_respects_an_as_of_bound(db):
+    db.upsert_ohlcv("AAA", _frame(["2024-01-02", "2024-01-05"], [10.0, 12.0]))
+    assert db.get_latest_closes(["AAA"], as_of=date(2024, 1, 3)) == {"AAA": 10.0}
+
+
+def test_share_counts_round_trip(db):
+    written = db.upsert_share_counts({"AAA": 1_000_000.0}, date(2024, 1, 2))
+    assert written == 1
+    assert db.get_share_counts(["AAA"]) == {"AAA": 1_000_000.0}
+
+
+def test_share_counts_past_the_age_limit_are_not_served(db):
+    """
+    A stale figure must look absent so the caller re-fetches it. Shares
+    outstanding moves quarterly, so the window is generous — but not infinite.
+    """
+    db.upsert_share_counts({"AAA": 1.0}, date(2020, 1, 1))
+    assert db.get_share_counts(["AAA"], max_age_days=30) == {}
+    assert db.get_share_counts(["AAA"]) == {"AAA": 1.0}  # no limit, still there
+
+
+def test_share_counts_update_in_place(db):
+    db.upsert_share_counts({"AAA": 1.0}, date(2024, 1, 2))
+    db.upsert_share_counts({"AAA": 2.0}, date(2024, 6, 2))
+    assert db.get_share_counts(["AAA"]) == {"AAA": 2.0}
+
+
+def test_nonpositive_share_counts_are_ignored(db):
+    assert db.upsert_share_counts({"AAA": 0.0, "BBB": -5.0}, date(2024, 1, 2)) == 0
+    assert db.get_share_counts(["AAA", "BBB"]) == {}

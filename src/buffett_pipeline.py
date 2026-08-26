@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -47,6 +48,11 @@ from buffett_store import get_store
 # Market-data batch size. Large enough to amortise call overhead, small enough
 # that one failure does not lose a long run's worth of work.
 MARKET_BATCH_SIZE = 200
+
+# How stale a cached share count may be before it is re-fetched. Shares
+# outstanding changes on buybacks and issuance, which are quarterly events; the
+# previous behaviour re-downloaded the whole universe daily for it.
+SHARE_COUNT_MAX_AGE_DAYS = 30
 
 
 @dataclass
@@ -153,38 +159,55 @@ def fetch_market_data(symbols: Sequence[str]) -> Dict[str, Dict[str, Any]]:
     than dropping it.
     """
     import market_data
+    from market_db import MarketDatabase
 
-    provider = market_data.get_shared_mdp()
-    result: Dict[str, Dict[str, Any]] = {}
     symbols = list(symbols)
+    result: Dict[str, Dict[str, Any]] = {}
+    db = MarketDatabase()
 
-    for start in range(0, len(symbols), MARKET_BATCH_SIZE):
-        batch = symbols[start : start + MARKET_BATCH_SIZE]
-        try:
-            details = provider.get_ticker_details_batch(set(batch))
-        except Exception as exc:
-            logging.warning(f"Rank: market data batch failed: {exc}")
-            continue
+    # Price comes from the archive. It holds every rankable symbol, and a stored
+    # close is better here than a live quote in two ways: a run takes minutes,
+    # so live quotes price the first symbol and the last at different moments,
+    # and a rank is only reproducible if the prices behind it can be read back.
+    prices = db.get_latest_closes(symbols)
 
-        for symbol in batch:
-            info = details.get(symbol) or {}
-            price = (
-                info.get("currentPrice")
-                or info.get("regularMarketPrice")
-                or info.get("previousClose")
+    # Shares outstanding moves on buybacks and issuance — quarterly at most —
+    # but get_ticker_details_batch caches for a single day, so the ranking was
+    # re-downloading the entire universe every run for one slow-moving number.
+    cached_shares = db.get_share_counts(symbols, max_age_days=SHARE_COUNT_MAX_AGE_DAYS)
+    stale = [s for s in symbols if s not in cached_shares]
+
+    logging.info(
+        f"Rank: {len(prices)}/{len(symbols)} prices from the archive; "
+        f"share counts cached for {len(cached_shares)}, fetching {len(stale)}"
+    )
+
+    if stale:
+        provider = market_data.get_shared_mdp()
+        fetched: Dict[str, float] = {}
+        for start in range(0, len(stale), MARKET_BATCH_SIZE):
+            batch = stale[start : start + MARKET_BATCH_SIZE]
+            try:
+                details = provider.get_ticker_details_batch(set(batch))
+            except Exception as exc:
+                logging.warning(f"Rank: share-count batch failed: {exc}")
+                continue
+            for symbol in batch:
+                shares = (details.get(symbol) or {}).get("sharesOutstanding")
+                if shares:
+                    fetched[symbol] = float(shares)
+            logging.info(
+                f"Rank: share counts {min(start + MARKET_BATCH_SIZE, len(stale))}/{len(stale)}"
             )
-            shares = info.get("sharesOutstanding")
-            if price and shares:
-                result[symbol] = {
-                    "price": price,
-                    "shares": shares,
-                    "info": info,
-                    "sector": info.get("sector"),
-                }
+        if fetched:
+            db.upsert_share_counts(fetched, date.today())
+            cached_shares.update(fetched)
 
-        logging.info(
-            f"Rank: market data {min(start + MARKET_BATCH_SIZE, len(symbols))}/{len(symbols)}"
-        )
+    for symbol in symbols:
+        price = prices.get(symbol)
+        shares = cached_shares.get(symbol)
+        if price and shares:
+            result[symbol] = {"price": price, "shares": shares}
 
     return result
 

@@ -70,6 +70,18 @@ NEW_TABLES: dict[str, str] = {
             PRIMARY KEY (fund_code, date)
         )
     """,
+    # Shares outstanding, kept because the ranking needs it and the only other
+    # source re-downloads the whole universe from Yahoo every day for a number
+    # that moves at most quarterly.
+    "share_count": """
+        CREATE TABLE share_count (
+            symbol   TEXT NOT NULL,
+            shares   REAL NOT NULL,
+            as_of    TEXT NOT NULL,   -- yyyy-MM-dd the figure was observed
+            source   TEXT NOT NULL,
+            PRIMARY KEY (symbol)
+        )
+    """,
     "backfill_progress": """
         CREATE TABLE backfill_progress (
             tier         TEXT NOT NULL,

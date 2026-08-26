@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import logging
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional, Sequence, Tuple
 import threading
 import config
@@ -919,6 +919,101 @@ class MarketDatabase:
                     out[code] = (first, last, count)
         except Exception as exc:
             logging.debug(f"fund_nav unavailable ({exc})")
+        return out
+
+    # --- share counts ------------------------------------------------------
+
+    def upsert_share_counts(
+        self, rows: Dict[str, float], as_of: date, source: str = "yahoo"
+    ) -> int:
+        """Store {symbol: shares outstanding} observed on `as_of`."""
+        params = [
+            (symbol, float(shares), as_of.isoformat(), source)
+            for symbol, shares in rows.items()
+            if shares and float(shares) > 0
+        ]
+        if not params:
+            return 0
+        with self._write_lock, self._get_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO share_count (symbol, shares, as_of, source)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    shares = excluded.shares,
+                    as_of = excluded.as_of,
+                    source = excluded.source
+                """,
+                params,
+            )
+            conn.commit()
+        return len(params)
+
+    def get_share_counts(
+        self, symbols: Sequence[str], max_age_days: Optional[int] = None
+    ) -> Dict[str, float]:
+        """
+        {symbol: shares} for entries no older than `max_age_days`.
+
+        Shares outstanding moves on buybacks and issuance — quarterly events —
+        so a stale-by-a-week figure is fine and re-downloading the universe
+        daily for it is not.
+        """
+        symbols = list(symbols)
+        if not symbols:
+            return {}
+
+        query = f"SELECT symbol, shares, as_of FROM share_count WHERE symbol IN ({', '.join(['?'] * len(symbols))})"
+        cutoff = None
+        if max_age_days is not None:
+            cutoff = (date.today() - timedelta(days=max_age_days)).isoformat()
+
+        out: Dict[str, float] = {}
+        try:
+            with self._get_connection() as conn:
+                for symbol, shares, as_of in conn.execute(query, symbols):
+                    if cutoff and (as_of or "") < cutoff:
+                        continue
+                    if shares:
+                        out[symbol] = float(shares)
+        except Exception as exc:
+            logging.debug(f"share_count unavailable ({exc})")
+        return out
+
+    def get_latest_closes(
+        self, symbols: Sequence[str], as_of: Optional[date] = None
+    ) -> Dict[str, float]:
+        """
+        {symbol: most recent close at or before `as_of`}.
+
+        One grouped query rather than a per-symbol read: the ranking asks for
+        the whole universe at once.
+        """
+        symbols = list(symbols)
+        if not symbols:
+            return {}
+
+        placeholders = ", ".join(["?"] * len(symbols))
+        params: List = list(symbols)
+        bound = ""
+        if as_of:
+            bound = "AND date <= ?"
+            params.append(as_of.isoformat())
+
+        query = f"""
+            SELECT symbol, close FROM daily_ohlcv
+            WHERE (symbol, date) IN (
+                SELECT symbol, MAX(date) FROM daily_ohlcv
+                WHERE symbol IN ({placeholders}) AND interval = '1d'
+                  AND close IS NOT NULL {bound}
+                GROUP BY symbol
+            ) AND interval = '1d'
+        """
+        out: Dict[str, float] = {}
+        with self._get_connection() as conn:
+            for symbol, close in conn.execute(query, params):
+                if close:
+                    out[symbol] = float(close)
         return out
 
     def get_last_date(self, symbol: str, table: str = "daily_ohlcv") -> Optional[date]:
