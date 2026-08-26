@@ -13,14 +13,34 @@ An archive kept "for future use" cannot be demand-driven. This walks a tier and
 brings every member current, recording progress per symbol so a run interrupted
 after ninety minutes resumes rather than restarts.
 
-Tiers:
+Tiers, which are additive to whatever the archive already holds:
 
-  A  everything already in the archive, plus every FX pair. What you actually
-     look at; minutes to run.
-  B  A plus the symbols the ranking scores (~1,200). ~0.4 GB, ~30 min.
-  C  the full US common-stock universe (~5,600). Overnight, and its payoff is
-     preventing *future* survivorship bias — it cannot fix the existing kind,
-     because the names that already delisted are no longer served.
+  A  everything already in the archive, plus every FX pair.
+  B  A plus the symbols the ranking scores.
+  C  A plus the full US common-stock universe.
+
+**After a Tier C fill the three coincide**, because A is defined as "what is
+already here" and C put the whole universe there. That is by design — the tiers
+describe what to *add*, not a permanent partition — but it means `--tier A` is
+no longer the quick portfolio-sized run it was before the first C fill.
+
+Two modes, and the difference matters:
+
+  full     (default) refetches each symbol's whole history. Use it to widen the
+           archive or repair a re-based series. ~90 min for the universe.
+  --days N fetches only the last N days. This is the nightly shape: measured at
+           8 min 9 s for all 5,668 symbols with a 5-day window, against ~90 min
+           to re-learn twenty million rows that have not changed.
+
+Nightly, after the US close (the market clock is US/Eastern, so 02:30 Bangkok
+is comfortably past it):
+
+    30 2 * * *  cd /path/to/Investa && python3 scripts/backfill_market_history.py \
+                  --tier A --days 5 --apply
+
+A 5-day window is deliberately wider than the 1-day gap it closes: the overlap
+is what `check_integrity` compares against, and it is how a provider re-basing a
+series (see WLFC) gets noticed the next night rather than months later.
 
 Two lessons from the D7 repair are baked in, and both were silent failures:
 
@@ -222,6 +242,14 @@ def main() -> int:
         help="restrict to these symbols (repeatable); ignores --resume so a "
         "targeted re-fetch is not skipped as already done",
     )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="nightly delta: fetch only the last N days instead of full history. "
+        "Use a window wider than the gap you are closing — the overlap is what "
+        "check_integrity compares against to catch a re-based series.",
+    )
     parser.add_argument("--skip-fx", action="store_true")
     parser.add_argument(
         "--mark-delisted",
@@ -285,13 +313,18 @@ def main() -> int:
     for start in range(0, len(pending), FETCH_BATCH):
         batch = pending[start : start + FETCH_BATCH]
         # One fetch window per batch: the earliest start any member needs.
-        starts = [
-            (first_dates[s] - timedelta(days=START_MARGIN_DAYS))
-            if s in first_dates
-            else NEW_SYMBOL_FLOOR
-            for s in batch
-        ]
-        window_start = min(starts)
+        if args.days:
+            # Delta mode: one short window for everything. Full history would be
+            # ~20M rows a night to re-learn what has not changed.
+            window_start = today - timedelta(days=args.days)
+        else:
+            starts = [
+                (first_dates[s] - timedelta(days=START_MARGIN_DAYS))
+                if s in first_dates
+                else NEW_SYMBOL_FLOOR
+                for s in batch
+            ]
+            window_start = min(starts)
         print(
             f"  [{start + len(batch)}/{len(pending)}] fetching {len(batch)} "
             f"from {window_start} ...",
@@ -326,11 +359,14 @@ def main() -> int:
         print(f"\nFX ({len(pairs)} pairs):")
         fx_first = db.get_first_dates(pairs, table="daily_fx")
         for pair in pairs:
-            begin = (
-                fx_first[pair] - timedelta(days=START_MARGIN_DAYS)
-                if pair in fx_first
-                else NEW_SYMBOL_FLOOR
-            )
+            if args.days:
+                begin = today - timedelta(days=args.days)
+            else:
+                begin = (
+                    fx_first[pair] - timedelta(days=START_MARGIN_DAYS)
+                    if pair in fx_first
+                    else NEW_SYMBOL_FLOOR
+                )
             print(f"  {pair:12} from {begin} ...", end="", flush=True)
             try:
                 fetched = provider._fetch_yf_historical_data(
