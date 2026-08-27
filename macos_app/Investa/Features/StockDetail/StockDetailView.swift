@@ -89,6 +89,14 @@ struct StockDetailView: View {
                     header
                     tabBar
                     Divider()
+                    // Above the tab content, not inside one tab: a broken price
+                    // history affects the chart, the returns and every figure
+                    // derived from them.
+                    if let flag = viewModel.dataQuality {
+                        DataQualityBanner(flag: flag)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                    }
                     Group {
                         switch tab {
                         case .overview: overviewTab
@@ -124,6 +132,11 @@ struct StockDetailView: View {
             tabBar
             Divider()
             ScrollView {
+                if let flag = viewModel.dataQuality {
+                    DataQualityBanner(flag: flag)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                }
                 Group {
                     switch tab {
                     case .overview: overviewTab

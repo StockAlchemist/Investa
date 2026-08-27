@@ -1154,6 +1154,48 @@ def _fetch_fx_rate_sync(currency_code: str) -> float | None:
     return None
 
 
+@router.get("/data_quality")
+async def get_data_quality(symbols: Optional[str] = None):
+    """
+    Symbols whose stored price history is known to be unreliable.
+
+    Derived from the two checks the archive has always run and only ever printed
+    to a terminal: splits the price series does not reflect (severity `high` —
+    definitely wrong), and price jumps no corporate action explains at 3x or
+    worse (`medium` — unexplained). Mild moves on thin stocks are deliberately
+    not included; a warning on half the market is a warning nobody reads.
+
+    Pass `symbols=A,B,C` to ask about specific tickers, or omit it for the whole
+    flagged set — it is a few hundred entries, so a client can fetch it once and
+    badge any list without a request per row.
+    """
+    wanted = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols else None
+
+    def _load():
+        return get_mdp().db.get_data_quality(wanted)
+
+    flagged = await asyncio.to_thread(_load)
+    return {
+        "symbols": flagged,
+        "count": len(flagged),
+        # An empty set is ambiguous on its own — it means either "nothing is
+        # wrong" or "nobody has run the scan". Say which.
+        "scanned": bool(flagged) or _data_quality_table_exists(),
+    }
+
+
+def _data_quality_table_exists() -> bool:
+    try:
+        with get_mdp().db._get_connection() as conn:
+            return bool(
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='data_quality'"
+                ).fetchone()
+            )
+    except Exception:
+        return False
+
+
 @router.get("/fx_rate/{currency}")
 async def get_fx_rate(currency: str):
     """

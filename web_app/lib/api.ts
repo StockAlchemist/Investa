@@ -1426,6 +1426,11 @@ export type BuffettModel = 'generic' | 'bank' | 'insurer' | 'reit';
 
 export interface BuffettRankRow {
     symbol: string;
+    /** Set when the archive knows this symbol's stored price history is suspect.
+     *  Always `medium` here: `high` means a split on record the prices do not
+     *  reflect, and the pipeline excludes those from ranking rather than scoring
+     *  value off a series known to be wrong. */
+    data_quality?: DataQualityFlag;
     cik: string | null;
     name: string | null;
     model: BuffettModel;
@@ -1986,3 +1991,35 @@ export async function fetchStockPositionHistory(
     return (await response.json()) as StockPositionHistoryPoint[];
 }
 
+
+// --- data quality ----------------------------------------------------------
+
+// A symbol whose stored price history is known to be unreliable. `high` means a
+// split is on record that the prices do not reflect — the series is definitely
+// wrong somewhere. `medium` means a jump no corporate action explains, which is
+// suspicious rather than certain.
+export interface DataQualityFlag {
+    symbol: string;
+    severity: 'high' | 'medium';
+    findings: number;
+    kinds: string[];
+    occurred_on: string | null;
+    detail: string | null;
+}
+
+export interface DataQualityResponse {
+    symbols: Record<string, DataQualityFlag>;
+    count: number;
+    // False when nobody has run the scan yet — distinct from "nothing is wrong",
+    // which is what an empty set would otherwise be mistaken for.
+    scanned: boolean;
+}
+
+export async function fetchDataQuality(symbols?: string[], signal?: AbortSignal): Promise<DataQualityResponse> {
+    const { data, error } = await apiClient.GET("/api/data_quality", {
+        params: { query: { symbols: symbols?.length ? symbols.join(',') : undefined } },
+        signal,
+    });
+    if (error) throw new Error('Failed to fetch data quality flags');
+    return data as unknown as DataQualityResponse;
+}

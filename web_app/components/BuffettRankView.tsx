@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Info, Loader2, ShieldAlert, TrendingUp, TrendingDown } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Info, Loader2, ShieldAlert, TrendingUp, TrendingDown } from 'lucide-react';
 import WatchlistStar from './WatchlistStar';
 import StockIcon from './StockIcon';
 import { Input } from "@/components/ui/input";
@@ -463,6 +463,23 @@ const RankTable: React.FC<{
                                         <Badge variant="outline" className="text-[10px]">
                                             {MODEL_LABELS[row.model]}
                                         </Badge>
+                                    )}
+                                    {/* A ranked row is something a reader may act on, so it
+                                        carries the same warning the stock page shows. The
+                                        title is the explanation; the date is formatted
+                                        rather than the ISO string the API ships. */}
+                                    {row.data_quality && (
+                                        <span
+                                            title={`${row.data_quality.detail ?? 'Price history looks unreliable.'}${
+                                                row.data_quality.occurred_on
+                                                    ? ` Around ${formatCalendarDate(row.data_quality.occurred_on)}.`
+                                                    : ''
+                                            }`}
+                                            className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+                                        >
+                                            <AlertTriangle className="h-3 w-3" aria-hidden />
+                                            Price history
+                                        </span>
                                     )}
                                 </div>
                             </td>

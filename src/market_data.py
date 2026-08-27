@@ -4758,21 +4758,27 @@ class MarketDataProvider:
                 )
                 for s, df in fetched.items():
                     if not df.empty:
-                        # OPTIMIZATION: Only perform expensive integrity check (and potential full re-fetch)
-                        # for high-priority or currently held symbols.
-                        should_check = (integrity_check_symbols is None) or (
-                            s in integrity_check_symbols
-                        )
-
-                        consistent = True
-                        if should_check:
-                            consistent, reason = self.db.check_integrity(s, df)
+                        # Integrity is checked for EVERY symbol, not just held
+                        # ones. The old gate skipped anything absent from
+                        # `integrity_check_symbols` — sold positions, benchmarks,
+                        # every screener symbol — so a split in an unwatched
+                        # symbol spliced two price bases together silently.
+                        # `integrity_check_symbols` now only prioritises the
+                        # expensive repair, it no longer gates detection.
+                        consistent, reason = self.db.check_integrity(s, df)
 
                         if not consistent:
+                            # Repair from the symbol's own earliest stored date,
+                            # not a hardcoded year. A fixed 2000-01-01 floor left
+                            # everything before it (AAPL, SPGI and the indices
+                            # reach back to 1980) stranded on the old basis,
+                            # turning one seam into two.
+                            earliest = self.db.get_first_dates([s]).get(s)
+                            inception = min(earliest, date(2000, 1, 1)) if earliest else date(2000, 1, 1)
                             logging.warning(
-                                f"Market DB Integrity: {reason}. Triggering full re-fetch for {s}."
+                                f"Market DB Integrity: {reason}. "
+                                f"Triggering full re-fetch for {s} from {inception}."
                             )
-                            inception = date(2000, 1, 1)
                             full_df_map = self._fetch_yf_historical_data(
                                 [s], inception, end_date, interval=interval
                             )
@@ -4790,13 +4796,18 @@ class MarketDataProvider:
                     if not df.empty:
                         self.db.upsert_fx(s, df, interval=interval)
 
-        # 3. Update metadata
+        # 3. Update metadata.
+        # INSERT OR REPLACE deletes the existing row and re-inserts it, so every
+        # column not named here reverts to its default — which would silently
+        # reset a converted symbol's price_basis back to the legacy basis on the
+        # next sync. Touch only last_synced.
         with self.db._get_connection() as conn:
             for sym in symbols:
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO sync_metadata (symbol, last_synced)
+                    INSERT INTO sync_metadata (symbol, last_synced)
                     VALUES (?, ?)
+                    ON CONFLICT(symbol) DO UPDATE SET last_synced = excluded.last_synced
                 """,
                     (sym, now.isoformat()),
                 )

@@ -103,6 +103,12 @@ struct BuffettRankRowCard: View {
                     if row.isConfidenceReduced {
                         BuffettTagBadge(text: "THIN DATA", tint: .brandAmber)
                     }
+                    // Same warning the stock page shows. A ranked row is
+                    // something a reader may act on, and the value half of the
+                    // score is computed from exactly this price series.
+                    if row.dataQuality != nil {
+                        BuffettTagBadge(text: "PRICE DATA", tint: .brandAmber)
+                    }
                 }
                 if let name = row.name, !name.isEmpty {
                     // Two lines rather than one: at phone width a single line
@@ -174,6 +180,12 @@ struct BuffettRankRowCard: View {
                     }
                     if row.isConfidenceReduced {
                         BuffettTagBadge(text: "THIN", tint: .brandAmber)
+                    }
+                    // The compact layout keeps the label short for the same
+                    // reason its neighbour is "THIN" and not "THIN DATA":
+                    // at phone width a longer badge pushes the row.
+                    if row.dataQuality != nil {
+                        BuffettTagBadge(text: "PRICE", tint: .brandAmber)
                     }
                 }
                 if let name = row.name, !name.isEmpty {

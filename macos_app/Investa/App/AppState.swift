@@ -118,6 +118,8 @@ final class AppState: ObservableObject {
     /// Background poll that keeps prices fresh while the market is open.
     private var autoRefreshTask: Task<Void, Never>?
     private let autoRefreshInterval: UInt64 = 60_000_000_000  // 60s
+    /// The in-flight `loadSettings` call, so concurrent callers join it.
+    private var settingsTask: Task<Void, Never>?
     private var refreshCancellable: AnyCancellable?
 
     init(api: APIClient = .shared) {
@@ -195,7 +197,29 @@ final class AppState: ObservableObject {
     /// added, renamed, or closed on the backend) without clobbering in-session
     /// UI state: display currency, show-closed, benchmarks, and the current
     /// account selection are only applied on the first load.
+    ///
+    /// Concurrent callers are coalesced: the shell's `.task` and the Dashboard's
+    /// both fire on the first render and both see `didLoadSettings == false`
+    /// (it only flips once the whole sequence has returned), so without this the
+    /// app opens by fetching `/settings`, `/summary/headline`, `/indices` and
+    /// `/market_status` twice over.
     func loadSettings(initial: Bool = true) async {
+        if let running = settingsTask {
+            await running.value
+            return
+        }
+        // Safe on @MainActor: no suspension point between the read above and
+        // the assignment below, so a second caller cannot slip in between.
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performLoadSettings(initial: initial)
+        }
+        settingsTask = task
+        await task.value
+        settingsTask = nil
+    }
+
+    private func performLoadSettings(initial: Bool) async {
         do {
             let settings: AppSettings = try await api.get("/settings")
             availableCurrencies = settings.availableCurrencies?.isEmpty == false
@@ -245,7 +269,7 @@ final class AppState: ObservableObject {
         } catch {
             // Non-fatal: fall back to defaults so the dashboard still loads.
             didLoadSettings = true
-            if initial { await fetchIndices() }
+            await fetchIndices()
         }
     }
 
@@ -301,7 +325,9 @@ final class AppState: ObservableObject {
                 try? await Task.sleep(nanoseconds: self?.autoRefreshInterval ?? 60_000_000_000)
                 guard let self, !Task.isCancelled else { return }
                 if self.marketIsOpen == true {
-                    await self.fetchIndices()
+                    // `loadSettings` (run by this notification's own handler)
+                    // ends in `fetchIndices()`, so fetching here as well would
+                    // hit /indices and /market_status twice per tick.
                     NotificationCenter.default.post(name: .refreshRequested, object: nil)
                 }
             }
