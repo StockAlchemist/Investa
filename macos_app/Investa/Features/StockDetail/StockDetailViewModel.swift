@@ -21,6 +21,10 @@ final class StockDetailViewModel: ObservableObject {
     @Published var positionData: StockPositionResponse?
     @Published var positionHistory: [StockPositionHistoryPoint] = []
     @Published var news: [MarketNewsItem] = []
+    /// Set when the archive knows this symbol's stored history is unreliable.
+    /// Surfaced above every tab, because a broken series affects the chart, the
+    /// returns and anything derived from them — not one tab.
+    @Published var dataQuality: DataQualityFlag?
 
     @Published var isLoading = false
     @Published var isLoadingPosition = false
@@ -60,6 +64,7 @@ final class StockDetailViewModel: ObservableObject {
         async let h: [Holding] = api.get("/holdings", query: [URLQueryItem(name: "currency", value: currency)])
         async let pos: StockPositionResponse = api.get("/stock/\(symbol)/position", query: [URLQueryItem(name: "currency", value: currency)])
         async let r: RatiosResponse = api.get("/ratios/\(symbol)", query: [URLQueryItem(name: "period_type", value: ratiosPeriod.rawValue)])
+        async let dq: DataQualityResponse = api.get("/data_quality", query: [URLQueryItem(name: "symbols", value: symbol)])
         do { fundamentals = try await f } catch { errorMessage = (error as? APIError)?.errorDescription }
         do { intrinsic = try await iv } catch { print("Intrinsic error: \(error)") }
         do { earnings = try await e } catch {}
@@ -71,6 +76,10 @@ final class StockDetailViewModel: ObservableObject {
         } catch {
             print("loadAll ratios error: \(error)")
         }
+        // A missing or failed flag means "nothing known against this symbol",
+        // which is the same as a clean one from the user's point of view: never
+        // block the page on it.
+        dataQuality = (try? await dq)?.symbols[symbol.uppercased()]
         // Aggregate the user's position in this symbol across accounts.
         if let holdings = try? await h {
             userPosition = aggregatePosition(holdings.filter { $0.symbol == symbol })

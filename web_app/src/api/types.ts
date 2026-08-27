@@ -348,6 +348,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/data_quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Quality
+         * @description Symbols whose stored price history is known to be unreliable.
+         *
+         *     Derived from the two checks the archive has always run and only ever printed
+         *     to a terminal: splits the price series does not reflect (severity `high` —
+         *     definitely wrong), and price jumps no corporate action explains at 3x or
+         *     worse (`medium` — unexplained). Mild moves on thin stocks are deliberately
+         *     not included; a warning on half the market is a warning nobody reads.
+         *
+         *     Pass `symbols=A,B,C` to ask about specific tickers, or omit it for the whole
+         *     flagged set — it is a few hundred entries, so a client can fetch it once and
+         *     badge any list without a request per row.
+         */
+        get: operations["get_data_quality_api_data_quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fx_rate/{currency}": {
         parameters: {
             query?: never;
@@ -1869,6 +1899,36 @@ export interface paths {
          * @description Returns calculated intrinsic value results for a symbol.
          */
         get: operations["get_intrinsic_value_endpoint_intrinsic_value__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/data_quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Quality
+         * @description Symbols whose stored price history is known to be unreliable.
+         *
+         *     Derived from the two checks the archive has always run and only ever printed
+         *     to a terminal: splits the price series does not reflect (severity `high` —
+         *     definitely wrong), and price jumps no corporate action explains at 3x or
+         *     worse (`medium` — unexplained). Mild moves on thin stocks are deliberately
+         *     not included; a warning on half the market is a warning nobody reads.
+         *
+         *     Pass `symbols=A,B,C` to ask about specific tickers, or omit it for the whole
+         *     flagged set — it is a few hundred entries, so a client can fetch it once and
+         *     badge any list without a request per row.
+         */
+        get: operations["get_data_quality_data_quality_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3953,6 +4013,37 @@ export interface operations {
             path: {
                 symbol: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_quality_api_data_quality_get: {
+        parameters: {
+            query?: {
+                symbols?: string | null;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -6271,6 +6362,37 @@ export interface operations {
             path: {
                 symbol: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_quality_data_quality_get: {
+        parameters: {
+            query?: {
+                symbols?: string | null;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

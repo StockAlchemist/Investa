@@ -918,6 +918,73 @@ class MarketDatabase:
 
         return df
 
+    # --- data quality ------------------------------------------------------
+
+    def get_data_quality(
+        self, symbols: Optional[Sequence[str]] = None
+    ) -> Dict[str, Dict]:
+        """Per-symbol summary of known defects in the stored price history.
+
+        Populated by `scripts/flag_data_quality.py` from the same two checks
+        that have always existed and only ever printed to a terminal — the
+        split-consistency check and the archive verifier. The point of surfacing
+        it is that a user looking at a chart cannot otherwise tell that the line
+        steps 30x in the middle for no reason.
+
+        Returns {} when the table has never been built. That is a normal state
+        for a fresh clone, not an error: the table is derived and rebuildable,
+        so nothing downstream should require it to exist.
+        """
+        query = (
+            "SELECT symbol, kind, severity, occurred_on, detail "
+            "FROM data_quality"
+        )
+        params: List = []
+        # `None` means "everything flagged"; an empty sequence means "these zero
+        # symbols", and the two must not collapse into each other — a client
+        # asking about an empty holdings list would otherwise light up every row.
+        if symbols is not None:
+            wanted = [s for s in symbols if s]
+            if not wanted:
+                return {}
+            query += f" WHERE symbol IN ({','.join('?' * len(wanted))})"
+            params = list(wanted)
+
+        try:
+            with self._get_connection() as conn:
+                rows = conn.execute(query, params).fetchall()
+        except Exception as exc:  # table absent on an archive never scanned
+            logging.debug(f"data_quality unavailable ({exc})")
+            return {}
+
+        out: Dict[str, Dict] = {}
+        for symbol, kind, severity, occurred_on, detail in rows:
+            entry = out.setdefault(
+                symbol,
+                {
+                    "symbol": symbol,
+                    "severity": "medium",
+                    "findings": 0,
+                    "kinds": [],
+                    "occurred_on": None,
+                    "detail": None,
+                },
+            )
+            entry["findings"] += 1
+            if kind not in entry["kinds"]:
+                entry["kinds"].append(kind)
+            # 'high' means a split is on record that the prices do not reflect:
+            # definitely wrong, as opposed to unexplained. It wins, and it is
+            # the finding whose detail is worth showing.
+            if severity == "high" and entry["severity"] != "high":
+                entry["severity"] = "high"
+                entry["detail"] = detail
+                entry["occurred_on"] = occurred_on
+            elif entry["detail"] is None:
+                entry["detail"] = detail
+                entry["occurred_on"] = occurred_on
+        return out
+
     def get_fx(
         self, pair: str, start_date: date, end_date: date, interval: str = "1d"
     ) -> pd.DataFrame:

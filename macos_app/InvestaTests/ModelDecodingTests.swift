@@ -3,6 +3,52 @@ import XCTest
 
 final class ModelDecodingTests: XCTestCase {
 
+    /// The data-quality flag mirrors `web_app/lib/api.ts` and the
+    /// `/api/data_quality` response. The snake_case key and the severity
+    /// fallback are the two things that would fail silently.
+    func testDataQualityFlagDecoding() throws {
+        let json = """
+        {
+            "symbols": {
+                "BYND": {
+                    "symbol": "BYND",
+                    "severity": "high",
+                    "findings": 3,
+                    "kinds": ["unapplied", "mixed"],
+                    "occurred_on": "2026-08-14",
+                    "detail": "A 0.0333 split is on record, but the stored prices do not reflect it."
+                }
+            },
+            "count": 1,
+            "scanned": true
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(DataQualityResponse.self, from: json)
+        let flag = try XCTUnwrap(decoded.symbols["BYND"])
+
+        XCTAssertEqual(flag.severity, .high)
+        XCTAssertEqual(flag.findings, 3)
+        XCTAssertEqual(flag.kinds, ["unapplied", "mixed"])
+        XCTAssertEqual(flag.occurredOn, "2026-08-14", "occurred_on must map to occurredOn")
+        XCTAssertTrue(decoded.scanned)
+    }
+
+    /// A severity this build does not know about must read as the milder one,
+    /// so an older client understates rather than alarms.
+    func testUnknownSeverityDegradesToMedium() throws {
+        let json = """
+        {"symbols": {"X": {"symbol": "X", "severity": "catastrophic",
+         "findings": 1, "kinds": [], "occurred_on": null, "detail": null}},
+         "count": 1, "scanned": true}
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(DataQualityResponse.self, from: json)
+
+        XCTAssertEqual(decoded.symbols["X"]?.severity, .medium)
+        XCTAssertNil(decoded.symbols["X"]?.occurredOn)
+    }
+
     func testAppSettingsDecodingAndComputedProperties() throws {
         let json = """
         {

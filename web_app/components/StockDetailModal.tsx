@@ -24,6 +24,8 @@ const PositionTab = dynamic(
     () => import('./stock-detail/tabs/PositionTab').then(mod => mod.PositionTab),
     { loading: () => <Skeleton className="h-96 w-full rounded-2xl" /> }
 );
+import { DataQualityBanner } from './DataQualityBanner';
+
 const ChartTab = dynamic(
     () => import('./stock-detail/tabs/ChartTab').then(mod => mod.ChartTab),
     { loading: () => <Skeleton className="h-96 w-full rounded-2xl" /> }
@@ -309,6 +311,10 @@ export default function StockDetailModal({
 
                 {/* Content Area */}
                 <div className="flex-1 p-4 sm:p-6 pt-4 custom-scrollbar">
+                    {/* Above the tabs' content rather than inside one of them:
+                        a broken price history affects the chart, the returns and
+                        every figure derived from them, not just one tab. */}
+                    <DataQualityBanner symbol={symbol} />
                     {loading ? (
                         <div className="space-y-4">
                             <Skeleton className="h-40 w-full rounded-2xl" />
