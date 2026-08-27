@@ -671,6 +671,47 @@ def _prepare_historical_fx_rates(
     return historical_fx_for_processing, historical_fx_data_usd_based, fx_warning
 
 
+def published_nav_prices(symbols: Set[str]) -> Dict[str, Tuple[str, float]]:
+    """Newest published NAV per symbol, as {SYMBOL: (nav_date, nav)}.
+
+    Thai SSF/RMF funds have no ticker and no quote, so they sit on the user's
+    exclusion list and never reach a price feed. The graph has valued them from
+    the SEC's published series since the fund store landed
+    (``portfolio_history._fund_nav_series``); the holdings table did not, and
+    fell through to the hand-entered override — a scalar typed once and then
+    left, which had SCBRCTECH 15% above its real NAV while the chart beside it
+    drew the published number.
+
+    A miss is the ordinary case (every US holding lands here), so this must stay
+    cheap: one batched read of the newest row per fund, filtered to the symbols
+    actually held. A store that isn't there yet returns nothing rather than
+    raising, and valuation falls back to the override exactly as before.
+    """
+    if not symbols:
+        return {}
+
+    try:
+        from market_db import MarketDatabase
+
+        latest = MarketDatabase().get_latest_fund_navs()
+    except Exception as exc:
+        logging.debug(f"Fund NAV store unavailable: {exc}")
+        return {}
+
+    if not latest:
+        return {}
+
+    out: Dict[str, Tuple[str, float]] = {}
+    for symbol in symbols:
+        row = latest.get(str(symbol).upper().strip())
+        if not row:
+            continue
+        nav_date, nav = row
+        if nav is not None and np.isfinite(nav) and nav > 1e-9:
+            out[symbol] = (nav_date, float(nav))
+    return out
+
+
 # --- Main Calculation Function (Current Portfolio Summary) ---
 # @profile
 def calculate_portfolio_summary(
@@ -1106,6 +1147,10 @@ def calculate_portfolio_summary(
         user_symbol_map=effective_user_symbol_map,
         user_excluded_symbols=effective_user_excluded_symbols,
     )
+    # Published NAVs for holdings the market has no quote for. Looked up by the
+    # symbols actually held, so this is one indexed read and nothing more.
+    published_navs = published_nav_prices(set(all_stock_symbols_internal))
+
     if err_fetch:  # If get_current_quotes signals a critical error
         has_errors = True  # Treat critical fetch error as overall error
         status_parts.append("Fetch Failed Critically")
@@ -1242,12 +1287,21 @@ def calculate_portfolio_summary(
                 # can't quote (e.g. SET tickers) get Market Value = 0 even though the
                 # rest of the engine uses the override correctly.
                 current_price = 0.0
+                # A published NAV outranks the override for the same reason it
+                # does in the summary: it is the same kind of number, kept
+                # current. Without this the lot rows price from the stale
+                # scalar while the holding row above them uses the NAV, and the
+                # lot market values no longer sum to the position.
+                published_nav_for_sym = published_navs.get(sym)
+                if published_nav_for_sym is not None:
+                    current_price = published_nav_for_sym[1]
+
                 manual_override_for_sym = (
                     manual_overrides_effective.get(sym)
                     if manual_overrides_effective
                     else None
                 )
-                if isinstance(manual_override_for_sym, dict):
+                if current_price <= 1e-9 and isinstance(manual_override_for_sym, dict):
                     manual_price_val = manual_override_for_sym.get("price")
                     if manual_price_val is not None and pd.notna(manual_price_val):
                         try:
@@ -1364,6 +1418,7 @@ def calculate_portfolio_summary(
         user_excluded_symbols=effective_user_excluded_symbols,
         user_symbol_map=effective_user_symbol_map,
         manual_prices_dict=manual_prices_for_build_rows,
+        published_navs=published_navs,
         account_interest_rates=account_interest_rates,  # NEW
         interest_free_thresholds=interest_free_thresholds,  # NEW
         include_accounts=include_accounts,

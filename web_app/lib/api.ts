@@ -509,7 +509,10 @@ export async function fetchEarningsDates(
     return data as unknown as EarningsDate[];
 }
 export interface ManualOverrideData {
-    price: number;
+    // Optional: an override may carry metadata only (asset type, sector,
+    // geography) for a holding whose price comes from somewhere else — a
+    // published NAV, or its own transaction history.
+    price?: number;
     currency?: string;
     asset_type?: string;
     sector?: string;

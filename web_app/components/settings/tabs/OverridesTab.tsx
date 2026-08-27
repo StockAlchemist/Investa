@@ -70,7 +70,13 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
         try {
             const currentOverrides = settings?.manual_overrides || {};
             const newOverrides: Record<string, ManualOverride> = { ...currentOverrides };
-            const priceNum = overridePrice !== '' ? parseFloat(overridePrice) : 0;
+            // A blank price omits the key rather than writing 0: an override may
+            // carry metadata only, for a holding that is priced from its own
+            // transactions or a published NAV. Writing 0 works too — every
+            // backend fallback treats it as absent — but it renders as a real
+            // field the next reader has to interpret. The macOS client already
+            // omits it, so the two round-trip to the same file.
+            const priceNum = overridePrice !== '' ? parseFloat(overridePrice) : undefined;
             const newData: ManualOverrideData = {
                 price: priceNum,
                 asset_type: overrideAssetType || undefined,
@@ -89,6 +95,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                 } else {
                     const rest = { ...v };
                     if ('currency' in rest) delete (rest as Record<string, unknown>).currency;
+                    if (rest.price === undefined) delete rest.price;
                     if (rest.asset_type === undefined) delete rest.asset_type;
                     if (rest.sector === undefined) delete rest.sector;
                     if (rest.geography === undefined) delete rest.geography;
@@ -148,7 +155,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                 <div className={cardClassName}>
                     <div className="mb-2">
                         <h3 className={sectionTitleClassName}>
-                            <Sliders className="w-5 h-5 text-emerald-500" />
+                            <Sliders className="w-5 h-5 text-up" />
                             {overrideSymbol ? 'Edit Override' : 'Add Override'}
                         </h3>
                     </div>
@@ -281,7 +288,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
             <div className={`${cardClassName} !p-0`}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
                     <h3 className={sectionTitleClassName}>
-                        <Sliders className="w-5 h-5 text-emerald-500" />
+                        <Sliders className="w-5 h-5 text-up" />
                         Active Overrides
                         <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">
                             {Object.entries(overrides).length}
@@ -326,9 +333,9 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                                             <tr key={symbol} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                                 <td className="sticky left-0 z-10 px-6 py-4 whitespace-nowrap font-bold text-foreground bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800 transition-colors shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">{symbol}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-muted-foreground font-mono">
-                                                    {price === 0
+                                                    {!price
                                                         ? <span className="opacity-50">-</span>
-                                                        : <span className="text-emerald-600 dark:text-emerald-400 font-medium">{currency === 'THB' ? '฿' : '$'}{price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
+                                                        : <span className="text-up font-medium">{currency === 'THB' ? '฿' : '$'}{price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
                                                     }
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -359,7 +366,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                                                         <button
                                                             type="button"
                                                             onClick={() => removeOverride(symbol)}
-                                                            className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                                                            className="p-2 text-down hover:bg-down/12 rounded-lg transition-colors cursor-pointer"
                                                             title="Delete override"
                                                         >
                                                             <Trash2 className="w-4 h-4" />

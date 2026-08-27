@@ -1086,6 +1086,7 @@ def _build_summary_rows(
     user_excluded_symbols: Set[str],
     user_symbol_map: Dict[str, str],  # New: Accept user symbol map
     manual_prices_dict: Dict[str, float],
+    published_navs: Optional[Dict[str, Tuple[str, float]]] = None,
     account_interest_rates: Optional[Dict[str, float]] = None,  # NEW
     interest_free_thresholds: Optional[Dict[str, float]] = None,  # NEW
     include_accounts: Optional[List[str]] = None,
@@ -1217,6 +1218,24 @@ def _build_summary_rows(
                 price_source = "Excluded"
                 has_warnings = True
         # --- END MODIFIED Price Determination ---
+
+        # A published NAV sits between the market feed and the hand-entered
+        # override. These holdings are on the exclusion list — they have no
+        # ticker, so the block above never prices them — and the override below
+        # is a number somebody typed once. The SEC's daily series is the same
+        # kind of number kept current, and it is already what the graph uses,
+        # so taking it here is what makes the two agree.
+        if pd.isna(current_price_local) and published_navs:
+            nav_row = published_navs.get(symbol)
+            if nav_row is not None:
+                nav_date, nav_value = nav_row
+                current_price_local = float(nav_value)
+                price_source = f"Published NAV ({nav_date})"
+                # A fund publishes one NAV a day and no intraday change; leaving
+                # these NaN keeps the day-change column empty rather than
+                # inventing a zero move.
+                day_change_local = np.nan
+                day_change_pct = np.nan
 
         if pd.isna(current_price_local):
             manual_price = manual_prices_dict.get(symbol)

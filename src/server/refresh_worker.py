@@ -16,6 +16,8 @@ Tuning knobs (env):
     INVESTA_METADATA_REFRESH_INTERVAL — seconds between cycles (default 6h)
     INVESTA_METADATA_REFRESH_BATCH    — max symbols per cycle (default 50)
     INVESTA_METADATA_REFRESH_ENABLED  — "0" to disable entirely
+    INVESTA_FUND_NAV_REFRESH_INTERVAL — seconds between Thai fund NAV top-ups (default 12h)
+    INVESTA_FUND_NAV_REFRESH_ENABLED  — "0" to disable the NAV top-up
 """
 
 import asyncio
@@ -40,6 +42,14 @@ ENABLED = os.getenv("INVESTA_METADATA_REFRESH_ENABLED", "1") != "0"
 # cache TTL (2 min) so the cache effectively never expires under load.
 INDEX_REFRESH_INTERVAL_SECONDS = int(os.getenv("INVESTA_INDEX_REFRESH_INTERVAL", "90"))
 INDEX_REFRESH_ENABLED = os.getenv("INVESTA_INDEX_REFRESH_ENABLED", "1") != "0"
+
+# Thai fund NAVs: the only holdings with no market feed, so nothing else brings
+# them forward. The SEC publishes once a day, hence a slow interval — the point
+# is that the series never stalls, not that it is minutes fresh.
+FUND_NAV_REFRESH_INTERVAL_SECONDS = int(
+    os.getenv("INVESTA_FUND_NAV_REFRESH_INTERVAL", str(12 * 3600))
+)
+FUND_NAV_REFRESH_ENABLED = os.getenv("INVESTA_FUND_NAV_REFRESH_ENABLED", "1") != "0"
 
 _V3_REQUIRED_KEYS = ("exchange", "country", "sector", "industry", "quoteType")
 
@@ -204,6 +214,59 @@ async def index_refresh_loop() -> None:
             await asyncio.sleep(INDEX_REFRESH_INTERVAL_SECONDS)
         except asyncio.CancelledError:
             logger.info("Index refresh worker cancelled during sleep")
+            raise
+
+
+def _refresh_fund_navs_sync() -> int:
+    """Top up the Thai fund NAV store. Returns rows written. Run via to_thread."""
+    from fund_nav_sync import top_up  # local import — keeps cold-start fast
+
+    try:
+        return sum(top_up().values())
+    except Exception as e:
+        logger.warning(f"Fund NAV top-up failed: {e}")
+        return 0
+
+
+async def fund_nav_refresh_loop() -> None:
+    """Keep the published Thai fund NAV series current. Cancellable.
+
+    Without this the store is only as fresh as the last manual backfill. It had
+    already fallen 3-6 days behind, which is invisible: valuation carries the
+    last NAV forward, so a stalled series looks exactly like a quiet market.
+    """
+    if not FUND_NAV_REFRESH_ENABLED:
+        logger.info(
+            "Fund NAV refresh worker disabled by INVESTA_FUND_NAV_REFRESH_ENABLED=0"
+        )
+        return
+
+    logger.info(
+        f"Fund NAV refresh worker started — interval={FUND_NAV_REFRESH_INTERVAL_SECONDS}s"
+    )
+
+    # Delay first run so we don't compete with cold-start work.
+    await asyncio.sleep(180)
+
+    while True:
+        try:
+            written = await asyncio.to_thread(_refresh_fund_navs_sync)
+            if written:
+                logger.info(f"Fund NAV refresh: {written} NAV rows written")
+            else:
+                logger.debug("Fund NAV refresh: nothing new this cycle")
+        except asyncio.CancelledError:
+            logger.info("Fund NAV refresh worker cancelled")
+            raise
+        except Exception as e:
+            logger.exception(
+                f"Fund NAV refresh cycle errored (will retry next interval): {e}"
+            )
+
+        try:
+            await asyncio.sleep(FUND_NAV_REFRESH_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("Fund NAV refresh worker cancelled during sleep")
             raise
 
 
