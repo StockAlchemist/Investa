@@ -445,3 +445,47 @@ def test_an_ordinary_fetch_still_updates_an_ordinary_bar(db):
 
     with db._get_connection() as conn:
         assert conn.execute("SELECT close FROM daily_ohlcv WHERE symbol='Y'").fetchone()[0] == 11.0
+
+
+def test_the_integrity_check_ignores_adjudicated_bars(db):
+    """Opening BYND's one-year chart wiped 1,836 repaired bars.
+
+    A repaired bar disagrees with what the provider serves *by design* — that is
+    what "repaired" means. Comparing it against that provider reads the
+    correction as corruption, and the response is a full multi-decade re-fetch.
+    So adjudicated bars are excluded from the comparison; only bars of the
+    provider's own making can testify about the provider's consistency.
+    """
+    day = pd.to_datetime(["2026-07-23"])
+    repaired = pd.DataFrame(
+        {"Open": [16.8], "High": [16.8], "Low": [16.8], "Close": [16.8], "Volume": [1]},
+        index=day,
+    )
+    db.upsert_ohlcv("BYND", repaired, source="tiingo")
+
+    # What Yahoo now serves for that day: the un-adjusted basis, 30x away.
+    incoming = pd.DataFrame(
+        {"Open": [0.56], "High": [0.56], "Low": [0.56], "Close": [0.56], "Volume": [1]},
+        index=pd.to_datetime(["2026-07-23"]),
+    )
+    consistent, reason = db.check_integrity("BYND", incoming)
+
+    assert consistent, f"a repaired bar must not read as corruption: {reason}"
+
+
+def test_the_integrity_check_still_catches_a_real_disagreement(db):
+    """The guard must not blind the check on ordinary, provider-written bars."""
+    day = pd.to_datetime(["2026-07-23"])
+    stored = pd.DataFrame(
+        {"Open": [10.0], "High": [10.0], "Low": [10.0], "Close": [10.0], "Volume": [1]},
+        index=day,
+    )
+    db.upsert_ohlcv("ZZZ", stored)
+
+    incoming = pd.DataFrame(
+        {"Open": [2.5], "High": [2.5], "Low": [2.5], "Close": [2.5], "Volume": [1]},
+        index=day,
+    )
+    consistent, _ = db.check_integrity("ZZZ", incoming)
+
+    assert not consistent, "a 4x disagreement on a yahoo bar is still a finding"

@@ -307,10 +307,18 @@ def main() -> int:
         print(f"No market database at {path}.")
         return 1
 
-    queue = findings_by_symbol(path)
+    # An explicit --symbol list is an instruction, not a filter over what the
+    # checker happens to flag today. A symbol can need adjudicating without a
+    # current split finding — a repair eroded by a later provider fetch is the
+    # obvious case, and intersecting the two silently did nothing for it.
+    flagged = findings_by_symbol(path)
     if args.symbol:
-        wanted = {s.upper() for s in args.symbol}
-        queue = {s: d for s, d in queue.items() if s.upper() in wanted}
+        queue = {}
+        for name in args.symbol:
+            symbol = name.upper()
+            queue[symbol] = flagged.get(symbol, [])
+    else:
+        queue = flagged
     if not queue:
         print("Nothing flagged — no reference needed.")
         return 0
@@ -357,10 +365,13 @@ def main() -> int:
             # Two guards, both learned by measuring: Tiingo's history may not
             # reach the finding, and the ticker may not be the same company.
             earliest = min(closes) if closes else None
-            if not earliest or earliest > min(ex_dates):
+            # With no flagged date, there is nothing for the history to fall
+            # short of — the whole overlap is the evidence.
+            need_from = min(ex_dates) if ex_dates else None
+            if not earliest or (need_from and earliest > need_from):
                 print(
                     f"  {symbol:8} history starts {earliest} — after the finding "
-                    f"({min(ex_dates)}); cannot testify"
+                    f"({need_from}); cannot testify"
                 )
                 out_of_range += 1
                 continue

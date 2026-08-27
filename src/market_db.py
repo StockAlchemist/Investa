@@ -1300,13 +1300,24 @@ class MarketDatabase:
             return True, None
 
         placeholders = ", ".join(["?"] * len(overlap_dates))
-        query = f"""
-            SELECT date, adj_close, close
-            FROM daily_ohlcv
-            WHERE symbol = ? AND date IN ({placeholders})
-        """
-
+        # Adjudicated bars are excluded from the comparison, and must be. They
+        # were corrected *because* they disagree with what this provider serves,
+        # so comparing them against it reports the correction as corruption —
+        # and the response is a full multi-decade re-download that used to
+        # overwrite the repair. Opening BYND's one-year chart did exactly that:
+        # a year of Yahoo bars 30x away from the repaired ones, read as a
+        # broken archive, and 1,836 corrected bars refetched away.
         with self._get_connection() as conn:
+            source_guard = (
+                " AND (source IS NULL OR source = 'yahoo')"
+                if self._has_column(conn, "daily_ohlcv", "source")
+                else ""
+            )
+            query = f"""
+                SELECT date, adj_close, close
+                FROM daily_ohlcv
+                WHERE symbol = ? AND date IN ({placeholders}){source_guard}
+            """
             db_data = pd.read_sql_query(query, conn, params=[symbol] + overlap_dates)
 
         if db_data.empty:
