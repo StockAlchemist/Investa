@@ -79,6 +79,12 @@ def parse(payload: Dict[str, Any]) -> Tuple[List[tuple], List[tuple], List[str]]
     notes: List[str] = []
 
     for symbol, block in payload.items():
+        # A payload is a record of an adjudication someone has to be able to
+        # reproduce later, so it is worth letting it carry a note about where it
+        # came from. Keys starting with an underscore are documentation, not
+        # instruments.
+        if symbol.startswith("_") or not isinstance(block, dict):
+            continue
         for raw in block.get("actions") or []:
             kind = KIND_BY_TYPE.get(raw.get("type"))
             if not kind:
@@ -152,7 +158,8 @@ def main() -> int:
         payload = json.load(fh)
 
     actions, prices, notes = parse(payload)
-    print(f"{len(payload)} symbol(s): {len(actions)} action(s), {len(prices)} reference close(s)")
+    instruments = [k for k in payload if not k.startswith("_")]
+    print(f"{len(instruments)} symbol(s): {len(actions)} action(s), {len(prices)} reference close(s)")
     for symbol in sorted(payload):
         mine = [a for a in actions if a[0] == symbol and a[2] == "split"]
         for a in mine:
