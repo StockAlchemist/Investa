@@ -73,14 +73,42 @@ def _display_name(name: Optional[str]) -> Optional[str]:
     return cleaned or name.strip()
 
 
-def _with_display_names(rows: list) -> list:
-    """Rewrite each row's `name` in place-safe fashion for the response."""
-    return [
-        {**row, "name": _display_name(row.get("name"))}
-        if isinstance(row, dict)
-        else row
-        for row in rows
-    ]
+def _decorate_rows(rows: list) -> list:
+    """Prepare rows for the response: display name, plus any price-quality flag.
+
+    A ranked row is something a reader may act on, so it carries the same
+    warning the stock detail page shows. In practice these are all `medium` —
+    a jump nothing explains — because `high` severity means a split on record
+    that the prices do not reflect, and the pipeline excludes those from
+    ranking outright rather than scoring value off a series known to be wrong.
+
+    One batch lookup for the page, not one per row.
+    """
+    symbols = [r.get("symbol") for r in rows if isinstance(r, dict) and r.get("symbol")]
+    flags: dict = {}
+    if symbols:
+        try:
+            from market_db import MarketDatabase
+
+            flags = MarketDatabase().get_data_quality(symbols)
+        except Exception as exc:  # an unscanned archive simply has no flags
+            logging.debug(f"Buffett rank: price-quality flags unavailable ({exc})")
+
+    decorated = []
+    for row in rows:
+        if not isinstance(row, dict):
+            decorated.append(row)
+            continue
+        out = {**row, "name": _display_name(row.get("name"))}
+        flag = flags.get(row.get("symbol"))
+        if flag:
+            # The whole flag, the same shape /api/data_quality serves and the
+            # same one every client already decodes. Trimming it here would mean
+            # two payloads for one concept and a decoder that silently yields
+            # nothing when it meets the short one.
+            out["data_quality"] = flag
+        decorated.append(out)
+    return decorated
 
 
 class RankRunSummary(BaseModel):
@@ -137,7 +165,7 @@ async def get_rankings(
         total = await run_in_threadpool(store.count_ranked, run_id, model, search)
         # Wrapped rather than a bare array: the client needs the match count to
         # distinguish "last page" from "no results", and to size the pager.
-        return clean_nans({"total": total, "rows": _with_display_names(rows)})
+        return clean_nans({"total": total, "rows": _decorate_rows(rows)})
     except Exception as exc:
         logging.error(f"Buffett rank: failed to load rankings: {exc}")
         raise HTTPException(status_code=500, detail="Could not load rankings")
@@ -158,7 +186,7 @@ async def get_exclusions(
             store.get_exclusions, run_id, limit, offset, search
         )
         total = await run_in_threadpool(store.count_exclusions, run_id, search)
-        return clean_nans({"total": total, "rows": _with_display_names(rows)})
+        return clean_nans({"total": total, "rows": _decorate_rows(rows)})
     except Exception as exc:
         logging.error(f"Buffett rank: failed to load exclusions: {exc}")
         raise HTTPException(status_code=500, detail="Could not load exclusions")

@@ -61,6 +61,11 @@ struct BuffettRankRow: Decodable, Sendable, Identifiable {
     let fcfYield: Double?
     let periodCount: Int?
     let latestPeriod: String?
+    /// Set when the archive knows this symbol's stored price history is
+    /// suspect. Always `medium` in a ranked row — `high` means a split on
+    /// record the prices do not reflect, and the pipeline excludes those from
+    /// ranking rather than scoring value off a series known to be wrong.
+    let dataQuality: DataQualityFlag?
 
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
@@ -84,6 +89,12 @@ struct BuffettRankRow: Decodable, Sendable, Identifiable {
         fcfYield = raw["fcf_yield"]?.doubleValue
         periodCount = raw["period_count"]?.doubleValue.map { Int($0) }
         latestPeriod = raw["latest_period"]?.stringValue
+        if let dq = raw["data_quality"], case .object = dq,
+           let data = try? JSONEncoder().encode(dq) {
+            dataQuality = try? JSONDecoder().decode(DataQualityFlag.self, from: data)
+        } else {
+            dataQuality = nil
+        }
     }
 
     var id: String { symbol }

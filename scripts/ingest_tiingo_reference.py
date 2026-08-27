@@ -103,6 +103,55 @@ def findings_by_symbol(path: str) -> Dict[str, List[str]]:
     return out
 
 
+def symbols_that_matter(path: str) -> set:
+    """Symbols where a wrong price could actually reach a decision.
+
+    Held positions, and whatever the newest finished ranking run scored. A
+    defect in anything else is worth *showing* — the data-quality flags do that
+    for every symbol — but not worth spending a metered request and a rewrite of
+    price history on.
+    """
+    matters: set = set()
+
+    users_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR)
+    if os.path.isdir(users_dir):
+        for user in os.listdir(users_dir):
+            book = os.path.join(users_dir, user, "portfolio.db")
+            if not os.path.exists(book):
+                continue
+            try:
+                conn = connect_readonly(book)
+                matters |= {
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT DISTINCT Symbol FROM transactions WHERE Symbol IS NOT NULL"
+                    )
+                }
+                conn.close()
+            except Exception:
+                continue
+
+    ranks = os.path.join(config.get_app_data_dir(), config.DB_DIR, "buffett_ranks.db")
+    if os.path.exists(ranks):
+        try:
+            conn = connect_readonly(ranks)
+            run = conn.execute(
+                "SELECT MAX(run_id) FROM rank_runs WHERE finished_at IS NOT NULL"
+            ).fetchone()[0]
+            if run:
+                matters |= {
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT symbol FROM rank_scores WHERE run_id = ?", (run,)
+                    )
+                }
+            conn.close()
+        except Exception:
+            pass
+
+    return {s.upper() for s in matters if s}
+
+
 def disputed_days(
     conn: sqlite3.Connection, symbol: str, closes: Dict[str, float]
 ) -> List[str]:
@@ -319,6 +368,11 @@ def main() -> int:
         help="adjudicate only these symbols (default: everything the checker flags)",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help="adjudicate every flagged symbol, not just the ones that matter",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -342,8 +396,22 @@ def main() -> int:
         for name in args.symbol:
             symbol = name.upper()
             queue[symbol] = flagged.get(symbol, [])
-    else:
+    elif args.all:
         queue = flagged
+    else:
+        # Repair costs a metered request, needs an admissible reference, and
+        # rewrites price history — so by default it is spent only where a wrong
+        # number could reach a decision: a symbol the user holds, or one the
+        # ranking is scoring. Everything else is flagged for the reader instead,
+        # which carries the same warning at none of the risk.
+        matters = symbols_that_matter(path)
+        queue = {s: d for s, d in flagged.items() if s in matters}
+        skipped = len(flagged) - len(queue)
+        if skipped:
+            print(
+                f"{skipped} flagged symbol(s) skipped: not held and not ranked. "
+                f"Use --all to include them.\n"
+            )
     if not queue:
         print("Nothing flagged — no reference needed.")
         return 0

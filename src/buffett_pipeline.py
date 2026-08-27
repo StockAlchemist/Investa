@@ -212,6 +212,44 @@ def fetch_market_data(symbols: Sequence[str]) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def _apply_price_quality_gate(companies: Sequence[CompanyMetrics]) -> int:
+    """Exclude companies whose stored price history is known to be wrong.
+
+    Deliberately *not* part of `evaluate_gates`. Those gates hold to one rule —
+    a company is excluded for something its filings show — and this is not a
+    fact about the company at all. It is a fact about our data, and conflating
+    the two would make the exclusion list lie about why a name is missing.
+
+    It matters because the value half of the score is built from price: E/P and
+    FCF/P divide by it. A series carrying an unapplied reverse split is wrong by
+    the ratio, which is the difference between a stock looking desperately cheap
+    and being ordinary. Ranking on it is how bad data becomes a decision.
+
+    Only `high` severity excludes — a split on record the prices do not reflect,
+    which is definitely wrong. An unexplained jump is suspicious rather than
+    certain, and stays in with a flag on it for the reader to weigh.
+    """
+    try:
+        from market_db import MarketDatabase
+
+        flags = MarketDatabase().get_data_quality(
+            [c.symbol for c in companies if c.symbol]
+        )
+    except Exception as exc:  # never let a missing scan block a ranking run
+        logging.debug(f"Rank: price-quality flags unavailable ({exc})")
+        return 0
+
+    gated = 0
+    for company in companies:
+        flag = flags.get(company.symbol)
+        if flag and flag.get("severity") == "high" and "price_history_unreliable" not in company.gate_failures:
+            company.gate_failures.append("price_history_unreliable")
+            gated += 1
+    if gated:
+        logging.info(f"Rank: {gated} excluded for unreliable price history")
+    return gated
+
+
 def _exclusion_records(companies: Sequence[CompanyMetrics]) -> List[Dict[str, Any]]:
     return [
         {
@@ -259,6 +297,7 @@ def run(
     )
 
     companies = collect_metrics(filers)
+    _apply_price_quality_gate(companies)
     eligible = [c for c in companies if not c.gate_failures]
     exclusions = _exclusion_records(companies)
     logging.info(f"Rank: {len(eligible)} eligible, {len(exclusions)} excluded by gates")

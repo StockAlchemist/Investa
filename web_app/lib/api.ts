@@ -1426,6 +1426,11 @@ export type BuffettModel = 'generic' | 'bank' | 'insurer' | 'reit';
 
 export interface BuffettRankRow {
     symbol: string;
+    /** Set when the archive knows this symbol's stored price history is suspect.
+     *  Always `medium` here: `high` means a split on record the prices do not
+     *  reflect, and the pipeline excludes those from ranking rather than scoring
+     *  value off a series known to be wrong. */
+    data_quality?: DataQualityFlag;
     cik: string | null;
     name: string | null;
     model: BuffettModel;
