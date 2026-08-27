@@ -144,6 +144,7 @@ class MarketDatabase:
         df: pd.DataFrame,
         interval: str = "1d",
         source: str = "yahoo",
+        force: bool = False,
     ):
         """
         Upserts OHLCV data from a DataFrame.
@@ -153,6 +154,9 @@ class MarketDatabase:
         come from one place: a repair adjudicated against an independent
         reference rewrites them, and without provenance a corrected bar and an
         original one are indistinguishable.
+
+        `force` overwrites a bar whatever its provenance. Reserved for a
+        deliberate revert; a routine sync must never need it.
         """
         if df.empty:
             return
@@ -232,15 +236,46 @@ class MarketDatabase:
                 # A database that predates the provenance migration still takes
                 # bars; it just cannot say where they came from.
                 if self._has_column(conn, "daily_ohlcv", "source"):
-                    cursor.executemany(
-                        """
-                        INSERT OR REPLACE INTO daily_ohlcv
-                        (symbol, date, open, high, low, close, adj_close, volume,
-                         interval, source)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                        params,
-                    )
+                    # A bar repaired against an independent reference must
+                    # survive the next routine fetch from the provider that got
+                    # it wrong. Yahoo keeps serving BYND's pre-split basis, so
+                    # `INSERT OR REPLACE` quietly undid the correction the next
+                    # time anything opened the chart — 1,836 bars, back to a
+                    # series that steps 30x in the middle.
+                    #
+                    # So an ordinary write updates a bar of its own source (or
+                    # one that predates provenance), and steps over an
+                    # adjudicated one. `force=True` is how a deliberate revert
+                    # still wins.
+                    if force:
+                        cursor.executemany(
+                            """
+                            INSERT OR REPLACE INTO daily_ohlcv
+                            (symbol, date, open, high, low, close, adj_close,
+                             volume, interval, source)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                            params,
+                        )
+                    else:
+                        cursor.executemany(
+                            """
+                            INSERT INTO daily_ohlcv
+                            (symbol, date, open, high, low, close, adj_close,
+                             volume, interval, source)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(symbol, date, interval) DO UPDATE SET
+                                open = excluded.open, high = excluded.high,
+                                low = excluded.low, close = excluded.close,
+                                adj_close = excluded.adj_close,
+                                volume = excluded.volume,
+                                source = excluded.source
+                            WHERE daily_ohlcv.source IS NULL
+                               OR daily_ohlcv.source = excluded.source
+                               OR daily_ohlcv.source = 'yahoo'
+                        """,
+                            params,
+                        )
                 else:
                     cursor.executemany(
                         """

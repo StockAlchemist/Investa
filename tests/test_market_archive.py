@@ -386,3 +386,62 @@ def test_bars_still_store_on_an_archive_without_the_provenance_column(tmp_path):
 
     with database._get_connection() as check:
         assert check.execute("SELECT close FROM daily_ohlcv").fetchone()[0] == 1.0
+
+
+def test_a_repaired_bar_survives_the_next_routine_fetch(db):
+    """The defect that undid 1,836 BYND bars.
+
+    Yahoo keeps serving the pre-split basis, so an ordinary `INSERT OR REPLACE`
+    put the broken value straight back the next time anything opened the chart.
+    A bar corrected against an independent reference has to outrank a routine
+    write from the provider that got it wrong.
+    """
+    day = pd.to_datetime(["2026-07-23"])
+    broken = pd.DataFrame(
+        {"Open": [0.56], "High": [0.56], "Low": [0.56], "Close": [0.56], "Volume": [10]},
+        index=day,
+    )
+    repaired = pd.DataFrame(
+        {"Open": [16.8], "High": [16.8], "Low": [16.8], "Close": [16.8], "Volume": [10]},
+        index=day,
+    )
+
+    db.upsert_ohlcv("BYND", broken)                       # yahoo, as served
+    db.upsert_ohlcv("BYND", repaired, source="tiingo")    # adjudicated
+    db.upsert_ohlcv("BYND", broken)                       # the nightly delta, again
+
+    with db._get_connection() as conn:
+        close, source = conn.execute(
+            "SELECT close, source FROM daily_ohlcv WHERE symbol = 'BYND'"
+        ).fetchone()
+    assert close == 16.8, "a routine fetch must not undo an adjudicated repair"
+    assert source == "tiingo"
+
+
+def test_a_deliberate_revert_can_still_overwrite_a_repair(db):
+    """Reverting a bad repair is a real operation — it just has to be asked for."""
+    day = pd.to_datetime(["2026-07-23"])
+    frame = lambda v: pd.DataFrame(  # noqa: E731
+        {"Open": [v], "High": [v], "Low": [v], "Close": [v], "Volume": [1]}, index=day
+    )
+    db.upsert_ohlcv("X", frame(16.8), source="tiingo")
+    db.upsert_ohlcv("X", frame(0.56), source="yahoo", force=True)
+
+    with db._get_connection() as conn:
+        close, source = conn.execute(
+            "SELECT close, source FROM daily_ohlcv WHERE symbol = 'X'"
+        ).fetchone()
+    assert (close, source) == (0.56, "yahoo")
+
+
+def test_an_ordinary_fetch_still_updates_an_ordinary_bar(db):
+    """The guard must not freeze the archive: today's bar is rewritten all day."""
+    day = pd.to_datetime(["2026-08-25"])
+    frame = lambda v: pd.DataFrame(  # noqa: E731
+        {"Open": [v], "High": [v], "Low": [v], "Close": [v], "Volume": [1]}, index=day
+    )
+    db.upsert_ohlcv("Y", frame(10.0))
+    db.upsert_ohlcv("Y", frame(11.0))
+
+    with db._get_connection() as conn:
+        assert conn.execute("SELECT close FROM daily_ohlcv WHERE symbol='Y'").fetchone()[0] == 11.0

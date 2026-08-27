@@ -11,6 +11,7 @@ Steps, each skipped when it is not due:
 
   1. price delta      when the newest bar is older than the last trading day
   2. split check      whenever prices moved (a new bar can carry a new split)
+  2b. quality flags   with it — what the clients badge must not outlive the bars
   3. official FX      when the newest ECB-sourced rate is behind the last trading
                       day — the ECB, and the Bank of Thailand behind it when a
                       token is configured
@@ -188,6 +189,13 @@ def plan(force: bool) -> Tuple[List[Tuple[str, List[str]]], List[str]]:
         )
         jobs.append(
             ("split-consistency check", [python, "scripts/check_split_consistency.py"])
+        )
+        # Whenever bars move, the data-quality flags the clients show are stale.
+        # They were, and it showed: BYND's chart was visibly broken while the
+        # app displayed no warning, because the flags had been computed while it
+        # was briefly correct. Rebuild them on the same trigger as the prices.
+        jobs.append(
+            ("data-quality flags", [python, "scripts/flag_data_quality.py"])
         )
     else:
         skipped.append(f"prices are current (newest bar {newest})")
