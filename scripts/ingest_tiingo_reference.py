@@ -264,6 +264,31 @@ def identity_check(
     return True, f"{len(diffs)} daily move(s) match to {median * 100:.2f}%"
 
 
+def purge_reference(path: str, symbol: str) -> int:
+    """Drop stored evidence for a symbol this run has judged inadmissible.
+
+    Reverting a bad repair is not enough on its own, and this is the second
+    time that lesson has been paid for. `repair_bars_against_reference.py`
+    works from whatever is in `reference_price`, so a reference left behind
+    after its bars were reverted is simply re-applied by the next run — which
+    is exactly what happened when a repair pass for one symbol silently redid
+    fifteen others, KGEI included.
+
+    Evidence that cannot be trusted must not merely be ignored; it has to stop
+    being on file.
+    """
+    conn = sqlite3.connect(path, timeout=120.0)
+    try:
+        removed = conn.execute(
+            "DELETE FROM reference_price WHERE symbol = ? AND source = ?",
+            (symbol, SOURCE),
+        ).rowcount
+        conn.commit()
+        return removed or 0
+    finally:
+        conn.close()
+
+
 def store(path: str, symbol: str, rows: List[tuple]) -> int:
     conn = sqlite3.connect(path, timeout=120.0)
     try:
@@ -340,7 +365,7 @@ def main() -> int:
         return 1
 
     conn = connect_readonly(path)
-    written = unknown = failed = out_of_range = mismatched = 0
+    written = unknown = failed = out_of_range = mismatched = purged = 0
     try:
         for symbol in symbols:
             ex_dates = queue[symbol]
@@ -379,11 +404,13 @@ def main() -> int:
             if not ok:
                 print(f"  {symbol:8} REFUSED: {why}")
                 mismatched += 1
+                purged += purge_reference(path, symbol) if args.apply else 0
                 continue
             ok, why = identity_check(conn, symbol, closes)
             if not ok:
                 print(f"  {symbol:8} REFUSED: {why}")
                 mismatched += 1
+                purged += purge_reference(path, symbol) if args.apply else 0
                 continue
 
             days = disputed_days(conn, symbol, closes)
@@ -407,6 +434,7 @@ def main() -> int:
         f"\n{provider.calls_made} Tiingo request(s). "
         f"{unknown} not carried, {out_of_range} out of range, "
         f"{mismatched} refused as a different listing, {failed} failed."
+        + (f" Purged {purged} inadmissible reference bar(s)." if purged else "")
     )
     if not args.apply:
         print("Dry run — nothing written. Re-run with --apply.")

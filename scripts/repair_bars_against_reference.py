@@ -81,6 +81,13 @@ def db_path() -> str:
 
 def find_bad_bars(conn: sqlite3.Connection, source: str) -> List[BadBar]:
     """Bars off the reference by exactly one of the symbol's own split ratios."""
+    # Everything in `reference_price` is treated as admissible evidence, which
+    # puts the whole weight of that judgement on whatever put it there.
+    # `ingest_tiingo_reference.py` therefore *deletes* a symbol's rows when it
+    # refuses one, rather than merely declining to add more — and a manual
+    # revert must do the same. Reverting the bars alone leaves the evidence on
+    # file, and the next run re-applies it: that is how a repair pass for a
+    # single symbol silently redid fifteen others.
     refs = conn.execute(
         "SELECT symbol, date, close FROM reference_price WHERE source = ? ORDER BY symbol, date",
         (source,),

@@ -365,3 +365,39 @@ def test_the_same_split_dated_a_day_apart_still_counts_as_carried(archive):
     )
 
     assert ok, why
+
+
+def test_refusing_a_symbol_purges_its_stored_evidence(tmp_path):
+    """Reverting bad bars is not enough on its own, and this cost two rounds.
+
+    `repair_bars_against_reference.py` acts on whatever sits in
+    `reference_price`. Evidence left on file after its bars were reverted gets
+    re-applied by the next run — which is how a repair pass for a single symbol
+    silently redid fifteen others. So a refusal has to delete, not merely
+    decline to add.
+    """
+    import sqlite3 as sq
+
+    path = str(tmp_path / "market.db")
+    conn = sq.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE reference_price (symbol TEXT, date TEXT, close REAL,
+            source TEXT, fetched_at TEXT, PRIMARY KEY (symbol, date, source));
+        """
+    )
+    conn.executemany(
+        "INSERT INTO reference_price VALUES (?,?,?,?,?)",
+        [("KGEI", "2020-01-02", 1.46, "tiingo", "now"),
+         ("KGEI", "2020-01-03", 1.47, "tiingo", "now"),
+         ("BYND", "2026-07-23", 16.8, "tiingo", "now")],
+    )
+    conn.commit()
+    conn.close()
+
+    removed = job.purge_reference(path, "KGEI")
+
+    check = sq.connect(path)
+    left = {r[0] for r in check.execute("SELECT DISTINCT symbol FROM reference_price")}
+    assert removed == 2
+    assert left == {"BYND"}, "only the refused symbol's evidence is dropped"
