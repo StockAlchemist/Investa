@@ -137,3 +137,111 @@ def test_intraday_older_than_the_daily_bar_is_ignored(provider):
 
     assert quote["price"] == pytest.approx(MON_LAST)
     assert quote["change"] == pytest.approx(MON_LAST - FRI_CLOSE)
+
+
+# --- Cache freshness across the opening bell -------------------------------
+#
+# A quote set cached while the market was shut must not survive into the open
+# session. The freshness window depends on the market state at the moment the
+# entry is USED, not the state when it was written — baking the closed-market
+# window (an hour) into the entry's expiry froze the dashboard on the previous
+# session's closes for up to an hour after the opening bell.
+
+import json
+
+
+def _age_caches(provider, seconds: float) -> None:
+    """Rewind both quote caches by `seconds`, as if that long had passed."""
+    with open(provider.current_cache_file) as f:
+        data = json.load(f)
+    stamp = pd.Timestamp(data["timestamp"]) - pd.Timedelta(seconds=seconds)
+    data["timestamp"] = stamp.isoformat()
+    with open(provider.current_cache_file, "w") as f:
+        json.dump(data, f)
+
+    mem = provider._current_quotes_memory_cache
+    with mem._lock:
+        for key, (value, expire_at) in list(mem._store.items()):
+            # An entry that carries no computed-at stamp cannot be aged — that
+            # shape is itself the defect these tests pin, so leave it alone and
+            # let the behavioural assertion report it.
+            if len(value) < 4:
+                continue
+            quotes, fx, fx_prev, computed_at = value
+            mem._store[key] = ((quotes, fx, fx_prev, computed_at - seconds), expire_at)
+
+
+def _counting_quotes(provider, daily_df, intraday_df, market_open: bool):
+    """Run get_current_quotes and report how many price fetches it made."""
+    calls = {"n": 0}
+
+    def fake_fetch(symbols, period=None, interval=None, task=None, **kwargs):
+        if any("=X" in s for s in symbols):  # FX leg
+            return pd.DataFrame()
+        calls["n"] += 1
+        return intraday_df if interval == "1m" else daily_df
+
+    with (
+        patch.object(market_data, "_run_isolated_fetch", side_effect=fake_fetch),
+        patch.object(market_data, "is_market_open", return_value=market_open),
+    ):
+        quotes, _fx, _fx_prev, err, _warn = provider.get_current_quotes(
+            ["AAPL"], {"USD"}, {}, set()
+        )
+    assert not err
+    return quotes, calls["n"]
+
+
+@pytest.fixture
+def two_session_frames():
+    daily = _daily_frame(
+        [
+            (date(2026, 7, 30), THU_CLOSE),
+            (date(2026, 7, 31), FRI_CLOSE),
+        ]
+    )
+    intraday = _intraday_frame(["2026-07-31 19:59"], [FRI_CLOSE])
+    return daily, intraday
+
+
+def test_quotes_cached_before_the_open_are_refetched_once_trading_starts(
+    provider, two_session_frames
+):
+    """The bell invalidates a pre-open quote set — the value must track the tape."""
+    daily, intraday = two_session_frames
+
+    _, fetches = _counting_quotes(provider, daily, intraday, market_open=False)
+    assert fetches > 0  # cold: real fetch
+
+    # Five minutes pass and the market opens. Under the closed-market window
+    # this entry would still look fresh for another 55 minutes.
+    _age_caches(provider, 300)
+
+    _, fetches = _counting_quotes(provider, daily, intraday, market_open=True)
+    assert fetches > 0, "pre-open quotes were served into the open session"
+
+
+def test_quotes_are_reused_within_the_minute_while_trading(
+    provider, two_session_frames
+):
+    """The open-session window is a minute, not zero — no refetch per request."""
+    daily, intraday = two_session_frames
+
+    _counting_quotes(provider, daily, intraday, market_open=True)
+    _age_caches(provider, 10)
+
+    _, fetches = _counting_quotes(provider, daily, intraday, market_open=True)
+    assert fetches == 0
+
+
+def test_quotes_are_reused_for_the_hour_while_the_market_is_shut(
+    provider, two_session_frames
+):
+    """Nothing moves after the close, so the long window stays long."""
+    daily, intraday = two_session_frames
+
+    _counting_quotes(provider, daily, intraday, market_open=False)
+    _age_caches(provider, 300)
+
+    _, fetches = _counting_quotes(provider, daily, intraday, market_open=False)
+    assert fetches == 0

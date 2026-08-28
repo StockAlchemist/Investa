@@ -283,6 +283,22 @@ def _quote_entry_age(entry: dict, now_utc: datetime) -> Optional[timedelta]:
     return now_utc - ts
 
 
+# How long a fetched set of quotes stays usable. One minute while the session is
+# running so the portfolio tracks the tape; an hour once it has closed, when the
+# numbers cannot move.
+QUOTE_CACHE_TTL_OPEN_SECONDS = 60
+QUOTE_CACHE_TTL_CLOSED_SECONDS = 3600
+
+
+def _quote_cache_ttl_seconds() -> int:
+    """Freshness window for a cached quote set, for the market state right now."""
+    return (
+        QUOTE_CACHE_TTL_OPEN_SECONDS
+        if is_market_open()
+        else QUOTE_CACHE_TTL_CLOSED_SECONDS
+    )
+
+
 # --- Robust MultiIndex Helper ---
 def _extract_ticker_from_df(df, ticker):
     """Robustly extracts columns for a specific ticker from a yfinance DataFrame."""
@@ -2301,14 +2317,28 @@ class MarketDataProvider:
         cached_fx_prev = None
         cache_valid = False
 
-        # Fast in-memory cache lookup
+        # Fast in-memory cache lookup.
+        #
+        # Freshness is judged HERE, against the market state right now — never
+        # against the state at the moment the entry was written. An entry stored
+        # while the market was shut carries the closed window (an hour), and
+        # baking that into its expiry froze the whole portfolio on the previous
+        # session's closes for up to an hour *into* the next open: every request
+        # hit this fast path and returned yesterday's prices, so the total value
+        # did not move while the tape did. The entry keeps the time it was
+        # computed and is re-measured on every read, exactly as the file cache
+        # below already does.
         in_memory_cached = self._current_quotes_memory_cache.get(cache_key)
         if in_memory_cached is not None:
-            cached_quotes, cached_fx, cached_fx_prev = in_memory_cached
-            logging.debug(
-                f"Using in-memory cache for current quotes (Key: {cache_key[:30]}...)"
-            )
-            return cached_quotes, cached_fx, cached_fx_prev, False, has_warnings
+            cached_quotes, cached_fx, cached_fx_prev, computed_at = in_memory_cached
+            if time.time() - computed_at < _quote_cache_ttl_seconds():
+                logging.debug(
+                    f"Using in-memory cache for current quotes (Key: {cache_key[:30]}...)"
+                )
+                return cached_quotes, cached_fx, cached_fx_prev, False, has_warnings
+            # The session opened under it: drop it and re-read/re-fetch.
+            self._current_quotes_memory_cache.delete(cache_key)
+            cached_quotes = cached_fx = cached_fx_prev = None
 
         if os.path.exists(self.current_cache_file):
             try:
@@ -2318,22 +2348,28 @@ class MarketDataProvider:
                     cache_timestamp_str = cache_data.get("timestamp")
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                        cache_ttl_minutes = 1 if is_market_open() else 60
+                        cache_age = datetime.now(timezone.utc) - cache_timestamp
                         if (
-                            datetime.now(timezone.utc) - cache_timestamp
-                            < timedelta(
-                                minutes=cache_ttl_minutes  # BN-06: Adaptive 1min/60min cache
-                            )
+                            cache_age.total_seconds()
+                            < _quote_cache_ttl_seconds()  # BN-06: adaptive open/closed window
                         ):
                             cached_quotes = cache_data.get("quotes")
                             cached_fx = cache_data.get("fx_rates")
                             cached_fx_prev = cache_data.get("fx_prev_close")
                             if cached_quotes is not None and cached_fx is not None:
                                 cache_valid = True
+                                # Carry the file's own fetch time into memory, so
+                                # the entry ages from when the quotes were taken
+                                # rather than from when they were read.
                                 self._current_quotes_memory_cache.set(
                                     cache_key,
-                                    (cached_quotes, cached_fx, cached_fx_prev),
-                                    ttl=cache_ttl_minutes * 60,
+                                    (
+                                        cached_quotes,
+                                        cached_fx,
+                                        cached_fx_prev,
+                                        time.time() - cache_age.total_seconds(),
+                                    ),
+                                    ttl=QUOTE_CACHE_TTL_CLOSED_SECONDS,
                                 )
                                 logging.info(
                                     f"Using valid cache for current quotes (Key: {cache_key[:30]}...). Age: {datetime.now(timezone.utc) - cache_timestamp}"
@@ -2921,11 +2957,12 @@ class MarketDataProvider:
                         f"price={prev_entry.get('price')} age={age}"
                     )
 
-                cache_ttl_minutes = 1 if is_market_open() else 60
+                # Bounded at the closed-market window; the read above applies
+                # the window that actually applies when the entry is used.
                 self._current_quotes_memory_cache.set(
                     cache_key,
-                    (results, fx_rates_vs_usd, fx_prev_close_vs_usd),
-                    ttl=cache_ttl_minutes * 60,
+                    (results, fx_rates_vs_usd, fx_prev_close_vs_usd, time.time()),
+                    ttl=QUOTE_CACHE_TTL_CLOSED_SECONDS,
                 )
 
                 # Retain quotes for symbols outside this batch so a later fetch
