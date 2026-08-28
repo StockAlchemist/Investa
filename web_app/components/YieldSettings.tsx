@@ -155,8 +155,8 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
 
             {saveStatus && (
                 <div className={`p-4 rounded-xl text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2 border ${saveStatus === 'success'
-                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                    ? 'bg-up/12 border-up/25 text-up'
+                    : 'bg-down/12 border-down/25 text-down'
                     }`}>
                     {saveStatus === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
                     <span className="font-medium">{statusMessage}</span>

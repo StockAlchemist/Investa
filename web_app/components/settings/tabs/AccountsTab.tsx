@@ -134,7 +134,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                                     <span className="font-bold font-mono text-amber-700 dark:text-amber-300 text-sm">{curr}</span>
                                     <button
                                         onClick={() => removeCurrency(curr)}
-                                        className="opacity-40 group-hover:opacity-100 text-red-500 hover:text-red-600 transition-opacity cursor-pointer"
+                                        className="opacity-40 group-hover:opacity-100 text-down hover:text-down transition-opacity cursor-pointer"
                                         aria-label={`Remove ${curr}`}
                                     >
                                         <Trash2 className="w-3.5 h-3.5" />
@@ -247,7 +247,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                                                         <button
                                                             type="button"
                                                             onClick={() => updateAccountClosureDate(account, null)}
-                                                            className="shrink-0 p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                                                            className="shrink-0 p-2 text-muted-foreground hover:text-down hover:bg-down/12 rounded-lg transition-colors cursor-pointer"
                                                             title="Clear closure date"
                                                             aria-label="Clear closure date"
                                                         >

@@ -157,7 +157,7 @@ export const HoldingsMobileCards: React.FC<HoldingsMobileCardsProps> = ({
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Intrinsic:</span>
                                     <span className={`font-medium ${holding.intrinsic_value !== null && holding.intrinsic_value !== undefined && holding.Price !== undefined ? (
-                                        holding.intrinsic_value > (holding.Price as number) ? 'text-emerald-500' :
+                                        holding.intrinsic_value > (holding.Price as number) ? 'text-up' :
                                             holding.intrinsic_value < (holding.Price as number) ? 'text-rose-500' : 'text-foreground'
                                     ) : 'text-foreground'
                                         }`}>

@@ -151,7 +151,7 @@ export const ProfileSecurityTab: React.FC = () => {
                     </div>
 
                     {passwordStatus && (
-                        <div className={`text-sm p-4 rounded-xl flex items-center gap-3 animate-in fade-in ${passwordStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'}`}>
+                        <div className={`text-sm p-4 rounded-xl flex items-center gap-3 animate-in fade-in ${passwordStatus.type === 'success' ? 'bg-up/12 text-up border border-up/25' : 'bg-down/12 text-down border border-down/25'}`}>
                             {passwordStatus.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
                             {passwordStatus.message}
                         </div>
@@ -193,8 +193,8 @@ export const ProfileSecurityTab: React.FC = () => {
                 <div className="bg-red-50/50 dark:bg-red-950/20 backdrop-blur-xl p-6 rounded-2xl border border-red-200 dark:border-red-900/50 shadow-sm flex flex-col justify-between relative overflow-hidden group">
                     <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-500 to-rose-500 transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
                     <div>
-                        <h4 className="font-bold text-red-700 dark:text-red-400 mb-2">Delete Account</h4>
-                        <p className="text-sm text-red-600/80 dark:text-red-400/80 mb-6 leading-relaxed">
+                        <h4 className="font-bold text-down mb-2">Delete Account</h4>
+                        <p className="text-sm text-down/80 dark:text-down/80 mb-6 leading-relaxed">
                             Permanently delete your profile, portfolio data, and settings. This action is irreversible.
                         </p>
                     </div>

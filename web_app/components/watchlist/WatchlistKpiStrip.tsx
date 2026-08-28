@@ -19,8 +19,8 @@ interface KpiTileProps {
 
 function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTileProps) {
     const toneClass =
-        tone === 'pos'  ? 'text-emerald-600 dark:text-emerald-400'
-        : tone === 'neg'  ? 'text-red-600 dark:text-red-400'
+        tone === 'pos'  ? 'text-up'
+        : tone === 'neg'  ? 'text-down'
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
     return (
@@ -90,7 +90,7 @@ export default function WatchlistKpiStrip({ items }: WatchlistKpiStripProps) {
                         <button
                             type="button"
                             onClick={() => openStockDetail(m.best!.symbol)}
-                            className="hover:text-emerald-500 cursor-pointer font-bold transition-colors"
+                            className="hover:text-up cursor-pointer font-bold transition-colors"
                         >
                             {m.best.symbol}
                         </button>
@@ -105,7 +105,7 @@ export default function WatchlistKpiStrip({ items }: WatchlistKpiStripProps) {
                         <button
                             type="button"
                             onClick={() => openStockDetail(m.worst!.symbol)}
-                            className="hover:text-red-500 cursor-pointer font-bold transition-colors"
+                            className="hover:text-down cursor-pointer font-bold transition-colors"
                         >
                             {m.worst.symbol}
                         </button>

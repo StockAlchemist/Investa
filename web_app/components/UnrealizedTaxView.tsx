@@ -181,14 +181,14 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                                             <td className="py-1.5 px-3 text-right tabular-nums">
                                                 {formatCurrency(c.lot['Market Value'], currency)}
                                             </td>
-                                            <td className="py-1.5 px-3 text-right tabular-nums font-bold text-red-500">
+                                            <td className="py-1.5 px-3 text-right tabular-nums font-bold text-down">
                                                 {formatCurrency(loss, currency)} <span className="text-muted-foreground/60 font-normal">({lossPct.toFixed(1)}%)</span>
                                             </td>
                                             <td className="py-1.5 pl-3">
                                                 <span className={cn(
                                                     'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded',
                                                     c.cls === 'LT'
-                                                        ? 'bg-emerald-500/15 text-emerald-600'
+                                                        ? 'bg-up/12 text-up'
                                                         : 'bg-amber-500/15 text-amber-600',
                                                 )}>
                                                     {c.cls}
@@ -232,7 +232,7 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                                         <span className="text-muted-foreground">acquired {formatCalendarDate(c.lot.Date)}</span>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        <span className="tabular-nums text-emerald-600 font-medium">
+                                        <span className="tabular-nums text-up font-medium">
                                             +{formatCurrency(gain, currency)}
                                         </span>
                                         <span className="tabular-nums text-amber-600 font-bold">
@@ -263,11 +263,11 @@ function SummaryTile({
 }) {
     const positive = value >= 0;
     const Icon = positive ? TrendingUp : TrendingDown;
-    const colorClass = positive ? 'text-emerald-500' : 'text-red-500';
+    const colorClass = positive ? 'text-up' : 'text-down';
     const accentBar = {
         amber: 'bg-amber-500',
         emerald: 'bg-emerald-500',
-        cyan: 'bg-[#0097b2]',
+        cyan: 'bg-primary',
     }[accent];
 
     return (

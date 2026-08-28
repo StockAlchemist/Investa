@@ -117,7 +117,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
     const getUpsideColor = (upside: number | null) => {
         if (upside === null) return "";
-        return upside > 0 ? "text-emerald-500 font-bold" : "text-rose-500 font-bold";
+        return upside > 0 ? "text-up font-bold" : "text-rose-500 font-bold";
     };
 
     const recommendedMethod = intrinsicValue?.recommended_method;
@@ -176,19 +176,19 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                             label="Unrealized G/L"
                             value={formatCurrency(userPosition["Unreal. Gain"], currency)}
                             subValue={userPosition["Unreal. Gain %"] === Infinity ? "∞" : `${(userPosition["Unreal. Gain %"] || 0).toFixed(2)}%`}
-                            subValueColor={(userPosition["Unreal. Gain %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
-                            valueColor={(userPosition["Unreal. Gain"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
+                            subValueColor={(userPosition["Unreal. Gain %"] || 0) >= 0 ? "text-up" : "text-rose-500"}
+                            valueColor={(userPosition["Unreal. Gain"] || 0) >= 0 ? "text-up" : "text-rose-500"}
                             icon={LucideActivity}
-                            color={(userPosition?.["Unreal. Gain"] ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                            color={(userPosition?.["Unreal. Gain"] ?? 0) >= 0 ? "bg-up/12 text-up" : "bg-rose-500/10 text-rose-500"}
                         />
                         <StatCard
                             label="Total Return"
                             value={formatCurrency(userPosition["Total Gain"], currency)}
                             subValue={userPosition["Total Return %"] === Infinity ? "∞" : `${(userPosition["Total Return %"] || 0).toFixed(2)}%`}
-                            subValueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
-                            valueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
+                            subValueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-up" : "text-rose-500"}
+                            valueColor={(userPosition["Total Return %"] || 0) >= 0 ? "text-up" : "text-rose-500"}
                             icon={TrendingUp}
-                            color={(userPosition["Total Return %"] || 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                            color={(userPosition["Total Return %"] || 0) >= 0 ? "bg-up/12 text-up" : "bg-rose-500/10 text-rose-500"}
                             extra={
                                 <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-500/90 leading-tight">
                                     Divs: {formatCurrency(userPosition["Dividends"], currency)}
@@ -199,8 +199,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                             label="IRR %"
                             value={userPosition["IRR %"] === Infinity ? "∞" : `${(userPosition["IRR %"] || 0).toFixed(2)}%`}
                             icon={LineChartIcon}
-                            valueColor={(userPosition["IRR %"] || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}
-                            color={(userPosition["IRR %"] || 0) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
+                            valueColor={(userPosition["IRR %"] || 0) >= 0 ? "text-up" : "text-rose-500"}
+                            color={(userPosition["IRR %"] || 0) >= 0 ? "bg-up/12 text-up" : "bg-rose-500/10 text-rose-500"}
                         />
                     </div>
 
@@ -237,8 +237,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                                 detailColor={reportedEarnings.surprise_pct == null
                                     ? undefined
                                     : reportedEarnings.surprise_pct >= 0
-                                        ? 'text-emerald-600 dark:text-emerald-400'
-                                        : 'text-rose-600 dark:text-rose-400'}
+                                        ? 'text-up'
+                                        : 'text-down'}
                             />
                         )}
                         {upcomingEarnings && (
@@ -259,7 +259,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         {upcomingDividend && (
                             <UpcomingEventRow
                                 icon={DollarSign}
-                                color="bg-emerald-500/10 text-emerald-500"
+                                color="bg-up/12 text-up"
                                 label="Next Dividend"
                                 status={upcomingDividend.status}
                                 date={upcomingDividend.dividend_date}
@@ -296,9 +296,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
                 const getCompositeColor = (score: number) => {
                     if (score >= 8.5) return {
-                        text: 'text-emerald-600 dark:text-emerald-400',
-                        bg: 'bg-emerald-500/10 dark:bg-emerald-500/15',
-                        border: 'border-emerald-500/30 dark:border-emerald-500/25',
+                        text: 'text-up',
+                        bg: 'bg-up/12 dark:bg-up/12',
+                        border: 'border-up/25 dark:border-emerald-500/25',
                     };
                     if (score >= 7.0) return {
                         text: 'text-indigo-600 dark:text-indigo-400',
@@ -311,7 +311,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         border: 'border-amber-500/30 dark:border-amber-500/25',
                     };
                     return {
-                        text: 'text-rose-600 dark:text-rose-400',
+                        text: 'text-down',
                         bg: 'bg-rose-500/10 dark:bg-rose-500/15',
                         border: 'border-rose-500/30 dark:border-rose-500/25',
                     };
@@ -347,10 +347,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         label: 'Predictability',
                         icon: Target,
                         score: sc.predictability,
-                        color: 'text-emerald-500 dark:text-emerald-400',
-                        bgColor: 'bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-500 dark:text-emerald-400',
+                        color: 'text-up',
+                        bgColor: 'bg-up/12 dark:bg-emerald-500/20 text-up',
                         barColor: 'from-emerald-500 to-teal-500',
-                        badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25',
+                        badgeColor: 'bg-up/12 text-up border-emerald-500/25',
                         getTier: (s: number) => s >= 9 ? 'High Visibility' : s >= 7.5 ? 'Predictable' : s >= 5.5 ? 'Moderate' : 'Volatile',
                     },
                     {

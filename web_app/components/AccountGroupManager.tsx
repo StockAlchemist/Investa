@@ -55,7 +55,7 @@ function SortableGroupItem({ id, name, accounts, onEdit, onDelete }: SortableIte
         <div
             ref={setNodeRef}
             style={style}
-            className={`flex items-center justify-between p-4 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-black/5 dark:border-white/5 rounded-2xl shadow-sm hover:border-indigo-500/30 transition-all group ${isDragging ? 'opacity-80 border-indigo-500 ring-2 ring-indigo-500/20 scale-[1.02]' : ''}`}
+            className={`flex items-center justify-between p-4 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-black/5 dark:border-white/5 rounded-2xl shadow-sm hover:border-indigo-500/30 transition-all group ${isDragging ? 'opacity-80 border-indigo-500 ring-2 ring-ring/25 scale-[1.02]' : ''}`}
         >
             <div className="flex items-center gap-4 flex-1 overflow-hidden">
                 <button
@@ -83,7 +83,7 @@ function SortableGroupItem({ id, name, accounts, onEdit, onDelete }: SortableIte
                 </button>
                 <button
                     onClick={() => handleDeleteGroup(name)}
-                    className="text-muted-foreground hover:text-red-500 hover:bg-red-500/10 p-2.5 rounded-xl transition-colors"
+                    className="text-muted-foreground hover:text-down hover:bg-down/12 p-2.5 rounded-xl transition-colors"
                     title="Delete Group"
                 >
                     <Trash2 className="w-4 h-4" />

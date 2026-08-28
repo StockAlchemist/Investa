@@ -202,7 +202,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                     if (active && payload && payload.length) {
                                         const val = payload[0].value as number;
                                         const isPositive = val >= 0;
-                                        const colorClass = isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500";
+                                        const colorClass = isPositive ? "text-up" : "text-down";
                                         const dotClass = isPositive ? "bg-emerald-500" : "bg-red-500";
                                         return (
                                             <div className="bg-background/98 backdrop-blur-2xl p-3 rounded-xl !opacity-100 border border-border/60 shadow-2xl">
@@ -299,7 +299,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <div className={`text-lg font-bold ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                    <div className={`text-lg font-bold ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-up' : 'text-down'}`}>
                                         {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
                                     </div>
                                     <div className="text-xs text-muted-foreground uppercase tracking-wider">
@@ -320,7 +320,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                         const gain = item['Realized Gain (Display)'] || 0;
                                         const gainPct = costBasis !== 0 ? (gain / costBasis) * 100 : 0;
                                         return (
-                                            <span className={`font-medium ${gainPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                            <span className={`font-medium ${gainPct >= 0 ? 'text-up' : 'text-down'}`}>
                                                 {gainPct.toFixed(2)}%
                                             </span>
                                         );
@@ -401,7 +401,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                         <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
                                             {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
                                         </td>
-                                        <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'
+                                        <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-up' : 'text-down'
                                             }`}>
                                             {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
                                         </td>
@@ -411,7 +411,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                                 const gain = item['Realized Gain (Display)'] || 0;
                                                 const gainPct = costBasis !== 0 ? (gain / costBasis) * 100 : 0;
                                                 return (
-                                                    <span className={gainPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}>
+                                                    <span className={gainPct >= 0 ? 'text-up' : 'text-down'}>
                                                         {gainPct.toFixed(2)}%
                                                     </span>
                                                 );
@@ -427,7 +427,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                     <div className="flex justify-center gap-4 p-4">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
                         >
                             Show More
                         </button>

@@ -94,7 +94,7 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                                                 <div key={`tooltip-${idx}`} className="flex items-center gap-3 mb-1 last:mb-0">
                                                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }}></div>
                                                     <span className="text-muted-foreground">{entry.name}:</span>
-                                                    <span className="font-mono text-emerald-500 font-bold ml-auto">
+                                                    <span className="font-mono text-up font-bold ml-auto">
                                                         {formatCurrency(entry.value as number, currency)}
                                                     </span>
                                                 </div>

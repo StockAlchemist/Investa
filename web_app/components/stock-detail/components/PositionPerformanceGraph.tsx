@@ -136,8 +136,8 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
                                 className={cn(
                                     'font-semibold tabular-nums',
                                     unrealG >= 0
-                                        ? 'text-emerald-600 dark:text-emerald-400'
-                                        : 'text-rose-600 dark:text-rose-400'
+                                        ? 'text-up'
+                                        : 'text-down'
                                 )}
                             >
                                 {unrealG >= 0 ? '+' : ''}
@@ -163,8 +163,8 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
                             className={cn(
                                 'font-bold tabular-nums',
                                 retPct >= 0
-                                    ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-rose-600 dark:text-rose-400'
+                                    ? 'text-up'
+                                    : 'text-down'
                             )}
                         >
                             {retPct >= 0 ? '+' : ''}
@@ -187,8 +187,8 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
                                     className={cn(
                                         'font-medium tabular-nums',
                                         (b.value ?? 0) >= 0
-                                            ? 'text-emerald-600 dark:text-emerald-400'
-                                            : 'text-rose-600 dark:text-rose-400'
+                                            ? 'text-up'
+                                            : 'text-down'
                                     )}
                                 >
                                     {(b.value ?? 0) >= 0 ? '+' : ''}
@@ -286,7 +286,7 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                             {view === 'value' ? (
                                 <PieChart className="w-4 h-4 text-indigo-500" />
                             ) : (
-                                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                                <TrendingUp className="w-4 h-4 text-up" />
                             )}
                             Position Performance History
                         </h3>
@@ -302,8 +302,8 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                         className={cn(
                                             'text-xs font-semibold px-2 py-0.5 rounded-md tabular-nums',
                                             periodReturnPct >= 0
-                                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                                                ? 'bg-up/12 text-up'
+                                                : 'bg-rose-500/10 text-down'
                                         )}
                                     >
                                         {periodReturnPct >= 0 ? '+' : ''}
@@ -315,8 +315,8 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                     className={cn(
                                         'text-xs font-semibold px-2 py-0.5 rounded-md tabular-nums',
                                         isOverallPositive
-                                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                                            ? 'bg-up/12 text-up'
+                                            : 'bg-rose-500/10 text-down'
                                     )}
                                 >
                                     {view === 'value' ? (

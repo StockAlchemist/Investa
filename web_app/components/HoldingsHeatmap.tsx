@@ -154,7 +154,7 @@ function HeatTooltip({ active, payload, currency, metricLabel, showGroup }: { ac
                 <span className="font-medium">{formatCompactNumber(d.value, currency)}</span>
                 <span className="text-muted-foreground/50">·</span>
                 <span className="text-muted-foreground">{metricLabel}</span>
-                <span className={cn('font-bold', d.metricVal == null ? 'text-muted-foreground' : up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+                <span className={cn('font-bold', d.metricVal == null ? 'text-muted-foreground' : up ? 'text-up' : 'text-down')}>
                     {d.metricVal == null ? 'n/a' : `${up ? '+' : ''}${d.metricVal.toFixed(2)}%`}
                 </span>
             </div>
@@ -289,7 +289,7 @@ export default function HoldingsHeatmap({ holdings, currency }: HoldingsHeatmapP
                                 onClick={() => setGroup(g.key)}
                                 className={cn(
                                     'px-2 py-1 rounded-md text-xs font-semibold transition-all',
-                                    group === g.key ? 'bg-[#0097b2] text-white' : 'text-muted-foreground hover:text-foreground',
+                                    group === g.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                                 )}
                             >
                                 {g.label}

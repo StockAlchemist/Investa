@@ -60,8 +60,8 @@ function StatCell({ label, value, tone }: { label: string; value: string; tone?:
             </span>
             <span className={cn(
                 'text-base font-bold tabular-nums leading-none',
-                tone === 'good' && 'text-emerald-600 dark:text-emerald-400',
-                tone === 'bad' && 'text-red-600 dark:text-red-500',
+                tone === 'good' && 'text-up',
+                tone === 'bad' && 'text-down',
             )}>
                 {value}
             </span>

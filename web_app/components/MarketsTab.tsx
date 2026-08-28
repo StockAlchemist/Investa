@@ -69,8 +69,8 @@ function IndexCard({ index, onClick }: { index: MarketIndex; onClick: () => void
                     <span className={cn(
                         'flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm font-bold tabular-nums shrink-0 mt-1',
                         isUp
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+                            ? 'bg-up/12 text-up'
+                            : 'bg-rose-500/10 text-down',
                     )}>
                         {isUp
                             ? <TrendingUp className="w-3.5 h-3.5" />
@@ -80,7 +80,7 @@ function IndexCard({ index, onClick }: { index: MarketIndex; onClick: () => void
                 </div>
                 <p className={cn(
                     'text-sm font-semibold tabular-nums mt-1.5',
-                    isUp ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+                    isUp ? 'text-up' : 'text-down',
                 )}>
                     {isUp ? '+' : ''}{index.change.toFixed(2)} pts
                 </p>
@@ -228,7 +228,7 @@ function MoversColumn({ title, rows, currency, positive, onPick }: {
     onPick: (symbol: string) => void;
 }) {
     const Icon = positive ? TrendingUp : TrendingDown;
-    const tone = positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+    const tone = positive ? 'text-up' : 'text-down';
     return (
         <div>
             <div className="flex items-center gap-1.5 mb-2">

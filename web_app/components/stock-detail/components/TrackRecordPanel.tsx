@@ -100,7 +100,7 @@ export const TrackRecordPanel: React.FC<{ record: TrackRecord }> = ({ record }) 
                                                 {item.label}{' '}
                                                 <span className={cn(
                                                     "font-medium tabular-nums",
-                                                    item.change_pct < 0 ? "text-red-500" : "text-emerald-500"
+                                                    item.change_pct < 0 ? "text-down" : "text-up"
                                                 )}>{item.display}</span>
                                                 <span className="text-muted-foreground text-xs">
                                                     {' '}({item.recovery_display ?? 'no fall'})
@@ -137,7 +137,7 @@ export const TrackRecordPanel: React.FC<{ record: TrackRecord }> = ({ record }) 
                                         <td className="py-1.5 pr-3 tabular-nums whitespace-nowrap">{item.display}</td>
                                         <td className={cn(
                                             "py-1.5 pr-3 text-right font-medium tabular-nums whitespace-nowrap",
-                                            item.change_pct < 0 ? "text-red-500" : "text-emerald-500"
+                                            item.change_pct < 0 ? "text-down" : "text-up"
                                         )}>{item.change_display}</td>
                                         <td className="py-1.5 text-right text-[11px] text-muted-foreground whitespace-nowrap">
                                             {fiscalPeriodYear(item.first_filed)} → {fiscalPeriodYear(item.restated_filed)}

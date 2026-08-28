@@ -642,7 +642,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                             <span className="text-xs font-bold text-blue-500 uppercase">{symbol}</span>
                             <span className="text-sm font-bold text-foreground">
                                 {view === 'price' ? formatCurrency(dataPoint.value, currency) :
-                                    <span className={dataPoint.return_pct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
+                                    <span className={dataPoint.return_pct >= 0 ? "text-up" : "text-down"}>
                                         {dataPoint.return_pct.toFixed(2)}%
                                     </span>
                                 }
@@ -691,7 +691,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                         </span>
                                         <span className="text-xs font-medium text-foreground">{dataPoint[`_evt_${kind}_label`]}</span>
                                         {gain != null && (
-                                            <span className={`text-xs font-semibold ml-auto shrink-0 ${gain >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                                            <span className={`text-xs font-semibold ml-auto shrink-0 ${gain >= 0 ? "text-up" : "text-down"}`}>
                                                 {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(gain), currency)}
                                                 {gainPct != null && ` (${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(2)}%)`}
                                             </span>
@@ -706,7 +706,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                             .map((b) => (
                                 <div key={b.key} className="flex items-center justify-between gap-4">
                                     <span className="text-xs font-bold uppercase" style={{ color: b.color }}>{b.name}</span>
-                                    <span className={`text-sm font-medium ${dataPoint[b.key] >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                                    <span className={`text-sm font-medium ${dataPoint[b.key] >= 0 ? "text-up" : "text-down"}`}>
                                         {dataPoint[b.key].toFixed(2)}%
                                     </span>
                                 </div>
@@ -733,7 +733,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                     {formatCurrency(stats.currentPrice, currency)}
                                 </span>
                             )}
-                            <span className={`text-base font-medium ${stats.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                            <span className={`text-base font-medium ${stats.change >= 0 ? 'text-up' : 'text-down'}`}>
                                 {formatCurrency(stats.change, currency)} ({stats.changePct.toFixed(2)}%)
                             </span>
                         </div>
@@ -777,7 +777,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                         key={key}
                                         onClick={() => setView(key)}
                                         className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all whitespace-nowrap ${view === key
-                                            ? 'bg-[#0097b2] text-white shadow-sm'
+                                            ? 'bg-primary text-primary-foreground shadow-sm'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                             }`}
                                     >

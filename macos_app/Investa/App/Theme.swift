@@ -6,10 +6,22 @@ extension Color {
     /// Loss (negative) semantic color — rose/red matching web.
     static let down = Color.adaptive(light: (0.86, 0.15, 0.15), dark: (0.94, 0.27, 0.27)) // #dc2626 / #ef4444
 
-    /// Primary brand teal accent (#0097b2).
-    static let brand = Color(hex: 0x0097b2)
-    /// Accent indigo (#6366f1) used in charts, AI cards, table header lines.
+    /// The one interface accent — indigo. Primary buttons, active nav, focus
+    /// rings, links, selection. Adaptive so it stays legible on both grounds:
+    /// indigo-500 on light, indigo-400 on dark.
+    ///
+    /// This was teal (#0097b2). Indigo won on usage — it already carried every
+    /// card shadow in `CardStyle` below and in the web app's glass cards, and
+    /// was the web app's most-used accent by a wide margin. Teal keeps its real
+    /// job as slot 1 of the data palette (`dataPalette`), which is where it was
+    /// already being used: the first colour of the allocation donut.
+    static let brand = Color.adaptive(light: (0.39, 0.40, 0.945), dark: (0.506, 0.549, 0.972))
+    /// Accent ink on a tinted fill — indigo-600 on light, indigo-300 on dark.
+    static let brandInk = Color.adaptive(light: (0.310, 0.275, 0.898), dark: (0.647, 0.706, 0.988))
+    /// Indigo-500, fixed. Use `brand` unless you need the exact hex.
     static let brandIndigo = Color(hex: 0x6366f1)
+    /// Teal — slot 1 of the data palette. Not an interface colour.
+    static let brandTeal = Color(hex: 0x0097b2)
     /// Accent violet (#8b5cf6) used in earnings events.
     static let brandViolet = Color(hex: 0x8b5cf6)
     /// Accent purple (#a855f7).
@@ -47,8 +59,19 @@ extension ShapeStyle where Self == Color {
 /// App-wide visual tokens. Centralizes the card chrome that was previously
 /// copy-pasted across every feature, so the whole app can be retuned in one place.
 enum Theme {
-    /// Brand accent (the teal already used as the first donut-palette color).
+    /// The one interface accent.
     static let brand = Color.brand
+
+    /// Categorical colours for charts and legends — fixed order, never used for
+    /// chrome. A tab is not a colour; a sector slice is.
+    static let dataPalette: [Color] = [
+        Color(hex: 0x0097b2),   // teal
+        Color(hex: 0x6366f1),   // indigo
+        Color(hex: 0xf59e0b),   // amber
+        Color(hex: 0x10b981),   // emerald
+        Color(hex: 0x8b5cf6),   // violet
+        Color(hex: 0xf43f5e),   // rose
+    ]
 
     /// FX overlay accent (amber-500), matching the web performance graph's FX line.
     static let fx = Color.brandAmber
@@ -56,10 +79,16 @@ enum Theme {
     /// Earnings-event accent (violet-500), matching the web Events card.
     static let earnings = Color.brandViolet
 
-    static let cardRadius: CGFloat = 16
-    static let heroRadius: CGFloat = 20
-    static let insetRadius: CGFloat = 12
+    static let controlRadius: CGFloat = 8    // buttons, chips, rows, inputs
+    static let insetRadius: CGFloat = 12     // panels inside a card, menus
+    static let cardRadius: CGFloat = 16      // every card, every modal
+    static let heroRadius: CGFloat = 20      // one per screen, at most
     static let gutter: CGFloat = 16
+
+    /// Control heights — three steps: toolbar, form, touch.
+    static let controlCompact: CGFloat = 28
+    static let controlDefault: CGFloat = 36
+    static let controlTouch: CGFloat = 44
 
     /// Card depth tiers. The hero floats highest; insets sit flush inside a card.
     enum Tier { case hero, standard, inset }
@@ -118,7 +147,7 @@ struct CardStyle: ViewModifier {
             .shadow(
                 color: colorScheme == .dark
                     ? Color.black.opacity(tier == .hero ? 0.40 : 0.25)
-                    : Color(hex: 0x6366f1).opacity(tier == .hero ? 0.08 : 0.04),
+                    : Color.brandIndigo.opacity(tier == .hero ? 0.08 : 0.04),
                 radius: tier == .hero ? 18 : 8,
                 x: 0,
                 y: tier == .hero ? 8 : 3

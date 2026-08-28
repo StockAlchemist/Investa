@@ -28,7 +28,7 @@ function TabButton({ active, onClick, icon: Icon, label }: {
         <button
             onClick={onClick}
             className={cn(
-                "py-4 px-4 flex items-center gap-2 text-sm font-medium transition-all relative border-b-2 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20 cursor-pointer",
+                "py-4 px-4 flex items-center gap-2 text-sm font-medium transition-all relative border-b-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/25 cursor-pointer",
                 active ? "text-indigo-600 dark:text-indigo-400 border-indigo-500" : "text-muted-foreground hover:text-foreground border-transparent"
             )}
         >

@@ -195,7 +195,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                         ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
                                                             <div className="w-24 ml-auto h-6">
                                                                 <InlineProgressBar value={(val as number) || 0} max={100}>
-                                                                    <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-red-600 dark:text-red-500' : ''}`}>{formatValue(val, header)}</span>
+                                                                    <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-down' : ''}`}>{formatValue(val, header)}</span>
                                                                 </InlineProgressBar>
                                                             </div>
                                                         ) : header === 'Symbol' ? (
@@ -246,7 +246,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                                             type="text"
                                                                             value={tagsInput}
                                                                             onChange={(e) => setTagsInput(e.target.value)}
-                                                                            className="w-32 h-7 text-xs bg-background rounded px-2 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                                            className="w-32 h-7 text-xs bg-background rounded px-2 focus:outline-none focus:ring-1 focus:ring-ring"
                                                                             placeholder="e.g. Dividend, Tech"
                                                                             autoFocus
                                                                             onKeyDown={(e) => {
@@ -254,10 +254,10 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                                                 if (e.key === 'Escape') setEditingTags(null);
                                                                             }}
                                                                         />
-                                                                        <button onClick={handleSaveTags} className="p-1 hover:bg-emerald-500/10 text-emerald-600 rounded">
+                                                                        <button onClick={handleSaveTags} className="p-1 hover:bg-up/12 text-up rounded">
                                                                             <Save className="w-3.5 h-3.5" />
                                                                         </button>
-                                                                        <button onClick={() => setEditingTags(null)} className="p-1 hover:bg-red-500/10 text-red-600 rounded">
+                                                                        <button onClick={() => setEditingTags(null)} className="p-1 hover:bg-down/12 text-down rounded">
                                                                             <X className="w-3.5 h-3.5" />
                                                                         </button>
                                                                     </div>
@@ -300,7 +300,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                             <div className="flex flex-col items-end gap-1.5 min-w-[80px]">
                                                                 <span className={
                                                                     val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
-                                                                        (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' :
+                                                                        (val as number) > ((holding.Price || holding.price) as number) ? 'text-up font-medium' :
                                                                             (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
                                                                     ) : ''
                                                                 }>
@@ -382,7 +382,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                 ) : ['Contribution %', '% of Total', 'pct_of_total'].includes(header) ? (
                                                     <div className="w-24 ml-auto h-6">
                                                         <InlineProgressBar value={(val as number) || 0} max={100}>
-                                                            <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-red-600 dark:text-red-500' : ''}`}>{formatValue(val, header)}</span>
+                                                            <span className={`text-xs font-medium relative z-10 ${((val as number) || 0) < 0 ? 'text-down' : ''}`}>{formatValue(val, header)}</span>
                                                         </InlineProgressBar>
                                                     </div>
                                                 ) : header === 'Symbol' ? (
@@ -461,7 +461,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                 ) : header === 'Intrinsic Value' ? (
                                                     <span className={
                                                         val !== null && val !== undefined && (holding.Price !== undefined || holding.price !== undefined) ? (
-                                                            (val as number) > ((holding.Price || holding.price) as number) ? 'text-emerald-600 dark:text-emerald-400 font-medium' :
+                                                            (val as number) > ((holding.Price || holding.price) as number) ? 'text-up font-medium' :
                                                                 (val as number) < ((holding.Price || holding.price) as number) ? 'text-rose-500 font-medium' : ''
                                                         ) : ''
                                                     }>

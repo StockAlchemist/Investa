@@ -21,8 +21,8 @@ interface KpiTileProps {
 
 function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTileProps) {
     const toneClass =
-        tone === 'pos' ? 'text-emerald-600 dark:text-emerald-400'
-        : tone === 'neg' ? 'text-red-600 dark:text-red-400'
+        tone === 'pos' ? 'text-up'
+        : tone === 'neg' ? 'text-down'
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
 

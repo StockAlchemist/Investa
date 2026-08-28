@@ -47,7 +47,7 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
     if (!optimizations || optimizations.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center p-8 text-center bg-card/30 rounded-[2rem] border border-dashed border-white/10 mt-6">
-                <CheckCircle2 className="w-8 h-8 text-emerald-500/50 mb-3" />
+                <CheckCircle2 className="w-8 h-8 text-up/50 mb-3" />
                 <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Portfolio Optimized</h3>
                 <p className="text-xs text-muted-foreground/60 max-w-[200px] mt-2">
                     No actions warranted. Inactivity is a virtue.
@@ -58,7 +58,7 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
 
     const getTypeIcon = (type: string) => {
         switch (type) {
-            case 'add': return <PlusCircle className="w-5 h-5 text-emerald-500" />;
+            case 'add': return <PlusCircle className="w-5 h-5 text-up" />;
             case 'trim': return <MinusCircle className="w-5 h-5 text-amber-500" />;
             case 'exit': return <LogOut className="w-5 h-5 text-rose-500" />;
             case 'monitor': return <Eye className="w-5 h-5 text-indigo-500" />;

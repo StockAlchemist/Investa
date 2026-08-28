@@ -21,8 +21,8 @@ interface KpiTileProps {
 
 function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTileProps) {
     const toneClass =
-        tone === 'pos'  ? 'text-emerald-600 dark:text-emerald-400'
-        : tone === 'neg'  ? 'text-red-600 dark:text-red-400'
+        tone === 'pos'  ? 'text-up'
+        : tone === 'neg'  ? 'text-down'
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
     // Mobile → tablet: fills its responsive grid cell. xl+: becomes a
@@ -97,7 +97,7 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                         label="Total Realized"
                         value={fmt(m.totalGain)}
                         sub={m.returnPct != null
-                            ? <span className={m.returnPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                            ? <span className={m.returnPct >= 0 ? 'text-up' : 'text-down'}>
                                 {m.returnPct >= 0 ? '+' : ''}{m.returnPct.toFixed(1)}% on cost
                               </span>
                             : 'on cost basis'}
@@ -152,20 +152,20 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                     {m.biggestWin && (
                         <div className="metric-card p-4 flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                                <TrendingUp className="w-4 h-4 text-up" />
                                 <div>
                                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Biggest Win</div>
                                     <button
                                         type="button"
                                         onClick={() => openStockDetail(m.biggestWin!.symbol, currency)}
-                                        className="text-sm font-bold text-foreground hover:text-emerald-500 cursor-pointer transition-colors text-left"
+                                        className="text-sm font-bold text-foreground hover:text-up cursor-pointer transition-colors text-left"
                                     >
                                         {m.biggestWin.symbol}
                                     </button>
                                     <div className="text-[10px] text-muted-foreground/60 tabular-nums">{formatCalendarDate(m.biggestWin.date)}</div>
                                 </div>
                             </div>
-                            <div className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                            <div className="text-lg font-bold tabular-nums text-up">
                                 +{formatCurrency(m.biggestWin.gain, currency)}
                             </div>
                         </div>
@@ -173,20 +173,20 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                     {m.biggestLoss && (
                         <div className="metric-card p-4 flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <TrendingDown className="w-4 h-4 text-red-500" />
+                                <TrendingDown className="w-4 h-4 text-down" />
                                 <div>
                                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Biggest Loss</div>
                                     <button
                                         type="button"
                                         onClick={() => openStockDetail(m.biggestLoss!.symbol, currency)}
-                                        className="text-sm font-bold text-foreground hover:text-red-500 cursor-pointer transition-colors text-left"
+                                        className="text-sm font-bold text-foreground hover:text-down cursor-pointer transition-colors text-left"
                                     >
                                         {m.biggestLoss.symbol}
                                     </button>
                                     <div className="text-[10px] text-muted-foreground/60 tabular-nums">{formatCalendarDate(m.biggestLoss.date)}</div>
                                 </div>
                             </div>
-                            <div className="text-lg font-bold tabular-nums text-red-600 dark:text-red-400">
+                            <div className="text-lg font-bold tabular-nums text-down">
                                 {formatCurrency(m.biggestLoss.gain, currency)}
                             </div>
                         </div>

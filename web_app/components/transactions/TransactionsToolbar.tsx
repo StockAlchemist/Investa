@@ -124,7 +124,7 @@ export const TransactionsToolbar: React.FC<TransactionsToolbarProps> = ({
                             onClick={() => setIsImportMenuOpen(prev => !prev)}
                             className={cn(
                                 "flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-accent/10 text-foreground border border-border/60 rounded-xl text-xs font-medium transition-all cursor-pointer",
-                                isImportMenuOpen && "ring-2 ring-cyan-500/20 bg-accent/10"
+                                isImportMenuOpen && "ring-2 ring-ring/25 bg-accent/10"
                             )}
                             title="Import PDF or CSV statements to an account"
                         >
@@ -259,7 +259,7 @@ export const TransactionsToolbar: React.FC<TransactionsToolbarProps> = ({
                             placeholder="Filter by symbol..."
                             value={symbolFilter}
                             onChange={e => setSymbolFilter(e.target.value)}
-                            className="w-full pl-8 pr-8 py-1.5 bg-background border border-border/60 rounded-xl text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            className="w-full pl-8 pr-8 py-1.5 bg-background border border-border/60 rounded-xl text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
                         />
                         {symbolFilter && (
                             <button
@@ -276,7 +276,7 @@ export const TransactionsToolbar: React.FC<TransactionsToolbarProps> = ({
                         <select
                             value={accountFilter}
                             onChange={e => setAccountFilter(e.target.value)}
-                            className="px-3 py-1.5 bg-background border border-border/60 rounded-xl text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            className="px-3 py-1.5 bg-background border border-border/60 rounded-xl text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                         >
                             <option value="">All Accounts</option>
                             {uniqueAccounts.map(acc => (
@@ -322,14 +322,14 @@ export const TransactionsToolbar: React.FC<TransactionsToolbarProps> = ({
                             type="date"
                             value={customFrom}
                             onChange={e => setCustomFrom(e.target.value)}
-                            className="px-2.5 py-1 bg-background border border-border/60 rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            className="px-2.5 py-1 bg-background border border-border/60 rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                         />
                         <span>To:</span>
                         <input
                             type="date"
                             value={customTo}
                             onChange={e => setCustomTo(e.target.value)}
-                            className="px-2.5 py-1 bg-background border border-border/60 rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                            className="px-2.5 py-1 bg-background border border-border/60 rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                         />
                     </div>
                 )}

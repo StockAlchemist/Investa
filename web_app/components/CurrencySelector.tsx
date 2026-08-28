@@ -39,7 +39,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
                     side === 'bottom' ? "bg-transparent" : "hover:bg-accent/10",
                     "font-semibold tracking-tight w-[60px]",
-                    isOpen ? "ring-2 ring-cyan-500/20" : "text-cyan-500",
+                    isOpen ? "ring-2 ring-ring/25" : "text-cyan-500",
                     side === 'bottom' && "flex-row py-2 px-2 h-[44px] justify-center w-auto min-w-0"
                 )}
                 title={`Currency: ${currentCurrency}`}
@@ -90,7 +90,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                                 className={cn(
                                     "flex items-center w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left",
                                     currentCurrency === currency
-                                        ? "bg-[#0097b2] text-white"
+                                        ? "bg-primary text-primary-foreground"
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >

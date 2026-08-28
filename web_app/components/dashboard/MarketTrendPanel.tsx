@@ -124,7 +124,7 @@ function TrendRow({ signal, label }: { signal: TrendSignal; label: string }) {
     const isUp = signal.state === 'in';
     const Icon = isUp ? TrendingUp : TrendingDown;
     const tone = isUp
-        ? 'text-emerald-700 dark:text-emerald-400'
+        ? 'text-up'
         : 'text-amber-700 dark:text-amber-400';
 
     // The margin of the *active* reading: the month-end close that set it,

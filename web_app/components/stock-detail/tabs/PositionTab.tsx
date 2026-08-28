@@ -200,28 +200,28 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                         label="Unrealized G/L"
                         value={formatCurrency(unrealGain, currency)}
                         subValue={unrealGainPct === Infinity ? '∞' : `${unrealGainPct >= 0 ? '+' : ''}${unrealGainPct.toFixed(2)}%`}
-                        subValueColor={unrealGainPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}
-                        valueColor={unrealGain >= 0 ? 'text-emerald-500' : 'text-rose-500'}
+                        subValueColor={unrealGainPct >= 0 ? 'text-up' : 'text-rose-500'}
+                        valueColor={unrealGain >= 0 ? 'text-up' : 'text-rose-500'}
                         icon={LucideActivity}
-                        iconColor={unrealGain >= 0 ? 'text-emerald-500' : 'text-rose-500'}
-                        bgTint={unrealGain >= 0 ? 'bg-emerald-500/5 hover:bg-emerald-500/10' : 'bg-rose-500/5 hover:bg-rose-500/10'}
+                        iconColor={unrealGain >= 0 ? 'text-up' : 'text-rose-500'}
+                        bgTint={unrealGain >= 0 ? 'bg-emerald-500/5 hover:bg-up/12' : 'bg-rose-500/5 hover:bg-rose-500/10'}
                     />
                     <PositionKpiCard
                         label="Total Return"
                         value={formatCurrency(totalGain, currency)}
                         subValue={totalReturnPct === Infinity ? '∞' : `${totalReturnPct >= 0 ? '+' : ''}${totalReturnPct.toFixed(2)}%`}
-                        subValueColor={totalReturnPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}
-                        valueColor={totalGain >= 0 ? 'text-emerald-500' : 'text-rose-500'}
+                        subValueColor={totalReturnPct >= 0 ? 'text-up' : 'text-rose-500'}
+                        valueColor={totalGain >= 0 ? 'text-up' : 'text-rose-500'}
                         icon={TrendingUp}
-                        iconColor={totalReturnPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}
-                        bgTint={totalReturnPct >= 0 ? 'bg-emerald-500/5 hover:bg-emerald-500/10' : 'bg-rose-500/5 hover:bg-rose-500/10'}
+                        iconColor={totalReturnPct >= 0 ? 'text-up' : 'text-rose-500'}
+                        bgTint={totalReturnPct >= 0 ? 'bg-emerald-500/5 hover:bg-up/12' : 'bg-rose-500/5 hover:bg-rose-500/10'}
                     />
                     <PositionKpiCard
                         label="IRR (Annualized)"
                         value={irr != null ? `${irr >= 0 ? '+' : ''}${irr.toFixed(2)}%` : '—'}
                         icon={TrendingUp}
-                        iconColor={irr != null && irr >= 0 ? 'text-emerald-500' : irr != null ? 'text-rose-500' : 'text-slate-500'}
-                        valueColor={irr != null && irr >= 0 ? 'text-emerald-500' : irr != null ? 'text-rose-500' : undefined}
+                        iconColor={irr != null && irr >= 0 ? 'text-up' : irr != null ? 'text-rose-500' : 'text-slate-500'}
+                        valueColor={irr != null && irr >= 0 ? 'text-up' : irr != null ? 'text-rose-500' : undefined}
                     />
                     <PositionKpiCard
                         label="Yield on Cost"
@@ -240,8 +240,8 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                         label="Realized G/L"
                         value={formatCurrency(realGain, currency)}
                         icon={CheckCircle2}
-                        iconColor={realGain >= 0 ? 'text-emerald-500' : 'text-rose-500'}
-                        valueColor={realGain >= 0 ? 'text-emerald-500' : 'text-rose-500'}
+                        iconColor={realGain >= 0 ? 'text-up' : 'text-rose-500'}
+                        valueColor={realGain >= 0 ? 'text-up' : 'text-rose-500'}
                     />
                 </div>
             </div>
@@ -271,7 +271,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                         <div className="text-muted-foreground flex items-center justify-between">
                             <span>Capital Appreciation</span>
                             {unrealGain + realGain >= 0 ? (
-                                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+                                <ArrowUpRight className="w-3.5 h-3.5 text-up" />
                             ) : (
                                 <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" />
                             )}
@@ -289,7 +289,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                             <span>Dividend Income</span>
                             <DollarSign className="w-3.5 h-3.5 text-amber-500" />
                         </div>
-                        <div className="font-semibold text-sm text-emerald-600 dark:text-emerald-400">
+                        <div className="font-semibold text-sm text-up">
                             +{formatCurrency(divs, currency)}
                         </div>
                         <div className="text-[11px] text-muted-foreground">
@@ -302,7 +302,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                             <span>Currency (FX) Impact</span>
                             <LucideActivity className="w-3.5 h-3.5 text-indigo-500" />
                         </div>
-                        <div className={`font-semibold text-sm ${fxGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        <div className={`font-semibold text-sm ${fxGain >= 0 ? 'text-up' : 'text-down'}`}>
                             {fxGain >= 0 ? '+' : ''}{formatCurrency(fxGain, currency)}
                         </div>
                         <div className="text-[11px] text-muted-foreground">
@@ -315,7 +315,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                             <span>Fees & Tax Friction</span>
                             <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
                         </div>
-                        <div className="font-semibold text-sm text-rose-600 dark:text-rose-400">
+                        <div className="font-semibold text-sm text-down">
                             -{formatCurrency(commissions + taxes, currency)}
                         </div>
                         <div className="text-[11px] text-muted-foreground">
@@ -376,7 +376,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                                             {formatCurrency(lot.market_value_display, currency)}
                                         </td>
                                         <td className="py-3 px-4 text-right tabular-nums whitespace-nowrap">
-                                            <span className={lot.unrealized_gain_display >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
+                                            <span className={lot.unrealized_gain_display >= 0 ? 'text-up font-semibold' : 'text-down font-semibold'}>
                                                 {lot.unrealized_gain_display >= 0 ? '+' : ''}{formatCurrency(lot.unrealized_gain_display, currency)}
                                                 <span className="text-[10px] ml-1 font-normal opacity-85">
                                                     ({lot.unrealized_gain_pct >= 0 ? '+' : ''}{lot.unrealized_gain_pct.toFixed(2)}%)
@@ -389,7 +389,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                                         <td className="py-3 px-4 text-center whitespace-nowrap">
                                             <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
                                                 lot.tax_term === 'long_term'
-                                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                                    ? 'bg-up/12 text-up border border-up/25'
                                                     : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
                                             }`}>
                                                 {lot.tax_term === 'long_term' ? 'Long-Term' : 'Short-Term'}
@@ -449,7 +449,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                                             {formatCurrency(trade.cost_basis_display, currency)}
                                         </td>
                                         <td className="py-3 px-4 text-right tabular-nums whitespace-nowrap">
-                                            <span className={trade.realized_gain_display >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}>
+                                            <span className={trade.realized_gain_display >= 0 ? 'text-up font-bold' : 'text-down font-bold'}>
                                                 {trade.realized_gain_display >= 0 ? '+' : ''}{formatCurrency(trade.realized_gain_display, currency)}
                                             </span>
                                         </td>

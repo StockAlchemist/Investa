@@ -245,9 +245,9 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
                         {insights.map((ins) => {
                             const Icon = ins.icon;
                             const tone = ins.tone === 'pos'
-                                ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10'
+                                ? 'text-up bg-up/12'
                                 : ins.tone === 'alert'
-                                    ? 'text-red-700 dark:text-red-400 bg-red-500/10'
+                                    ? 'text-down bg-down/12'
                                     : ins.tone === 'warn'
                                         ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10'
                                         : 'text-foreground bg-muted/30';
@@ -390,7 +390,7 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                                     {formatCalendarDate(lot.date)}
                                                 </td>
                                                 <td className="px-3 py-2 text-right tabular-nums">{lot.quantity.toLocaleString()}</td>
-                                                <td className="px-3 py-2 text-right tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">
+                                                <td className="px-3 py-2 text-right tabular-nums text-up font-semibold">
                                                     +{formatCurrency(lot.gain, currency)}
                                                 </td>
                                                 <td className="px-3 py-2 text-right tabular-nums font-bold text-amber-700 dark:text-amber-400">
@@ -424,7 +424,7 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                                 </div>
                                                 <span className={cn(
                                                     'text-sm font-black tabular-nums shrink-0',
-                                                    overweight ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'
+                                                    overweight ? 'text-down' : 'text-amber-700 dark:text-amber-400'
                                                 )}>
                                                     {overweight ? '+' : ''}{d.drift.toFixed(1)}%
                                                 </span>
@@ -487,7 +487,7 @@ function InsightsDetailModal({ open, onClose, details, insights, currency }: Ins
                                                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                                                     {u.marketValue != null ? formatCurrency(u.marketValue, currency) : '—'}
                                                 </td>
-                                                <td className="px-3 py-2 text-right tabular-nums font-bold text-emerald-700 dark:text-emerald-400">
+                                                <td className="px-3 py-2 text-right tabular-nums font-bold text-up">
                                                     {u.mos.toFixed(1)}%
                                                 </td>
                                             </tr>
@@ -524,9 +524,9 @@ interface DetailSectionProps {
 
 function DetailSection({ icon: Icon, tone, title, description, children }: DetailSectionProps) {
     const toneClass = tone === 'pos'
-        ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10'
+        ? 'text-up bg-up/12'
         : tone === 'alert'
-            ? 'text-red-700 dark:text-red-400 bg-red-500/10'
+            ? 'text-down bg-down/12'
             : tone === 'warn'
                 ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10'
                 : 'text-foreground bg-muted/30';

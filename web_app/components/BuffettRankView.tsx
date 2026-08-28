@@ -56,10 +56,10 @@ const PAGE_SIZE = 100;
 /** Percentile scores share one scale, so one colour ramp serves all of them. */
 const scoreClass = (value: number | null | undefined): string => {
     if (value === null || value === undefined) return 'text-muted-foreground';
-    if (value >= 70) return 'text-emerald-600 dark:text-emerald-400';
+    if (value >= 70) return 'text-up';
     if (value >= 50) return 'text-cyan-600 dark:text-cyan-400';
     if (value >= 30) return 'text-amber-600 dark:text-amber-400';
-    return 'text-red-600 dark:text-red-500';
+    return 'text-down';
 };
 
 const fmtScore = (value: number | null | undefined): string =>
@@ -390,7 +390,7 @@ const RankTable: React.FC<{
     }
     if (error) {
         return (
-            <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-red-500">
+            <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-down">
                 Could not load the ranking.
             </div>
         );
@@ -518,8 +518,8 @@ const RankTable: React.FC<{
                                         className={cn(
                                             'inline-flex items-center',
                                             row.earnings_yield > 0
-                                                ? 'text-emerald-600 dark:text-emerald-400'
-                                                : 'text-red-600 dark:text-red-500'
+                                                ? 'text-up'
+                                                : 'text-down'
                                         )}
                                     >
                                         {row.earnings_yield > 0 ? (

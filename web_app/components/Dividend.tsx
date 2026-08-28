@@ -232,7 +232,7 @@ export default function Dividend({
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                                                     <span className="text-muted-foreground">Dividends:</span>
-                                                    <span className="font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                                    <span className="font-medium text-up tabular-nums">
                                                         {formatCurrency(row.amount, currency)}
                                                     </span>
                                                 </div>
@@ -242,7 +242,7 @@ export default function Dividend({
                                                         <span className="text-muted-foreground">YoY:</span>
                                                         <span className={cn(
                                                             'font-medium tabular-nums',
-                                                            row.yoyPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                                            row.yoyPct >= 0 ? 'text-up' : 'text-down',
                                                         )}>
                                                             {row.yoyPct > 0 ? '+' : ''}{row.yoyPct.toFixed(1)}%
                                                         </span>
@@ -272,7 +272,7 @@ export default function Dividend({
                             {visibleData.length} / {sortedData.length}
                         </span>
                         {selectedYear && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-up/12 text-up text-xs font-medium">
                                 <Calendar className="w-3 h-3" />
                                 <span className="font-bold">{selectedYear}</span>
                                 <button
@@ -292,7 +292,7 @@ export default function Dividend({
                             placeholder="Search symbol or account..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="bg-card border-none text-foreground rounded-md pl-9 pr-8 py-2 text-sm w-full focus:ring-emerald-500 focus:border-emerald-500"
+                            className="bg-card border-none text-foreground rounded-md pl-9 pr-8 py-2 text-sm w-full focus:ring-ring focus:border-emerald-500"
                         />
                         {searchQuery && (
                             <button
@@ -344,10 +344,10 @@ export default function Dividend({
                                             </div>
                                         </td>
                                         <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
-                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-emerald-500 tabular-nums">
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-up tabular-nums">
                                             {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
                                         </td>
-                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-red-500/80 tabular-nums">
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-down/80 tabular-nums">
                                             {item['TaxAmountDisplayCurrency'] ? formatCurrency(item['TaxAmountDisplayCurrency'], currency) : '-'}
                                         </td>
                                         <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-foreground font-medium tabular-nums">
@@ -384,11 +384,11 @@ export default function Dividend({
                                     <div className="text-xs text-muted-foreground">{formatCalendarDate(item.Date)} • {item.Account}</div>
                                 </div>
                                 <div className="text-right">
-                                    <div className="text-lg font-bold text-emerald-500">
+                                    <div className="text-lg font-bold text-up">
                                         {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
                                     </div>
                                     {item['TaxAmountDisplayCurrency'] ? (
-                                        <div className="text-[10px] text-red-500/70">
+                                        <div className="text-[10px] text-down/70">
                                             Tax: {formatCurrency(item['TaxAmountDisplayCurrency'], currency)}
                                         </div>
                                     ) : null}
@@ -404,7 +404,7 @@ export default function Dividend({
                     <div className="flex justify-center gap-4 p-4">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
                         >
                             Show More
                         </button>

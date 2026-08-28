@@ -19,8 +19,8 @@ export function EmptyState({ onNavigate, className }: EmptyStateProps) {
         <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
           <Wallet className="w-9 h-9 text-primary/70" />
         </div>
-        <div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-          <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+        <div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-up/12 border border-up/25 flex items-center justify-center">
+          <TrendingUp className="w-3.5 h-3.5 text-up" />
         </div>
       </div>
 

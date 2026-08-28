@@ -87,7 +87,7 @@ export default function TopPayers({ dividends, currency, limit = 10 }: TopPayers
                             </div>
                         </div>
                         <div className="text-right shrink-0 tabular-nums">
-                            <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                            <div className="text-xs font-bold text-up">
                                 {formatCurrency(row.gross, currency)}
                             </div>
                             <div className="text-[10px] text-muted-foreground/60">

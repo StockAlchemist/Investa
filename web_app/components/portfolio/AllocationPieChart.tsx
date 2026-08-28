@@ -286,7 +286,7 @@ export default function AllocationPieChart({ title, data, currency, holdings, bu
                                         </div>
                                         <div className="relative h-1.5 bg-muted rounded-full overflow-hidden">
                                             <div
-                                                className="absolute inset-y-0 left-0 bg-[#0097b2] rounded-full"
+                                                className="absolute inset-y-0 left-0 bg-primary rounded-full"
                                                 style={{ width: `${Math.min(100, row.pctOfBucket)}%` }}
                                             />
                                         </div>

@@ -87,7 +87,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                 className={cn(
                                     'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
                                     period === p.key
-                                        ? 'bg-[#0097b2] text-white shadow-sm'
+                                        ? 'bg-primary text-primary-foreground shadow-sm'
                                         : 'text-muted-foreground hover:text-foreground',
                                 )}
                             >
@@ -124,7 +124,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                             onClick={() => setViewMode('percent')}
                             className={cn(
                                 'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
-                                viewMode === 'percent' ? 'bg-[#0097b2] text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                                viewMode === 'percent' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             %
@@ -133,7 +133,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                             onClick={() => setViewMode('value')}
                             className={cn(
                                 'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
-                                viewMode === 'value' ? 'bg-[#0097b2] text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                                viewMode === 'value' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             {currency}
@@ -214,7 +214,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                                     <span className="text-muted-foreground">{entry.name}:</span>
                                                     <span className={cn(
                                                         'font-medium',
-                                                        Number(entry.value) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                                        Number(entry.value) >= 0 ? 'text-up' : 'text-down',
                                                     )}>
                                                         {formatValue(Number(entry.value))}
                                                     </span>
@@ -235,7 +235,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                                                 <span className="text-muted-foreground">Net Flow:</span>
                                                                 <span className={cn(
                                                                     'font-medium',
-                                                                    netFlow >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                                                    netFlow >= 0 ? 'text-up' : 'text-down',
                                                                 )}>
                                                                     {formatValue(netFlow)}
                                                                 </span>
@@ -246,7 +246,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                                                     <span className="text-muted-foreground">Total Change:</span>
                                                                     <span className={cn(
                                                                         'font-medium',
-                                                                        totalChange >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                                                        totalChange >= 0 ? 'text-up' : 'text-down',
                                                                     )}>
                                                                         {formatValue(totalChange)}
                                                                     </span>

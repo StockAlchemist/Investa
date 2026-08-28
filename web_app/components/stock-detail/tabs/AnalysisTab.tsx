@@ -139,7 +139,7 @@ export const AnalysisTab: React.FC<AnalysisTabProps> = ({ symbol, isOpen }) => {
     const topics = [
         { id: 'moat', title: 'Moat & Edge', icon: Shield, color: 'text-blue-500', bg: 'bg-blue-500/10', content: analysis?.analysis?.moat, score: analysis?.scorecard?.moat },
         { id: 'strength', title: 'Financial Strength', icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10', content: analysis?.analysis?.financial_strength, score: analysis?.scorecard?.financial_strength },
-        { id: 'predictability', title: 'Predictability', icon: Target, color: 'text-emerald-500', bg: 'bg-emerald-500/10', content: analysis?.analysis?.predictability, score: analysis?.scorecard?.predictability },
+        { id: 'predictability', title: 'Predictability', icon: Target, color: 'text-up', bg: 'bg-up/12', content: analysis?.analysis?.predictability, score: analysis?.scorecard?.predictability },
         { id: 'growth', title: 'Growth Perspective', icon: LucideActivity, color: 'text-purple-500', bg: 'bg-purple-500/10', content: analysis?.analysis?.growth_perspective, score: analysis?.scorecard?.growth }
     ];
 
@@ -229,7 +229,7 @@ export const AnalysisTab: React.FC<AnalysisTabProps> = ({ symbol, isOpen }) => {
                         {typeof analysis.sentiment === 'number' && (
                             <Badge className={cn(
                                 "border-none px-3 py-1",
-                                analysis.sentiment >= 70 ? "bg-emerald-500/20 text-emerald-500" :
+                                analysis.sentiment >= 70 ? "bg-emerald-500/20 text-up" :
                                 analysis.sentiment >= 40 ? "bg-amber-500/20 text-amber-500" :
                                 "bg-rose-500/20 text-rose-500"
                             )}>

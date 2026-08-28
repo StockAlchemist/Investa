@@ -156,14 +156,14 @@ export default function TxKpiStrip({ transactions, preferredCurrency }: TxKpiStr
                 )}
                 {incomeCount > 0 && (
                     <span className="inline-flex items-baseline gap-1.5">
-                        <span className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                        <span className="text-sm font-bold tabular-nums text-up">
                             {counts.dividend.toLocaleString()}
                         </span>
                         <span className="text-[11px] text-muted-foreground">div</span>
                         {counts.interest > 0 && (
                             <>
                                 <span className="text-muted-foreground/40">·</span>
-                                <span className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                <span className="text-sm font-bold tabular-nums text-up">
                                     {counts.interest.toLocaleString()}
                                 </span>
                                 <span className="text-[11px] text-muted-foreground">int</span>
@@ -188,8 +188,8 @@ export default function TxKpiStrip({ transactions, preferredCurrency }: TxKpiStr
                     {rows.map(row => {
                         const positive = row.netFlow >= 0;
                         const netTone = positive
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-red-600 dark:text-red-400';
+                            ? 'text-up'
+                            : 'text-down';
                         const NetArrow = positive ? ArrowDownRight : ArrowUpRight;
                         return (
                             <div

@@ -54,7 +54,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
             <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-40" />
             <div className="pb-4">
                 <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-[#0097b2]" />
+                    <Filter className="w-4 h-4 text-primary" />
                     <h3 className="section-label">Initial Parameters</h3>
                 </div>
             </div>
@@ -71,7 +71,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     aria-label="Universe"
                                     value={universeType}
                                     onChange={(e) => setUniverseType(e.target.value)}
-                                    className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
+                                    className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
                                 >
                                     <option value="watchlist" className="bg-card text-foreground">Watchlist</option>
                                     <option value="narrative" className="bg-card text-foreground text-cyan-400 font-bold">Narrative Search (AI) ✨</option>
@@ -96,7 +96,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                         aria-label="Target Portfolio"
                                         value={selectedWatchlistId}
                                         onChange={(e) => setSelectedWatchlistId(e.target.value)}
-                                        className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
+                                        className="w-full h-10 px-3 bg-secondary rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
                                     >
                                         {isFetchingLists ? (
                                             <option value="" disabled>Loading watchlists...</option>
@@ -126,7 +126,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     value={narrativePrompt}
                                     onChange={(e) => setNarrativePrompt(e.target.value)}
                                     placeholder="e.g. Find high-growth tech stocks with margin of safety > 20%"
-                                    className="bg-secondary/50 border-cyan-500/20 text-foreground font-medium h-10 placeholder:text-muted-foreground/50 focus-visible:ring-cyan-500/30"
+                                    className="bg-secondary/50 border-cyan-500/20 text-foreground font-medium h-10 placeholder:text-muted-foreground/50 focus-visible:ring-ring/30"
                                 />
                             </div>
                         )}
@@ -149,7 +149,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                             <Button
                                 type="submit"
                                 disabled={isLoading || (universeType === 'watchlist' && !selectedWatchlistId && !isFetchingLists)}
-                                className="w-full h-10 bg-[#0097b2] hover:bg-[#00869e] text-white font-bold tracking-tight rounded-md transition-all flex items-center justify-center gap-2"
+                                className="w-full h-10 bg-primary hover:bg-primary-hover text-primary-foreground font-bold tracking-tight rounded-md transition-all flex items-center justify-center gap-2"
                             >
                                 {isLoading ? (
                                     <>

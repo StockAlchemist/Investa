@@ -28,11 +28,11 @@ function SortIndicator({ active, direction }: { active: boolean; direction: 'asc
 
 function getTypeBadgeStyle(type: string): string {
     const t = type.toLowerCase();
-    if (t === 'buy') return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-    if (t === 'sell') return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
+    if (t === 'buy') return 'bg-up/12 text-up border-up/25';
+    if (t === 'sell') return 'bg-down/12 text-down border-down/25';
     if (t === 'dividend') return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
     if (t === 'deposit') return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
-    if (t === 'withdrawal') return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
+    if (t === 'withdrawal') return 'bg-rose-500/10 text-down border-rose-500/20';
     if (t === 'transfer') return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20';
     return 'bg-secondary text-muted-foreground border-border/60';
 }
@@ -219,7 +219,7 @@ export const TransactionsDesktopTable: React.FC<TransactionsDesktopTableProps> =
                                             </button>
                                             <button
                                                 onClick={() => onDelete(tx)}
-                                                className="p-1 text-muted-foreground hover:text-red-500 hover:bg-secondary rounded-lg transition-colors"
+                                                className="p-1 text-muted-foreground hover:text-down hover:bg-secondary rounded-lg transition-colors"
                                                 title="Delete Transaction"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />

@@ -37,7 +37,7 @@ interface ValuationItem {
 const CATEGORY_STYLES = {
     cash_earnings: {
         label: 'Cash Flow & Earnings',
-        badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+        badge: 'bg-up/12 text-up border-up/25',
         dot: 'bg-emerald-500',
     },
     multiples: {
@@ -329,7 +329,7 @@ export default function ValuationComparisonChart({
                         <span className="text-muted-foreground">Consensus:</span>
                         <span className={cn(
                             "font-bold",
-                            undervaluedCount > items.length / 2 ? "text-emerald-500" : "text-amber-500"
+                            undervaluedCount > items.length / 2 ? "text-up" : "text-amber-500"
                         )}>
                             {undervaluedCount}/{items.length} Undervalued
                         </span>
@@ -444,8 +444,8 @@ export default function ValuationComparisonChart({
                                         <span className={cn(
                                             "text-xs font-semibold px-1.5 py-0.5 rounded",
                                             effectiveBlendedValue >= currentPrice
-                                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                                : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                                                ? "bg-up/12 text-up"
+                                                : "bg-rose-500/15 text-down"
                                         )}>
                                             {effectiveBlendedValue >= currentPrice ? '+' : ''}
                                             {(((effectiveBlendedValue - currentPrice) / currentPrice) * 100).toFixed(1)}%
@@ -555,8 +555,8 @@ export default function ValuationComparisonChart({
                                         <span className={cn(
                                             "text-[11px] font-bold px-1.5 py-0.2 rounded tabular-nums",
                                             isUndervalued
-                                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                                : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                                                ? "bg-up/12 text-up"
+                                                : "bg-rose-500/15 text-down"
                                         )}>
                                             {isUndervalued ? '+' : ''}{item.upsidePct.toFixed(1)}%
                                         </span>
@@ -616,7 +616,7 @@ export default function ValuationComparisonChart({
                                 {isHovered && item.bestSuitedFor && (
                                     <div className="mt-2 pt-2 border-t border-border/40 text-[11px] text-muted-foreground flex flex-col sm:flex-row gap-2">
                                         <div>
-                                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Best Suited: </span>
+                                            <span className="font-semibold text-up">Best Suited: </span>
                                             <span>{item.bestSuitedFor}</span>
                                         </div>
                                     </div>

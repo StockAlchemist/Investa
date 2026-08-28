@@ -62,7 +62,7 @@ function renderItemList(
                         className={cn(
                             "group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors last:border-0",
                             isVisible
-                                ? 'bg-[#0097b2] text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                         )}
                     >
