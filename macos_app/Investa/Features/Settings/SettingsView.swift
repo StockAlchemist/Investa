@@ -56,6 +56,56 @@ final class SettingsViewModel: ObservableObject {
         } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
     }
 
+    /// Save account preferences in a single POST request.
+    func updateAccountPreferences(currencyMap: [String: String], cashModeMap: [String: String], closureMap: [String: String]) async {
+        struct Body: Encodable {
+            let account_currency_map: [String: String]
+            let account_cash_mode_map: [String: String]
+            let account_closure_dates: [String: String]
+        }
+        do {
+            let _: StatusResponse = try await api.send(
+                method: "POST", path: "/settings/update",
+                body: Body(
+                    account_currency_map: currencyMap,
+                    account_cash_mode_map: cashModeMap,
+                    account_closure_dates: closureMap
+                ))
+            status = "Account preferences saved."
+            await load()
+        } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+
+    /// Save cash yield settings in a single POST request.
+    func updateCashYield(rates: [String: Double], thresholds: [String: Double]) async {
+        struct Body: Encodable {
+            let account_interest_rates: [String: Double]
+            let interest_free_thresholds: [String: Double]
+        }
+        do {
+            let _: StatusResponse = try await api.send(
+                method: "POST", path: "/settings/update",
+                body: Body(account_interest_rates: rates, interest_free_thresholds: thresholds))
+            status = "Cash yield settings saved."
+            await load()
+        } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+
+    /// Save IBKR credentials in a single POST request.
+    func updateIBKR(token: String, queryId: String) async {
+        struct Body: Encodable {
+            let ibkr_token: String
+            let ibkr_query_id: String
+        }
+        do {
+            let _: StatusResponse = try await api.send(
+                method: "POST", path: "/settings/update",
+                body: Body(ibkr_token: token, ibkr_query_id: queryId))
+            status = "Credentials saved."
+            await load()
+        } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+
     func clearCache() async {
         do { let _: StatusResponse = try await api.send(method: "POST", path: "/clear_cache"); status = "Cache cleared." }
         catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
@@ -174,24 +224,20 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text("Settings")
-                        .appFont(.system(size: 32, weight: .heavy, design: .default))
-                        .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
-                    
+                    Text("Settings").appFont(.title2.bold())
                     if viewModel.isLoading { ProgressView().controlSize(.small).padding(.leading, 8) }
                     Spacer()
                     if let s = viewModel.status { Text(s).appFont(.caption).foregroundStyle(.secondary) }
                 }
-                
                 Text("Manage application settings, preferences, and account configurations.")
-                    .appFont(.body)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
             
             if isCompact {
                 ScrollView(.horizontal, showsIndicators: false) {

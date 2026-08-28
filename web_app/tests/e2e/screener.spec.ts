@@ -11,7 +11,7 @@ test.describe('Screener Journey', () => {
 
         // Navigate to Screener
         await page.getByRole('button', { name: 'Screener' }).click();
-        await expect(page.getByText('Market Explorer')).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Screener' })).toBeVisible();
 
         // Universe select: Select S&P 500
         const universeSelect = page.locator('#screener-universe');

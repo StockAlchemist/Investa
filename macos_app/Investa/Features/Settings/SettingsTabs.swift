@@ -212,9 +212,11 @@ struct AccountsSettings: View {
             
             Button("Save Account Preferences") {
                 Task {
-                    await vm.update("account_currency_map", currencyMap.filter { !$0.value.isEmpty })
-                    await vm.update("account_cash_mode_map", cashModeMap)
-                    await vm.update("account_closure_dates", closureMap.filter { !$0.value.isEmpty })
+                    await vm.updateAccountPreferences(
+                        currencyMap: currencyMap.filter { !$0.value.isEmpty },
+                        cashModeMap: cashModeMap,
+                        closureMap: closureMap.filter { !$0.value.isEmpty }
+                    )
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -289,8 +291,7 @@ struct AccountsSettings: View {
             }
             Button("Save Cash Yield Settings") {
                 Task {
-                    await vm.update("account_interest_rates", rates)
-                    await vm.update("interest_free_thresholds", thresholds)
+                    await vm.updateCashYield(rates: rates, thresholds: thresholds)
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -454,12 +455,14 @@ struct OverridesSettings: View {
 
     @State private var isEditing = false
 
-    private var overrides: [(symbol: String, price: Double?, meta: [String: String])] {
+    private var overrides: [(symbol: String, price: Double?, meta: [String: String], currency: String)] {
         (settings?.manualOverrides ?? [:]).sorted(by: { $0.key < $1.key }).map { sym, val in
-            if let p = val.doubleValue { return (sym, p, [:]) }
+            let currency = val["currency"]?.stringValue ?? (sym.hasSuffix(".BK") || sym.contains(":BKK") ? "THB" : "USD")
+            if let p = val.doubleValue { return (sym, p > 0 ? p : nil, [:], currency) }
             var meta: [String: String] = [:]
             for k in ["asset_type", "sector", "geography", "industry", "exchange"] { if let s = val[k]?.stringValue { meta[k] = s } }
-            return (sym, val["price"]?.doubleValue, meta)
+            let p = val["price"]?.doubleValue
+            return (sym, (p != nil && p! > 0) ? p : nil, meta, currency)
         }
     }
 
@@ -516,7 +519,7 @@ struct OverridesSettings: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 16) {
                                 Text("Symbol").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
-                                Text("Price").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                                Text("Price").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
                                 Text("Asset Type").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
                                 Text("Sector").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
                                 Text("Country").appFont(.caption).fontWeight(.bold).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
@@ -528,13 +531,30 @@ struct OverridesSettings: View {
                             ForEach(overrides, id: \.symbol) { o in
                                 HStack(spacing: 16) {
                                     Text(o.symbol).fontWeight(.bold).frame(width: 80, alignment: .leading).lineLimit(1)
-                                    Text(o.price.map { Fmt.number($0) } ?? "—").monospacedDigit().frame(width: 80, alignment: .trailing)
                                     
-                                    Text(o.meta["asset_type"] ?? "—").appFont(.caption).frame(width: 100, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["sector"] ?? "—").appFont(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["geography"] ?? "—").appFont(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["industry"] ?? "—").appFont(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
-                                    Text(o.meta["exchange"] ?? "—").appFont(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
+                                    Group {
+                                        if let p = o.price, p > 0 {
+                                            let currSymbol = o.currency == "THB" ? "฿" : "$"
+                                            Text("\(currSymbol)\(Fmt.number(p, fractionDigits: 4))")
+                                                .monospacedDigit()
+                                                .foregroundStyle(Color.green)
+                                        } else {
+                                            Text("-")
+                                                .foregroundStyle(Color.secondary.opacity(0.5))
+                                        }
+                                    }
+                                    .frame(width: 90, alignment: .trailing)
+                                    
+                                    Text(o.meta["asset_type"] ?? "-").appFont(.caption).frame(width: 100, alignment: .leading).lineLimit(1)
+                                        .foregroundStyle(o.meta["asset_type"] != nil ? Color.primary : Color.secondary.opacity(0.5))
+                                    Text(o.meta["sector"] ?? "-").appFont(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
+                                        .foregroundStyle(o.meta["sector"] != nil ? Color.primary : Color.secondary.opacity(0.5))
+                                    Text(o.meta["geography"] ?? "-").appFont(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
+                                        .foregroundStyle(o.meta["geography"] != nil ? Color.primary : Color.secondary.opacity(0.5))
+                                    Text(o.meta["industry"] ?? "-").appFont(.caption).frame(width: 120, alignment: .leading).lineLimit(1)
+                                        .foregroundStyle(o.meta["industry"] != nil ? Color.primary : Color.secondary.opacity(0.5))
+                                    Text(o.meta["exchange"] ?? "-").appFont(.caption).frame(width: 80, alignment: .leading).lineLimit(1)
+                                        .foregroundStyle(o.meta["exchange"] != nil ? Color.primary : Color.secondary.opacity(0.5))
                                     
                                     HStack(spacing: 8) {
                                         Button { edit(o) } label: { Image(systemName: "pencil") }
@@ -561,16 +581,16 @@ struct OverridesSettings: View {
     private func add() {
         var map = settings?.manualOverrides ?? [:]
         var obj: [String: JSONValue] = [:]
-        if let p = Double(price) { obj["price"] = .double(p) }
+        if let p = Double(price), p > 0 { obj["price"] = .double(p) }
         for (k, v) in [("asset_type", assetType), ("sector", sector), ("geography", geo), ("industry", industry), ("exchange", exchange)] where !v.isEmpty { obj[k] = .string(v) }
         map[sym.uppercased()] = .object(obj)
         clear()
         Task { await vm.update("manual_price_overrides", map) }
     }
     
-    private func edit(_ o: (symbol: String, price: Double?, meta: [String: String])) {
+    private func edit(_ o: (symbol: String, price: Double?, meta: [String: String], currency: String)) {
         sym = o.symbol
-        price = o.price.map { String($0) } ?? ""
+        price = (o.price != nil && o.price! > 0) ? String(o.price!) : ""
         assetType = o.meta["asset_type"] ?? ""
         sector = o.meta["sector"] ?? ""
         geo = o.meta["geography"] ?? ""
@@ -721,7 +741,7 @@ struct AdvancedSettings: View {
             .padding(.top, 4)
             
             HStack(spacing: 12) {
-                Button("Save Credentials") { Task { await vm.update("ibkr_token", ibkrToken); await vm.update("ibkr_query_id", ibkrQuery) } }
+                Button("Save Credentials") { Task { await vm.updateIBKR(token: ibkrToken, queryId: ibkrQuery) } }
                     .buttonStyle(.borderedProminent)
                 Button { Task { await vm.syncIbkr() } } label: {
                     if vm.isSyncingIbkr {

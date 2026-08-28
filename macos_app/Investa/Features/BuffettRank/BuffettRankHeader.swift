@@ -18,8 +18,8 @@ struct BuffettRankHero: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isPhoneLayout ? 9 : 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Buffett & Value Ranking")
-                    .appFont(.title2.weight(.bold))
+                Text("Rankings")
+                    .appFont(.title2.bold())
                 // Three lines of explanation ahead of the first company is a
                 // fair trade on a Mac window and a bad one on a phone, where it
                 // is a tenth of the screen every time the tab is opened. There

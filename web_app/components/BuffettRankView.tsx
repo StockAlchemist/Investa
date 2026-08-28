@@ -242,7 +242,7 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
     return (
         <div className="space-y-4">
             <header className="rounded-xl border border-border bg-card p-5">
-                <h1 className="text-xl font-semibold">Buffett &amp; Value Ranking</h1>
+                <h1 className="text-xl font-semibold">Rankings</h1>
                 <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
                     Every US-listed common stock, scored 60% on business quality and 40% on
                     value. Quality gates run first — a company that fails one is excluded

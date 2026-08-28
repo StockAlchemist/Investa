@@ -238,14 +238,13 @@ export default function AuthenticatedDashboard() {
   const lastSyncedRef = useRef<Record<string, unknown>>({});
   const isInitialSyncDone = useRef(false);
 
-  // Initialize lastSyncedRef once settingsQuery.data is first loaded
+  // Keep lastSyncedRef updated whenever settingsQuery.data is loaded or refreshed
   useEffect(() => {
-    if (!settingsQuery.data || isInitialSyncDone.current) return;
+    if (!settingsQuery.data) return;
     isInitialSyncDone.current = true;
     const s = settingsQuery.data;
     lastSyncedRef.current = {
       display_currency: s.display_currency,
-      active_tab: s.active_tab,
       show_closed: s.show_closed,
       selected_accounts: s.selected_accounts,
       visible_items: s.visible_items,
@@ -253,6 +252,7 @@ export default function AuthenticatedDashboard() {
     };
   }, [settingsQuery.data]);
 
+  // Persist UI state to localStorage immediately
   useEffect(() => {
     if (!mounted) return;
     try {
@@ -270,8 +270,11 @@ export default function AuthenticatedDashboard() {
     } catch (e) {
       console.warn('localStorage quota exceeded, skipping persistence', e);
     }
+  }, [mounted, currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, graphPeriod, graphView]);
 
-    if (!isInitialSyncDone.current) return;
+  // Debounced sync of persistent user configuration to backend settings
+  useEffect(() => {
+    if (!mounted || !isInitialSyncDone.current) return;
 
     const id = setTimeout(() => {
       const updates: Partial<SettingsUpdate> = {};
@@ -283,12 +286,11 @@ export default function AuthenticatedDashboard() {
         return arrA.length === arrB.length && arrA.every((v, i) => v === arrB[i]);
       };
 
-      if (last.display_currency !== currency) updates.display_currency = currency;
-      if (last.active_tab !== activeTab) updates.active_tab = activeTab;
-      if (last.show_closed !== showClosed) updates.show_closed = showClosed;
-      if (!arrayEqual(last.selected_accounts, selectedAccounts)) updates.selected_accounts = selectedAccounts;
-      if (!arrayEqual(last.visible_items, visibleItems) && visibleItems.length > 0) updates.visible_items = visibleItems;
-      if (!arrayEqual(last.benchmarks, benchmarks) && benchmarks.length > 0) updates.benchmarks = benchmarks;
+      if (last.display_currency !== undefined && last.display_currency !== currency) updates.display_currency = currency;
+      if (last.show_closed !== undefined && last.show_closed !== showClosed) updates.show_closed = showClosed;
+      if (last.selected_accounts !== undefined && !arrayEqual(last.selected_accounts, selectedAccounts)) updates.selected_accounts = selectedAccounts;
+      if (last.visible_items !== undefined && !arrayEqual(last.visible_items, visibleItems) && visibleItems.length > 0) updates.visible_items = visibleItems;
+      if (last.benchmarks !== undefined && !arrayEqual(last.benchmarks, benchmarks) && benchmarks.length > 0) updates.benchmarks = benchmarks;
 
       if (Object.keys(updates).length > 0) {
         lastSyncedRef.current = {
@@ -300,7 +302,7 @@ export default function AuthenticatedDashboard() {
     }, 1500);
 
     return () => clearTimeout(id);
-  }, [mounted, currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems, tabLayouts, graphPeriod, graphView]);
+  }, [mounted, currency, showClosed, benchmarks, selectedAccounts, visibleItems]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

@@ -221,11 +221,11 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex items-center justify-between flex-wrap gap-4">
-                <header className="space-y-2">
-                    <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent w-fit">
-                        Portfolio AI Review
+                <header className="space-y-1">
+                    <h2 className="text-2xl font-bold tracking-tight text-foreground">
+                        AI Insights
                     </h2>
-                    <p className="text-muted-foreground text-sm font-medium max-w-2xl leading-relaxed">
+                    <p className="text-muted-foreground text-sm max-w-3xl">
                         AI-driven insights and recommendations for your portfolio.
                     </p>
                     {generatedAgo && (

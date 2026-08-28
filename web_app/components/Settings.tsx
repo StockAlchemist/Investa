@@ -25,9 +25,9 @@ export default function Settings({
 
     return (
         <div className="pb-20 max-w-7xl mx-auto px-4 md:px-8">
-            <div className="mb-10">
-                <h2 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit pb-1 drop-shadow-sm">Settings</h2>
-                <p className="text-muted-foreground mt-2 text-base">
+            <div className="mb-8 space-y-1">
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">Settings</h2>
+                <p className="text-muted-foreground text-sm">
                     Manage application settings, preferences, and account configurations.
                 </p>
             </div>

@@ -51,8 +51,8 @@ struct AppSettings: Codable, Sendable {
     var manualOverridePrices: [String: Double] {
         var out: [String: Double] = [:]
         for (symbol, value) in manualOverrides ?? [:] {
-            if let p = value.doubleValue { out[symbol] = p }
-            else if let p = value["price"]?.doubleValue { out[symbol] = p }
+            if let p = value.doubleValue, p > 0 { out[symbol] = p }
+            else if let p = value["price"]?.doubleValue, p > 0 { out[symbol] = p }
         }
         return out
     }

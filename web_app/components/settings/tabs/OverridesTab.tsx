@@ -48,14 +48,16 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
     const handleEdit = (symbol: string, data: ManualOverride) => {
         setOverrideSymbol(symbol);
         if (typeof data === 'object' && data !== null && 'price' in data) {
-            setOverridePrice(data.price !== undefined ? data.price.toString() : '');
+            const p = data.price;
+            setOverridePrice(p !== undefined && p !== null && p !== 0 ? p.toString() : '');
             setOverrideAssetType(data.asset_type || '');
             setOverrideSector(data.sector || '');
             setOverrideGeo(data.geography || '');
             setOverrideIndustry(data.industry || '');
             setOverrideExchange(data.exchange || '');
         } else {
-            setOverridePrice(data !== undefined ? data.toString() : '');
+            const p = typeof data === 'number' ? data : undefined;
+            setOverridePrice(p !== undefined && p !== null && p !== 0 ? p.toString() : '');
             setOverrideAssetType('');
             setOverrideSector('');
             setOverrideGeo('');
@@ -76,7 +78,8 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
             // backend fallback treats it as absent — but it renders as a real
             // field the next reader has to interpret. The macOS client already
             // omits it, so the two round-trip to the same file.
-            const priceNum = overridePrice !== '' ? parseFloat(overridePrice) : undefined;
+            const parsed = overridePrice !== '' ? parseFloat(overridePrice) : undefined;
+            const priceNum = parsed !== undefined && !isNaN(parsed) && parsed > 0 ? parsed : undefined;
             const newData: ManualOverrideData = {
                 price: priceNum,
                 asset_type: overrideAssetType || undefined,
@@ -91,11 +94,11 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
             const cleanedOverrides: Record<string, ManualOverride> = {};
             Object.entries(newOverrides).forEach(([k, v]) => {
                 if (typeof v === 'number') {
-                    cleanedOverrides[k] = v;
+                    if (v > 0) cleanedOverrides[k] = v;
                 } else {
                     const rest = { ...v };
                     if ('currency' in rest) delete (rest as Record<string, unknown>).currency;
-                    if (rest.price === undefined) delete rest.price;
+                    if (rest.price === undefined || rest.price === null || rest.price === 0) delete rest.price;
                     if (rest.asset_type === undefined) delete rest.asset_type;
                     if (rest.sector === undefined) delete rest.sector;
                     if (rest.geography === undefined) delete rest.geography;
@@ -333,7 +336,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                                             <tr key={symbol} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                                 <td className="sticky left-0 z-10 px-6 py-4 whitespace-nowrap font-bold text-foreground bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800 transition-colors shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">{symbol}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-muted-foreground font-mono">
-                                                    {!price
+                                                    {(!price || price === 0)
                                                         ? <span className="opacity-50">-</span>
                                                         : <span className="text-up font-medium">{currency === 'THB' ? '฿' : '$'}{price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
                                                     }

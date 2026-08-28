@@ -17,6 +17,8 @@ enum AppSection: String, CaseIterable, Identifiable {
     case watchlist = "Watchlist"
     case markets = "Markets"
     case aiReview = "AI Insights"
+    // Settings
+    case settings = "Settings"
 
     var id: String { rawValue }
 
@@ -37,6 +39,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .watchlist: return "star"
         case .markets: return "globe"
         case .aiReview: return "sparkles"
+        case .settings: return "gearshape"
         }
     }
 }
@@ -47,7 +50,6 @@ struct MainView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selection: AppSection = .performance
     @State private var visitedSections: Set<AppSection> = [.performance]
-    @State private var showingSettings = false
     @State private var showingPalette = false
     /// nil = follow system; true/false = forced.
     @AppStorage("investa.forceDark") private var forceDark = false
@@ -66,13 +68,10 @@ struct MainView: View {
                 AIChatLauncher()
             }
             .preferredColorScheme(appearanceSet ? (forceDark ? .dark : .light) : nil)
-            .sheet(isPresented: $showingSettings) {
-                SettingsSheet().environmentObject(appState).environmentObject(auth)
-            }
             .sheet(isPresented: $showingPalette) {
                 CommandPaletteView(
-                    onNavigate: { selection = $0; appState.clearStock() },
-                    onOpenSettings: { showingSettings = true },
+                    onNavigate: { selection = $0; visitedSections.insert($0); appState.clearStock() },
+                    onOpenSettings: { selection = .settings; visitedSections.insert(.settings); appState.clearStock() },
                     onOpenStock: { appState.openStock($0) })
             }
             .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
@@ -80,9 +79,14 @@ struct MainView: View {
                 if let section = note.object as? AppSection {
                     appState.clearStock()
                     selection = section
+                    visitedSections.insert(section)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in showingSettings = true }
+            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+                appState.clearStock()
+                selection = .settings
+                visitedSections.insert(.settings)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .toggleDarkMode)) { _ in
                 appearanceSet = true; forceDark.toggle()
             }
@@ -131,6 +135,7 @@ struct MainView: View {
                     }
                 }
             }
+            .navigationTitle(appState.selectedStock ?? "Investa")
             .task { if !appState.didLoadSettings { await appState.loadSettings() } }
             .onChange(of: selection) { _, newSelection in
                 appState.clearStock()
@@ -183,6 +188,7 @@ struct MainView: View {
         case .watchlist: WatchlistView()
         case .markets: MarketsView()
         case .aiReview: AIView()
+        case .settings: SettingsView()
         }
     }
 
@@ -190,7 +196,7 @@ struct MainView: View {
         VStack(spacing: 0) {
             Divider()
             VStack(alignment: .leading, spacing: 2) {
-                footerButton("Settings", "gearshape") { showingSettings = true }
+                footerNavButton(.settings)
                 footerButton("Dark mode", forceDark ? "sun.max" : "moon") {
                     appearanceSet = true
                     forceDark.toggle()
@@ -213,6 +219,23 @@ struct MainView: View {
             }
             .padding(.vertical, 6)
         }
+    }
+
+    private func footerNavButton(_ section: AppSection) -> some View {
+        let isSelected = selection == section && appState.selectedStock == nil
+        return Button {
+            appState.clearStock()
+            selection = section
+            visitedSections.insert(section)
+        } label: {
+            Label(section.rawValue, systemImage: section.icon)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+        }
+        .buttonStyle(.plain)
     }
 
     private func footerButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
@@ -259,7 +282,11 @@ struct MainView: View {
                 // menu, so the phone bar no longer needs standalone refresh/profile
                 // icons.
                 GlobalControlBar(section: section) {
-                    MenuRow(title: "Settings", systemImage: "gearshape") { showingSettings = true }
+                    MenuRow(title: "Settings", systemImage: "gearshape") {
+                        appState.clearStock()
+                        selection = .settings
+                        visitedSections.insert(.settings)
+                    }
                     MenuRow(title: forceDark ? "Light Mode" : "Dark Mode",
                             systemImage: forceDark ? "sun.max" : "moon") {
                         appearanceSet = true; forceDark.toggle()
@@ -330,21 +357,6 @@ struct MainView: View {
     }
 
     #endif
-}
-
-/// Wraps SettingsView in a dismissible sheet container.
-private struct SettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
-                .padding(12)
-            SettingsView()
-        }
-        #if os(macOS)
-        .frame(width: 900, height: 720)
-        #endif
-    }
 }
 
 /// A horizontally scrolling strip showing market indices, typically placed in the app title bar.

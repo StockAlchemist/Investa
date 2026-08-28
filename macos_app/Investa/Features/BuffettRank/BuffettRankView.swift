@@ -169,7 +169,6 @@ struct BuffettRankView: View {
             }
             .padding(Theme.gutter)
         }
-        .navigationTitle("Rankings")
         .task { await viewModel.start() }
     }
 

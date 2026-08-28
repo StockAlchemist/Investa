@@ -187,6 +187,7 @@ final class AppState: ObservableObject {
 
     /// Update the benchmark selection and persist it to the backend settings.
     func setBenchmarks(_ list: [String]) {
+        guard list != benchmarks else { return }
         benchmarks = list
         struct Body: Encodable { let benchmarks: [String] }
         Task { let _: StatusResponse? = try? await api.send(method: "POST", path: "/settings/update", body: Body(benchmarks: list)) }

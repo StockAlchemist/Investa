@@ -27,7 +27,7 @@ struct CommandPaletteView: View {
         .init(section: .watchlist, label: "Watchlist", icon: "star", group: "Tools", settings: false),
         .init(section: .markets, label: "Markets", icon: "globe", group: "Tools", settings: false),
         .init(section: .aiReview, label: "AI Insights", icon: "sparkles", group: "Tools", settings: false),
-        .init(section: nil, label: "Settings", icon: "gearshape", group: "Settings", settings: true),
+        .init(section: .settings, label: "Settings", icon: "gearshape", group: "Settings", settings: true),
     ]
 
     private var filteredNav: [NavCommand] {

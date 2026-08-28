@@ -60,6 +60,7 @@ final class AllocationViewModel: ObservableObject {
 
     /// Persist edited targets for one bucket, merging with the rest.
     func saveTargets(bucket: String, values: [String: Double]) async {
+        guard targets[bucket] != values else { return }
         var merged = targets
         merged[bucket] = values
         targets = merged

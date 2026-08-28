@@ -134,8 +134,7 @@ struct ScreenerView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Market Explorer").appFont(.title2.bold())
-                .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
+            Text("Screener").appFont(.title2.bold())
             Text("Identify opportunities using intrinsic-value models and AI fundamental audits.")
                 .appFont(.caption).foregroundStyle(.secondary)
         }

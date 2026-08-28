@@ -117,7 +117,7 @@ struct StrategiesView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Strategies").appFont(.title2.weight(.bold))
+            Text("Strategies").appFont(.title2.bold())
             Text("Fixed rules, not live suggestions. Each was backtested point-in-time; "
                  + "the returns below assume the rule is followed mechanically. "
                  + "Nothing here places an order.")
