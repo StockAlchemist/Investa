@@ -4,28 +4,8 @@
 
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
-import {
-  LayoutDashboard, PieChart, TrendingUp, ArrowLeftRight,
-  DollarSign, BarChart3, Search, Star, Globe, Sparkles, Trophy,
-  Settings, ChevronLeft, Sun, Moon, LogOut, Layers } from 'lucide-react';
-
-const PRIMARY_NAV = [
-  { id: 'performance',   label: 'Dashboard',     icon: LayoutDashboard },
-  { id: 'allocation',    label: 'Portfolio',      icon: PieChart },
-  { id: 'asset_change',  label: 'Performance',    icon: TrendingUp },
-  { id: 'transactions',  label: 'Transactions',   icon: ArrowLeftRight },
-  { id: 'dividend',      label: 'Income',         icon: DollarSign },
-  { id: 'capital_gains', label: 'Capital Gains',  icon: BarChart3 },
-] as const;
-
-const SECONDARY_NAV = [
-  { id: 'screener',   label: 'Screener',    icon: Search },
-  { id: 'buffett_rank', label: 'Rankings',  icon: Trophy },
-  { id: 'strategies', label: 'Strategies', icon: Layers },
-  { id: 'watchlist',  label: 'Watchlist',   icon: Star },
-  { id: 'markets',    label: 'Markets',     icon: Globe },
-  { id: 'ai_review',  label: 'AI Insights', icon: Sparkles },
-] as const;
+import { ChevronLeft, Sun, Moon, LogOut } from 'lucide-react';
+import { PRIMARY_NAV, SECONDARY_NAV, SETTINGS_NAV } from '@/lib/navigation';
 
 interface SidebarProps {
   activeTab: string;
@@ -56,12 +36,12 @@ function NavItem({ id, label, icon: Icon, activeTab, onTabChange, collapsed }: {
         'group/item relative flex items-center w-full rounded-lg text-sm font-medium transition-all duration-150',
         collapsed ? 'h-9 justify-center' : 'h-9 px-3 gap-2.5',
         active
-          ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold'
+          ? 'bg-primary/15 text-primary-ink font-semibold'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
       {active && (
-        <span className="absolute left-0 inset-y-[6px] w-[3px] bg-blue-500 rounded-r-full" />
+        <span className="absolute left-0 inset-y-[6px] w-[3px] bg-primary rounded-r-full" />
       )}
       <div className="w-6 flex items-center justify-center shrink-0">
         <Icon className="w-4 h-4" />
@@ -108,7 +88,7 @@ export function Sidebar({
         {collapsed && dayChangePct !== undefined && (
           <span className={cn(
             'text-[9px] font-bold tabular-nums leading-none',
-            dayChangePct >= 0 ? 'text-emerald-500' : 'text-red-500',
+            dayChangePct >= 0 ? 'text-up' : 'text-down',
           )}>
             {dayChangePct >= 0 ? '+' : ''}{dayChangePct.toFixed(1)}%
           </span>
@@ -124,7 +104,7 @@ export function Sidebar({
 
       {/* Bottom utilities */}
       <div className="border-t border-border px-2 py-2 space-y-0.5 shrink-0">
-        <NavItem id="settings" label="Settings" icon={Settings} activeTab={activeTab} onTabChange={onTabChange} collapsed={collapsed} />
+        <NavItem id={SETTINGS_NAV.id} label={SETTINGS_NAV.label} icon={SETTINGS_NAV.icon} activeTab={activeTab} onTabChange={onTabChange} collapsed={collapsed} />
 
         <button
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}

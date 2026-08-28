@@ -47,7 +47,7 @@ function MarketContextColumn({ indices, portfolioDayChangePct }: { indices?: Rec
                 <div className="flex items-baseline gap-2 mb-1">
                     <span className={cn(
                         'text-2xl font-bold tabular-nums leading-none',
-                        portfolioDayChangePct >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
+                        portfolioDayChangePct >= 0 ? 'text-up' : 'text-down',
                     )}>
                         {portfolioDayChangePct >= 0 ? '+' : ''}{portfolioDayChangePct.toFixed(2)}%
                     </span>
@@ -63,14 +63,14 @@ function MarketContextColumn({ indices, portfolioDayChangePct }: { indices?: Rec
                             <span className="text-foreground truncate">{idx.name}</span>
                             <span className={cn(
                                 'tabular-nums font-bold',
-                                positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
+                                positive ? 'text-up' : 'text-down',
                             )}>
                                 {positive ? '+' : ''}{idx.changesPercentage.toFixed(2)}%
                             </span>
                             {delta != null && (
                                 <span className={cn(
                                     'text-[10px] tabular-nums w-12 text-right',
-                                    delta >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
+                                    delta >= 0 ? 'text-up' : 'text-down',
                                 )}>
                                     ({delta >= 0 ? '+' : ''}{delta.toFixed(2)})
                                 </span>
@@ -90,7 +90,7 @@ function MoversColumn({ rows, currency, positive, onPick }: {
     onPick: (sym: string) => void;
 }) {
     const Icon = positive ? TrendingUp : TrendingDown;
-    const tone = positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400';
+    const tone = positive ? 'text-up' : 'text-down';
     return (
         <div className="flex flex-col gap-2 min-w-0">
             <div className={cn('flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold', tone)}>

@@ -17,9 +17,9 @@ function bucketClass(v: number | null): string {
     if (v >= 5)   return 'bg-emerald-500/70 text-white';
     if (v >= 3)   return 'bg-emerald-500/50 text-emerald-950 dark:text-white';
     if (v >= 1)   return 'bg-emerald-500/30 text-emerald-900 dark:text-emerald-100';
-    if (v >  0)   return 'bg-emerald-500/15 text-emerald-900 dark:text-emerald-200';
+    if (v >  0)   return 'bg-up/12 text-emerald-900 dark:text-emerald-200';
     if (v === 0)  return 'bg-muted/40 text-muted-foreground';
-    if (v > -1)   return 'bg-red-500/15 text-red-900 dark:text-red-200';
+    if (v > -1)   return 'bg-down/12 text-red-900 dark:text-red-200';
     if (v > -3)   return 'bg-red-500/30 text-red-900 dark:text-red-100';
     if (v > -5)   return 'bg-red-500/50 text-red-950 dark:text-white';
     if (v > -8)   return 'bg-red-500/70 text-white';
@@ -119,8 +119,8 @@ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
                                     <td className={cn(
                                         'text-right font-bold pl-2',
                                         total == null ? 'text-muted-foreground' :
-                                        total >= 0 ? 'text-emerald-600 dark:text-emerald-400'
-                                                   : 'text-red-600 dark:text-red-400',
+                                        total >= 0 ? 'text-up'
+                                                   : 'text-down',
                                     )}>
                                         {total != null ? `${total > 0 ? '+' : ''}${total.toFixed(1)}%` : '—'}
                                     </td>
@@ -150,8 +150,8 @@ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
                                     <td className={cn(
                                         'text-right font-bold pl-2 pt-1 border-t border-border/50',
                                         avg == null ? 'text-muted-foreground' :
-                                        avg >= 0 ? 'text-emerald-600 dark:text-emerald-400'
-                                                 : 'text-red-600 dark:text-red-400',
+                                        avg >= 0 ? 'text-up'
+                                                 : 'text-down',
                                     )}>
                                         {avg != null ? `${avg > 0 ? '+' : ''}${avg.toFixed(1)}%` : '—'}
                                     </td>

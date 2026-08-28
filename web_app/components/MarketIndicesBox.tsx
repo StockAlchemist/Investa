@@ -87,7 +87,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
                             <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground truncate max-w-[60px]">
                                 {index.name.replace('Dow Jones', 'Dow').replace('Russell 2000', 'RUT').replace('S&P 500', 'S&P')}
                             </span>
-                            <span className={`text-[9px] font-bold tabular-nums flex items-center gap-0.5 ${isUp ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            <span className={`text-[9px] font-bold tabular-nums flex items-center gap-0.5 ${isUp ? 'text-up' : 'text-rose-500'}`}>
                                 {isUp
                                     ? <TrendingUp className="w-2.5 h-2.5 shrink-0" />
                                     : <TrendingDown className="w-2.5 h-2.5 shrink-0" />

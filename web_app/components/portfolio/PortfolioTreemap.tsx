@@ -160,7 +160,7 @@ export default function PortfolioTreemap({ holdings, currency }: PortfolioTreema
                             onClick={() => setDim(d.key)}
                             className={cn(
                                 'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                                dim === d.key ? 'bg-[#0097b2] text-white' : 'text-muted-foreground hover:text-foreground',
+                                dim === d.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             {d.label}

@@ -43,14 +43,14 @@ export default function DrawdownTimeline({ history, isLoading }: DrawdownTimelin
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500 opacity-80" />
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                    <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+                    <TrendingDown className="w-3.5 h-3.5 text-down" />
                     <h3 className="section-label">Drawdown (1Y)</h3>
                 </div>
                 {series.length > 0 && (
                     <div className="flex items-center gap-4 text-right">
                         <div>
                             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Max</div>
-                            <div className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400">
+                            <div className="text-sm font-bold tabular-nums text-down">
                                 {maxDD.toFixed(2)}%
                             </div>
                         </div>
@@ -111,7 +111,7 @@ export default function DrawdownTimeline({ history, isLoading }: DrawdownTimelin
                                             <div className="flex items-center gap-2 text-xs">
                                                 <span className="w-2 h-2 rounded-full bg-red-500" />
                                                 <span className="text-muted-foreground">Drawdown:</span>
-                                                <span className="font-medium text-red-600 dark:text-red-400 tabular-nums">
+                                                <span className="font-medium text-down tabular-nums">
                                                     {Number(payload[0].value).toFixed(2)}%
                                                 </span>
                                             </div>

@@ -290,8 +290,8 @@ export default function StockKeyMetrics({
 
                 {viewMode === 'table' ? (
                     <p className="text-[10px] text-muted-foreground">
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Green</span> beats,{' '}
-                        <span className="text-rose-600 dark:text-rose-400 font-semibold">red</span> trails a typical
+                        <span className="text-up font-semibold">Green</span> beats,{' '}
+                        <span className="text-down font-semibold">red</span> trails a typical
                         S&amp;P 500 company on that measure
                     </p>
                 ) : (

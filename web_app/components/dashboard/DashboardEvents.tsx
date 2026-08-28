@@ -90,7 +90,7 @@ function ConfirmedDividendsModal({
                 <div className="sticky top-0 z-10 bg-card flex-shrink-0 px-6 pt-6 pb-4 flex items-start justify-between">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            <CheckCircle2 className="w-4 h-4 text-up" />
                             <h2 className="text-lg font-black tracking-tight text-foreground">Confirmed Dividends</h2>
                         </div>
                         <p className="text-xs text-muted-foreground font-semibold">
@@ -125,7 +125,7 @@ function ConfirmedDividendsModal({
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-1.5 min-w-0">
                                                 <span className="text-sm font-bold text-foreground truncate">{e.symbol}</span>
-                                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                                <CheckCircle2 className="w-2.5 h-2.5 text-up shrink-0" />
                                             </div>
                                             {e.name && (
                                                 <span className="block text-[10px] text-slate-600 dark:text-slate-400 truncate leading-tight">
@@ -137,7 +137,7 @@ function ConfirmedDividendsModal({
                                     <span className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
                                         {fullDate(e.dividend_date)}
                                     </span>
-                                    <span className="text-sm font-bold tabular-nums text-emerald-700 dark:text-emerald-400 w-24 text-right">
+                                    <span className="text-sm font-bold tabular-nums text-up w-24 text-right">
                                         {formatCurrency(e.amount, currency)}
                                     </span>
                                 </button>
@@ -174,8 +174,8 @@ function ReportedValue({ event }: { event: EarningsEvent }) {
     const tone = surprise == null
         ? 'text-violet-600 dark:text-violet-400'
         : surprise >= 0
-            ? 'text-emerald-700 dark:text-emerald-400'
-            : 'text-rose-700 dark:text-rose-400';
+            ? 'text-up'
+            : 'text-down';
 
     return (
         <span
@@ -305,7 +305,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                                     est.
                                                 </span>
                                             ) : (
-                                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                                <CheckCircle2 className="w-2.5 h-2.5 text-up shrink-0" />
                                             )}
                                         </div>
                                         {row.event.name && (
@@ -321,7 +321,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                         : fullDate(row.date)}
                                     className={cn(
                                         'text-[10px] uppercase tracking-wider tabular-nums font-semibold',
-                                        isSoon ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400',
+                                        isSoon ? 'text-up' : 'text-slate-600 dark:text-slate-400',
                                     )}
                                 >
                                     {rel}
@@ -340,7 +340,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                                             : 'Report'}
                                     </span>
                                 ) : (
-                                    <span className="text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-400 w-20 text-right">
+                                    <span className="text-xs font-bold tabular-nums text-up w-20 text-right">
                                         {formatCurrency(row.event.amount, currency)}
                                     </span>
                                 )}

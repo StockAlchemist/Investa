@@ -66,7 +66,7 @@ export function SectorAttribution({ data, isLoading, isRefreshing = false, curre
                     <div key={s.sector}>
                         <div className="flex justify-between text-xs mb-1.5">
                             <span className="font-semibold text-foreground/80">{s.sector}</span>
-                            <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-red-600 dark:text-red-500 font-bold'}>
+                            <span className={s.gain >= 0 ? 'text-up font-bold' : 'text-down font-bold'}>
                                 {formatCurrencyHelper(s.gain, currency)} ({formatPercentHelper(s.contribution)})
                             </span>
                         </div>
@@ -180,7 +180,7 @@ function FullContributorsModal({
                             <input
                                 type="text"
                                 placeholder="Search symbols, names, or sectors..."
-                                className="w-full bg-muted/60 dark:bg-black/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 backdrop-blur-md placeholder-muted-foreground/60 border border-border/40 dark:border-white/10 transition-all text-foreground"
+                                className="w-full bg-muted/60 dark:bg-black/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring backdrop-blur-md placeholder-muted-foreground/60 border border-border/40 dark:border-white/10 transition-all text-foreground"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
@@ -234,7 +234,7 @@ function FullContributorsModal({
                                                     </span>
                                                 ))}
                                                 {stock.value > 0 && (
-                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider whitespace-nowrap leading-none">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-up/12 text-up uppercase tracking-wider whitespace-nowrap leading-none">
                                                         Held
                                                     </span>
                                                 )}
@@ -245,10 +245,10 @@ function FullContributorsModal({
                                     <div className="text-right flex flex-col items-end gap-0.5 min-w-0 flex-shrink-0">
                                         <div className="flex items-center justify-end gap-1.5">
                                             {stock.gain >= 0 ?
-                                                <div className="bg-emerald-500/10 p-0.5 rounded-full"><TrendingUp className="w-3 h-3 text-emerald-500" /></div> :
-                                                <div className="bg-red-500/10 p-0.5 rounded-full"><TrendingDown className="w-3 h-3 text-red-500" /></div>
+                                                <div className="bg-up/12 p-0.5 rounded-full"><TrendingUp className="w-3 h-3 text-up" /></div> :
+                                                <div className="bg-down/12 p-0.5 rounded-full"><TrendingDown className="w-3 h-3 text-down" /></div>
                                             }
-                                            <span className={cn("text-sm sm:text-base font-medium tracking-tight whitespace-nowrap", stock.gain >= 0 ? 'text-emerald-500' : 'text-red-500')}>
+                                            <span className={cn("text-sm sm:text-base font-medium tracking-tight whitespace-nowrap", stock.gain >= 0 ? 'text-up' : 'text-down')}>
                                                 {formatCurrencyHelper(stock.gain, currency)}
                                                 <span className="text-[10px] sm:text-xs ml-1 opacity-80">({formatPercentHelper(stock.contribution)})</span>
                                             </span>
@@ -333,7 +333,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                             </span>
                                         ))}
                                         {stock.value > 0 && (
-                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider whitespace-nowrap leading-none">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-up/12 text-up uppercase tracking-wider whitespace-nowrap leading-none">
                                                 Held
                                             </span>
                                         )}
@@ -342,7 +342,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                 </div>
                             </div>
                             <div className="text-right">
-                                <p className={`text-sm font-bold tabular-nums ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                <p className={`text-sm font-bold tabular-nums ${stock.gain >= 0 ? 'text-up' : 'text-down'}`}>
                                     {formatCurrencyHelper(stock.gain, currency)}
                                     <span className="text-[10px] ml-1 opacity-70">({formatPercentHelper(stock.contribution)})</span>
                                 </p>

@@ -33,7 +33,7 @@ export default function BenchmarkScoreboard({ currency, benchmarks, availableAcc
     });
     const rows = data ?? [];
     const num = (v: number, digits = 2) => `${v >= 0 ? '+' : ''}${v.toFixed(digits)}`;
-    const tone = (v: number) => v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+    const tone = (v: number) => v >= 0 ? 'text-up' : 'text-down';
 
     return (
         <div className="metric-card p-5 relative overflow-hidden">

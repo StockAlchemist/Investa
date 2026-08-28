@@ -1,5 +1,76 @@
 @import "tailwindcss";
+@plugin "tailwindcss-animate";
 @variant dark (&:where(.dark, .dark *));
+
+/*
+ * Tailwind v4 takes its theme from CSS, not from tailwind.config.ts (which is
+ * only read when a stylesheet asks for it with @config). Without these blocks
+ * `bg-primary`, `bg-card`, `text-muted-foreground` and `border-border` compile
+ * to nothing at all — the utilities exist in the markup but generate no rule.
+ * That is the root of most of the colour drift in this app: when `bg-primary`
+ * silently does nothing, the next person writes `bg-[#0097b2]`.
+ *
+ * Geometry first. Not `inline`, so the values are emitted as custom properties
+ * and the card classes below can read them with var().
+ *
+ * Four radii, by role, matching Theme.swift's inset/card/hero scale. The legacy
+ * steps are aliased onto it rather than migrated, because existing markup
+ * already tracks the roles: rounded-lg on nav rows and buttons, rounded-xl on
+ * menus and inset panels, rounded-2xl on cards.
+ *
+ * Control heights are the stock scale — h-7 (28, toolbars), h-9 (36, forms and
+ * nav), h-11 (44, touch and primary actions) — so they need no tokens here.
+ */
+@theme {
+  --radius-control: 8px;
+  --radius-inset: 12px;
+  --radius-card: 16px;
+  --radius-hero: 20px;
+
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-control);
+  --radius-xl: var(--radius-inset);
+  --radius-2xl: var(--radius-card);
+  --radius-3xl: var(--radius-hero);
+}
+
+/*
+ * Colour. `inline` substitutes the value at the point of use, which is what
+ * lets a `.dark` override of the underlying channel triple reach a utility.
+ */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-hover: hsl(var(--primary-hover));
+  --color-primary-ink: hsl(var(--primary-ink));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  /* Semantic. The only meanings colour carries outside a chart. */
+  --color-up: hsl(var(--up));
+  --color-down: hsl(var(--down));
+  --color-warn: hsl(var(--warn));
+  --color-warn-ink: hsl(var(--warn-ink));
+}
 
 /*
  * Numbers render in the platform system font (SF Pro on macOS/iOS) with
@@ -40,8 +111,13 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
+    /* Accent — indigo-500. The one interface accent: primary buttons, active
+       nav, focus rings, links, selection. Was blue-500, which almost nothing
+       read; indigo is what the card shadows and the native app already use. */
+    --primary: 238.7 83.5% 66.7%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 243.4 75.4% 58.6%;   /* indigo-600 */
+    --primary-ink: 243.4 75.4% 58.6%;     /* accent text on a tinted fill (light) */
 
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -57,16 +133,22 @@
 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --ring: 238.7 83.5% 66.7%;
 
-    --radius: 0.75rem;
+    /* Semantic — never decorative. Gain, loss, and "this data is suspect". */
+    --up: 142.1 76.2% 36.3%;
+    --down: 0 72.2% 50.6%;
+    --warn: 37.7 92.1% 50.2%;
+    --warn-ink: 26 90.5% 37.1%;   /* amber-700: #f59e0b is unreadable as text on light */
+
+    --radius: 0.5rem;
     --glass-hover: rgba(0, 0, 0, 0.03);
 
     --card-elevated: rgba(255,255,255,0.55);
     --card-border: rgba(255,255,255,0.55);
     --shine: rgba(255,255,255,0.6);
 
-    --menu-solid: #ffffff;
+    --menu-solid: hsl(220 35% 97%);
     --ring-track: #f3f4f6;
     --pie-stroke: #ffffff;
 
@@ -86,8 +168,10 @@
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 234.5 89.5% 73.9%;         /* indigo-400 */
+    --primary-foreground: 243.4 75.4% 20%;
+    --primary-hover: 238.7 83.5% 66.7%;   /* indigo-500 */
+    --primary-ink: 229.7 93.6% 81.8%;     /* indigo-300 */
 
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -103,14 +187,20 @@
 
     --border: 217.2 25% 16%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --ring: 238.7 83.5% 66.7%;
+
+    --up: 142.1 70.6% 45.3%;
+    --down: 0 84.2% 60.2%;
+    --warn: 43.3 96.4% 56.3%;
+    --warn-ink: 43.3 96.4% 56.3%;
+
     --glass-hover: rgba(255, 255, 255, 0.05);
 
     --card-elevated: rgba(255,255,255,0.04);
     --card-border: rgba(255,255,255,0.08);
     --shine: rgba(255,255,255,0.04);
 
-    --menu-solid: #030d1a;
+    --menu-solid: hsl(217 50% 8%);
     --ring-track: #27272a;
     --pie-stroke: #030d1a;
   }
@@ -147,101 +237,55 @@
 }
 
 /* ============================
-   GLASSMORPHISM & DEPTH
-   ============================ */
-.glass-card {
-  background: rgba(255,255,255,0.95);
-  backdrop-filter: blur(12px) saturate(150%);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-  border: 1px solid rgba(255,255,255,0.8);
-  box-shadow:
-    0 2px 12px rgba(99,102,241,0.06),
-    0 1px 3px rgba(0,0,0,0.04),
-    0 1px 0 rgba(255,255,255,1.0) inset;
+   CARD DEPTH — three tiers
+   ============================
+   One border, one shadow, one radius per tier. Mirrors CardStyle in
+   Theme.swift so a card is the same object on all three clients.
+
+   .card-inset     flush inside another card — border only
+   .card-standard  every card (alias: .glass-card, .metric-card)
+   .card-hero      one per screen, at most
+
+   The five overlapping styles this replaces (glass blur stacks, a 135deg
+   shine overlay, a 3-layer premium shadow, a translucent ring) are kept as
+   aliases so existing markup lands on the tier it meant. */
+
+.card-inset {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-inset);
 }
 
-.dark .glass-card {
-  background: rgba(10,20,50,0.7);
-  border: 1px solid rgba(255,255,255,0.07);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.05) inset;
-}
-
-/* Metric card base — glass elements with subtle depth */
+.card-standard,
+.glass-card,
 .metric-card {
-  background: rgba(255,255,255,0.95);
-  backdrop-filter: blur(12px) saturate(150%);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-  border: 1px solid rgba(255,255,255,0.8);
-  border-radius: 1.25rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow:
-    0 2px 12px rgba(99,102,241,0.06),
-    0 1px 3px rgba(0,0,0,0.04),
-    0 1px 0 rgba(255,255,255,1.0) inset;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-card);
+  box-shadow: 0 3px 8px hsl(var(--primary) / 0.10);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.dark .metric-card {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.06);
-  box-shadow: 
-    0 10px 15px -3px rgba(0, 0, 0, 0.3),
-    0 4px 6px -4px rgba(0, 0, 0, 0.2),
-    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+.card-hero {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--primary) / 0.30);
+  border-radius: var(--radius-hero);
+  box-shadow: 0 8px 18px hsl(var(--primary) / 0.20);
 }
 
+/* Hover lifts a card. It does not lift a control — see .btn rules. */
+.card-standard:hover,
+.glass-card:hover,
 .metric-card:hover {
-  transform: translateY(-2px);
-  background: rgba(255,255,255,1.0);
-  border-color: rgba(255,255,255,0.9);
-  box-shadow:
-    0 12px 32px rgba(99,102,241,0.10),
-    0 4px 8px rgba(0,0,0,0.04),
-    0 1px 0 rgba(255,255,255,1.0) inset;
+  border-color: hsl(var(--primary) / 0.30);
+  box-shadow: 0 6px 14px hsl(var(--primary) / 0.16);
 }
 
-.dark .metric-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 
-    0 20px 25px -5px rgba(0, 0, 0, 0.4),
-    0 10px 10px -6px rgba(0, 0, 0, 0.3),
-    0 1px 0 rgba(255, 255, 255, 0.06) inset;
-}
-
-/* Top-shine highlight on cards — kept subtle to preserve readability of text,
-   tables, and charts beneath. Past versions used 0.4 opacity which washed out
-   content over light backgrounds; the gradient is now confined to the top edge
-   and limited in opacity in both themes. */
-.card-shine::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 25%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.dark .card-shine::before {
-  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 25%);
-}
-
-.premium-shadow {
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -1px rgba(0, 0, 0, 0.06),
-    0 10px 15px -3px rgba(0, 0, 0, 0.05);
-}
-
-.dark .premium-shadow {
-  box-shadow:
-    0 4px 24px rgba(0,0,0,0.45),
-    0 1px 0 rgba(255,255,255,0.05) inset;
-}
-
-.premium-ring {
-  @apply ring-1 ring-white/20 dark:ring-white/10;
-}
+/* Retired: the shine overlay, the 3-layer shadow and the translucent ring.
+   Kept as no-ops so the ~29 call sites still parse while they are migrated. */
+.card-shine::before { content: none; }
+.premium-shadow { box-shadow: 0 3px 8px hsl(var(--primary) / 0.10); }
+.premium-ring { border: 1px solid hsl(var(--border)); }
 
 /* Animated background gradient shimmer for accent glows */
 .animate-shimmer {
@@ -259,11 +303,7 @@
   font-weight: 800;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #475569;
-}
-
-.dark .section-label {
-  color: #94a3b8;
+  color: hsl(var(--muted-foreground));
 }
 
 /* Recharts Overrides */
@@ -294,14 +334,10 @@
   .markdown-content h1, 
   .markdown-content h2, 
   .markdown-content h3 {
-    font-weight: 700;
+    font-weight: 600;
     margin-top: 1.25rem;
     margin-bottom: 0.75rem;
-    background-image: linear-gradient(to right, #6366f1, #a855f7);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    width: fit-content;
+    color: hsl(var(--foreground));
   }
 
   .markdown-content h1 { font-size: 1.125rem; }
@@ -316,11 +352,8 @@
   }
 
   .markdown-content strong {
-    font-weight: 900;
-    color: #4f46e5; /* indigo-600 */
-  }
-  .dark .markdown-content strong {
-    color: #a5b4fc; /* indigo-300 */
+    font-weight: 700;
+    color: hsl(var(--foreground));
   }
 
   .markdown-content em {
@@ -348,8 +381,8 @@
   }
 
   .markdown-content li::marker {
-    color: #6366f1; /* indigo-500 */
-    font-weight: 700;
+    color: hsl(var(--muted-foreground));
+    font-weight: 600;
   }
 
   .markdown-content table {
@@ -359,27 +392,24 @@
     border-collapse: collapse;
     text-align: left;
     overflow: hidden;
-    border-radius: 0.75rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-inset);
+    border: 1px solid hsl(var(--border));
   }
 
   .markdown-content th {
     padding: 0.625rem 1rem;
-    background-color: rgba(99, 102, 241, 0.05);
-    border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+    background-color: hsl(var(--primary) / 0.05);
+    border-bottom: 1px solid hsl(var(--border));
     font-size: 10px;
-    font-weight: 900;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #4f46e5;
-  }
-  .dark .markdown-content th {
-    color: #818cf8;
+    letter-spacing: 0.15em;
+    color: hsl(var(--muted-foreground));
   }
 
   .markdown-content td {
     padding: 0.625rem 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid hsl(var(--border));
     font-size: 0.75rem;
     font-weight: 500;
   }
@@ -391,12 +421,12 @@
   .markdown-content blockquote {
     padding-left: 1rem;
     border-left-width: 4px;
-    border-left-color: rgba(99, 102, 241, 0.3);
+    border-left-color: hsl(var(--primary) / 0.30);
     font-style: italic;
     margin-top: 1rem;
     margin-bottom: 1rem;
-    color: #64748b; /* slate-500 */
-    background-color: rgba(99, 102, 241, 0.05);
+    color: hsl(var(--muted-foreground));
+    background-color: hsl(var(--primary) / 0.05);
     padding-top: 0.5rem;
     padding-bottom: 0.5rem;
     padding-right: 1rem;
@@ -409,21 +439,18 @@
 
   .markdown-content code {
     padding: 0.125rem 0.375rem;
-    border-radius: 0.375rem;
-    background-color: rgba(99, 102, 241, 0.1);
+    border-radius: 6px;
+    background-color: hsl(var(--muted));
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: 11px;
-    color: #9333ea; /* purple-600 */
-    border: 1px solid rgba(99, 102, 241, 0.1);
-  }
-  .dark .markdown-content code {
-    color: #d8b4fe; /* purple-300 */
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
   }
 
   .markdown-content hr {
     margin-top: 1.5rem;
     margin-bottom: 1.5rem;
     border-top-width: 1px;
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: hsl(var(--border));
   }
 }

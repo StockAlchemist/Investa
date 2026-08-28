@@ -6,7 +6,13 @@
       "Bash(rm -f quality_strategy_report.aux quality_strategy_report.log quality_strategy_report.out quality_strategy_report.toc && python3 -c \" *)",
       "WebFetch(domain:www.stockoracle.com)",
       "WebFetch(domain:www.piranhaprofits.com)",
-      "WebFetch(domain:help.stockoracle.com)"
+      "WebFetch(domain:help.stockoracle.com)",
+      "mcp__claude_ai_Interactive_Brokers__search_contracts",
+      "WebFetch(domain:developer.webull.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__claude_ai_Interactive_Brokers__get_price_history",
+      "WebFetch(domain:portal.api.bot.or.th)",
+      "WebFetch(domain:www.bot.or.th)"
     ],
     "additionalDirectories": [
       "/Users/kmatan/Investa/docs"

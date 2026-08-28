@@ -231,8 +231,8 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
             {syncStatus && (
                 <div className={`p-3.5 rounded-2xl text-xs flex items-center justify-between transition-all animate-in fade-in slide-in-from-top-2 duration-300 ${
                     syncStatus.type === 'error'
-                        ? 'bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400'
-                        : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                        ? 'bg-down/12 border border-down/25 text-down'
+                        : 'bg-up/12 border border-up/25 text-up'
                 }`}>
                     <div className="flex items-center gap-2.5">
                         {syncStatus.type === 'error' ? (

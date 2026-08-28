@@ -68,8 +68,8 @@ const ScoreRing = ({ score }: { score: number }) => {
     const circumference = radius * 2 * Math.PI;
     const strokeDashoffset = circumference - (normalizedScore / 100) * circumference;
 
-    let colorClass = "text-emerald-500";
-    if (score < 40) colorClass = "text-red-500";
+    let colorClass = "text-up";
+    if (score < 40) colorClass = "text-down";
     else if (score < 60) colorClass = "text-yellow-500";
     else if (score < 80) colorClass = "text-cyan-500";
 
@@ -202,7 +202,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
             label: 'Sharpe Ratio',
             value: formatNumber(metrics['Sharpe Ratio']),
             description: 'Risk-adjusted return',
-            color: metrics['Sharpe Ratio'] && metrics['Sharpe Ratio'] > 1 ? 'text-emerald-500' : 'text-muted-foreground',
+            color: metrics['Sharpe Ratio'] && metrics['Sharpe Ratio'] > 1 ? 'text-up' : 'text-muted-foreground',
             icon: Activity,
             onClick: () => setSelectedMetric('Sharpe Ratio')
         },
@@ -211,7 +211,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
             label: 'Sortino Ratio',
             value: formatNumber(metrics['Sortino Ratio']),
             description: 'Downside risk-adjusted',
-            color: metrics['Sortino Ratio'] && metrics['Sortino Ratio'] > 1 ? 'text-emerald-500' : 'text-muted-foreground',
+            color: metrics['Sortino Ratio'] && metrics['Sortino Ratio'] > 1 ? 'text-up' : 'text-muted-foreground',
             icon: Zap,
             onClick: () => setSelectedMetric('Sortino Ratio')
         },
@@ -229,7 +229,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
             label: 'Max Drawdown',
             value: formatPercent(metrics['Max Drawdown']),
             description: 'Peak to trough decline',
-            color: 'text-red-500',
+            color: 'text-down',
             icon: ArrowDownRight,
             onClick: () => setSelectedMetric('Max Drawdown')
         },
@@ -247,7 +247,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
             label: 'Alpha',
             value: formatPercent(metrics['Alpha']),
             description: 'Excess return',
-            color: metrics['Alpha'] && metrics['Alpha'] > 0 ? 'text-emerald-500' : metrics['Alpha'] && metrics['Alpha'] < 0 ? 'text-red-500' : 'text-muted-foreground',
+            color: metrics['Alpha'] && metrics['Alpha'] > 0 ? 'text-up' : metrics['Alpha'] && metrics['Alpha'] < 0 ? 'text-down' : 'text-muted-foreground',
             icon: TrendingUp,
             onClick: () => setSelectedMetric('Alpha')
         },
@@ -289,8 +289,8 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 <div className={cn(
                                     "text-sm md:text-base font-bold tracking-tight",
                                     portfolioHealth.overall_score >= 80 ? "text-cyan-500" :
-                                        portfolioHealth.overall_score >= 60 ? "text-emerald-500" :
-                                            portfolioHealth.overall_score >= 40 ? "text-yellow-500" : "text-red-500"
+                                        portfolioHealth.overall_score >= 60 ? "text-up" :
+                                            portfolioHealth.overall_score >= 40 ? "text-yellow-500" : "text-down"
                                 )}>
                                     {portfolioHealth.rating}
                                 </div>
@@ -305,7 +305,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     </div>
                                     <span className={cn(
                                         "text-xs md:text-sm font-bold",
-                                        (portfolioHealth?.components?.diversification?.score ?? 0) >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                        (portfolioHealth?.components?.diversification?.score ?? 0) >= 60 ? "text-up" : "text-yellow-500"
                                     )}>
                                         {portfolioHealth?.components?.diversification?.score ?? 0}
                                     </span>
@@ -317,7 +317,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     </div>
                                     <span className={cn(
                                         "text-xs md:text-sm font-bold",
-                                        (portfolioHealth?.components?.efficiency?.score ?? 0) >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                        (portfolioHealth?.components?.efficiency?.score ?? 0) >= 60 ? "text-up" : "text-yellow-500"
                                     )}>
                                         {portfolioHealth?.components?.efficiency?.score ?? 0}
                                     </span>
@@ -329,7 +329,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     </div>
                                     <span className={cn(
                                         "text-xs md:text-sm font-bold",
-                                        (portfolioHealth?.components?.stability?.score ?? 0) >= 60 ? "text-emerald-500" : "text-yellow-500"
+                                        (portfolioHealth?.components?.stability?.score ?? 0) >= 60 ? "text-up" : "text-yellow-500"
                                     )}>
                                         {portfolioHealth?.components?.stability?.score ?? 0}
                                     </span>
@@ -446,11 +446,11 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     </p>
                                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
                                         <div className="p-2 bg-background/50 rounded-lg">
-                                            <div className="font-bold text-emerald-500">40%</div>
+                                            <div className="font-bold text-up">40%</div>
                                             <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Diversification</div>
                                         </div>
                                         <div className="p-2 bg-background/50 rounded-lg">
-                                            <div className="font-bold text-emerald-500">40%</div>
+                                            <div className="font-bold text-up">40%</div>
                                             <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Efficiency</div>
                                         </div>
                                         <div className="p-2 bg-background/50 rounded-lg">
@@ -474,11 +474,11 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                             <div className="space-y-5">
                                 <div className="space-y-2 pb-4 last:pb-0">
                                     <h4 className="text-sm font-bold flex items-center gap-2">
-                                        <PieChart className="w-4 h-4 text-emerald-500" />
+                                        <PieChart className="w-4 h-4 text-up" />
                                         Diversification (HHI)
                                         <span className={cn(
                                             "ml-auto text-xs font-mono px-2 py-0.5 rounded",
-                                            portfolioHealth.components.diversification.score >= 60 ? "bg-emerald-500/10 text-emerald-500" : "bg-yellow-500/10 text-yellow-500"
+                                            portfolioHealth.components.diversification.score >= 60 ? "bg-up/12 text-up" : "bg-yellow-500/10 text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.diversification.metric}
                                         </span>
@@ -496,11 +496,11 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
                                 <div className="space-y-2 pb-4 last:pb-0">
                                     <h4 className="text-sm font-bold flex items-center gap-2">
-                                        <Activity className="w-4 h-4 text-emerald-500" />
+                                        <Activity className="w-4 h-4 text-up" />
                                         Efficiency (Sharpe Cost)
                                         <span className={cn(
                                             "ml-auto text-xs font-mono px-2 py-0.5 rounded",
-                                            portfolioHealth.components.efficiency.score >= 60 ? "bg-emerald-500/10 text-emerald-500" : "bg-yellow-500/10 text-yellow-500"
+                                            portfolioHealth.components.efficiency.score >= 60 ? "bg-up/12 text-up" : "bg-yellow-500/10 text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.efficiency.metric}
                                         </span>
@@ -522,7 +522,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                         Stability (Volatility)
                                         <span className={cn(
                                             "ml-auto text-xs font-mono px-2 py-0.5 rounded",
-                                            portfolioHealth.components.stability.score >= 60 ? "bg-emerald-500/10 text-emerald-500" : "bg-yellow-500/10 text-yellow-500"
+                                            portfolioHealth.components.stability.score >= 60 ? "bg-up/12 text-up" : "bg-yellow-500/10 text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.stability.metric}
                                         </span>

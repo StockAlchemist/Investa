@@ -78,7 +78,7 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                             <label
                                 key={benchmark}
                                 className={`flex items-center space-x-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${selectedBenchmarks.includes(benchmark)
-                                    ? 'bg-[#0097b2] text-white underline-none'
+                                    ? 'bg-primary text-primary-foreground underline-none'
                                     : 'hover:bg-accent/10 text-foreground'
                                     }`}
                             >
@@ -86,7 +86,7 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                                     type="checkbox"
                                     checked={selectedBenchmarks.includes(benchmark)}
                                     onChange={() => handleToggle(benchmark)}
-                                    className={`rounded border-none bg-secondary focus:ring-cyan-500 ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-cyan-500'}`}
+                                    className={`rounded border-none bg-secondary focus:ring-ring ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-cyan-500'}`}
                                 />
                                 <span className={`text-sm ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-foreground'}`}>{benchmark}</span>
                             </label>
@@ -101,7 +101,7 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                                 {customSelected.map(ticker => (
                                     <div
                                         key={ticker}
-                                        className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0097b2]/15 text-foreground"
+                                        className="flex items-center justify-between px-2 py-1.5 rounded bg-primary/12 text-foreground"
                                     >
                                         <span className="text-sm font-mono font-semibold">{ticker}</span>
                                         <button
@@ -131,14 +131,14 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                                     }
                                 }}
                                 placeholder="Custom ticker (e.g., VTI)"
-                                className="flex-1 text-xs px-2 py-1.5 bg-secondary text-foreground rounded border border-transparent focus:border-[#0097b2] focus:outline-none placeholder:text-muted-foreground/60 font-mono uppercase"
+                                className="flex-1 text-xs px-2 py-1.5 bg-secondary text-foreground rounded border border-transparent focus:border-ring focus:outline-none placeholder:text-muted-foreground/60 font-mono uppercase"
                                 spellCheck={false}
                                 autoComplete="off"
                             />
                             <button
                                 onClick={handleAddCustom}
                                 disabled={!customInput.trim()}
-                                className="p-1.5 rounded bg-[#0097b2] text-white hover:bg-[#0097b2]/85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                className="p-1.5 rounded bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                 aria-label="Add custom ticker"
                             >
                                 <Plus className="w-3.5 h-3.5" />

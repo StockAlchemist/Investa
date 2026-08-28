@@ -31,7 +31,11 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from db_utils import initialize_database, initialize_global_database
-    from server.refresh_worker import refresh_loop, index_refresh_loop
+    from server.refresh_worker import (
+        refresh_loop,
+        index_refresh_loop,
+        fund_nav_refresh_loop,
+    )
     from server.portfolio_service import warm_summary_caches
 
     initialize_database()
@@ -44,14 +48,16 @@ async def lifespan(app: FastAPI):
     # Pre-compute summaries for recently active users so the first dashboard
     # load after a restart is served from cache.
     warm_task = asyncio.create_task(warm_summary_caches(), name="summary-warmup")
+    # Thai fund NAVs have no market feed; nothing else moves them forward.
+    nav_task = asyncio.create_task(fund_nav_refresh_loop(), name="fund-nav-refresh")
 
     try:
         yield
     finally:
         # Graceful shutdown: cancel the background workers and drain the precalc pool.
-        for task in (refresh_task, index_task, warm_task):
+        for task in (refresh_task, index_task, warm_task, nav_task):
             task.cancel()
-        for task in (refresh_task, index_task, warm_task):
+        for task in (refresh_task, index_task, warm_task, nav_task):
             try:
                 await task
             except (asyncio.CancelledError, Exception):

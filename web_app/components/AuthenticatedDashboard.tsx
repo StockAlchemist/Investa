@@ -376,6 +376,11 @@ export default function AuthenticatedDashboard() {
     queryKey: ['holdings', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchHoldings(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
+    // Same cadence as the headline and the summary: every per-stock price on
+    // this screen — the holdings table, the day's gainers and losers, the
+    // heatmap — comes from here, and without a poll they sat on whatever the
+    // session opened with until the tab lost and regained focus.
+    refetchInterval: isMarketOpen ? 60 * 1000 : false,
     placeholderData: (prev) => prev ?? cachedInitialHoldings,
     enabled: !!user,
   });
@@ -811,7 +816,7 @@ export default function AuthenticatedDashboard() {
   const currentTheme = TAB_THEMES[activeTab] || TAB_THEMES.performance;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background selection:bg-indigo-500/20 selection:text-indigo-500">
+    <div className="flex h-screen overflow-hidden bg-background selection:bg-primary/20 selection:text-primary-ink">
 
       {/* Ambient background glows */}
       <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
@@ -824,7 +829,7 @@ export default function AuthenticatedDashboard() {
           currentTheme.bgGlow,
         )} />
       </div>
-      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/10 via-background to-background pointer-events-none" />
+      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background pointer-events-none" />
 
       {/* ── Sidebar (desktop) ── */}
       <Sidebar

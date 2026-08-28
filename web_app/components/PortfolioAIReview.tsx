@@ -19,7 +19,7 @@ interface PortfolioAIReviewProps {
 // 1-10 score → tailwind color token used for text + bar fill.
 function scoreTone(score: number): { text: string; bar: string } {
     if (!score) return { text: 'text-muted-foreground', bar: 'bg-muted-foreground/40' };
-    if (score >= 8) return { text: 'text-emerald-500', bar: 'bg-emerald-500' };
+    if (score >= 8) return { text: 'text-up', bar: 'bg-emerald-500' };
     if (score >= 5) return { text: 'text-yellow-500', bar: 'bg-yellow-500' };
     return { text: 'text-rose-500', bar: 'bg-rose-500' };
 }
@@ -206,7 +206,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
     // Helper to determine color based on score (1-10)
     const getScoreColor = (score: number) => {
         if (!score) return "text-muted-foreground";
-        if (score >= 8) return "text-emerald-500";
+        if (score >= 8) return "text-up";
         if (score >= 5) return "text-yellow-500";
         return "text-rose-500";
     };
@@ -308,7 +308,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             {/* Executive Summary */}
             <div className="metric-card card-shine p-6 relative overflow-hidden group">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
-                <h3 className="section-label text-rose-600 dark:text-rose-400 mb-4 relative z-10">
+                <h3 className="section-label text-down mb-4 relative z-10">
                     Executive Summary
                 </h3>
                 <div className="prose dark:prose-invert max-w-none prose-sm opacity-90">
@@ -362,7 +362,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                 {/* Actionable Recommendations */}
                 <div className="metric-card card-shine lg:col-span-2 p-6 relative overflow-hidden group">
                     <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
-                    <h3 className="section-label text-rose-600 dark:text-rose-400 flex items-center gap-2 mb-4 relative z-10">
+                    <h3 className="section-label text-down flex items-center gap-2 mb-4 relative z-10">
                         <Lightbulb className="w-4 h-4" />
                         Actionable Recommendations
                     </h3>

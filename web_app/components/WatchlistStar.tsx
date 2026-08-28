@@ -115,7 +115,7 @@ export default function WatchlistStar({ symbol, size = "md", className, iconClas
             {openWatchlistDropdown && showDropdown && watchlists.length > 0 && typeof document !== 'undefined' && createPortal(
                 <div
                     ref={dropdownRef}
-                    className="fixed w-48 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[9999] overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-200"
+                    className="fixed w-48 bg-popover border border-border rounded-inset shadow-lg z-[9999] overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-200"
                     style={{
                         // eslint-disable-next-line react-hooks/refs -- reads the trigger button's rect during render to position the portal dropdown
                         top: dropdownPosition.top + (dropdownPosition.top < (starButtonRef.current?.getBoundingClientRect().top ?? 0) ? -8 : 8),

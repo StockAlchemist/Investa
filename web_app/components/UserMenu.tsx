@@ -66,7 +66,7 @@ export default function UserMenu({ user, onLogout, onUserClick, align = 'right' 
                                 setIsOpen(false);
                                 onLogout?.();
                             }}
-                            className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 text-red-500 hover:bg-red-500/10 text-left"
+                            className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 text-down hover:bg-down/12 text-left"
                         >
                             <LogOut className="w-4 h-4" />
                             <span>Log Out</span>

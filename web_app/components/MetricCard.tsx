@@ -2,7 +2,6 @@ import React from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency } from '@/lib/utils';
-import { ResponsiveContainer, LineChart, Line } from 'recharts';
 import { LucideIcon, Loader2 } from 'lucide-react';
 
 export interface MetricCardProps {
@@ -20,98 +19,20 @@ export interface MetricCardProps {
     icon?: LucideIcon;
     isLoading?: boolean;
     isRefreshing?: boolean;
+    /** Retired — a watermark chart behind a figure informs no one. */
     sparklineData?: { value: number }[];
     accentColor?: string;
     variant?: 'card' | 'seamless';
     onClick?: () => void;
 }
 
-// Maps accent color name → CSS values for icon bg, icon text, top-border glow
-const ACCENT_MAP: Record<string, {
-    iconBg: string;
-    iconText: string;
-    topBar: string;
-    glowShadow: string;
-    sparkColor: string;
-}> = {
-    'indigo-500': {
-        iconBg: 'bg-indigo-500/15 dark:bg-indigo-500/20',
-        iconText: 'text-indigo-500',
-        topBar: 'bg-indigo-500',
-        glowShadow: 'hover:shadow-indigo-500/10',
-        sparkColor: '#6366f1',
-    },
-    'sky-500': {
-        iconBg: 'bg-sky-500/15 dark:bg-sky-500/20',
-        iconText: 'text-sky-500',
-        topBar: 'bg-sky-500',
-        glowShadow: 'hover:shadow-sky-500/10',
-        sparkColor: '#0ea5e9',
-    },
-    'teal-500': {
-        iconBg: 'bg-teal-500/15 dark:bg-teal-500/20',
-        iconText: 'text-teal-500',
-        topBar: 'bg-teal-500',
-        glowShadow: 'hover:shadow-teal-500/10',
-        sparkColor: '#14b8a6',
-    },
-    'slate-500': {
-        iconBg: 'bg-slate-500/15 dark:bg-slate-500/20',
-        iconText: 'text-slate-400',
-        topBar: 'bg-slate-400',
-        glowShadow: 'hover:shadow-slate-500/10',
-        sparkColor: '#94a3b8',
-    },
-    'purple-500': {
-        iconBg: 'bg-purple-500/15 dark:bg-purple-500/20',
-        iconText: 'text-purple-500',
-        topBar: 'bg-purple-500',
-        glowShadow: 'hover:shadow-purple-500/10',
-        sparkColor: '#a855f7',
-    },
-    'violet-500': {
-        iconBg: 'bg-violet-500/15 dark:bg-violet-500/20',
-        iconText: 'text-violet-500',
-        topBar: 'bg-violet-500',
-        glowShadow: 'hover:shadow-violet-500/10',
-        sparkColor: '#8b5cf6',
-    },
-    'amber-500': {
-        iconBg: 'bg-amber-500/15 dark:bg-amber-500/20',
-        iconText: 'text-amber-500',
-        topBar: 'bg-amber-500',
-        glowShadow: 'hover:shadow-amber-500/10',
-        sparkColor: '#f59e0b',
-    },
-    'emerald-500': {
-        iconBg: 'bg-emerald-500/15 dark:bg-emerald-500/20',
-        iconText: 'text-emerald-500',
-        topBar: 'bg-emerald-500',
-        glowShadow: 'hover:shadow-emerald-500/10',
-        sparkColor: '#10b981',
-    },
-    'rose-500': {
-        iconBg: 'bg-rose-500/15 dark:bg-rose-500/20',
-        iconText: 'text-rose-500',
-        topBar: 'bg-rose-500',
-        glowShadow: 'hover:shadow-rose-500/10',
-        sparkColor: '#f43f5e',
-    },
-    'cyan-500': {
-        iconBg: 'bg-cyan-500/15 dark:bg-cyan-500/20',
-        iconText: 'text-cyan-500',
-        topBar: 'bg-cyan-500',
-        glowShadow: 'hover:shadow-cyan-500/10',
-        sparkColor: '#06b6d4',
-    },
-    'zinc-500': {
-        iconBg: 'bg-zinc-500/15 dark:bg-zinc-500/20',
-        iconText: 'text-zinc-400',
-        topBar: 'bg-zinc-400',
-        glowShadow: 'hover:shadow-zinc-500/10',
-        sparkColor: '#71717a',
-    },
-};
+// The eleven-entry accent map is gone: a KPI tile no longer paints a 128px
+// blurred colour glow in its corner, nor a 10%-opacity sparkline watermark
+// across its bottom. Neither was readable enough to inform and both were
+// visible enough to distract, with the figure sitting on top of them. Tiles
+// carry one accent; if a trend matters it gets a real chart with an axis.
+//
+// `accentColor` is still accepted so the ~20 call sites keep compiling.
 
 export function MetricCard({
     title,
@@ -126,218 +47,85 @@ export function MetricCard({
     isLoading = false,
     isRefreshing = false,
     icon: Icon,
-    accentColor = 'indigo-500',
     variant = 'card',
     onClick,
-    sparklineData
 }: MetricCardProps) {
-    const accent = ACCENT_MAP[accentColor] || ACCENT_MAP['indigo-500'];
+    // Label → figure → delta, with the delta row reserved even when empty, so a
+    // grid row of tiles shares one baseline and one height.
+    const display = value !== null && value !== undefined
+        ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : String(value))
+        : '\u2014';
 
-    if (variant === 'seamless') {
-        // Seamless variant: flat, no card chrome, used in the scalar metrics grid.
-        // Layout is a 3-row vertical stack (label → value → delta) so every card
-        // shares the same rhythm regardless of currency width or whether a
-        // sub-value is present — keeps the 2-col mobile grid visually aligned.
+    // The full number is always shown — never abbreviated, never ellipsized.
+    // The figure steps down as the string grows so long amounts still fit.
+    const fitClass =
+        display.length > 13 ? 'text-sm sm:text-base' :
+        display.length > 11 ? 'text-base sm:text-lg' :
+        display.length > 9 ? 'text-lg sm:text-xl' : '';
 
-        // The full number is always shown — never abbreviated or ellipsized.
-        // The font steps down as the string grows so long amounts still fit
-        // the card.
-        const display = value !== null && value !== undefined
-            ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : String(value))
-            : '—';
-        const fitClass =
-            display.length > 13 ? 'text-sm sm:text-base' :
-            display.length > 11 ? 'text-base sm:text-lg' :
-            display.length > 9 ? 'text-lg sm:text-xl' : '';
+    const seamless = variant === 'seamless';
 
-        return (
-            <div
-                className={cn(
-                    'metric-card card-shine relative overflow-hidden h-full min-h-[112px] p-4 cursor-default group flex flex-col',
-                    onClick ? 'cursor-pointer' : '',
-                    containerClassName
-                )}
-                onClick={onClick}
-            >
-                {/* Soft background glow */}
-                <div className="absolute -top-12 -right-12 w-32 h-32 blur-[40px] opacity-10 transition-opacity duration-500 group-hover:opacity-20 pointer-events-none"
-                    style={{ backgroundColor: accent.sparkColor }} />
+    const deltaBadge = subValue !== undefined && subValue !== null ? (
+        <Badge
+            variant={typeof subValue === 'number' ? (subValue >= 0 ? 'success' : 'destructive') : 'outline'}
+            className={cn('shrink-0', subValueClassName)}
+        >
+            {typeof subValue === 'number'
+                ? (subValue === Infinity ? '\u221e' : `${subValue >= 0 ? '+' : ''}${subValue.toFixed(2)}%`)
+                : subValue}
+        </Badge>
+    ) : null;
 
-                {/* Row 1 — label + icon */}
-                <div className="flex items-start justify-between gap-2 mb-2 relative z-10">
-                    <p className="section-label pr-1 leading-tight min-w-0 line-clamp-2">{title}</p>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        {isRefreshing && (
-                            <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
-                                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
-                            </div>
-                        )}
-                        {Icon && (
-                            <div className={cn(
-                                'p-1.5 rounded-lg transition-all duration-300 group-hover:scale-110 backdrop-blur-sm',
-                                accent.iconBg,
-                                accent.iconText
-                            )}>
-                                <Icon className="w-3.5 h-3.5" />
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Row 2 — primary value (single line, truncates if overflowing) */}
-                <div className="relative z-10 min-w-0">
-                    {isLoading ? (
-                        <Skeleton className="h-7 w-28 opacity-50 rounded-lg" />
-                    ) : (
-                        <span
-                            title={value !== null && value !== undefined && isCurrency && typeof value === 'number'
-                                ? formatCurrency(value, currency)
-                                : undefined}
-                            className={cn(
-                                'block font-bold tracking-tight leading-none tabular-nums text-foreground truncate',
-                                colorClass,
-                                valueClassName,
-                                fitClass
-                            )}
-                        >
-                            {display}
-                        </span>
-                    )}
-                </div>
-
-                {/* Row 3 — delta badge on its own line, reserves height even when
-                    empty so card footers line up across the grid. */}
-                <div className="relative z-10 mt-auto pt-2 min-h-[24px] flex items-center">
-                    {isLoading ? (
-                        <Skeleton className="h-4 w-14 rounded-full opacity-50" />
-                    ) : subValue !== undefined && subValue !== null ? (
-                        <Badge
-                            variant="outline"
-                            className={cn(
-                                'text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full shrink-0',
-                                typeof subValue === 'number'
-                                    ? (subValue >= 0
-                                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
-                                        : 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20')
-                                    : '',
-                                subValueClassName
-                            )}
-                        >
-                            {typeof subValue === 'number'
-                                ? (subValue === Infinity ? '∞' : `${subValue >= 0 ? '+' : ''}${subValue.toFixed(2)}%`)
-                                : subValue}
-                        </Badge>
-                    ) : null}
-                </div>
-
-                {/* Sparkline */}
-                {!isLoading && sparklineData && sparklineData.length > 1 && (
-                    <div className="absolute inset-x-0 bottom-0 h-12 z-0 pointer-events-none opacity-10 group-hover:opacity-20 transition-opacity duration-500">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={sparklineData}>
-                                <Line
-                                    type="monotone"
-                                    dataKey="value"
-                                    stroke={accent.sparkColor}
-                                    strokeWidth={2}
-                                    dot={false}
-                                    isAnimationActive={false}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                )}
-            </div>
-        );
-    }
-
-    // Card variant (used for complex/tall metrics)
     return (
         <div
             className={cn(
-                'metric-card card-shine relative overflow-hidden h-full p-5 cursor-default group',
-                onClick ? 'cursor-pointer' : '',
-                containerClassName
+                'card-standard relative h-full p-4 flex flex-col gap-2',
+                seamless && 'min-h-[112px]',
+                onClick ? 'cursor-pointer' : 'cursor-default',
+                containerClassName,
             )}
             onClick={onClick}
         >
-            {/* Soft background glow */}
-            <div className="absolute -top-16 -right-16 w-48 h-48 blur-[60px] opacity-8 transition-opacity duration-500 group-hover:opacity-15 pointer-events-none"
-                style={{ backgroundColor: accent.sparkColor }} />
-
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4 relative z-10">
-                <div className="flex items-center gap-1.5">
-                    <p className="section-label">{title}</p>
+            {/* Label + icon */}
+            <div className="flex items-start justify-between gap-2">
+                <p className="section-label pr-1 leading-tight min-w-0 line-clamp-2">{title}</p>
+                <div className="flex items-center gap-1.5 shrink-0">
                     {isRefreshing && (
-                        <div className="flex items-center gap-1.5 animate-in fade-in duration-500">
-                            <Loader2 className="w-4 h-4 animate-spin text-indigo-500/60 dark:text-indigo-400/60" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/60" />
+                    )}
+                    {Icon && (
+                        <div className="p-1.5 rounded-md bg-primary/12 text-primary-ink">
+                            <Icon className="w-3.5 h-3.5" />
                         </div>
                     )}
                 </div>
-                {Icon && (
-                    <div className={cn(
-                        'p-2 rounded-xl transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 backdrop-blur-sm',
-                        accent.iconBg,
-                        accent.iconText
-                    )}>
-                        <Icon className="w-4 h-4" />
-                    </div>
-                )}
             </div>
 
-            {/* Value */}
-            <div className="flex items-end justify-between gap-3 relative z-10">
-                <div className="flex flex-col min-w-0">
-                    {isLoading ? (
-                        <Skeleton className="h-9 w-32 mb-1 opacity-50 rounded-lg" />
-                    ) : (
-                        <span className={cn(
-                            'font-bold tracking-tight leading-none tabular-nums text-foreground whitespace-nowrap',
-                            colorClass,
-                            valueClassName
-                        )}>
-                            {value !== null && value !== undefined
-                                ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value)
-                                : '—'}
-                        </span>
-                    )}
-                </div>
-
+            {/* Figure */}
+            <div className="min-w-0">
                 {isLoading ? (
-                    <Skeleton className="h-5 w-12 rounded-full opacity-50" />
-                ) : subValue !== undefined && subValue !== null && (
-                    <Badge
-                        variant={(typeof subValue === 'number' ? subValue >= 0 : true) ? 'success' : 'destructive'}
+                    <Skeleton className="h-7 w-28 opacity-50 rounded-md" />
+                ) : (
+                    <span
+                        title={value !== null && value !== undefined && isCurrency && typeof value === 'number'
+                            ? formatCurrency(value, currency)
+                            : undefined}
                         className={cn(
-                            'text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full border-none shrink-0',
-                            subValueClassName
+                            'block font-bold tracking-tight leading-none tabular-nums text-foreground truncate',
+                            colorClass,
+                            valueClassName,
+                            fitClass,
                         )}
                     >
-                        {typeof subValue === 'number'
-                            ? (subValue === Infinity ? '∞' : `${subValue >= 0 ? '+' : ''}${subValue.toFixed(2)}%`)
-                            : subValue}
-                    </Badge>
+                        {display}
+                    </span>
                 )}
             </div>
 
-            {/* Sparkline */}
-            {!isLoading && sparklineData && sparklineData.length > 1 && (
-                <div className="absolute inset-x-0 bottom-0 h-16 z-0 pointer-events-none opacity-8 group-hover:opacity-15 transition-opacity duration-500">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={sparklineData}>
-                            <Line
-                                type="monotone"
-                                dataKey="value"
-                                stroke={accent.sparkColor}
-                                strokeWidth={3}
-                                dot={false}
-                                isAnimationActive={false}
-                            />
-                        </LineChart>
-                    </ResponsiveContainer>
-                </div>
-            )}
+            {/* Delta — the row keeps its height so card footers line up. */}
+            <div className="mt-auto pt-1 min-h-[24px] flex items-center">
+                {isLoading ? <Skeleton className="h-4 w-14 rounded-full opacity-50" /> : deltaBadge}
+            </div>
         </div>
     );
 }

@@ -116,7 +116,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                                 </td>
                                 <td className="px-6 py-3">
                                     {event.status === 'confirmed' ? (
-                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-up/12 text-up">
                                             <CheckCircle2 className="w-3 h-3" />
                                             Confirmed
                                         </span>
@@ -127,7 +127,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                                         </span>
                                     )}
                                 </td>
-                                <td className="px-6 py-3 text-right font-medium text-emerald-500 dark:text-emerald-400 tabular-nums">
+                                <td className="px-6 py-3 text-right font-medium text-up tabular-nums">
                                     {formatCurrency(event.amount, currency)}
                                 </td>
                             </tr>

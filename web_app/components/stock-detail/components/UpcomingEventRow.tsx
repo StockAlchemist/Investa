@@ -40,7 +40,7 @@ export const UpcomingEventRow: React.FC<UpcomingEventRowProps> = ({
 }) => {
     const relative = relativeEventDay(date, timeZone);
     const badge = {
-        confirmed: { text: 'confirmed', tone: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10', title: 'Announced by the company' },
+        confirmed: { text: 'confirmed', tone: 'text-up bg-up/12', title: 'Announced by the company' },
         estimated: { text: 'est.', tone: 'text-amber-600 dark:text-amber-400 bg-amber-500/10', title: 'Projected from the past reporting/payment cadence' },
         reported: { text: 'reported', tone: 'text-violet-600 dark:text-violet-400 bg-violet-500/10', title: 'Already reported by the company' },
     }[status];

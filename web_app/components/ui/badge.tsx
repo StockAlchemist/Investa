@@ -3,17 +3,18 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-    "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
     {
         variants: {
             variant: {
-                default: "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
-                secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
-                destructive: "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
-                outline: "text-foreground",
-                success: "border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25 border-emerald-500/20",
-                warning: "border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/25 border-amber-500/20",
-                info: "border-transparent bg-blue-500/15 text-blue-700 dark:text-blue-400 hover:bg-blue-500/25 border-blue-500/20",
+                default: "border-transparent bg-primary text-primary-foreground",
+                secondary: "border-border bg-muted text-muted-foreground",
+                destructive: "border-down/25 bg-down/12 text-down",
+                outline: "border-border text-foreground",
+                // Semantic. Same geometry as every other pill; only the hue moves.
+                success: "border-up/25 bg-up/12 text-up",
+                warning: "border-warn/25 bg-warn/12 text-warn-ink",
+                info: "border-primary/25 bg-primary/12 text-primary-ink",
             },
         },
         defaultVariants: {

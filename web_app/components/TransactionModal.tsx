@@ -409,7 +409,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                         </button>
                     </div>
 
-                    {error && <div className="mb-4 p-2 bg-red-100 text-red-600 rounded text-sm">{error}</div>}
+                    {error && <div className="mb-4 p-2 bg-red-100 text-down rounded text-sm">{error}</div>}
 
                     <form onSubmit={handleSubmit} className="space-y-3">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

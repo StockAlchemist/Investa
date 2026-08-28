@@ -8,10 +8,10 @@ import { formatCalendarDate } from '@/lib/market_time';
 function getPendingTypeStyle(type: string): string {
     const t = (type || '').toUpperCase();
     if (['BUY', 'DEPOSIT', 'BUY TO COVER'].includes(t)) {
-        return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
+        return 'bg-up/12 text-up';
     }
     if (['SELL', 'WITHDRAWAL', 'SHORT SELL'].includes(t)) {
-        return 'bg-red-500/10 text-red-600 dark:text-red-500';
+        return 'bg-down/12 text-down';
     }
     if (['DIVIDEND', 'INTEREST'].includes(t)) {
         return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400';
@@ -172,14 +172,14 @@ export const PendingIbkrBanner: React.FC = () => {
                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button
                                             onClick={() => handlePendingAction('approve', [tx.id!])}
-                                            className="p-1.5 text-emerald-500 hover:bg-emerald-500/10 rounded transition-all"
+                                            className="p-1.5 text-up hover:bg-up/12 rounded transition-all"
                                             title="Approve"
                                         >
                                             <CheckCircle className="h-4 w-4" />
                                         </button>
                                         <button
                                             onClick={() => handlePendingAction('reject', [tx.id!])}
-                                            className="p-1.5 text-red-500 hover:bg-red-500/10 rounded transition-all"
+                                            className="p-1.5 text-down hover:bg-down/12 rounded transition-all"
                                             title="Reject"
                                         >
                                             <XCircle className="h-4 w-4" />

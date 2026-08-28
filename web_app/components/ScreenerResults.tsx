@@ -237,7 +237,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 placeholder="Search symbol or name..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 h-9 w-full sm:w-[240px] bg-muted/30 dark:bg-white/[0.03] backdrop-blur-sm border-border/40 dark:border-white/[0.05] focus:ring-cyan-500/20 text-foreground transition-all"
+                                className="pl-9 h-9 w-full sm:w-[240px] bg-muted/30 dark:bg-white/[0.03] backdrop-blur-sm border-border/40 dark:border-white/[0.05] focus:ring-ring/20 text-foreground transition-all"
                             />
                             {searchQuery && (
                                 <button
@@ -270,7 +270,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                     </div>
                     <div className="flex-1 min-w-[110px] px-4 py-2.5">
                         <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">Undervalued</div>
-                        <div className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                        <div className="text-lg font-bold tabular-nums text-up">
                             {summary.undervalued.toLocaleString()}
                             <span className="text-[11px] text-muted-foreground/60 font-medium ml-1">MoS &gt; 0</span>
                         </div>
@@ -280,7 +280,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                         <div className={cn(
                             'text-lg font-bold tabular-nums',
                             summary.avgMOS == null ? 'text-muted-foreground'
-                            : summary.avgMOS >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                            : summary.avgMOS >= 0 ? 'text-up' : 'text-down',
                         )}>
                             {summary.avgMOS != null ? `${summary.avgMOS >= 0 ? '+' : ''}${summary.avgMOS.toFixed(1)}%` : '–'}
                         </div>
@@ -305,7 +305,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     placeholder="e.g. 15"
                                     value={minMOS}
                                     onChange={(e) => setMinMOS(e.target.value === "" ? "" : Number(e.target.value))}
-                                    className="h-9 bg-background/50 backdrop-blur-sm border-border/40 focus:ring-cyan-500/30 text-foreground"
+                                    className="h-9 bg-background/50 backdrop-blur-sm border-border/40 focus:ring-ring/30 text-foreground"
                                 />
                             </div>
 
@@ -317,7 +317,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     placeholder="e.g. 25"
                                     value={maxPE}
                                     onChange={(e) => setMaxPE(e.target.value === "" ? "" : Number(e.target.value))}
-                                    className="h-9 bg-background/50 backdrop-blur-sm border-border/40 focus:ring-cyan-500/30 text-foreground"
+                                    className="h-9 bg-background/50 backdrop-blur-sm border-border/40 focus:ring-ring/30 text-foreground"
                                 />
                             </div>
 
@@ -329,7 +329,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     aria-label="Market Cap"
                                     value={marketCapCategory}
                                     onChange={(e) => setMarketCapCategory(e.target.value)}
-                                    className="w-full h-9 px-3 bg-background/50 backdrop-blur-sm border border-border/40 rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-foreground transition-all"
+                                    className="w-full h-9 px-3 bg-background/50 backdrop-blur-sm border border-border/40 rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring text-foreground transition-all"
                                 >
                                     <option value="all">All Sizes</option>
                                     <option value="micro">Micro Cap (&lt; $300M)</option>
@@ -364,7 +364,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                         setMarketCapCategory("all");
                                         setOnlyAI(false);
                                     }}
-                                    className="h-9 text-muted-foreground hover:text-red-500"
+                                    className="h-9 text-muted-foreground hover:text-down"
                                 >
                                     Reset
                                 </Button>
@@ -459,8 +459,8 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                             {row.margin_of_safety !== null ? (
                                                 <div className={cn(
                                                     "flex items-center justify-end font-mono font-bold text-sm",
-                                                    row.margin_of_safety > 15 ? 'text-emerald-600 dark:text-emerald-400' :
-                                                        row.margin_of_safety > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-red-600 dark:text-red-500'
+                                                    row.margin_of_safety > 15 ? 'text-up' :
+                                                        row.margin_of_safety > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-down'
                                                 )}>
                                                     {row.margin_of_safety > 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
                                                     {typeof row.margin_of_safety === 'number' ? formatPercent(row.margin_of_safety / 100) : '-'}
@@ -478,9 +478,9 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                             {row.ai_score !== null && row.ai_score !== undefined ? (
                                                 <div className={cn(
                                                     "flex items-center justify-end font-mono font-bold text-sm",
-                                                    row.ai_score >= 8 ? 'text-emerald-500' :
+                                                    row.ai_score >= 8 ? 'text-up' :
                                                         row.ai_score >= 6 ? 'text-cyan-500' :
-                                                            row.ai_score >= 4 ? 'text-amber-500' : 'text-red-500'
+                                                            row.ai_score >= 4 ? 'text-amber-500' : 'text-down'
                                                 )}>
                                                     {typeof row.ai_score === 'number' ? `${row.ai_score.toFixed(1)}/10` : 'N/A'}
                                                 </div>
@@ -588,7 +588,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                 <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
                                                 <span className={cn(
                                                     "text-xs font-bold",
-                                                    v >= 8 ? 'text-emerald-500' : v >= 6 ? 'text-cyan-500' : 'text-amber-500'
+                                                    v >= 8 ? 'text-up' : v >= 6 ? 'text-cyan-500' : 'text-amber-500'
                                                 )}>{v}/10</span>
                                             </div>
                                         ))}

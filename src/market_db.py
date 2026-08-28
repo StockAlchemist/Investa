@@ -970,10 +970,7 @@ class MarketDatabase:
         for a fresh clone, not an error: the table is derived and rebuildable,
         so nothing downstream should require it to exist.
         """
-        query = (
-            "SELECT symbol, kind, severity, occurred_on, detail "
-            "FROM data_quality"
-        )
+        query = "SELECT symbol, kind, severity, occurred_on, detail FROM data_quality"
         params: List = []
         # `None` means "everything flagged"; an empty sequence means "these zero
         # symbols", and the two must not collapse into each other — a client
@@ -1099,6 +1096,38 @@ class MarketDatabase:
             df.set_index("date", inplace=True)
             df.columns = ["price"]
         return df
+
+    def get_latest_fund_navs(self) -> Dict[str, Tuple[str, float]]:
+        """{FUND_CODE: (date, nav)} for the newest NAV on record per fund.
+
+        Keys are upper-cased because callers match against ledger symbols, which
+        the engine normalizes, while the codes here came from the override file
+        and keep whatever case the user typed.
+
+        This is the *current* price for a fund with no market feed. Without it
+        the summary falls back to the hand-entered override, which is a scalar
+        somebody typed once — SCBRCTECH sat 15% above its real NAV that way,
+        while the graph beside it was already drawing the published series.
+        """
+        query = """
+            SELECT f.fund_code, f.date, f.nav
+            FROM fund_nav AS f
+            JOIN (
+                SELECT fund_code, MAX(date) AS date
+                FROM fund_nav GROUP BY fund_code
+            ) AS newest
+              ON f.fund_code = newest.fund_code AND f.date = newest.date
+        """
+        out: Dict[str, Tuple[str, float]] = {}
+        try:
+            with self._get_connection() as conn:
+                for code, day, nav in conn.execute(query):
+                    if nav is None:
+                        continue
+                    out[str(code).upper().strip()] = (str(day), float(nav))
+        except Exception as exc:
+            logging.debug(f"fund_nav unavailable ({exc})")
+        return out
 
     def get_fund_nav_coverage(self) -> Dict[str, Tuple[str, str, int]]:
         """{fund_code: (first_date, last_date, row_count)} — for backfill status."""

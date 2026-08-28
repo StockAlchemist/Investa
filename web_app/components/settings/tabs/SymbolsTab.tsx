@@ -163,7 +163,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                                             <button
                                                 type="button"
                                                 onClick={() => removeMapping(from)}
-                                                className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                                                className="p-2 text-down hover:bg-down/12 rounded-lg transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
                                                 title={`Remove mapping for ${from}`}
                                             >
                                                 <Trash2 className="w-4 h-4" />
@@ -226,11 +226,11 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                                 key={sym + idx}
                                 className="group inline-flex items-center gap-2 bg-rose-500/10 border border-rose-500/30 hover:border-rose-500/50 px-3 py-1.5 rounded-lg transition-colors"
                             >
-                                <span className="font-bold font-mono text-rose-700 dark:text-rose-300 text-sm">{sym}</span>
+                                <span className="font-bold font-mono text-down text-sm">{sym}</span>
                                 <button
                                     type="button"
                                     onClick={() => removeExcluded(sym)}
-                                    className="opacity-40 group-hover:opacity-100 text-red-500 hover:text-red-600 transition-opacity cursor-pointer"
+                                    className="opacity-40 group-hover:opacity-100 text-down hover:text-down transition-opacity cursor-pointer"
                                     aria-label={`Remove ${sym}`}
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />

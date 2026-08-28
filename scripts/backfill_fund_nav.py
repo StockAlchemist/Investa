@@ -30,7 +30,6 @@ anything ambiguous is reported and skipped rather than guessed at.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from datetime import date, datetime
@@ -38,75 +37,16 @@ from typing import Any, Dict, List
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-import config  # noqa: E402
-
-# The SEC's own NAV history does not usefully predate this, and the ledger's
-# first transaction is 2002 — matching the archive's universe floor.
-DEFAULT_START = date(2000, 1, 1)
-
-# Local fund codes that do not match the SEC's own abbreviation.
-#
-# Everything else resolves automatically, including share classes: SCBCHA-SSF is
-# a *class* of project SCBCHAFUND and the resolver finds it by searching the stem
-# and matching the class name exactly. Only a genuine naming difference belongs
-# here, and each entry is a claim that two names are the same fund — get one
-# wrong and a whole history of somebody else's NAVs lands under your code, which
-# is why these are declared explicitly rather than guessed by fuzzy matching.
-FUND_CODE_ALIASES = {
-    # Local 'SCBRCTECH' vs the SEC's 'SCBRMCTECH' (SCB China Technology RMF,
-    # M0295_2564) — a dropped 'M' against the sibling codes SCBRM1 and
-    # SCBRMS&P500. NOT the same fund as SCBCTECH-SSF, which is the SSF class of
-    # the non-RMF SCB China Technology.
-    "SCBRCTECH": "SCBRMCTECH",
-}
-
-# Codes that are provident-fund sub-policies, NOT retail mutual funds.
-#
-# These are investment options inside the "Eastspring M Choice" pooled provident
-# fund (SEC proj_id V0006_2552) — the platform whose logo appears on the
-# statements. They are a genuine trap: several share a name with a retail
-# Eastspring fund, so a lookup resolves happily and backfills the wrong
-# instrument's entire history. ES-GQG did exactly that here — 2,694 rows of the
-# retail Eastspring Global Quality Growth Fund were written under it before the
-# trade prices showed the provident sub-policy closer on 19 of 19 trades and the
-# retail fund on none.
-#
-# They are skipped rather than fetched because the SEC's PVD NAV endpoint
-# (/v1/pvd/factsheet/{proj_id}/nav/{yyyyMMdd}) publishes month-end values only,
-# and only from roughly 2024-12 to 2026-05 — about eighteen points against
-# fifteen years of monthly contributions. Not enough to value a position with,
-# and worse than nothing if it were mistaken for a real series.
-PVD_SUB_POLICIES = {
-    "ES-GQG": ("V0006_2552", "000625520014", "ตราสารทุน (equity)"),
-    "ES-FIXED_INCOME": ("V0006_2552", "000625520029", "ตราสารหนี้ (fixed income)"),
-    "ES-TRESURY": ("V0006_2552", "000625520036", "ตราสารหนี้ - ตลาดเงิน (money market)"),
-    # ES-SET50 and ES-JUMBO25 are almost certainly M Choice policies too, but
-    # both were sold before the PVD NAV window opens, so nothing here can
-    # confirm which sub-policy each is. Left unlisted rather than guessed.
-}
-
-
-def discover_fund_codes() -> Dict[str, List[str]]:
-    """{fund_code: [users who hold it]} from every user's manual overrides."""
-    users_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR)
-    found: Dict[str, List[str]] = {}
-    if not os.path.isdir(users_dir):
-        return found
-
-    for username in sorted(os.listdir(users_dir)):
-        path = os.path.join(
-            users_dir, username, config.CONFIG_DIR, "manual_overrides.json"
-        )
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path) as fh:
-                overrides = json.load(fh)
-        except (OSError, json.JSONDecodeError):
-            continue
-        for code in overrides.get("manual_price_overrides") or {}:
-            found.setdefault(code, []).append(username)
-    return found
+# Fund resolution policy — the alias table, the provident-fund skip list, the
+# history floor and the override-file scan — lives in `src/fund_nav_sync.py`,
+# shared with the background top-up worker. Two copies of an alias is how one
+# fund's history ends up filed under another's name.
+from fund_nav_sync import (  # noqa: E402
+    DEFAULT_START,
+    FUND_CODE_ALIASES,
+    PVD_SUB_POLICIES,
+    discover_fund_codes,
+)
 
 
 def main() -> int:

@@ -172,7 +172,7 @@ export default function PerformanceGraph({
             const stats = [{
                 label: "Period TWR",
                 text: `${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
-                color: twr >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
+                color: twr >= 0 ? "text-up" : "text-down"
             }];
 
             // Calculate Annualized TWR if period > 1 year
@@ -185,7 +185,7 @@ export default function PerformanceGraph({
                 stats.push({
                     label: "Ann. TWR",
                     text: `${annualizedTwr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
-                    color: annualizedTwr >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
+                    color: annualizedTwr >= 0 ? "text-up" : "text-down"
                 });
             }
 
@@ -206,7 +206,7 @@ export default function PerformanceGraph({
             return [{
                 label: useSummaryDay ? "Day Change" : "Period Change",
                 text: `${formatCurrency(change, currency)} (${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
-                color: change >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
+                color: change >= 0 ? "text-up" : "text-down"
             }];
         }
         return null;
@@ -489,13 +489,13 @@ export default function PerformanceGraph({
                             </div>
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">TWR</span>
-                                <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-up' : 'text-down'}`}>
                                     {dataPoint.twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Drawdown</span>
-                                <span className="text-[13px] font-bold text-red-500">
+                                <span className="text-[13px] font-bold text-down">
                                     {dataPoint.drawdown.toFixed(2)}%
                                 </span>
                             </div>
@@ -505,7 +505,7 @@ export default function PerformanceGraph({
                         <div className="space-y-0.5">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Gain</span>
-                                <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-up' : 'text-down'}`}>
                                     {formatCurrency(dataPoint.abs_gain, currency)}
                                 </span>
                             </div>
@@ -532,7 +532,7 @@ export default function PerformanceGraph({
                                     {dataPoint.fx_return != null && (
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Ret</span>
-                                            <span className={`text-[12px] font-bold ${dataPoint.fx_return >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                            <span className={`text-[12px] font-bold ${dataPoint.fx_return >= 0 ? 'text-up' : 'text-down'}`}>
                                                 {dataPoint.fx_return.toFixed(2)}%
                                             </span>
                                         </div>
@@ -551,7 +551,7 @@ export default function PerformanceGraph({
                                                 <span className="text-[10px] truncate max-w-[80px] font-bold uppercase tracking-wider" style={{ color: color }}>
                                                     {bKey}
                                                 </span>
-                                                <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                                <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-up' : 'text-down'}`}>
                                                     {Number(dataPoint[bKey]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                                 </span>
                                             </div>

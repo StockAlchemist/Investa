@@ -303,7 +303,7 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
                                     <td className="px-4 py-3 text-right">
                                         <button
                                             onClick={() => handleRemoveFromReview(idx)}
-                                            className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-all"
+                                            className="p-1.5 text-muted-foreground hover:text-down hover:bg-down/12 rounded transition-all"
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </button>

@@ -135,7 +135,7 @@ const FactChip: React.FC<{ icon: React.ReactNode; label: string; value: string }
 const ConfidenceChip: React.FC<{ confidence: number }> = ({ confidence }) => {
     const pct = Math.max(0, Math.min(1, confidence));
     const tone = pct >= 0.66 ? 'bg-emerald-500' : pct >= 0.4 ? 'bg-amber-500' : 'bg-rose-500';
-    const text = pct >= 0.66 ? 'text-emerald-500' : pct >= 0.4 ? 'text-amber-500' : 'text-rose-500';
+    const text = pct >= 0.66 ? 'text-up' : pct >= 0.4 ? 'text-amber-500' : 'text-rose-500';
     return (
         <span
             className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-muted border border-border/60"
@@ -182,8 +182,8 @@ const ValuationHeadlineCard: React.FC<ValuationHeadlineCardProps> = ({
     const accentText = hasAnyCustom ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-500';
     const accentBar = hasAnyCustom ? 'bg-amber-500' : 'bg-indigo-500';
     const mosPositive = mos !== null && mos >= 0;
-    const mosText = mos === null ? 'text-muted-foreground' : mosPositive ? 'text-emerald-500' : 'text-rose-500';
-    const mosBg = mos === null ? 'bg-muted' : mosPositive ? 'bg-emerald-500/10' : 'bg-rose-500/10';
+    const mosText = mos === null ? 'text-muted-foreground' : mosPositive ? 'text-up' : 'text-rose-500';
+    const mosBg = mos === null ? 'bg-muted' : mosPositive ? 'bg-up/12' : 'bg-rose-500/10';
     const gapBar = mos === null ? 'bg-secondary' : mosPositive ? 'bg-emerald-500' : 'bg-rose-500';
 
     const valueLabel =
@@ -221,7 +221,7 @@ const ValuationHeadlineCard: React.FC<ValuationHeadlineCardProps> = ({
                     {customDiffPct !== null && isPlottable(defaultValue) ? (
                         <p className="mt-1.5 text-xs font-semibold text-muted-foreground tabular-nums">
                             Default {formatCurrency(defaultValue * fxRate, currency)}{' '}
-                            <span className={customDiffPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                            <span className={customDiffPct >= 0 ? 'text-up' : 'text-rose-500'}>
                                 {customDiffPct >= 0 ? '+' : ''}
                                 {customDiffPct.toFixed(1)}%
                             </span>

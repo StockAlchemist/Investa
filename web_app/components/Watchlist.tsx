@@ -359,7 +359,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                         <Button type="submit" size="icon" variant="ghost" className="h-8 w-8 hover:bg-green-500/10 hover:text-green-500">
                             <Check className="h-4 w-4" />
                         </Button>
-                        <Button type="button" onClick={() => setIsCreating(false)} size="icon" variant="ghost" className="h-8 w-8 hover:bg-red-500/10 hover:text-red-500">
+                        <Button type="button" onClick={() => setIsCreating(false)} size="icon" variant="ghost" className="h-8 w-8 hover:bg-down/12 hover:text-down">
                             <X className="h-4 w-4" />
                         </Button>
                     </form>
@@ -401,7 +401,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                     <Button type="submit" size="icon" variant="ghost" className="h-8 w-8 hover:bg-green-500/10 hover:text-green-500">
                                         <Check className="h-4 w-4" />
                                     </Button>
-                                    <Button type="button" onClick={() => setIsRenaming(false)} size="icon" variant="ghost" className="h-8 w-8 hover:bg-red-500/10 hover:text-red-500">
+                                    <Button type="button" onClick={() => setIsRenaming(false)} size="icon" variant="ghost" className="h-8 w-8 hover:bg-down/12 hover:text-down">
                                         <X className="h-4 w-4" />
                                     </Button>
                                 </form>
@@ -578,7 +578,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                 "px-4 py-3 whitespace-nowrap text-right text-sm transition-colors",
                                                 getHeatmapClass(item["Day Change %"])
                                             )}>
-                                                <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-red-600 dark:text-red-500 font-bold'
+                                                <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-up font-bold' : 'text-down font-bold'
                                                     }`}>
                                                     {item["Day Change %"] ? formatPercent(item["Day Change %"] / 100) : '-'}
                                                 </div>
@@ -604,9 +604,9 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                 {item.ai_score ? (
                                                     <div className={cn(
                                                         "inline-flex items-center justify-center w-9 h-9 rounded-full font-bold text-xs shadow-sm border mx-auto",
-                                                        item.ai_score >= 7.5 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" :
+                                                        item.ai_score >= 7.5 ? "bg-up/12 text-up border-up/25" :
                                                         item.ai_score >= 5.0 ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
-                                                        "bg-red-500/10 text-red-600 border-red-500/20"
+                                                        "bg-down/12 text-down border-down/25"
                                                     )}>
                                                         {item.ai_score.toFixed(1)}
                                                     </div>
@@ -621,7 +621,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                             {formatCurrency(item.intrinsic_value, item.Currency || 'USD')}
                                                         </span>
                                                         {item.margin_of_safety !== undefined && item.margin_of_safety !== null && (
-                                                            <span className={`text-[10px] font-black uppercase tracking-tighter ${item.margin_of_safety >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                            <span className={`text-[10px] font-black uppercase tracking-tighter ${item.margin_of_safety >= 0 ? 'text-up' : 'text-rose-500'}`}>
                                                                 {item.margin_of_safety.toFixed(1)}% MOS
                                                             </span>
                                                         )}
@@ -670,7 +670,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                                         <div className="flex items-center gap-2 mt-1">
                                                                             <span className="text-[10px] text-muted-foreground font-medium">{formatCalendarDate(c.date)}</span>
                                                                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
-                                                                                c.impact === 'High' ? 'bg-red-500/10 text-red-500' : 
+                                                                                c.impact === 'High' ? 'bg-down/12 text-down' : 
                                                                                 c.impact === 'Medium' ? 'bg-amber-500/10 text-amber-500' : 
                                                                                 'bg-blue-500/10 text-blue-500'
                                                                             }`}>
@@ -715,7 +715,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 onClick={() => saveEdit(item.Symbol)}
-                                                                className="h-8 w-8 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
+                                                                className="h-8 w-8 text-up hover:text-up hover:bg-up/12"
                                                             >
                                                                 <Check className="h-4 w-4" />
                                                             </Button>
@@ -742,7 +742,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 onClick={() => removeMutation.mutate(item.Symbol)}
-                                                                className="h-8 w-8 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                                                                className="h-8 w-8 text-down hover:text-down hover:bg-down/12"
                                                             >
                                                                 <Trash2 className="h-4 w-4" />
                                                             </Button>

@@ -130,7 +130,7 @@ export default function AIChat() {
                     <div>
                         <h3 className="text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">Investa AI</h3>
                         <div className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
                             <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Online</span>
                             {messages.length > 0 && (
                                 <>

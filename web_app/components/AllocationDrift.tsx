@@ -190,13 +190,13 @@ export default function AllocationDrift({
                     <div className="flex items-center gap-1.5">
                         <span className={cn(
                             'text-[11px] font-bold tabular-nums px-2',
-                            Math.abs(draftSum - 100) < 0.5 ? 'text-emerald-500' : 'text-amber-500',
+                            Math.abs(draftSum - 100) < 0.5 ? 'text-up' : 'text-amber-500',
                         )}>
                             Σ {draftSum.toFixed(1)}%
                         </span>
                         <button
                             onClick={commitEdit}
-                            className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 transition-colors"
+                            className="p-1.5 rounded-md bg-up/12 text-up hover:bg-emerald-500/25 transition-colors"
                             aria-label="Save targets"
                         >
                             <Check className="w-3.5 h-3.5" />
@@ -237,7 +237,7 @@ export default function AllocationDrift({
                                     {/* Stacked progress bar: current bar with target marker */}
                                     <div className="relative h-2 bg-muted rounded-full overflow-hidden">
                                         <div
-                                            className="absolute inset-y-0 left-0 bg-[#0097b2] rounded-full transition-all"
+                                            className="absolute inset-y-0 left-0 bg-primary rounded-full transition-all"
                                             style={{ width: `${Math.min(100, r.current)}%` }}
                                         />
                                         {r.target > 0 && (
@@ -256,7 +256,7 @@ export default function AllocationDrift({
                                         max="100"
                                         value={draft[r.bucket] ?? ''}
                                         onChange={e => setDraft(d => ({ ...d, [r.bucket]: e.target.value }))}
-                                        className="w-14 text-xs px-1.5 py-1 bg-secondary text-foreground rounded border border-transparent focus:border-[#0097b2] focus:outline-none text-right tabular-nums"
+                                        className="w-14 text-xs px-1.5 py-1 bg-secondary text-foreground rounded border border-transparent focus:border-ring focus:outline-none text-right tabular-nums"
                                         placeholder="0"
                                     />
                                 ) : (
@@ -266,10 +266,10 @@ export default function AllocationDrift({
                                             r.target === 0
                                                 ? 'text-muted-foreground/60'
                                                 : isAlert
-                                                    ? 'text-red-500'
+                                                    ? 'text-down'
                                                     : isWarn
                                                         ? 'text-amber-500'
-                                                        : 'text-emerald-500',
+                                                        : 'text-up',
                                         )}
                                     >
                                         {isAlert && <AlertTriangle className="w-3 h-3 shrink-0" />}

@@ -97,7 +97,7 @@ export default function RebalanceHelper({ holdings, currency }: RebalanceHelperP
         <div className="metric-card p-5">
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                    <Scale className="w-3.5 h-3.5 text-emerald-500" />
+                    <Scale className="w-3.5 h-3.5 text-up" />
                     <h3 className="section-label">Rebalance Helper</h3>
                 </div>
                 <div className="inline-flex rounded-lg bg-secondary p-0.5">
@@ -107,7 +107,7 @@ export default function RebalanceHelper({ holdings, currency }: RebalanceHelperP
                             onClick={() => setDim(d.key)}
                             className={cn(
                                 'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                                dim === d.key ? 'bg-[#0097b2] text-white' : 'text-muted-foreground hover:text-foreground',
+                                dim === d.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             {d.label}
@@ -174,7 +174,7 @@ export default function RebalanceHelper({ holdings, currency }: RebalanceHelperP
                                                 ) : (
                                                     <span className={cn(
                                                         'inline-flex items-center gap-0.5 justify-end',
-                                                        isBuy ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                                        isBuy ? 'text-up' : 'text-down',
                                                     )}>
                                                         {isBuy ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                                                         {isBuy ? 'Buy' : 'Sell'} {formatCurrency(Math.abs(r.delta), currency)}

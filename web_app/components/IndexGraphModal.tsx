@@ -66,7 +66,7 @@ const CustomTooltip = ({ active, payload, label, period }: {
                                 <span className="text-xs font-bold text-foreground/90">{entry.name}</span>
                             </div>
                             <div className="flex flex-col items-end">
-                                <span className={`text-xs font-black tabular-nums ${entry.value >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                <span className={`text-xs font-black tabular-nums ${entry.value >= 0 ? 'text-up' : 'text-rose-500'}`}>
                                     {entry.value.toFixed(2)}%
                                 </span>
                                 {payload[0]?.payload?.[`${entry.name}_price`] !== undefined && (
@@ -184,7 +184,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                     <div className="p-8 pb-6 flex justify-between items-start">
                         <div className="flex items-center gap-6 text-foreground">
                             {/* Icon Stack/Placeholder */}
-                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0097b2] to-blue-600 flex items-center justify-center flex-shrink-0 p-3 overflow-hidden">
+                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0097b2] to-primary flex items-center justify-center flex-shrink-0 p-3 overflow-hidden">
                                 <TrendingUp className="w-full h-full text-white" />
                             </div>
 
@@ -225,7 +225,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                                 </span>
                                                 <span className={cn(
                                                     "text-[10px] font-bold tracking-tight tabular-nums",
-                                                    displayPct >= 0 ? "text-emerald-500" : "text-rose-500"
+                                                    displayPct >= 0 ? "text-up" : "text-rose-500"
                                                 )}>
                                                     {displayPct.toFixed(2)}%
                                                 </span>
@@ -260,7 +260,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                         className={cn(
                                             'px-3 py-1 text-[11px] font-bold rounded-full border transition-all',
                                             bench === tvSelected
-                                                ? 'bg-[#0097b2] text-white border-transparent shadow-sm'
+                                                ? 'bg-primary text-primary-foreground border-transparent shadow-sm'
                                                 : 'text-muted-foreground border-border bg-secondary hover:text-foreground hover:bg-accent/10',
                                         )}
                                     >
@@ -294,7 +294,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                             className={cn(
                                                 'px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all whitespace-nowrap',
                                                 view === key
-                                                    ? 'bg-[#0097b2] text-white shadow-sm'
+                                                    ? 'bg-primary text-primary-foreground shadow-sm'
                                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10',
                                             )}
                                         >

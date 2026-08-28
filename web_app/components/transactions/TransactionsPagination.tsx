@@ -33,7 +33,7 @@ export const TransactionsPagination: React.FC<TransactionsPaginationProps> = ({
                         setPageSize(Number(e.target.value));
                         setCurrentPage(1);
                     }}
-                    className="px-2 py-1 bg-background border border-border/60 rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                    className="px-2 py-1 bg-background border border-border/60 rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                     <option value={10}>10</option>
                     <option value={25}>25</option>

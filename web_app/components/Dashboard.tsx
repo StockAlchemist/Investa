@@ -199,7 +199,7 @@ function StatPill({
             ) : (
                 <p className={cn(
                     'text-lg sm:text-xl font-bold tabular-nums leading-none',
-                    positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
+                    positive ? 'text-up' : 'text-down',
                 )}>
                     {positive ? '+' : ''}{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                 </p>
@@ -282,7 +282,7 @@ function PortfolioHeroCard({
                             {dayGL !== null && (
                                 <div className={cn(
                                     'flex items-center gap-2 flex-wrap',
-                                    positive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
+                                    positive ? 'text-up' : 'text-down',
                                 )}>
                                     {positive
                                         ? <ArrowUpRight className="w-4 h-4 shrink-0" />
@@ -293,7 +293,7 @@ function PortfolioHeroCard({
                                     {dayGLPct !== null && (
                                         <span className={cn(
                                             'text-sm font-bold px-2.5 py-0.5 rounded-full',
-                                            positive ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-red-500/10 text-red-700 dark:text-red-400',
+                                            positive ? 'bg-up/12 text-up' : 'bg-down/12 text-down',
                                         )}>
                                             {animatedDayPct >= 0 ? '+' : ''}{animatedDayPct.toFixed(2)}%
                                         </span>
@@ -337,7 +337,7 @@ function PortfolioHeroCard({
                                     className={cn(
                                         'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
                                         heroPeriod === p.key
-                                            ? 'bg-[#0097b2] text-white'
+                                            ? 'bg-primary text-primary-foreground'
                                             : 'text-muted-foreground hover:text-foreground',
                                     )}
                                 >
@@ -348,7 +348,7 @@ function PortfolioHeroCard({
                         {periodView.pct != null && periodView.abs != null && heroPeriod !== 'day' && (
                             <div className={cn(
                                 'inline-flex items-baseline gap-2 tabular-nums',
-                                periodPositive ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400',
+                                periodPositive ? 'text-up' : 'text-down',
                             )}>
                                 <span className="text-sm font-bold">
                                     {periodPositive ? '+' : ''}{periodView.pct.toFixed(2)}%
@@ -457,11 +457,11 @@ function DashboardInner({
     else if (m && m.unrealized_gain != null)
         unrealizedGLPct = 0;
 
-    const pos = (v: number | null) => v !== null && v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const pos = (v: number | null) => v !== null && v >= 0 ? 'text-up' : 'text-down';
     const subBadge = (v: number | null | undefined) =>
         v != null && v >= 0
-            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
-            : 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20';
+            ? 'bg-up/12 text-up border-up/25'
+            : 'bg-down/12 text-down border-down/25';
 
     const renderContent = (id: string, variant: 'card' | 'seamless' = 'card') => {
         if (allSelectedClosed && GATED_WHEN_CLOSED.has(id)) {
@@ -511,7 +511,7 @@ function DashboardInner({
                 return <MetricCard title="YTD Return" value={riskMetrics?.['YTD Return'] != null ? `${(riskMetrics['YTD Return'] * 100).toFixed(2)}%` : m?.ytd_return != null ? `${m.ytd_return.toFixed(2)}%` : '-'} isCurrency={false} colorClass={pos((riskMetrics?.['YTD Return'] ?? m?.ytd_return ?? 0))} isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={TrendingUp} accentColor={themeColor} variant={variant} />;
             case 'maxDrawdown': {
                 const maxDD = riskMetrics?.['Max Drawdown'] != null ? riskMetrics['Max Drawdown'] * 100 : m?.max_drawdown;
-                return <MetricCard title="Max Drawdown" value={maxDD != null ? `${maxDD.toFixed(2)}%` : '-'} isCurrency={false} colorClass="text-red-600 dark:text-red-500" isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={TrendingDown} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Max Drawdown" value={maxDD != null ? `${maxDD.toFixed(2)}%` : '-'} isCurrency={false} colorClass="text-down" isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={TrendingDown} accentColor={themeColor} variant={variant} />;
             }
             case 'volatility': {
                 const vol = riskMetrics?.['Volatility (Ann.)'] != null ? riskMetrics['Volatility (Ann.)'] * 100 : m?.volatility_ann;
@@ -519,16 +519,16 @@ function DashboardInner({
             }
             case 'sharpeRatio': {
                 const sharpe = riskMetrics?.['Sharpe Ratio'] ?? m?.sharpe_ratio;
-                return <MetricCard title="Sharpe Ratio" value={sharpe != null ? sharpe.toFixed(2) : '-'} isCurrency={false} colorClass={(sharpe ?? 0) >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'} isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={Zap} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Sharpe Ratio" value={sharpe != null ? sharpe.toFixed(2) : '-'} isCurrency={false} colorClass={(sharpe ?? 0) >= 1 ? 'text-up' : 'text-amber-600 dark:text-amber-400'} isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={Zap} accentColor={themeColor} variant={variant} />;
             }
             case 'beta': {
                 const beta = riskMetrics?.['Beta'] ?? m?.beta;
-                return <MetricCard title="Portfolio Beta" value={beta != null ? beta.toFixed(2) : '-'} isCurrency={false} colorClass={(beta ?? 1) > 1.2 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'} isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Portfolio Beta" value={beta != null ? beta.toFixed(2) : '-'} isCurrency={false} colorClass={(beta ?? 1) > 1.2 ? 'text-amber-600 dark:text-amber-400' : 'text-up'} isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
             }
             case 'fees':
-                return <MetricCard title="Fees" value={m?.commissions ?? 0} colorClass="text-red-600 dark:text-red-500" currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Receipt} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Fees" value={m?.commissions ?? 0} colorClass="text-down" currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Receipt} accentColor={themeColor} variant={variant} />;
             case 'taxes':
-                return <MetricCard title="Taxes" value={m?.taxes ?? 0} colorClass="text-red-600 dark:text-red-500" currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Receipt} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Taxes" value={m?.taxes ?? 0} colorClass="text-down" currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Receipt} accentColor={themeColor} variant={variant} />;
             case 'riskMetrics':
                 return <Suspense fallback={<AnalyticsFallback />}><RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} isRefreshing={isRefreshing} /></Suspense>;
             case 'sectorContribution':

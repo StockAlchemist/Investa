@@ -111,7 +111,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                         placeholder="Search symbol..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-1.5 text-sm bg-muted/40 dark:bg-white/[0.04] border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder-muted-foreground/40 transition-all"
+                        className="w-full pl-9 pr-4 py-1.5 text-sm bg-muted/40 dark:bg-white/[0.04] border border-border/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-ring placeholder-muted-foreground/40 transition-all"
                     />
                     {searchQuery && (
                         <button
@@ -132,9 +132,9 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                 <div className="relative" ref={groupByMenuRef}>
                     <button
                         onClick={() => setIsGroupByMenuOpen(!isGroupByMenuOpen)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors
                         ${groupBy
-                                ? 'bg-[#0097b2] text-white border-none'
+                                ? 'bg-primary text-primary-foreground border-none'
                                 : 'text-foreground bg-secondary border-none hover:bg-accent/10'
                             }`}
                     >
@@ -142,7 +142,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                         <span className="hidden sm:inline">{groupBy ? `By ${GROUPING_LABEL_MAP[groupBy]}` : 'Group'}</span>
                     </button>
                     {isGroupByMenuOpen && (
-                        <div className="absolute left-0 z-50 mt-1.5 w-48 origin-top-left bg-white dark:bg-zinc-950 rounded-md focus:outline-none shadow-lg border border-border">
+                        <div className="absolute left-0 z-50 mt-1.5 w-48 origin-top-left bg-popover rounded-inset focus:outline-none shadow-lg border border-border">
                             <div className="py-1">
                                 <label className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
                                     <input
@@ -150,7 +150,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                                         name="grouping"
                                         checked={groupBy === null}
                                         onChange={() => handleSetGroupBy(null)}
-                                        className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded-full bg-secondary"
+                                        className="h-4 w-4 text-primary focus:ring-ring border-border rounded-full bg-secondary"
                                     />
                                     <span className="ml-2">Do not group</span>
                                 </label>
@@ -162,7 +162,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                                             name="grouping"
                                             checked={groupBy === key}
                                             onChange={() => handleSetGroupBy(key as GroupingOption)}
-                                            className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded-full bg-secondary"
+                                            className="h-4 w-4 text-primary focus:ring-ring border-border rounded-full bg-secondary"
                                         />
                                         <span className="ml-2">{label}</span>
                                     </label>
@@ -176,9 +176,9 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                 <div className="relative" ref={accountMenuRef}>
                     <button
                         onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors
                         ${selectedAccounts.size > 0 || isAccountMenuOpen
-                                ? 'bg-[#0097b2] text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'text-foreground bg-secondary hover:bg-accent/10'
                             }`}
                     >
@@ -187,7 +187,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                         {selectedAccounts.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center">{selectedAccounts.size}</span>}
                     </button>
                     {isAccountMenuOpen && (
-                        <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-white dark:bg-zinc-950 rounded-md border border-border shadow-lg focus:outline-none max-h-96 overflow-y-auto">
+                        <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-popover rounded-inset border border-border shadow-lg focus:outline-none max-h-96 overflow-y-auto">
                             <div className="p-2">
                                 <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
                                     Clear Filter
@@ -200,7 +200,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                                             type="checkbox"
                                             checked={selectedAccounts.has(account)}
                                             onChange={() => toggleAccount(account)}
-                                            className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
+                                            className="h-4 w-4 text-primary focus:ring-ring border-border rounded bg-secondary"
                                         />
                                         <span className="ml-2 truncate">{account}</span>
                                     </label>
@@ -289,9 +289,9 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                 {mobileViewMode === 'card' && (
                     <button
                         onClick={toggleAllCards}
-                        className={`md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                        className={`md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring text-center transition-colors
                         ${expandedCards.size > 0
-                                ? 'bg-[#0097b2] text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'text-foreground bg-secondary hover:bg-accent/10'
                             }`}
                         title={expandedCards.size > 0 ? 'Collapse All Details' : 'Expand All Details'}
@@ -304,9 +304,9 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                 {/* Toggle All Lots Helper */}
                 <button
                     onClick={toggleAllLots}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring text-center transition-colors
                     ${expandedLots.size > 0
-                            ? 'bg-[#0097b2] text-white'
+                            ? 'bg-primary text-primary-foreground'
                             : 'text-foreground bg-secondary hover:bg-accent/10'
                         }`}
                     title={expandedLots.size > 0 ? 'Collapse All Tax Lots' : 'Show All Tax Lots'}
@@ -318,7 +318,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                 {/* Export Button */}
                 <button
                     onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary rounded-md hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center ml-auto"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary rounded-md hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring text-center ml-auto"
                     title="Export to CSV"
                 >
                     <Download className="w-3.5 h-3.5" />
@@ -327,7 +327,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                 {/* Mobile View Toggle */}
                 <button
                     onClick={() => setMobileViewMode(current => current === 'card' ? 'table' : 'card')}
-                    className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary hover:bg-accent/10"
+                    className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring text-center transition-colors text-foreground bg-secondary hover:bg-accent/10"
                     title={mobileViewMode === 'card' ? 'Switch to Table View' : 'Switch to Card View'}
                 >
                     {mobileViewMode === 'card' ? <TableIcon className="w-3.5 h-3.5" /> : <LayoutGrid className="w-3.5 h-3.5" />}

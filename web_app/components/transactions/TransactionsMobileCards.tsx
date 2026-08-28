@@ -61,7 +61,7 @@ export const TransactionsMobileCards: React.FC<TransactionsMobileCardsProps> = (
                                 </button>
                                 <button
                                     onClick={() => onDelete(tx)}
-                                    className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-secondary rounded-lg transition-colors"
+                                    className="p-1.5 text-muted-foreground hover:text-down hover:bg-secondary rounded-lg transition-colors"
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>

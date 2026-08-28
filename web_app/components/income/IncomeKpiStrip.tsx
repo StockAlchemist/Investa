@@ -21,8 +21,8 @@ interface KpiTileProps {
 
 function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTileProps) {
     const toneClass =
-        tone === 'pos'  ? 'text-emerald-600 dark:text-emerald-400'
-        : tone === 'neg'  ? 'text-red-600 dark:text-red-400'
+        tone === 'pos'  ? 'text-up'
+        : tone === 'neg'  ? 'text-down'
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
 
@@ -119,7 +119,7 @@ export default function IncomeKpiStrip({
                         metrics.yoyPct != null ? (
                             <span className={cn(
                                 'inline-flex items-center gap-0.5 font-semibold tabular-nums',
-                                metrics.yoyPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                                metrics.yoyPct >= 0 ? 'text-up' : 'text-down',
                             )}>
                                 {metrics.yoyPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                                 {metrics.yoyPct >= 0 ? '+' : ''}{metrics.yoyPct.toFixed(1)}% YoY

@@ -177,7 +177,7 @@ export function MetricChangeStrip({ label, color, points, seriesKey, periodType 
                     </div>
                     <div className={cn(
                         "text-lg font-bold tabular-nums mt-0.5",
-                        cell.tone == null ? "text-foreground" : cell.tone >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+                        cell.tone == null ? "text-foreground" : cell.tone >= 0 ? "text-up" : "text-down"
                     )}>
                         {cell.value}
                     </div>

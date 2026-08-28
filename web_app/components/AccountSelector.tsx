@@ -141,7 +141,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                         <button
                             onClick={handleSelectAll}
                             className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isAllSelected
-                                ? 'bg-[#0097b2] text-white shadow-sm'
+                                ? 'bg-primary text-primary-foreground shadow-sm'
                                 : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                 }`}
                         >
@@ -168,7 +168,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                             key={groupName}
                                             onClick={() => handleSelectGroup(groupName, groupAccounts)}
                                             className={`group flex items-center justify-between w-full px-4 py-2 text-sm font-medium transition-colors ${isGroupSelected
-                                                ? 'bg-[#0097b2] text-white shadow-sm'
+                                                ? 'bg-primary text-primary-foreground shadow-sm'
                                                 : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                                 }`}
                                         >
@@ -206,7 +206,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                         key={account}
                                         onClick={() => toggleAccount(account)}
                                         className={`group flex items-center justify-between gap-2 w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
-                                            ? 'bg-[#0097b2] text-white shadow-sm'
+                                            ? 'bg-primary text-primary-foreground shadow-sm'
                                             : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                             } last:border-0`}
                                     >

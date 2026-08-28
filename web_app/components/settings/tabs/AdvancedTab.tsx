@@ -239,7 +239,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                         </button>
                     </div>
                     {refreshStatus && (
-                        <p className={`text-sm font-medium animate-in fade-in ${refreshStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-500'}`}>
+                        <p className={`text-sm font-medium animate-in fade-in ${refreshStatus.startsWith('Error') ? 'text-down' : 'text-up'}`}>
                             {refreshStatus}
                         </p>
                     )}
@@ -304,7 +304,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                     </button>
 
                     {syncStatus && (
-                        <p className={`text-sm font-medium animate-in fade-in ${syncStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-500'}`}>
+                        <p className={`text-sm font-medium animate-in fade-in ${syncStatus.startsWith('Error') ? 'text-down' : 'text-up'}`}>
                             {syncStatus}
                         </p>
                     )}
@@ -315,7 +315,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <div className={`${cardClassName} border-l-4 border-l-red-500`}>
                 <div className="mb-2">
                     <h3 className={sectionTitleClassName}>
-                        <ShieldAlert className="w-5 h-5 text-red-500" />
+                        <ShieldAlert className="w-5 h-5 text-down" />
                         System Cache
                     </h3>
                 </div>
@@ -329,12 +329,12 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             onClick={handleClearCache}
                             className={`px-6 py-2.5 rounded-xl text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 border cursor-pointer ${confirmClear
                                 ? 'bg-red-600 text-white border-transparent hover:bg-red-700 focus:ring-red-500 scale-105'
-                                : 'border-red-500/50 text-red-600 dark:text-red-400 bg-red-500/5 hover:bg-red-500/10 focus:ring-red-500'}`}
+                                : 'border-red-500/50 text-down bg-red-500/5 hover:bg-down/12 focus:ring-red-500'}`}
                         >
                             {confirmClear ? "Click again to Confirm" : "Clear System Cache"}
                         </button>
                         {clearStatus && (
-                            <p className={`text-sm font-medium animate-in fade-in ${clearStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-500'}`}>
+                            <p className={`text-sm font-medium animate-in fade-in ${clearStatus.startsWith('Error') ? 'text-down' : 'text-up'}`}>
                                 {clearStatus}
                             </p>
                         )}

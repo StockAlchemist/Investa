@@ -209,7 +209,7 @@ const LimitationCallout = ({
                 <div className="px-3 pb-3 space-y-2">
                     {suited && (
                         <div className="space-y-0.5">
-                            <div className="flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-emerald-600 dark:text-emerald-400">
+                            <div className="flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-up">
                                 <CheckCircle2 className="w-3 h-3" />
                                 Best Suited For
                             </div>
@@ -274,11 +274,11 @@ const MonteCarloPillRow: React.FC<{
                     <p className="text-xs font-bold">{formatCurrency((mc.base ?? 0) * fxRate, currency)}</p>
                 </div>
                 <div
-                    className="bg-emerald-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors"
+                    className="bg-emerald-500/5 p-2 rounded-lg text-center cursor-pointer hover:bg-up/12 transition-colors"
                     onClick={onOpenModal}
                     title="Click to view full distribution"
                 >
-                    <p className="text-[10px] text-emerald-500 font-bold uppercase mb-0.5">Bull (90th)</p>
+                    <p className="text-[10px] text-up font-bold uppercase mb-0.5">Bull (90th)</p>
                     <p className="text-xs font-bold">{formatCurrency((mc.bull ?? 0) * fxRate, currency)}</p>
                 </div>
             </div>
@@ -449,7 +449,7 @@ const ValuationCaveatBanner: React.FC<{
             <div className="space-y-2 min-w-0">
                 <p className={cn(
                     "text-xs font-bold uppercase tracking-wider",
-                    isClamped ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"
+                    isClamped ? "text-down" : "text-amber-600 dark:text-amber-400"
                 )}>
                     {isClamped ? "Output outside credible range" : "Models disagree"}
                 </p>
@@ -719,7 +719,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             {title}
                             {primaryBadge && (
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-up bg-up/12 px-2 py-0.5 rounded">
                                     {primaryBadge}
                                 </span>
                             )}
@@ -738,7 +738,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                         <div className="flex flex-col items-end">
                             <Badge className={cn(
                                 "border-none text-xs font-bold",
-                                isCustom ? "bg-amber-500/20 text-amber-600 dark:text-amber-400" : "bg-emerald-500/20 text-emerald-500"
+                                isCustom ? "bg-amber-500/20 text-amber-600 dark:text-amber-400" : "bg-emerald-500/20 text-up"
                             )}>
                                 {formatCurrency(activeVal * fxRate, currency)}
                             </Badge>
@@ -746,7 +746,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                 <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
                                     <span>Def: {formatCurrency(defaultVal * fxRate, currency)}</span>
                                     {diffPct != null && (
-                                        <span className={cn("font-bold", diffPct >= 0 ? "text-emerald-500" : "text-rose-500")}>
+                                        <span className={cn("font-bold", diffPct >= 0 ? "text-up" : "text-rose-500")}>
                                             ({diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%)
                                         </span>
                                     )}
@@ -845,7 +845,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                         <p className="text-[10px] uppercase font-bold text-muted-foreground">Upside</p>
                                         <p className={cn(
                                             "text-sm font-bold",
-                                            ((recommended_method.intrinsic_value - current_price) / current_price) >= 0 ? "text-emerald-500" : "text-rose-500"
+                                            ((recommended_method.intrinsic_value - current_price) / current_price) >= 0 ? "text-up" : "text-rose-500"
                                         )}>
                                             {((recommended_method.intrinsic_value - current_price) / current_price) >= 0 ? "+" : ""}
                                             {(((recommended_method.intrinsic_value - current_price) / current_price) * 100).toFixed(1)}%
@@ -857,7 +857,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 pt-3 border-t border-indigo-500/20 text-xs">
                         <div>
-                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Best Suited For: </span>
+                            <span className="font-semibold text-up">Best Suited For: </span>
                             <span className="text-muted-foreground">{recommended_method.best_suited_for || recommended_method.when_to_use}</span>
                         </div>
                         <div>
@@ -936,7 +936,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                         )}>
                             {renderCardHeader(
                                 models.dcf.model || 'Discounted Free Cash Flow',
-                                <TrendingUp className="w-5 h-5 text-emerald-500" />,
+                                <TrendingUp className="w-5 h-5 text-up" />,
                                 'dcf',
                                 models.dcf,
                                 'Primary'

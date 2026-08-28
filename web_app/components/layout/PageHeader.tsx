@@ -8,23 +8,12 @@ import { Menu, ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
 import { StockSearchBar } from '@/components/StockSearchBar';
+import { navLabel } from '@/lib/navigation';
 
 const MarketIndicesBox  = dynamic(() => import('@/components/MarketIndicesBox'),  { ssr: false });
 const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
 
-const TAB_LABELS: Record<string, string> = {
-  performance:   'Dashboard',
-  allocation:    'Portfolio',
-  asset_change:  'Performance',
-  transactions:  'Transactions',
-  dividend:      'Income',
-  capital_gains: 'Capital Gains',
-  screener:      'Screener',
-  watchlist:     'Watchlist',
-  markets:       'Markets',
-  ai_review:     'AI Insights',
-  settings:      'Settings',
-};
+// Labels come from lib/navigation — see the note there on why.
 
 interface PageHeaderProps {
   activeTab: string;
@@ -104,7 +93,7 @@ export function PageHeader({
 
       {/* Desktop: page title */}
       <h1 className="hidden md:block text-sm font-semibold text-foreground shrink-0 select-none truncate max-w-[120px] lg:max-w-none">
-        {TAB_LABELS[activeTab] ?? activeTab}
+        {navLabel(activeTab)}
       </h1>
 
       {/* ── Mini KPI: portfolio value + day change ── */}
@@ -120,8 +109,8 @@ export function PageHeader({
                 className={cn(
                   'flex items-center gap-0.5 text-[11px] font-bold tabular-nums leading-none px-1.5 py-0.5 rounded-full',
                   dayPositive
-                    ? 'text-emerald-800 dark:text-emerald-300 bg-emerald-500/10'
-                    : 'text-red-800 dark:text-red-300 bg-red-500/10',
+                    ? 'text-up bg-up/12 border border-up/25'
+                    : 'text-down bg-down/12 border border-down/25',
                 )}
               >
                 {dayPositive
@@ -143,12 +132,12 @@ export function PageHeader({
               <span className={cn(
                 'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
                 isMarketOpen
-                  ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                  ? 'text-up border-up/25 bg-up/12'
                   : 'text-muted-foreground border-border bg-muted/40',
               )}>
                 <span className={cn(
                   'w-1.5 h-1.5 rounded-full',
-                  isMarketOpen ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50',
+                  isMarketOpen ? 'bg-up animate-pulse' : 'bg-muted-foreground/50',
                 )} />
                 {isMarketOpen ? 'Live' : 'Closed'}
               </span>
@@ -212,17 +201,16 @@ export function PageHeader({
             aria-label={showClosed ? 'Hide closed positions' : 'Show closed positions'}
             aria-pressed={!!showClosed}
             className={cn(
-              'flex flex-row items-center gap-1.5 p-3 py-2 px-2 h-[44px] rounded-2xl transition-all duration-300 group bg-transparent',
-              'font-semibold tracking-tight',
-              showClosed ? 'ring-2 ring-cyan-500/20' : 'text-cyan-500',
+              'flex items-center gap-1.5 h-7 px-2.5 rounded-control text-xs font-semibold transition-colors',
+              showClosed
+                ? 'bg-primary/12 text-primary-ink'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             )}
           >
             {showClosed
-              ? <EyeOff className="w-3.5 h-3.5 text-cyan-500" />
-              : <Eye className="w-3.5 h-3.5 text-cyan-500" />}
-            <span className="hidden md:inline bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent font-bold uppercase text-[14px]">
-              Closed
-            </span>
+              ? <EyeOff className="w-3.5 h-3.5" />
+              : <Eye className="w-3.5 h-3.5" />}
+            <span className="hidden md:inline">Closed</span>
           </button>
         )}
 

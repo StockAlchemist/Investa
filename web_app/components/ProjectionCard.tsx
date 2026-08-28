@@ -145,7 +145,7 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                                     <tr key={h.years} className="border-t border-border/40 text-right">
                                         <td className="text-left font-semibold py-2">{h.years} {h.years === 1 ? 'year' : 'years'}</td>
                                         <td className="py-2 font-bold tabular-nums">{formatCurrency(h.median_value, cur)}</td>
-                                        <td className={`py-2 font-semibold tabular-nums ${h.median_return_pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                        <td className={`py-2 font-semibold tabular-nums ${h.median_return_pct >= 0 ? 'text-up' : 'text-down'}`}>
                                             {h.median_return_pct >= 0 ? '+' : ''}{formatPercent(h.median_return_pct / 100)}
                                         </td>
                                         <td className="py-2 text-muted-foreground tabular-nums">
