@@ -32,16 +32,23 @@ struct AccountGroupManagerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            headerView
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                headerView
 
-            if isCreating {
-                groupFormView
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                if isCreating {
+                    groupFormView
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                groupListView
             }
-
-            groupListView
+            .padding(16)
         }
+        .navigationTitle("Account Groups")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .animation(.easeInOut(duration: 0.25), value: isCreating)
         .alert("Delete Account Group", isPresented: $showingDeleteAlert, presenting: groupToDelete) { name in
             Button("Delete", role: .destructive) {
@@ -65,8 +72,8 @@ struct AccountGroupManagerView: View {
                     Text("Custom Account Groups")
                         .appFont(.title3.bold())
                 }
-                Text("Create custom groups of accounts for quick filtering. Drag or use arrows to reorder.")
-                    .appFont(.subheadline)
+                Text("Create custom groups of accounts for quick filtering across all dashboard charts and views.")
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -143,7 +150,7 @@ struct AccountGroupManagerView: View {
                         .appFont(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    let columns = [GridItem(.adaptive(minimum: 150), spacing: 8)]
+                    let columns = [GridItem(.adaptive(minimum: 140), spacing: 8)]
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                         ForEach(configurableAccounts, id: \.self) { acc in
                             let isSelected = selectedAccounts.contains(acc)
@@ -291,7 +298,7 @@ struct AccountGroupManagerView: View {
                             .foregroundStyle(index < orderedGroupNames.count - 1 ? Color.primary : Color.secondary.opacity(0.3))
                     }
                     .buttonStyle(.plain)
-                    .disabled(index == orderedGroupNames.count - 1)
+                    .disabled(index == 0 || index == orderedGroupNames.count - 1)
                 }
             }
 
@@ -422,6 +429,7 @@ struct AccountGroupManagerView: View {
         }
 
         save(groups: newGroups, order: newOrder)
+        ToastManager.shared.show(message: "Account group \"\(name)\" saved", style: .success)
         cancelForm()
     }
 
@@ -430,6 +438,7 @@ struct AccountGroupManagerView: View {
         newGroups.removeValue(forKey: name)
         let newOrder = orderedGroupNames.filter { $0 != name }
         save(groups: newGroups, order: newOrder)
+        ToastManager.shared.show(message: "Account group \"\(name)\" deleted", style: .info)
     }
 
     private func moveGroup(_ name: String, by offset: Int) {

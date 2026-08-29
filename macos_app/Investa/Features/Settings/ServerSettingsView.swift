@@ -1,0 +1,122 @@
+import SwiftUI
+
+struct ServerSettingsView: View {
+    @ObservedObject var vm: SettingsViewModel
+    let settings: AppSettings?
+
+    @State private var serverURL = APIConfig.baseURL
+    @State private var isClearingCache = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Server Base URL Card
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "network")
+                            .foregroundStyle(Color.blue)
+                            .appFont(.title3)
+                        Text("Backend Base URL")
+                            .appFont(.headline.bold())
+                        Spacer()
+                    }
+
+                    Text("The address of your FastAPI backend instance. Change this if running against a remote LAN host or Tailscale node.")
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("http://127.0.0.1:8000", text: $serverURL)
+                            .textFieldStyle(.roundedBorder)
+                            .autocorrectionDisabled()
+
+                        HStack {
+                            Button("Reset Default") {
+                                serverURL = "http://127.0.0.1:8000"
+                                APIConfig.baseURL = serverURL
+                                ToastManager.shared.show(message: "Reset backend URL to default", style: .info)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Spacer()
+
+                            Button("Save URL") {
+                                APIConfig.baseURL = serverURL
+                                ToastManager.shared.show(message: "Saved backend URL: \(serverURL)", style: .success)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .padding(18)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.primary.opacity(0.03))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+
+                // Server Cache Management Card
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "internaldrive.fill")
+                            .foregroundStyle(Color.orange)
+                            .appFont(.title3)
+                        Text("Market Data Cache")
+                            .appFont(.headline.bold())
+                        Spacer()
+                    }
+
+                    Text("Purge all locally cached ticker quotes, exchange rate tables, and financial statements to force fresh fetches.")
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        clearCache()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isClearingCache {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "trash.circle")
+                            }
+                            Text("Clear Server Cache")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .fontWeight(.semibold)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                    .disabled(isClearingCache)
+                }
+                .padding(18)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.primary.opacity(0.03))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+            }
+            .padding(16)
+        }
+        .navigationTitle("System & Server")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+
+    private func clearCache() {
+        isClearingCache = true
+        Task {
+            await vm.clearCache()
+            isClearingCache = false
+            ToastManager.shared.show(message: "Server cache cleared successfully", style: .success)
+        }
+    }
+}
