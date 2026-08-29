@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-    Loader2, AlertTriangle, Info, TrendingUp, ShieldCheck, ShieldAlert, Layers, Check,
+    Loader2, AlertTriangle, Info, TrendingUp, ShieldCheck, ShieldAlert, Check,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -268,9 +268,6 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
     return (
         <div className="space-y-6">
             <header className="space-y-1">
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                    <Layers className="w-5 h-5" /> Strategies
-                </h1>
                 <p className="text-sm text-muted-foreground max-w-3xl">
                     Fixed rules, not live suggestions. Each was backtested point-in-time; the
                     returns below assume the rule is followed mechanically. Nothing here places

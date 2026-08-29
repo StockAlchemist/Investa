@@ -92,7 +92,6 @@ struct AIView: View {
         #if os(iOS)
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Insights").appFont(.title2.bold())
                 Text("AI-driven insights and recommendations for your portfolio.")
                     .appFont(.caption).foregroundStyle(.secondary)
                 if let gen = viewModel.review?.generatedAt, !gen.isEmpty {
@@ -122,7 +121,6 @@ struct AIView: View {
         #else
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Insights").appFont(.title2.bold())
                 Text("AI-driven insights and recommendations for your portfolio.")
                     .appFont(.caption).foregroundStyle(.secondary)
                 if let gen = viewModel.review?.generatedAt, !gen.isEmpty {

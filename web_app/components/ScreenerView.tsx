@@ -124,14 +124,9 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            <header className="space-y-1">
-                <h2 className="text-2xl font-bold tracking-tight text-foreground">
-                    Screener
-                </h2>
-                <p className="text-muted-foreground text-sm max-w-3xl">
-                    Identify high-probability investment opportunities using quantitative <span className="text-cyan-500/80">intrinsic value models</span> and <span className="text-blue-500/80">AI-powered fundamental audits</span>.
-                </p>
-            </header>
+            <p className="text-muted-foreground text-sm max-w-3xl">
+                Identify high-probability investment opportunities using quantitative <span className="text-cyan-500/80">intrinsic value models</span> and <span className="text-blue-500/80">AI-powered fundamental audits</span>.
+            </p>
 
             <div className="space-y-6">
                 <ScreenerInput onRunScreener={handleRunScreener} isLoading={isLoading} />

@@ -133,13 +133,10 @@ struct ScreenerView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Screener").appFont(.title2.bold())
-            Text("Identify opportunities using intrinsic-value models and AI fundamental audits.")
-                .appFont(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20).padding(.vertical, 12)
+        Text("Identify opportunities using intrinsic-value models and AI fundamental audits.")
+            .appFont(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20).padding(.vertical, 12)
     }
 
     // MARK: - Input card

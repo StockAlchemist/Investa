@@ -323,8 +323,6 @@ struct SettingsView: View {
             // Header
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Settings")
-                        .appFont(.title2.bold())
                     if viewModel.isLoading {
                         ProgressView().controlSize(.small).padding(.leading, 8)
                     }

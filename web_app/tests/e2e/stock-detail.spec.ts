@@ -47,7 +47,7 @@ test.describe('Stock Detail View Journey', () => {
         await page.locator('table').getByText('AAPL', { exact: true }).first().click();
 
         // Click Analysis tab
-        await page.getByRole('button', { name: 'Analysis' }).click();
+        await page.getByRole('button', { name: 'Analysis', exact: true }).click();
 
         // Verify AI Scorecard / Moat analysis / Track record
         await expect(page.getByText(/Moat|Financial Strength|Quality Score|Track Record/i).first()).toBeVisible();
