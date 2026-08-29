@@ -612,6 +612,12 @@ struct AdvancedSettings: View {
     let settings: AppSettings?
     @EnvironmentObject private var appState: AppState
     @State private var ibkrToken = ""; @State private var ibkrQuery = ""
+    @State private var geminiApiKey = ""
+    @State private var fmpApiKey = ""
+    @State private var secThApiKey = ""
+    @State private var botApiKey = ""
+    @State private var tiingoApiKey = ""
+    @State private var showApiKeys = false
     @State private var refreshSecret = ""
     @State private var serverURL = APIConfig.baseURL
     @State private var benchmarksText = ""
@@ -621,12 +627,23 @@ struct AdvancedSettings: View {
             benchmarksCard
             webhookCard
             ibkrCard
+            apiKeysCard
             serverCard
         }
         .onAppear {
             ibkrToken = settings?.ibkrToken ?? ""; ibkrQuery = settings?.ibkrQueryId ?? ""
+            geminiApiKey = settings?.geminiApiKey ?? ""
+            fmpApiKey = settings?.fmpApiKey ?? ""
+            secThApiKey = settings?.secThApiKey ?? ""
+            botApiKey = settings?.botApiKey ?? ""
+            tiingoApiKey = settings?.tiingoApiKey ?? ""
         }
         .onChange(of: settings?.ibkrToken) { _, new in ibkrToken = new ?? ibkrToken }
+        .onChange(of: settings?.geminiApiKey) { _, new in geminiApiKey = new ?? geminiApiKey }
+        .onChange(of: settings?.fmpApiKey) { _, new in fmpApiKey = new ?? fmpApiKey }
+        .onChange(of: settings?.secThApiKey) { _, new in secThApiKey = new ?? secThApiKey }
+        .onChange(of: settings?.botApiKey) { _, new in botApiKey = new ?? botApiKey }
+        .onChange(of: settings?.tiingoApiKey) { _, new in tiingoApiKey = new ?? tiingoApiKey }
     }
 
     private let presetBenchmarks = [
@@ -759,6 +776,64 @@ struct AdvancedSettings: View {
                 .disabled(vm.isSyncingIbkr)
             }
             .padding(.top, 4)
+        }
+    }
+
+    private var apiKeysCard: some View {
+        SettingsCard(title: "API Keys (.env)", icon: "key.fill", iconColor: .orange) {
+            Text("Configure external API keys stored in .env for market data providers and AI features.")
+                .appFont(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            #if os(macOS)
+            let cols = [GridItem(.adaptive(minimum: 220), spacing: 16)]
+            #else
+            let cols = [GridItem(.adaptive(minimum: 140), spacing: 16)]
+            #endif
+
+            LazyVGrid(columns: cols, alignment: .leading, spacing: 12) {
+                apiKeyField(title: "Gemini API Key", placeholder: "AI Analysis", text: $geminiApiKey)
+                apiKeyField(title: "FMP API Key", placeholder: "Valuation & Statements", text: $fmpApiKey)
+                apiKeyField(title: "Thai SEC API Key", placeholder: "SSF/RMF NAVs", text: $secThApiKey)
+                apiKeyField(title: "Bank of Thailand API Key", placeholder: "THB FX Rates", text: $botApiKey)
+                apiKeyField(title: "Tiingo API Key", placeholder: "Splits & Verification", text: $tiingoApiKey)
+            }
+            .padding(.top, 4)
+
+            HStack(spacing: 12) {
+                Button("Save API Keys") {
+                    Task {
+                        await vm.updateAPIKeys(
+                            gemini: geminiApiKey,
+                            fmp: fmpApiKey,
+                            secTh: secThApiKey,
+                            bot: botApiKey,
+                            tiingo: tiingoApiKey
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
+                    showApiKeys.toggle()
+                } label: {
+                    Label(showApiKeys ? "Hide Keys" : "Show Keys", systemImage: showApiKeys ? "eye.slash" : "eye")
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private func apiKeyField(title: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).appFont(.caption2).foregroundStyle(.secondary)
+            if showApiKeys {
+                TextField(placeholder, text: text).textFieldStyle(.roundedBorder)
+            } else {
+                SecureField(placeholder, text: text).textFieldStyle(.roundedBorder)
+            }
         }
     }
 

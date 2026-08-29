@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -148,6 +149,16 @@ def get_settings(
             or getattr(config, "IBKR_TOKEN", None),
             "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id")
             or getattr(config, "IBKR_QUERY_ID", None),
+            "gemini_api_key": getattr(config, "GEMINI_API_KEY", None)
+            or os.getenv("GEMINI_API_KEY"),
+            "fmp_api_key": getattr(config, "FMP_API_KEY", None)
+            or os.getenv("FMP_API_KEY"),
+            "sec_th_api_key": getattr(config, "SEC_TH_API_KEY", None)
+            or os.getenv("SEC_TH_API_KEY"),
+            "bot_api_key": getattr(config, "BOT_API_KEY", None)
+            or os.getenv("BOT_API_KEY"),
+            "tiingo_api_key": getattr(config, "TIINGO_API_KEY", None)
+            or os.getenv("TIINGO_API_KEY"),
             "target_allocation": config_manager.gui_config.get("target_allocation", {}),
         }
     except Exception as e:
@@ -179,6 +190,11 @@ class SettingsUpdate(BaseModel):
     active_tab: Optional[str] = None
     ibkr_token: Optional[str] = None
     ibkr_query_id: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    fmp_api_key: Optional[str] = None
+    sec_th_api_key: Optional[str] = None
+    bot_api_key: Optional[str] = None
+    tiingo_api_key: Optional[str] = None
     # Per-bucket target allocation. Outer key is bucket type (e.g. "quoteType",
     # "sector"); inner maps bucket name → target % of portfolio.
     target_allocation: Optional[Dict[str, Dict[str, float]]] = None
@@ -236,6 +252,27 @@ def update_settings(
 
             if settings.ibkr_query_id is not None:
                 current_overrides["ibkr_query_id"] = settings.ibkr_query_id
+
+            # Update API Keys (.env and runtime environment)
+            api_keys_to_update = {
+                "GEMINI_API_KEY": settings.gemini_api_key,
+                "FMP_API_KEY": settings.fmp_api_key,
+                "SEC_TH_API_KEY": settings.sec_th_api_key,
+                "BOT_API_KEY": settings.bot_api_key,
+                "TIINGO_API_KEY": settings.tiingo_api_key,
+            }
+            env_file_path = os.path.join(project_root, ".env")
+            for env_key, env_val in api_keys_to_update.items():
+                if env_val is not None:
+                    cleaned_val = env_val.strip()
+                    os.environ[env_key] = cleaned_val
+                    setattr(config, env_key, cleaned_val if cleaned_val else None)
+                    try:
+                        dotenv.set_key(
+                            env_file_path, env_key, cleaned_val, quote_mode="never"
+                        )
+                    except Exception as e:
+                        logging.warning(f"Failed to write {env_key} to .env: {e}")
 
             # Update GUI Config (Dashboard persistence)
             gui_config_changed = False

@@ -124,7 +124,7 @@ struct MainView: View {
                     StockDetailView(symbol: selectedStock, currency: appState.displayCurrency)
                         .id(selectedStock)
                 } else {
-                    ZStack {
+                    ZStack(alignment: .top) {
                         ForEach(AppSection.allCases) { section in
                             if visitedSections.contains(section) {
                                 sectionView(section)
@@ -133,6 +133,7 @@ struct MainView: View {
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             }
             .navigationTitle(appState.selectedStock ?? "Investa")

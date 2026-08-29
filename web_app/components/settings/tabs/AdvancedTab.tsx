@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Plus, XCircle, Activity, Sliders, Save, Loader2, ShieldAlert } from 'lucide-react';
+import { LineChart, Plus, XCircle, Activity, Sliders, Save, Loader2, ShieldAlert, Key, Eye, EyeOff } from 'lucide-react';
 import { Settings as SettingsType, triggerRefresh, clearCache, syncIbkr, updateSettings } from '../../../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
@@ -36,6 +36,15 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
+    const [geminiApiKey, setGeminiApiKey] = useState('');
+    const [fmpApiKey, setFmpApiKey] = useState('');
+    const [secThApiKey, setSecThApiKey] = useState('');
+    const [botApiKey, setBotApiKey] = useState('');
+    const [tiingoApiKey, setTiingoApiKey] = useState('');
+    const [showApiKeys, setShowApiKeys] = useState(false);
+    const [isSavingApiKeys, setIsSavingApiKeys] = useState(false);
+    const [apiKeyStatus, setApiKeyStatus] = useState<string | null>(null);
+
     const [confirmClear, setConfirmClear] = useState(false);
     const [clearStatus, setClearStatus] = useState<string | null>(null);
 
@@ -43,6 +52,11 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
         if (settings) {
             setIbkrToken(settings.ibkr_token || '');
             setIbkrQueryId(settings.ibkr_query_id || '');
+            setGeminiApiKey(settings.gemini_api_key || '');
+            setFmpApiKey(settings.fmp_api_key || '');
+            setSecThApiKey(settings.sec_th_api_key || '');
+            setBotApiKey(settings.bot_api_key || '');
+            setTiingoApiKey(settings.tiingo_api_key || '');
         }
     }, [settings]);
 
@@ -71,6 +85,27 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
         } finally {
             setIsSavingIbkr(false);
             setTimeout(() => setSyncStatus(null), 5000);
+        }
+    };
+
+    const handleSaveApiKeys = async () => {
+        setIsSavingApiKeys(true);
+        try {
+            await updateSettings({
+                gemini_api_key: geminiApiKey,
+                fmp_api_key: fmpApiKey,
+                sec_th_api_key: secThApiKey,
+                bot_api_key: botApiKey,
+                tiingo_api_key: tiingoApiKey,
+            });
+            await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
+            setApiKeyStatus("API keys saved successfully.");
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to save API keys";
+            setApiKeyStatus(`Error: ${message}`);
+        } finally {
+            setIsSavingApiKeys(false);
+            setTimeout(() => setApiKeyStatus(null), 5000);
         }
     };
 
@@ -306,6 +341,98 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                     {syncStatus && (
                         <p className={`text-sm font-medium animate-in fade-in ${syncStatus.startsWith('Error') ? 'text-down' : 'text-up'}`}>
                             {syncStatus}
+                        </p>
+                    )}
+                </div>
+            </div>
+
+            {/* API Keys Configuration */}
+            <div className={`${cardClassName} border-l-4 border-l-amber-500`}>
+                <div className="flex items-center justify-between mb-2">
+                    <h3 className={sectionTitleClassName}>
+                        <Key className="w-5 h-5 text-amber-500" />
+                        API Keys (.env)
+                    </h3>
+                    <button
+                        type="button"
+                        onClick={() => setShowApiKeys(!showApiKeys)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                        {showApiKeys ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showApiKeys ? "Hide Keys" : "Show Keys"}
+                    </button>
+                </div>
+                <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+                    Configure external API keys stored in <code className="inline-block bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-amber-600 dark:text-amber-400 border border-black/10 dark:border-white/10 align-middle">.env</code> for AI stock analysis, valuation models, and supplementary market data feeds.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+                    <div className="space-y-1.5">
+                        <label className={labelClassName}>Google Gemini API Key</label>
+                        <input
+                            type={showApiKeys ? "text" : "password"}
+                            placeholder="AI stock analysis & screener"
+                            value={geminiApiKey}
+                            onChange={(e) => setGeminiApiKey(e.target.value)}
+                            className={inputClassName}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={labelClassName}>Financial Modeling Prep (FMP)</label>
+                        <input
+                            type={showApiKeys ? "text" : "password"}
+                            placeholder="Financial statements & intrinsic models"
+                            value={fmpApiKey}
+                            onChange={(e) => setFmpApiKey(e.target.value)}
+                            className={inputClassName}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={labelClassName}>Thai SEC Open API</label>
+                        <input
+                            type={showApiKeys ? "text" : "password"}
+                            placeholder="SSF / RMF mutual fund daily NAVs"
+                            value={secThApiKey}
+                            onChange={(e) => setSecThApiKey(e.target.value)}
+                            className={inputClassName}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={labelClassName}>Bank of Thailand (BOT)</label>
+                        <input
+                            type={showApiKeys ? "text" : "password"}
+                            placeholder="Historical THB exchange rates"
+                            value={botApiKey}
+                            onChange={(e) => setBotApiKey(e.target.value)}
+                            className={inputClassName}
+                        />
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={labelClassName}>Tiingo API Key</label>
+                        <input
+                            type={showApiKeys ? "text" : "password"}
+                            placeholder="Corporate actions & stock split verification"
+                            value={tiingoApiKey}
+                            onChange={(e) => setTiingoApiKey(e.target.value)}
+                            className={inputClassName}
+                        />
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 bg-black/5 dark:bg-white/5 p-4 rounded-xl border border-black/5 dark:border-white/5">
+                    <button
+                        type="button"
+                        onClick={handleSaveApiKeys}
+                        disabled={isSavingApiKeys}
+                        className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
+                    >
+                        {isSavingApiKeys ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4"/>}
+                        Save API Keys
+                    </button>
+
+                    {apiKeyStatus && (
+                        <p className={`text-sm font-medium animate-in fade-in ${apiKeyStatus.startsWith('Error') ? 'text-down' : 'text-up'}`}>
+                            {apiKeyStatus}
                         </p>
                     )}
                 </div>

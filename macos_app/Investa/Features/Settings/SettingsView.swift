@@ -106,6 +106,31 @@ final class SettingsViewModel: ObservableObject {
         } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
     }
 
+    /// Save external API keys in a single POST request.
+    func updateAPIKeys(gemini: String, fmp: String, secTh: String, bot: String, tiingo: String) async {
+        struct Body: Encodable {
+            let gemini_api_key: String
+            let fmp_api_key: String
+            let sec_th_api_key: String
+            let bot_api_key: String
+            let tiingo_api_key: String
+        }
+        do {
+            let _: StatusResponse = try await api.send(
+                method: "POST", path: "/settings/update",
+                body: Body(
+                    gemini_api_key: gemini,
+                    fmp_api_key: fmp,
+                    sec_th_api_key: secTh,
+                    bot_api_key: bot,
+                    tiingo_api_key: tiingo
+                )
+            )
+            status = "API keys saved."
+            await load()
+        } catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+
     func clearCache() async {
         do { let _: StatusResponse = try await api.send(method: "POST", path: "/clear_cache"); status = "Cache cleared." }
         catch { status = (error as? APIError)?.errorDescription ?? error.localizedDescription }

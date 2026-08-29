@@ -75,7 +75,12 @@ final class ModelDecodingTests: XCTestCase {
             },
             "account_cash_mode_map": {
                 "Brokerage Main": "Auto"
-            }
+            },
+            "gemini_api_key": "test_gemini_key",
+            "fmp_api_key": "test_fmp_key",
+            "sec_th_api_key": "test_sec_key",
+            "bot_api_key": "test_bot_key",
+            "tiingo_api_key": "test_tiingo_key"
         }
         """.data(using: .utf8)!
 
@@ -101,6 +106,13 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(settings.accountClosureDates?["Old Account"], "2024-01-01")
         XCTAssertEqual(settings.accountCurrencyMap?["SET"], "THB")
         XCTAssertEqual(settings.accountCashModeMap?["Brokerage Main"], "Auto")
+
+        // Test API keys decoding
+        XCTAssertEqual(settings.geminiApiKey, "test_gemini_key")
+        XCTAssertEqual(settings.fmpApiKey, "test_fmp_key")
+        XCTAssertEqual(settings.secThApiKey, "test_sec_key")
+        XCTAssertEqual(settings.botApiKey, "test_bot_key")
+        XCTAssertEqual(settings.tiingoApiKey, "test_tiingo_key")
     }
 
     func testHoldingDecoding() throws {

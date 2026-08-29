@@ -148,4 +148,69 @@ def test_per_user_config_defaults_to_own_db(tmp_path):
     )
 
 
-# Add more specific checks if needed for complex constants
+def test_api_keys_settings_update(tmp_path, monkeypatch):
+    """Test that updating API keys through settings updates os.environ, config, and .env."""
+    import config
+    from server.routes.settings import SettingsUpdate, update_settings
+    from server.auth import User
+    from config_manager import ConfigManager
+
+    # Mock user and config manager
+    user_dir = tmp_path / "users" / "test_user"
+    user_dir.mkdir(parents=True)
+    (user_dir / "portfolio.db").write_bytes(b"")
+    cm = ConfigManager(str(user_dir))
+
+    fake_user = User(
+        id=1,
+        username="test_user",
+        alias="Tester",
+        is_active=True,
+        created_at="2026-01-01T00:00:00",
+    )
+
+    # Point project_root .env to temporary directory
+    fake_env = tmp_path / ".env"
+    fake_env.write_text("GEMINI_API_KEY=initial_gemini\n")
+
+    import server.routes.settings as settings_mod
+
+    monkeypatch.setattr(settings_mod, "project_root", str(tmp_path))
+
+    update_payload = SettingsUpdate(
+        gemini_api_key="updated_gemini_key",
+        fmp_api_key="updated_fmp_key",
+        sec_th_api_key="updated_sec_key",
+        bot_api_key="updated_bot_key",
+        tiingo_api_key="updated_tiingo_key",
+    )
+
+    res = update_settings(
+        settings=update_payload,
+        config_manager=cm,
+        current_user=fake_user,
+    )
+    assert res.get("status") == "success"
+
+    # Check os.environ
+    assert os.environ.get("GEMINI_API_KEY") == "updated_gemini_key"
+    assert os.environ.get("FMP_API_KEY") == "updated_fmp_key"
+    assert os.environ.get("SEC_TH_API_KEY") == "updated_sec_key"
+    assert os.environ.get("BOT_API_KEY") == "updated_bot_key"
+    assert os.environ.get("TIINGO_API_KEY") == "updated_tiingo_key"
+
+    # Check config module attributes
+    assert config.GEMINI_API_KEY == "updated_gemini_key"
+    assert config.FMP_API_KEY == "updated_fmp_key"
+    assert config.SEC_TH_API_KEY == "updated_sec_key"
+    assert config.BOT_API_KEY == "updated_bot_key"
+    assert config.TIINGO_API_KEY == "updated_tiingo_key"
+
+    # Check .env file content
+    env_content = fake_env.read_text()
+    assert "GEMINI_API_KEY=updated_gemini_key" in env_content
+    assert "FMP_API_KEY=updated_fmp_key" in env_content
+    assert "SEC_TH_API_KEY=updated_sec_key" in env_content
+    assert "BOT_API_KEY=updated_bot_key" in env_content
+    assert "TIINGO_API_KEY=updated_tiingo_key" in env_content
+

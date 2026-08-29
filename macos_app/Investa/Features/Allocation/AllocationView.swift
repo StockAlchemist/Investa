@@ -110,11 +110,11 @@ struct AllocationView: View {
                 ProgressView()
                 Text("Loading holdings…").appFont(.callout).foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 200)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.vertical, 40)
         } else {
             ContentUnavailableView("No holdings", systemImage: "chart.pie")
-                .frame(maxWidth: .infinity, minHeight: 200)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 40)
         }
     }
@@ -151,6 +151,7 @@ struct AllocationView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }

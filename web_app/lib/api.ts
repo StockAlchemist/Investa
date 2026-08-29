@@ -545,6 +545,11 @@ export interface Settings {
     active_tab?: string;
     ibkr_token?: string;
     ibkr_query_id?: string;
+    gemini_api_key?: string;
+    fmp_api_key?: string;
+    sec_th_api_key?: string;
+    bot_api_key?: string;
+    tiingo_api_key?: string;
     target_allocation?: Record<string, Record<string, number>>;
 }
 
@@ -576,6 +581,11 @@ export interface SettingsUpdate {
     active_tab?: string;
     ibkr_token?: string;
     ibkr_query_id?: string;
+    gemini_api_key?: string;
+    fmp_api_key?: string;
+    sec_th_api_key?: string;
+    bot_api_key?: string;
+    tiingo_api_key?: string;
     target_allocation?: Record<string, Record<string, number>>;
 }
 

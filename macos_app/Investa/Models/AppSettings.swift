@@ -23,6 +23,11 @@ struct AppSettings: Codable, Sendable {
     let interestFreeThresholds: [String: Double]?
     let ibkrToken: String?
     let ibkrQueryId: String?
+    let geminiApiKey: String?
+    let fmpApiKey: String?
+    let secThApiKey: String?
+    let botApiKey: String?
+    let tiingoApiKey: String?
 
     enum CodingKeys: String, CodingKey {
         case availableCurrencies = "available_currencies"
@@ -44,6 +49,11 @@ struct AppSettings: Codable, Sendable {
         case interestFreeThresholds = "interest_free_thresholds"
         case ibkrToken = "ibkr_token"
         case ibkrQueryId = "ibkr_query_id"
+        case geminiApiKey = "gemini_api_key"
+        case fmpApiKey = "fmp_api_key"
+        case secThApiKey = "sec_th_api_key"
+        case botApiKey = "bot_api_key"
+        case tiingoApiKey = "tiingo_api_key"
     }
 
     /// Manual price overrides flattened to symbol → price (handles both the bare
