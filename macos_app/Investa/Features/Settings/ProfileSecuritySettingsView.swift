@@ -4,29 +4,27 @@ struct ProfileSecuritySettingsView: View {
     @ObservedObject var vm: SettingsViewModel
     @EnvironmentObject private var auth: AuthViewModel
 
+    var embedded: Bool = false
     @State private var alias = ""
     @State private var showPassword = false
     @State private var confirmDelete = false
     @State private var isSavingAlias = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Profile Information Card
-                profileCard
-
-                // Security & Password Card
-                securityCard
-
-                // Session & Danger Zone
-                sessionAndDangerSection
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
+                }
+                .navigationTitle("Profile & Security")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
             }
-            .padding(16)
         }
-        .navigationTitle("Profile & Security")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .onAppear {
             alias = auth.currentUser?.alias ?? ""
         }
@@ -47,6 +45,19 @@ struct ProfileSecuritySettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This permanently deletes your account and all associated transactions, portfolios, and settings. This action cannot be undone.")
+        }
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 20) {
+            // Profile Information Card
+            profileCard
+
+            // Security & Password Card
+            securityCard
+
+            // Session & Danger Zone
+            sessionAndDangerSection
         }
     }
 

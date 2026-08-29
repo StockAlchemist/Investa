@@ -4,13 +4,30 @@ struct ServerSettingsView: View {
     @ObservedObject var vm: SettingsViewModel
     let settings: AppSettings?
 
+    var embedded: Bool = false
     @State private var serverURL = APIConfig.baseURL
     @State private var isClearingCache = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Server Base URL Card
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
+                }
+                .navigationTitle("System & Server")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+            }
+        }
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 20) {
+            // Server Base URL Card
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 8) {
                         Image(systemName: "network")
@@ -103,13 +120,7 @@ struct ServerSettingsView: View {
                         .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 )
             }
-            .padding(16)
         }
-        .navigationTitle("System & Server")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-    }
 
     private func clearCache() {
         isClearingCache = true

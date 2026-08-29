@@ -4,6 +4,7 @@ struct ExcludedSymbolsView: View {
     @ObservedObject var vm: SettingsViewModel
     let settings: AppSettings?
 
+    var embedded: Bool = false
     @State private var newSymbol = ""
 
     private var excludedList: [String] {
@@ -11,92 +12,102 @@ struct ExcludedSymbolsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Add Exclude Card
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Color.red)
-                            .appFont(.title3)
-                        Text("Exclude a Symbol")
-                            .appFont(.headline.bold())
-                    }
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
+                }
+                .navigationTitle("Excluded Symbols")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+            }
+        }
+    }
 
-                    Text("Excluded tickers are completely skipped during portfolio calculations, performance returns, and market data queries.")
+    private var mainContent: some View {
+        VStack(spacing: 20) {
+            // Add Exclude Card
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Color.red)
+                        .appFont(.title3)
+                    Text("Exclude a Symbol")
+                        .appFont(.headline.bold())
+                }
+
+                Text("Excluded tickers are completely skipped during portfolio calculations, performance returns, and market data queries.")
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    TextField("e.g. TEST-TICKER, CASH-USD", text: $newSymbol)
+                        .textFieldStyle(.roundedBorder)
+                        .uppercaseAutoCapitalization()
+                        .autocorrectionDisabled()
+
+                    Button("Exclude") {
+                        addSymbol()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.primary.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+
+            // Current Excluded Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Currently Excluded Symbols")
+                        .appFont(.headline.bold())
+                    Spacer()
+                    Text("\(excludedList.count) symbols")
                         .appFont(.caption)
                         .foregroundStyle(.secondary)
-
-                    HStack(spacing: 10) {
-                        TextField("e.g. TEST-TICKER, CASH-USD", text: $newSymbol)
-                            .textFieldStyle(.roundedBorder)
-                            .uppercaseAutoCapitalization()
-                            .autocorrectionDisabled()
-
-                        Button("Exclude") {
-                            addSymbol()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
                 }
-                .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.primary.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                )
 
-                // Current Excluded Section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Currently Excluded Symbols")
-                            .appFont(.headline.bold())
-                        Spacer()
-                        Text("\(excludedList.count) symbols")
+                if excludedList.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.green.opacity(0.6))
+                            .padding(.vertical, 8)
+                        Text("No symbols are currently excluded.")
                             .appFont(.caption)
                             .foregroundStyle(.secondary)
                     }
-
-                    if excludedList.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle")
-                                .font(.system(size: 32))
-                                .foregroundStyle(.green.opacity(0.6))
-                                .padding(.vertical, 8)
-                            Text("No symbols are currently excluded.")
-                                .appFont(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
-                    } else {
-                        FlowChipsRemovable(items: excludedList, color: .red) { sym in
-                            removeSymbol(sym)
-                        }
-                        .padding(.top, 4)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    FlowChipsRemovable(items: excludedList, color: .red) { sym in
+                        removeSymbol(sym)
                     }
+                    .padding(.top, 4)
                 }
-                .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.primary.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                )
             }
-            .padding(16)
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.primary.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            )
         }
-        .navigationTitle("Excluded Symbols")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
     }
 
     private func addSymbol() {

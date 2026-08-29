@@ -12,6 +12,7 @@ struct OverridesListView: View {
     @ObservedObject var vm: SettingsViewModel
     let settings: AppSettings?
 
+    var embedded: Bool = false
     @State private var searchText = ""
     @State private var showingAddSheet = false
     @State private var editingItem: OverrideItem? = nil
@@ -81,25 +82,33 @@ struct OverridesListView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, embedded ? 0 : 16)
+            .padding(.top, embedded ? 0 : 12)
+            .padding(.bottom, 12)
 
             if filteredOverrides.isEmpty {
                 emptyView
             } else {
-                ScrollView {
+                if embedded {
                     LazyVStack(spacing: 12) {
                         ForEach(filteredOverrides) { item in
                             overrideCard(item)
                         }
                     }
-                    .padding(16)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(filteredOverrides) { item in
+                                overrideCard(item)
+                            }
+                        }
+                        .padding(16)
+                    }
                 }
             }
         }
-        .navigationTitle("Manual Overrides")
         #if os(iOS)
+        .navigationTitle("Manual Overrides")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

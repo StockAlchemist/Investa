@@ -4,6 +4,7 @@ struct APIKeysSettingsView: View {
     @ObservedObject var vm: SettingsViewModel
     let settings: AppSettings?
 
+    var embedded: Bool = false
     @State private var geminiApiKey = ""
     @State private var fmpApiKey = ""
     @State private var secThApiKey = ""
@@ -13,9 +14,31 @@ struct APIKeysSettingsView: View {
     @State private var isSaving = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Header Note
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
+                }
+                .navigationTitle("API Keys (.env)")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+            }
+        }
+        .onAppear { seed() }
+        .onChange(of: settings?.geminiApiKey) { _, new in geminiApiKey = new ?? geminiApiKey }
+        .onChange(of: settings?.fmpApiKey) { _, new in fmpApiKey = new ?? fmpApiKey }
+        .onChange(of: settings?.secThApiKey) { _, new in secThApiKey = new ?? secThApiKey }
+        .onChange(of: settings?.botApiKey) { _, new in botApiKey = new ?? botApiKey }
+        .onChange(of: settings?.tiingoApiKey) { _, new in tiingoApiKey = new ?? tiingoApiKey }
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 20) {
+            // Header Note
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("External API Keys")
@@ -108,19 +131,7 @@ struct APIKeysSettingsView: View {
                 .tint(.orange)
                 .disabled(isSaving)
                 .padding(.top, 8)
-            }
-            .padding(16)
         }
-        .navigationTitle("API Keys (.env)")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .onAppear { seed() }
-        .onChange(of: settings?.geminiApiKey) { _, new in geminiApiKey = new ?? geminiApiKey }
-        .onChange(of: settings?.fmpApiKey) { _, new in fmpApiKey = new ?? fmpApiKey }
-        .onChange(of: settings?.secThApiKey) { _, new in secThApiKey = new ?? secThApiKey }
-        .onChange(of: settings?.botApiKey) { _, new in botApiKey = new ?? botApiKey }
-        .onChange(of: settings?.tiingoApiKey) { _, new in tiingoApiKey = new ?? tiingoApiKey }
     }
 
     private func seed() {

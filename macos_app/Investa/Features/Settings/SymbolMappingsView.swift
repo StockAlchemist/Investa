@@ -4,6 +4,7 @@ struct SymbolMappingsView: View {
     @ObservedObject var vm: SettingsViewModel
     let settings: AppSettings?
 
+    var embedded: Bool = false
     @State private var mapFrom = ""
     @State private var mapTo = ""
     @State private var searchText = ""
@@ -22,20 +23,30 @@ struct SymbolMappingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Add Mapping Card
-                addMappingCard
-
-                // Active Mappings Section
-                activeMappingsSection
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
+                }
+                .navigationTitle("Symbol Mappings")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
             }
-            .padding(16)
         }
-        .navigationTitle("Symbol Mappings")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 20) {
+            // Add Mapping Card
+            addMappingCard
+
+            // Active Mappings Section
+            activeMappingsSection
+        }
     }
 
     private var addMappingCard: some View {

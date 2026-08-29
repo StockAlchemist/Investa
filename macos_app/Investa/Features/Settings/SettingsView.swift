@@ -204,7 +204,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case accounts = "Accounts"
     case symbols = "Symbols"
     case overrides = "Overrides"
-    case advanced = "Advanced"
+    case advanced = "Advanced Settings"
     case account = "Profile & Security"
 
     var id: String { rawValue }

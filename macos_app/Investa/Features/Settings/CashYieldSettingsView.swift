@@ -6,76 +6,88 @@ struct CashYieldSettingsView: View {
     let accounts: [String]
     @ObservedObject var appState: AppState
 
+    var embedded: Bool = false
+
     @State private var holdings: [Holding] = []
     @State private var rates: [String: Double] = [:]
     @State private var thresholds: [String: Double] = [:]
     @State private var isSaving = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // Header Note
-                Text("Configure annual interest rates and interest-free cash thresholds to estimate future cash yield.")
-                    .appFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
-
-                let cashAccounts = accountsWithCash()
-                if cashAccounts.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "banknote")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.secondary.opacity(0.4))
-                            .padding(.vertical, 8)
-                        Text("No cash balances found across your accounts.")
-                            .appFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                } else {
-                    LazyVStack(spacing: 14) {
-                        ForEach(cashAccounts, id: \.self) { acc in
-                            cashYieldCard(acc)
-                        }
-                    }
-
-                    // Save Button
-                    Button {
-                        saveYieldSettings()
-                    } label: {
-                        HStack(spacing: 8) {
-                            if isSaving {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "checkmark.circle.fill")
-                            }
-                            Text("Save Cash Yield Settings")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .fontWeight(.bold)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.teal)
-                    .disabled(isSaving)
-                    .padding(.top, 8)
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
                 }
+                .navigationTitle("Cash Yield Assumptions")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
             }
-            .padding(16)
         }
-        .navigationTitle("Cash Yield Assumptions")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .onAppear {
             seed()
             fetchHoldings()
         }
         .onChange(of: settings?.accountInterestRates) { _, _ in seed() }
         .onChange(of: settings?.interestFreeThresholds) { _, _ in seed() }
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 16) {
+            // Header Note
+            Text("Configure annual interest rates and interest-free cash thresholds to estimate future cash yield.")
+                .appFont(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+
+            let cashAccounts = accountsWithCash()
+            if cashAccounts.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "banknote")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.secondary.opacity(0.4))
+                        .padding(.vertical, 8)
+                    Text("No cash balances found across your accounts.")
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+            } else {
+                LazyVStack(spacing: 14) {
+                    ForEach(cashAccounts, id: \.self) { acc in
+                        cashYieldCard(acc)
+                    }
+                }
+
+                // Save Button
+                Button {
+                    saveYieldSettings()
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                        }
+                        Text("Save Cash Yield Settings")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .fontWeight(.bold)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.teal)
+                .disabled(isSaving)
+                .padding(.top, 8)
+            }
+        }
     }
 
     private func seed() {

@@ -5,6 +5,7 @@ struct BenchmarksSettingsView: View {
     let settings: AppSettings?
     @EnvironmentObject private var appState: AppState
 
+    var embedded: Bool = false
     @State private var customTicker = ""
 
     private let presetBenchmarks = [
@@ -15,68 +16,84 @@ struct BenchmarksSettingsView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Intro Note
-                Text("Select market indices and custom benchmark tickers to compare your portfolio returns and performance charts against.")
-                    .appFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
+                }
+                .navigationTitle("Benchmarks")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+            }
+        }
+    }
 
-                // Presets Section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Popular Index Benchmarks")
-                            .appFont(.headline.bold())
-                        Spacer()
-                    }
+    private var mainContent: some View {
+        VStack(spacing: 20) {
+            // Intro Note
+            Text("Select market indices and custom benchmark tickers to compare your portfolio returns and performance charts against.")
+                .appFont(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
 
-                    #if os(macOS)
-                    let cols = [GridItem(.adaptive(minimum: 180), spacing: 8)]
-                    #else
-                    let cols = [GridItem(.adaptive(minimum: 150), spacing: 8)]
-                    #endif
+            // Presets Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Popular Index Benchmarks")
+                        .appFont(.headline.bold())
+                    Spacer()
+                }
 
-                    LazyVGrid(columns: cols, alignment: .leading, spacing: 8) {
-                        ForEach(presetBenchmarks, id: \.self) { b in
-                            let on = appState.benchmarks.contains(b)
-                            Button {
-                                toggleBenchmark(b)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(on ? Color.purple : .secondary.opacity(0.6))
-                                        .font(.system(size: 16))
+                #if os(macOS)
+                let cols = [GridItem(.adaptive(minimum: 180), spacing: 8)]
+                #else
+                let cols = [GridItem(.adaptive(minimum: 150), spacing: 8)]
+                #endif
 
-                                    Text(b)
-                                        .appFont(.caption.weight(.medium))
-                                        .foregroundStyle(on ? .primary : .secondary)
+                LazyVGrid(columns: cols, alignment: .leading, spacing: 8) {
+                    ForEach(presetBenchmarks, id: \.self) { b in
+                        let on = appState.benchmarks.contains(b)
+                        Button {
+                            toggleBenchmark(b)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(on ? Color.purple : .secondary.opacity(0.6))
+                                    .font(.system(size: 16))
 
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(on ? Color.purple.opacity(0.12) : Color.primary.opacity(0.04))
-                                .cornerRadius(10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(on ? Color.purple.opacity(0.35) : Color.clear, lineWidth: 1)
-                                )
+                                Text(b)
+                                    .appFont(.caption.weight(.medium))
+                                    .foregroundStyle(on ? .primary : .secondary)
+
+                                Spacer()
                             }
-                            .buttonStyle(.plain)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(on ? Color.purple.opacity(0.12) : Color.primary.opacity(0.04))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(on ? Color.purple.opacity(0.35) : Color.clear, lineWidth: 1)
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.primary.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                )
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.primary.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            )
 
                 // Custom Tickers Section
                 VStack(alignment: .leading, spacing: 14) {
@@ -128,13 +145,7 @@ struct BenchmarksSettingsView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 )
-            }
-            .padding(16)
         }
-        .navigationTitle("Benchmarks")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
     }
 
     private func toggleBenchmark(_ b: String) {

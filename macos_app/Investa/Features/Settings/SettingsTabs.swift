@@ -14,26 +14,30 @@ struct AccountsSettings: View {
                 vm: vm,
                 settings: settings,
                 availableAccounts: accounts,
-                appState: appState
+                appState: appState,
+                embedded: true
             )
 
             AccountPreferencesView(
                 vm: vm,
                 settings: settings,
                 accounts: accounts,
-                appState: appState
+                appState: appState,
+                embedded: true
             )
 
             CurrencyManagementView(
                 vm: vm,
-                settings: settings
+                settings: settings,
+                embedded: true
             )
 
             CashYieldSettingsView(
                 vm: vm,
                 settings: settings,
                 accounts: accounts,
-                appState: appState
+                appState: appState,
+                embedded: true
             )
         }
     }
@@ -47,8 +51,8 @@ struct SymbolsSettings: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            SymbolMappingsView(vm: vm, settings: settings)
-            ExcludedSymbolsView(vm: vm, settings: settings)
+            SymbolMappingsView(vm: vm, settings: settings, embedded: true)
+            ExcludedSymbolsView(vm: vm, settings: settings, embedded: true)
         }
     }
 }
@@ -60,7 +64,7 @@ struct OverridesSettings: View {
     let settings: AppSettings?
 
     var body: some View {
-        OverridesListView(vm: vm, settings: settings)
+        OverridesListView(vm: vm, settings: settings, embedded: true)
     }
 }
 
@@ -73,14 +77,14 @@ struct AdvancedSettings: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            BenchmarksSettingsView(vm: vm, settings: settings)
+            BenchmarksSettingsView(vm: vm, settings: settings, embedded: true)
                 .environmentObject(appState)
 
-            IntegrationsSettingsView(vm: vm, settings: settings)
+            IntegrationsSettingsView(vm: vm, settings: settings, embedded: true)
 
-            APIKeysSettingsView(vm: vm, settings: settings)
+            APIKeysSettingsView(vm: vm, settings: settings, embedded: true)
 
-            ServerSettingsView(vm: vm, settings: settings)
+            ServerSettingsView(vm: vm, settings: settings, embedded: true)
         }
     }
 }
@@ -92,7 +96,7 @@ struct AccountSecuritySettings: View {
     @EnvironmentObject private var auth: AuthViewModel
 
     var body: some View {
-        ProfileSecuritySettingsView(vm: vm)
+        ProfileSecuritySettingsView(vm: vm, embedded: true)
             .environmentObject(auth)
     }
 }

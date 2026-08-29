@@ -1,4 +1,4 @@
-import { Users, Map as MapIcon, Sliders, Settings as SettingsIcon, UserCircle } from 'lucide-react';
+import { Users, ArrowLeftRight, SlidersHorizontal, Settings2, UserCircle } from 'lucide-react';
 import { TabDefinition } from './types';
 
 export const ASSET_TYPES = [
@@ -52,11 +52,51 @@ export const PRESET_BENCHMARKS = [
 ];
 
 export const TABS: TabDefinition[] = [
-    { id: 'accounts', label: 'Accounts', description: 'Account groups, per-account currency/cash/closure settings, and cash-yield assumptions.', icon: Users, color: 'text-muted-foreground' },
-    { id: 'symbols', label: 'Symbols', description: 'Map portfolio symbols to their Yahoo Finance ticker and manage excluded symbols.', icon: MapIcon, color: 'text-muted-foreground' },
-    { id: 'overrides', label: 'Overrides', description: 'Manually override price/metadata and DCF valuation inputs for specific symbols.', icon: Sliders, color: 'text-emerald-500 dark:text-emerald-400' },
-    { id: 'advanced', label: 'Advanced Settings', description: 'Webhook integration, Interactive Brokers sync, and system cache.', icon: SettingsIcon, color: 'text-muted-foreground' },
-    { id: 'account', label: 'Profile & Security', description: 'Manage your user profile, password, and login.', icon: UserCircle, color: 'text-muted-foreground' },
+    {
+        id: 'accounts',
+        label: 'Accounts',
+        description: 'Account groups, per-account currency, cash automation, and yield assumptions.',
+        icon: Users,
+        color: 'text-indigo-500 dark:text-indigo-400',
+        badgeBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+        accentDot: 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]',
+    },
+    {
+        id: 'symbols',
+        label: 'Symbols',
+        description: 'Map portfolio symbols to Yahoo Finance tickers and manage excluded symbols.',
+        icon: ArrowLeftRight,
+        color: 'text-blue-500 dark:text-blue-400',
+        badgeBg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20',
+        accentDot: 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]',
+    },
+    {
+        id: 'overrides',
+        label: 'Overrides',
+        description: 'Manually override price, sector, asset type, and metadata for specific symbols.',
+        icon: SlidersHorizontal,
+        color: 'text-emerald-500 dark:text-emerald-400',
+        badgeBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+        accentDot: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]',
+    },
+    {
+        id: 'advanced',
+        label: 'Advanced Settings',
+        description: 'Benchmark comparisons, IBKR Flex Query sync, external API keys, and cache.',
+        icon: Settings2,
+        color: 'text-purple-500 dark:text-purple-400',
+        badgeBg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20',
+        accentDot: 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]',
+    },
+    {
+        id: 'account',
+        label: 'Profile & Security',
+        description: 'Manage user profile, login credentials, and session security.',
+        icon: UserCircle,
+        color: 'text-cyan-500 dark:text-cyan-400',
+        badgeBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20',
+        accentDot: 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]',
+    },
 ];
 
 export const inputClassName = "w-full h-9 rounded-control border border-input bg-background text-foreground px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors";

@@ -38,8 +38,8 @@ struct SettingsHubIOS: View {
                 }
             }
 
-            // Section 1: Portfolio & Accounts
-            Section("Portfolio & Accounts") {
+            // Section 1: Accounts
+            Section("Accounts") {
                 SettingsNavRow(
                     icon: "person.2.fill",
                     iconColor: .indigo,
@@ -52,6 +52,18 @@ struct SettingsHubIOS: View {
                         settings: viewModel.settings,
                         availableAccounts: appState.allAccounts,
                         appState: appState
+                    )
+                }
+
+                SettingsNavRow(
+                    icon: "dollarsign.circle.fill",
+                    iconColor: .orange,
+                    title: "Currency Management",
+                    subtitle: "Add/remove available currencies"
+                ) {
+                    CurrencyManagementView(
+                        vm: viewModel,
+                        settings: viewModel.settings
                     )
                 }
 
@@ -70,18 +82,6 @@ struct SettingsHubIOS: View {
                 }
 
                 SettingsNavRow(
-                    icon: "dollarsign.circle.fill",
-                    iconColor: .orange,
-                    title: "Currency Management",
-                    subtitle: "Add/remove available currencies"
-                ) {
-                    CurrencyManagementView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
-                }
-
-                SettingsNavRow(
                     icon: "percent",
                     iconColor: .teal,
                     title: "Cash Yield Assumptions",
@@ -96,8 +96,8 @@ struct SettingsHubIOS: View {
                 }
             }
 
-            // Section 2: Data & Mapping
-            Section("Data & Ticker Mapping") {
+            // Section 2: Symbols
+            Section("Symbols") {
                 SettingsNavRow(
                     icon: "arrow.left.arrow.right",
                     iconColor: .blue,
@@ -123,7 +123,10 @@ struct SettingsHubIOS: View {
                         settings: viewModel.settings
                     )
                 }
+            }
 
+            // Section 3: Overrides
+            Section("Overrides") {
                 SettingsNavRow(
                     icon: "pencil.and.ruler.fill",
                     iconColor: .green,
@@ -138,8 +141,8 @@ struct SettingsHubIOS: View {
                 }
             }
 
-            // Section 3: Integrations & Performance
-            Section("Integrations & Benchmarks") {
+            // Section 4: Advanced Settings
+            Section("Advanced Settings") {
                 SettingsNavRow(
                     icon: "chart.line.uptrend.xyaxis",
                     iconColor: .purple,
@@ -165,10 +168,7 @@ struct SettingsHubIOS: View {
                         settings: viewModel.settings
                     )
                 }
-            }
 
-            // Section 4: Developer & System
-            Section("Developer & System") {
                 SettingsNavRow(
                     icon: "key.fill",
                     iconColor: .orange,
@@ -194,8 +194,8 @@ struct SettingsHubIOS: View {
                 }
             }
 
-            // Section 5: Account & Security
-            Section("Account & Security") {
+            // Section 5: Profile & Security
+            Section("Profile & Security") {
                 SettingsNavRow(
                     icon: "person.crop.circle.fill",
                     iconColor: .cyan,

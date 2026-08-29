@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Map as MapIcon, ArrowRight, Trash2, XCircle } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ArrowLeftRight, Trash2, XCircle, Search } from 'lucide-react';
 import { Settings as SettingsType, updateSettings } from '../../../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
@@ -21,10 +21,21 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
 
     const [mapFrom, setMapFrom] = useState('');
     const [mapTo, setMapTo] = useState('');
+    const [mappingSearch, setMappingSearch] = useState('');
     const [excludeSymbol, setExcludeSymbol] = useState('');
 
     const symbolMap = settings?.user_symbol_map || {};
     const excluded = settings?.user_excluded_symbols || [];
+
+    const sortedMapEntries = useMemo(() => {
+        return Object.entries(symbolMap)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .filter(([from, to]) => {
+                if (!mappingSearch.trim()) return true;
+                const q = mappingSearch.toLowerCase();
+                return from.toLowerCase().includes(q) || to.toLowerCase().includes(q);
+            });
+    }, [symbolMap, mappingSearch]);
 
     const addMapping = async () => {
         if (!mapFrom || !mapTo) return;
@@ -82,7 +93,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
             <div className={cardClassName}>
                 <div className="mb-2">
                     <h3 className={sectionTitleClassName}>
-                        <MapIcon className="w-5 h-5 text-blue-500" />
+                        <ArrowLeftRight className="w-5 h-5 text-blue-500" />
                         Add Symbol Mapping
                     </h3>
                 </div>
@@ -99,7 +110,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                         />
                     </div>
                     <div className="hidden md:flex pb-3 text-muted-foreground">
-                        <ArrowRight className="w-5 h-5 opacity-50" />
+                        <ArrowLeftRight className="w-5 h-5 opacity-40 text-blue-500" />
                     </div>
                     <div className="flex-1 w-full space-y-1">
                         <label className={labelClassName}>Yahoo Finance Ticker</label>
@@ -115,23 +126,35 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                         type="button"
                         onClick={addMapping}
                         disabled={!mapFrom || !mapTo}
-                        className={`${primaryButtonClassName} w-full md:w-auto`}
+                        className={`${primaryButtonClassName} w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white`}
                     >
-                        Map
+                        Map Symbol
                     </button>
                 </div>
             </div>
 
             {/* Active Mappings Table */}
             <div className={`${cardClassName} !p-0`}>
-                <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
                     <h3 className={sectionTitleClassName}>
-                        <MapIcon className="w-5 h-5 text-blue-500" />
+                        <ArrowLeftRight className="w-5 h-5 text-blue-500" />
                         Active Mappings
                         <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">
                             {Object.entries(symbolMap).length}
                         </span>
                     </h3>
+                    {Object.entries(symbolMap).length > 0 && (
+                        <div className="relative max-w-xs w-full">
+                            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                                type="text"
+                                placeholder="Filter mappings..."
+                                value={mappingSearch}
+                                onChange={(e) => setMappingSearch(e.target.value)}
+                                className="w-full h-8 pl-8 pr-3 text-xs rounded-lg border border-input bg-background/80 text-foreground outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                        </div>
+                    )}
                 </div>
                 <table className="min-w-full text-sm">
                     <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
@@ -143,34 +166,32 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                        {Object.entries(symbolMap).length === 0 ? (
+                        {sortedMapEntries.length === 0 ? (
                             <tr>
                                 <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                    No symbol mappings defined.
+                                    {Object.entries(symbolMap).length === 0 ? "No symbol mappings defined." : "No mappings match your search."}
                                 </td>
                             </tr>
                         ) : (
-                            Object.entries(symbolMap)
-                                .sort((a, b) => a[0].localeCompare(b[0]))
-                                .map(([from, to]: [string, string]) => (
-                                    <tr key={from} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
-                                        <td className="px-6 py-4 font-bold text-foreground">{from}</td>
-                                        <td className="px-6 py-4 text-center text-muted-foreground">
-                                            <ArrowRight className="w-4 h-4 inline opacity-50" />
-                                        </td>
-                                        <td className="px-6 py-4 text-blue-600 dark:text-blue-400 font-mono font-medium">{to}</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button
-                                                type="button"
-                                                onClick={() => removeMapping(from)}
-                                                className="p-2 text-down hover:bg-down/12 rounded-lg transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                                                title={`Remove mapping for ${from}`}
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
+                            sortedMapEntries.map(([from, to]: [string, string]) => (
+                                <tr key={from} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                                    <td className="px-6 py-4 font-bold text-foreground font-mono">{from}</td>
+                                    <td className="px-6 py-4 text-center text-muted-foreground">
+                                        <ArrowLeftRight className="w-4 h-4 inline opacity-50 text-blue-500" />
+                                    </td>
+                                    <td className="px-6 py-4 text-blue-600 dark:text-blue-400 font-mono font-medium">{to}</td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button
+                                            type="button"
+                                            onClick={() => removeMapping(from)}
+                                            className="p-2 text-down hover:bg-down/12 rounded-lg transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                                            title={`Remove mapping for ${from}`}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
                         )}
                     </tbody>
                 </table>

@@ -6,6 +6,8 @@ struct AccountPreferencesView: View {
     let accounts: [String]
     @ObservedObject var appState: AppState
 
+    var embedded: Bool = false
+
     @State private var currencyMap: [String: String] = [:]
     @State private var cashModeMap: [String: String] = [:]
     @State private var closureMap: [String: String] = [:]
@@ -16,67 +18,77 @@ struct AccountPreferencesView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // Header Note
-                Text("Configure base currency, cash automation mode, and closure dates for each account.")
-                    .appFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
-
-                if configurableAccounts.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "person.2.slash")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.secondary.opacity(0.4))
-                            .padding(.vertical, 8)
-                        Text("No active accounts found.")
-                            .appFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                } else {
-                    LazyVStack(spacing: 14) {
-                        ForEach(configurableAccounts, id: \.self) { acc in
-                            accountCard(acc)
-                        }
-                    }
-
-                    // Save Button
-                    Button {
-                        savePreferences()
-                    } label: {
-                        HStack(spacing: 8) {
-                            if isSaving {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "checkmark.circle.fill")
-                            }
-                            Text("Save Account Preferences")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .fontWeight(.bold)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.purple)
-                    .disabled(isSaving)
-                    .padding(.top, 8)
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
                 }
+                .navigationTitle("Account Preferences")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
             }
-            .padding(16)
         }
-        .navigationTitle("Account Preferences")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .onAppear { seed() }
         .onChange(of: settings?.accountCurrencyMap) { _, _ in seed() }
         .onChange(of: settings?.accountCashModeMap) { _, _ in seed() }
         .onChange(of: settings?.accountClosureDates) { _, _ in seed() }
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 16) {
+            // Header Note
+            Text("Configure base currency, cash automation mode, and closure dates for each account.")
+                .appFont(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+
+            if configurableAccounts.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "person.2.slash")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.secondary.opacity(0.4))
+                        .padding(.vertical, 8)
+                    Text("No active accounts found.")
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+            } else {
+                LazyVStack(spacing: 14) {
+                    ForEach(configurableAccounts, id: \.self) { acc in
+                        accountCard(acc)
+                    }
+                }
+
+                // Save Button
+                Button {
+                    savePreferences()
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                        }
+                        Text("Save Account Preferences")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .fontWeight(.bold)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.purple)
+                .disabled(isSaving)
+                .padding(.top, 8)
+            }
+        }
     }
 
     private func seed() {

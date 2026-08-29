@@ -8,6 +8,8 @@ struct AccountGroupManagerView: View {
     let availableAccounts: [String]
     @ObservedObject var appState: AppState
 
+    var embedded: Bool = false
+
     @State private var isCreating = false
     @State private var editingGroupName: String? = nil
     @State private var groupNameInput = ""
@@ -32,23 +34,20 @@ struct AccountGroupManagerView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                headerView
-
-                if isCreating {
-                    groupFormView
-                        .transition(.move(edge: .top).combined(with: .opacity))
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
                 }
-
-                groupListView
+                .navigationTitle("Account Groups")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
             }
-            .padding(16)
         }
-        .navigationTitle("Account Groups")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .animation(.easeInOut(duration: 0.25), value: isCreating)
         .alert("Delete Account Group", isPresented: $showingDeleteAlert, presenting: groupToDelete) { name in
             Button("Delete", role: .destructive) {
@@ -57,6 +56,19 @@ struct AccountGroupManagerView: View {
             Button("Cancel", role: .cancel) {}
         } message: { name in
             Text("Are you sure you want to delete the group \"\(name)\"?")
+        }
+    }
+
+    private var mainContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            headerView
+
+            if isCreating {
+                groupFormView
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            groupListView
         }
     }
 

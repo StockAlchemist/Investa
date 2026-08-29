@@ -17,4 +17,7 @@ export interface TabDefinition {
     description: string;
     icon: React.ElementType;
     color: string;
+    badgeBg: string;
+    accentDot: string;
 }
+

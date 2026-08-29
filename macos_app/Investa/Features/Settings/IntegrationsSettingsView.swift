@@ -4,29 +4,40 @@ struct IntegrationsSettingsView: View {
     @ObservedObject var vm: SettingsViewModel
     let settings: AppSettings?
 
+    var embedded: Bool = false
     @State private var ibkrToken = ""
     @State private var ibkrQuery = ""
     @State private var refreshSecret = ""
     @State private var isSavingIBKR = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                ibkrSection
-                webhookSection
+        Group {
+            if embedded {
+                mainContent
+            } else {
+                ScrollView {
+                    mainContent
+                        .padding(16)
+                }
+                .navigationTitle("Integrations")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
             }
-            .padding(16)
         }
-        .navigationTitle("Integrations")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .onAppear {
             ibkrToken = settings?.ibkrToken ?? ""
             ibkrQuery = settings?.ibkrQueryId ?? ""
         }
         .onChange(of: settings?.ibkrToken) { _, new in ibkrToken = new ?? ibkrToken }
         .onChange(of: settings?.ibkrQueryId) { _, new in ibkrQuery = new ?? ibkrQuery }
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 20) {
+            ibkrSection
+            webhookSection
+        }
     }
 
     private var ibkrSection: some View {

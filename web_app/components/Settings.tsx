@@ -51,7 +51,7 @@ export default function Settings({
                                 <Icon className={`w-5 h-5 ${isActive ? tab.color : 'opacity-70'}`} />
                                 {tab.label}
                                 {isActive && (
-                                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                                    <div className={`ml-auto w-1.5 h-1.5 rounded-full ${tab.accentDot}`} />
                                 )}
                             </button>
                         );
@@ -60,13 +60,13 @@ export default function Settings({
 
                 {/* Main Content Area */}
                 <div className="flex-1 bg-white/40 dark:bg-zinc-950/40 backdrop-blur-2xl shadow-xl rounded-3xl border border-white/60 dark:border-white/10 overflow-hidden relative min-h-[600px]">
-                    <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent opacity-50" />
+                    <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-50" />
 
                     {/* Header for active tab */}
                     <div className="px-8 py-6 border-b border-black/5 dark:border-white/5 flex items-start gap-4 bg-white/20 dark:bg-black/20">
                         {activeTabObj && (
                             <>
-                                <div className={`p-2.5 rounded-xl bg-white dark:bg-zinc-900 shadow-sm border border-black/5 dark:border-white/5 ${activeTabObj.color} shrink-0`}>
+                                <div className={`p-2.5 rounded-xl ${activeTabObj.badgeBg} shadow-sm shrink-0 flex items-center justify-center`}>
                                     <activeTabObj.icon className="w-6 h-6" />
                                 </div>
                                 <div className="min-w-0">
