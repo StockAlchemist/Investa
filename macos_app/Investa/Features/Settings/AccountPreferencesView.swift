@@ -242,12 +242,13 @@ struct AccountPreferencesView: View {
     private func savePreferences() {
         isSaving = true
         Task {
-            await vm.updateAccountPreferences(
+            let saved = await vm.updateAccountPreferences(
                 currencyMap: currencyMap.filter { !$0.value.isEmpty },
                 cashModeMap: cashModeMap,
                 closureMap: closureMap.filter { !$0.value.isEmpty }
             )
             isSaving = false
+            guard saved else { return }
             ToastManager.shared.show(message: "Account preferences saved", style: .success)
         }
     }

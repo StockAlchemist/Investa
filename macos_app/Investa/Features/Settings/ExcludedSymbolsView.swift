@@ -129,7 +129,7 @@ struct ExcludedSymbolsView: View {
         let current = settings?.userExcludedSymbols ?? []
         let updated = current.filter { $0 != sym }
         Task {
-            await vm.update("user_excluded_symbols", updated, note: "Removed \(sym) from exclusion list")
+            guard await vm.update("user_excluded_symbols", updated, note: "Removed \(sym) from exclusion list") else { return }
             ToastManager.shared.show(message: "Re-included \(sym)", style: .success)
         }
     }

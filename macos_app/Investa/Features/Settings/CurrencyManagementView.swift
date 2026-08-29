@@ -114,7 +114,7 @@ struct CurrencyManagementView: View {
 
         let updated = Array(Set(current + [c])).sorted()
         Task {
-            await vm.update("available_currencies", updated, note: "Added currency \(c)")
+            guard await vm.update("available_currencies", updated, note: "Added currency \(c)") else { return }
             ToastManager.shared.show(message: "Added currency \(c)", style: .success)
         }
     }

@@ -44,20 +44,35 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
     const [showApiKeys, setShowApiKeys] = useState(false);
     const [isSavingApiKeys, setIsSavingApiKeys] = useState(false);
     const [apiKeyStatus, setApiKeyStatus] = useState<string | null>(null);
+    // Which key fields the user has actually typed into. The server sends
+    // masked previews, never the real keys, and treats "" as "clear" - so a
+    // save must post only the fields that were edited. Posting all five would
+    // wipe every stored key whenever the settings fetch has not resolved.
+    const [editedApiKeys, setEditedApiKeys] = useState<Set<string>>(new Set());
+
+    const markApiKeyEdited = (field: string) => {
+        setEditedApiKeys((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
+    };
 
     const [confirmClear, setConfirmClear] = useState(false);
     const [clearStatus, setClearStatus] = useState<string | null>(null);
 
     useEffect(() => {
-        if (settings) {
-            setIbkrToken(settings.ibkr_token || '');
-            setIbkrQueryId(settings.ibkr_query_id || '');
-            setGeminiApiKey(settings.gemini_api_key || '');
-            setFmpApiKey(settings.fmp_api_key || '');
-            setSecThApiKey(settings.sec_th_api_key || '');
-            setBotApiKey(settings.bot_api_key || '');
-            setTiingoApiKey(settings.tiingo_api_key || '');
-        }
+        if (!settings) return;
+        setIbkrToken(settings.ibkr_token || '');
+        setIbkrQueryId(settings.ibkr_query_id || '');
+        // A refetch must not overwrite a key the user is midway through
+        // typing - saving an unrelated section refetches settings, and that
+        // would silently discard a pasted-but-unsaved key.
+        const seed = (field: string, set: (v: string) => void, value?: string | null) => {
+            if (!editedApiKeys.has(field)) set(value || '');
+        };
+        seed('gemini_api_key', setGeminiApiKey, settings.gemini_api_key);
+        seed('fmp_api_key', setFmpApiKey, settings.fmp_api_key);
+        seed('sec_th_api_key', setSecThApiKey, settings.sec_th_api_key);
+        seed('bot_api_key', setBotApiKey, settings.bot_api_key);
+        seed('tiingo_api_key', setTiingoApiKey, settings.tiingo_api_key);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [settings]);
 
     const handleRefresh = async () => {
@@ -89,15 +104,25 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
     };
 
     const handleSaveApiKeys = async () => {
+        const values: Record<string, string> = {
+            gemini_api_key: geminiApiKey,
+            fmp_api_key: fmpApiKey,
+            sec_th_api_key: secThApiKey,
+            bot_api_key: botApiKey,
+            tiingo_api_key: tiingoApiKey,
+        };
+        const payload: Record<string, string> = {};
+        editedApiKeys.forEach((field) => { payload[field] = values[field]; });
+        if (Object.keys(payload).length === 0) {
+            setApiKeyStatus("No API key changes to save.");
+            setTimeout(() => setApiKeyStatus(null), 5000);
+            return;
+        }
+
         setIsSavingApiKeys(true);
         try {
-            await updateSettings({
-                gemini_api_key: geminiApiKey,
-                fmp_api_key: fmpApiKey,
-                sec_th_api_key: secThApiKey,
-                bot_api_key: botApiKey,
-                tiingo_api_key: tiingoApiKey,
-            });
+            await updateSettings(payload);
+            setEditedApiKeys(new Set());
             await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
             setApiKeyStatus("API keys saved successfully.");
         } catch (err: unknown) {
@@ -363,7 +388,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                     </button>
                 </div>
                 <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
-                    Configure external API keys stored in <code className="inline-block bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-amber-600 dark:text-amber-400 border border-black/10 dark:border-white/10 align-middle">.env</code> for AI stock analysis, valuation models, and supplementary market data feeds.
+                    Configure external API keys stored in <code className="inline-block bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-amber-600 dark:text-amber-400 border border-black/10 dark:border-white/10 align-middle">.env</code> for AI stock analysis, valuation models, and supplementary market data feeds. Stored keys show only their last four characters &mdash; retype a field to replace it, or clear it to remove the key.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
@@ -373,7 +398,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             type={showApiKeys ? "text" : "password"}
                             placeholder="AI stock analysis & screener"
                             value={geminiApiKey}
-                            onChange={(e) => setGeminiApiKey(e.target.value)}
+                            onChange={(e) => { setGeminiApiKey(e.target.value); markApiKeyEdited('gemini_api_key'); }}
                             className={inputClassName}
                         />
                     </div>
@@ -383,7 +408,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             type={showApiKeys ? "text" : "password"}
                             placeholder="Financial statements & intrinsic models"
                             value={fmpApiKey}
-                            onChange={(e) => setFmpApiKey(e.target.value)}
+                            onChange={(e) => { setFmpApiKey(e.target.value); markApiKeyEdited('fmp_api_key'); }}
                             className={inputClassName}
                         />
                     </div>
@@ -393,7 +418,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             type={showApiKeys ? "text" : "password"}
                             placeholder="SSF / RMF mutual fund daily NAVs"
                             value={secThApiKey}
-                            onChange={(e) => setSecThApiKey(e.target.value)}
+                            onChange={(e) => { setSecThApiKey(e.target.value); markApiKeyEdited('sec_th_api_key'); }}
                             className={inputClassName}
                         />
                     </div>
@@ -403,7 +428,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             type={showApiKeys ? "text" : "password"}
                             placeholder="Historical THB exchange rates"
                             value={botApiKey}
-                            onChange={(e) => setBotApiKey(e.target.value)}
+                            onChange={(e) => { setBotApiKey(e.target.value); markApiKeyEdited('bot_api_key'); }}
                             className={inputClassName}
                         />
                     </div>
@@ -413,7 +438,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             type={showApiKeys ? "text" : "password"}
                             placeholder="Corporate actions & stock split verification"
                             value={tiingoApiKey}
-                            onChange={(e) => setTiingoApiKey(e.target.value)}
+                            onChange={(e) => { setTiingoApiKey(e.target.value); markApiKeyEdited('tiingo_api_key'); }}
                             className={inputClassName}
                         />
                     </div>
@@ -423,7 +448,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                     <button
                         type="button"
                         onClick={handleSaveApiKeys}
-                        disabled={isSavingApiKeys}
+                        disabled={isSavingApiKeys || editedApiKeys.size === 0}
                         className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
                     >
                         {isSavingApiKeys ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4"/>}

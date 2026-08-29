@@ -173,8 +173,9 @@ struct IntegrationsSettingsView: View {
     private func saveIBKRCredentials() {
         isSavingIBKR = true
         Task {
-            await vm.updateIBKR(token: ibkrToken, queryId: ibkrQuery)
+            let saved = await vm.updateIBKR(token: ibkrToken, queryId: ibkrQuery)
             isSavingIBKR = false
+            guard saved else { return }
             ToastManager.shared.show(message: "IBKR credentials saved", style: .success)
         }
     }
@@ -190,7 +191,7 @@ struct IntegrationsSettingsView: View {
 
     private func triggerWebhook() {
         Task {
-            await vm.triggerRefresh(secret: refreshSecret)
+            guard await vm.triggerRefresh(secret: refreshSecret) else { return }
             ToastManager.shared.show(message: "Webhook refresh triggered", style: .success)
         }
     }

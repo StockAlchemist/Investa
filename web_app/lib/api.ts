@@ -17,6 +17,103 @@ const getApiBaseUrl = () => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+/* ---------------------------------------------------------------------------
+ * Response shaping
+ *
+ * Every fetcher below reaches its return type through `as unknown as`, so the
+ * types in this file describe what the backend promises, not what arrived. That
+ * gap is invisible until a component maps over an array the type marks as
+ * present: a payload that omits it throws mid-render, and the app error
+ * boundary replaces the whole screen — a far worse failure than the empty or
+ * error state the screen already knows how to draw.
+ *
+ * The rule these helpers apply:
+ *
+ *   - When the *whole response* is the list, a non-array is unusable, not
+ *     empty. Throw, so React Query reports it and the caller's error branch
+ *     runs. Rendering "no holdings" for a malformed response would be worse
+ *     than an error — it reads as a true answer about someone's money.
+ *   - When the response is an object and only one *field* is malformed, the
+ *     rest is still worth showing. Coerce that field to an empty list.
+ *   - Only fields the types mark as **non-optional** need this. An optional
+ *     one already forces the caller to guard; a required one is exactly what
+ *     tells them not to.
+ *
+ * Covered by tests/unit/api-response-shaping.test.ts.
+ * ------------------------------------------------------------------------ */
+
+/** The payload as a keyed object, or null when it is not one. */
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+}
+
+/** `value` when it is already an array, an empty array otherwise. */
+function asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+}
+
+/** Entries that are strings. Anything else is dropped rather than rendered. */
+function asStringArray(value: unknown): string[] {
+    return asArray(value).filter((entry): entry is string => typeof entry === 'string');
+}
+
+/** Entries that are keyed objects, each passed through `shape`. */
+function asRecordArray<T>(
+    value: unknown,
+    shape: (row: Record<string, unknown>) => T
+): T[] {
+    const rows: T[] = [];
+    for (const entry of asArray(value)) {
+        const record = asRecord(entry);
+        if (record) rows.push(shape(record));
+    }
+    return rows;
+}
+
+/**
+ * A record the caller dereferences without checking — `strategy.backtest.cagr`
+ * and the like. Missing means every field reads undefined, which the callers
+ * already render as an em dash; missing *the object* would throw.
+ */
+function asRecordOrEmpty(value: unknown): Record<string, unknown> {
+    return asRecord(value) ?? {};
+}
+
+/**
+ * A whole-response list. Throws `message` when the payload is not an array —
+ * see the note above on why this is not coerced to empty.
+ */
+function asList<T>(value: unknown, message: string): T[] {
+    if (!Array.isArray(value)) throw new Error(message);
+    return value as T[];
+}
+
+/**
+ * A response object whose named list and map fields are guaranteed to be a list
+ * and a keyed object respectively. Throws `message` when the payload is not an
+ * object at all.
+ *
+ * `mapFields` matters for the same reason `listFields` does: callers reach a
+ * required `Record<..>` through `Object.entries`/`Object.keys`, which throw on
+ * undefined just as `.map` does.
+ */
+function shapeRecord<T>(
+    value: unknown,
+    message: string,
+    listFields: readonly string[],
+    mapFields: readonly string[] = []
+): T {
+    const raw = asRecord(value);
+    if (!raw) throw new Error(message);
+    const shaped: Record<string, unknown> = { ...raw };
+    for (const field of listFields) shaped[field] = asArray(raw[field]);
+    for (const field of mapFields) shaped[field] = asRecordOrEmpty(raw[field]);
+    return shaped as T;
+}
+
+
 export class SessionExpiredError extends Error {
     constructor() {
         super('Session expired');
@@ -226,7 +323,7 @@ export async function fetchHoldings(currency: string = 'USD', accounts?: string[
         signal
     });
     if (error) throw new Error('Failed to fetch holdings');
-    return data as unknown as Holding[];
+    return asList<Holding>(data, 'Failed to fetch holdings');
 }
 
 export type HoldingReturnPeriod = '1m' | '3m' | '6m' | '1y' | 'ytd';
@@ -267,7 +364,7 @@ export async function fetchTransactions(accounts?: string[], signal?: AbortSigna
         signal
     });
     if (error) throw new Error('Failed to fetch transactions');
-    return data as unknown as Transaction[];
+    return asList<Transaction>(data, 'Failed to fetch transactions');
 }
 
 export interface StatusResponse {
@@ -354,7 +451,7 @@ export async function fetchHistory(
         signal
     });
     if (error) throw new Error('Failed to fetch history');
-    return data as unknown as PerformanceData[];
+    return asList<PerformanceData>(data, 'Failed to fetch history');
 }
 
 export async function fetchMarketHistory(
@@ -373,7 +470,7 @@ export async function fetchMarketHistory(
     });
     if (error) throw new Error('Failed to fetch market history');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing; typed cleanup tracked separately
-    return data as any[];
+    return asList<any>(data, 'Failed to fetch market history');
 }
 
 export interface StockHistoryData {
@@ -399,7 +496,7 @@ export async function fetchStockHistory(
         signal
     });
     if (error) throw new Error('Failed to fetch stock history');
-    return data as unknown as StockHistoryData[];
+    return asList<StockHistoryData>(data, 'Failed to fetch stock history');
 }
 
 export interface AssetChangeData {
@@ -459,7 +556,7 @@ export async function fetchCapitalGains(
         signal
     });
     if (error) throw new Error('Failed to fetch capital gains');
-    return data as unknown as CapitalGain[];
+    return asList<CapitalGain>(data, 'Failed to fetch capital gains');
 }
 
 export interface Dividend {
@@ -487,7 +584,7 @@ export async function fetchDividends(
         signal
     });
     if (error) throw new Error('Failed to fetch dividends');
-    return data as unknown as Dividend[];
+    return asList<Dividend>(data, 'Failed to fetch dividends');
 }
 
 export interface EarningsDate {
@@ -506,7 +603,7 @@ export async function fetchEarningsDates(
         signal,
     });
     if (error) throw new Error('Failed to fetch earnings dates');
-    return data as unknown as EarningsDate[];
+    return asList<EarningsDate>(data, 'Failed to fetch earnings dates');
 }
 export interface ManualOverrideData {
     // Optional: an override may carry metadata only (asset type, sector,
@@ -545,6 +642,8 @@ export interface Settings {
     active_tab?: string;
     ibkr_token?: string;
     ibkr_query_id?: string;
+    // Masked previews (e.g. "••••••••3456"), never the real key —
+    // every authenticated user shares one .env.
     gemini_api_key?: string;
     fmp_api_key?: string;
     sec_th_api_key?: string;
@@ -556,7 +655,16 @@ export interface Settings {
 export async function fetchSettings(): Promise<Settings> {
     const { data, error } = await apiClient.GET("/api/settings");
     if (error) throw new Error('Failed to fetch settings');
-    return data as unknown as Settings;
+    return shapeRecord<Settings>(
+        data,
+        'Failed to fetch settings',
+        ['user_excluded_symbols', 'available_currencies'],
+        [
+            'manual_overrides', 'user_symbol_map', 'account_currency_map',
+            'account_cash_mode_map', 'account_groups', 'account_interest_rates',
+            'interest_free_thresholds', 'valuation_overrides',
+        ]
+    );
 }
 
 export interface SettingsUpdate {
@@ -581,6 +689,9 @@ export interface SettingsUpdate {
     active_tab?: string;
     ibkr_token?: string;
     ibkr_query_id?: string;
+    // Send a field only when the user retyped it: "" clears the stored key.
+    // A value still holding the masked preview from fetchSettings is ignored
+    // by the server, so round-tripping settings is safe.
     gemini_api_key?: string;
     fmp_api_key?: string;
     sec_th_api_key?: string;
@@ -720,7 +831,7 @@ export async function fetchDividendCalendar(currency: string = 'USD', accounts?:
         signal
     });
     if (error) throw new Error('Failed to fetch dividend calendar');
-    return data as unknown as DividendEvent[];
+    return asList<DividendEvent>(data, 'Failed to fetch dividend calendar');
 }
 
 export interface EarningsEvent {
@@ -762,7 +873,7 @@ export async function fetchEarningsCalendar(accounts?: string[], signal?: AbortS
         signal
     });
     if (error) throw new Error('Failed to fetch earnings calendar');
-    return data as unknown as EarningsEvent[];
+    return asList<EarningsEvent>(data, 'Failed to fetch earnings calendar');
 }
 
 export async function saveManualOverride(symbol: string, price: number | null): Promise<StatusResponse> {
@@ -793,7 +904,7 @@ export async function syncIbkr(): Promise<StatusResponse> {
 export async function fetchPendingIbkr(): Promise<Transaction[]> {
     const { data, error } = await apiClient.GET("/api/sync/ibkr/pending");
     if (error) throw new Error('Failed to fetch pending transactions');
-    return data as unknown as Transaction[];
+    return asList<Transaction>(data, 'Failed to fetch transactions');
 }
 
 export async function approveIbkr(ids: number[]): Promise<StatusResponse> {
@@ -831,7 +942,7 @@ export async function fetchProjectedIncome(
         signal
     });
     if (error) throw new Error('Failed to fetch projected income');
-    return data as unknown as ProjectedIncome[];
+    return asList<ProjectedIncome>(data, 'Failed to fetch projected income');
 }
 
 export interface HealthComponent {
@@ -905,7 +1016,7 @@ export interface WatchlistMeta {
 export async function getWatchlists(signal?: AbortSignal): Promise<WatchlistMeta[]> {
     const { data, error } = await apiClient.GET("/api/watchlists", { signal });
     if (error) throw new Error('Failed to fetch watchlists');
-    return data as unknown as WatchlistMeta[];
+    return asList<WatchlistMeta>(data, 'Failed to fetch watchlists');
 }
 
 export async function createWatchlist(name: string): Promise<WatchlistMeta> {
@@ -943,7 +1054,7 @@ export async function fetchWatchlist(currency: string = 'USD', watchlistId: numb
         signal
     });
     if (error) throw new Error('Failed to fetch watchlist');
-    return data as unknown as WatchlistItem[];
+    return asList<WatchlistItem>(data, 'Failed to fetch watchlist');
 }
 
 export async function addToWatchlist(symbol: string, note: string = "", watchlistId: number = 1): Promise<StatusResponse> {
@@ -1162,7 +1273,7 @@ export async function fetchSymbolSearch(q: string): Promise<SymbolSearchResult[]
         params: { query: { q } }
     });
     if (error) return [];
-    return data as unknown as SymbolSearchResult[];
+    return asArray(data) as SymbolSearchResult[];
 }
 
 export interface MarketNewsItem {
@@ -1180,7 +1291,7 @@ export async function fetchMarketNews(limit = 20): Promise<MarketNewsItem[]> {
         params: { query: { limit } }
     });
     if (error) return [];
-    return data as unknown as MarketNewsItem[];
+    return asArray(data) as MarketNewsItem[];
 }
 
 export async function fetchStockNews(symbols: string[], limit = 30): Promise<MarketNewsItem[]> {
@@ -1189,7 +1300,7 @@ export async function fetchStockNews(symbols: string[], limit = 30): Promise<Mar
         params: { query: { symbols: symbols.join(','), limit } }
     });
     if (error) return [];
-    return data as unknown as MarketNewsItem[];
+    return asArray(data) as MarketNewsItem[];
 }
 
 // S&P 500 Heatmap
@@ -1271,7 +1382,7 @@ export async function fetchSP500Heatmap(signal?: AbortSignal): Promise<SP500Heat
     const url = `${API_BASE_URL}/sp500/heatmap`;
     const response = await authFetch(url, { signal });
     if (!response.ok) throw new Error('Failed to fetch S&P 500 heatmap');
-    return (await response.json()) as SP500HeatmapItem[];
+    return asList<SP500HeatmapItem>((await response.json()), 'Failed to fetch the S&P 500 heatmap');
 }
 
 export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {
@@ -1304,7 +1415,7 @@ export async function fetchRatios(
         params: { path: { symbol }, query: { period_type: periodType, force: force || undefined } },
     });
     if (error) throw new Error(`Failed to fetch ratios for ${symbol}`);
-    return data as unknown as RatiosResponse;
+    return shapeRecord<RatiosResponse>(data, 'Failed to fetch ratios', ['historical']);
 }
 
 export async function fetchIntrinsicValue(symbol: string, force: boolean = false): Promise<IntrinsicValueResponse> {
@@ -1401,7 +1512,7 @@ export async function runScreener(request: ScreenerRequest): Promise<ScreenerRes
         body: request as never
     });
     if (error) throw new Error('Failed to run stock screen');
-    return data as unknown as ScreenerResult[];
+    return asList<ScreenerResult>(data, 'Failed to run the screener');
 }
 
 export async function runNarrativeSearch(prompt: string): Promise<ScreenerResult[]> {
@@ -1409,7 +1520,7 @@ export async function runNarrativeSearch(prompt: string): Promise<ScreenerResult
         body: { prompt } as never,
     });
     if (error) throw new Error('Failed to run narrative search');
-    return data as unknown as ScreenerResult[];
+    return asList<ScreenerResult>(data, 'Failed to run the screener');
 }
 
 export async function fetchScreenerReview(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
@@ -1526,7 +1637,7 @@ export async function fetchBuffettRankings(
         signal
     });
     if (error) throw new Error('Failed to fetch rankings');
-    return data as unknown as BuffettRankPage;
+    return shapeRecord<BuffettRankPage>(data, 'Failed to fetch the rankings', ['rows']);
 }
 
 export interface BuffettExclusionPage {
@@ -1551,7 +1662,7 @@ export async function fetchBuffettExclusions(
         signal
     });
     if (error) throw new Error('Failed to fetch ranking exclusions');
-    return data as unknown as BuffettExclusionPage;
+    return shapeRecord<BuffettExclusionPage>(data, 'Failed to fetch the exclusions', ['rows']);
 }
 
 /** One measured metric from a company's record. */
@@ -1682,7 +1793,22 @@ export async function fetchTrackRecord(
     // every SET holding, every foreign listing. The panel hides itself.
     if (response.status === 404) return null;
     if (error) throw new Error(`Failed to fetch track record for ${symbol}`);
-    return data as unknown as TrackRecord;
+    const record = shapeRecord<TrackRecord>(data, `Failed to fetch track record for ${symbol}`, [
+        'gate_failures', 'groups', 'stress', 'valuation_bands',
+    ]);
+    // One level deeper: the panel maps each group's and each stress block's
+    // own `items`, which the types also mark as always present.
+    return {
+        ...record,
+        groups: asRecordArray(record.groups, (group) => ({
+            ...(group as unknown as TrackRecordGroup),
+            items: asArray(group.items) as TrackRecordItem[],
+        })),
+        stress: asRecordArray(record.stress, (block) => ({
+            ...(block as unknown as TrackRecordStress),
+            items: asArray(block.items) as TrackRecordStressItem[],
+        })),
+    };
 }
 
 export async function fetchBuffettRankHistory(
@@ -1695,7 +1821,7 @@ export async function fetchBuffettRankHistory(
         signal
     });
     if (error) throw new Error(`Failed to fetch rank history for ${symbol}`);
-    return data as unknown as BuffettRankRow[];
+    return asList<BuffettRankRow>(data, 'Failed to fetch the ranking history');
 }
 
 // --- Rule-based strategies --------------------------------------------------
@@ -1837,13 +1963,36 @@ export interface StrategyAllocation {
     warnings: string[];
 }
 
+function shapeStrategyDefinition(raw: Record<string, unknown>): StrategyDefinition {
+    return {
+        ...(raw as unknown as StrategyDefinition),
+        backtest: asRecordOrEmpty(raw.backtest) as unknown as StrategyBacktest,
+        risks: asStringArray(raw.risks),
+    };
+}
+
+function shapeStrategySleeve(raw: Record<string, unknown>): StrategySleeve {
+    return {
+        ...(raw as unknown as StrategySleeve),
+        positions: asRecordArray(
+            raw.positions,
+            (position) => position as unknown as StrategyPosition
+        ),
+    };
+}
+
 export async function fetchStrategies(signal?: AbortSignal): Promise<{
     strategies: StrategyDefinition[];
     default: string;
 }> {
     const { data, error } = await apiClient.GET("/api/strategies", { signal });
     if (error) throw new Error('Failed to fetch strategies');
-    return data as unknown as { strategies: StrategyDefinition[]; default: string };
+    const raw = asRecord(data);
+    if (!raw) throw new Error('Failed to fetch strategies');
+    return {
+        strategies: asRecordArray(raw.strategies, shapeStrategyDefinition),
+        default: typeof raw.default === 'string' ? raw.default : '',
+    };
 }
 
 /**
@@ -1870,7 +2019,7 @@ export async function fetchTrendSignal(
         signal
     });
     if (error) throw new Error('Failed to fetch the trend signal');
-    return data as unknown as TrendSignal;
+    return shapeRecord<TrendSignal>(data, 'Failed to fetch the trend signal', ['history']);
 }
 
 export async function fetchStrategyAllocation(
@@ -1883,7 +2032,13 @@ export async function fetchStrategyAllocation(
         signal
     });
     if (error) throw new Error('Failed to build the strategy allocation');
-    return data as unknown as StrategyAllocation;
+    const raw = asRecord(data);
+    if (!raw) throw new Error('Failed to build the strategy allocation');
+    return {
+        ...(raw as unknown as StrategyAllocation),
+        sleeves: asRecordArray(raw.sleeves, shapeStrategySleeve),
+        warnings: asStringArray(raw.warnings),
+    };
 }
 
 export interface OpenLot {
@@ -1964,7 +2119,11 @@ export async function fetchStockPosition(
     const url = `${API_BASE_URL}/stock/${encodeURIComponent(symbol)}/position?${params.toString()}`;
     const response = await authFetch(url, { signal });
     if (!response.ok) throw new Error(`Failed to fetch stock position for ${symbol}`);
-    return (await response.json()) as StockPositionData;
+    return shapeRecord<StockPositionData>(
+        await response.json(),
+        `Failed to fetch stock position for ${symbol}`,
+        ['open_lots', 'closed_trades']
+    );
 }
 
 export interface StockPositionHistoryPoint {
@@ -2001,7 +2160,7 @@ export async function fetchStockPositionHistory(
     const url = `${API_BASE_URL}/stock/${encodeURIComponent(symbol)}/position_history?${params.toString()}`;
     const response = await authFetch(url, { signal });
     if (!response.ok) throw new Error(`Failed to fetch stock position history for ${symbol}`);
-    return (await response.json()) as StockPositionHistoryPoint[];
+    return asList<StockPositionHistoryPoint>((await response.json()), 'Failed to fetch position history');
 }
 
 

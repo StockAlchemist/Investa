@@ -206,8 +206,9 @@ struct CashYieldSettingsView: View {
     private func saveYieldSettings() {
         isSaving = true
         Task {
-            await vm.updateCashYield(rates: rates, thresholds: thresholds)
+            let saved = await vm.updateCashYield(rates: rates, thresholds: thresholds)
             isSaving = false
+            guard saved else { return }
             ToastManager.shared.show(message: "Cash yield settings saved", style: .success)
         }
     }

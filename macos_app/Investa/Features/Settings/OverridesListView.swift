@@ -108,17 +108,10 @@ struct OverridesListView: View {
             }
         }
         #if os(iOS)
-        .navigationTitle("Manual Overrides")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingAddSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-        }
+        // Standalone only: embedded, these would retitle the host column and
+        // hang a stray "+" off the app's own toolbar. The in-view "Add" button
+        // above already covers the embedded case.
+        .modifier(OverridesNavigationChrome(embedded: embedded, showingAddSheet: $showingAddSheet))
         #endif
         .sheet(isPresented: $showingAddSheet) {
             OverrideEditSheet { sym, price, meta in
@@ -284,7 +277,7 @@ struct OverridesListView: View {
         map[symbol.uppercased()] = .object(obj)
 
         Task {
-            await vm.update("manual_price_overrides", map, note: "Override saved for \(symbol)")
+            guard await vm.update("manual_price_overrides", map, note: "Override saved for \(symbol)") else { return }
             ToastManager.shared.show(message: "Override saved for \(symbol)", style: .success)
         }
     }
@@ -304,7 +297,7 @@ private struct FlowChipsView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(tags, id: \.title) { tag in
+            ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                 HStack(spacing: 4) {
                     Image(systemName: tag.icon)
                         .font(.system(size: 9))
@@ -321,3 +314,32 @@ private struct FlowChipsView: View {
         }
     }
 }
+
+
+#if os(iOS)
+/// Navigation chrome that must apply only when OverridesListView owns its own
+/// navigation stack - never when it is embedded in another column.
+private struct OverridesNavigationChrome: ViewModifier {
+    let embedded: Bool
+    @Binding var showingAddSheet: Bool
+
+    func body(content: Content) -> some View {
+        if embedded {
+            content
+        } else {
+            content
+                .navigationTitle("Manual Overrides")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showingAddSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                    }
+                }
+        }
+    }
+}
+#endif

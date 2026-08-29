@@ -206,8 +206,9 @@ struct ProfileSecuritySettingsView: View {
     private func saveAlias() {
         isSavingAlias = true
         Task {
-            await vm.updateProfile(alias: alias)
+            let saved = await vm.updateProfile(alias: alias)
             isSavingAlias = false
+            guard saved else { return }
             ToastManager.shared.show(message: "Display name updated", style: .success)
         }
     }

@@ -245,7 +245,7 @@ struct SymbolMappingsView: View {
         mapTo = ""
 
         Task {
-            await vm.update("user_symbol_map", m, note: "Mapped \(f) ➔ \(t)")
+            guard await vm.update("user_symbol_map", m, note: "Mapped \(f) ➔ \(t)") else { return }
             ToastManager.shared.show(message: "Mapped \(f) ➔ \(t)", style: .success)
         }
     }

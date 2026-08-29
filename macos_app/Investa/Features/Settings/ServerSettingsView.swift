@@ -43,13 +43,16 @@ struct ServerSettingsView: View {
                         .foregroundStyle(.secondary)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("http://127.0.0.1:8000", text: $serverURL)
+                        TextField(APIConfig.fallbackBaseURL, text: $serverURL)
                             .textFieldStyle(.roundedBorder)
                             .autocorrectionDisabled()
 
                         HStack {
                             Button("Reset Default") {
-                                serverURL = "http://127.0.0.1:8000"
+                                // Must be APIConfig's own fallback: it carries the
+                                // /api prefix, and a hand-written URL without it
+                                // 404s every request with no way back but retyping.
+                                serverURL = APIConfig.fallbackBaseURL
                                 APIConfig.baseURL = serverURL
                                 ToastManager.shared.show(message: "Reset backend URL to default", style: .info)
                             }
@@ -125,8 +128,9 @@ struct ServerSettingsView: View {
     private func clearCache() {
         isClearingCache = true
         Task {
-            await vm.clearCache()
+            let cleared = await vm.clearCache()
             isClearingCache = false
+            guard cleared else { return }
             ToastManager.shared.show(message: "Server cache cleared successfully", style: .success)
         }
     }

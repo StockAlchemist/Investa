@@ -124,6 +124,10 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Below md the PageHeader title is hidden, so the screen names itself here. */}
+            <h2 className="md:hidden text-2xl font-bold tracking-tight text-foreground">
+                Screener
+            </h2>
             <p className="text-muted-foreground text-sm max-w-3xl">
                 Identify high-probability investment opportunities using quantitative <span className="text-cyan-500/80">intrinsic value models</span> and <span className="text-blue-500/80">AI-powered fundamental audits</span>.
             </p>

@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-    Loader2, AlertTriangle, Info, TrendingUp, ShieldCheck, ShieldAlert, Check,
+    Loader2, AlertTriangle, Info, TrendingUp, ShieldCheck, ShieldAlert, Layers, Check,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -268,6 +268,10 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
     return (
         <div className="space-y-6">
             <header className="space-y-1">
+                {/* Below md the PageHeader title is hidden, so the screen names itself here. */}
+                <h1 className="md:hidden text-2xl font-bold flex items-center gap-2">
+                    <Layers className="w-5 h-5" /> Strategies
+                </h1>
                 <p className="text-sm text-muted-foreground max-w-3xl">
                     Fixed rules, not live suggestions. Each was backtested point-in-time; the
                     returns below assume the rule is followed mechanically. Nothing here places
@@ -404,14 +408,21 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
                         </div>
                     )}
 
-                    {allocation?.warnings.map(warning => (
+                    {/*
+                      * fetchStrategyAllocation guarantees both arrays exist, so
+                      * the every-field guards the other maps on this screen once
+                      * needed are gone. These two keep theirs only because
+                      * `allocation` is undefined while the query is in flight,
+                      * and the second `?.` costs nothing to leave beside it.
+                      */}
+                    {allocation?.warnings?.map(warning => (
                         <div key={warning} className="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs">
                             <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
                             <span>{warning}</span>
                         </div>
                     ))}
 
-                    {allocation?.sleeves.map(sleeve => (
+                    {allocation?.sleeves?.map(sleeve => (
                         <div key={sleeve.key} className="space-y-1">
                             <div className="flex items-baseline justify-between gap-2 border-b pb-1">
                                 <h3 className="font-semibold text-sm">{sleeve.label}</h3>

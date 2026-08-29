@@ -310,7 +310,7 @@ struct AccountGroupManagerView: View {
                             .foregroundStyle(index < orderedGroupNames.count - 1 ? Color.primary : Color.secondary.opacity(0.3))
                     }
                     .buttonStyle(.plain)
-                    .disabled(index == 0 || index == orderedGroupNames.count - 1)
+                    .disabled(index == orderedGroupNames.count - 1)
                 }
             }
 
@@ -440,8 +440,8 @@ struct AccountGroupManagerView: View {
             }
         }
 
-        save(groups: newGroups, order: newOrder)
-        ToastManager.shared.show(message: "Account group \"\(name)\" saved", style: .success)
+        save(groups: newGroups, order: newOrder,
+             confirmation: ("Account group \"\(name)\" saved", .success))
         cancelForm()
     }
 
@@ -449,8 +449,8 @@ struct AccountGroupManagerView: View {
         var newGroups = groupsMap
         newGroups.removeValue(forKey: name)
         let newOrder = orderedGroupNames.filter { $0 != name }
-        save(groups: newGroups, order: newOrder)
-        ToastManager.shared.show(message: "Account group \"\(name)\" deleted", style: .info)
+        save(groups: newGroups, order: newOrder,
+             confirmation: ("Account group \"\(name)\" deleted", .info))
     }
 
     private func moveGroup(_ name: String, by offset: Int) {
@@ -463,10 +463,16 @@ struct AccountGroupManagerView: View {
         save(groups: groupsMap, order: order)
     }
 
-    private func save(groups: [String: [String]], order: [String]) {
+    /// Persist groups, and announce it only once the write has landed - the
+    /// view model error-toasts on failure, so an unconditional confirmation
+    /// would sit beside it claiming the opposite.
+    private func save(groups: [String: [String]], order: [String],
+                      confirmation: (message: String, style: ToastStyle)? = nil) {
         Task {
-            await vm.updateGroups(groups, order: order)
+            let saved = await vm.updateGroups(groups, order: order)
             await appState.loadSettings(initial: false)
+            guard saved, let confirmation else { return }
+            ToastManager.shared.show(message: confirmation.message, style: confirmation.style)
         }
     }
 }

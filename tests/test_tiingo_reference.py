@@ -153,7 +153,9 @@ def test_a_429_explains_the_meter():
 
 
 def test_no_token_is_a_setup_error_not_an_outage(monkeypatch):
-    monkeypatch.setattr(tg, "TIINGO_API_KEY", None)
+    import config
+
+    monkeypatch.setattr(config, "TIINGO_API_KEY", None)
     p = tg.TiingoProvider(api_key=None)
     assert not p.is_configured()
     with pytest.raises(tg.TiingoNotConfiguredError):

@@ -32,20 +32,24 @@ final class SettingsViewModel: ObservableObject {
     }
 
     /// POST a single settings field, then reload.
-    func update<T: Encodable>(_ key: String, _ value: T, note: String = "Saved.") async {
+    @discardableResult
+    func update<T: Encodable>(_ key: String, _ value: T, note: String = "Saved.") async -> Bool {
         do {
             let _: StatusResponse = try await api.send(method: "POST", path: "/settings/update", body: KV(key: key, value: value))
             status = note
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving settings", style: .error)
+            return false
         }
     }
 
     /// Save account groups and their display order together (they must stay in
     /// sync — the pickers render groups in `account_group_order`).
-    func updateGroups(_ groups: [String: [String]], order: [String]) async {
+    @discardableResult
+    func updateGroups(_ groups: [String: [String]], order: [String]) async -> Bool {
         struct Body: Encodable {
             let account_groups: [String: [String]]
             let account_group_order: [String]
@@ -56,14 +60,17 @@ final class SettingsViewModel: ObservableObject {
                 body: Body(account_groups: groups, account_group_order: order))
             status = "Groups saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving groups", style: .error)
+            return false
         }
     }
 
     /// Save account preferences in a single POST request.
-    func updateAccountPreferences(currencyMap: [String: String], cashModeMap: [String: String], closureMap: [String: String]) async {
+    @discardableResult
+    func updateAccountPreferences(currencyMap: [String: String], cashModeMap: [String: String], closureMap: [String: String]) async -> Bool {
         struct Body: Encodable {
             let account_currency_map: [String: String]
             let account_cash_mode_map: [String: String]
@@ -79,14 +86,17 @@ final class SettingsViewModel: ObservableObject {
                 ))
             status = "Account preferences saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving preferences", style: .error)
+            return false
         }
     }
 
     /// Save cash yield settings in a single POST request.
-    func updateCashYield(rates: [String: Double], thresholds: [String: Double]) async {
+    @discardableResult
+    func updateCashYield(rates: [String: Double], thresholds: [String: Double]) async -> Bool {
         struct Body: Encodable {
             let account_interest_rates: [String: Double]
             let interest_free_thresholds: [String: Double]
@@ -97,14 +107,17 @@ final class SettingsViewModel: ObservableObject {
                 body: Body(account_interest_rates: rates, interest_free_thresholds: thresholds))
             status = "Cash yield settings saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving yield settings", style: .error)
+            return false
         }
     }
 
     /// Save IBKR credentials in a single POST request.
-    func updateIBKR(token: String, queryId: String) async {
+    @discardableResult
+    func updateIBKR(token: String, queryId: String) async -> Bool {
         struct Body: Encodable {
             let ibkr_token: String
             let ibkr_query_id: String
@@ -115,83 +128,92 @@ final class SettingsViewModel: ObservableObject {
                 body: Body(ibkr_token: token, ibkr_query_id: queryId))
             status = "Credentials saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving credentials", style: .error)
+            return false
         }
     }
 
-    /// Save external API keys in a single POST request.
-    func updateAPIKeys(gemini: String, fmp: String, secTh: String, bot: String, tiingo: String) async {
-        struct Body: Encodable {
-            let gemini_api_key: String
-            let fmp_api_key: String
-            let sec_th_api_key: String
-            let bot_api_key: String
-            let tiingo_api_key: String
-        }
+    /// Save external API keys.
+    ///
+    /// Takes only the fields the user actually retyped, keyed by their wire
+    /// name. The server sends masked previews rather than the real keys and
+    /// reads "" as "clear this key", so posting all five would wipe every
+    /// stored key whenever the settings fetch had not resolved.
+    @discardableResult
+    func updateAPIKeys(_ keys: [String: String]) async -> Bool {
+        guard !keys.isEmpty else { return false }
         do {
             let _: StatusResponse = try await api.send(
-                method: "POST", path: "/settings/update",
-                body: Body(
-                    gemini_api_key: gemini,
-                    fmp_api_key: fmp,
-                    sec_th_api_key: secTh,
-                    bot_api_key: bot,
-                    tiingo_api_key: tiingo
-                )
+                method: "POST", path: "/settings/update", body: keys
             )
             status = "API keys saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving API keys", style: .error)
+            return false
         }
     }
 
-    func clearCache() async {
+    @discardableResult
+    func clearCache() async -> Bool {
         do {
             let _: StatusResponse = try await api.send(method: "POST", path: "/clear_cache")
             status = "Cache cleared."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error clearing cache", style: .error)
+            return false
         }
     }
 
-    func triggerRefresh(secret: String) async {
+    @discardableResult
+    func triggerRefresh(secret: String) async -> Bool {
         struct Body: Encodable { let secret: String }
         do {
             let _: StatusResponse = try await api.send(method: "POST", path: "/webhook/refresh", body: Body(secret: secret))
             status = "Refresh triggered."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error triggering refresh", style: .error)
+            return false
         }
     }
 
-    func syncIbkr() async {
-        guard !isSyncingIbkr else { return }
+    @discardableResult
+    func syncIbkr() async -> Bool {
+        guard !isSyncingIbkr else { return false }
         isSyncingIbkr = true
         defer { isSyncingIbkr = false }
         status = "Syncing IBKR…"
         do {
             let res: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr")
             status = res.message ?? "IBKR sync complete."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error syncing IBKR", style: .error)
+            return false
         }
     }
 
-    func updateProfile(alias: String) async {
+    @discardableResult
+    func updateProfile(alias: String) async -> Bool {
         struct Body: Encodable { let alias: String }
         do {
             let _: User = try await api.send(method: "PATCH", path: "/auth/me", body: Body(alias: alias))
             status = "Profile updated."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error updating profile", style: .error)
+            return false
         }
     }
 
