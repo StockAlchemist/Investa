@@ -74,7 +74,15 @@ enum TradingViewSymbol {
         ".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC",
         // Display names — INDEX_DISPLAY_NAMES and BENCHMARK_MAPPING
         "DOW": "^DJI", "DOW JONES": "^DJI", "NASDAQ": "^IXIC", "S&P 500": "^GSPC",
-        "RUSSELL 2000": "^RUT", "S&P 500 TOTAL RETURN": "^SP500TR",
+        "RUSSELL 2000": "^RUT",
+        "TOTAL US MARKET (VTI)": "VTI", "ALL-WORLD (VT)": "VT",
+        "TOTAL INTERNATIONAL (VXUS)": "VXUS", "EMERGING MARKETS (VWO)": "VWO",
+        "EUROPE (VGK)": "VGK", "JAPAN (EWJ)": "EWJ",
+        "US TOTAL BOND (BND)": "BND", "20+ YEAR TREASURY (TLT)": "TLT",
+        "GOLD (GLD)": "GLD", "BITCOIN (BTC-USD)": "BTC-USD",
+        "US GROWTH (VUG)": "VUG", "US VALUE (VTV)": "VTV", "US DIVIDEND (SCHD)": "SCHD",
+        // Legacy aliases
+        "S&P 500 TOTAL RETURN": "^SP500TR",
         "SPY (S&P 500 ETF)": "SPY", "QQQ (NASDAQ 100 ETF)": "QQQ", "DIA (DOW JONES ETF)": "DIA",
     ]
 

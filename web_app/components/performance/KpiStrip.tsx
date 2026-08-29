@@ -66,8 +66,6 @@ export default function KpiStrip({ data, summary, riskMetrics = null, benchmarks
     const metrics = useMemo(() => {
         const portfolioMonthly = getMonthlyReturns(data, 'Portfolio');
         const sumMetrics = summary?.metrics;
-        const primaryBenchmark = benchmarks[0];
-        const benchMonthly = primaryBenchmark ? getMonthlyReturns(data, primaryBenchmark) : [];
 
         // YTD: prefer backend metric, fallback to summing current-year monthly returns.
         let ytd: number | null = sumMetrics?.ytd_return ?? null;
@@ -104,16 +102,21 @@ export default function KpiStrip({ data, summary, riskMetrics = null, benchmarks
             ? riskDD * 100
             : (sumMetrics?.max_drawdown ?? null);
 
-        // vs Primary benchmark over last 12 months: compounded portfolio − compounded benchmark.
-        let vsBench: number | null = null;
-        if (primaryBenchmark && last12.length > 0 && benchMonthly.length > 0) {
-            const benchLast12 = benchMonthly.slice(-12);
-            const portRet = last12.reduce((acc, m) => acc * (1 + m.value / 100), 1) * 100 - 100;
-            const benchRet = benchLast12.reduce((acc, m) => acc * (1 + m.value / 100), 1) * 100 - 100;
-            vsBench = portRet - benchRet;
-        }
+        // vs Benchmarks over last 12 months: compounded portfolio − compounded benchmark.
+        const activeBenchmarks = benchmarks && benchmarks.length > 0 ? benchmarks : ['S&P 500', 'NASDAQ'];
+        const vsBenchmarks = activeBenchmarks.map(bench => {
+            const benchMonthly = getMonthlyReturns(data, bench);
+            let vsBench: number | null = null;
+            if (last12.length > 0 && benchMonthly.length > 0) {
+                const benchLast12 = benchMonthly.slice(-12);
+                const portRet = last12.reduce((acc, m) => acc * (1 + m.value / 100), 1) * 100 - 100;
+                const benchRet = benchLast12.reduce((acc, m) => acc * (1 + m.value / 100), 1) * 100 - 100;
+                vsBench = portRet - benchRet;
+            }
+            return { name: bench, value: vsBench };
+        });
 
-        return { ytd, oneYear, winRate, best, worst, maxDD, vsBench, primaryBenchmark };
+        return { ytd, oneYear, winRate, best, worst, maxDD, vsBenchmarks };
     }, [data, summary, riskMetrics, benchmarks]);
 
     const fmtMonth = (date: string) => {
@@ -166,15 +169,16 @@ export default function KpiStrip({ data, summary, riskMetrics = null, benchmarks
                     tone="warn"
                     icon={AlertTriangle}
                 />
-                {metrics.primaryBenchmark && (
+                {metrics.vsBenchmarks.map(bm => (
                     <KpiTile
-                        label={`vs ${metrics.primaryBenchmark}`}
-                        value={metrics.vsBench != null ? formatPct(metrics.vsBench) : '–'}
+                        key={bm.name}
+                        label={`vs ${bm.name}`}
+                        value={bm.value != null ? formatPct(bm.value) : '–'}
                         sub="last 12M"
-                        tone={(metrics.vsBench ?? 0) >= 0 ? 'pos' : 'neg'}
-                        icon={(metrics.vsBench ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight}
+                        tone={(bm.value ?? 0) >= 0 ? 'pos' : 'neg'}
+                        icon={(bm.value ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight}
                     />
-                )}
+                ))}
             </div>
         </div>
     );

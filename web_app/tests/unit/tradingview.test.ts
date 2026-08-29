@@ -64,6 +64,11 @@ describe('benchmarkYahooSymbol', () => {
         expect(benchmarkYahooSymbol('Dow Jones')).toBe('^DJI');
         expect(benchmarkYahooSymbol('Dow')).toBe('^DJI');
         expect(benchmarkYahooSymbol('nasdaq')).toBe('^IXIC');
+        expect(benchmarkYahooSymbol('Total US Market (VTI)')).toBe('VTI');
+        expect(benchmarkYahooSymbol('All-World (VT)')).toBe('VT');
+        expect(benchmarkYahooSymbol('US Total Bond (BND)')).toBe('BND');
+        expect(benchmarkYahooSymbol('Gold (GLD)')).toBe('GLD');
+        expect(benchmarkYahooSymbol('Bitcoin (BTC-USD)')).toBe('BTC-USD');
         expect(benchmarkYahooSymbol('QQQ (Nasdaq 100 ETF)')).toBe('QQQ');
     });
 
@@ -72,6 +77,8 @@ describe('benchmarkYahooSymbol', () => {
         expect(toTradingViewSymbol(benchmarkYahooSymbol('S&P 500')!)).toBe('FOREXCOM:SPXUSD');
         expect(toTradingViewSymbol(benchmarkYahooSymbol('IXIC')!)).toBe('NASDAQ:ONEQ');
         expect(toTradingViewSymbol(benchmarkYahooSymbol('Russell 2000')!)).toBe('OANDA:US2000USD');
+        expect(toTradingViewSymbol(benchmarkYahooSymbol('Total US Market (VTI)')!)).toBe('VTI');
+        expect(toTradingViewSymbol(benchmarkYahooSymbol('Bitcoin (BTC-USD)')!)).toBe('CRYPTO:BTCUSD');
     });
 
     it('returns null for a label we do not carry', () => {

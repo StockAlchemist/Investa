@@ -630,8 +630,10 @@ struct AdvancedSettings: View {
     }
 
     private let presetBenchmarks = [
-        "S&P 500", "Dow Jones", "NASDAQ", "Russell 2000",
-        "SPY (S&P 500 ETF)", "QQQ (Nasdaq 100 ETF)", "DIA (Dow Jones ETF)", "S&P 500 Total Return",
+        "S&P 500", "NASDAQ", "Dow Jones", "Russell 2000",
+        "Total US Market (VTI)", "All-World (VT)", "Total International (VXUS)", "Emerging Markets (VWO)",
+        "Europe (VGK)", "Japan (EWJ)", "US Total Bond (BND)", "20+ Year Treasury (TLT)",
+        "Gold (GLD)", "Bitcoin (BTC-USD)", "US Growth (VUG)", "US Value (VTV)", "US Dividend (SCHD)",
     ]
 
     private var benchmarksCard: some View {

@@ -44,8 +44,21 @@ struct PerfKpiStrip: View {
     let risk: RiskMetrics?
     let benchmarks: [String]
 
-    private struct M { var ytd: Double?; var oneYear: Double?; var winRate: Double?
-        var best: (String, Double)?; var worst: (String, Double)?; var maxDD: Double?; var vsBench: Double? }
+    private struct BenchmarkComparison: Identifiable {
+        let name: String
+        let value: Double?
+        var id: String { name }
+    }
+
+    private struct M {
+        var ytd: Double?
+        var oneYear: Double?
+        var winRate: Double?
+        var best: (String, Double)?
+        var worst: (String, Double)?
+        var maxDD: Double?
+        var vsBenchmarks: [BenchmarkComparison] = []
+    }
 
     private func compounded(_ xs: [Double]) -> Double { (xs.reduce(1.0) { $0 * (1 + $1 / 100) } - 1) * 100 }
 
@@ -66,9 +79,11 @@ struct PerfKpiStrip: View {
             out.worst = monthly.min { $0.1 < $1.1 }
         }
         if let dd = risk?.maxDrawdown { out.maxDD = dd * 100 } else { out.maxDD = metrics?.maxDrawdown }
-        if let bench = benchmarks.first {
+        let activeBenchmarks = !benchmarks.isEmpty ? benchmarks : ["S&P 500", "NASDAQ"]
+        out.vsBenchmarks = activeBenchmarks.map { bench in
             let bm = Array(AssetChangeData.returns(data, period: "M", series: bench).suffix(12))
-            if !last12.isEmpty, !bm.isEmpty { out.vsBench = compounded(last12.map { $0.1 }) - compounded(bm.map { $0.1 }) }
+            let val: Double? = (!last12.isEmpty && !bm.isEmpty) ? (compounded(last12.map { $0.1 }) - compounded(bm.map { $0.1 })) : nil
+            return BenchmarkComparison(name: bench, value: val)
         }
         return out
     }
@@ -82,15 +97,15 @@ struct PerfKpiStrip: View {
     var body: some View {
         let mt = m
         PSection(title: "Performance KPIs") {
-            KpiRow(count: benchmarks.first != nil ? 7 : 6, minTileWidth: 150) {
+            KpiRow(count: 6 + mt.vsBenchmarks.count, minTileWidth: 150) {
                 tile("YTD", pct(mt.ytd), nil, Fmt.tint(for: mt.ytd))
                 tile("1Y", pct(mt.oneYear), nil, Fmt.tint(for: mt.oneYear))
                 tile("Win Rate", mt.winRate.map { String(format: "%.0f%%", $0) } ?? "–", "of months", (mt.winRate ?? 0) >= 50 ? .green : .orange)
                 tile("Best Month", mt.best.map { pct($0.1) } ?? "–", mt.best.map { fmtMonth($0.0) }, .green)
                 tile("Worst Month", mt.worst.map { pct($0.1) } ?? "–", mt.worst.map { fmtMonth($0.0) }, .red)
                 tile("Max DD", mt.maxDD.map { String(format: "%.2f%%", $0) } ?? "–", nil, .orange)
-                if let b = benchmarks.first {
-                    tile("vs \(b)", pct(mt.vsBench), "last 12M", Fmt.tint(for: mt.vsBench))
+                ForEach(mt.vsBenchmarks) { b in
+                    tile("vs \(b.name)", pct(b.value), "last 12M", Fmt.tint(for: b.value))
                 }
             }
         }

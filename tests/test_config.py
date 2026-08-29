@@ -108,6 +108,14 @@ def test_import_and_types():
     assert MANUAL_OVERRIDES_FILENAME == "manual_overrides.json"
     assert "USD" in COMMON_CURRENCIES
     assert "S&P 500" in BENCHMARK_MAPPING
+    assert BENCHMARK_MAPPING["Total US Market (VTI)"] == "VTI"
+    assert BENCHMARK_MAPPING["All-World (VT)"] == "VT"
+    assert BENCHMARK_MAPPING["US Total Bond (BND)"] == "BND"
+    assert BENCHMARK_MAPPING["Gold (GLD)"] == "GLD"
+    assert BENCHMARK_MAPPING["Bitcoin (BTC-USD)"] == "BTC-USD"
+    assert "Total US Market (VTI)" in BENCHMARK_OPTIONS_DISPLAY
+    assert "SPY (S&P 500 ETF)" not in BENCHMARK_OPTIONS_DISPLAY
+    assert len(BENCHMARK_OPTIONS_DISPLAY) == len(set(BENCHMARK_OPTIONS_DISPLAY))  # No duplicates
     assert COLOR_GAIN == "#198754"
 
 

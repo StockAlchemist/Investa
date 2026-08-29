@@ -694,26 +694,54 @@ DEFAULT_GRAPH_BENCHMARKS = [
     "S&P 500"
 ]  # Default benchmarks selected in the UI (user-friendly names)
 # Maps user-friendly benchmark names to Yahoo Finance tickers
-BENCHMARK_MAPPING = {  # Maps user-friendly benchmark names to Yahoo Finance tickers
+BENCHMARK_MAPPING = {
+    # Core US Indices
     "S&P 500": "^GSPC",
     "NASDAQ": "^IXIC",
     "Dow Jones": "^DJI",
     "Russell 2000": "^RUT",
+    "Total US Market (VTI)": "VTI",
+    # Global & International
+    "All-World (VT)": "VT",
+    "Total International (VXUS)": "VXUS",
+    "Emerging Markets (VWO)": "VWO",
+    "Europe (VGK)": "VGK",
+    "Japan (EWJ)": "EWJ",
+    # Fixed Income / Bonds
+    "US Total Bond (BND)": "BND",
+    "20+ Year Treasury (TLT)": "TLT",
+    # Commodities & Crypto
+    "Gold (GLD)": "GLD",
+    "Bitcoin (BTC-USD)": "BTC-USD",
+    # Factors & Style
+    "US Growth (VUG)": "VUG",
+    "US Value (VTV)": "VTV",
+    "US Dividend (SCHD)": "SCHD",
+    # Legacy aliases (kept for backwards compatibility with existing user configs)
     "SPY (S&P 500 ETF)": "SPY",
     "QQQ (Nasdaq 100 ETF)": "QQQ",
     "DIA (Dow Jones ETF)": "DIA",
-    "S&P 500 Total Return": "^SP500TR",  # Note: Total return indices might need specific handling or data source
+    "S&P 500 Total Return": "^SP500TR",
 }
 
 BENCHMARK_OPTIONS_DISPLAY = [  # Order for UI display of benchmark options in menu
     "S&P 500",
-    "Dow Jones",
     "NASDAQ",
+    "Dow Jones",
     "Russell 2000",
-    "SPY (S&P 500 ETF)",
-    "QQQ (Nasdaq 100 ETF)",
-    "DIA (Dow Jones ETF)",
-    "S&P 500 Total Return",
+    "Total US Market (VTI)",
+    "All-World (VT)",
+    "Total International (VXUS)",
+    "Emerging Markets (VWO)",
+    "Europe (VGK)",
+    "Japan (EWJ)",
+    "US Total Bond (BND)",
+    "20+ Year Treasury (TLT)",
+    "Gold (GLD)",
+    "Bitcoin (BTC-USD)",
+    "US Growth (VUG)",
+    "US Value (VTV)",
+    "US Dividend (SCHD)",
 ]
 
 # --- Theme Colors (Hex Strings) ---
