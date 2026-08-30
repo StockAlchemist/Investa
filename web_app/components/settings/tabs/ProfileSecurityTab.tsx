@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { UserCircle, ShieldAlert, Smartphone, LogOut, Info, CheckCircle, AlertCircle, Loader2, Save } from 'lucide-react';
+import { Smartphone, LogOut, Info, CheckCircle, AlertCircle, Loader2, Save } from 'lucide-react';
 import { updateUserProfile, changePassword, deleteUser } from '../../../lib/api';
 import { useAuth } from '../../../context/AuthContext';
 import {
     cardClassName,
+    cardHeadClassName,
     sectionTitleClassName,
+    destructiveButtonClassName,
+    secondaryButtonClassName,
     labelClassName,
     inputClassName,
     primaryButtonClassName
@@ -61,16 +64,13 @@ export const ProfileSecurityTab: React.FC = () => {
     };
 
     return (
-        <div className="space-y-8 max-w-3xl">
+        <div className="space-y-6 max-w-3xl">
             {/* Profile Information */}
             <div className={cardClassName}>
-                <div className="mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <UserCircle className="w-5 h-5 text-cyan-500" />
-                        Profile Information
-                    </h3>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Profile Information</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-6">Identifiers and display name shown across the app.</p>
+                <p className="text-xs text-muted-foreground mb-5">Identifiers and display name shown across the app.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-1">
                         <label className={labelClassName}>Username</label>
@@ -109,13 +109,10 @@ export const ProfileSecurityTab: React.FC = () => {
 
             {/* Security: Password Change */}
             <div className={cardClassName}>
-                <div className="mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <ShieldAlert className="w-5 h-5 text-amber-500" />
-                        Security
-                    </h3>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Security</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-6">Change your login password.</p>
+                <p className="text-xs text-muted-foreground mb-5">Change your login password.</p>
                 <form onSubmit={handleChangePassword} className="space-y-5">
                     <div className="space-y-1">
                         <label className={labelClassName}>Current Password</label>
@@ -183,25 +180,24 @@ export const ProfileSecurityTab: React.FC = () => {
                     <button
                         type="button"
                         onClick={() => logout()}
-                        className="w-full py-2.5 rounded-xl border-2 border-border bg-transparent hover:bg-secondary font-medium transition-colors text-foreground flex items-center justify-center gap-2 cursor-pointer"
+                        className={`${secondaryButtonClassName} w-full`}
                     >
                         <LogOut className="w-4 h-4" />
                         Sign Out
                     </button>
                 </div>
 
-                <div className="bg-red-50/50 dark:bg-red-950/20 backdrop-blur-xl p-6 rounded-2xl border border-red-200 dark:border-red-900/50 shadow-sm flex flex-col justify-between relative overflow-hidden group">
-                    <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-500 to-rose-500 transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
+                <div className="card-standard p-6 border-down/40 flex flex-col justify-between">
                     <div>
                         <h4 className="font-bold text-down mb-2">Delete Account</h4>
-                        <p className="text-sm text-down/80 dark:text-down/80 mb-6 leading-relaxed">
+                        <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
                             Permanently delete your profile, portfolio data, and settings. This action is irreversible.
                         </p>
                     </div>
                     <button
                         type="button"
                         onClick={handleDeleteAccount}
-                        className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium shadow-sm transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-red-500 cursor-pointer"
+                        className={`${destructiveButtonClassName} w-full`}
                     >
                         Delete Account Permanently
                     </button>

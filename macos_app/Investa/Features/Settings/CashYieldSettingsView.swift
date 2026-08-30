@@ -83,7 +83,7 @@ struct CashYieldSettingsView: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.teal)
+                .tint(Color.brand)
                 .disabled(isSaving)
                 .padding(.top, 8)
             }
@@ -125,7 +125,7 @@ struct CashYieldSettingsView: View {
             HStack {
                 HStack(spacing: 8) {
                     Image(systemName: "percent")
-                        .foregroundStyle(Color.teal)
+                        .foregroundStyle(Color.brand)
                         .appFont(.body)
 
                     Text(acc)
@@ -188,19 +188,12 @@ struct CashYieldSettingsView: View {
                     Spacer()
                     Text(interest.formatted(.currency(code: appState.displayCurrency)))
                         .appFont(.headline.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.up)
                 }
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card()
     }
 
     private func saveYieldSettings() {

@@ -50,9 +50,8 @@ struct APIKeysSettingsView: View {
             // Header Note
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("External API Keys")
-                            .appFont(.title3.bold())
-                        Spacer()
+                        SectionLabel(title: "External API Keys")
+                        Spacer(minLength: 8)
                         Button {
                             showApiKeys.toggle()
                         } label: {
@@ -79,7 +78,6 @@ struct APIKeysSettingsView: View {
                         subtitle: "Powers Gemini 2.5 Flash for AI stock analysis, portfolio synthesis, and thesis generation.",
                         placeholder: "AIzaSy...",
                         icon: "sparkles",
-                        iconColor: .cyan,
                         text: $geminiApiKey
                     )
 
@@ -88,7 +86,6 @@ struct APIKeysSettingsView: View {
                         subtitle: "Powers financial statements, balance sheets, cash flows, DCF valuation models, and ratios.",
                         placeholder: "Enter FMP API key",
                         icon: "chart.pie.fill",
-                        iconColor: .indigo,
                         text: $fmpApiKey
                     )
 
@@ -97,7 +94,6 @@ struct APIKeysSettingsView: View {
                         subtitle: "Retrieves daily official NAV and historical price records for Thai mutual funds (SSF, RMF, ThaiESG).",
                         placeholder: "Enter SEC Thailand API key",
                         icon: "building.columns.fill",
-                        iconColor: .orange,
                         text: $secThApiKey
                     )
 
@@ -106,7 +102,6 @@ struct APIKeysSettingsView: View {
                         subtitle: "Provides official Bank of Thailand daily foreign exchange conversion rates for THB pairs.",
                         placeholder: "Enter Bank of Thailand API key",
                         icon: "banknote.fill",
-                        iconColor: .green,
                         text: $botApiKey
                     )
 
@@ -115,7 +110,6 @@ struct APIKeysSettingsView: View {
                         subtitle: "Used for historical stock split adjustments, dividend validation, and market data fallback.",
                         placeholder: "Enter Tiingo API key",
                         icon: "arrow.triangle.swap",
-                        iconColor: .purple,
                         text: $tiingoApiKey
                     )
                 }
@@ -137,7 +131,7 @@ struct APIKeysSettingsView: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.orange)
+                .tint(Color.brand)
                 .disabled(isSaving)
                 .padding(.top, 8)
         }
@@ -181,22 +175,21 @@ struct APIKeysSettingsView: View {
         subtitle: String,
         placeholder: String,
         icon: String,
-        iconColor: Color,
         text: Binding<String>
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                SettingsIconBadge(icon: icon, color: iconColor, size: 24, iconSize: 13)
+                SettingsIcon(icon: icon, size: 20)
                 Text(title)
                     .appFont(.subheadline.bold())
                 Spacer()
                 if !text.wrappedValue.isEmpty {
                     Text("Configured")
                         .appFont(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.up)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.12), in: Capsule())
+                        .background(Color.up.opacity(0.12), in: Capsule())
                 }
             }
 
@@ -216,14 +209,7 @@ struct APIKeysSettingsView: View {
             }
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card(.inset)
     }
 
     private func saveKeys() {

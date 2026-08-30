@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Plus, XCircle, Activity, Sliders, Save, Loader2, ShieldAlert, Key, Eye, EyeOff } from 'lucide-react';
+import { Plus, XCircle, Save, Loader2, Eye, EyeOff } from 'lucide-react';
 import { Settings as SettingsType, triggerRefresh, clearCache, syncIbkr, updateSettings } from '../../../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
@@ -7,9 +7,13 @@ import { cn } from '../../../lib/utils';
 import {
     PRESET_BENCHMARKS,
     cardClassName,
+    cardHeadClassName,
     sectionTitleClassName,
+    countBadgeClassName,
+    secondaryButtonClassName,
     labelClassName,
-    inputClassName
+    inputClassName,
+    primaryButtonClassName
 } from '../constants';
 
 interface AdvancedTabProps {
@@ -169,18 +173,16 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
     };
 
     return (
-        <div className="space-y-8 max-w-4xl">
+        <div className="space-y-6 max-w-4xl">
             {/* Benchmarks Section */}
-            <div className={`${cardClassName} border-l-4 border-l-purple-500`}>
-                <div className="mb-4">
-                    <h3 className={sectionTitleClassName}>
-                        <LineChart className="w-5 h-5 text-purple-500" />
-                        Benchmarks
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Select indices and specific symbols to compare your portfolio performance against.
-                    </p>
+            <div className={cardClassName}>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Benchmarks</h3>
+                    <span className={countBadgeClassName}>{benchmarks.length}</span>
                 </div>
+                <p className="text-xs text-muted-foreground mb-4">
+                    Compared against your returns on the Performance tab.
+                </p>
                 
                 <div className="space-y-4">
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
@@ -188,10 +190,10 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             <label
                                 key={benchmark}
                                 className={cn(
-                                    "flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all",
+                                    "flex items-center gap-2 h-11 px-3 rounded-control border cursor-pointer transition-colors",
                                     benchmarks.includes(benchmark)
-                                        ? "bg-purple-500/10 border-purple-500/50 text-foreground"
-                                        : "bg-black/5 dark:bg-white/5 border-transparent text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10"
+                                        ? "bg-primary/12 border-primary/30 text-foreground"
+                                        : "bg-background border-border text-muted-foreground hover:bg-muted"
                                 )}
                             >
                                 <input
@@ -204,7 +206,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                                             onBenchmarksChange(benchmarks.filter(b => b !== benchmark));
                                         }
                                     }}
-                                    className="rounded border-none bg-secondary text-purple-500 focus:ring-purple-500"
+                                    className="rounded border-none bg-secondary text-primary focus:ring-ring"
                                 />
                                 <span className="text-sm font-medium">{benchmark}</span>
                             </label>
@@ -239,9 +241,9 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                                             setCustomBenchmark('');
                                         }
                                     }}
-                                    className="p-2.5 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 rounded-xl transition-colors text-foreground cursor-pointer"
+                                    className={`${secondaryButtonClassName} px-2.5`}
                                 >
-                                    <Plus className="w-5 h-5" />
+                                    <Plus className="w-4 h-4" />
                                 </button>
                             </div>
                         </div>
@@ -252,13 +254,13 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                             {benchmarks.filter(b => !PRESET_BENCHMARKS.includes(b)).map(b => (
                                 <span
                                     key={b}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-lg text-sm font-medium"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/12 text-primary-ink rounded-control text-sm font-medium"
                                 >
                                     {b}
                                     <button
                                         type="button"
                                         onClick={() => onBenchmarksChange(benchmarks.filter(item => item !== b))}
-                                        className="hover:bg-purple-500/20 p-0.5 rounded-md transition-colors cursor-pointer"
+                                        className="hover:bg-primary/20 p-0.5 rounded-md transition-colors cursor-pointer"
                                     >
                                         <XCircle className="w-3.5 h-3.5" />
                                     </button>
@@ -270,16 +272,13 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             </div>
 
             {/* Webhook Connection */}
-            <div className={`${cardClassName} border-l-4 border-l-cyan-500`}>
-                <div className="mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <Activity className="w-5 h-5 text-cyan-500" />
-                        Webhook Integration
-                    </h3>
+            <div className={cardClassName}>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Webhook Integration</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+                <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
                     Trigger a background data refresh externally by sending a POST request to{' '}
-                    <code className="inline-block bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-md text-xs text-cyan-600 dark:text-cyan-400 font-mono border border-black/10 dark:border-white/10 align-middle">POST /api/webhook/refresh</code>
+                    <code className="inline-block bg-muted px-2 py-0.5 rounded-md text-xs text-primary-ink font-mono border border-border align-middle">POST /api/webhook/refresh</code>
                 </p>
                 <div className="space-y-3">
                     <div className="flex gap-3 max-w-md">
@@ -293,7 +292,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                         <button
                             type="button"
                             onClick={handleRefresh}
-                            className="px-6 py-2.5 border border-border rounded-xl font-medium text-foreground bg-background hover:bg-secondary transition-colors cursor-pointer"
+                            className={secondaryButtonClassName}
                         >
                             Test
                         </button>
@@ -307,14 +306,11 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             </div>
 
             {/* IBKR Integration */}
-            <div className={`${cardClassName} border-l-4 border-l-blue-500`}>
-                <div className="mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <Sliders className="w-5 h-5 text-blue-500" />
-                        Interactive Brokers Sync
-                    </h3>
+            <div className={cardClassName}>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Interactive Brokers Sync</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-5">
+                <p className="text-xs text-muted-foreground mb-4">
                     Sync transactions using IBKR Flex Web Service. Requires an active Activity Flex Query.
                 </p>
 
@@ -341,12 +337,12 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 bg-black/5 dark:bg-white/5 p-4 rounded-xl border border-black/5 dark:border-white/5">
+                <div className="flex flex-wrap items-center gap-4 card-inset p-4">
                     <button
                         type="button"
                         onClick={handleSaveIbkr}
                         disabled={isSavingIbkr || isSyncing}
-                        className="px-5 py-2.5 border border-border rounded-xl text-sm font-medium hover:bg-secondary transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                        className={secondaryButtonClassName}
                     >
                         {isSavingIbkr ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4"/>}
                         Save Credentials
@@ -358,7 +354,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                         type="button"
                         onClick={handleSyncIbkr}
                         disabled={isSyncing || !ibkrToken || !ibkrQueryId}
-                        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
+                        className={primaryButtonClassName}
                     >
                         {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sync Transactions Now"}
                     </button>
@@ -372,23 +368,20 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             </div>
 
             {/* API Keys Configuration */}
-            <div className={`${cardClassName} border-l-4 border-l-amber-500`}>
-                <div className="flex items-center justify-between mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <Key className="w-5 h-5 text-amber-500" />
-                        API Keys (.env)
-                    </h3>
+            <div className={cardClassName}>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>API Keys</h3>
                     <button
                         type="button"
                         onClick={() => setShowApiKeys(!showApiKeys)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        className="ml-auto inline-flex items-center gap-1.5 h-7 px-2.5 rounded-control text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                     >
                         {showApiKeys ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         {showApiKeys ? "Hide Keys" : "Show Keys"}
                     </button>
                 </div>
-                <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
-                    Configure external API keys stored in <code className="inline-block bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-amber-600 dark:text-amber-400 border border-black/10 dark:border-white/10 align-middle">.env</code> for AI stock analysis, valuation models, and supplementary market data feeds. Stored keys show only their last four characters &mdash; retype a field to replace it, or clear it to remove the key.
+                <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+                    Configure external API keys stored in <code className="inline-block bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary-ink border border-border align-middle">.env</code> for AI stock analysis, valuation models, and supplementary market data feeds. Stored keys show only their last four characters &mdash; retype a field to replace it, or clear it to remove the key.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
@@ -444,12 +437,12 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 bg-black/5 dark:bg-white/5 p-4 rounded-xl border border-black/5 dark:border-white/5">
+                <div className="flex flex-wrap items-center gap-4 card-inset p-4">
                     <button
                         type="button"
                         onClick={handleSaveApiKeys}
                         disabled={isSavingApiKeys || editedApiKeys.size === 0}
-                        className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
+                        className={primaryButtonClassName}
                     >
                         {isSavingApiKeys ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4"/>}
                         Save API Keys
@@ -464,14 +457,11 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             </div>
 
             {/* Cache Management Section */}
-            <div className={`${cardClassName} border-l-4 border-l-red-500`}>
-                <div className="mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <ShieldAlert className="w-5 h-5 text-down" />
-                        System Cache
-                    </h3>
+            <div className={cardClassName}>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>System Cache</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+                <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
                     Clear local caches to resolve data discrepancies. This drops historical performance data, market quotes, and metadata, forcing a fresh download on the next load.
                 </p>
                 <div className="space-y-6">
@@ -479,9 +469,9 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                         <button
                             type="button"
                             onClick={handleClearCache}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 border cursor-pointer ${confirmClear
-                                ? 'bg-red-600 text-white border-transparent hover:bg-red-700 focus:ring-red-500 scale-105'
-                                : 'border-red-500/50 text-down bg-red-500/5 hover:bg-down/12 focus:ring-red-500'}`}
+                            className={`h-9 px-3.5 rounded-control text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-down focus-visible:ring-offset-2 ring-offset-background border cursor-pointer ${confirmClear
+                                ? 'bg-down text-white border-transparent hover:opacity-90'
+                                : 'border-down/50 text-down bg-down/5 hover:bg-down/12'}`}
                         >
                             {confirmClear ? "Click again to Confirm" : "Clear System Cache"}
                         </button>

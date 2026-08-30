@@ -55,7 +55,7 @@ function SortableGroupItem({ id, name, accounts, onEdit, onDelete }: SortableIte
         <div
             ref={setNodeRef}
             style={style}
-            className={`flex items-center justify-between p-4 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-black/5 dark:border-white/5 rounded-2xl shadow-sm hover:border-indigo-500/30 transition-all group ${isDragging ? 'opacity-80 border-indigo-500 ring-2 ring-ring/25 scale-[1.02]' : ''}`}
+            className={`flex items-center justify-between card-inset p-4 hover:border-primary/30 transition-colors group ${isDragging ? 'opacity-80 border-primary ring-2 ring-ring/25' : ''}`}
         >
             <div className="flex items-center gap-4 flex-1 overflow-hidden">
                 <button
@@ -76,7 +76,7 @@ function SortableGroupItem({ id, name, accounts, onEdit, onDelete }: SortableIte
             <div className="flex items-center gap-1.5 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                     onClick={() => onEdit(name, accounts as string[])}
-                    className="text-muted-foreground hover:text-indigo-500 hover:bg-indigo-500/10 p-2.5 rounded-xl transition-colors"
+                    className="text-muted-foreground hover:text-primary hover:bg-primary/10 p-2.5 rounded-control transition-colors"
                     title="Edit Group"
                 >
                     <Pencil className="w-4 h-4" />
@@ -268,14 +268,13 @@ export default function AccountGroupManager({ availableAccounts, settings, onUpd
     }
 
     return (
-        <div className="space-y-6 max-w-4xl">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
-                <div>
-                    <h3 className="text-xl font-bold text-foreground">Custom Account Groups</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Create custom groups of accounts for quick filtering. Drag to reorder.
-                    </p>
-                </div>
+        <div className="card-standard p-6 space-y-5">
+            <div className="flex items-center gap-2.5">
+                <h3 className="section-label">Account Groups</h3>
+                <span className="text-[11px] font-bold tabular-nums text-primary-ink bg-primary/12 rounded-full px-2 py-0.5 shrink-0">
+                    {groupList.length}
+                </span>
+                <span className="text-xs text-muted-foreground ml-auto hidden sm:block">Group accounts for aggregate filtering — drag to reorder</span>
                 {!isCreating && (
                     <button
                         onClick={() => {
@@ -284,19 +283,19 @@ export default function AccountGroupManager({ availableAccounts, settings, onUpd
                             setNewGroupName('');
                             setSelectedAccounts([]);
                         }}
-                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all flex items-center justify-center gap-2"
+                        className="h-8 px-3 rounded-control bg-primary text-primary-foreground hover:bg-primary-hover text-xs font-semibold transition-colors inline-flex items-center gap-1.5 shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
                     >
-                        <Plus className="w-5 h-5" />
-                        Create Group
+                        <Plus className="w-3.5 h-3.5" />
+                        New group
                     </button>
                 )}
             </div>
 
             {isCreating && (
-                <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl p-6 rounded-2xl border border-indigo-500/20 dark:border-indigo-500/30 shadow-lg animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className="flex justify-between items-center mb-6 border-b border-black/5 dark:border-white/5 pb-4">
-                        <h4 className="text-lg font-bold text-foreground flex items-center gap-2">
-                            {editingGroupName ? <Pencil className="w-5 h-5 text-indigo-500"/> : <Plus className="w-5 h-5 text-indigo-500"/>}
+                <div className="card-inset p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex justify-between items-center mb-5 border-b border-border pb-3">
+                        <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            {editingGroupName ? <Pencil className="w-4 h-4 text-primary"/> : <Plus className="w-4 h-4 text-primary"/>}
                             {editingGroupName ? 'Edit Group' : 'New Account Group'}
                         </h4>
                         <button onClick={handleCancel} className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-xl transition-colors">
@@ -317,38 +316,38 @@ export default function AccountGroupManager({ availableAccounts, settings, onUpd
 
                     <div className="mb-8">
                         <label className={labelClassName}>Select Accounts</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-72 overflow-y-auto p-4 border border-black/10 dark:border-white/10 rounded-xl bg-black/5 dark:bg-white/5 shadow-inner">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-72 overflow-y-auto p-3 border border-border rounded-inset bg-background">
                             {availableAccounts.map(account => {
                                 const isSelected = selectedAccounts.includes(account);
                                 return (
-                                    <label key={account} className={`flex items-center space-x-3 p-3 rounded-xl cursor-pointer transition-all border ${isSelected ? 'bg-indigo-500/10 border-indigo-500/30 shadow-sm' : 'hover:bg-white/40 dark:hover:bg-black/20 border-transparent hover:border-black/10 dark:hover:border-white/10'}`}>
+                                    <label key={account} className={`flex items-center gap-3 h-11 px-3 rounded-control cursor-pointer transition-colors border ${isSelected ? 'bg-primary/12 border-primary/30' : 'border-border hover:bg-muted'}`}>
                                         <input
                                             type="checkbox"
                                             checked={isSelected}
                                             onChange={() => toggleAccountSelection(account)}
-                                            className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                            className="w-4 h-4 rounded border-border text-primary focus:ring-ring"
                                         />
-                                        <span className={`text-sm font-medium ${isSelected ? 'text-indigo-700 dark:text-indigo-400' : 'text-foreground'}`}>{account}</span>
+                                        <span className={`text-sm font-medium truncate ${isSelected ? 'text-primary-ink' : 'text-foreground'}`}>{account}</span>
                                     </label>
                                 );
                             })}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-2 font-medium bg-black/5 dark:bg-white/5 inline-block px-3 py-1 rounded-full">
+                        <p className="text-xs text-muted-foreground mt-2 font-medium bg-muted inline-block px-3 py-1 rounded-full">
                             {selectedAccounts.length} account{selectedAccounts.length !== 1 && 's'} selected
                         </p>
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t border-black/5 dark:border-white/5">
+                    <div className="flex justify-end gap-3 pt-4 border-t border-border">
                         <button
                             onClick={handleCancel}
-                            className="px-6 py-2.5 border border-border text-foreground rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-sm font-medium"
+                            className="h-9 px-3.5 rounded-control border border-border bg-background text-foreground hover:bg-muted transition-colors text-sm font-medium cursor-pointer"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handleCreateGroup}
                             disabled={!newGroupName || selectedAccounts.length === 0}
-                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            className="h-9 px-3.5 rounded-control bg-primary text-primary-foreground hover:bg-primary-hover text-sm font-medium disabled:opacity-50 disabled:pointer-events-none transition-colors cursor-pointer"
                         >
                             {editingGroupName ? 'Update Group' : 'Save Group'}
                         </button>
@@ -358,7 +357,7 @@ export default function AccountGroupManager({ availableAccounts, settings, onUpd
 
             <div className="grid gap-4">
                 {groupList.length === 0 ? (
-                    <div className="text-center p-12 text-muted-foreground bg-black/5 dark:bg-white/5 border border-dashed border-black/10 dark:border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3">
+                    <div className="text-center p-12 text-sm text-muted-foreground border border-dashed border-border rounded-inset flex flex-col items-center justify-center gap-3">
                         <Users className="w-8 h-8 opacity-50" />
                         <p>No groups defined yet.</p>
                     </div>

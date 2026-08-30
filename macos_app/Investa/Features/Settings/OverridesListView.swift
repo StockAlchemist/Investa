@@ -163,12 +163,12 @@ struct OverridesListView: View {
                     HStack(spacing: 2) {
                         Text("\(currSymbol)\(Fmt.number(p, fractionDigits: 4))")
                             .appFont(.subheadline.monospacedDigit().weight(.bold))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.up)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color.green.opacity(0.12), in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.green.opacity(0.3), lineWidth: 1))
+                    .background(Color.up.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.up.opacity(0.3), lineWidth: 1))
                 } else {
                     Text("Auto Price")
                         .appFont(.caption.weight(.medium))
@@ -216,22 +216,15 @@ struct OverridesListView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card()
     }
 
     private func metadataTags(_ meta: [String: String]) -> [(title: String, icon: String, color: Color)] {
         var tags: [(title: String, icon: String, color: Color)] = []
-        if let val = meta["asset_type"], !val.isEmpty { tags.append((val, "cube.fill", .blue)) }
-        if let val = meta["sector"], !val.isEmpty { tags.append((val, "chart.pie.fill", .indigo)) }
-        if let val = meta["geography"], !val.isEmpty { tags.append((val, "globe.americas.fill", .orange)) }
-        if let val = meta["industry"], !val.isEmpty { tags.append((val, "building.2.fill", .purple)) }
+        if let val = meta["asset_type"], !val.isEmpty { tags.append((val, "cube.fill", .secondary)) }
+        if let val = meta["sector"], !val.isEmpty { tags.append((val, "chart.pie.fill", .secondary)) }
+        if let val = meta["geography"], !val.isEmpty { tags.append((val, "globe.americas.fill", .secondary)) }
+        if let val = meta["industry"], !val.isEmpty { tags.append((val, "building.2.fill", .secondary)) }
         return tags
     }
 

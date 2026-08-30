@@ -78,11 +78,8 @@ struct AccountGroupManagerView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Image(systemName: "person.2.fill")
-                        .foregroundStyle(Color.indigo)
-                        .appFont(.title3)
-                    Text("Custom Account Groups")
-                        .appFont(.title3.bold())
+                    SectionLabel(title: "Account Groups")
+                    Spacer(minLength: 0)
                 }
                 Text("Create custom groups of accounts for quick filtering across all dashboard charts and views.")
                     .appFont(.caption)
@@ -104,7 +101,7 @@ struct AccountGroupManagerView: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(Color.brand)
             }
         }
     }
@@ -116,11 +113,7 @@ struct AccountGroupManagerView: View {
             // Form Header
             HStack {
                 HStack(spacing: 8) {
-                    Image(systemName: editingGroupName != nil ? "pencil" : "plus.circle.fill")
-                        .foregroundStyle(Color.indigo)
-                        .appFont(.headline)
-                    Text(editingGroupName != nil ? "Edit Group" : "New Account Group")
-                        .appFont(.headline.bold())
+                    SectionLabel(title: editingGroupName != nil ? "Edit Group" : "New Account Group")
                 }
 
                 Spacer()
@@ -172,11 +165,11 @@ struct AccountGroupManagerView: View {
                                 HStack(spacing: 8) {
                                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                                         .appFont(.system(size: 15, weight: .medium))
-                                        .foregroundStyle(isSelected ? Color.indigo : Color.secondary)
+                                        .foregroundStyle(isSelected ? Color.brand : Color.secondary)
 
                                     Text(acc)
                                         .appFont(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                                        .foregroundStyle(isSelected ? Color.indigo : Color.primary)
+                                        .foregroundStyle(isSelected ? Color.brand : Color.primary)
                                         .lineLimit(1)
 
                                     Spacer(minLength: 0)
@@ -185,25 +178,18 @@ struct AccountGroupManagerView: View {
                                 .padding(.vertical, 8)
                                 .background(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(isSelected ? Color.indigo.opacity(0.12) : Color.primary.opacity(0.04))
+                                        .fill(isSelected ? Color.brand.opacity(0.12) : Color.primary.opacity(0.04))
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .strokeBorder(isSelected ? Color.indigo.opacity(0.4) : Color.primary.opacity(0.08), lineWidth: 1)
+                                        .strokeBorder(isSelected ? Color.brand.opacity(0.4) : Color.primary.opacity(0.08), lineWidth: 1)
                                 )
                             }
                             .buttonStyle(.plain)
                         }
                     }
                     .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.primary.opacity(0.02))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                    )
+                    .card(.inset)
 
                     HStack {
                         Text("\(selectedAccounts.count) account\(selectedAccounts.count == 1 ? "" : "s") selected")
@@ -232,20 +218,12 @@ struct AccountGroupManagerView: View {
                     saveGroup()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(Color.brand)
                 .disabled(groupNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedAccounts.isEmpty)
             }
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.indigo.opacity(0.3), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
+        .card()
     }
 
     // MARK: - Group List
@@ -350,9 +328,9 @@ struct AccountGroupManagerView: View {
                 } label: {
                     Image(systemName: "pencil")
                         .appFont(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.indigo)
+                        .foregroundStyle(Color.brand)
                         .padding(8)
-                        .background(Color.indigo.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(Color.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help("Edit Group")
@@ -373,14 +351,7 @@ struct AccountGroupManagerView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card(.inset)
     }
 
     // MARK: - Actions & State Handlers

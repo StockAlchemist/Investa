@@ -30,12 +30,8 @@ struct ServerSettingsView: View {
             // Server Base URL Card
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 8) {
-                        Image(systemName: "network")
-                            .foregroundStyle(Color.blue)
-                            .appFont(.title3)
-                        Text("Backend Base URL")
-                            .appFont(.headline.bold())
-                        Spacer()
+                        SectionLabel(title: "Backend Base URL")
+                        Spacer(minLength: 0)
                     }
 
                     Text("The address of your FastAPI backend instance. Change this if running against a remote LAN host or Tailscale node.")
@@ -71,24 +67,13 @@ struct ServerSettingsView: View {
                     }
                 }
                 .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.primary.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                )
+                .card()
 
                 // Server Cache Management Card
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 8) {
-                        Image(systemName: "internaldrive.fill")
-                            .foregroundStyle(Color.orange)
-                            .appFont(.title3)
-                        Text("Market Data Cache")
-                            .appFont(.headline.bold())
-                        Spacer()
+                        SectionLabel(title: "Market Data Cache")
+                        Spacer(minLength: 0)
                     }
 
                     Text("Purge all locally cached ticker quotes, exchange rate tables, and financial statements to force fresh fetches.")
@@ -110,18 +95,11 @@ struct ServerSettingsView: View {
                         .fontWeight(.semibold)
                     }
                     .buttonStyle(.bordered)
-                    .tint(.orange)
+                    .tint(Color.brand)
                     .disabled(isClearingCache)
                 }
                 .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.primary.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                )
+                .card()
             }
         }
 

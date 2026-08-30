@@ -125,18 +125,14 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
         });
     }, [availableAccounts, accountCashBalances, settings]);
 
-    const inputClassName = "w-full rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-sm text-foreground shadow-sm focus:border-green-500 focus:ring-green-500/50 px-4 py-2 text-sm outline-none focus:ring-2 transition-all hover:border-black/20 dark:hover:border-white/20";
-    const primaryButtonClassName = "px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white rounded-xl font-medium shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2";
+    const inputClassName = "w-full h-9 rounded-control border border-input bg-background text-foreground px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors";
+    const primaryButtonClassName = "h-8 px-3 rounded-control bg-primary text-primary-foreground hover:bg-primary-hover text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 disabled:pointer-events-none transition-colors inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer";
 
     return (
-        <div className="max-w-5xl space-y-8">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-                <div>
-                    <h3 className="text-xl font-bold text-foreground">Cash Yield Management</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Configure annual interest rates and interest-free thresholds for your cash balances to estimate future yield.
-                    </p>
-                </div>
+        <div className="card-standard p-6 space-y-5">
+            <div className="flex items-center gap-2.5">
+                <h3 className="section-label">Cash Yield Assumptions</h3>
+                <span className="text-xs text-muted-foreground ml-auto hidden sm:block">Applied to idle cash above the exempt threshold</span>
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
@@ -146,7 +142,7 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                         <>Saving...</>
                     ) : (
                         <>
-                            <Save className="w-5 h-5" />
+                            <Save className="w-3.5 h-3.5" />
                             Save Changes
                         </>
                     )}
@@ -163,9 +159,9 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                 </div>
             )}
 
-            <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
+            <div className="card-inset overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
+                    <table className="min-w-full divide-y divide-border">
                         <thead className="bg-black/5 dark:bg-white/5">
                             <tr>
                                 <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account</th>
@@ -199,12 +195,12 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                     const thresholdDisplay = Math.round(thresholdUSD * fxRate);
 
                                     return (
-                                        <tr key={account} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                                        <tr key={account} className="hover:bg-muted/50 transition-colors group">
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-foreground">{account}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-muted-foreground font-medium">
                                                 {accountCash.toLocaleString(undefined, { style: 'currency', currency: displayCurrency })}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-green-600 dark:text-green-400 font-bold">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-up font-bold">
                                                 {(() => {
                                                     const rate = (localRates[account] || 0) / 100;
                                                     const interest = Math.max(0, accountCash - thresholdDisplay) * rate;

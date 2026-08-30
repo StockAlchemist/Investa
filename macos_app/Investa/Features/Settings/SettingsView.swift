@@ -226,32 +226,23 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case accounts = "Accounts"
     case symbols = "Symbols"
     case overrides = "Overrides"
-    case advanced = "Advanced Settings"
+    case advanced = "Advanced"
     case account = "Profile & Security"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .accounts: return "person.2.fill"
+        case .accounts: return "person.2"
         case .symbols: return "arrow.left.arrow.right"
-        case .overrides: return "pencil.and.ruler.fill"
-        case .advanced: return "gearshape.2.fill"
-        case .account: return "person.crop.circle.fill"
+        case .overrides: return "slider.horizontal.3"
+        case .advanced: return "gearshape"
+        case .account: return "person.crop.circle"
         }
     }
 
-    var color: Color {
-        switch self {
-        case .accounts: return .indigo
-        case .symbols: return .blue
-        case .overrides: return .green
-        case .advanced: return .purple
-        case .account: return .cyan
-        }
-    }
-
-    var description: String {
+    /// Tooltip on the rail. The tab no longer draws a banner that repeats it.
+    var help: String {
         switch self {
         case .accounts: return "Account groups, per-account currency, cash automation, and yield assumptions."
         case .symbols: return "Map portfolio symbols to Yahoo Finance tickers and manage excluded symbols."
@@ -262,42 +253,55 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-struct SettingsSidebarItem: View {
+/// One row of the category rail.
+///
+/// Deliberately the sidebar's own `NavItem` anatomy — 36pt tall, 8pt radius,
+/// `brand/15` fill and a 3pt left rail when active — so the rail reads as part
+/// of the app rather than a second, differently-styled navigation.
+struct SettingsCategoryRow: View {
     let tab: SettingsTab
     let isActive: Bool
+    var count: Int? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                SettingsIconBadge(icon: tab.icon, color: tab.color, size: 26, iconSize: 13)
+            HStack(spacing: 10) {
+                SettingsIcon(icon: tab.icon, size: 18, isActive: isActive)
 
                 Text(tab.rawValue)
                     .appFont(.system(size: 14, weight: isActive ? .semibold : .medium))
-                    .foregroundStyle(isActive ? .primary : .secondary)
+                    .foregroundStyle(isActive ? Color.brandInk : Color.secondary)
 
-                Spacer()
+                Spacer(minLength: 6)
 
-                if isActive {
-                    Circle()
-                        .fill(tab.color)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: tab.color.opacity(0.8), radius: 4, x: 0, y: 0)
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .appFont(.system(size: 11, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(isActive ? Color.brandInk.opacity(0.85) : Color.secondary)
                 }
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .frame(height: Theme.controlDefault)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isActive ? Color.primary.opacity(0.06) : Color.clear)
+                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                    .fill(isActive ? Color.brand.opacity(0.15) : Color.clear)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isActive ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
-            )
+            .overlay(alignment: .leading) {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(Color.brand)
+                        .frame(width: 3)
+                        .padding(.vertical, 6)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(tab.help)
     }
 }
 
@@ -327,10 +331,10 @@ struct SettingsView: View {
                     SettingsHubIOS(viewModel: viewModel)
                 }
                 #else
-                desktopSplitView
+                regularLayout
                 #endif
             } else {
-                desktopSplitView
+                regularLayout
             }
         }
         .task {
@@ -338,118 +342,86 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Desktop & iPad Split View
+    // MARK: - macOS & iPad
 
-    private var desktopSplitView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    if viewModel.isLoading {
-                        ProgressView().controlSize(.small).padding(.leading, 8)
-                    }
-                    Spacer()
-                    if let s = viewModel.status {
-                        Text(s)
-                            .appFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+    /// The same shape as every other tab: title, divider, then one scrolling
+    /// column of cards — with the category rail beside it.
+    private var regularLayout: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ScrollView {
+                HStack(alignment: .top, spacing: 24) {
+                    rail
+                    content
                 }
-                Text("Manage application preferences, market data providers, and portfolio configurations.")
-                    .appFont(.subheadline)
-                    .foregroundStyle(.secondary)
+                .padding(20)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-
-            HStack(alignment: .top, spacing: 24) {
-                // Sidebar Tabs
-                VStack(spacing: 6) {
-                    ForEach(SettingsTab.allCases) { t in
-                        SettingsSidebarItem(tab: t, isActive: tab == t) {
-                            tab = t
-                        }
-                    }
-                    Spacer()
-                }
-                .frame(width: 220)
-
-                // Tab Content Card
-                desktopContentArea
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
         }
+        .macMinSize(width: 820, height: 560)
     }
 
-    private var desktopContentArea: some View {
-        VStack(spacing: 0) {
-            // Active Tab Header Banner
-            HStack(alignment: .center, spacing: 16) {
-                SettingsIconBadge(icon: tab.icon, color: tab.color, size: 44, iconSize: 22)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(tab.rawValue)
-                        .appFont(.title3.bold())
-                    Text(tab.description)
-                        .appFont(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .padding(20)
-            .background(Color.primary.opacity(0.02))
-            .overlay(
-                Rectangle()
-                    .frame(height: 1)
-                    .foregroundColor(Color.primary.opacity(0.06)),
-                alignment: .bottom
-            )
-
-            // Scrollable Content
-            ScrollView {
-                Group {
-                    switch tab {
-                    case .accounts:
-                        AccountsSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings,
-                            accounts: appState.allAccounts,
-                            appState: appState
-                        )
-                    case .symbols:
-                        SymbolsSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings
-                        )
-                    case .overrides:
-                        OverridesSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings
-                        )
-                    case .advanced:
-                        AdvancedSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings
-                        )
-                    case .account:
-                        AccountSecuritySettings(
-                            vm: viewModel
-                        )
-                        .environmentObject(auth)
-                    }
-                }
-                .padding(24)
+    private var header: some View {
+        HStack(spacing: 10) {
+            Text("Settings").appFont(.title2.bold())
+            if viewModel.isLoading { ProgressView().controlSize(.small) }
+            Spacer(minLength: 8)
+            if let status = viewModel.status {
+                Text(status)
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.primary.opacity(0.02))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
+    private var rail: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            SectionLabel(title: "Categories")
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+
+            ForEach(SettingsTab.allCases) { t in
+                SettingsCategoryRow(tab: t, isActive: tab == t, count: count(for: t)) {
+                    tab = t
+                }
+            }
+        }
+        .frame(width: 216, alignment: .leading)
+    }
+
+    @ViewBuilder private var content: some View {
+        VStack(spacing: 20) {
+            switch tab {
+            case .accounts:
+                AccountsSettings(
+                    vm: viewModel,
+                    settings: viewModel.settings,
+                    accounts: appState.allAccounts,
+                    appState: appState
+                )
+            case .symbols:
+                SymbolsSettings(vm: viewModel, settings: viewModel.settings)
+            case .overrides:
+                OverridesSettings(vm: viewModel, settings: viewModel.settings)
+            case .advanced:
+                AdvancedSettings(vm: viewModel, settings: viewModel.settings)
+            case .account:
+                AccountSecuritySettings(vm: viewModel).environmentObject(auth)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// Counts ride the rail so a category says how much it holds before it opens.
+    private func count(for tab: SettingsTab) -> Int? {
+        switch tab {
+        case .accounts: return viewModel.settings?.accountGroups?.count
+        case .symbols: return viewModel.settings?.userSymbolMap?.count
+        case .overrides: return viewModel.settings?.manualOverrides?.count
+        default: return nil
+        }
     }
 }

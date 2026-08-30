@@ -52,12 +52,8 @@ struct SymbolMappingsView: View {
     private var addMappingCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill")
-                    .foregroundStyle(Color.blue)
-                    .appFont(.title3)
-                Text("Map a Symbol")
-                    .appFont(.headline.bold())
-                Spacer()
+                SectionLabel(title: "Map a Symbol")
+                Spacer(minLength: 0)
             }
 
             Text("Resolve non-standard or broker-specific tickers to a real Yahoo Finance symbol for live prices.")
@@ -114,29 +110,19 @@ struct SymbolMappingsView: View {
             }
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card()
     }
 
     private var activeMappingsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Active Mappings")
-                    .appFont(.headline.bold())
-
-                Spacer()
+                SectionLabel(title: "Active Mappings")
 
                 if !sortedMap.isEmpty {
-                    Text("\(sortedMap.count) total")
-                        .appFont(.caption)
-                        .foregroundStyle(.secondary)
+                    SettingsCountBadge(value: sortedMap.count)
                 }
+
+                Spacer(minLength: 0)
             }
 
             if !sortedMap.isEmpty {
@@ -200,7 +186,7 @@ struct SymbolMappingsView: View {
 
             Image(systemName: "arrow.right")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Color.blue)
+                .foregroundStyle(Color.brand)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text("YAHOO FINANCE")
@@ -208,7 +194,7 @@ struct SymbolMappingsView: View {
                     .foregroundStyle(.secondary)
                 Text(to)
                     .appFont(.headline.bold().monospacedDigit())
-                    .foregroundStyle(Color.blue)
+                    .foregroundStyle(Color.brand)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
 
@@ -224,14 +210,7 @@ struct SymbolMappingsView: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-        )
+        .card(.inset)
     }
 
     private func addMapping() {

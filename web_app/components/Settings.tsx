@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { SettingsProps, Tab } from './settings/types';
 import { TABS } from './settings/constants';
 import { AccountsTab } from './settings/tabs/AccountsTab';
@@ -12,6 +13,16 @@ import { ProfileSecurityTab } from './settings/tabs/ProfileSecurityTab';
 
 export type { SettingsProps, Tab };
 
+/**
+ * Settings is a tab like any other: a column of standard cards under the page
+ * header, with a category rail built from the sidebar's own NavItem anatomy.
+ *
+ * It used to be the app's one visual exception — five per-category colours, a
+ * rounded-3xl translucent panel wrapping the whole tab, and a banner that
+ * repeated the tab's name under a 44px coloured icon. All three are gone; the
+ * cards, the section labels and the indigo accent are the ones every other tab
+ * already draws (see globals.css `.card-standard` and Theme.swift `CardStyle`).
+ */
 export default function Settings({
     settings,
     holdings,
@@ -21,101 +32,104 @@ export default function Settings({
     onBenchmarksChange,
 }: SettingsProps) {
     const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-    const activeTabObj = TABS.find(t => t.id === activeTab);
+    const activeChipRef = useRef<HTMLButtonElement>(null);
+
+    // Below lg the rail is a horizontal scroller. Keep the selected category in
+    // view — Settings can open on a tab the user did not pick (the user menu
+    // opens Profile & Security), which would otherwise start off-screen with
+    // nothing on screen saying which category is showing.
+    useEffect(() => {
+        activeChipRef.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }, [activeTab]);
+
+    // Counts ride the rail so a category says how much it holds before it opens.
+    const counts: Partial<Record<Tab, number>> = {
+        accounts: settings ? Object.keys(settings.account_groups ?? {}).length : undefined,
+        symbols: settings ? Object.keys(settings.user_symbol_map ?? {}).length : undefined,
+        overrides: settings ? Object.keys(settings.manual_overrides ?? {}).length : undefined,
+    };
 
     return (
         <div className="pb-20 max-w-7xl mx-auto px-4 md:px-8">
-            <div className="mb-8 space-y-1">
-                {/* Below md the PageHeader title is hidden, so the screen names itself here. */}
-                <h2 className="md:hidden text-2xl font-bold tracking-tight text-foreground">Settings</h2>
-                <p className="text-muted-foreground text-sm">
-                    Manage application settings, preferences, and account configurations.
-                </p>
-            </div>
+            {/* Below md the PageHeader title is hidden, so the screen names itself here. */}
+            <h2 className="md:hidden text-2xl font-bold tracking-tight text-foreground mb-5">Settings</h2>
 
-            <div className="flex flex-col lg:flex-row gap-8">
-                {/* Sidebar Navigation */}
-                <div className="w-full lg:w-72 shrink-0 space-y-2">
-                    {TABS.map((tab) => {
-                        const Icon = tab.icon;
-                        const isActive = activeTab === tab.id;
-                        return (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl font-medium transition-all duration-200 text-sm cursor-pointer ${
-                                    isActive
-                                        ? `bg-white/80 dark:bg-white/10 text-foreground shadow-md backdrop-blur-md border border-white/40 dark:border-white/5`
-                                        : `text-muted-foreground hover:bg-white/40 dark:hover:bg-white/5 hover:text-foreground border border-transparent`
-                                }`}
-                            >
-                                <Icon className={`w-5 h-5 ${isActive ? tab.color : 'opacity-70'}`} />
-                                {tab.label}
-                                {isActive && (
-                                    <div className={`ml-auto w-1.5 h-1.5 rounded-full ${tab.accentDot}`} />
-                                )}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {/* Main Content Area */}
-                <div className="flex-1 bg-white/40 dark:bg-zinc-950/40 backdrop-blur-2xl shadow-xl rounded-3xl border border-white/60 dark:border-white/10 overflow-hidden relative min-h-[600px]">
-                    <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-50" />
-
-                    {/* Header for active tab */}
-                    <div className="px-8 py-6 border-b border-black/5 dark:border-white/5 flex items-start gap-4 bg-white/20 dark:bg-black/20">
-                        {activeTabObj && (
-                            <>
-                                <div className={`p-2.5 rounded-xl ${activeTabObj.badgeBg} shadow-sm shrink-0 flex items-center justify-center`}>
-                                    <activeTabObj.icon className="w-6 h-6" />
-                                </div>
-                                <div className="min-w-0">
-                                    <h3 className="text-xl font-bold text-foreground leading-tight">{activeTabObj.label}</h3>
-                                    <p className="text-sm text-muted-foreground mt-1">{activeTabObj.description}</p>
-                                </div>
-                            </>
-                        )}
+            <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
+                {/* Category rail — vertical at lg+, one horizontal row of chips below it. */}
+                <nav className="w-full lg:w-[216px] lg:shrink-0" aria-label="Settings categories">
+                    <p className="hidden lg:block section-label px-3 mb-2">Categories</p>
+                    <div className="flex lg:flex-col gap-2 lg:gap-0.5 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {TABS.map((tab) => {
+                            const Icon = tab.icon;
+                            const isActive = activeTab === tab.id;
+                            const count = counts[tab.id];
+                            return (
+                                <button
+                                    key={tab.id}
+                                    ref={isActive ? activeChipRef : undefined}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    title={tab.description}
+                                    aria-current={isActive ? 'page' : undefined}
+                                    className={cn(
+                                        'group/item relative flex items-center gap-2.5 h-9 shrink-0 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-all duration-150 cursor-pointer border lg:border-0 lg:w-full',
+                                        isActive
+                                            ? 'bg-primary/15 text-primary-ink font-semibold border-primary/30'
+                                            : 'text-muted-foreground border-border lg:border-transparent hover:bg-muted hover:text-foreground',
+                                    )}
+                                >
+                                    {isActive && (
+                                        <span className="hidden lg:block absolute left-0 inset-y-[6px] w-[3px] bg-primary rounded-r-full" />
+                                    )}
+                                    <Icon className="w-4 h-4 shrink-0" />
+                                    <span className="truncate">{tab.label}</span>
+                                    {count !== undefined && count > 0 && (
+                                        <span className="lg:ml-auto text-[11px] font-bold tabular-nums opacity-75">
+                                            {count}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
+                </nav>
 
-                    <div className="p-8">
-                        {!settings && (
-                            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground animate-in fade-in zoom-in duration-500">
-                                <Loader2 className="w-10 h-10 animate-spin mb-4 text-cyan-500" />
-                                <p className="font-medium">Loading settings...</p>
-                            </div>
+                {/* Cards sit on the page ground — no panel, no glass, no banner. */}
+                <div className="flex-1 min-w-0">
+                    {!settings && (
+                        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground animate-in fade-in duration-300">
+                            <Loader2 className="w-8 h-8 animate-spin mb-3 text-primary" />
+                            <p className="text-sm font-medium">Loading settings…</p>
+                        </div>
+                    )}
+
+                    <div className="animate-in fade-in duration-300 fill-mode-both">
+                        {activeTab === 'accounts' && (
+                            <AccountsTab
+                                settings={settings}
+                                availableAccounts={availableAccounts}
+                                holdings={holdings}
+                            />
                         )}
 
-                        {/* Content Switching with subtle animation */}
-                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-both">
-                            {activeTab === 'accounts' && (
-                                <AccountsTab
-                                    settings={settings}
-                                    availableAccounts={availableAccounts}
-                                    holdings={holdings}
-                                />
-                            )}
+                        {activeTab === 'symbols' && (
+                            <SymbolsTab settings={settings} />
+                        )}
 
-                            {activeTab === 'symbols' && (
-                                <SymbolsTab settings={settings} />
-                            )}
+                        {activeTab === 'overrides' && (
+                            <OverridesTab settings={settings} holdings={holdings} />
+                        )}
 
-                            {activeTab === 'overrides' && (
-                                <OverridesTab settings={settings} holdings={holdings} />
-                            )}
+                        {activeTab === 'advanced' && (
+                            <AdvancedTab
+                                settings={settings}
+                                benchmarks={benchmarks}
+                                onBenchmarksChange={onBenchmarksChange}
+                            />
+                        )}
 
-                            {activeTab === 'advanced' && (
-                                <AdvancedTab
-                                    settings={settings}
-                                    benchmarks={benchmarks}
-                                    onBenchmarksChange={onBenchmarksChange}
-                                />
-                            )}
-
-                            {activeTab === 'account' && (
-                                <ProfileSecurityTab />
-                            )}
-                        </div>
+                        {activeTab === 'account' && (
+                            <ProfileSecurityTab />
+                        )}
                     </div>
                 </div>
             </div>

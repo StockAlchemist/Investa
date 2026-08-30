@@ -44,9 +44,8 @@ struct BenchmarksSettingsView: View {
             // Presets Section
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Popular Index Benchmarks")
-                        .appFont(.headline.bold())
-                    Spacer()
+                    SectionLabel(title: "Popular Index Benchmarks")
+                    Spacer(minLength: 0)
                 }
 
                 #if os(macOS)
@@ -63,7 +62,7 @@ struct BenchmarksSettingsView: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(on ? Color.purple : .secondary.opacity(0.6))
+                                    .foregroundStyle(on ? Color.brand : .secondary.opacity(0.6))
                                     .font(.system(size: 16))
 
                                 Text(b)
@@ -74,11 +73,11 @@ struct BenchmarksSettingsView: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
-                            .background(on ? Color.purple.opacity(0.12) : Color.primary.opacity(0.04))
+                            .background(on ? Color.brand.opacity(0.12) : Color.primary.opacity(0.04))
                             .cornerRadius(10)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .stroke(on ? Color.purple.opacity(0.35) : Color.clear, lineWidth: 1)
+                                    .stroke(on ? Color.brand.opacity(0.35) : Color.clear, lineWidth: 1)
                             )
                         }
                         .buttonStyle(.plain)
@@ -86,21 +85,13 @@ struct BenchmarksSettingsView: View {
                 }
             }
             .padding(18)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.primary.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+            .card()
 
                 // Custom Tickers Section
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("Custom Benchmark Tickers")
-                            .appFont(.headline.bold())
-                        Spacer()
+                        SectionLabel(title: "Custom Benchmark Tickers")
+                        Spacer(minLength: 0)
                     }
 
                     HStack(spacing: 10) {
@@ -119,7 +110,7 @@ struct BenchmarksSettingsView: View {
                             .fontWeight(.semibold)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.purple)
+                        .tint(Color.brand)
                         .disabled(customTicker.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
 
@@ -130,21 +121,14 @@ struct BenchmarksSettingsView: View {
                             .foregroundStyle(.secondary)
                             .padding(.top, 4)
                     } else {
-                        FlowChipsRemovable(items: customList, color: .purple) { sym in
+                        FlowChipsRemovable(items: customList, color: .brand) { sym in
                             toggleBenchmark(sym)
                         }
                         .padding(.top, 4)
                     }
                 }
                 .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.primary.opacity(0.03))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                )
+                .card()
         }
     }
 

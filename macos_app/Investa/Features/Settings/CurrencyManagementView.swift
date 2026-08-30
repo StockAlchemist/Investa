@@ -33,11 +33,8 @@ struct CurrencyManagementView: View {
             // Add Currency Card
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
-                    Image(systemName: "dollarsign.circle.fill")
-                        .foregroundStyle(Color.orange)
-                        .appFont(.title3)
-                    Text("Add Manual Currency")
-                        .appFont(.headline.bold())
+                    SectionLabel(title: "Add Manual Currency")
+                    Spacer(minLength: 0)
                 }
 
                 Text("Define additional currencies available for manual cash and asset accounts (e.g. SGD, EUR, JPY, GBP).")
@@ -55,29 +52,19 @@ struct CurrencyManagementView: View {
                         addCurrency()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.orange)
+                    .tint(Color.brand)
                     .disabled(newCurrency.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .padding(18)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.primary.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+            .card()
 
             // Active Currencies Section
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Available Currencies")
-                        .appFont(.headline.bold())
-                    Spacer()
-                    Text("\(currencies.count) defined")
-                        .appFont(.caption)
-                        .foregroundStyle(.secondary)
+                    SectionLabel(title: "Available Currencies")
+                    SettingsCountBadge(value: currencies.count)
+                    Spacer(minLength: 0)
                 }
 
                 if currencies.isEmpty {
@@ -86,21 +73,14 @@ struct CurrencyManagementView: View {
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 8)
                 } else {
-                    FlowChipsRemovable(items: currencies, color: .orange) { curr in
+                    FlowChipsRemovable(items: currencies, color: .brand) { curr in
                         removeCurrency(curr)
                     }
                     .padding(.top, 4)
                 }
             }
             .padding(18)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.primary.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+            .card()
         }
     }
 

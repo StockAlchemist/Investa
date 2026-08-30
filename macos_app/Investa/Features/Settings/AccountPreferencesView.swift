@@ -84,7 +84,7 @@ struct AccountPreferencesView: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.purple)
+                .tint(Color.brand)
                 .disabled(isSaving)
                 .padding(.top, 8)
             }
@@ -106,7 +106,7 @@ struct AccountPreferencesView: View {
             HStack {
                 HStack(spacing: 8) {
                     Image(systemName: isClosed ? "lock.fill" : "creditcard.fill")
-                        .foregroundStyle(isClosed ? .secondary : Color.purple)
+                        .foregroundStyle(isClosed ? .secondary : Color.brand)
                         .appFont(.body)
 
                     Text(acc)
@@ -127,10 +127,10 @@ struct AccountPreferencesView: View {
                 } else {
                     Text("ACTIVE")
                         .appFont(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.up)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.green.opacity(0.12), in: Capsule())
+                        .background(Color.up.opacity(0.12), in: Capsule())
                 }
             }
 
@@ -228,14 +228,7 @@ struct AccountPreferencesView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(isClosed ? 0.015 : 0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card(.inset)
         .opacity(isClosed ? 0.8 : 1.0)
     }
 

@@ -1,116 +1,145 @@
 import SwiftUI
 
-// MARK: - iOS HIG Settings Row Icon Badge
+// MARK: - Category glyph
 
-/// Colored rounded rectangle icon tile matching Apple iOS Settings app design.
-struct SettingsIconBadge: View {
+/// One monochrome line glyph for a Settings category or row.
+///
+/// This replaced a filled, gradient-tinted tile in one of five colours
+/// (indigo / blue / green / purple / cyan). A category is not a colour —
+/// `Theme.dataPalette` is reserved for data, and chrome carries one accent, so
+/// the glyph is secondary until its row is active, then it is `Color.brand`.
+struct SettingsIcon: View {
     let icon: String
-    let color: Color
-    var size: CGFloat = 30
-    var iconSize: CGFloat = 16
+    var size: CGFloat = 22
+    var isActive: Bool = false
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(color.gradient)
-            Image(systemName: icon)
-                .font(.system(size: iconSize, weight: .semibold))
-                .foregroundStyle(.white)
-        }
-        .frame(width: size, height: size)
-        .shadow(color: color.opacity(0.3), radius: 3, x: 0, y: 1.5)
+        Image(systemName: icon)
+            .appFont(.system(size: size * 0.78, weight: .medium))
+            .foregroundStyle(isActive ? Color.brand : Color.secondary)
+            .frame(width: size, height: size)
     }
 }
 
-// MARK: - Settings Navigation Link Row (iOS)
+// MARK: - Count badge
 
-/// Reusable navigation row for the iOS Settings Hub with icon badge, title, subtitle, and optional count badge.
+/// Small indigo count pill for a card head or a row — mirrors the web
+/// `countBadgeClassName`.
+struct SettingsCountBadge: View {
+    let value: Int
+
+    var body: some View {
+        Text("\(value)")
+            .appFont(.system(size: 11, weight: .bold))
+            .monospacedDigit()
+            .foregroundStyle(Color.brandInk)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(Color.brand.opacity(0.14), in: Capsule())
+    }
+}
+
+// MARK: - Grouped rows (iPhone hub)
+
+/// A card holding a stack of rows separated by hairlines — the phone's
+/// equivalent of an inset-grouped `List` section, drawn in the app's own card
+/// chrome instead of the system's grey grouped background.
+struct SettingsRowGroup<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+}
+
+/// Hairline between two rows in a `SettingsRowGroup`, inset past the glyph.
+struct SettingsRowDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.cardBorder.opacity(0.6))
+            .frame(height: 1)
+            .padding(.leading, 48)
+    }
+}
+
+/// A row inside a `SettingsRowGroup` that pushes a detail screen.
 struct SettingsNavRow<Destination: View>: View {
     let icon: String
-    let iconColor: Color
     let title: String
     var subtitle: String? = nil
-    var badge: String? = nil
+    var count: Int? = nil
     @ViewBuilder let destination: Destination
 
     var body: some View {
-        NavigationLink(destination: destination) {
+        NavigationLink {
+            destination
+        } label: {
             HStack(spacing: 12) {
-                SettingsIconBadge(icon: icon, color: iconColor)
+                SettingsIcon(icon: icon)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .appFont(.body)
                         .foregroundStyle(.primary)
 
-                    if let subtitle = subtitle, !subtitle.isEmpty {
+                    if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
                             .appFont(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                if let badge = badge, !badge.isEmpty {
-                    Text(badge)
-                        .appFont(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
-                }
+                if let count, count > 0 { SettingsCountBadge(value: count) }
+
+                Image(systemName: "chevron.right")
+                    .appFont(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.tertiary)
             }
-            .padding(.vertical, 2)
+            // One line, in full, at every Dynamic Type size — applied to the
+            // stack so a value added later cannot opt out.
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 14)
+            .frame(minHeight: Theme.controlTouch, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 }
 
-// MARK: - Reusable Card for Desktop / iPad
-
-struct SettingsCard<Content: View>: View {
+/// A row inside a `SettingsRowGroup` that performs an action instead of
+/// pushing — sign out, and anything else terminal.
+struct SettingsActionRow: View {
+    let icon: String
     let title: String
-    var subtitle: String? = nil
-    var icon: String? = nil
-    var iconColor: Color? = nil
-    @ViewBuilder var content: Content
+    var tint: Color = .primary
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 10) {
-                if let icon = icon {
-                    SettingsIconBadge(icon: icon, color: iconColor ?? .blue, size: 28, iconSize: 15)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .appFont(.headline.bold())
-
-                    if let subtitle = subtitle {
-                        Text(subtitle)
-                            .appFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Spacer()
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .appFont(.system(size: 17, weight: .medium))
+                    .foregroundStyle(tint)
+                    .frame(width: 22, height: 22)
+                Text(title)
+                    .appFont(.body)
+                    .foregroundStyle(tint)
+                Spacer(minLength: 0)
             }
-
-            content
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 14)
+            .frame(minHeight: Theme.controlTouch, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.02), radius: 8, x: 0, y: 4)
+        .buttonStyle(.plain)
     }
 }
 
@@ -118,7 +147,7 @@ struct SettingsCard<Content: View>: View {
 
 struct RemovableTagChip: View {
     let text: String
-    var color: Color = .blue
+    var color: Color = .brand
     let onRemove: () -> Void
 
     var body: some View {
@@ -126,6 +155,7 @@ struct RemovableTagChip: View {
             Text(text)
                 .appFont(.caption.weight(.semibold))
                 .foregroundStyle(color)
+                .lineLimit(1)
 
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
@@ -143,7 +173,7 @@ struct RemovableTagChip: View {
 
 struct FlowChipsRemovable: View {
     let items: [String]
-    var color: Color = .blue
+    var color: Color = .brand
     let onRemove: (String) -> Void
 
     var body: some View {
@@ -165,9 +195,7 @@ struct SettingsFieldLabel<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .appFont(.caption2.bold())
-                .foregroundStyle(.secondary)
+            SectionLabel(title: label)
             content()
         }
     }
@@ -183,4 +211,3 @@ extension View {
         #endif
     }
 }
-

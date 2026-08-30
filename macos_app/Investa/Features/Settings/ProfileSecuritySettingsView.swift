@@ -64,12 +64,8 @@ struct ProfileSecuritySettingsView: View {
     private var profileCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "person.crop.circle.fill")
-                    .foregroundStyle(Color.cyan)
-                    .appFont(.title3)
-                Text("Profile Information")
-                    .appFont(.headline.bold())
-                Spacer()
+                SectionLabel(title: "Profile Information")
+                Spacer(minLength: 0)
             }
 
             if let user = auth.currentUser {
@@ -109,7 +105,7 @@ struct ProfileSecuritySettingsView: View {
                                 saveAlias()
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint(.cyan)
+                            .tint(Color.brand)
                             .disabled(alias == user.alias || isSavingAlias)
                         }
 
@@ -121,25 +117,14 @@ struct ProfileSecuritySettingsView: View {
             }
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card()
     }
 
     private var securityCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "lock.shield.fill")
-                    .foregroundStyle(Color.orange)
-                    .appFont(.title3)
-                Text("Login Security")
-                    .appFont(.headline.bold())
-                Spacer()
+                SectionLabel(title: "Login Security")
+                Spacer(minLength: 0)
             }
 
             Text("Protect your portfolio data with a strong, updated login password.")
@@ -159,14 +144,7 @@ struct ProfileSecuritySettingsView: View {
             .buttonStyle(.bordered)
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card()
     }
 
     private var sessionAndDangerSection: some View {
