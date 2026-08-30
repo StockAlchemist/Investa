@@ -28,27 +28,32 @@ struct GlobalControlBar<Trailing: View>: View {
 
     private var regularBar: some View {
         HStack(spacing: 12) {
+            // Left cluster, in the web header's order (PageHeader.tsx):
+            // tab name, portfolio KPI, market status + last-updated time.
             sectionTitle
             barDivider
-            accountMenu
-            if TabLayout.hasLayout(section) { layoutMenu }
-            showClosedToggle
-            Spacer()
-            marketStatusBadge
-            lastUpdatedLabel
-            
-            if appState.isRefreshing {
-                ProgressView().controlSize(.small).frame(width: 16, height: 16)
-            } else {
-                Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                    Image(systemName: "arrow.clockwise").appFont(.body)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
+            if appState.headlineMarketValue != nil {
+                headlineKPI
+                barDivider
+            }
+            HStack(spacing: 8) {
+                marketStatusBadge
+                lastUpdatedLabel
             }
 
+            Spacer()
+
+            // Right cluster, likewise: search, then the controls. The web puts
+            // its indices ticker between the two; the native bar leaves it out
+            // (the Markets tab is where indices live here). Refresh has no web
+            // twin — the web polls — so it goes last, with the app chrome.
             StockSearchBar(currency: appState.displayCurrency)
+            barDivider
+            if TabLayout.hasLayout(section) { layoutMenu }
             currencyMenu
+            showClosedToggle
+            accountMenu
+            refreshControl
             trailing
         }
         .padding(.horizontal, 20).padding(.vertical, 8)
@@ -87,6 +92,58 @@ struct GlobalControlBar<Trailing: View>: View {
         Rectangle()
             .fill(Color.secondary.opacity(0.25))
             .frame(width: 1, height: 16)
+    }
+
+    /// Manual refresh (⌘R's twin), or the in-flight spinner while a reload runs.
+    @ViewBuilder private var refreshControl: some View {
+        if appState.isRefreshing {
+            ProgressView().controlSize(.small).frame(width: 16, height: 16)
+        } else {
+            Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
+                Image(systemName: "arrow.clockwise").appFont(.body)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+        }
+    }
+
+    /// Total portfolio value + day-change pill, beside the section title — the
+    /// twin of the web header's mini KPI (PageHeader.tsx). It follows the same
+    /// currency and account selection as the rest of the app, and the web's
+    /// `hidden lg:flex`: shown wherever the section title is, so the crowded
+    /// iPhone bar stays as it was.
+    @ViewBuilder private var headlineKPI: some View {
+        if let value = appState.headlineMarketValue {
+            HStack(spacing: 6) {
+                Text(Fmt.compact(value, code: appState.displayCurrency, forceDecimals: true))
+                    .appFont(.system(size: 15, weight: .bold)).monospacedDigit()
+                    .foregroundStyle(.primary)
+                if let pct = appState.headlineDayChangePct {
+                    let up = pct >= 0
+                    HStack(spacing: 2) {
+                        Image(systemName: up ? "arrow.up.right" : "arrow.down.right")
+                            .appFont(.system(size: 9, weight: .bold))
+                        Text(Fmt.percent(pct, includeSign: true))
+                            .appFont(.system(size: 11, weight: .bold)).monospacedDigit()
+                    }
+                    .foregroundStyle(up ? Color.up : Color.down)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background((up ? Color.up : Color.down).opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder((up ? Color.up : Color.down).opacity(0.25), lineWidth: 1))
+                }
+            }
+            // A truncated figure is a different number, so the pair shrinks
+            // together rather than ellipsising, and keeps its room ahead of the
+            // flexible controls without demanding width (no `fixedSize`).
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .layoutPriority(1)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Portfolio value \(Fmt.currency(value, code: appState.displayCurrency))")
+            .accessibilityValue(appState.headlineDayChangePct.map {
+                "Day change \(Fmt.percent($0, includeSign: true))"
+            } ?? "")
+        }
     }
 
     /// "Live" / "Closed" market-status pill (mirrors the web header badge).
@@ -153,6 +210,10 @@ struct GlobalControlBar<Trailing: View>: View {
                 if showsSectionTitle {
                     sectionTitle.padding(.leading, 12)
                     barDivider
+                    if appState.headlineMarketValue != nil {
+                        headlineKPI
+                        barDivider
+                    }
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -176,16 +237,8 @@ struct GlobalControlBar<Trailing: View>: View {
                 Spacer(minLength: 8)
                 
                 marketStatusCompact
-                
-                if appState.isRefreshing {
-                    ProgressView().controlSize(.small).frame(width: 16, height: 16)
-                } else {
-                    Button { NotificationCenter.default.post(name: .refreshRequested, object: nil) } label: {
-                        Image(systemName: "arrow.clockwise").appFont(.body)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                }
+
+                refreshControl
             }
             // Single instance kept across the active/inactive switch so focus and
             // typed text survive when the sibling controls show/hide.
