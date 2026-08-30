@@ -56,6 +56,10 @@ def provider(tmp_path):
             return_value={"AAPL": {"currency": "USD", "name": "Apple Inc."}},
         ),
         patch.object(MarketDataProvider, "get_fundamental_data_batch", return_value={}),
+        # These tests pin the daily-vs-intraday rules on synthetic frames, so
+        # the archive cross-check must not reach the real market DB and answer
+        # with today's genuine closes. Tests that exercise it patch it again.
+        patch.object(type(mdp.db), "get_latest_close_rows", return_value={}),
     ):
         yield mdp
 
@@ -121,6 +125,54 @@ def test_intraday_read_from_the_last_minute_the_symbol_traded(provider):
 
     assert quote["price"] == pytest.approx(MON_LAST)
     assert quote["change"] == pytest.approx(MON_LAST - FRI_CLOSE)
+
+
+def test_archive_fills_a_daily_bar_yahoo_left_closeless(provider):
+    """No intraday to fall back on: the archived close carries the session.
+
+    Yahoo serves the newest session with OHLC and volume but a null Close, and
+    over a weekend the 1m frame has nothing left to correct it with. Dropping
+    that row prices the whole holding at the session before — the archive
+    already holds the real close, so it wins.
+    """
+    daily = _daily_frame(
+        [
+            (date(2026, 7, 30), THU_CLOSE),
+            (date(2026, 7, 31), float("nan")),  # Friday, OHLC present, Close null
+        ]
+    )
+
+    with patch.object(
+        type(provider.db),
+        "get_latest_close_rows",
+        return_value={"AAPL": ("2026-07-31", FRI_CLOSE)},
+    ):
+        quote = _quotes(provider, daily, pd.DataFrame())["AAPL"]
+
+    assert quote["price"] == pytest.approx(FRI_CLOSE)
+    # Friday's move, measured against Thursday.
+    assert quote["change"] == pytest.approx(FRI_CLOSE - THU_CLOSE)
+    assert quote["source"] == "archive_daily_close"
+
+
+def test_archive_behind_the_fetch_is_ignored(provider):
+    """A stale archive must never drag a fresher fetched close backwards."""
+    daily = _daily_frame(
+        [
+            (date(2026, 7, 30), THU_CLOSE),
+            (date(2026, 7, 31), FRI_CLOSE),
+        ]
+    )
+
+    with patch.object(
+        type(provider.db),
+        "get_latest_close_rows",
+        return_value={"AAPL": ("2026-07-30", THU_CLOSE)},
+    ):
+        quote = _quotes(provider, daily, pd.DataFrame())["AAPL"]
+
+    assert quote["price"] == pytest.approx(FRI_CLOSE)
+    assert quote["source"] != "archive_daily_close"
 
 
 def test_intraday_older_than_the_daily_bar_is_ignored(provider):

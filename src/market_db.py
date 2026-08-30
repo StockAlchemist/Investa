@@ -1239,6 +1239,37 @@ class MarketDatabase:
                     out[symbol] = float(close)
         return out
 
+    def get_latest_close_rows(
+        self, symbols: Sequence[str]
+    ) -> Dict[str, Tuple[str, float]]:
+        """
+        {symbol: (date, close)} for the newest session that actually has a close.
+
+        Same shape as `get_latest_closes` but keeps the session date, which the
+        quote path needs to tell whether the archive is ahead of what the live
+        feed just returned.
+        """
+        symbols = list(symbols)
+        if not symbols:
+            return {}
+
+        placeholders = ", ".join(["?"] * len(symbols))
+        query = f"""
+            SELECT symbol, date, close FROM daily_ohlcv
+            WHERE (symbol, date) IN (
+                SELECT symbol, MAX(date) FROM daily_ohlcv
+                WHERE symbol IN ({placeholders}) AND interval = '1d'
+                  AND close IS NOT NULL
+                GROUP BY symbol
+            ) AND interval = '1d'
+        """
+        out: Dict[str, Tuple[str, float]] = {}
+        with self._get_connection() as conn:
+            for symbol, day, close in conn.execute(query, list(symbols)):
+                if close:
+                    out[symbol] = (day, float(close))
+        return out
+
     def get_last_date(self, symbol: str, table: str = "daily_ohlcv") -> Optional[date]:
         """Returns the most recent date available in the DB for a symbol."""
         col = "symbol" if table == "daily_ohlcv" else "pair"

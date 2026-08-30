@@ -2462,6 +2462,19 @@ class MarketDataProvider:
                     # Current UTC date for filtering
                     now_utc = datetime.now(timezone.utc).date()
 
+                    # Newest archived session per symbol, in one query. Used
+                    # below to catch the case where this fetch came back a
+                    # session short of what we already hold.
+                    try:
+                        archive_latest = self.db.get_latest_close_rows(
+                            list(internal_to_yf_map_local.values())
+                        )
+                    except Exception as e:
+                        logging.warning(
+                            f"Could not read latest archived closes for quote cross-check: {e}"
+                        )
+                        archive_latest = {}
+
                     # Process results
                     for internal_sym, yf_sym in internal_to_yf_map_local.items():
                         try:
@@ -2469,6 +2482,7 @@ class MarketDataProvider:
                             prev_close = None
                             sparkline = []
                             sparkline_1m = []
+                            price_from_archive = False
 
                             # Handle yf.download structure using robust helper
                             sym_df = _extract_ticker_from_df(df, yf_sym)
@@ -2554,6 +2568,51 @@ class MarketDataProvider:
 
                                         daily_session_dates[internal_sym] = last_date
 
+                                        # yfinance's `period=` fetch sometimes
+                                        # serves the newest session with OHLC
+                                        # and volume but a null Close. The
+                                        # dropna above discards that whole row,
+                                        # so the price silently falls back to
+                                        # the session before it — on a weekend
+                                        # that prices the entire portfolio a
+                                        # day stale, with a day change to
+                                        # match. The archive already holds that
+                                        # close (a different Yahoo call fills
+                                        # it), so prefer it whenever it is
+                                        # ahead of what this fetch returned.
+                                        archived = archive_latest.get(yf_sym)
+                                        if archived:
+                                            archived_day, archived_close = archived
+                                            try:
+                                                archived_date = date.fromisoformat(
+                                                    archived_day
+                                                )
+                                            except (TypeError, ValueError):
+                                                archived_date = None
+                                            if (
+                                                archived_date
+                                                and archived_date > last_date
+                                            ):
+                                                prev_close = last_val
+                                                price = archived_close
+                                                last_date = archived_date
+                                                is_today = archived_date >= now_utc
+                                                daily_session_dates[internal_sym] = (
+                                                    archived_date
+                                                )
+                                                sparkline = (
+                                                    sparkline + [archived_close]
+                                                )[-7:]
+                                                sparkline_1m = (
+                                                    sparkline_1m + [archived_close]
+                                                )[-22:]
+                                                price_from_archive = True
+                                                logging.info(
+                                                    f"{yf_sym}: fetch returned {vals[-1]:.4f} "
+                                                    f"@{dates_idx[-1]}, archive is ahead at "
+                                                    f"{archived_close:.4f} @{archived_day} — using the archive."
+                                                )
+
                                         logging.debug(
                                             f"{yf_sym} Download: LastDate={last_date}, IsToday={is_today}, Price={price}, Prev={prev_close}"
                                         )
@@ -2588,9 +2647,13 @@ class MarketDataProvider:
                                     "exchange": meta.get("exchange"),
                                     "fullExchangeName": meta.get("fullExchangeName"),
                                     "quoteType": meta.get("quoteType"),
-                                    "source": "yf_batch_download_stale_safe"
-                                    if not is_today
-                                    else "yf_batch_download",
+                                    "source": "archive_daily_close"
+                                    if price_from_archive
+                                    else (
+                                        "yf_batch_download_stale_safe"
+                                        if not is_today
+                                        else "yf_batch_download"
+                                    ),
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "dividendRate": fund.get("dividendRate", 0),
                                     "trailingAnnualDividendRate": fund.get(
@@ -4811,7 +4874,11 @@ class MarketDataProvider:
                             # reach back to 1980) stranded on the old basis,
                             # turning one seam into two.
                             earliest = self.db.get_first_dates([s]).get(s)
-                            inception = min(earliest, date(2000, 1, 1)) if earliest else date(2000, 1, 1)
+                            inception = (
+                                min(earliest, date(2000, 1, 1))
+                                if earliest
+                                else date(2000, 1, 1)
+                            )
                             logging.warning(
                                 f"Market DB Integrity: {reason}. "
                                 f"Triggering full re-fetch for {s} from {inception}."
