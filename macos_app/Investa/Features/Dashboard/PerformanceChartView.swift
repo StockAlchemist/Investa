@@ -166,7 +166,7 @@ struct PerformanceChartView: View {
     /// (plus annualized when over a year) for the TWR view.
     private struct PeriodStat: Identifiable { let id = UUID(); let label: String; let text: String; let positive: Bool }
 
-    private func pctStr(_ v: Double) -> String { String(format: "%.2f%%", v) }
+    private func pctStr(_ v: Double) -> String { Fmt.percent(v) }
 
     private var periodStats: [PeriodStat]? {
         guard points.count >= 2 else { return nil }
@@ -400,11 +400,11 @@ struct PerformanceChartView: View {
         let entries = model.series.filter { $0.date == date && $0.series != model.fxSeriesName }
         var rows = entries.map {
             ChartTooltipRow(color: seriesColor($0.series), label: $0.series,
-                            value: view == .value ? Fmt.currency($0.value, code: currency) : String(format: "%.2f%%", $0.value))
+                            value: view == .value ? Fmt.currency($0.value, code: currency) : Fmt.percent($0.value))
         }
         if model.showFX, let fp = model.fxPoints.first(where: { $0.date == date }) {
             rows.append(ChartTooltipRow(color: Theme.fx, label: "FX Rate", value: String(format: "%.4f", fp.rate)))
-            rows.append(ChartTooltipRow(color: Theme.fx, label: "FX Ret", value: String(format: "%.2f%%", fp.ret)))
+            rows.append(ChartTooltipRow(color: Theme.fx, label: "FX Ret", value: Fmt.percent(fp.ret)))
         }
         guard !rows.isEmpty else { return nil }
         return ChartTooltipContent(title: tooltipString(date), rows: rows)
