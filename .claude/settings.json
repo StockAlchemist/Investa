@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:portal.api.bot.or.th)",
+      "WebFetch(domain:www.bot.or.th)",
+      "mcp__claude_ai_Interactive_Brokers__search_contracts",
+      "mcp__claude_ai_Interactive_Brokers__get_price_history"
+    ]
+  }
+}
