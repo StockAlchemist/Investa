@@ -3323,6 +3323,16 @@ export interface components {
             ibkr_token?: string | null;
             /** Ibkr Query Id */
             ibkr_query_id?: string | null;
+            /** Gemini Api Key */
+            gemini_api_key?: string | null;
+            /** Fmp Api Key */
+            fmp_api_key?: string | null;
+            /** Sec Th Api Key */
+            sec_th_api_key?: string | null;
+            /** Bot Api Key */
+            bot_api_key?: string | null;
+            /** Tiingo Api Key */
+            tiingo_api_key?: string | null;
             /** Target Allocation */
             target_allocation?: {
                 [key: string]: {
