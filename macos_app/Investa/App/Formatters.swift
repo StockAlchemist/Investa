@@ -90,7 +90,9 @@ enum Fmt {
     }
 
     /// Compact currency (e.g. `$1.2M`, `฿12K`) — mirrors the web `formatCompactNumber`.
-    static func compact(_ value: Double, code: String) -> String {
+    /// `forceDecimals` keeps both places (`$1.90M`, not `$1.9M`) so a figure that
+    /// updates live doesn't change width as its last digit lands on zero.
+    static func compact(_ value: Double, code: String, forceDecimals: Bool = false) -> String {
         if value == 0 { return "0" }
         let symbol = symbol(code)
         let sign = value < 0 ? "-" : ""
@@ -104,7 +106,7 @@ enum Fmt {
         default: (scaled, suffix) = (a, "")
         }
         var num = String(format: "%.2f", scaled)
-        if num.contains(".") {
+        if !forceDecimals, num.contains(".") {
             while num.hasSuffix("0") { num.removeLast() }
             if num.hasSuffix(".") { num.removeLast() }
         }

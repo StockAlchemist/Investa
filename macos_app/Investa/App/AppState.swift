@@ -85,6 +85,12 @@ final class AppState: ObservableObject {
     @Published var marketIsOpen: Bool? = nil
     /// When the global market data (indices / market status) was last fetched.
     @Published var lastUpdated: Date? = nil
+    /// Total portfolio value + day change shown beside the section title in the
+    /// header (the twin of the web PageHeader's mini KPI). Filtered by the
+    /// current display currency and account selection, like the web's
+    /// `headlineQuery`; nil until the first fetch lands.
+    @Published private(set) var headlineMarketValue: Double? = nil
+    @Published private(set) var headlineDayChangePct: Double? = nil
     @Published var isRefreshing: Bool = false
     /// In-window stock detail navigation state.
     @Published var selectedStock: String? = nil
@@ -121,6 +127,7 @@ final class AppState: ObservableObject {
     /// The in-flight `loadSettings` call, so concurrent callers join it.
     private var settingsTask: Task<Void, Never>?
     private var refreshCancellable: AnyCancellable?
+    private var headlineCancellable: AnyCancellable?
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -134,6 +141,19 @@ final class AppState: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self, self.didLoadSettings else { return }
                     await self.loadSettings(initial: false)
+                }
+            }
+        // The header KPI is scoped to the currency and account pickers, so it
+        // has to re-fetch when either moves. Debounced because @Published fires
+        // on `willSet` — after the delay the properties hold their new values,
+        // and a burst of account toggles collapses into one request.
+        headlineCancellable = Publishers.CombineLatest($displayCurrency, $selectedAccounts)
+            .dropFirst()
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.didLoadSettings else { return }
+                    await self.fetchHeadline()
                 }
             }
     }
@@ -245,9 +265,12 @@ final class AppState: ObservableObject {
             // Full account list comes from the summary's _available_accounts (all
             // transaction accounts, incl. closed) — union with closed + grouped.
             var accounts = Set<String>()
-            if let headline: SummaryResponse = try? await api.get(
-                "/summary/headline", query: [URLQueryItem(name: "currency", value: displayCurrency)]),
-               let list = headline.metrics?.raw["_available_accounts"]?.arrayValue?.compactMap({ $0.stringValue }) {
+            // Unfiltered so every transaction account shows up in the selector;
+            // its metrics double as the header KPI when nothing is filtered out.
+            let allAccountsHeadline: SummaryResponse? = try? await api.get(
+                "/summary/headline", query: [URLQueryItem(name: "currency", value: displayCurrency)])
+            if let list = allAccountsHeadline?.metrics?.raw["_available_accounts"]?
+                .arrayValue?.compactMap({ $0.stringValue }) {
                 accounts.formUnion(list)
             }
             accounts.formUnion(settings.allAccounts)
@@ -264,6 +287,11 @@ final class AppState: ObservableObject {
                 // Drop selections that no longer exist (renamed/split accounts).
                 selectedAccounts = selectedAccounts.filter { allAccounts.contains($0) }
             }
+            if selectedAccounts.isEmpty, let metrics = allAccountsHeadline?.metrics {
+                applyHeadline(metrics)   // same request the selector list came from
+            } else {
+                await fetchHeadline()
+            }
             await fetchFXRate()
             await fetchIndices()
             didLoadSettings = true
@@ -272,6 +300,25 @@ final class AppState: ObservableObject {
             didLoadSettings = true
             await fetchIndices()
         }
+    }
+
+    /// Fetch the header KPI (portfolio value + day change) for the current
+    /// currency and account selection. Cheap enough to re-run on every refresh
+    /// — it's the same `/summary/headline` the web header polls.
+    func fetchHeadline() async {
+        let currency = displayCurrency
+        let accounts = selectedAccounts.sorted()
+        let query = [URLQueryItem(name: "currency", value: currency)]
+            + APIClient.arrayQuery("accounts", accounts)
+        guard let res: SummaryResponse = try? await api.get("/summary/headline", query: query) else { return }
+        // Drop a response the user has already navigated away from.
+        guard displayCurrency == currency, selectedAccounts.sorted() == accounts else { return }
+        applyHeadline(res.metrics)
+    }
+
+    private func applyHeadline(_ metrics: Metrics?) {
+        headlineMarketValue = metrics?.marketValue
+        headlineDayChangePct = metrics?.dayChangePercent
     }
 
     /// Fetch the exchange rate for the current display currency vs USD.
