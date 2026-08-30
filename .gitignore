@@ -26,6 +26,9 @@ sp500_recalc.log
 .coverage
 # Claude Code agent worktrees — local checkouts, never commit
 .claude/worktrees/
+# The permission allowlist is per-machine: it accretes grants as they are
+# approved interactively, so tracking it left the file permanently dirty.
+.claude/settings.json
 
 # py-spy profiler output
 profiles/
