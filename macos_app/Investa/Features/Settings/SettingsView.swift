@@ -344,12 +344,11 @@ struct SettingsView: View {
 
     // MARK: - macOS & iPad
 
-    /// The same shape as every other tab: title, divider, then one scrolling
-    /// column of cards — with the category rail beside it.
+    /// The same shape as every other tab: the control bar names the tab, then
+    /// one scrolling column of cards — with the category rail beside it.
     private var regularLayout: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             ScrollView {
                 HStack(alignment: .top, spacing: 24) {
                     rail
@@ -361,20 +360,25 @@ struct SettingsView: View {
         .macMinSize(width: 820, height: 560)
     }
 
-    private var header: some View {
-        HStack(spacing: 10) {
-            Text("Settings").appFont(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
-            Spacer(minLength: 8)
-            if let status = viewModel.status {
-                Text(status)
-                    .appFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+    /// Save status and the loading spinner. The tab's name lives in the control
+    /// bar, so with nothing to report this row disappears rather than leaving a
+    /// blank band above the first card.
+    @ViewBuilder private var header: some View {
+        if viewModel.isLoading || viewModel.status != nil {
+            HStack(spacing: 10) {
+                if viewModel.isLoading { ProgressView().controlSize(.small) }
+                Spacer(minLength: 8)
+                if let status = viewModel.status {
+                    Text(status)
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
             }
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            Divider()
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
     }
 
     private var rail: some View {

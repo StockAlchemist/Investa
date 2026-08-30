@@ -62,21 +62,10 @@ struct DividendsView: View {
         return viewModel.dividends.filter { $0.date.hasPrefix(y) }
     }
 
-    private var header: some View {
-        HStack {
-            Text("Income").appFont(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
-            Spacer()
-        }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-    }
-
     var body: some View {
         #if os(iOS)
         ScrollView {
             VStack(spacing: 0) {
-                header
-                Divider()
                 if isInitialLoading {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -105,11 +94,10 @@ struct DividendsView: View {
         }
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         #else
         VStack(spacing: 0) {
-            header
-            Divider()
             if isInitialLoading {
                 VStack(spacing: 12) {
                     ProgressView()
@@ -138,6 +126,7 @@ struct DividendsView: View {
         }
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         #endif
     }
